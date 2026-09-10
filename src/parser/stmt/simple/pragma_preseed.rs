@@ -23,12 +23,6 @@ pub(crate) fn set_eval_operator_assoc_preseed(assoc: HashMap<String, String>) {
     });
 }
 
-pub(crate) fn set_eval_imported_function_preseed(names: Vec<String>) {
-    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
-        *preseed.borrow_mut() = names;
-    });
-}
-
 pub(crate) fn set_eval_user_sub_preseed(names: Vec<String>) {
     EVAL_USER_SUB_PRESEED.with(|preseed| {
         *preseed.borrow_mut() = names;

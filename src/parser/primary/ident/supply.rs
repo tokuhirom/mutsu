@@ -285,10 +285,6 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             param_type,
             body: rewrite_supply_body(body, emitter_name),
         },
-        Stmt::Subtest { name, body } => Stmt::Subtest {
-            name,
-            body: rewrite_supply_body(body, emitter_name),
-        },
         // A CLOSE phaser in a `supply { ... }` block registers its body as a
         // close callback on the emitter, to run when the tap is closed or the
         // supply terminates. Rewrite it to a registration call so it survives

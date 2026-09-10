@@ -82,8 +82,7 @@ fn walk_stmt(stmt: &Stmt, in_scope: bool, line: &mut i64, found: &mut Option<i64
         | Stmt::Control(body)
         | Stmt::Given { body, .. }
         | Stmt::When { body, .. }
-        | Stmt::While { body, .. }
-        | Stmt::Subtest { body, .. } => walk_stmts(body, in_scope, line, found),
+        | Stmt::While { body, .. } => walk_stmts(body, in_scope, line, found),
         Stmt::For { body, iterable, .. } => {
             walk_expr(iterable, in_scope, line, found);
             walk_stmts(body, in_scope, line, found);

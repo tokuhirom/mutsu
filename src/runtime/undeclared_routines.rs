@@ -353,10 +353,6 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
                 walk_call_arg(a, scan);
             }
         }
-        Stmt::Subtest { name, body } => {
-            walk_expr(name, scan);
-            walk_stmts(body, scan);
-        }
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
         | Stmt::Default(body)

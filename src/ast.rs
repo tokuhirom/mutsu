@@ -1211,10 +1211,6 @@ pub(crate) enum Stmt {
         module: String,
         tags: Vec<String>,
     },
-    Subtest {
-        name: Expr,
-        body: Vec<Stmt>,
-    },
     Block(Vec<Stmt>),
     /// Non-lexical statement sequence used by parser desugarings.
     SyntheticBlock(Vec<Stmt>),

@@ -66,7 +66,7 @@ failure. The real `JSON::Tiny.from-json` throws `X::JSON::Tiny::Invalid`
 native path threw a plain `X::AdHoc` (matching `JSON::Fast`, which really does
 just `die` a string). Fixed by making `native_from_json` pick the exception
 shape based on which module was `use`d (`self.loaded_modules.contains(...)`,
-see `json_tiny_exception_style()` in `src/runtime/test_functions/mod.rs`) —
+see `json_tiny_exception_style()` in `src/vm/vm_native_json.rs`) —
 `JSON::Fast`'s own `X::JSON::AdditionalContent` mirroring
 (`t/json-additional-content.t`) was the precedent. Pin:
 `t/json-tiny-invalid-exception.t`.

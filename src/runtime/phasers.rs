@@ -1096,7 +1096,6 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         | Stmt::Control(body)
         | Stmt::ClassDecl { body, .. }
         | Stmt::RoleDecl { body, .. }
-        | Stmt::Subtest { body, .. }
         | Stmt::Package { body, .. } => {
             reorder_recursive(body, false);
         }

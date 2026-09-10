@@ -26,17 +26,11 @@ genuine upstream implementation instead of reimplementing it natively.
 ### `Test` runs verbatim, and is what `use Test` resolves to
 
 This file is the unmodified upstream `Test.rakumod`, and mutsu runs it verbatim
--- it was never renamed or shimmed. Since 2026-09-10 it is also **the default
-provider**: a bare `use Test` loads this file. Mutsu's native TAP provider
-(`src/runtime/test_functions.rs`) survives only behind `MUTSU_REAL_TEST=0`,
-which is how the dual-provider sweeps (`scripts/test-module-sweep.sh`,
-`scripts/roast-test-module-sweep.sh`) still compare the two, and it is scheduled
-for deletion ([#7566](https://github.com/tokuhirom/mutsu/issues/7566)).
-
-```
-mutsu t/some-test.t                        # this file (default)
-MUTSU_REAL_TEST=0 mutsu t/some-test.t      # the native provider
-```
+-- it was never renamed or shimmed. Since 2026-09-10 it is also **the only
+provider**: a bare `use Test` loads this file, and there is nothing else it
+could load. Mutsu's native TAP provider was retired on 2026-09-10
+([#7566](https://github.com/tokuhirom/mutsu/issues/7566)); the `MUTSU_REAL_TEST`
+switch that used to select between the two is gone with it.
 
 Every `t/` file and every roast file stands on `Test`, so the switch was held
 until nothing regressed under it. It was attempted on 2026-09-07/08 and

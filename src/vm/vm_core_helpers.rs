@@ -4,9 +4,8 @@ impl Interpreter {
     /// Interpreter-native Stdout emit (③後段 PR-C), mirroring `Interpreter::emit_output`:
     /// bump the Stdout-target handle's `bytes_written`, then push to the sink
     /// (immediate real-stdout flush / buffer / thread-clone shared buffer per the
-    /// sink's decision). `subtest_active` comes from the interpreter (TAP state
-    /// stays interpreter-owned). Build the payload before calling — no guard is
-    /// held across re-entrant work.
+    /// sink's decision). Build the payload before calling — no guard is held
+    /// across re-entrant work.
     pub(crate) fn vm_emit_stdout(&mut self, text: &str) {
         let byte_count = text.len() as i64;
         {
@@ -15,16 +14,14 @@ impl Interpreter {
                 h.add_bytes_written(byte_count);
             }
         }
-        let subtest_active = self.subtest_active();
-        self.output_sink_mut().emit(text, subtest_active);
+        self.output_sink_mut().emit(text);
     }
 
     /// Interpreter-native Stderr emit (③後段 PR-C), mirroring the `Stderr` branch of
     /// `write_to_handle_value_trying` (immediate real-stderr flush or the stderr
     /// buffer; no `bytes_written` scan, no `output_emitted`).
     pub(crate) fn vm_emit_stderr(&mut self, text: &str) {
-        let subtest_active = self.subtest_active();
-        self.output_sink_mut().emit_stderr(text, subtest_active);
+        self.output_sink_mut().emit_stderr(text);
     }
 
     /// Invoke a callable value using the Interpreter fast paths when available and

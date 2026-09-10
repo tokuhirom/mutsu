@@ -454,13 +454,6 @@ impl Interpreter {
         io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
     }
 
-    /// Whether a TAP subtest is currently in progress. The VM queries this (the
-    /// TAP state machine stays interpreter-owned) to pass `subtest_active` into
-    /// the output sink's emit decision for VM-native Stdout/Stderr output.
-    pub(crate) fn subtest_active(&self) -> bool {
-        self.tap.subtest_depth() != 0
-    }
-
     /// Allocate a fresh handle id, store `state` under it, and return the id.
     /// Build `state` fully (including anything that needs `&self`, e.g.
     /// `default_line_separators()`) *before* calling this, since the short write

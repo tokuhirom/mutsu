@@ -35,8 +35,10 @@ learn the expected behaviour.
 
 ## Rules
 
-- The implementation lives in `src/runtime/test_functions.rs`, **not** as a builtin in
-  `builtins/`.
+- `Test::Util` is a roast helper module, **not** Raku core: a function that needs interpreter
+  support gets it in the relevant runtime module, **not** as a builtin in `builtins/`. (There is
+  no native `Test` provider to add it to any more — it was retired in #7566 and `use Test` loads
+  rakudo's own `Test.rakumod`.)
 - If making the function work needs a new language feature (e.g. `exit_code` support),
   implement the feature properly. No stubs, hardcoded outputs, or early returns.
 - Always read the `.rakumod` source before implementing — the helper's real behaviour, not an

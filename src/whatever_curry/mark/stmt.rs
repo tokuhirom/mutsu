@@ -81,10 +81,6 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
             super::expr::mark_expr(supply);
             mark_stmts(body);
         }
-        Stmt::Subtest { name, body } => {
-            super::expr::mark_expr(name);
-            mark_stmts(body);
-        }
         Stmt::Label { stmt, .. } => mark_stmt(stmt),
         Stmt::Let { index, value, .. } => {
             if let Some(index) = index {

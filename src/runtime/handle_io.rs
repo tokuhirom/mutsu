@@ -199,8 +199,7 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                let subtest_active = self.subtest_active();
-                self.output_sink_mut().emit_stderr(&payload, subtest_active);
+                self.output_sink_mut().emit_stderr(&payload);
                 Ok(())
             }
             IoHandleTarget::File => self.with_handle_mut(handle_value, |state| {
@@ -252,7 +251,7 @@ impl Interpreter {
                 // encoding.t needs the child to emit the real bytes). Mirror the
                 // Stderr branch: bytes straight through when stdout is immediate;
                 // only the TAP-capture buffer path decodes lossily.
-                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
+                if self.output_sink().immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stdout().write_all(bytes);
                     let _ = std::io::stdout().flush();
@@ -263,7 +262,7 @@ impl Interpreter {
                 Ok(())
             }
             IoHandleTarget::Stderr => {
-                if self.tap.subtest_depth() == 0 && self.output_sink().immediate_stdout {
+                if self.output_sink().immediate_stdout {
                     use std::io::Write;
                     let _ = std::io::stderr().write_all(bytes);
                     let _ = std::io::stderr().flush();

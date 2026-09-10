@@ -145,48 +145,6 @@ impl Interpreter {
         pre_resolved: Option<Arc<FunctionDef>>,
     ) -> Result<Value, RuntimeError> {
         self.test_pending_callsite_line = callsite_line;
-        // Delegate test functions to the unified test_functions.rs — unless a
-        // user routine of that name is declared and can take these arguments.
-        //
-        // This dispatch runs *before* user-routine resolution, so without the
-        // guard mutsu's native TAP routines silently overrule a module that
-        // exports its own `ok`/`is`/`plan`/... The two implementations then keep
-        // separate counters, which looks exactly like a stale module lexical:
-        // rakudo's real `Test.rakumod`, loaded under an alias, emitted `ok 1`
-        // for its first *and* second assertion because every other one had been
-        // answered by the native handler. `use Test` is intercepted natively and
-        // registers no routines, so the ordinary path has no declaration to
-        // compete with and is unaffected.
-        //
-        // Decide on whether a *declaration* exists, not on whether the name is a
-        // builtin — same rule as the qualified-call guard
-        // (news/2026-07/qualified-call-no-longer-aliases-a-builtin.md).
-        //
-        // Scoped to the `Test` module's own export list, NOT to every name in
-        // `is_test_function_name` (which also covers roast's `Test::Util` /
-        // `Test::Tap` helpers). Those modules really are loaded from source, so
-        // mutsu's natives override live declarations there today; flipping that
-        // is a separate provider retirement — see
-        // todo/tickets/retire-native-test-util-overrides.md, which now tracks
-        // the seven roast files the widened guard exposes.
-        // Under MUTSU_REAL_TEST=1 the real Test.rakumod owns the TAP state.
-        // The native handlers bypass that (they write to stdout directly and
-        // don't increment the real module's counters), so skip them — the real
-        // Raku sub (loaded from Test.rakumod / Test::Util source) must handle
-        // it.
-        //
-        // The declaration probe is asked ONLY when a native handler could still
-        // win, because its answer has no other consumer. It costs a full
-        // `resolve_function_with_types` + `args_match_param_types` over the
-        // routine's multi candidates, and under the real module every single
-        // assertion arrives here — that probe alone was ~20% of the vendored
-        // provider's per-assertion cost (vendor-real-test-module-flip, #7554).
-        if !Self::real_test_module_enabled()
-            && !self.user_test_decl_beats_native(name, &args)
-            && let Some(result) = self.call_test_function(name, &args)?
-        {
-            return Ok(result);
-        }
         match name {
             "make" => {
                 let value = if args.is_empty() {

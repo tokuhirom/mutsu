@@ -4,7 +4,7 @@ use Test;
 use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test::Util;
 
-plan 8;
+plan 7;
 
 # Regression for todo/deep/vendor-real-test-module.md: `roast/S32-list/skip.t`
 # selectively imports Test's `plan`/`is`/etc. as `&`-sigil VALUES out of a `do`
@@ -16,8 +16,8 @@ plan 8;
 #       (&plan, &is)
 #   }
 #
-# Under `MUTSU_REAL_TEST=1` (the real vendored Test.rakumod, not mutsu's
-# native TAP provider) this died with "Unknown function: plan" -- even though
+# Under the vendored Test.rakumod (then still opt-in, behind
+# `MUTSU_REAL_TEST=1`) this died with "Unknown function: plan" -- even though
 # `Test::plan` was still perfectly declared. Two independent bugs combined to
 # cause it, both in `&`-sigil capture of a proto/multi routine reached only
 # through an import that is lexically scoped to a block:
@@ -50,14 +50,10 @@ plan 8;
 # top level.
 #
 # This file exercises both bugs directly with a LOCAL proto+multi module
-# (t/lib/ProtoMultiCapture.rakumod) -- which reproduces under the DEFAULT
-# native-provider mutsu too, since a user-defined routine (unlike `plan`/`is`)
-# is never a hardcoded builtin name -- across all four combinations of
+# (t/lib/ProtoMultiCapture.rakumod), across all four combinations of
 # BEGIN/no-BEGIN and single-variable/list-destructured binding. It then pins
-# the original Test.rakumod scenario directly, toggling
-# `MUTSU_REAL_TEST` via `is_run` so the real regression (only visible under
-# the vendored Test module) is covered too, without changing what `t/`
-# normally exercises.
+# the original Test.rakumod scenario directly, through `is_run` so the child
+# process gets its own `use Test` import scope to pop.
 
 # --- Bug A: no BEGIN, single-variable binding ---
 {
@@ -109,7 +105,7 @@ ok !(try { EVAL('proto-multi-capture(1)'); True }),
     'the bare routine name did not leak outside its selective-import do block';
 
 # --- The original roast/S32-list/skip.t shape, against the vendored
-# Test.rakumod (MUTSU_REAL_TEST=1) as well as the native provider. ---
+# Test.rakumod. ---
 my $begin_list_probe = q:to/CODE/;
 BEGIN my (&plan, &is) = do {
     use Test;
@@ -128,18 +124,8 @@ plan 1;
 say "single var ok";
 CODE
 
-# The vendored module is the default since 2026-09-10, so the native provider
-# has to be asked for explicitly -- `:delete` would leave the child on the
-# vendored half and test the same thing twice.
-%*ENV<MUTSU_REAL_TEST> = '0';
 is_run $begin_list_probe, { status => 0, out => "1..1\nok 1 - selective import survived\n" },
-    'native provider: BEGIN + list-destructured selective import of Test still works';
-
-%*ENV<MUTSU_REAL_TEST> = '1';
-is_run $begin_list_probe, { status => 0, out => "1..1\nok 1 - selective import survived\n" },
-    'vendored Test.rakumod: BEGIN + list-destructured selective import survives the import scope popping';
+    'BEGIN + list-destructured selective import survives the import scope popping';
 is_run $begin_single_probe,
     { status => 255, out => "1..1\nsingle var ok\n# You planned 1 test, but ran 0\n" },
-    'vendored Test.rakumod: BEGIN + single-variable selective import survives (was wrongly hoisted)';
-
-%*ENV<MUTSU_REAL_TEST>:delete;
+    'BEGIN + single-variable selective import survives (was wrongly hoisted)';

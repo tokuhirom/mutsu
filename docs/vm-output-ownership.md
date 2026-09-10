@@ -34,7 +34,7 @@ elif is_thread_clone && shared_thread_output: push to the shared buffer
 else: push to self.output
 ```
 
-`emit_output` is called from **37 sites** (subtest/test_functions/io/supply/handle/builtins_system/vm_hyper_race_parallel/
+`emit_output` is called from **37 sites** (react_whenever/io/supply/handle/builtins_system/vm_hyper_race_parallel/
 main_args …). `output` reads/writes number **~33 sites**.
 
 ## ★What is decisively different from io_handles (the strategic crux)

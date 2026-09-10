@@ -104,17 +104,6 @@ pub(crate) fn set_current_language_version(version: &str) {
     stmt::simple::set_current_language_version(version);
 }
 
-/// Run `f` with the given names pre-seeded as known user-sub names, so any parse
-/// performed inside `f` (e.g. a re-entrant `Interpreter::run`) recognizes them as
-/// callable in listop form. Restores the previous (empty) preseed afterwards.
-/// Used by `throws-like`/EVAL so caller-scope lexical `&name` subs parse as calls.
-pub(crate) fn with_user_sub_preseed<R>(names: Vec<String>, f: impl FnOnce() -> R) -> R {
-    stmt::set_eval_user_sub_preseed(names);
-    let result = f();
-    stmt::set_eval_user_sub_preseed(Vec::new());
-    result
-}
-
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
@@ -676,7 +665,6 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     input: &str,
     operator_names: &[String],
     operator_assoc: &std::collections::HashMap<String, String>,
-    imported_function_names: &[String],
     user_sub_names: &[String],
     user_type_names: &[String],
     user_value_term_names: &[String],
@@ -685,7 +673,6 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     // parse_program will call reset_user_subs, then we re-register after.
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
-    stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
     stmt::set_eval_user_type_preseed(user_type_names.to_vec());
     stmt::set_eval_user_value_term_preseed(user_value_term_names.to_vec());
@@ -703,7 +690,6 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     let result = parse_program(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
-    stmt::set_eval_imported_function_preseed(Vec::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
     stmt::set_eval_user_type_preseed(Vec::new());
     stmt::set_eval_user_value_term_preseed(Vec::new());
@@ -719,11 +705,9 @@ pub(crate) fn parse_program_partial_with_operators(
     input: &str,
     operator_names: &[String],
     operator_assoc: &std::collections::HashMap<String, String>,
-    imported_function_names: &[String],
 ) -> (Vec<Stmt>, Option<String>) {
     stmt::set_eval_operator_preseed(operator_names.to_vec());
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
-    stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(Vec::new());
     // Same revision inheritance as `parse_program_with_operators_and_user_subs`:
     // this scans EVAL'd code, so it compiles under the caller's language version.
@@ -731,7 +715,6 @@ pub(crate) fn parse_program_partial_with_operators(
     let result = parse_program_partial(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
-    stmt::set_eval_imported_function_preseed(Vec::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
     stmt::set_eval_language_version_preseed(None);
     result

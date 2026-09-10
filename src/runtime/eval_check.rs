@@ -571,7 +571,6 @@ impl Interpreter {
         src: &str,
         op_names: &[String],
         op_assoc: &HashMap<String, String>,
-        imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
         let user_type_names = self.collect_eval_user_type_names();
@@ -580,7 +579,6 @@ impl Interpreter {
             src,
             op_names,
             op_assoc,
-            imported_names,
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
@@ -616,12 +614,8 @@ impl Interpreter {
                 Ok(Value::NIL)
             }
             Err(parse_err) => {
-                let (partial_stmts, _) = crate::parser::parse_program_partial_with_operators(
-                    src,
-                    op_names,
-                    op_assoc,
-                    imported_names,
-                );
+                let (partial_stmts, _) =
+                    crate::parser::parse_program_partial_with_operators(src, op_names, op_assoc);
                 self.execute_begin_phasers(&partial_stmts);
                 Err(parse_err)
             }
@@ -638,13 +632,7 @@ impl Interpreter {
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
-        let imported_names = self.collect_eval_imported_function_names();
-        let result = self.parse_and_check_only_with_operators(
-            trimmed,
-            &op_names,
-            &op_assoc,
-            &imported_names,
-        );
+        let result = self.parse_and_check_only_with_operators(trimmed, &op_names, &op_assoc);
         if let Some(saved) = saved_in_eval {
             self.env.insert("__mutsu_in_eval".to_string(), saved);
         } else {

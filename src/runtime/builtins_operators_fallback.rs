@@ -260,32 +260,6 @@ impl Interpreter {
                 )));
             }
         }
-        // Same rule as the `exec_call` guard (`calls.rs`): a module that exports
-        // its own `ok`/`is`/`plan`/... beats mutsu's native TAP provider, and the
-        // decision is made on whether a *declaration* exists, not on whether the
-        // name is a builtin. This is the second dispatch path into the native
-        // provider, and it was missing the guard — so a call that reached the
-        // fallback here (a listop whose name did not resolve to a compiled
-        // function at the call site) was answered natively even though the real
-        // `Test.rakumod` had exported one. The two implementations then kept
-        // separate counters: under `MUTSU_REAL_TEST=1` the native `plan` recorded
-        // a plan nobody ran against, and `finish()` reported "You planned 14
-        // test, but ran 0" on a file whose assertions had all passed.
-        let user_declared = self.user_test_decl_beats_native(name, args);
-        // Under MUTSU_REAL_TEST=1 the real Test.rakumod owns the TAP state and
-        // all test assertions go through it.  The native handlers bypass that
-        // (they write to stdout directly and don't increment the real module's
-        // counters), so skip them here too — user declarations still win via
-        // `user_test_decl_beats_native` above; the native provider is only the
-        // fallback for files that call Test helpers without loading the module.
-        if !user_declared
-            && !Self::real_test_module_enabled()
-            && (self.loaded_modules.contains("Test")
-                || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
-            && let Some(result) = self.call_test_function(name, args)?
-        {
-            return Ok(result);
-        }
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::regex(pattern));
         }

@@ -92,12 +92,11 @@ are both fine; pick whichever reads better, subject to the global-uniqueness rul
 
 ## 5. Why basenames stay unique
 
-Several long-standing tools key on the basename rather than the path:
-
-- `scripts/test-module-sweep.sh` copies every test into one flat work directory and indexes its
-  two output files by basename.
-- CI logs, `prove` output, and every historical `docs/` and `news/` entry name tests by basename
-  in prose.
+Several long-standing tools key on the basename rather than the path: CI logs, `prove` output,
+and every historical `docs/` and `news/` entry name tests by basename in prose. (Until 2026-09-10
+`scripts/test-module-sweep.sh` did too -- it copied every test into one flat work directory and
+indexed its two output files by basename -- but it went with the native `Test` provider it
+compared against, #7566.)
 
 Making basenames unique is much cheaper than making all of that path-aware, and it preserves the
 property that a bare test name in a five-year-old design doc still resolves. `make check-t-layout`

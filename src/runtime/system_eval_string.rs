@@ -172,15 +172,6 @@ impl Interpreter {
         assoc
     }
 
-    pub(crate) fn collect_eval_imported_function_names(&self) -> Vec<String> {
-        // The `Test` module's own exports; the single copy lives in
-        // runtime::test_functions so the parser, EVAL and `exec_call` agree.
-        crate::runtime::TEST_MODULE_EXPORTS
-            .iter()
-            .map(|name| (*name).to_string())
-            .collect()
-    }
-
     /// Collect user-declared subroutine names from the current runtime so
     /// EVAL'd code can see them as declared at parse time. This allows
     /// constructs like `first.uc` (where `first` is a user sub shadowing
@@ -194,6 +185,13 @@ impl Interpreter {
             } else {
                 key_s.as_str()
             };
+            // A multi candidate is keyed `Pkg::name/arity…`, so the bare
+            // routine name stops at the first `/`. Without this, an imported
+            // multi (every `Test` assertion is one) reached the preseed as
+            // `is/2` — a name no parse can match — and EVAL'd code calling it
+            // in listop form (`is [$sub()], [42], 'desc'`) parsed its first
+            // argument as a subscript instead.
+            let short = short.split('/').next().unwrap_or(short);
             // Skip empty/meta-named entries. Operator subs are handled by
             // collect_operator_sub_names.
             if short.is_empty() || short.contains(':') {
@@ -370,7 +368,6 @@ impl Interpreter {
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
-        let imported_names = self.collect_eval_imported_function_names();
         let bracketed_stmt_inner = unwrap_bracketed_statements(trimmed)
             .filter(|inner| looks_like_bracketed_statement_list(inner));
         // General case: parse and evaluate as Raku code
@@ -378,17 +375,10 @@ impl Interpreter {
             Err(err)
         } else if let Some(inner) = bracketed_stmt_inner {
             // EVAL q[[ ... ]] can yield one wrapper [] around statement lists.
-            self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names)
-                .or_else(|_| {
-                    self.parse_and_eval_with_operators(
-                        trimmed,
-                        &op_names,
-                        &op_assoc,
-                        &imported_names,
-                    )
-                })
+            self.parse_and_eval_with_operators(inner, &op_names, &op_assoc)
+                .or_else(|_| self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc))
         } else {
-            self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc, &imported_names)
+            self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc)
         };
         self.emit_parse_warnings(crate::parser::take_parse_warnings());
         // Fallback: parser still rejects forms like `~< foo bar >`.
@@ -397,20 +387,14 @@ impl Interpreter {
             && result.is_err()
             && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
         {
-            result = self.parse_and_eval_with_operators(
-                &rewritten,
-                &op_names,
-                &op_assoc,
-                &imported_names,
-            );
+            result = self.parse_and_eval_with_operators(&rewritten, &op_names, &op_assoc);
         }
         // Accept parenthesized statement lists like `(6;)` in EVAL.
         if !pod_failed
             && result.is_err()
             && let Some(inner) = unwrap_parenthesized_statements(trimmed)
         {
-            result =
-                self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names);
+            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
         }
         // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
         if !pod_failed
@@ -418,8 +402,7 @@ impl Interpreter {
             && bracketed_stmt_inner.is_none()
             && let Some(inner) = unwrap_bracketed_statements(trimmed)
         {
-            result =
-                self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names);
+            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
         }
         // EVAL should accept routine declarations in snippet context.
         // If unit-scope parsing rejects a declaration, retry inside an implicit block.
@@ -433,8 +416,7 @@ impl Interpreter {
             let saved_wrapped_eval = self.env.get("__mutsu_eval_wrapped_decls").cloned();
             self.env
                 .insert("__mutsu_eval_wrapped_decls".to_string(), Value::TRUE);
-            result =
-                self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc, &imported_names);
+            result = self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc);
             if let Some(saved) = saved_wrapped_eval {
                 self.env
                     .insert("__mutsu_eval_wrapped_decls".to_string(), saved);

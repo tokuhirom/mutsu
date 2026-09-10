@@ -755,6 +755,7 @@ mod promise_broken_gist;
 mod promise_errors;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
+pub(crate) mod react_whenever;
 mod receiver_class;
 pub(crate) mod regex;
 pub(crate) mod regex_parse;
@@ -823,7 +824,6 @@ pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_validate;
 pub(crate) mod str_numeric;
-pub(crate) mod subtest;
 mod supply_classify;
 mod supply_promise;
 mod supply_transform;
@@ -834,8 +834,7 @@ mod system_eval_string;
 mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
-mod test_functions;
-pub(crate) use test_functions::TEST_MODULE_EXPORTS;
+mod test_module_predicates;
 pub(crate) mod thread_compat;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
@@ -862,7 +861,7 @@ pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::Registry;
 pub(crate) use self::scope_stack::ScopeStack;
-pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
+pub(crate) use self::tap_state::TapState;
 
 pub(crate) use utils::*;
 
@@ -2716,8 +2715,7 @@ pub struct Interpreter {
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
-    /// `eval-dies-ok` construct to run their code string (`test_fn_eval_lives_ok`/
-    /// `test_fn_eval_dies_ok` in `runtime/test_functions/eval_exception.rs`).
+    /// `eval-dies-ok` construct to run their code string.
     /// Real raku's own `Test.rakumod` implements both via a helper (`sub
     /// eval_exception($code) { try { EVAL($code) }; $! }`) that calls `EVAL`
     /// with NO explicit `context =>` argument -- unlike `throws-like`, which
@@ -3109,7 +3107,7 @@ pub struct Interpreter {
     /// synchronously (instead of buffering into `supply_emit_buffer`), so an
     /// infinite synchronous body (`supply { loop { emit(...) } }`) can be
     /// terminated by the consumer's `done` on emit-to-dead-consumer.
-    pub(super) supply_stream_consumers: Vec<crate::runtime::subtest::StreamConsumer>,
+    pub(super) supply_stream_consumers: Vec<crate::runtime::react_whenever::StreamConsumer>,
     /// Nesting depth of the running `react` drive loop. `> 0` while the event
     /// loop is polling subscriptions and dispatching `whenever`/`LAST`/`QUIT`
     /// callbacks. Used so a `whenever` that taps an on-demand supply from inside
@@ -4158,12 +4156,6 @@ pub(crate) enum NewlineMode {
     Lf,
     Cr,
     Crlf,
-}
-
-pub(crate) struct SubtestContext {
-    parent_test_state: Option<TestState>,
-    parent_output: String,
-    parent_halted: bool,
 }
 
 /// Which compilation unit each `EVAL` unit was compiled inside, keyed by the

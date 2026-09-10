@@ -571,20 +571,6 @@ impl Registry {
         (local, role)
     }
 
-    pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
-        self.method_entries = source.method_entries.clone();
-        // F4c-1: copy the reverse index alongside the table it derives from,
-        // or a nested interpreter built via this path (EVAL/`eval-lives-ok`/
-        // `throws-like`/`fails-like`) would run the parent's `method_entries`
-        // against its own `Interpreter::new()`'s empty `owner_method_names`.
-        self.owner_method_names = source.owner_method_names.clone();
-        // Same reasoning for the accessor half of the table: a nested
-        // interpreter must not run the copied `method_entries` against its own
-        // (differently populated) accessor index.
-        self.owner_accessor_names = source.owner_accessor_names.clone();
-        self.bump_method_generation();
-    }
-
     /// Register a `proto method`/`proto submethod` body for `(class_name,
     /// method_name)` (ADR-0019 E8, authoritative since E8c). Single call site
     /// (`registration_class_body.rs`'s `class_body_proto_method_decl`).

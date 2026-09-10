@@ -2523,9 +2523,6 @@ pub(crate) enum OpCode {
     RegisterEnum(u32),
     AugmentClass(u32),
     RegisterSubset(u32),
-    SubtestScope {
-        body_end: u32,
-    },
     ReactScope {
         body_end: u32,
     },
@@ -3225,7 +3222,6 @@ fn stmt_uses_return_rw(stmt: &Stmt) -> bool {
         | Stmt::SyntheticBlock(body)
         | Stmt::Block(body)
         | Stmt::Default(body)
-        | Stmt::Subtest { body, .. }
         | Stmt::Given { body, .. }
         | Stmt::When { body, .. }
         | Stmt::For { body, .. } => body_uses_return_rw(body),
@@ -3516,7 +3512,6 @@ fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
         | Stmt::React { body }
         | Stmt::SyntheticBlock(body)
         | Stmt::Block(body)
-        | Stmt::Subtest { body, .. }
         | Stmt::For { body, .. } => body_contains_non_nil_return(body),
         Stmt::Loop { init, body, .. } => {
             init.as_deref()
@@ -8024,7 +8019,6 @@ impl CompiledCode {
             OpCode::OnceExpr { body_end, .. } => *body_end = target,
             OpCode::BeginOnceExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
-            OpCode::SubtestScope { body_end, .. } => *body_end = target,
             OpCode::ReactScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_body_end on opcode without body_end"),
         }

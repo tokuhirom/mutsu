@@ -5,42 +5,21 @@ impl Interpreter {
         !self.module_load_stack.is_empty()
     }
 
-    /// Whether `use Test` should load the vendored upstream `Test.rakumod`
-    /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
-    /// no-op that leaves mutsu's native TAP provider in charge.
-    ///
-    /// **The vendored module is the default** (2026-09-10). This is
-    /// `BATTERIES.md` rung 2 in its intended form: the real upstream module runs
-    /// verbatim under mutsu, so `use Test` resolves to it rather than to a
-    /// reimplementation. `MUTSU_REAL_TEST=0` (or the empty string, or `false`)
-    /// selects the native TAP provider in `runtime/test_functions.rs` instead —
-    /// the escape hatch the dual-provider sweeps
-    /// (`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`)
-    /// drive, and the one thing keeping that provider reachable until it is
-    /// deleted (#7566).
-    ///
-    /// The flip was attempted once before and withdrawn (2026-09-08) because the
-    /// `Bundled-library test suites` gate regressed on four upstream
-    /// distributions. Those were four unrelated interpreter gaps that only the
-    /// real module's code shapes reached, not `Test` compatibility problems;
-    /// they were root-caused and fixed one at a time (#7653, #7663, #7714,
-    /// #7805, #7806, and the #7667 perf chain), and #7555 records the whole
-    /// chase. Measured on `main` before this flip, the gate passes under the
-    /// vendored module with *more* files green than under the native provider.
-    pub(crate) fn real_test_module_enabled() -> bool {
-        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '0'` set
-        // mid-run in a parent process (as `t/vendored-real-test-module.t` does,
-        // to steer its `is_run` children) does NOT retroactively swap the
-        // provider already in charge of that process.
-        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ENABLED.get_or_init(|| {
-            // Unset means the default (the vendored module). Only an explicit
-            // off-value opts out — `MUTSU_REAL_TEST=` (empty) included, which is
-            // how the sweep scripts spell "the native half".
-            std::env::var("MUTSU_REAL_TEST")
-                .map(|v| !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false")))
-                .unwrap_or(true)
-        })
+    /// True once `use JSON::Fast` / `use JSON::Tiny` has been seen, gating the
+    /// native `to-json` / `from-json` dispatch (see `vm/vm_native_json.rs`).
+    pub(crate) fn json_module_loaded(&self) -> bool {
+        self.loaded_modules.contains("JSON::Fast") || self.loaded_modules.contains("JSON::Tiny")
+    }
+
+    /// Whether a `from-json` parse failure should surface as
+    /// `X::JSON::Tiny::Invalid` (the real JSON::Tiny's exception) rather than
+    /// the plain `X::AdHoc` JSON::Fast produces via `die`. Both modules share
+    /// one native `from-json`, so this is a best-effort guess from which
+    /// module name(s) were `use`d — accurate for the common single-import
+    /// case; a program that loads both modules falls back to the
+    /// JSON::Fast-shaped error.
+    pub(crate) fn json_tiny_exception_style(&self) -> bool {
+        self.loaded_modules.contains("JSON::Tiny") && !self.loaded_modules.contains("JSON::Fast")
     }
 
     /// True while some module compunit's mainline is currently running
@@ -416,18 +395,15 @@ impl Interpreter {
         // reason: their exports are a real introspectable surface
         // (`Mod::EXPORT::DEFAULT`), and nothing else populates `exported_subs`
         // for a module that runs no `is export` declarations.
-        // Only `Test` for now: `JSON::Fast`/`JSON::Tiny`'s `to-json`/`from-json`
-        // are native builtins with no code-var form, so registering their names
+        // `Test` used to be registered here too; it loads rakudo's own
+        // `Test.rakumod` now (#7566), which runs its own `is export`
+        // declarations. `JSON::Fast`/`JSON::Tiny`'s `to-json`/`from-json` are
+        // native builtins with no code-var form, so registering their names
         // would build a stash whose entries resolve to `Nil` -- worse than not
         // having it. See the ticket for that residue.
-        if module == "Test" && !Self::real_test_module_enabled() {
-            let names = crate::runtime::TEST_MODULE_EXPORTS.to_vec();
-            self.register_native_provider_exports("Test", &names);
-        }
-        let result = if (module == "Test" && !Self::real_test_module_enabled())
-            || matches!(
-                module,
-                "strict"
+        let result = if matches!(
+            module,
+            "strict"
                     | "warnings"
                     | "MONKEY-SEE-NO-EVAL"
                     | "MONKEY-TYPING"
@@ -454,7 +430,7 @@ impl Interpreter {
                     // (see runtime/json.rs, dispatched in vm_native_json.rs).
                     | "JSON::Fast"
                     | "JSON::Tiny"
-            ) {
+        ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
                 self.monkey_typing = true;

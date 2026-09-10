@@ -475,8 +475,7 @@ impl Interpreter {
             | Stmt::React { body }
             | Stmt::When { body, .. }
             | Stmt::Given { body, .. }
-            | Stmt::Phaser { body, .. }
-            | Stmt::Subtest { body, .. } => {
+            | Stmt::Phaser { body, .. } => {
                 self.validate_private_access_in_stmts(caller_class, body)?
             }
             Stmt::Whenever { supply, body, .. } => {
@@ -1054,35 +1053,6 @@ impl Interpreter {
     /// Check if a user-defined function with the given name can accept the
     /// given args (arity + type check). Used to decide whether a user-defined
     /// sub should shadow a same-named builtin.
-    /// Whether a declaration of `name` should beat mutsu's native TAP provider
-    /// for this call. Shared by the two dispatch paths into that provider
-    /// (`exec_call` and `call_function_fallback`) so they agree.
-    ///
-    /// The rule is the one from the qualified-call guard: decide on whether a
-    /// *declaration* exists, not on whether the name is a builtin. `skip` is the
-    /// single exception, because it is both a Test directive and a Raku list
-    /// routine — a user `multi skip($n, +values)` accepts `skip 'reason', 2` on
-    /// signature alone, so the name needs the same shape-based disambiguation
-    /// the three `skip` dispatch sites already apply
-    /// (`t/skip-user-multi-shadows-test.t`).
-    ///
-    /// The name set is the *wide* one (`is_test_function_name`), not just the
-    /// `Test` module's own exports: roast's `Test::Util` / `Test::Tap` helpers
-    /// (`is_run`, `doesn't-hang`, `tap-ok`, …) really are loaded from source, so
-    /// the routine the file imported must win over the native provider. Keeping
-    /// the native handlers only as the fallback for a file that calls a helper
-    /// *without* loading its module is what retires those two rung-3 providers
-    /// (`todo/tickets/retire-native-test-util-overrides.md`).
-    pub(crate) fn user_test_decl_beats_native(&mut self, name: &str, args: &[Value]) -> bool {
-        if !Self::is_test_function_name(name) {
-            return false;
-        }
-        if name == "skip" && !Self::skip_call_is_list_skip(args) {
-            return false;
-        }
-        self.user_function_matches_call(name, args)
-    }
-
     pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
         let has_fn = self.has_declared_function_cached(name);
         let has_multi = self.has_multi_function_cached(name);
@@ -1142,8 +1112,7 @@ impl Interpreter {
                 Stmt::While { body, .. }
                 | Stmt::React { body }
                 | Stmt::SyntheticBlock(body)
-                | Stmt::Block(body)
-                | Stmt::Subtest { body, .. } => {
+                | Stmt::Block(body) => {
                     if Self::body_contains_non_nil_return(body) {
                         return true;
                     }

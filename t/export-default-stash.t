@@ -6,20 +6,20 @@ use Test;
 #
 # `todo/deep/export-default-package-not-symbolically-navigable.md` said mutsu
 # "never materializes the `ModuleName::EXPORT::DEFAULT` package itself".
-# Measured 2026-09-06, that is only true of `Test`: for a module loaded from
-# source the whole path already matches raku byte for byte, including a module
-# whose own name contains `::`. `Test` is different because it is a NATIVE
-# provider -- it runs no `is export` declarations, so nothing populated
-# `exported_subs` for it.
+# Measured 2026-09-06, that was only true of `Test`, which was then a NATIVE
+# provider -- it ran no `is export` declarations, so nothing populated
+# `exported_subs` for it. That provider was retired in #7566 and `use Test`
+# loads rakudo's own module now, so `Test` reaches this the same way every
+# source module always did.
 #
 # Every row measured against raku v2026.07; this file passes verbatim there too.
 
 plan 9;
 
-# The native provider -- the ticket's own repro.
+# `Test` -- the ticket's own repro.
 {
     ok ::("Test::EXPORT::DEFAULT::&ok").defined,
-        'a native provider exposes its exports through EXPORT::DEFAULT';
+        'Test exposes its exports through EXPORT::DEFAULT';
     is ::("Test::EXPORT").WHO.keys.sort, ('ALL', 'DEFAULT'),
         'and its EXPORT package lists the tags';
     ok ::("Test::EXPORT::DEFAULT").WHO<&ok>.defined,

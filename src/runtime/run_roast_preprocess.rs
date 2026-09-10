@@ -342,21 +342,16 @@ impl Interpreter {
                 } else {
                     "todo"
                 };
-                // The `__mutsu_backend_todo__:` marker asks the NATIVE TAP
+                // The reason is emitted bare. mutsu used to wrap it in a
+                // `__mutsu_backend_todo__:` marker that asked its native TAP
                 // provider to drop the `# TODO` annotation when the assertion
-                // actually passes: `#?rakudo todo` says the test is expected to
-                // fail *on rakudo*, and mutsu is a different backend, so a pass
-                // here is not the "unexpectedly succeeded" event the annotation
-                // reports. The vendored upstream `Test` has no such convention —
-                // it is the module rakudo itself ships — so under it the marker
-                // would leak verbatim into the TAP description. Emit the bare
-                // reason there and accept rakudo's own reporting (a TODO pass).
-                let reason = if Self::real_test_module_enabled() {
-                    reason.to_string()
-                } else {
-                    format!("__mutsu_backend_todo__:{reason}")
-                };
-                pending_todo = Some((reason, count, explicit_count));
+                // actually passed, on the grounds that `#?rakudo todo` speaks
+                // about rakudo and mutsu is a different backend. `use Test`
+                // loads rakudo's own module now (#7566), which has no such
+                // convention — the marker would leak verbatim into the TAP
+                // description — so mutsu accepts rakudo's own reporting of a
+                // TODO pass.
+                pending_todo = Some((reason.to_string(), count, explicit_count));
                 output.push('\n');
                 continue;
             }

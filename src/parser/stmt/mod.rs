@@ -102,10 +102,6 @@ pub(super) fn set_eval_operator_assoc_preseed(assoc: std::collections::HashMap<S
     simple::set_eval_operator_assoc_preseed(assoc);
 }
 
-pub(super) fn set_eval_imported_function_preseed(names: Vec<String>) {
-    simple::set_eval_imported_function_preseed(names);
-}
-
 pub(super) fn set_eval_user_type_preseed(names: Vec<String>) {
     simple::set_eval_user_type_preseed(names);
 }
@@ -189,7 +185,6 @@ const STMT_PARSERS: &[StmtParser] = &[
     simple::catch_stmt,
     simple::control_stmt,
     simple::phaser_stmt,
-    simple::subtest_stmt,
     control::react_stmt,
     control::whenever_stmt,
     class::package_decl,

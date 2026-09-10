@@ -25,7 +25,7 @@ use super::*;
 use crate::runtime::native_methods::{
     SupplyEvent, next_supplier_id, supplier_register_promise, take_supply_channel,
 };
-use crate::runtime::subtest::{ReactSubscription, StreamConsumer, SupplyDrivePolicy};
+use crate::runtime::react_whenever::{ReactSubscription, StreamConsumer, SupplyDrivePolicy};
 
 impl Interpreter {
     /// Dispatch a `whenever` body or one of its `LAST` / `QUIT` / `CLOSE` phaser

@@ -11,13 +11,12 @@ plan 2;
 # fell back to a generic stringification instead of the user's own `.raku`.
 # Verified against real raku 2026-08-14: it prints the user-defined `.raku`.
 #
-# The `:err` here follows the vendored `Test.rakumod`, which is the default
-# provider since 2026-09-10 (#7554). rakudo and the vendored module both send a
-# non-TODO failure's diagnostic to `$failure_output` (STDERR); mutsu's native
-# provider (`MUTSU_REAL_TEST=0`) writes it to STDOUT instead -- measured
-# 2026-09-08 by running this file under `raku` itself. This was the one `t/`
-# file whose expectation differed between the providers, and flipping it is
-# what the flip's own note asked for.
+# The `:err` here follows the vendored `Test.rakumod`, the only provider since
+# 2026-09-10 (#7554, #7566): rakudo and the vendored module both send a
+# non-TODO failure's diagnostic to `$failure_output` (STDERR), where mutsu's
+# retired native provider wrote it to STDOUT -- measured 2026-09-08 by running
+# this file under `raku` itself. This was the one `t/` file whose expectation
+# differed between the two providers.
 
 is_run
     'use Test; class Foo { has $.x; method raku { "MyFoo(" ~ $.x ~ ")" } };'

@@ -184,17 +184,6 @@ pub(crate) fn reset_user_subs() {
             register_user_infix_assoc(name, assoc);
         }
     });
-    EVAL_IMPORTED_FUNCTION_PRESEED.with(|preseed| {
-        let names = preseed.borrow();
-        SCOPES.with(|s| {
-            let mut scopes = s.borrow_mut();
-            if let Some(scope) = scopes.last_mut() {
-                for name in names.iter() {
-                    scope.imported_functions.insert(name.clone());
-                }
-            }
-        });
-    });
     EVAL_USER_SUB_PRESEED.with(|preseed| {
         let names = preseed.borrow();
         SCOPES.with(|s| {
