@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Accepted (design confirmed by the maintainer 2026-09-10; implementation not started)
+- Status: Accepted (design confirmed 2026-09-10; P1 implemented — see "Implementation status")
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -284,6 +284,32 @@ mixed in.
 - Committing ~1600 records is a few megabytes of JSON and a bounded per-sweep
   diff. Accepted in exchange for the data being *in the repository*, which the
   issue requires and which makes it browsable, diffable and reviewable.
+
+## Implementation status
+
+Phases are listed in [docs/ecosystem-parity.md](../ecosystem-parity.md) §7.
+
+| phase | state |
+|---|---|
+| **P1** — harness, dependency resolver, sandbox, record store, `--only`/`--prefix`/`--rollup` | **done** — `scripts/ecosystem-sweep.py` + `scripts/ecosystem_common.py`; validated on eight distributions, which surfaced real interpreter findings on the first pass |
+| **P2** — first corpus sweep, the first KPI numbers | open; needs a many-core box (D9) |
+| **P3** — `ecosystem/history.svg` in the README, `site/ecosystem.html` | open |
+| **P4** — operator runbook | open |
+| **P5** — root-cause grouping of `regression` records into issues | open |
+
+Two decisions were tested by the implementation rather than only argued:
+
+- **D4/D5 (the flat closure) held.** The two sweeps now disagree usefully on the
+  same distribution: `dist-compat-sweep.py` calls `Trie` `missing_dep
+  (OrderedHash)`, while this harness resolves `OrderedHash` from REA and
+  measures the distribution. That is the coverage the merged index buys.
+- **D8 (the environment contract) is enforced at startup**, not documented and
+  hoped for: a set `MUTSU_FUDGE`, a missing `bwrap` on a corpus run, or a `use
+  Test` that does not reach the vendored `Test.rakumod` each abort the sweep.
+
+`ecosystem/` deliberately carries no `summary.*` or `history.tsv` until P2: a
+rollup over a handful of hand-picked distributions reads like a KPI and is not
+one.
 
 ## Alternatives considered
 
