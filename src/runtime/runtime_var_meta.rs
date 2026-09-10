@@ -544,10 +544,12 @@ impl Interpreter {
     }
 
     /// Mark that an atomic variable / atomic storage has been registered, both on
-    /// this interpreter (for the read gates) and process-wide (for the reset gate).
+    /// this interpreter (for the read gates) and process-wide (for the reset gate
+    /// and the JIT's `LOCAL_READ_SPOILERS` latch).
     pub(crate) fn mark_atomic_var_seen(&mut self) {
         self.atomic_var_seen = true;
         ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        crate::vm::vm_jit::note_local_read_spoiler();
     }
 
     /// Whether any variable type constraint has ever been registered in this
