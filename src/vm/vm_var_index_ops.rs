@@ -125,6 +125,48 @@ impl Interpreter {
         }
     }
 
+    /// A from-the-end subscript (`*-1`, `*-0`, `* div 2`) resolved against the
+    /// array it addresses, for the CONTAINER-producing index paths (`:=` bind,
+    /// `return-rw`, an `is rw` routine's subscript tail).
+    ///
+    /// Every rvalue index path already resolves a `WhateverCode` subscript
+    /// against the subscripted value's length before using it
+    /// ([`Interpreter::resolve_whatever_index_for_target`]); the two
+    /// autovivifying paths did not, so `index_to_usize` saw an unconvertible
+    /// `Sub` and fell through to a plain *read*. That made an `is rw` routine
+    /// whose tail is a from-the-end subscript hand back the element's VALUE:
+    /// `sub g(\c) is rw { return-rw c[*-1] }; g(@a) = 9` died with "Cannot
+    /// modify an immutable Int", and `c[*-0]` — the append idiom `Crane::In`
+    /// is built on (#7539) — silently wrote nowhere.
+    ///
+    /// Deliberately narrow, on three axes.
+    ///
+    /// Only a `WhateverCode` (`ValueView::Sub`), never a bare `Whatever`:
+    /// `resolve_whatever_index_for_target` expands `*` to the full index list,
+    /// which is a *slice* and has its own bind semantics further down. Only
+    /// against an `Array`, because the length a from-the-end index is relative
+    /// to is a positional one — a `WhateverCode` key into a Hash stays the key
+    /// object it is. And only when the closure yields a single usable index:
+    /// a `WhateverCode` subscript is just as often a whole SLICE
+    /// (`$result[0..*-2]`, one closure returning a `Range`), which the arms
+    /// below hand to the general subscript path unresolved. Substituting the
+    /// evaluated `Range` there changed which fallback ran and broke
+    /// `roast/S03-sequence/exhaustive.t`'s `test-seq` slices, so anything that
+    /// is not a single non-negative `Int` — a `Range`, a list of indices — is
+    /// handed back exactly as it arrived.
+    fn resolve_whatever_container_index(&mut self, index: Value, resolved: &Value) -> Value {
+        if !matches!(index.view(), ValueView::Sub(_))
+            || !matches!(resolved.view(), ValueView::Array(..))
+        {
+            return index;
+        }
+        let candidate = self.resolve_whatever_index_for_target(index.clone(), Some(resolved));
+        match candidate.view() {
+            ValueView::Int(_) if Self::index_to_usize(&candidate).is_some() => candidate,
+            _ => index,
+        }
+    }
+
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
     /// a `HashEntryRef` (hash) or a shared `ContainerRef` cell (array element) so
     /// that `:=` bind to nested elements works.
@@ -142,6 +184,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => inner.clone(),
             _ => target.clone(),
         };
+        let index = self.resolve_whatever_container_index(index, &resolved);
 
         // Junction autothreading: when indexing a hash with a junction key,
         // expand the junction and create a slot ref for each element. EXCEPT on an
@@ -307,6 +350,7 @@ impl Interpreter {
             }
             _ => target.clone(),
         };
+        let index = self.resolve_whatever_container_index(index, &resolved);
 
         match resolved.view() {
             ValueView::Hash(ref map) => {

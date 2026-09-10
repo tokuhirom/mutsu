@@ -241,6 +241,28 @@ impl Interpreter {
         // on purpose, and is why THAT match alone (checked below) is not
         // enough here.
         let top = name.split_once("::").map_or(name, |(top, _)| top);
+        // A package nested under a name the SETTING already provides is
+        // visible from everywhere, however it was reached. Rakudo merges a
+        // `use`d compunit's declarations stash-by-stash, so a
+        // `class X::Crane::GetRootContainerKey` lands in the setting's own
+        // `X` stash — one process-global object every compunit shares —
+        // rather than in the declaring compunit's `GLOBALish`, which is the
+        // only thing the importing compunit merges. Verified against real
+        // rakudo, which draws exactly this line:
+        //
+        // | declared in a transitively-`use`d module | rakudo |
+        // | --- | --- |
+        // | `class Zzz::Foo::Alpha` | "Could not find symbol" |
+        // | `unit module Baz; our sub greet` | "Could not find symbol" |
+        // | `class X::Zork::Alpha` | resolves |
+        // | `class IO::Zork` / `class Pod::Zork` | resolves |
+        //
+        // This is what `use Crane;` relies on to make `X::Crane::*`
+        // resolvable from a script that only ever `use`d `Crane` (Crane's
+        // own `t/*.rakutest` name those exception types directly, #7539).
+        if Self::top_segment_is_setting_package(top) {
+            return true;
+        }
         if self.package_granted_in_unit_chain(executing, top)
             || self.package_granted_in_unit_chain(self.current_unit, top)
         {
@@ -258,6 +280,40 @@ impl Interpreter {
         };
         self.package_visible_in_unit_chain(executing, prefix, declaring_unit)
             || self.package_visible_in_unit_chain(self.current_unit, prefix, declaring_unit)
+    }
+
+    /// Whether `top` is a top-level name the setting itself provides, so that
+    /// a package declared under it is installed into a stash every compunit
+    /// shares (see the call site in
+    /// [`Self::qualified_name_visible_here`] for the rakudo behaviour this
+    /// models).
+    ///
+    /// Two disjoint groups. The pure *namespace* packages, which hold no type
+    /// of their own, are enumerated here because nothing else in the
+    /// interpreter knows them — they are exactly rakudo's `CORE::` entries
+    /// whose HOW is a Package/Module. Everything else is a setting *type*
+    /// that also acts as a namespace (`IO::Path`, `Proc::Async`,
+    /// `Lock::Async`, `Distribution::Hash`, ...), so it is answered by the
+    /// existing builtin-type list rather than duplicated.
+    fn top_segment_is_setting_package(top: &str) -> bool {
+        matches!(
+            top,
+            "CX" | "EXPORTHOW"
+                | "Exceptions"
+                | "Metamodel"
+                | "PROCESS"
+                | "Pod"
+                | "RakuAST"
+                | "Rakudo"
+                | "X"
+                // Setting types whose bare name the builtin-type list below
+                // does not carry (it holds `CompUnit::Repository` and friends
+                // but not the namespace root, and `Encoding`/`Systemic` are
+                // roles rather than instantiable types).
+                | "CompUnit"
+                | "Encoding"
+                | "Systemic"
+        ) || Self::is_builtin_type(top)
     }
 
     /// Whether the top-level `::`-segment `top` is among the packages
