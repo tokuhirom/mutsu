@@ -42,7 +42,7 @@ pub(crate) fn next_class_decl_id() -> u64 {
 }
 
 /// Specifies how delegation (`handles`) should forward methods.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
     Name(String),
@@ -56,7 +56,7 @@ pub(crate) enum HandleSpec {
     Wildcard,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ParamDef {
     pub(crate) name: String,
     pub(crate) default: Option<Expr>,
@@ -361,8 +361,8 @@ impl FunctionDef {
     /// body. Multi-candidate identity, `state`-variable scoping, wrap chains,
     /// `MAIN` candidate dedup, and redeclaration checks all key on it.
     ///
-    /// Computed once per def and cached inline. The underlying hash Debug-renders
-    /// the whole body AST, which profiled as a large share of multi/method
+    /// Computed once per def and cached inline. The underlying hash walks the
+    /// whole body AST, which profiled as a large share of multi/method
     /// redispatch; two side caches (`func_def_fp_cache`, keyed on the def's `Arc`
     /// pointer) existed only to avoid that, and this field replaces them with
     /// state that cannot go stale or miss.
@@ -379,37 +379,51 @@ impl FunctionDef {
     }
 }
 
-/// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,
-/// so `write!(.., "{:?}", x)` hashes the Debug rendering without ever
-/// allocating an intermediate `String`. `function_body_fingerprint` runs on the
-/// per-dispatch hot path (candidate identity in multi/method dispatch), so the
-/// three `format!` allocations it used to do showed up as a large share of the
-/// allocator traffic in method-call / class benchmarks.
-struct HashWrite<'a, H: Hasher>(&'a mut H);
+#[cfg(test)]
+mod fingerprint_tests;
 
-impl<H: Hasher> std::fmt::Write for HashWrite<'_, H> {
-    fn write_str(&mut self, s: &str) -> std::fmt::Result {
-        self.0.write(s.as_bytes());
-        Ok(())
-    }
-}
-
+/// Structural identity of a routine declaration: its parameter names,
+/// parameter definitions and body, hashed through the derived [`Hash`] impls
+/// on the AST.
+///
+/// # Contract
+///
+/// This is an *identity* fingerprint — "were these two declarations parsed from
+/// the same source shape" — not a value hash. Two properties it must keep, and
+/// which the derived impls give for free:
+///
+/// - **Structure only.** No addresses and no per-object ids, so two separately
+///   parsed copies of one source fingerprint equal. (`Symbol` hashes its
+///   interning id, which is a pure function of the symbol's text within a
+///   process; fingerprints are only ever compared in-process — none of them is
+///   serialized, `FunctionDef::body_fp_cache` included.)
+/// - **Line sensitivity.** This one hashes `Stmt::SetLine` markers like any
+///   other statement; [`registration_identity_fingerprint`] deliberately does
+///   not.
+///
+/// This used to stream a `Debug` rendering of the whole AST into the hasher,
+/// which made `core::fmt` (`DebugStruct::field`, `DebugSet::entry`,
+/// `format_inner`) the dominant cost of every routine the compiler touched —
+/// 78.6% of one Cro HTTP/2 DATA frame at its worst. Hashing structurally pays
+/// none of that machinery.
 pub(crate) fn function_body_fingerprint(
     params: &[String],
     param_defs: &[ParamDef],
     body: &[Stmt],
 ) -> u64 {
-    use std::fmt::Write as _;
     let mut hasher = DefaultHasher::new();
-    let mut sink = HashWrite(&mut hasher);
-    // Separators keep distinct fields from colliding when their renderings abut.
-    let _ = write!(sink, "{params:?}\x00{param_defs:?}\x00{body:?}");
+    // Slice hashing writes a length prefix, which is what keeps the three
+    // fields from colliding into each other the way the old `\x00` separators
+    // guarded against.
+    params.hash(&mut hasher);
+    param_defs.hash(&mut hasher);
+    body.hash(&mut hasher);
     hasher.finish()
 }
 
 /// Line-insensitive identity of a routine declaration for redeclaration
 /// comparison: params, param_defs, and the body with top-level `SetLine`
-/// markers stripped, streamed into a hasher. Identical redeclarations that
+/// markers stripped, hashed structurally. Identical redeclarations that
 /// differ only in source line compare equal. Distinct from
 /// [`function_body_fingerprint`], which hashes `SetLine` markers too (it is a
 /// structural identity, not a redeclaration identity).
@@ -418,12 +432,15 @@ pub(crate) fn registration_identity_fingerprint(
     param_defs: &[ParamDef],
     body: &[Stmt],
 ) -> u64 {
-    use std::fmt::Write as _;
     let mut hasher = DefaultHasher::new();
-    let mut sink = HashWrite(&mut hasher);
-    let _ = write!(sink, "{params:?}\x00{param_defs:?}\x00");
-    for stmt in body.iter().filter(|s| !matches!(s, Stmt::SetLine(_))) {
-        let _ = write!(sink, "{stmt:?}\x00");
+    params.hash(&mut hasher);
+    param_defs.hash(&mut hasher);
+    let kept = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    // Stand in for the length prefix a slice hash would have written, so a
+    // body cannot collide with a longer one whose extra statements hash empty.
+    kept().count().hash(&mut hasher);
+    for stmt in kept() {
+        stmt.hash(&mut hasher);
     }
     hasher.finish()
 }
@@ -472,7 +489,7 @@ pub(crate) fn next_end_phaser_index() -> u32 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,
     Check,
@@ -491,7 +508,7 @@ pub(crate) enum PhaserKind {
     Close,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
@@ -927,7 +944,7 @@ pub(crate) enum Expr {
 /// on success — **at the end of the enclosing block**. A synthesized wrapper
 /// is not that block, so resolving a save at one would resolve it far too
 /// early (GH-7635).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum DoBlockOrigin {
     /// Real `{ ... }` braces the user wrote, which *are* a Raku block: `do {
     /// ... }`, a labelled `L: { ... }`, and the statement prefixes whose block
@@ -946,7 +963,7 @@ pub(crate) enum DoBlockOrigin {
 }
 
 /// Secondary adverb on :exists subscript adverb
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ExistsAdverb {
     None,
     Kv,
@@ -960,7 +977,7 @@ pub(crate) enum ExistsAdverb {
     InvalidV,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HyperSliceAdverb {
     Kv,
     K,
@@ -970,14 +987,14 @@ pub(crate) enum HyperSliceAdverb {
     DeepKv,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ControlFlowKind {
     Last,
     Next,
     Redo,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum CallArg {
     Positional(Expr),
     Named {
@@ -991,7 +1008,7 @@ pub(crate) enum CallArg {
 }
 
 /// Execution mode for `for` loops.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ForMode {
     Normal,
     Race,
@@ -1002,7 +1019,7 @@ pub(crate) enum ForMode {
 
 /// The declarator keyword used for a `Stmt::Package`. Determines the
 /// `package-kind` reported by X::Attribute::Package.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PackageKind {
     Module,
     Package,
@@ -1037,7 +1054,7 @@ impl PackageKind {
 ///
 /// Recording the kind where the readonly-ness is *decided* keeps the three
 /// apart without any name-based guessing at the (single, shared) check site.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ReadonlyKind {
     /// Readonly binding with a container behind it: parameters, `for` aliases.
     Alias,
@@ -1047,7 +1064,7 @@ pub(crate) enum ReadonlyKind {
     ImmutableValue,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
         name: String,
@@ -1582,7 +1599,7 @@ pub(crate) enum Stmt {
     Expr(Expr),
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum AssignOp {
     Assign,
     Bind,

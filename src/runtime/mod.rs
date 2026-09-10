@@ -3839,11 +3839,12 @@ pub struct Interpreter {
     /// and is cleared with the other method caches on any registry change.
     pub(crate) dispatch_multi_candidate: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized structural fingerprint of a method body, keyed by the *pointer*
-    /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` Debug-traverses
+    /// of its `Arc<Vec<Stmt>>` body. `function_body_fingerprint` traverses
     /// the whole body AST, which dominated the method-redispatch hot path
     /// (`build_remaining` / `prepare_method_dispatch_frame`, reached by every
     /// `nextsame`/`samewith` and multi-method call) — perf showed ~8% of a
-    /// samewith-tight-loop in SipHash-over-Debug. A `MethodDef` clone shares its
+    /// samewith-tight-loop in SipHash-over-Debug back when the traversal went
+    /// through `core::fmt`. A `MethodDef` clone shares its
     /// body `Arc`, and two *distinct* methods always have distinct body `Arc`s
     /// (clones are the only way to share one, and clones carry identical
     /// params/param_defs), so the body-`Arc` pointer uniquely identifies the
