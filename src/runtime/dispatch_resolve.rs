@@ -659,7 +659,7 @@ impl Interpreter {
                 .map(|(_, def)| (**def).clone())
                 .collect();
             for def in candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
+                if self.args_match_multi_candidate(arg_values, &def.param_defs) {
                     all_matches.push(def);
                 }
             }
@@ -686,7 +686,7 @@ impl Interpreter {
                 b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
             });
             for (_, def) in candidates {
-                if self.args_match_param_types(arg_values, &def.param_defs) {
+                if self.args_match_multi_candidate(arg_values, &def.param_defs) {
                     let fp = crate::ast::function_body_fingerprint(
                         &def.params,
                         &def.param_defs,
@@ -723,7 +723,7 @@ impl Interpreter {
             .collect();
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
-            if self.args_match_param_types(arg_values, &def.param_defs) {
+            if self.args_match_multi_candidate(arg_values, &def.param_defs) {
                 let fp = def.body_fingerprint();
                 if !all_matches.iter().any(|m: &FunctionDef| {
                     crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp

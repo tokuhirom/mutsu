@@ -139,7 +139,7 @@ impl Interpreter {
                     .count();
                 positional_arg_count == def.params.len()
             } else {
-                self.args_match_param_types(args, &def.param_defs)
+                self.args_match_multi_candidate(args, &def.param_defs)
             };
             if let Some(e) = self.take_where_exception() {
                 if threw.is_none() {
@@ -1078,24 +1078,7 @@ impl Interpreter {
 
     /// Check if a type name is a native type.
     fn is_native_type_name(name: &str) -> bool {
-        matches!(
-            name,
-            "int"
-                | "int8"
-                | "int16"
-                | "int32"
-                | "int64"
-                | "uint"
-                | "uint8"
-                | "uint16"
-                | "uint32"
-                | "uint64"
-                | "byte"
-                | "num"
-                | "num32"
-                | "num64"
-                | "str"
-        )
+        crate::runtime::native_types::native_family(name).is_some()
     }
 
     /// Map native type names to their boxed equivalents.
@@ -1109,14 +1092,6 @@ impl Interpreter {
     /// `Int`, and an integer literal against `byte`/`Int` answers `Int`), and so
     /// is int-vs-num (`my int $n` against `num`/`Int` answers `Int`).
     fn native_family(name: &str) -> Option<&'static str> {
-        match name {
-            "int" | "int8" | "int16" | "int32" | "int64" | "atomicint" | "long" | "longlong"
-            | "ssize_t" | "bool" => Some("int"),
-            "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" | "ulong" | "ulonglong"
-            | "size_t" => Some("uint"),
-            "num" | "num32" | "num64" => Some("num"),
-            "str" => Some("str"),
-            _ => None,
-        }
+        crate::runtime::native_types::native_family(name)
     }
 }

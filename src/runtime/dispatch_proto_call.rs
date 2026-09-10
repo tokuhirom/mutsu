@@ -308,7 +308,7 @@ impl Interpreter {
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }
-            if !self.args_match_param_types(args, &cand.param_defs) {
+            if !self.args_match_multi_candidate(args, &cand.param_defs) {
                 continue; // doesn't match
             }
             if !found_current {
