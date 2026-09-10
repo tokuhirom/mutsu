@@ -247,7 +247,10 @@ impl IoHandleState {
     /// current one (mirrors the interpreter's `set_handle_encoding`).
     pub(crate) fn encoding_setting(&mut self, set: Option<String>) -> String {
         match set {
-            Some(enc) => std::mem::replace(&mut self.encoding, enc),
+            Some(enc) => {
+                self.bin = enc == "bin";
+                std::mem::replace(&mut self.encoding, enc)
+            }
             None => self.encoding.clone(),
         }
     }
