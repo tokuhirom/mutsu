@@ -288,15 +288,34 @@ impl Interpreter {
     /// this interpreter — the same pair `promise_chain_method` uses for `.then`.
     pub(crate) fn arm_pending_promise_whenevers(&mut self) {
         for (promise, supplier) in std::mem::take(&mut self.pending_promise_whenever_arms) {
-            let mut thread_interp = self.clone_for_thread();
-            promise.on_resolve(Box::new(move |status, result, _output, _stderr| {
-                let method = if status == "Kept" { "emit" } else { "quit" };
-                let _ =
-                    thread_interp.call_method_with_values(supplier.clone(), method, vec![result]);
-                if status == "Kept" {
-                    let _ = thread_interp.call_method_with_values(supplier, "done", vec![]);
+            // The stand-in's serialize group was recorded when the rewritten
+            // `whenever <Supply>` marker was subscribed, just above this call.
+            // Handing it to `on_resolve` makes the resolving thread reserve
+            // this reaction's place in the supply block before the pooled
+            // worker that runs it is even woken, so N promises resolved in a
+            // row reach the block in resolution order (#7811).
+            let group = match supplier.view() {
+                ValueView::Instance { attributes, .. } => {
+                    supplier_id_from_attrs(&attributes.as_map())
+                        .and_then(crate::runtime::native_methods::supplier_serialize_group)
                 }
-            }));
+                _ => None,
+            };
+            let mut thread_interp = self.clone_for_thread();
+            promise.on_resolve_in_supply_group(
+                Box::new(move |status, result, _output, _stderr| {
+                    let method = if status == "Kept" { "emit" } else { "quit" };
+                    let _ = thread_interp.call_method_with_values(
+                        supplier.clone(),
+                        method,
+                        vec![result],
+                    );
+                    if status == "Kept" {
+                        let _ = thread_interp.call_method_with_values(supplier, "done", vec![]);
+                    }
+                }),
+                group,
+            );
         }
     }
 
