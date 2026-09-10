@@ -12,14 +12,14 @@
   "dist": "CSS::Nested",
   "files": [],
   "load": {
-    "CSS::Nested": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ilba_6s2/dist/CSS-Nested-0.0.1/lib/CSS/Nested.rakumod"
+    "CSS::Nested": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected right-h"
   },
   "measured": {
     "attempts": 2,
     "date": "2026-09-10",
     "harness": 1,
     "host": "linux-x86_64",
-    "mutsu_commit": "671a11d",
+    "mutsu_commit": "a7fe6d9",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -1120,7 +1120,7 @@
    "baseline": 0,
    "dist": "CRDT",
    "passed": 0,
-   "reason": "CRDT: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+   "reason": "CRDT: expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
    "status": "blocked_load",
    "version": "0.0.16"
   },
@@ -1129,7 +1129,7 @@
    "baseline": 0,
    "dist": "CSS::Font::Resources",
    "passed": 0,
-   "reason": "CSS::Font::Resources::Source: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/CSS__Properties/CSS-Properties-0.10.9/lib/CSS/Properties.raku",
+   "reason": "CSS::Font::Resources::Source: expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ",
    "status": "blocked_load",
    "version": "0.0.11"
   },
@@ -1138,7 +1138,7 @@
    "baseline": 0,
    "dist": "CSS::Grammar",
    "passed": 0,
-   "reason": "CSS::Grammar::AST: Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSSelector' declared",
+   "reason": "CSS::Grammar::AST: Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSTrait' declared",
    "status": "blocked_load",
    "version": "0.4.3"
   },
@@ -1174,7 +1174,7 @@
    "baseline": 0,
    "dist": "CSS::Nested",
    "passed": 0,
-   "reason": "CSS::Nested: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ilba_6s2/dist/CSS-Nested-0.0.1/lib/CSS/Nested.rakumod",
+   "reason": "CSS::Nested: expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected express",
    "status": "blocked_load",
    "version": "0.0.1"
   },
@@ -1183,7 +1183,7 @@
    "baseline": 0,
    "dist": "CSS::Properties",
    "passed": 0,
-   "reason": "CSS::Font: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-pf627hyp/dist/CSS-Properties-0.10.9/lib/CSS/Properties.rakumod",
+   "reason": "CSS::Font: expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
    "status": "blocked_load",
    "version": "0.10.9"
   },
@@ -2274,7 +2274,7 @@
  "measured": {
   "date": "2026-09-10",
   "host": "linux-x86_64",
-  "mutsu_commit": "671a11d",
+  "mutsu_commit": "a7fe6d9",
   "mutsu_version": "0.23.0",
   "raku_version": "2026.07"
  }
