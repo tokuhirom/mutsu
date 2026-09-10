@@ -264,8 +264,10 @@ mod tests {
         // A program whose closure creation moves from a churning scope to a
         // stable one must be able to pick the memo back up.
         let code = chunk();
-        let mut cache = CaptureCache::default();
-        cache.wasted_arms = ARM_BACKOFF_AFTER + 1;
+        let mut cache = CaptureCache {
+            wasted_arms: ARM_BACKOFF_AFTER + 1,
+            ..Default::default()
+        };
         let root = Env::new();
         let addrs = root.tier_addrs();
         cache.last = addrs.map(|a| (a, Arc::as_ptr(&code) as usize));
