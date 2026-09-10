@@ -29,7 +29,9 @@ sides, and publish the difference.
 
 Corpus: the fez index (`https://360.zef.pm/`, cached at
 `~/.zef/store/fez/fez.json`), latest version of each dist. As of the 2026-09-10
-snapshot: **1623 distributions**, 9214 provided module names.
+snapshot: **1623 distributions**, 9214 provided module names. Dependencies are
+resolved against fez **merged with REA** (§3), which adds ~920 more
+distributions — those are dependency supply, not measurement targets.
 
 ### The three numbers
 
@@ -97,14 +99,16 @@ than leaving it to the operator:
 
 ## 3. Dependencies — a flat `-I` closure, resolved offline
 
-Per ADR-0085 D4/D5:
+Per ADR-0085 D4/D5. **The index is fez + the
+[Raku Ecosystem Archive](https://github.com/Raku/REA) merged**, highest version
+wins; REA is not optional (see the coverage table below).
 
 1. Read `depends` + `test-depends` from the index entry (and from the extracted
    `META6.json`, which is authoritative when they disagree).
-2. Resolve each name against the index: first as a dist name, then through the
-   index's module→dist `provides` map. Names the compiler provides (`Test`,
-   `NativeCall`, `nqp`, …) and `:from<native>` / `:from<bin>` entries are not
-   dependencies.
+2. Resolve each name against the merged index: first as a dist name, then
+   through the index's module→dist `provides` map. Names the compiler provides
+   (`Test`, `NativeCall`, `nqp`, …) and `:from<native>` / `:from<bin>` entries
+   are not dependencies.
 3. Recurse to a fixed point; download and extract each member (cached under
    `~/.cache/mutsu-ecosystem/`); build one `-I <dep>/lib` list.
 4. Hand that identical list to **both** interpreters.
@@ -115,14 +119,33 @@ neither side.** Letting mutsu's bundled batteries (`modules/`, which sit below
 raise the KPI without any compatibility improving. The record instead notes
 `bundled_would_supply: [...]` — a batteries statistic, reported separately.
 
-Measured on the 2026-09-10 snapshot: **1383 / 1623 (85%)** of dists have a
-first-level dependency list that resolves entirely from the fez index; 816 have
-no runtime or test dependencies at all. The top unresolvable names are legacy
-p6c/CPAN-era dists (`Distribution::Builder::MakeFromJSON` ×25, `Terminal::ANSI`
-×19, `Hash::Merge` ×16, `JSON::Tiny` ×15, `UUID`, `File::Which`, `Base64`).
-Adding the [Raku Ecosystem Archive](https://github.com/Raku/REA) index as a
-second source would recover most of them; that is a follow-up (§8), not a
-phase-1 requirement.
+### Coverage — why REA is a phase-1 requirement
+
+Measured 2026-09-10, resolving the **transitive** closure over the 1623 fez
+distributions (816 of which have no dependencies at all):
+
+| index | closures that resolve | blocked |
+|---|---|---|
+| fez only | 1164 (72%) | 459 |
+| fez + mutsu's bundled batteries | 1260 (78%) | 363 |
+| **fez + REA** (the design) | **1584 (98%)** | 39 |
+| fez + REA + bundled batteries | 1584 (98%) | 39 |
+
+A first-level-only count flatters this to 85%; **72% is the operative number**
+for a resolver that recurses to a fixed point, and it is not enough to sweep on.
+What fez alone cannot supply is the legacy p6c/CPAN tail that never moved:
+`File::Which` (69 dependents), `Hash::Merge` (60),
+`Distribution::Builder::MakeFromJSON` (58), `Getopt::Long` (52),
+`Compress::Zlib` (27). REA carries all of them, and takes the corpus from
+roughly a quarter unmeasurable to 2%.
+
+The 39 that still fail are dominated by malformed `depends` entries in the
+source `META6.json` — prose fragments (`has`, `path`, `as`, `shorten`) rather
+than distribution names. They are recorded as `blocked_dep`, not chased.
+
+Note the last row: **with REA in, the bundled batteries add nothing to
+coverage** — which is what makes ADR-0085 D5 (skip `blocked_dep` on both sides)
+cost nothing rather than being a sacrifice.
 
 ## 4. The data store
 
@@ -289,8 +312,9 @@ produced a number worth watching.
   in `no_baseline`. Recorded as a count so the size of the blind spot is known;
   a future opt-in `--allow-network` mode for a vetted subset is possible but is
   not part of this design.
-- **`blocked_dep` residue (~15% of dists).** Adding the REA index as a second
-  source is the obvious fix and the highest-value follow-up.
+- **`blocked_dep` residue (39 dists, 2%).** Mostly malformed `depends` metadata
+  upstream. Parsing prose-fragment dependency entries more forgivingly would
+  recover a handful; it is not worth much.
 - **Author (`xt/`) tests, `build-depends`, and dists whose `provides` uses a
   non-convention path** (resolvable only through an installed provides map) are
   each a small, recorded population rather than a silent one.

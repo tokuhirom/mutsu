@@ -122,10 +122,30 @@ Rejected alternatives:
   run depend on the order dists were installed in.
 
 A flat `-I` closure is deterministic, cacheable, identical for both
-interpreters, and needs no package manager at either end. Measured on the
-2026-09-10 fez snapshot: **1383 of 1623 distributions (85%) have a first-level
-dependency list that resolves entirely from the index**, so this covers the
-corpus well enough to start; the residue is recorded, not worked around.
+interpreters, and needs no package manager at either end.
+
+**The index must be fez + the [Raku Ecosystem Archive](https://github.com/Raku/REA),
+not fez alone.** Measured on 2026-09-10 snapshots of both, resolving the
+*transitive* closure over the 1623 fez distributions:
+
+| index | closures that resolve | blocked |
+|---|---|---|
+| fez only | 1164 (72%) | 459 |
+| fez + mutsu's bundled batteries | 1260 (78%) | 363 |
+| **fez + REA** | **1584 (98%)** | 39 |
+| fez + REA + bundled batteries | 1584 (98%) | 39 |
+
+(The 85% figure that a first-level-only count gives is misleading for a
+resolver that recurses to a fixed point; 72% is the operative number.) The
+blockers fez alone cannot supply are legacy p6c/CPAN-era dependencies that
+never moved to fez — `File::Which` (69 dependents), `Hash::Merge` (60),
+`Distribution::Builder::MakeFromJSON` (58), `Getopt::Long` (52) — and REA
+carries all of them. The 39 that remain are almost entirely malformed
+`depends` entries in the source `META6.json` (prose fragments such as `has`,
+`path`, `as`), not real distributions.
+
+Note the fourth row: **once REA is in, mutsu's bundled batteries add nothing
+to coverage.** That is what makes D5 cheap rather than a sacrifice.
 
 ### D5. A distribution whose dependency closure cannot be resolved is skipped on *both* sides
 
@@ -143,6 +163,12 @@ The value of the bundle is instead recorded *separately*: each `blocked_dep`
 record notes whether a bundled battery would have supplied the missing
 dependency (`bundled_would_supply`). That is a batteries statistic, reported as
 such, not folded into parity.
+
+The measurement in D4 shows this rule costs almost nothing: with fez + REA the
+bundle rescues **zero** additional distributions (1584 either way), and the
+population it applies to is 39 distributions, most of them malformed metadata.
+The rule was worth stating anyway — without it the KPI would have a standing
+way to rise without any compatibility improving — but it is not a trade.
 
 ### D6. The store is one JSON file per distribution, sharded by first letter
 
