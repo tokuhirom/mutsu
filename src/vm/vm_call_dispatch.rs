@@ -173,10 +173,6 @@ impl Interpreter {
             }
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
-        // Dispatch Test functions straight to their typed handler (lever A).
-        if let Some(result) = self.try_native_test_function(name, &args) {
-            return result;
-        }
         // Builtin operator-as-function `infix:<op>(...)` (e.g. `&infix:<+>`, the
         // routine `[+]`/hyper/`reduce` lower to). Any user-defined operator was
         // already resolved above (compiled_fns / OTF), so reaching here means the
@@ -502,21 +498,14 @@ impl Interpreter {
     }
 
     /// Check if a function name is handled by the interpreter's Rust code
-    /// rather than by compiling its AST body. This includes test functions
-    /// (implemented in runtime/test_functions.rs), internal `__mutsu_*` functions,
-    /// and pseudo-package qualified names that need special resolution.
+    /// rather than by compiling its AST body: internal `__mutsu_*` functions and
+    /// pseudo-package qualified names that need special resolution.
+    ///
+    /// `Test`'s routines used to be listed here too, back when they were Rust
+    /// methods. They are ordinary imported Raku subs from the vendored
+    /// `Test.rakumod` now (#7566), so they resolve through the normal
+    /// compiled-function path like any other import.
     pub(super) fn is_interpreter_handled_function(&self, name: &str) -> bool {
-        // Test functions are implemented as Rust methods, not via AST.
-        // Under MUTSU_REAL_TEST=1 the real Test.rakumod / Test::Util functions are
-        // proper user-defined Raku subs and must be resolved through the normal
-        // compiled-function path first; the native handlers are only the fallback
-        // when no user declaration exists (try_native_test_function checks this).
-        if self.test_mode_active()
-            && !crate::runtime::Interpreter::real_test_module_enabled()
-            && crate::runtime::Interpreter::is_test_function_name(name)
-        {
-            return true;
-        }
         // Internal functions are dispatched by the interpreter's call_function match
         if name.starts_with("__mutsu_") {
             return true;

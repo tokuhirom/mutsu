@@ -27,9 +27,8 @@ plan 1;
 # literal is created while that cell is still live, and is the first to pick
 # it up).
 #
-# Reproducing this needs the real vendored `Test.rakumod` (`MUTSU_REAL_TEST=1`)
-# loaded, same as the 2-call sibling pin.
-%*ENV<MUTSU_REAL_TEST> = '1';
+# Reproducing this needs the vendored `Test.rakumod` loaded, same as the
+# 2-call sibling pin.
 
 my $code = q:to/RAKU/;
     use Test;

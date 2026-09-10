@@ -256,8 +256,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &mut Ctx) {
         | Stmt::Default(body)
         | Stmt::Catch(body)
         | Stmt::Control(body)
-        | Stmt::React { body }
-        | Stmt::Subtest { body, .. } => walk_scoped_body(body, ctx),
+        | Stmt::React { body } => walk_scoped_body(body, ctx),
 
         Stmt::Given { body, topic, .. } => {
             walk_expr(topic, ctx);

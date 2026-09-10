@@ -57,7 +57,7 @@ pub(crate) use slang_modes::{
 // `pub(super)` re-exports.
 pub(super) use control_stmts::{
     block_stmt, catch_stmt, control_stmt, die_stmt, goto_stmt, known_call_stmt, last_stmt,
-    next_stmt, phaser_stmt, redo_stmt, return_stmt, subtest_stmt, take_stmt,
+    next_stmt, phaser_stmt, redo_stmt, return_stmt, take_stmt,
 };
 pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
@@ -78,9 +78,8 @@ pub(in crate::parser) use pragma_preseed::{
     current_attributes_pragma, is_imported_value_term, is_user_declared_enum_value,
     is_user_declared_sub, is_user_declared_type, push_package_path, register_imported_type,
     register_imported_value_term, register_user_enum_value, register_user_type, reset_package_path,
-    set_attributes_pragma, set_eval_imported_function_preseed, set_eval_operator_assoc_preseed,
-    set_eval_operator_preseed, set_eval_user_sub_preseed, set_eval_user_type_preseed,
-    set_eval_user_value_term_preseed,
+    set_attributes_pragma, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
+    set_eval_user_sub_preseed, set_eval_user_type_preseed, set_eval_user_value_term_preseed,
 };
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, is_declared_loop_label, lookup_custom_infix_precedence,
@@ -212,8 +211,6 @@ thread_local! {
     /// Infix associativity traits to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_ASSOC_PRESEED: RefCell<HashMap<String, String>> =
         RefCell::new(HashMap::new());
-    /// Imported function names to pre-register after scope reset (for EVAL).
-    static EVAL_IMPORTED_FUNCTION_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// User-declared sub names to pre-register after scope reset (for EVAL).
     /// These are subs defined in the outer runtime scope that EVAL'd code
     /// should see as declared (so e.g. `first.uc` can parse as

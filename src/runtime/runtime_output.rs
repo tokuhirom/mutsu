@@ -47,8 +47,7 @@ impl Interpreter {
         self.output_sink().output_emitted
     }
 
-    /// Write to the output buffer and also flush to real stdout
-    /// when not inside a subtest.
+    /// Write to the output buffer and also flush to real stdout.
     pub(crate) fn emit_output(&mut self, text: &str) {
         let byte_count = text.len() as i64;
         if let Some(stdout_handle) = self
@@ -61,8 +60,7 @@ impl Interpreter {
         }
         // The Stdout `bytes_written` accounting above touches `io_handles`; the
         // write decision + buffers live in `output_sink`.
-        let subtest_active = self.tap.subtest_depth() != 0;
-        self.output_sink_mut().emit(text, subtest_active);
+        self.output_sink_mut().emit(text);
     }
 
     /// Enable immediate flushing of output to stdout.

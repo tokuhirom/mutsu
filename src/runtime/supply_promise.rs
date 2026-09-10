@@ -549,7 +549,7 @@ impl Interpreter {
         // dies) and capturing emitted values. This makes
         // `await (supply { whenever Supply.from-list(...) { ... } })` resolve
         // with the last emitted value even when the whenever never iterates.
-        let mut react_subs: Vec<crate::runtime::subtest::ReactSubscription> = Vec::new();
+        let mut react_subs: Vec<crate::runtime::react_whenever::ReactSubscription> = Vec::new();
         let mut static_last_value: Option<Value> = None;
         // `register_nested_on_demand_source` below may register entries in
         // `self.supply_stream_consumers` (so a nested stage's `emit` streams
@@ -590,12 +590,12 @@ impl Interpreter {
                             let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
                         },
                     );
-                    react_subs.push(crate::runtime::subtest::ReactSubscription {
+                    react_subs.push(crate::runtime::react_whenever::ReactSubscription {
                         receiver: Some(rx),
                         promise: Some(shared.clone()),
                         last_callbacks: last_cbs,
                         quit_callbacks: quit_cbs,
-                        ..crate::runtime::subtest::ReactSubscription::new(callback)
+                        ..crate::runtime::react_whenever::ReactSubscription::new(callback)
                     });
                     continue;
                 }
@@ -619,9 +619,9 @@ impl Interpreter {
                     if let Some(sid) = supply_id
                         && let Some(rx) = take_supply_channel(sid)
                     {
-                        react_subs.push(crate::runtime::subtest::ReactSubscription {
+                        react_subs.push(crate::runtime::react_whenever::ReactSubscription {
                             receiver: Some(rx),
-                            ..crate::runtime::subtest::ReactSubscription::new(callback)
+                            ..crate::runtime::react_whenever::ReactSubscription::new(callback)
                         });
                         continue;
                     }
@@ -641,11 +641,11 @@ impl Interpreter {
                             Some(ValueView::Bool(true))
                         )
                     {
-                        react_subs.push(crate::runtime::subtest::ReactSubscription {
+                        react_subs.push(crate::runtime::react_whenever::ReactSubscription {
                             supplier_id: Some(supplier_id as u64),
                             last_callbacks: last_cbs,
                             quit_callbacks: quit_cbs,
-                            ..crate::runtime::subtest::ReactSubscription::new(callback)
+                            ..crate::runtime::react_whenever::ReactSubscription::new(callback)
                         });
                         continue;
                     }
@@ -761,7 +761,7 @@ impl Interpreter {
         let seed = static_last_value
             .or_else(|| plain_values.last().cloned())
             .unwrap_or(Value::NIL);
-        let policy = crate::runtime::subtest::SupplyDrivePolicy::Promise {
+        let policy = crate::runtime::react_whenever::SupplyDrivePolicy::Promise {
             promise: promise.clone(),
             deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
             last_value: seed,
@@ -827,8 +827,8 @@ impl Interpreter {
     /// already have `done`-and-reset the supplier state.
     pub(crate) fn drive_react_subscriptions_prewired(
         &mut self,
-        react_subs: Vec<crate::runtime::subtest::ReactSubscription>,
-        policy: crate::runtime::subtest::SupplyDrivePolicy,
+        react_subs: Vec<crate::runtime::react_whenever::ReactSubscription>,
+        policy: crate::runtime::react_whenever::SupplyDrivePolicy,
         waker: crate::value::waker::ReactWaker,
         sink_regs: Vec<(u64, u64)>,
     ) -> Result<(), RuntimeError> {

@@ -2,7 +2,7 @@
 //! split from `vm_react_loop` (§7-8 file split).
 use super::*;
 use crate::runtime::native_methods::next_supplier_id;
-use crate::runtime::subtest::{ReactSubscription, StreamConsumer};
+use crate::runtime::react_whenever::{ReactSubscription, StreamConsumer};
 use crate::value::AttrMap;
 
 impl Interpreter {

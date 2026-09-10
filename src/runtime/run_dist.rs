@@ -439,23 +439,13 @@ mod tests {
     }
 
     #[test]
-    fn preprocess_rakudo_todo_marks_backend_specific_todo() {
+    fn preprocess_rakudo_todo_emits_bare_reason() {
         let src = "#?rakudo todo 'NYI'\nok True, 'still runs';\n#?rakudo 2 todo 'later'\nis 42, 42, 'also runs';\n";
         let out = Interpreter::preprocess_roast_directives(src);
-        // The `__mutsu_backend_todo__:` marker is the NATIVE provider's
-        // convention for "drop the `# TODO` annotation if this passes"; the
-        // vendored upstream `Test` has no such convention, so under it the
-        // bare reason is emitted. Assert whichever provider is in charge.
-        let (a, b) = if Interpreter::real_test_module_enabled() {
-            ("todo 'NYI', 1;", "todo 'later', 2;")
-        } else {
-            (
-                "todo '__mutsu_backend_todo__:NYI', 1;",
-                "todo '__mutsu_backend_todo__:later', 2;",
-            )
-        };
-        assert!(out.contains(a), "output: {out}");
-        assert!(out.contains(b), "output: {out}");
+        // The reason is emitted bare: `use Test` loads rakudo's own module,
+        // which has no "drop the annotation if it passes" convention (#7566).
+        assert!(out.contains("todo 'NYI', 1;"), "output: {out}");
+        assert!(out.contains("todo 'later', 2;"), "output: {out}");
     }
 
     #[test]
@@ -482,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn rakudo_todo_passes_without_todo_annotation() {
+    fn rakudo_todo_passes_keep_todo_annotation() {
         let mut interp = Interpreter::new();
         interp.set_immediate_stdout(false);
         // run() only applies fudge when MUTSU_FUDGE is set; preprocess explicitly
@@ -492,15 +482,12 @@ mod tests {
         );
         let result = interp.run(&src);
         assert!(result.is_ok(), "run failed: {:?}", result.err());
-        // The native provider drops the annotation for a PASSING backend-specific
-        // todo (mutsu is not the rakudo the directive speaks about); the vendored
-        // upstream module reports it the way rakudo itself does.
-        let expected = if Interpreter::real_test_module_enabled() {
+        // A passing `#?rakudo todo` keeps the annotation: mutsu reports it the
+        // way rakudo's own `Test` does (#7566).
+        assert_eq!(
+            interp.output_sink().output,
             "1..1\nok 1 - pass # TODO NYI\n"
-        } else {
-            "1..1\nok 1 - pass\n"
-        };
-        assert_eq!(interp.output_sink().output, expected);
+        );
     }
 
     #[test]

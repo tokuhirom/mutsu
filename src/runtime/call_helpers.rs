@@ -2,7 +2,6 @@ use super::*;
 use crate::value::ValueView;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
-const BACKEND_TODO_PREFIX: &str = "__mutsu_backend_todo__:";
 
 impl Interpreter {
     pub(crate) fn set_pending_call_arg_sources(&mut self, sources: Option<Vec<Option<String>>>) {
@@ -112,162 +111,6 @@ impl Interpreter {
         self.exec_call_sanitized(name, args, callsite_line, pre_resolved)
     }
 
-    pub(crate) fn test_ok(
-        &mut self,
-        success: bool,
-        desc: &str,
-        todo: bool,
-    ) -> Result<(), RuntimeError> {
-        self.test_ok_with_diag(success, desc, todo, &[])
-    }
-
-    /// Like [`test_ok`](Self::test_ok) but appends extra `#`-prefixed diagnostic
-    /// lines (e.g. `# expected: '4'` / `#      got: '3'`) to the failure block so
-    /// they are routed the same way as `# Failed test` — to stdout for a TODO
-    /// test (a TAP comment) and to stderr otherwise. Callers pass each line
-    /// already `#`-prefixed and without a trailing newline.
-    pub(crate) fn test_ok_with_diag(
-        &mut self,
-        success: bool,
-        desc: &str,
-        todo: bool,
-        detail: &[String],
-    ) -> Result<(), RuntimeError> {
-        let mut line = String::new();
-        let (record_failure, effective_todo) = {
-            let state = self.tap.ensure_state();
-            state.next_ran();
-            let forced_reason = state
-                .force_todo
-                .iter()
-                .find(|range| state.ran >= range.start && state.ran <= range.end)
-                .map(|range| range.reason.as_str());
-            let is_backend_todo =
-                forced_reason.is_some_and(|reason| reason.starts_with(BACKEND_TODO_PREFIX));
-            let todo = todo || forced_reason.is_some();
-            if !success && !todo {
-                state.failed += 1;
-            }
-            if success {
-                line.push_str("ok ");
-            } else {
-                line.push_str("not ok ");
-            }
-            line.push_str(&state.ran.to_string());
-            line.push_str(" - ");
-            // Split description on newlines: first line goes on the TAP line,
-            // remaining lines become `# continuation` lines (Raku TAP escaping).
-            let mut desc_lines = desc.splitn(2, '\n');
-            let first_desc_line = desc_lines.next().unwrap_or("");
-            let rest_desc_lines = desc_lines.next(); // remaining after first \n
-            if !first_desc_line.is_empty() {
-                line.push_str(first_desc_line);
-            }
-            let show_todo = todo && (!is_backend_todo || !success);
-            if show_todo {
-                match forced_reason {
-                    Some(reason) if !reason.is_empty() => {
-                        let reason = reason.strip_prefix(BACKEND_TODO_PREFIX).unwrap_or(reason);
-                        line.push_str(" # TODO ");
-                        line.push_str(reason);
-                    }
-                    _ => line.push_str(" # TODO"),
-                }
-            }
-            line.push('\n');
-            // Append continuation lines for newlines in description
-            if let Some(rest) = rest_desc_lines {
-                for cont in rest.split('\n') {
-                    line.push_str("# ");
-                    line.push_str(cont);
-                    line.push('\n');
-                }
-            }
-            (!success, todo)
-        };
-        self.emit_output(&line);
-        if record_failure {
-            // Rakudo splits the two diagnostic streams by whether the failure is
-            // TODO'd, not by how deep it is (`_diag`'s `$is_todo`): a TODO'd
-            // failure's diagnostic goes to `$todo_output` (stdout, so it stays
-            // inside the subtest's TAP block) and a real one to
-            // `$failure_output` (stderr). An assertion counts as TODO'd either
-            // in its own right or because the enclosing subtest is
-            // (`$subtest_todo_reason`, captured when the subtest starts).
-            // Keying on `subtest_depth() == 0` instead put *every* in-subtest
-            // failure diagnostic on stdout.
-            let to_stderr = !effective_todo && !self.tap.subtest_todo_active();
-            self.emit_test_failure_diag(desc, to_stderr, detail);
-            if !effective_todo
-                && self.tap.subtest_depth() == 0
-                && self.raku_test_die_on_fail_enabled()
-            {
-                self.output_sink_mut()
-                    .stderr_output
-                    .push_str("Stopping test suite because of RAKU_TEST_DIE_ON_FAIL\n");
-                self.exit_code = 255;
-                self.halted = true;
-            }
-        }
-        Ok(())
-    }
-
-    pub(super) fn emit_test_summary_diag(
-        &mut self,
-        planned: Option<usize>,
-        ran: usize,
-        failed: usize,
-    ) {
-        if let Some(planned) = planned
-            && planned != ran
-        {
-            self.output_sink_mut()
-                .stderr_output
-                .push_str(&format!("# Planned {} tests, but ran {}\n", planned, ran));
-        }
-        let plural = if failed == 1 { "" } else { "s" };
-        self.output_sink_mut().stderr_output.push_str(&format!(
-            "# You failed {} test{} of {}\n",
-            failed, plural, ran
-        ));
-    }
-
-    fn emit_test_failure_diag(&mut self, desc: &str, to_stderr: bool, detail: &[String]) {
-        let line_no = self.current_test_failure_line();
-        let at_line = if let Some(path) = &self.program_path {
-            format!("at {} line {}", path, line_no)
-        } else {
-            format!("at line {}", line_no)
-        };
-        // A stdout diagnostic is indented later, when `finish_subtest` renders
-        // the subtest's buffered output. A stderr one bypasses that buffer, so
-        // it has to carry the indentation itself — rakudo indents both.
-        let indent = "    ".repeat(self.tap.subtest_depth());
-        let mut emit = |msg: String| {
-            if to_stderr {
-                // `emit_stderr` buffers in nested mode and writes through
-                // otherwise; doing both duplicated every diagnostic, once at the
-                // raise and once when `flush_stderr_buffer` drained the buffer.
-                self.emit_stderr(&format!("{}{}", indent, msg));
-            } else {
-                self.emit_output(&msg);
-            }
-        };
-        if desc.is_empty() {
-            emit(format!("# Failed test {}\n", at_line));
-        } else {
-            emit(format!("# Failed test '{}'\n", desc));
-            emit(format!("# {}\n", at_line));
-        }
-        for line in detail {
-            emit(format!("{}\n", line));
-        }
-    }
-
-    /// Peek at the callsite line from args without consuming or sanitizing them.
-    /// True for the synthetic callsite-line marker the compiler appends to some
-    /// call argument lists (for deprecation / test diagnostics). NativeCall (and
-    /// any raw-args consumer) must drop it before treating the list as real args.
     pub(crate) fn is_callsite_line_marker(arg: &Value) -> bool {
         match arg.view() {
             ValueView::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
@@ -411,14 +254,6 @@ impl Interpreter {
             .truncate(depth.min(self.test_assertion_line_stack.len()));
     }
 
-    fn current_test_failure_line(&self) -> i64 {
-        self.test_assertion_line_stack
-            .last()
-            .copied()
-            .or(self.test_pending_callsite_line)
-            .unwrap_or(1)
-    }
-
     pub(crate) fn routine_is_test_assertion_by_name(&mut self, name: &str, args: &[Value]) -> bool {
         // Monotonic negative filter: unless some `is test-assertion` routine was
         // ever registered under this bare name, skip the full name resolution
@@ -430,32 +265,6 @@ impl Interpreter {
         self.resolve_function_with_alias(name, args)
             .map(|def| def.is_test_assertion)
             .unwrap_or(false)
-    }
-
-    fn env_value(&self, key: &str) -> Option<Value> {
-        if let Some(env) = self.env.get("%*ENV")
-            && let ValueView::Hash(env_hash) = env.view()
-            && let Some(val) = env_hash.get(key)
-        {
-            return Some(val.clone());
-        }
-        std::env::var_os(key).map(|v| Value::str(v.to_string_lossy().to_string()))
-    }
-
-    fn raku_test_die_on_fail_enabled(&self) -> bool {
-        let Some(val) = self.env_value("RAKU_TEST_DIE_ON_FAIL") else {
-            return false;
-        };
-        match val.view() {
-            ValueView::Nil => false,
-            ValueView::Bool(b) => b,
-            ValueView::Int(i) => i != 0,
-            ValueView::BigInt(i) => *i.as_ref() != 0.into(),
-            ValueView::Num(n) => n != 0.0,
-            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => d != 0 && n != 0,
-            ValueView::Str(s) => !s.is_empty() && s.as_str() != "0",
-            _ => val.truthy(),
-        }
     }
 
     pub(super) fn positional_values(args: &[Value]) -> Vec<&Value> {
@@ -541,66 +350,6 @@ impl Interpreter {
             let mut err = RuntimeError::new(message);
             err.exception = Some(Box::new(exception.clone()));
             return Err(err);
-        }
-        Ok(val)
-    }
-
-    /// Sink a Proc with non-zero exitcode: throw X::Proc::Unsuccessful.
-    pub(super) fn sink_proc_to_error(val: Value) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = val.view()
-            && class_name.resolve() == "Proc"
-        {
-            let exitcode = attributes
-                .as_map()
-                .get("exitcode")
-                .and_then(|v| v.as_int())
-                .unwrap_or(0);
-            // A still-"live" Proc (from `run(:in, ...)`) carries a placeholder
-            // exitcode of -1 until it is finalized; sinking it must not throw.
-            let is_live = attributes.as_map().get("live").and_then(|v| v.as_bool()) == Some(true);
-            if exitcode != 0 && !is_live {
-                let signal = attributes
-                    .as_map()
-                    .get("signal")
-                    .and_then(|v| v.as_int())
-                    .unwrap_or(0);
-                let command = attributes
-                    .as_map()
-                    .get("command")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                // A command that could not be spawned (exit code -1) reports the
-                // underlying OS error, matching rakudo's X::Proc::Unsuccessful.
-                let os_error = attributes
-                    .as_map()
-                    .get("os-error")
-                    .map(|v| v.to_string_value())
-                    .filter(|s| !s.is_empty());
-                let msg = match &os_error {
-                    Some(oe) => format!(
-                        "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {}, OS error = {})",
-                        command, exitcode, signal, oe
-                    ),
-                    None => format!(
-                        "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {})",
-                        command, exitcode, signal
-                    ),
-                };
-                let mut ex_attrs = std::collections::HashMap::new();
-                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                ex_attrs.insert("proc".to_string(), val);
-                let exception = Value::make_instance(
-                    crate::symbol::Symbol::intern("X::Proc::Unsuccessful"),
-                    ex_attrs,
-                );
-                let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(exception));
-                return Err(err);
-            }
         }
         Ok(val)
     }

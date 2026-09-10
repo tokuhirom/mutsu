@@ -548,34 +548,6 @@ impl Interpreter {
             // just call-syntax macros. They dispatch through the builtin-function
             // path (see `builtins.rs`), so expose them as Routine values here.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
-        } else if self.test_module_loaded()
-            && Self::is_test_function_name(lookup_name)
-            && !Self::real_test_module_enabled()
-        {
-            // Test-framework functions (&is-deeply, &pass, ...) are implemented
-            // as Rust methods (runtime/test_functions.rs), not declared subs, so
-            // the function-def lookup above misses them. Expose them as Routine
-            // values so `my &fn = &is-deeply; fn(...)` dispatches through the
-            // Routine call path, which routes test names to the Test dispatcher.
-            //
-            // Under MUTSU_REAL_TEST=1 there is no such native fallback: `plan`,
-            // `is`, etc. are ordinary Raku subs from the vendored Test.rakumod,
-            // reachable only through the normal declaration/import machinery
-            // (the `def`/`is_multi`/`has_proto` branches above). Synthesizing a
-            // by-name Routine reference here was wrong in that mode — worse,
-            // `test_module_loaded()` reads `loaded_modules`, which (correctly,
-            // matching Raku's own "a module stays loaded forever, only its
-            // exported symbols are lexically scoped" semantics) never rolls
-            // back when a `use Test;` block's import scope pops. So this
-            // branch kept firing for a bareword `plan` at outer scope even
-            // after `pop_import_scope` had correctly removed GLOBAL::plan's
-            // proto/multi registrations, returning a dangling by-name
-            // reference instead of Nil. With Nil, callers like
-            // `exec_call_on_code_var_op` fall back to the frame's own local
-            // slot, which is where a selective import
-            // (`my (&plan) = do { use Test; (&plan) }`, roast/S32-list/skip.t)
-            // actually stores the real imported Sub value.
-            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if self.json_module_loaded() && matches!(lookup_name, "to-json" | "from-json") {
             // Native JSON routines (runtime/json.rs) have no declared sub either;
             // expose them as Routines so `&from-json` / `$str.&from-json` work.

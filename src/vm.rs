@@ -225,7 +225,6 @@ mod vm_native_json;
 mod vm_native_map;
 mod vm_native_sort;
 mod vm_native_subst;
-mod vm_native_test;
 mod vm_our_package_vars;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;

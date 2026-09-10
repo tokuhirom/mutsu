@@ -74,7 +74,6 @@ impl Interpreter {
         src: &str,
         op_names: &[String],
         op_assoc: &HashMap<String, String>,
-        imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
         let user_type_names = self.collect_eval_user_type_names();
@@ -88,7 +87,6 @@ impl Interpreter {
             src,
             op_names,
             op_assoc,
-            imported_names,
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
@@ -99,11 +97,10 @@ impl Interpreter {
                 // A placeholder parameter used directly in the mainline is
                 // `X::Placeholder::Mainline`, and this has to run BEFORE the
                 // undeclared check -- otherwise `@_` / `%_` are reported as
-                // `X::Undeclared`. It lived only in the NATIVE `throws-like`
-                // (`test_functions/throws_like.rs`), which is why
-                // `roast/S32-exceptions/misc2.t` passed there and failed under
-                // the real `Test` module, whose `throws-like` EVALs its string
-                // through this ordinary path.
+                // `X::Undeclared`. It used to live only in the retired native
+                // `throws-like`, which is why `roast/S32-exceptions/misc2.t`
+                // passed there and failed under the real `Test` module, whose
+                // `throws-like` EVALs its string through this ordinary path.
                 self.check_eval_mainline_placeholders(&stmts)?;
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
@@ -333,12 +330,8 @@ impl Interpreter {
                 // BEGIN blocks should execute even when a later parse error occurs.
                 // Do a partial parse to find any BEGIN phasers and execute them
                 // before returning the parse error.
-                let (partial_stmts, _) = crate::parser::parse_program_partial_with_operators(
-                    src,
-                    op_names,
-                    op_assoc,
-                    imported_names,
-                );
+                let (partial_stmts, _) =
+                    crate::parser::parse_program_partial_with_operators(src, op_names, op_assoc);
                 self.execute_begin_phasers(&partial_stmts);
                 Err(parse_err)
             }

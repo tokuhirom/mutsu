@@ -81,19 +81,10 @@ impl Interpreter {
     /// `thread_id` unless the thread is `app_lifetime` (those are killed when
     /// the process's main thread terminates, so nothing ever joins them).
     fn spawn_thread_body(&mut self, block: Value, thread_id: u64, app_lifetime: bool) {
-        // A thread spawned *inside* a subtest must keep buffering its output
-        // through `shared_thread_output` (as `clone_for_thread` already
-        // arranges) rather than writing straight to stdout: its TAP lines are
-        // subtest-internal and must be drained (indented) into the subtest by
-        // `Thread.finish`, not leaked to the real top-level stream ("tests out
-        // of sequence"). Only threads spawned at top level get immediate
-        // stdout so their output lands in real chronological order relative
-        // to the main thread's direct writes.
-        let parent_in_subtest = self.tap.subtest_depth() != 0;
+        // Immediate stdout so the thread's output lands in real chronological
+        // order relative to the main thread's direct writes.
         let mut thread_interp = self.clone_for_thread();
-        if !parent_in_subtest {
-            thread_interp.set_immediate_stdout(true);
-        }
+        thread_interp.set_immediate_stdout(true);
         let mutsu_tid = thread_id as i64;
         // Use the large user-code stack (matches `start {}` / Promise / Supply
         // worker threads): `Thread.start` runs arbitrary user code, and the

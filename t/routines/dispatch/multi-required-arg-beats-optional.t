@@ -2,7 +2,6 @@ use Test;
 use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
-BEGIN %*ENV<MUTSU_REAL_TEST> = '1';
 BEGIN %*ENV<MUTSU_PRECOMP> = '0';
 
 plan 1;

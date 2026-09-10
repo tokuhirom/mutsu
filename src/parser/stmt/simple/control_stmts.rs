@@ -410,31 +410,6 @@ fn fold_compile_time_version(expr: &Expr) -> Option<Value> {
     Some(Value::version(parts, false, false))
 }
 
-/// Parse `subtest` declaration.
-pub(crate) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("subtest", input).ok_or_else(|| PError::expected("subtest statement"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, name) = expression(rest)?;
-    let (rest, _) = ws(rest)?;
-    // Expect =>
-    if !rest.starts_with("=>") {
-        return Err(PError::expected("'=>' in subtest"));
-    }
-    let rest = &rest[2..];
-    let (rest, _) = ws(rest)?;
-    // Optional 'sub' keyword
-    let rest = if let Some(r) = keyword("sub", rest) {
-        let (r, _) = ws(r)?;
-        r
-    } else {
-        rest
-    };
-    let (rest, body) = block(rest)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::Subtest { name, body }))
-}
-
 /// True when `input` begins, at this exact position, with a user-declared
 /// custom infix operator (symbol or word form). Used by `block_stmt` to
 /// detect that a leading `{ ... }` is really the left operand of a declared

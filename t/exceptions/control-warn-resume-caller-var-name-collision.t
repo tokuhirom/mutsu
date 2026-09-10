@@ -21,12 +21,9 @@ plan 1;
 # call's result, so the 2nd closure's blanket env-capture snapshot picks up
 # that same value, and the coincidence trips the skip.
 #
-# Reproducing this needs the real vendored `Test.rakumod` (`MUTSU_REAL_TEST=1`)
-# loaded — a large synthetic module with many declared-but-uncalled subs does
-# NOT reproduce it, so the trigger is spawned as a subprocess with the real
-# switch on rather than gated at the file level (this file itself always
-# runs).
-%*ENV<MUTSU_REAL_TEST> = '1';
+# Reproducing this needs the vendored `Test.rakumod` loaded — a large
+# synthetic module with many declared-but-uncalled subs does NOT reproduce it,
+# so the trigger is spawned as a subprocess (this file itself always runs).
 
 my $code = q:to/RAKU/;
     use Test;

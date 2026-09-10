@@ -1,6 +1,6 @@
-# The core list routine is shadowed by Test's skip directive after `use Test`.
-# Keep its behavior in a standalone TAP test so both native and real Test
-# providers exercise the same core call.
+# The core list routine is shadowed by Test's skip directive after `use Test`
+# (rakudo does the same). Keep its behavior in a standalone TAP test, with no
+# `use Test` at all, so the core call is exercised unshadowed.
 
 say '1..5';
 

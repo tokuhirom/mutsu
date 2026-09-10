@@ -91,7 +91,6 @@ fn walk_stmt(stmt: &Stmt, in_routine: bool, found: &mut Option<String>) {
         | Stmt::Given { body, .. }
         | Stmt::When { body, .. }
         | Stmt::While { body, .. }
-        | Stmt::Subtest { body, .. }
         | Stmt::React { body, .. } => walk_stmts(body, in_routine, found),
         Stmt::Whenever { supply, body, .. } => {
             walk_expr(supply, in_routine, found);

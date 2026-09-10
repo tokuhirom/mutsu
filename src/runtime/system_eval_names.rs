@@ -470,7 +470,7 @@ impl Interpreter {
                     Self::collect_type_refs_in_stmt(s, out);
                 }
             }
-            Stmt::Phaser { body, .. } | Stmt::Subtest { body, .. } => {
+            Stmt::Phaser { body, .. } => {
                 for s in body {
                     Self::collect_type_refs_in_stmt(s, out);
                 }
