@@ -605,8 +605,7 @@ impl EndWalker<'_> {
             | Stmt::Catch(body)
             | Stmt::Control(body)
             | Stmt::React { body }
-            | Stmt::Loop { body, .. }
-            | Stmt::Subtest { body, .. } => self.stmts(body),
+            | Stmt::Loop { body, .. } => self.stmts(body),
             Stmt::SubDecl { params, body, .. }
             | Stmt::MethodDecl { params, body, .. }
             | Stmt::ProtoDecl { params, body, .. } => {

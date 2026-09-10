@@ -1,7 +1,7 @@
 //! Helpers for wrapping errors in `X::React::Died` when a `react` block
 //! encounters an unhandled exception from a supply.
 
-use super::subtest::ReactSubscription;
+use super::react_whenever::ReactSubscription;
 use super::*;
 use crate::runtime::native_methods::take_supply_channel;
 use crate::symbol::Symbol;

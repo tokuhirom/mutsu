@@ -15,7 +15,7 @@ use crate::runtime::native_methods::{
     PromiseCombinator, SupplyEvent, supplier_sink_unregister, supplier_sinks_register_batch,
     take_promise_combinator_sources,
 };
-use crate::runtime::subtest::{ReactSubscription, SupplyDrivePolicy};
+use crate::runtime::react_whenever::{ReactSubscription, SupplyDrivePolicy};
 use crate::value::waker::{ReactWaker, SinkEvent};
 use std::sync::mpsc;
 use std::time::Duration;

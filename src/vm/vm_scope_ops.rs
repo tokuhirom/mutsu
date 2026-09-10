@@ -1,26 +1,7 @@
-//! Scope ops: `subtest`, `react`, and `whenever` scope execution.
+//! Scope ops: `react` and `whenever` scope execution.
 use super::*;
 
 impl Interpreter {
-    pub(super) fn exec_subtest_scope_op(
-        &mut self,
-        code: &CompiledCode,
-        body_end: u32,
-        ip: &mut usize,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(), RuntimeError> {
-        let end = body_end as usize;
-        let body_start = *ip + 1;
-        let label = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
-        let ctx = self.begin_subtest();
-        let saved_depth = self.stack.len();
-        let run_result = self.run_range(code, body_start, end, compiled_fns);
-        self.stack.truncate(saved_depth);
-        self.finish_subtest(ctx, &label, run_result)?;
-        *ip = end;
-        Ok(())
-    }
-
     pub(super) fn exec_react_scope_op(
         &mut self,
         code: &CompiledCode,

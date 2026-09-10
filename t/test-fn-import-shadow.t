@@ -1,11 +1,12 @@
 use v6;
 use Test;
 
-# mutsu provides the `Test` module natively (`src/runtime/test_functions/`), and
-# the statement-call path dispatched every name in `is_test_function_name()` to
-# those Rust routines BEFORE resolving user routines, and without any gate. So a
-# module exporting its own `ok`/`is`/... was silently overruled: the call went to
-# mutsu's TAP implementation instead.
+# mutsu used to provide the `Test` module natively, and the statement-call path
+# dispatched every name in `is_test_function_name()` to those Rust routines
+# BEFORE resolving user routines, and without any gate. So a module exporting
+# its own `ok`/`is`/... was silently overruled: the call went to mutsu's TAP
+# implementation instead. That provider was retired in #7566, which removes the
+# competing dispatch entirely; this file keeps pinning the outcome.
 #
 # It is a nasty failure to diagnose, because the two implementations then keep
 # separate counters. Loading rakudo's real Test.rakumod under an alias produced
@@ -18,10 +19,8 @@ use Test;
 # which reads as a stale module lexical rather than as two live implementations.
 # (todo/tickets/vendor-real-test-module.md)
 #
-# The rule is the one from the qualified-call guard: decide on whether a
-# *declaration* exists, not on whether the name is a builtin. `use Test` is
-# intercepted natively and registers no routines, so the ordinary path has
-# nothing to compete with and is unaffected -- pinned below too.
+# The ordinary `use Test` path must keep working while an importing module's
+# own routines win -- both are pinned below.
 #
 # Run in a subprocess: importing the fixture here would shadow the very `ok`
 # this file's own assertions use.
@@ -39,7 +38,7 @@ sub run-snippet($code) {
 
 is run-snippet('use ShadowingTap; ok 1, "a"; ok 0, "b"; done-testing'),
     "MINE ok 1 - a\nMINE not ok 2 - b\nMINE done, ran 2",
-    'an imported `ok` wins over the native Test provider';
+    'an imported `ok` wins over the routines `use Test` would bring in';
 
 is run-snippet('use ShadowingTap; plan 2; is 2, 2, "x"; is 1, 2, "y"'),
     "MINE plan 2\nMINE ok 1 - x\nMINE not ok 2 - y",
@@ -57,15 +56,14 @@ is run-snippet('use ShadowingTap; ok 1, "a"; is 1, 1, "b"; ok 1, "c"; done-testi
 # Regression guard: the ordinary `use Test` path is untouched.
 is run-snippet('use Test; plan 2; ok 1, "native"; is 3, 3, "native too"'),
     "1..2\nok 1 - native\nok 2 - native too",
-    'plain `use Test` still reaches the native provider';
+    'plain `use Test` still reaches the vendored module';
 
 is run-snippet('use Test; plan 1; ok 1, "still numbered from the native counter"'),
     "1..1\nok 1 - still numbered from the native counter",
     'and keeps numbering its own tests';
 
 # Regression guard: the `Test::Util`/`Test::Tap`-only names (`is_run`,
-# `make-temp-dir`, `group-of`, ...) have no native fallback anymore
-# (`todo/tickets/retire-native-test-util-overrides.md`) -- calling one
+# `make-temp-dir`, `group-of`, ...) have no native fallback -- calling one
 # without importing the real module must fail to resolve, not silently
 # answer through a Rust implementation.
 like run-snippet('make-temp-dir()'),

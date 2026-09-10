@@ -56,10 +56,10 @@ thread_local! {
     /// does it activate a slang. Written by `register_module_exports` on
     /// every path (including the ones that deliberately do NOT scan), read
     /// once by the parse-time slang hook. The hook must never trigger a scan
-    /// of its own: modules the register step skips (native Test/JSON,
+    /// of its own: modules the register step skips (`Test`, native JSON,
     /// pragmas, unresolvable names) would otherwise be file-scanned on every
-    /// `use` — Test.rakumod on every test process, ~200ms of debug-build
-    /// parsing each, which 5x'd the CI TAP suite before this record existed.
+    /// `use` — Test.rakumod on every test process, which 5x'd the CI TAP suite
+    /// before this record existed.
     static LAST_USE_SCAN_ACTIVATES_SLANG: RefCell<Option<(String, bool)>> =
         const { RefCell::new(None) };
     /// Set when this compilation unit imported a module the parser could not
@@ -119,8 +119,9 @@ fn note_scan_guard_skip() {
 /// Register exported function names for a module (called when parsing `use` statements).
 /// Exports are added to the current (innermost) lexical scope.
 ///
-/// For `Test`, uses a hardcoded list (Test functions are implemented natively in Rust).
-/// For all other modules, dynamically scans the module file to extract `is export` subs.
+/// For the natively-provided JSON modules, and for `Test`, uses a hardcoded list
+/// (see [`TEST_EXPORTS`]). For all other modules, dynamically scans the module
+/// file to extract `is export` subs.
 pub(crate) fn register_module_exports(module: &str) {
     record_use_scan_outcome(module, false);
     if module == "Test" {
@@ -920,9 +921,87 @@ fn is_default_export_from_regex_match_group(caps: &regex::Captures, group: usize
     }
 }
 
-/// Functions exported by `use Test`, re-exported from the runtime so the
-/// parser and the dispatcher cannot drift apart. Test functions are implemented
-/// natively in Rust (`runtime/test_functions/`), not loaded from a `.rakumod`
-/// file, so the set has to be spelled out somewhere; that somewhere is
-/// `runtime::TEST_MODULE_EXPORTS`.
-use crate::runtime::TEST_MODULE_EXPORTS as TEST_EXPORTS;
+/// What `use Test` puts in scope, as a parse-time shortcut.
+///
+/// `Test` is an ordinary bundled module now — `modules/Rakudo-Core/lib/Test.rakumod`,
+/// rakudo's own, loaded and run like any other (#7566) — so this list is NOT a
+/// native provider's export surface any more. It exists purely for parse speed:
+/// `find_and_scan_module` would otherwise parse those 953 lines once per process
+/// on top of the runtime's own (precompilation-cached) load, which measured
+/// **7 ms -> 93 ms** for `mutsu -e 'use Test; plan 1; ok 1, "x"'`. Every `t/` and
+/// roast file pays that, so the list stays.
+///
+/// It is the scanner's own answer for the vendored file, minus three names the
+/// regex-assisted scan picks up spuriously (`sub` and `trait_mod` from
+/// declaration syntax, `fail` from a comment). `test_exports_match_the_vendored_module`
+/// re-derives it from `Test.rakumod` on every `cargo test`, so bumping the
+/// vendored module cannot silently leave this behind.
+pub(crate) const TEST_EXPORTS: &[&str] = &[
+    "MONKEY-SEE-NO-EVAL",
+    "bail-out",
+    "can-ok",
+    "cmp-ok",
+    "diag",
+    "dies-ok",
+    "does-ok",
+    "done-testing",
+    "eval-dies-ok",
+    "eval-lives-ok",
+    "exit-ok",
+    "exits-ok",
+    "fails-like",
+    "flunk",
+    "is",
+    "is-approx",
+    "is-deeply",
+    "isa-ok",
+    "isnt",
+    "like",
+    "lives-ok",
+    "nok",
+    "ok",
+    "pass",
+    "plan",
+    "skip",
+    "skip-rest",
+    "subtest",
+    "throws-like",
+    "todo",
+    "trait_mod:<is>",
+    "unlike",
+    "use-ok",
+];
+
+#[cfg(test)]
+mod test_exports_tests {
+    /// Names the module-file scanner reports for any Raku source but that are
+    /// not routines: `sub` and `trait_mod` fall out of declaration syntax, and
+    /// `fail` out of the "In earlier Perls, this is spelled \"sub fail\"" comment.
+    const SCAN_ARTIFACTS: [&str; 3] = ["fail", "sub", "trait_mod"];
+
+    /// [`super::TEST_EXPORTS`] is a hand-maintained copy of what a scan of the
+    /// vendored `Test.rakumod` yields. Re-derive it here so a re-vendoring that
+    /// adds or drops an export fails the build instead of silently leaving the
+    /// parser with a stale view of what `use Test` brings into scope.
+    #[test]
+    fn test_exports_match_the_vendored_module() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/modules/Rakudo-Core/lib/Test.rakumod"
+        );
+        let src = std::fs::read_to_string(path).expect("the vendored Test.rakumod is readable");
+        let mut scanned: Vec<String> = super::extract_exported_names(&src)
+            .into_iter()
+            .map(|e| e.name)
+            .filter(|n| !SCAN_ARTIFACTS.contains(&n.as_str()))
+            .collect();
+        scanned.sort();
+        scanned.dedup();
+        let mut declared: Vec<String> = super::TEST_EXPORTS.iter().map(|s| s.to_string()).collect();
+        declared.sort();
+        assert_eq!(
+            declared, scanned,
+            "TEST_EXPORTS has drifted from modules/Rakudo-Core/lib/Test.rakumod"
+        );
+    }
+}

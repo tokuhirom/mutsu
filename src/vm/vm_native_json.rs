@@ -4,7 +4,9 @@
 //! These are not Raku core builtins — they are provided by the JSON modules.
 //! The real `JSON::Fast` depends on ~50 `nqp::` ops mutsu lacks, so mutsu ships
 //! native Rust implementations (`runtime/json.rs`) gated behind `use JSON::Fast`
-//! / `use JSON::Tiny`, mirroring the native `Test` dispatch in `vm_native_test`.
+//! / `use JSON::Tiny`. (`Test` used to be provided the same way; its native
+//! provider was retired in #7566 and `use Test` now loads rakudo's own
+//! `Test.rakumod`.)
 
 use super::*;
 use crate::runtime::json::{self, ToJsonOpts};

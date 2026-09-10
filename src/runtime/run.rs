@@ -1113,62 +1113,6 @@ impl Interpreter {
             self.output_sink_mut().stderr_output.push_str(&report);
             self.output_sink_mut().stderr_output.push('\n');
         }
-        if self.tap.bailed_out() {
-            // Rakudo's `bail-out` ends the process with status 255 (`Test.rakumod`
-            // does `exit 255` after emitting "Bail out!"), which is what `prove`
-            // and `Test::Util`'s `is_run ..., :255status` read.
-            self.exit_code = 255;
-            return Ok(());
-        }
-        if let Some(state) = self.tap.state() {
-            // Use the shared-atomic-aware count: tests run on a spawned thread
-            // (start blocks, Promise callbacks) bump the shared counter but not
-            // this state's local `ran` field.
-            let ran = state.effective_ran();
-            let plan_mismatch = matches!(state.planned, Some(planned) if planned != ran);
-            if state.failed > 0 {
-                self.emit_test_summary_diag(state.planned, ran, state.failed);
-                // "Some assertions failed" is an ordinary non-zero exit, not
-                // an uncaught runtime error -- rakudo prints only the TAP
-                // diagnostics above, with no extra "Runtime error: ..." line.
-                // Matches the bail-out branch above: set exit_code and
-                // return Ok rather than surfacing this as an Err. Only
-                // default to 1 when nothing set a more specific exit code
-                // already (e.g. `RAKU_TEST_DIE_ON_FAIL` sets 255 mid-run,
-                // before `finish()` ever runs) -- this used to work by
-                // accident, since main()'s Err handler only fell back to 1
-                // when `exit_code` was still 0; preserve that precedence
-                // explicitly now that this path returns Ok instead of Err.
-                if self.exit_code == 0 {
-                    self.exit_code = 1;
-                }
-                return Ok(());
-            }
-            if plan_mismatch {
-                if let Some(planned) = state.planned {
-                    let plural = if planned == 1 { "" } else { "s" };
-                    let msg = format!(
-                        "# You planned {} test{}, but ran {}\n",
-                        planned, plural, ran
-                    );
-                    // Rakudo's `Test.rakumod` sends this diagnostic to stdout
-                    // when NO test ever ran (`ran == 0`), but to stderr for
-                    // the ordinary "ran fewer than planned but at least one"
-                    // mismatch. Verified against real `raku`: `plan 1; say
-                    // "done";` prints the summary on stdout, while `plan 2; ok
-                    // True; say "done";` prints it on stderr. Only the
-                    // zero-run case differs from the general mismatch sink.
-                    if ran == 0 {
-                        self.emit_output(&msg);
-                    } else {
-                        self.output_sink_mut().stderr_output.push_str(&msg);
-                    }
-                }
-                // Dubious: exit code 255
-                self.exit_code = 255;
-                return Ok(());
-            }
-        }
         Ok(())
     }
 

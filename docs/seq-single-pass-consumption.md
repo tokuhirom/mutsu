@@ -47,8 +47,6 @@ There is already a partial substrate.
 - `src/runtime/methods_call_dispatch.rs`
   - selected methods (`iterator`, `list`, `List`, `eager`, `Array`, `flat`,
     `Slip`, `join`, `is-lazy`) already guard on consumed non-cached Seq.
-- `src/runtime/test_functions/comparison.rs`
-  - test helpers already know how to surface `X::Seq::Consumed`.
 
 So the problem is not "no support exists". The problem is that the support is
 **scattered and incomplete**.
@@ -133,7 +131,6 @@ The target behavior is:
 
 ### 5.3 Helpers and test adapters that currently force
 
-- `src/runtime/test_functions/comparison.rs`
 - `src/runtime/builtins_operators_infix.rs`
 - any helper that calls `value_to_list` / `.to_vec()` / `Array(...)` on Seq
 
@@ -329,8 +326,7 @@ Goal:
 
 Files:
 
-- `src/runtime/test_functions/comparison.rs`
-- other helper modules that inspect iterable values through listification
+- helper modules that inspect iterable values through listification
 
 ## 8. Validation plan
 

@@ -5455,10 +5455,6 @@ impl Interpreter {
                 self.exec_register_subset_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::SubtestScope { body_end } => {
-                self.sync_source_line(code, *ip);
-                self.exec_subtest_scope_op(code, *body_end, ip, compiled_fns)?;
-            }
             OpCode::ReactScope { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_react_scope_op(code, *body_end, ip, compiled_fns)?;

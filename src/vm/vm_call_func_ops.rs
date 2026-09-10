@@ -1839,9 +1839,6 @@ impl Interpreter {
                     let returns_container = Self::routine_is_rw_capable(&def);
                     let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
-                } else if let Some(result) = self.try_native_test_function(name, &args) {
-                    // Dispatch Test functions straight to their typed handler (lever A).
-                    result
                 } else if let Some(result) = self.try_nativecast(name, &args) {
                     // NativeCall's `nativecast($target-type, $source)` helper.
                     result
@@ -2664,8 +2661,7 @@ impl Interpreter {
             | Stmt::Given { body, .. }
             | Stmt::When { body, .. }
             | Stmt::Whenever { body, .. }
-            | Stmt::React { body, .. }
-            | Stmt::Subtest { body, .. } => Self::function_body_declares_state(body),
+            | Stmt::React { body, .. } => Self::function_body_declares_state(body),
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Default(body) => {
                 Self::function_body_declares_state(body)
             }

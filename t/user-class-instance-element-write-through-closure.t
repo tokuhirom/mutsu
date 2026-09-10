@@ -1,4 +1,3 @@
-BEGIN %*ENV<MUTSU_REAL_TEST> = '1';
 use Test;
 
 plan 3;
