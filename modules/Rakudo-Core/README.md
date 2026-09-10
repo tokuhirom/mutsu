@@ -23,27 +23,29 @@ genuine upstream implementation instead of reimplementing it natively.
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
-### `Test` runs verbatim, behind `MUTSU_REAL_TEST=1`
+### `Test` runs verbatim, and is what `use Test` resolves to
 
 This file is the unmodified upstream `Test.rakumod`, and mutsu runs it verbatim
--- it was never renamed or shimmed. It is **not** yet what a bare `use Test`
-resolves to: mutsu's native TAP provider (`src/runtime/test_functions.rs`) is
-still the default, and this file is selected with **`MUTSU_REAL_TEST=1`**, which
-is also how the dual-provider sweeps (`scripts/test-module-sweep.sh`,
-`scripts/roast-test-module-sweep.sh`) compare the two.
+-- it was never renamed or shimmed. Since 2026-09-10 it is also **the default
+provider**: a bare `use Test` loads this file. Mutsu's native TAP provider
+(`src/runtime/test_functions.rs`) survives only behind `MUTSU_REAL_TEST=0`,
+which is how the dual-provider sweeps (`scripts/test-module-sweep.sh`,
+`scripts/roast-test-module-sweep.sh`) still compare the two, and it is scheduled
+for deletion ([#7566](https://github.com/tokuhirom/mutsu/issues/7566)).
 
 ```
-mutsu t/some-test.t                        # the native provider (default)
-MUTSU_REAL_TEST=1 mutsu t/some-test.t      # this file
+mutsu t/some-test.t                        # this file (default)
+MUTSU_REAL_TEST=0 mutsu t/some-test.t      # the native provider
 ```
 
-Every `t/` file and every roast file stands on `Test`, so the switch is held
-until nothing regresses under it. The roast and `t/` suites already pass; the
-`Bundled-library test suites` gate does not, on four unrelated interpreter gaps.
-The flip was attempted on 2026-09-07/08 and withdrawn -- see
-`todo/deep/vendor-real-test-module-flip.md` for the measurements and
-`todo/deep/vendored-test-battery-gate-regressions.md` for what is left. Pinned by
-`t/vendored-real-test-module.t`.
+Every `t/` file and every roast file stands on `Test`, so the switch was held
+until nothing regressed under it. It was attempted on 2026-09-07/08 and
+withdrawn, because the `Bundled-library test suites` gate regressed on four
+upstream distributions -- four unrelated interpreter gaps, none of them a `Test`
+compatibility problem. Those were fixed one at a time
+([#7555](https://github.com/tokuhirom/mutsu/issues/7555) records the chase) and
+the gate now passes under this module with more files green than under the
+native provider. Pinned by `t/vendored-real-test-module.t`.
 
 ## Why this directory exists
 

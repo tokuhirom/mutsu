@@ -5,11 +5,11 @@ use Test::Util;
 
 plan 10;
 
-# `MUTSU_REAL_TEST=1` makes `use Test` load the vendored upstream
-# `Test.rakumod` (modules/Rakudo-Core/lib/) instead of being recognized as a
-# no-op that leaves mutsu's native TAP provider in charge. Step 2 of
-# `todo/tickets/vendor-real-test-module.md`: exercise the real module without
-# yet swapping the foundation the whole suite stands on.
+# `use Test` loads the vendored upstream `Test.rakumod`
+# (modules/Rakudo-Core/lib/) by default since 2026-09-10 (#7554);
+# `MUTSU_REAL_TEST=0` selects mutsu's native TAP provider instead. This file
+# pins both halves, so it keeps its value as the escape hatch's regression test
+# until the native provider is deleted (#7566).
 
 my $vendored = $*PROGRAM.parent(2).add("modules/Rakudo-Core/lib/Test.rakumod");
 ok $vendored.e, 'the upstream Test.rakumod is vendored in the repository';
@@ -23,7 +23,9 @@ my $probe = 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "module export";';
 my $plain = 'use Test; plan 2; ok 1, "a"; is 1+1, 2, "b";';
 
 # --- switch off: the native provider answers ---
-%*ENV<MUTSU_REAL_TEST>:delete;
+# `:delete` would leave the child on the DEFAULT, which is the vendored module
+# since 2026-09-10 -- the native provider now has to be asked for explicitly.
+%*ENV<MUTSU_REAL_TEST> = '0';
 
 is_run $plain, { status => 0, out => "1..2\nok 1 - a\nok 2 - b\n", err => '' },
     'the native provider emits plain TAP';
