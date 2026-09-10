@@ -1076,26 +1076,29 @@ impl Interpreter {
             .cloned()
             .collect();
         // #7797: record that `importer_unit` may reference this load's own
-        // top-level package(s) qualified (`Module::whatever`), but NOT a
-        // package reached only through one of ITS `use` statements —
-        // `owned_types`' filter just below already draws exactly that line
-        // for bare-name aliasing, so this reuses it rather than re-deriving
-        // "which of `new_types` belongs to this load" a second way.
-        // Coarse first-`::`-segment granularity, matching the existing
-        // `!key.contains("::")` bare-name gates (#7743/#7764/#7787): a
-        // `unit module A::B` grants `"A"`, not the full `"A::B"`.
-        fn top_segment(s: &str) -> &str {
-            s.split_once("::").map_or(s, |(top, _)| top)
-        }
+        // package(s) qualified (`Module::whatever`), but NOT a package
+        // reached only through one of ITS `use` statements — `owned_types`'
+        // filter just below already draws exactly that line for bare-name
+        // aliasing, so this reuses it rather than re-deriving "which of
+        // `new_types` belongs to this load" a second way.
+        //
+        // Full-name granularity, NOT a truncated first `::`-segment: a real
+        // multi-file distribution routinely has several UNRELATED compunits
+        // sharing a namespace prefix (`XML::Entity` and `XML::Element` are
+        // separate `unit class`-scoped files, both under `XML::`). Keying
+        // this by `"XML"` let whichever of them loaded first claim the
+        // whole prefix and made every sibling's OWN qualified self-reference
+        // to its OWN name look foreign — caught by `battery-testsuite.sh`,
+        // not by `make test`/`make roast`.
         let module_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
         let mut granted_packages: HashSet<&str> = HashSet::new();
-        granted_packages.insert(top_segment(module));
+        granted_packages.insert(module);
         if let Some(name) = unit_name.as_deref() {
-            granted_packages.insert(top_segment(name));
+            granted_packages.insert(name);
         }
         for qualified in &new_types {
             if *qualified == module || qualified.starts_with(&format!("{module}::")) {
-                granted_packages.insert(top_segment(qualified));
+                granted_packages.insert(qualified);
             }
         }
         {
@@ -1104,10 +1107,23 @@ impl Interpreter {
                 declaring.entry(pkg.to_string()).or_insert(module_unit);
             }
         }
-        crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+        // The grant side additionally records each package's top-level
+        // `::`-segment (never `package_declaring_units`, which stays
+        // full-name-only — see the comment above): a distribution's own
+        // files reference each other by shared top-level namespace alone,
+        // not only by the exact package an individual `use` names (verified
+        // against real rakudo: `IO::Socket::Async::SSL.rakumod` reads
+        // `OpenSSL::Version::version_num()` in a top-level `constant`
+        // without ever `use`ing `OpenSSL::Version` itself, only sibling
+        // packages under the same `OpenSSL::` prefix).
+        let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
             .entry(importer_unit)
-            .or_default()
-            .extend(granted_packages.iter().map(|s| s.to_string()));
+            .or_default();
+        for pkg in &granted_packages {
+            visible_here.insert(pkg.to_string());
+            let top = pkg.split_once("::").map_or(*pkg, |(top, _)| top);
+            visible_here.insert(top.to_string());
+        }
         // Make each newly-declared class/role's bare short name resolvable from
         // the IMPORTER's own package/class too, not just from the declaring
         // module's own package-ancestor chain. An ordinary `use Foo::Native;`

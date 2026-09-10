@@ -352,12 +352,13 @@ impl Interpreter {
             // already loaded `Conf` first, yet `Issue7733::Conf.new` inside a
             // `User`-declared method must still resolve.
             {
-                let top = module.split_once("::").map_or(module, |(top, _)| top);
                 let importer_unit = self.executing_unit_sym_for_module_load();
-                crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+                let top = module.split_once("::").map_or(module, |(top, _)| top);
+                let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
                     .entry(importer_unit)
-                    .or_default()
-                    .insert(top.to_string());
+                    .or_default();
+                entry.insert(module.to_string());
+                entry.insert(top.to_string());
             }
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even
