@@ -111,3 +111,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0083](0083-a-collected-for-retains-containers-past-the-loop.md) | A collected `for` retains lvalue containers past the loop | Accepted (implemented) |
 | [0084](0084-the-frame-env-is-not-the-programs-symbol-table.md) | The per-frame `Env` is not the program's symbol table — type/package names and internal markers move to side tables | Proposed (design complete; implementation not started) |
 | [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Accepted (P1 implemented; P2-P5 open — see "Implementation status") |
+| [0086](0086-builtin-dynamics-are-not-closure-capture-material.md) | The built-in dynamics are not closure-capture material — they belong in a per-interpreter never-copied tier | Proposed (design complete; implementation not started) |

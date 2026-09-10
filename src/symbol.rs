@@ -341,6 +341,13 @@ pub(crate) mod wk {
         /// `.gist`, probed by the same gate before the native stringification
         /// of a value reaches `note`/`say`.
         gist => "gist";
+        /// The "we are inside a re-entrant source `EVAL`" marker, probed on
+        /// EVERY closure creation by `capture_bare_callees` to decide whether
+        /// the import-alias escape gate applies. The common program never sets
+        /// it, so the probe is a pure miss -- and interning the literal for it
+        /// per creation cost a thread-local string-keyed hash lookup each time
+        /// (0.25% of a closure-creation loop, #7557).
+        in_eval => "__mutsu_in_eval";
     }
 
     /// Whether `key` is one of the fixed per-call env keys the well-known

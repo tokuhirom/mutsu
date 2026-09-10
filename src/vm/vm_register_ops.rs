@@ -1077,8 +1077,7 @@ impl Interpreter {
         // `crate::vm::vm_capture_cache` for why an address comparison settles
         // "unchanged".
         let tier_addrs = self.env().tier_addrs();
-        if let Some(cached) = self.capture_cache.get(tier_addrs, cc) {
-            let mut env = cached.clone();
+        if let Some(mut env) = self.capture_cache.get(tier_addrs, cc).cloned() {
             self.finish_closure_capture(code, cc, &mut env);
             return env;
         }
@@ -1178,7 +1177,7 @@ impl Interpreter {
         // Import aliases only need this escape gate for re-entrant source EVAL:
         // ordinary module/package execution retains its lexical registry state
         // through the existing module-scope machinery.
-        if self.env().get("__mutsu_in_eval").is_none() {
+        if self.env().get_sym(crate::symbol::wk::in_eval()).is_none() {
             return;
         }
         for name in cc.bare_callee_names() {
