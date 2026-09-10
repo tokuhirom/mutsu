@@ -32,6 +32,25 @@ fn param_display_name(pd: &crate::ast::ParamDef) -> String {
     }
 }
 
+/// The callee's pre-interned Symbol for parameter `idx`, when it handed one over
+/// (see [`Interpreter::bind_function_args_values_with_syms`]). `None` means no
+/// baked table, and the caller interns `pd.name` itself.
+///
+/// The table is index-parallel to `param_defs`, so the failure this guards
+/// against is a *misalignment*: a parameter bound, marked readonly or cleared
+/// under a neighbour's name. The `debug_assert_eq!` makes that loud in CI's
+/// debug runs; `with_syms` drops a table whose length already disagrees.
+fn baked_param_name_sym(baked: &[Symbol], idx: usize, pd: &ParamDef) -> Option<Symbol> {
+    let sym = *baked.get(idx)?;
+    debug_assert_eq!(
+        sym,
+        Symbol::intern(&pd.name),
+        "param_name_syms[{idx}] is not the symbol of param_defs[{idx}] ({:?})",
+        pd.name,
+    );
+    Some(sym)
+}
+
 fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     params.iter().any(|p| {
         !p.starts_with(':')
@@ -547,7 +566,7 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_argspec(param_defs, params, args, None)
+        self.bind_function_args_values_with_syms(param_defs, params, args, None, &[])
     }
 
     /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
@@ -582,8 +601,41 @@ impl Interpreter {
         args: &[Value],
         reads_args_array: Option<bool>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        let result =
-            self.bind_function_args_values_inner(param_defs, params, args, reads_args_array);
+        self.bind_function_args_values_with_syms(param_defs, params, args, reads_args_array, &[])
+    }
+
+    /// [`Interpreter::bind_function_args_values_with_argspec`] plus the callee's
+    /// **pre-interned parameter names**.
+    ///
+    /// Binding a parameter names it several times — the value bind, the type
+    /// constraint, the readonly mark — and every one of those wants a `Symbol`.
+    /// A registered routine already has them:
+    /// [`CompiledFunction::precompute_param_name_syms`](crate::opcode::CompiledFunction::precompute_param_name_syms)
+    /// interns `param_defs[i].name` once at registration time. Handing that slice
+    /// over takes the per-call cost to zero; the benchmark behind #7766 spent
+    /// ~12 `Symbol::intern` calls per `Test::ok` assertion here, the single
+    /// largest remaining bucket.
+    ///
+    /// `param_name_syms` is index-parallel to `param_defs`, or empty. A caller
+    /// that builds `param_defs` by hand (a `FunctionDef`/`SubData` path, a
+    /// synthesized signature) passes `&[]` and every name is interned lazily as
+    /// before. A slice whose length does not match `param_defs` is treated as
+    /// empty rather than trusted, so a stale vector cannot mis-key a binding.
+    pub(crate) fn bind_function_args_values_with_syms(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+        reads_args_array: Option<bool>,
+        param_name_syms: &[Symbol],
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let result = self.bind_function_args_values_inner(
+            param_defs,
+            params,
+            args,
+            reads_args_array,
+            param_name_syms,
+        );
         let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
             // The legacy binding path: a single pointy-block parameter
             // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
@@ -600,7 +652,24 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
         reads_args_array: Option<bool>,
+        param_name_syms: &[Symbol],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        // Index-parallel or nothing: a length mismatch means the slice does not
+        // describe THIS signature (a caller that passed a sibling's vector, or a
+        // `param_defs` mutated after the precompute), and indexing it would bind
+        // a parameter under another one's name. Falling back to the lazy intern
+        // keeps such a caller correct at the old cost.
+        let baked_name_syms: &[Symbol] = if param_name_syms.len() == param_defs.len() {
+            param_name_syms
+        } else {
+            debug_assert!(
+                param_name_syms.is_empty(),
+                "param_name_syms ({}) is neither empty nor parallel to param_defs ({})",
+                param_name_syms.len(),
+                param_defs.len(),
+            );
+            &[]
+        };
         let filtered_args: Vec<Value> = args
             .iter()
             .filter(|arg| !is_internal_named_arg(&unwrap_varref_value((*arg).clone())))
@@ -992,13 +1061,18 @@ impl Interpreter {
             })
             .collect();
         let mut positional_idx = 0usize;
-        for pd in param_defs {
-            // One intern per parameter for the whole per-parameter path below
+        for (param_idx, pd) in param_defs.iter().enumerate() {
+            // One Symbol per parameter for the whole per-parameter path below
             // (value bind, type constraint, readonly mark), instead of one per
-            // helper. Lazy, so an arm that never names the parameter still
-            // interns nothing (#7736).
+            // helper (#7736). Served from the callee's registration-time
+            // `param_name_syms` when the caller had one, so a compiled routine
+            // interns nothing at all here (#7766); otherwise interned lazily, so
+            // an arm that never names the parameter still interns nothing.
             let pd_name_cell = std::cell::OnceCell::new();
-            let pd_name_sym = || *pd_name_cell.get_or_init(|| Symbol::intern(&pd.name));
+            let pd_name_sym = || {
+                baked_param_name_sym(baked_name_syms, param_idx, pd)
+                    .unwrap_or_else(|| *pd_name_cell.get_or_init(|| Symbol::intern(&pd.name)))
+            };
             if pd.onearg {
                 // +@ (single-argument rule slurpy): if exactly one remaining positional
                 // arg is Iterable (Array, List, etc.), use its elements directly.
@@ -2864,7 +2938,7 @@ impl Interpreter {
         // Mark parameters as readonly unless they have `is rw`, `is copy`, or `is raw` traits.
         // Sigilless params (\x) are always writable (they are raw aliases).
         // For `is raw` with non-lvalue args, also mark readonly.
-        for pd in param_defs {
+        for (param_idx, pd) in param_defs.iter().enumerate() {
             if pd.name.is_empty() || pd.name == "__type_only__" || pd.name == "__subsig__" {
                 continue;
             }
@@ -2886,8 +2960,10 @@ impl Interpreter {
             // attribute binds, already skipped above.)
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
             if !is_container_param {
-                // One intern for both arms below (#7736).
-                let pd_name_sym = Symbol::intern(&pd.name);
+                // One Symbol for both arms below (#7736), from the callee's baked
+                // table when there is one (#7766).
+                let pd_name_sym = baked_param_name_sym(baked_name_syms, param_idx, pd)
+                    .unwrap_or_else(|| Symbol::intern(&pd.name));
                 if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
                     self.mark_readonly_sym(pd_name_sym);
                 } else {

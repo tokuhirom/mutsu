@@ -277,6 +277,18 @@ static BOUND_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// `distribute_bound_multidim_slice` on every scalar `SetLocal`/assignment.
 static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for `__mutsu_scalar_bind_no_container::*`
+/// markers (`my $i := 42`, recording that the name owns no Scalar container).
+///
+/// EVERY scalar `my` declaration used to clear this key speculatively, so that a
+/// redeclaration could not inherit an earlier same-named variable's state — an
+/// `env_mut()` (and so a possible CoW deep clone of the frame env) per `my $x`,
+/// for a key that a program without a single `:=`-to-value bind never holds.
+/// Same soundness argument as [`BOUND_SLICE_KEY_SEEN`]: the only creation site
+/// goes through a noting insert, the flag is monotonic, and an over-set only
+/// makes the (correct) clear run.
+static SCALAR_NO_CONTAINER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// Monotonic, process-global flag for the per-element index metadata keys
 /// (`__mutsu_bound_index::*`, `__mutsu_elem_share::*`, `__mutsu_deleted_index::*`).
 /// Their probes run on *every* element write (`@a[i] = x`) and on `:exists`, and
@@ -349,6 +361,13 @@ pub(crate) fn bound_array_slice_possible() -> bool {
     BOUND_SLICE_KEY_SEEN.load(Ordering::Relaxed)
 }
 
+/// True if any `__mutsu_scalar_bind_no_container::*` marker may exist in some
+/// env. See [`SCALAR_NO_CONTAINER_KEY_SEEN`].
+#[inline]
+pub(crate) fn scalar_bind_no_container_possible() -> bool {
+    SCALAR_NO_CONTAINER_KEY_SEEN.load(Ordering::Relaxed)
+}
+
 /// True if any per-element index metadata key may exist in some env. See
 /// [`ELEM_INDEX_META_SEEN`].
 #[inline]
@@ -398,6 +417,8 @@ pub(crate) fn note_env_key(key: &str) {
             BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_array_slice::") {
             BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
+        } else if key.starts_with("__mutsu_scalar_bind_no_container::") {
+            SCALAR_NO_CONTAINER_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_index::")
             || key.starts_with("__mutsu_elem_share::")
             || key.starts_with("__mutsu_deleted_index::")

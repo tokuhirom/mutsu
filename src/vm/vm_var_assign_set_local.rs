@@ -854,11 +854,21 @@ impl Interpreter {
         // `bind_marks_no_container`). Set/cleared per declaration so a later
         // `my $o = 5` of the same name goes back to owning a Scalar.
         if is_vardecl && !code.locals[idx].starts_with(['@', '%', '&']) {
-            let key = Self::scalar_bind_no_container_key(&code.locals[idx]);
             if bind_marks_no_container {
-                self.env_mut().insert(key, Value::TRUE);
-            } else {
-                self.env_mut().remove(&key);
+                // `insert_sym_noting`, not `insert_sym`: this is the only site
+                // that creates the key, so it is what arms
+                // `scalar_bind_no_container_possible` for the clear below.
+                if let Some(sym) = code.scalar_no_container_sym(idx) {
+                    self.env_mut().insert_sym_noting(sym, Value::TRUE);
+                }
+            } else if crate::env::scalar_bind_no_container_possible()
+                && let Some(sym) = code.scalar_no_container_sym(idx)
+            {
+                // Speculative clear, so a redeclaration cannot inherit an
+                // earlier same-named variable's "owns no container" state.
+                // Skipped entirely — no `env_mut()`, so no CoW deep clone — in
+                // the common program that never made such a binding.
+                self.env_mut().remove_sym(sym);
             }
         }
 

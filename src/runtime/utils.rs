@@ -65,6 +65,21 @@ pub(crate) fn bound_array_slice_key(name: &str) -> String {
     format!("__mutsu_bound_array_slice::{name}")
 }
 
+/// The env key recording that a `$` name was `:=`-bound straight to a value and
+/// so owns no Scalar container (`my $i := 42`). Written at the declaration's
+/// store and speculatively cleared on every other scalar declaration, so — like
+/// the four keys above — a hot path pre-interns it per local rather than
+/// rebuilding it per store (`CompiledCode::locals_scalar_no_container_sym`).
+///
+/// The `$` is trimmed because the compiler stores scalars under their bare name,
+/// but a caller that still holds the sigiled spelling must land on the same key.
+pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
+    format!(
+        "__mutsu_scalar_bind_no_container::{}",
+        name.trim_start_matches('$')
+    )
+}
+
 /// True for the per-call-site internal temp names of the Index-argument `is rw`
 /// writeback machinery (`__mutsu_index_rw_arg_N` / `__mutsu_index_rw_orig_N` /
 /// `__mutsu_call_result_N`, see `compile_call_arg_with_escape` /
