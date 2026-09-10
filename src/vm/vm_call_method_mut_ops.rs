@@ -792,6 +792,51 @@ impl Interpreter {
         } else {
             target
         };
+        // Unhandled Failure explosion: calling a non-Failure method on an
+        // unhandled Failure should throw before native dispatch can mistake
+        // the Failure for an ordinary Cool value (for example, `Failure.lines`
+        // reaches the native Str/Cool method table).
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && class_name.resolve() == "Failure"
+            && !target.is_failure_handled()
+            && !matches!(
+                method,
+                "exception"
+                    | "handled"
+                    | "self"
+                    | "defined"
+                    | "Bool"
+                    | "so"
+                    | "not"
+                    | "gist"
+                    | "Str"
+                    | "raku"
+                    | "perl"
+                    | "WHICH"
+                    | "WHERE"
+                    | "HOW"
+                    | "WHY"
+                    | "WHO"
+                    | "backtrace"
+                    | "is-handling"
+                    | "WHAT"
+                    | "DEFINITE"
+                    | "VAR"
+                    | "^name"
+                    | "isa"
+                    | "does"
+                    | "ACCEPTS"
+                    | "Failure"
+                    | "sink"
+            )
+            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "failure-explode",
+            );
+            return Err(err);
+        }
         if method == "value"
             && args.is_empty()
             && let Some(weight) = self.quanthash_weight_pair_value(target.unwrap_varref())
