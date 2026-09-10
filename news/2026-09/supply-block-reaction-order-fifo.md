@@ -18,33 +18,41 @@ Three values in, and `@fired` came out as `10 30 20` about as often as
 `10 20 30`. `raku` produced `10 20 30` 20 times out of 20 on the same snippet,
 including under 2x CPU oversubscription.
 
-## Two mechanisms, both real
+## Two mechanisms
 
-**The supply block's serialize lock was a barging lock.** Raku guarantees "you
-can only be in one `whenever` block at a time" per `supply {}` instance, and
-mutsu enforces that with a per-block group lock held across the callback
-(`acquire_supply_serialize`). But its waiters parked on a condvar and, on wake,
-whoever won the mutex race took the lock — so a reaction that had been waiting
-since before the current holder even started could be overtaken indefinitely by
-a steady stream of new emits. Rakudo's own `Lock::Async` queues its waiters as a
-FIFO of `Promise`s, and supply-block output order is *observable*, so this was
-not a fairness nicety. The lock is a ticket lock now: arrival order decides.
+**The supply block's serialize lock decides the order, and nothing fed it one.**
+Raku guarantees "you can only be in one `whenever` block at a time" per
+`supply {}` instance, and mutsu enforces that with a per-block group lock held
+across the callback. But the lock is first-come-first-served, so the order it
+publishes is the order threads happen to arrive in.
 
-**Promise-driven reactions did not reach that lock in a meaningful order.** A
-nested `whenever <Promise>` body runs on whichever thread resolves the promise
+**And promise-driven reactions arrived in no order at all.** A nested
+`whenever <Promise>` body runs on whichever thread resolves the promise
 (`SharedPromise::dispatch_waiters`), and each resolution is submitted as its own
 pooled task. With three promises kept in quick succession, three pooled workers
 raced each other's wake-up latency for which body reached the supply block
-first. Making the lock fair only halved the failure rate, because the *arrival*
-order at a fair lock was itself the race.
+first.
+
+An early attempt made the group lock itself a strict FIFO ticket lock, on the
+theory that Rakudo's `Lock::Async` queues its waiters and mutsu should too. That
+only halved the failure rate -- the *arrival* order at a fair lock was itself the
+race -- and it cost real throughput: a hot `Supply.act` stream pays a context
+switch per handoff under a strict queue, which dropped Log::Async's
+`05-concurrent` from 400 delivered messages to 159 inside its two-second window.
+The lock stays first-come-first-served.
 
 The order those reactions should come out in is fixed long before any worker
 wakes: it is the order the promises were resolved in, on one thread, in program
 order. So that is where the place in the queue is now taken. A waiter registered
 via the new `on_resolve_in_supply_group` carries the enclosing block's serialize
 group; `dispatch_waiters` reserves a `SupplyTicket` for it on the resolving
-thread, before the pooled task is even submitted, and the worker redeems that
-ticket instead of racing for the lock. Nothing about the pool changes — tasks
+thread, before the pooled task is even submitted, and the worker waits for that
+ticket's turn before taking the lock. The sequencer that hands out the tickets
+sits beside the group lock under its own mutex rather than inside it, so a
+reaction that took no ticket -- every `Supply.act` callback, every ordinary
+`whenever` -- neither waits on it nor advances it, and pays nothing. Each parked
+ticket holder gets its own condvar, so a handoff wakes exactly the one thread
+whose turn it is. Nothing about the pool changes — tasks
 still run wherever there is a worker, they just enter the supply block in the
 order their sources produced them. An unredeemed ticket (a panicking task, a
 waiter dropped during unwind) cancels itself on drop, so a dispatch that never
