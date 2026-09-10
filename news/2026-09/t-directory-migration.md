@@ -34,6 +34,23 @@ why the first full-suite attempt never reached the TAP files at all.
 `docs/t-directory-layout.md` now states the rule directly: address a fixture from the repository
 root, never from the test file.
 
+## An order dependency the reshuffle exposed
+
+`prove` walks the tree in a different order now, and that surfaced a latent bug in CI rather than
+in the tests: six IO and lazy-seq files died at their first `spurt` because the repository-relative
+`tmp/` scratch directory did not exist.
+
+Two dozen tests write scratch files to `tmp/`, which is gitignored and therefore absent from a
+fresh checkout. `make test`, the `gc-stress` TAP step and the `jit-stress` TAP step all begin with
+`mkdir -p tmp`; **the `test` job's TAP step was the only one of the four that did not**, and got
+away with it because the flat ordering happened to run something that created the directory before
+anything needed it. That is now fixed, so the step no longer depends on execution order.
+
+The evidence was clean: `gc-stress` ran the identical 3,950-file suite on the same commit and
+passed, differing only in that `mkdir -p tmp`. Removing `tmp/` locally reproduced the exact CI
+symptom (`exited 255`, "planned N but ran 0"), and restoring it made the same `prove -r -j4`
+command pass.
+
 ## What it looks like
 
 Ten of the sixteen categories carry a second level, because a category past roughly 200 files is
