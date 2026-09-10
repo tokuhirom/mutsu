@@ -1,0 +1,88 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Test::Scheduler"
+    ],
+    "unresolved": []
+  },
+  "dist": "Concurrent::Progress",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 60,
+        "plan": 60,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/min-interval.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Concurrent::Progress": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONCURRENT_PROGRESS/c2b1dec774d24434d4ad4880d3e819d209885e61.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 84,
+    "baseline_files": 2,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "1.2"
+}

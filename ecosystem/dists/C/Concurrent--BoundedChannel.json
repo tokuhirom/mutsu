@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Concurrent::BoundedChannel",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "flaky": true,
+      "mutsu": {
+        "first_failure": "Invocant of method 'send' must be an object instance of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": 39,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 8.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Concurrent::BoundedChannel": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONCURRENT_BOUNDEDCHANNEL/9ed7e5076b4d9f5f96a3e544fb27225de9de7823.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.4.1"
+}

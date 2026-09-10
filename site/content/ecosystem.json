@@ -1,12 +1,12 @@
 {
  "counts": {
   "corpus": 1623,
-  "distributions": 223,
-  "graded": 113,
-  "green": 59
+  "distributions": 251,
+  "graded": 127,
+  "green": 61
  },
- "coverage": 13.7,
- "dist_parity": 52.2,
+ "coverage": 15.5,
+ "dist_parity": 48.0,
  "distributions": [
   {
    "axis": "pure",
@@ -182,11 +182,29 @@
   {
    "axis": "pure",
    "baseline": 1,
+   "dist": "Chatnik",
+   "passed": 0,
+   "reason": "circular module dependency detected: Chatnik -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+   "status": "red",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
    "dist": "Chinese",
    "passed": 0,
    "reason": "Unknown function: 且",
    "status": "red",
    "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 5,
+   "dist": "ClassX::StrictConstructor",
+   "passed": 0,
+   "reason": "Can create an instance of a Class that does StrictClass",
+   "status": "red",
+   "version": "0.2"
   },
   {
    "axis": "pure",
@@ -205,6 +223,60 @@
    "reason": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&proto'; expected Callable but got Str (proto)",
    "status": "red",
    "version": "0.0.5"
+  },
+  {
+   "axis": "guts",
+   "baseline": 1,
+   "dist": "CodeUnit",
+   "passed": 0,
+   "reason": "Unsupported nqp:: op: nqp::getcomp",
+   "status": "red",
+   "version": "0.0.11"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Commands",
+   "passed": 0,
+   "reason": "Cannot bind to %!commands",
+   "status": "red",
+   "version": "0.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Compress::LZString",
+   "passed": 0,
+   "reason": "Too many positionals passed; expected 0 arguments but got more",
+   "status": "red",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "guts",
+   "baseline": 8,
+   "dist": "CompUnit::Util",
+   "passed": 0,
+   "reason": "load",
+   "status": "red",
+   "version": "0.7.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Concurrent::Progress",
+   "passed": 0,
+   "reason": "No such method 'share' for invocant of type 'Supply'",
+   "status": "red",
+   "version": "1.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Concurrent::Queue",
+   "passed": 0,
+   "reason": "Can enqueue a value",
+   "status": "red",
+   "version": "1.2"
   },
   {
    "axis": "pure",
@@ -469,12 +541,48 @@
   },
   {
    "axis": "pure",
+   "baseline": 6,
+   "dist": "Chronic",
+   "passed": 4,
+   "reason": "SWEEP-TIMEOUT",
+   "status": "partial",
+   "version": "0.0.14"
+  },
+  {
+   "axis": "pure",
    "baseline": 2,
    "dist": "CLDR::List",
    "passed": 1,
    "reason": "root: 3 Num elements",
    "status": "partial",
    "version": "*"
+  },
+  {
+   "axis": "pure",
+   "baseline": 8,
+   "dist": "Color",
+   "passed": 5,
+   "reason": ".to-string()",
+   "status": "partial",
+   "version": "1.004001"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Color::Names",
+   "passed": 2,
+   "reason": "X11 color-data is sane",
+   "status": "partial",
+   "version": "2.0.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "ComfyUI::API",
+   "passed": 1,
+   "reason": "render dies on missing variable",
+   "status": "partial",
+   "version": "0.2.2"
   },
   {
    "axis": "pure",
@@ -934,6 +1042,78 @@
    "reason": "CellularAutomata: circular module dependency detected: CellularAutomata -> CellularAutomata::Scan -> Data::Transformers -> Data::TypeSystem::Predicates -> Data:",
    "status": "blocked_load",
    "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Chemistry::Stoichiometry",
+   "passed": 0,
+   "reason": "Chemistry::Stoichiometry: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Math__Matrix/dist/lib/Math/Matrix.rakumod",
+   "status": "blocked_load",
+   "version": "0.1.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Clu",
+   "passed": 0,
+   "reason": "Clu::Ingester: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/TOML/lib/TOML/NQP.rakumod",
+   "status": "blocked_load",
+   "version": "1.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Code::Coverable",
+   "passed": 0,
+   "reason": "Code::Coverable: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-7wqvi8lf/dist/Code-Coverable-0.0.13/lib/Code/Coverable.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.13"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Code::Coverage",
+   "passed": 0,
+   "reason": "Code::Coverage: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Code__Coverable/Code-Coverable-0.0.13/lib/Code/Coverable.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.8"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Collection",
+   "passed": 0,
+   "reason": "Collection: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/PrettyDump/dist/lib/PrettyDump.rakumod",
+   "status": "blocked_load",
+   "version": "0.18.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Color::DirColors",
+   "passed": 0,
+   "reason": "Color::DirColors: Unknown name for export: 'stat'",
+   "status": "blocked_load",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Color::Palette",
+   "passed": 0,
+   "reason": "Color::Palette: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-rar5otge/dist/dist/lib/Color/Palette.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Concurrent::PriorityQueue",
+   "passed": 0,
+   "reason": "Concurrent::PriorityQueue: Unsupported nqp:: op: nqp::list",
+   "status": "blocked_load",
+   "version": "0.0.2"
   },
   {
    "axis": "pure",
@@ -1640,11 +1820,29 @@
   {
    "axis": "pure",
    "baseline": 1,
+   "dist": "ClassicalChinese",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
    "dist": "CLI::Version",
    "passed": 1,
    "reason": "",
    "status": "green",
    "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Clipboard",
+   "passed": 3,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.2"
   },
   {
    "axis": "pure",
@@ -1989,6 +2187,60 @@
    "version": "0.0.1"
   },
   {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Collection-Raku-Documentation",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.12.3"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Compress::Bzip2",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.4.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Compress::Bzip2::Raw",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.2.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Compress::PDF",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.5.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Concurrent::BoundedChannel",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.4.1"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Concurrent::PChannel",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.4"
+  },
+  {
    "axis": "native",
    "baseline": 0,
    "dist": "CRoaring",
@@ -2016,7 +2268,7 @@
    "version": "v0.0.3"
   }
  ],
- "file_parity": 65.3,
+ "file_parity": 61.0,
  "generated_from": "ecosystem/dists",
  "has_chart": false,
  "measured": {

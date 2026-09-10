@@ -1,0 +1,86 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Concurrent::Queue",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Can enqueue a value",
+        "nok": 17,
+        "ok": 12,
+        "plan": 29,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: cas",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/stress.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Concurrent::Queue": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONCURRENT_QUEUE/cf48fc6d08d92688b80d779a868f4ac39a3edec4.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 33,
+    "baseline_files": 2,
+    "mutsu_assertions": 12,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "1.2"
+}
