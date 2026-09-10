@@ -17,6 +17,7 @@ const STRINGS = {
     'nav.repl': 'REPL',
     'nav.embed': 'Embed',
     'nav.batteries': 'Bundled Libraries',
+    'nav.ecosystem': 'Ecosystem',
     'nav.bench': 'Benchmarks',
     'nav.github': 'GitHub',
 
@@ -113,6 +114,7 @@ const STRINGS = {
     'nav.repl': 'REPL',
     'nav.embed': '組み込み',
     'nav.batteries': '同梱ライブラリ',
+    'nav.ecosystem': 'エコシステム',
     'nav.bench': 'ベンチマーク',
     'nav.github': 'GitHub',
 
@@ -250,6 +252,7 @@ const NAV = [
   { key: 'nav.repl', href: 'repl.html', page: 'repl' },
   { key: 'nav.embed', href: 'embed-demo.html', page: 'embed' },
   { key: 'nav.batteries', href: 'batteries.html', page: 'batteries' },
+  { key: 'nav.ecosystem', href: 'ecosystem.html', page: 'ecosystem' },
   { key: 'nav.bench', href: 'bench-trend.html', page: 'bench' },
 ];
 

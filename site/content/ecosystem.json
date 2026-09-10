@@ -1,0 +1,19 @@
+{
+ "counts": {
+  "distributions": 0,
+  "graded": 0,
+  "green": 0
+ },
+ "dist_parity": 0.0,
+ "distributions": [],
+ "file_parity": 0.0,
+ "generated_from": "ecosystem/dists",
+ "has_chart": false,
+ "measured": {
+  "date": null,
+  "host": null,
+  "mutsu_commit": null,
+  "mutsu_version": null,
+  "raku_version": null
+ }
+}
