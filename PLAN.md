@@ -100,6 +100,14 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 
 ### B4. Module-compatibility frontier (the base of batteries)
 
+- [ ] **★Ecosystem parity KPI** — run every zef distribution's own test suite on **both** rakudo and
+      mutsu and publish the difference as the project's headline compatibility number, with
+      per-distribution machine-readable records in `ecosystem/`.
+      Decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md);
+      operations manual and phases (P1-P5, one PR each):
+      [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
+      tracking issue [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
+      Its P4 (scheduled report-only sweep) also closes B1's "working-module regression CI".
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.

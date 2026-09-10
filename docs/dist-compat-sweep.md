@@ -241,6 +241,16 @@ Time::Duration · Time::Duration::Parser · Trap · Util::Uuencode · ValueList
 1. **Level 2 — run each dist's own test suite** (not just `use`): after
    `load_ok`, run `t/`/`.rakutest` under mutsu with deps installed. This catches
    runtime (not just load) divergence and is the truer "runs on mutsu" measure.
+   **This is now its own campaign, designed in
+   [ADR-0085](adr/0085-ecosystem-testsuite-parity-measurement.md) with the
+   operations manual in [docs/ecosystem-parity.md](ecosystem-parity.md)**
+   ([#7785](https://github.com/tokuhirom/mutsu/issues/7785)): an exhaustive,
+   re-runnable ledger over the whole fez corpus that runs each suite on
+   **both** rakudo and mutsu and publishes the difference as the project KPI.
+   This sweep stays what it is — the *sampling diagnostic* that buckets load
+   failures by root cause and feeds `TODO_dist/TICKETS.md`; the two will share
+   one implementation of the index reader, tarball cache, sandbox wrapper and
+   TAP parser.
 2. **Dep-closure sweep**: `mzef install` each sampled dist into a shared throwaway
    HOME so `missing_dep` collapses and second-order bugs (deps that themselves
    fail) surface.
