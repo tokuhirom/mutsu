@@ -3,7 +3,7 @@
 //! uncompiled `MethodDef` for a `proto method`/`proto submethod` body on
 //! EVERY call, forcing `run_resolved_method_celled`'s on-demand-compile path
 //! to recompile the same body from AST every time instead of once. A
-//! recursive `proto method` dispatch (`t/where-named-param-sibling-ref.t`'s
+//! recursive `proto method` dispatch (`t/routines/signature/where-named-param-sibling-ref.t`'s
 //! binomial-triangle shape) used to trigger 265 recompiles; the fix caches
 //! the compiled body on `Registry::proto_compiled_cache`, keyed by
 //! `(owner, method_name)`. A regression here reintroduces the per-call
@@ -15,6 +15,8 @@ use std::process::Command;
 fn recursive_proto_method_body_compiles_once_not_per_call() {
     let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("t")
+        .join("routines")
+        .join("signature")
         .join("where-named-param-sibling-ref.t");
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mutsu"));
     cmd.arg(&script);

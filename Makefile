@@ -62,6 +62,7 @@ check-flaky-list:
 
 check-t-layout:
 	scripts/check-t-layout.sh
+	python3 scripts/migrate-t-layout.py --check
 
 roast:
 	@mkdir -p tmp

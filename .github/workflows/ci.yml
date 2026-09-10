@@ -197,7 +197,16 @@ jobs:
         # widen the budget rather than quarantining a real (if heavy) test.
         # Kept at 45 on the release binary too: the budget exists for the
         # heaviest file under contention, and headroom there is free.
-        run: prove -r -j4 --merge -e 'scripts/run-t-test.sh' t/
+        # `mkdir -p tmp` like the gc-stress and jit-stress TAP steps and
+        # `make test`: two dozen tests write scratch files to a relative
+        # `tmp/`, which is gitignored and so absent from a fresh checkout.
+        # This step was the only one of the four without it, and got away
+        # with it only because the flat t/ ordering happened to run
+        # something that created the directory first. Nesting t/ reshuffled
+        # the order and six IO/lazy-seq files started dying at `spurt`.
+        run: |
+          mkdir -p tmp
+          prove -r -j4 --merge -e 'scripts/run-t-test.sh' t/
         env:
           MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
