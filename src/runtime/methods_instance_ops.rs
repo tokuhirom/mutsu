@@ -1450,6 +1450,22 @@ impl Interpreter {
             {
                 return result;
             }
+            // A few built-in instance representations carry their native
+            // identity in an attribute named `name` (for example the Pair
+            // values used by bundled modules). Keep that compatibility path
+            // for built-in classes only. A user class must not inherit this
+            // storage convention: an undeclared `.name` must be a genuine
+            // method-not-found error.
+            if method == "name"
+                && args.is_empty()
+                && Self::is_builtin_type(class_name.resolve().as_str())
+            {
+                return Ok(attributes
+                    .as_map()
+                    .get("name")
+                    .cloned()
+                    .unwrap_or(Value::NIL));
+            }
             if method == "clone"
                 && let Some(result) = self.native_instance_clone_value(&target, &args)
             {
@@ -2206,12 +2222,10 @@ impl Interpreter {
             },
             "name"
                 if args.is_empty()
-                    && matches!(
+                    && !matches!(
                         target.view(),
-                        ValueView::Routine { .. }
-                            | ValueView::Package(_)
-                            | ValueView::Str(_)
-                            | ValueView::Sub(_)
+                        ValueView::Instance { class_name, .. }
+                            if !Self::is_builtin_type(class_name.resolve().as_str())
                     ) =>
             {
                 match target.view() {
@@ -2236,7 +2250,11 @@ impl Interpreter {
                     ValueView::Sub(data) => {
                         Ok(Value::str(format_operator_name(&data.name.resolve())))
                     }
-                    _ => unreachable!("the .name receiver was checked above"),
+                    // Preserve the legacy fallback for non-instance built-in
+                    // values (notably Pair and Bool). User-class instances do
+                    // not enter this arm and reach the real method-not-found
+                    // path below.
+                    _ => Ok(Value::NIL),
                 }
             }
             "package" if args.is_empty() => match target.view() {
