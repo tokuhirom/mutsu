@@ -24,6 +24,16 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
+        // method by NAME and answer out of the stringified receiver, which for
+        // a type object is its gist -- so `$undefined.uc` answered `"(ANY)"`.
+        // The interpreter entry (`call_method_with_values`) carries the twin of
+        // this gate; the OPCODE path reaches the cascades without passing
+        // through it.
+        if let Some(err) = crate::runtime::cool_method_not_found_on_any(target, method_sym.as_str())
+        {
+            return Some(Err(err));
+        }
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by
         // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —

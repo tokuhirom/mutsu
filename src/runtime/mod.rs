@@ -532,6 +532,7 @@ mod accessors_resolve;
 mod accessors_stack;
 mod accessors_stash;
 mod accessors_state;
+mod any_cool_method_gate;
 mod attr_build_defaults;
 mod builtins;
 mod builtins_atomic;
@@ -852,6 +853,7 @@ pub(crate) mod wasm_sched;
 mod which_identity;
 /// Elastic worker pool for short-lived user tasks (ADR-0020).
 pub(crate) mod worker_pool;
+pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
 pub(crate) use self::locals::Locals;
 pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;

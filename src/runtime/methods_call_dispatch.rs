@@ -167,6 +167,15 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // `Any` is not a `Cool`, so it does not answer `Cool`'s methods. Gated
+        // here, ahead of every native/instance handler, because the by-name
+        // native cascades below recognize the NAME and then stringify the
+        // receiver -- a type object stringifies to its gist, so
+        // `$undefined.comb(/\w+/)` answered `("Any",)` instead of throwing
+        // (#7773). See `any_cool_method_gate` for the derivation of the set.
+        if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
+            return Err(err);
+        }
         // `X::Promise::Broken` is composed into a broken promise's cause by
         // `Promise.result`, and the role overrides `gist` (only `gist` — see
         // `promise_broken_gist`). mutsu registers the role with no method
