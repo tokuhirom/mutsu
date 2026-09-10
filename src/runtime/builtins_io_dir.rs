@@ -70,7 +70,7 @@ impl Interpreter {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(
-                    "Failed to chdir to '{}': no such file or directory",
+                    "Failed to change the working directory to '{}': does not exist",
                     requested
                 ),
             ));
@@ -78,13 +78,19 @@ impl Interpreter {
         if require_dir && !absolute_target.is_dir() {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': not a directory", requested),
+                format!(
+                    "Failed to change the working directory to '{}': is not a directory",
+                    requested
+                ),
             ));
         }
         if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': permission denied", requested),
+                format!(
+                    "Failed to change the working directory to '{}': permission denied",
+                    requested
+                ),
             ));
         }
         let canonical = fs::canonicalize(&absolute_target).unwrap_or(absolute_target);
@@ -157,7 +163,7 @@ impl Interpreter {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(
-                    "Failed to chdir to '{}': no such file or directory",
+                    "Failed to change the working directory to '{}': does not exist",
                     requested
                 ),
             ));
@@ -165,13 +171,19 @@ impl Interpreter {
         if require_dir && !absolute_target.is_dir() {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': not a directory", requested),
+                format!(
+                    "Failed to change the working directory to '{}': is not a directory",
+                    requested
+                ),
             ));
         }
         if !has_required_mode_bits(&absolute_target, require_read, require_write, require_exec) {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
-                format!("Failed to chdir to '{}': permission denied", requested),
+                format!(
+                    "Failed to change the working directory to '{}': permission denied",
+                    requested
+                ),
             ));
         }
         let saved = self.env.get("$*CWD").cloned();
