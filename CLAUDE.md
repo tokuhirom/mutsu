@@ -488,17 +488,19 @@ anything not on `origin` is not saved.
 ### Remote containers self-provision via a SessionStart hook
 
 Sessions started from the Claude app / Claude Code on the web get a **fresh container** whose base
-image usually ships a rustc older than this repo compiles under and no `raku` at all. Both are fixed
-automatically by `.claude/hooks/session-start.sh`, registered as a `SessionStart` hook in
+image usually ships a rustc older than this repo compiles under, no `raku` at all, and none of the
+C shared libraries the bundled batteries `dlopen`. All three are fixed automatically by
+`.claude/hooks/session-start.sh`, registered as a `SessionStart` hook in
 `.claude/settings.json`: it installs the highest Rust version declared by the repo (the `ci.yml`
 toolchain pin, `Cargo.toml`'s `rust-version`, `.mise.toml`) via rustup, runs
-`.agents/skills/install-raku/install-raku.sh` when `raku` is missing, and warms the crate cache with
-`cargo fetch`. It is idempotent (~0.3s when everything is already in place) and does nothing on a
-local checkout unless `MUTSU_SETUP_FORCE=1` is set — a developer machine is pinned by `.mise.toml`
-and owns its own toolchain.
+`.agents/skills/install-raku/install-raku.sh` when `raku` is missing, apt-installs the native
+libraries listed in its `NATIVE_LIBS` array (currently just `libmysqlclient21`, which DBIish's mysql
+driver needs), and warms the crate cache with `cargo fetch`. It is idempotent (~0.14s when
+everything is already in place) and does nothing on a local checkout unless `MUTSU_SETUP_FORCE=1`
+is set — a developer machine is pinned by `.mise.toml` and owns its own toolchain.
 
-So **do not hand-install rustc or rakudo at the start of a remote session** — it has already
-happened, and the `raku` oracle is available there too. If a build still fails with `E0658`, the hook
+So **do not hand-install rustc, rakudo or `libmysqlclient` at the start of a remote session** — it
+has already happened, and the `raku` oracle is available there too. If a build still fails with `E0658`, the hook
 did not run (check for its `session-start: environment ready` line) and
 `.claude/skills/rustc-too-old/SKILL.md` applies. Whenever a version pin moves, the hook follows it
 with no edit; only the *sources* of the pins are hardcoded, so add a new one there if the repo ever

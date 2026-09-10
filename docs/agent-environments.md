@@ -73,13 +73,21 @@ Two consequences worth spelling out:
   `pull_request_read`/`get_check_runs` again after doing other work, or use
   `subscribe_pr_activity` so CI results and review comments wake the session.
 
-## Provisioning: rust and raku
+## Provisioning: rust, raku and the native C libraries
 
 `.claude/hooks/session-start.sh` (registered as a `SessionStart` hook in `.claude/settings.json`)
 installs the highest Rust version the repo declares, runs `.agents/skills/install-raku/install-raku.sh`
-when `raku` is missing, and warms the crate cache with `cargo fetch`. It is idempotent (~0.3s when
-everything is in place) and does nothing on a local checkout unless `MUTSU_SETUP_FORCE=1` is set —
-a developer machine is pinned by `.mise.toml` and owns its own toolchain.
+when `raku` is missing, installs the C shared libraries the bundled batteries `dlopen`, and warms
+the crate cache with `cargo fetch`. It is idempotent (~0.3s when everything is in place) and does
+nothing on a local checkout unless `MUTSU_SETUP_FORCE=1` is set — a developer machine is pinned by
+`.mise.toml` and owns its own toolchain.
+
+The native-library list is the `NATIVE_LIBS` array at the top of `setup_native_libs()`, one
+`"<soname> <apt package>"` row each. It currently holds a single entry, `libmysqlclient.so.21` /
+`libmysqlclient21` (`libpq` and `libsqlite3` already ship in the base image). Note that
+`default-libmysqlclient-dev` is *not* a substitute: on Ubuntu it pulls MariaDB's `libmariadb.so.3`,
+which DBIish's `NativeLibs::Searcher.try-versions('mysqlclient', 16..21)` does not match. Installing
+it costs about 2s on a cold container; the whole hook then takes ~0.14s on every later run.
 
 So **do not hand-install rustc or rakudo at the start of a remote session** — it has already
 happened, and `raku` is available as the oracle. If a build still fails with `E0658`, the hook did
@@ -136,18 +144,23 @@ Two things this list is not:
 ## Environment-only `scripts/battery-testsuite.sh` failures
 
 The battery gate is not part of CI (it runs at release time, and on demand when a change can affect
-a bundled library's own code paths). In a remote container it cannot come back green either, for one
-reason: **`libmysqlclient` is not installed**, so DBIish's MySQL files cannot run. The tell is a
-`NativeCall: symbol 'mysql_init' not found in 'this process': dlsym failed` raised from
+a bundled library's own code paths). Historically it could not come back green in a remote container
+for one reason: **`libmysqlclient` was not installed**, so DBIish's MySQL files could not run. The
+tell was a `NativeCall: symbol 'mysql_init' not found in 'this process': dlsym failed` raised from
 `DBDish/mysql.rakumod`, and a `FAIL(ok=0/N,notok=0)` — zero assertions ran, none failed.
+
+**The `SessionStart` hook now installs `libmysqlclient21`** (see "Provisioning" above), so this
+should no longer happen. If you do see that shape:
 
 | Files | Shape | Why |
 |---|---|---|
 | `DBIish/24-mysql-types.rakutest`, `24-mysql-types-json`, `25-mysql-common`, `26-mysql-blob`, `27-mysql-datetime`, `28-mysql-connection-lock` | `FAIL(ok=0/N,notok=0)`, or a `timeout 120` part-way through | no `libmysqlclient` in the container |
 
-`ldconfig -p | grep -c mysql` returning `0` confirms it. The same two caveats as the roast list
-above apply: confirm the failing set is a subset of these *by name*, and a `notok` greater than zero
-in any of them is a real failure, not this.
+`ldconfig -p | grep -c mysql` returning `0` confirms it, and means the hook did not run or could not
+reach the archive — re-run it by hand with `MUTSU_SETUP_FORCE=1 .claude/hooks/session-start.sh`
+rather than treating the failures as environmental. The same two caveats as the roast list above
+apply: confirm the failing set is a subset of these *by name*, and a `notok` greater than zero in any
+of them is a real failure, not this.
 
 Run the gate **alone** — two of them in a shared `tmp/battery-testsuite` workdir produce a false
 REGRESSION — and remember it needs network access to fetch each upstream suite at its pinned commit.
