@@ -417,8 +417,13 @@ impl Interpreter {
             return result.map(|v| (v, None));
         }
         let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
-        let remaining =
-            self.deferral_tail_entries(receiver_class_name, method_name, &args, &method_def);
+        let remaining = self.deferral_tail_entries(
+            receiver_class_name,
+            method_name,
+            &args,
+            &method_def,
+            &inv_value,
+        );
         // A user-overridden grammar `parse`/`subparse`/`parsefile` still needs an MRO
         // frame even with no further USER candidate, so a `nextsame`/`nextwith` inside
         // it can defer to the NATIVE grammar parse — the base candidate that is not a

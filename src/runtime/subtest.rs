@@ -161,22 +161,42 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    fn split_whenever_body_phasers(body: &[Stmt]) -> (Vec<Stmt>, Vec<Vec<Stmt>>, Vec<Vec<Stmt>>) {
+    fn split_whenever_body_phasers(body: &[Stmt]) -> super::WheneverBodySplit {
         let mut main = Vec::new();
         let mut last = Vec::new();
         let mut quit = Vec::new();
         for stmt in body {
             if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
-                    PhaserKind::Last => last.push(body.clone()),
-                    PhaserKind::Quit => quit.push(body.clone()),
+                    PhaserKind::Last => last.push(std::sync::Arc::new(body.clone())),
+                    PhaserKind::Quit => quit.push(std::sync::Arc::new(body.clone())),
                     _ => main.push(stmt.clone()),
                 }
             } else {
                 main.push(stmt.clone());
             }
         }
-        (main, last, quit)
+        (std::sync::Arc::new(main), last, quit)
+    }
+
+    /// [`Self::split_whenever_body_phasers`], memoized per parse site.
+    ///
+    /// The split is a pure function of the body, so every registration from one
+    /// `whenever` literal can share one set of `Arc`s -- which is both an
+    /// O(body) AST clone saved per registration and what lets the callback
+    /// `Sub` carry a *stable* body identity, so the carrier compile cache can
+    /// serve it. See [`super::WheneverBodySplit`].
+    fn whenever_body_split(
+        &mut self,
+        body: &std::sync::Arc<Vec<Stmt>>,
+    ) -> super::WheneverBodySplit {
+        let key = super::WheneverBodyKey(std::sync::Arc::clone(body));
+        if let Some(hit) = self.whenever_body_splits.get(&key) {
+            return hit.clone();
+        }
+        let split = Self::split_whenever_body_phasers(body);
+        self.whenever_body_splits.insert(key, split.clone());
+        split
     }
 
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
@@ -363,7 +383,7 @@ impl Interpreter {
         yields_value: bool,
         param: &Option<String>,
         param_type: &Option<String>,
-        body: &[Stmt],
+        body: &std::sync::Arc<Vec<Stmt>>,
         owned_lexicals: &[Symbol],
     ) -> Result<Value, RuntimeError> {
         let whenever_id = crate::runtime::native_methods::next_whenever_id();
@@ -417,7 +437,7 @@ impl Interpreter {
             ));
         }
 
-        let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
+        let (main_body, last_bodies, quit_bodies) = self.whenever_body_split(body);
         // The `supply` block this `whenever` is written in — its body is what is
         // running right now, so this is unambiguous. Stamped onto every callback
         // below so dispatch can re-establish it as the innermost active emitter
@@ -656,30 +676,41 @@ impl Interpreter {
             // explicitly rather than trusting `ran.is_ok()`, since a
             // converted die returns `Ok` too (the conversion absorbs it).
             let emitter_supplier_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
-            shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
-                if status == "Kept" {
-                    let ran = thread_interp.call_supply_tap(callback, vec![result], true);
-                    let quit_fired = emitter_supplier_id
-                        .map(|sid| {
-                            crate::runtime::native_methods::supplier_snapshot(sid)
-                                .2
-                                .is_some()
-                        })
-                        .unwrap_or(false);
-                    if ran.is_ok()
-                        && !quit_fired
-                        && let Some(last_cb) = last_cb
-                    {
-                        let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+            // The enclosing supply block's emitter id is also its serialize
+            // group, so handing it to `on_resolve` makes the thread that
+            // resolves the promise reserve this body's place in the block
+            // before the pooled worker that will run it is even woken. That is
+            // what keeps N nested `whenever <Promise>` bodies -- one created
+            // per value by an outer `whenever`, each on its own promise -- in
+            // the order their promises were kept, instead of in whichever
+            // order N pooled workers happened to wake up in (#7811).
+            shared.on_resolve_in_supply_group(
+                Box::new(move |status, result, _output, _stderr| {
+                    if status == "Kept" {
+                        let ran = thread_interp.call_supply_tap(callback, vec![result], true);
+                        let quit_fired = emitter_supplier_id
+                            .map(|sid| {
+                                crate::runtime::native_methods::supplier_snapshot(sid)
+                                    .2
+                                    .is_some()
+                            })
+                            .unwrap_or(false);
+                        if ran.is_ok()
+                            && !quit_fired
+                            && let Some(last_cb) = last_cb
+                        {
+                            let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+                        }
+                    } else if let Some(quit_cb) = quit_cb {
+                        let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
                     }
-                } else if let Some(quit_cb) = quit_cb {
-                    let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
-                }
-                // One-shot source complete: leave the enclosing done group.
-                if let Some(marker) = marker {
-                    let _ = thread_interp.invoke_done_callback(marker);
-                }
-            }));
+                    // One-shot source complete: leave the enclosing done group.
+                    if let Some(marker) = marker {
+                        let _ = thread_interp.invoke_done_callback(marker);
+                    }
+                }),
+                emitter_supplier_id,
+            );
         } else if let Some(marker) = group_marker {
             // No subscription was registered for this source kind; undo the
             // group join so the enclosing supply's done is not held hostage.

@@ -605,7 +605,50 @@ impl Compiler {
         self.bind_terminal = false;
         let saved_decl_bind = self.decl_bind_terminal;
         self.decl_bind_terminal = false;
-        self.compile_expr(index);
+
+        match index {
+            // A bare colon-pair/fat-arrow index (`R[:v<hi>]`) is a role
+            // parameterization's NAMED type argument — Rakudo decides
+            // named-ness from call-site SYNTAX, not from what flavour of
+            // Pair the expression happens to evaluate to (ADR-0021), and a
+            // subscript's bracket content is exactly a call's argument list
+            // for this purpose. The generic `compile_expr` below (reached
+            // for anything that isn't this shape) emits the data-default
+            // `MakePair` (`ValuePair`), which `role_candidate_arity_ok`'s
+            // named-argument scan cannot see — `role R[Str:D :$v]`'s only
+            // candidate then looked like it took one POSITIONAL argument,
+            // never matched, and `but R[:v<hi>]` died "No matching
+            // candidate". Mint the named flavour here, the same way a
+            // function call's argument-list compile does for `f(:v<hi>)`.
+            Expr::Binary { op, .. } if *op == TokenKind::FatArrow => {
+                self.mint_named_pair = true;
+                self.compile_expr(index);
+            }
+            // A comma list of type arguments (`R[Int, :v<hi>]`) needs the
+            // same per-element treatment. The generic `Expr::ArrayLiteral`
+            // compile has no per-element "mint this one as named" hook, and
+            // role type-arguments are pure values (never lvalue containers),
+            // so a minimal element loop — mint the flag right before each
+            // qualifying item, `compile_expr`, then the same `MakeArray` the
+            // generic path ends with — is enough; the container-aliasing
+            // machinery (`WrapVarRef`, rw-arg-callee marking) that path also
+            // does is irrelevant here and deliberately skipped.
+            Expr::ArrayLiteral(items)
+                if items.iter().any(
+                    |item| matches!(item, Expr::Binary { op, .. } if *op == TokenKind::FatArrow),
+                ) =>
+            {
+                for item in items {
+                    if matches!(item, Expr::Binary { op, .. } if *op == TokenKind::FatArrow) {
+                        self.mint_named_pair = true;
+                    }
+                    self.compile_expr(item);
+                }
+                self.code.emit(OpCode::MakeArray(items.len() as u32));
+            }
+            _ => self.compile_expr(index),
+        }
+
         self.scalar_bind_autovivify = saved_av;
         self.bind_terminal = saved_terminal;
         self.decl_bind_terminal = saved_decl_bind;

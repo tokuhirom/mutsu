@@ -53,7 +53,7 @@ been found; the gate is the net for the ones that have not.
 | --- | --- |
 | `batteries.lock` | Which batteries, where their tests come from, the pinned upstream commit, and the extra `-I` paths each suite needs. |
 | `batteries-whitelist.txt` | The per-file baseline: `name<TAB>testfile` for every test file that currently passes. Sorted. |
-| `batteries-exclude.txt` | Files the gate must never run, same `name<TAB>testfile` shape. Skipped in both modes, so they can neither block a release nor enter the baseline. |
+| `batteries-exclude.txt` | Files the gate must never run, same `name<TAB>testfile` shape. Skipped in both modes, so they can neither block a release nor enter the baseline. Unlike the whitelist, it takes `#` comments — and every entry needs one. |
 | `scripts/battery-testsuite.sh` | The harness. Fetches each suite at its pinned commit, runs it against the bundled library, and enforces (or, with `--update`, regenerates) the whitelist. |
 | `release.yml` `batteries` job | Runs the harness on every release build; `needs` gates the publish job. |
 | `ci.yml` `test` job, last step | Runs the same harness on every PR and every push to `main`. No path filter — see "On every PR" above for why. |
@@ -115,11 +115,17 @@ baseline by running `--update` and committing the diff.
 
 ## What the gate does not run
 
+Two narrow categories, both listed in
+[`batteries-exclude.txt`](../../batteries-exclude.txt) and skipped entirely, in
+both gate and `--update` mode. They share one rule: **the file's verdict must not
+be a statement about mutsu.** An excluded file is never a parking spot for a
+genuinely failing test.
+
+### 1. Third-party service
+
 The gate blocks a release, so a test whose verdict depends on a **third-party
 service** being reachable and healthy must not be in it — an outage somewhere
-else would block a release that has nothing wrong with it. Those files are listed
-in [`batteries-exclude.txt`](../../batteries-exclude.txt) and are skipped
-entirely, in both gate and `--update` mode.
+else would block a release that has nothing wrong with it.
 
 The bar is deliberately narrow: the file must reach outside the machine
 *unconditionally*. Most battery suites already guard their live-network
@@ -131,14 +137,46 @@ a loopback-only network namespace:
 unshare -rn -- sh -c "ip link set lo up; cd <clone>; exec mutsu <-I…> <test>"
 ```
 
-Only two files failed, and they are the two in the exclusion list. With them
-excluded, **every file in the baseline passes offline** — the gate's verdict does
-not depend on any third-party service. Re-run that check when adding a battery
-whose suite talks to the network, and keep it true.
+Only two files failed, and they are the two network entries in the exclusion
+list. With them excluded, **every file in the baseline passes offline** — the
+gate's verdict does not depend on any third-party service. Re-run that check when
+adding a battery whose suite talks to the network, and keep it true.
 
-An excluded file is not a parking spot for a genuinely failing test: it must
-still be run by hand (and it is, by the module's own record), it is simply not a
-release blocker.
+### 2. The upstream file races with itself
+
+A test file whose own harness is non-deterministic decides nothing about the
+interpreter under it, and on a release gate it is worse than no coverage: it
+turns a green build into a coin flip. The bar has three parts, all required:
+
+1. **Root-caused to the upstream file, not to mutsu.** A failure you have not
+   reduced is a bug to fix, not an entry here.
+2. **Reported upstream, with the PR named in the entry.** An entry that cannot
+   name a fix in flight does not qualify.
+3. **A written restore condition** — which upstream merge, and what to do when it
+   lands — so the entry is a wait on someone else's merge rather than a quiet
+   retirement.
+
+`Cro::HTTP/http2-request-parser` is the worked example: it calls `ok` from inside
+`start` blocks, and `Test` is not thread-safe, so two concurrent HTTP/2 streams
+interleave their TAP output. Fixed upstream by
+[croservices/cro-http#217](https://github.com/croservices/cro-http/pull/217);
+the entry says to delete itself and re-run `--update` once that is vendored in.
+
+Note what this category is **not**. It is not `flaky-tests.txt`
+([`docs/flaky-test-policy.md`](../flaky-test-policy.md)): that ledger quarantines
+tests whose non-determinism is inherent but *bounded* — a statistical assertion
+that a correct RNG violates now and then — by re-running them up to three times,
+which is the right answer when a retry converges. It does not apply here for two
+reasons: the battery harness has no retry path, and a ~50% per-run rate would not
+converge in three attempts if it had one.
+
+### In both cases
+
+An excluded file must still be run by hand (and it is, by the module's own record
+under `docs/batteries/`), it is simply not a release blocker. Because `--update`
+skips it too, it cannot drift back into the baseline on its own — deleting the
+entry is the only way back in, which is what makes the restore condition
+load-bearing.
 
 The gate itself still needs the network to *fetch* each suite at its pinned
 commit — that is unavoidable setup, not an assertion. A fetch failure reports

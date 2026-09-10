@@ -881,6 +881,11 @@ impl Interpreter {
         } else {
             Self::decrement_value(&old)
         };
+        let new_val = if let Some(constraint) = crate::value::lookup_container_constraint(arc) {
+            Self::wrap_native_int_arithmetic_for_constraint(&constraint, new_val)
+        } else {
+            self.wrap_native_int_arithmetic_result(name, new_val)
+        };
         if let Some(constraint) = crate::value::lookup_container_constraint(arc)
             && !matches!(constraint.as_str(), "Any" | "Mu")
             && !new_val.is_nil()

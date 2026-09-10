@@ -976,8 +976,9 @@ impl Interpreter {
     }
 
     /// ADR-0019 E9a/E9b-2: candidates from the deferral expansion whose
-    /// signature matches this call's args (invocant-blind, per E8a finding
-    /// 1). Shared first half of [`Self::push_method_dispatch_frame`]'s and
+    /// signature matches this call's args. The actual invocant is supplied so
+    /// a candidate's `where` clause can use `self` while the dispatch frame is
+    /// being built. Shared first half of [`Self::push_method_dispatch_frame`]'s and
     /// [`Self::deferral_tail_entries`]'s computation, before either applies
     /// its own "skip the chosen winner" step.
     fn matched_deferral_candidates(
@@ -985,6 +986,7 @@ impl Interpreter {
         receiver_class: &str,
         method_name: &str,
         args: &[Value],
+        invocant: &Value,
     ) -> Vec<(Symbol, super::MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
         let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
@@ -995,7 +997,7 @@ impl Interpreter {
                 &def,
                 args,
                 role_bindings.as_ref(),
-                None,
+                Some(invocant),
             ) {
                 all_candidates.push((owner, def));
             }
@@ -1019,6 +1021,7 @@ impl Interpreter {
         method_name: &str,
         args: &[Value],
         chosen_def: &super::MethodDef,
+        invocant: &Value,
     ) -> Vec<super::DeferralEntry> {
         // Submethod fast path, mirroring `push_method_dispatch_frame`'s own
         // `<=1` guard: a submethod is never inherited, so a single visible
@@ -1028,7 +1031,8 @@ impl Interpreter {
         {
             return Vec::new();
         }
-        let all_candidates = self.matched_deferral_candidates(receiver_class, method_name, args);
+        let all_candidates =
+            self.matched_deferral_candidates(receiver_class, method_name, args, invocant);
         let chosen_fp = self.method_def_fingerprint(chosen_def);
         let mut remaining = Vec::new();
         let mut skipped = false;
@@ -1073,7 +1077,8 @@ impl Interpreter {
         method_def: &super::MethodDef,
         chain: &[(u64, Value)],
     ) {
-        let mro_tail = self.deferral_tail_entries(receiver_class, method_name, args, method_def);
+        let mro_tail =
+            self.deferral_tail_entries(receiver_class, method_name, args, method_def, &invocant);
         let rw_params =
             super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
         let dispatch_token = self.next_dispatch_token();
@@ -1159,9 +1164,10 @@ impl Interpreter {
         // `resolve_all_methods_with_owner` as the ordering source — see its module doc for why
         // a raw MRO walk in declaration order does not reproduce raku's own deferral order once
         // a `multi method` spans MRO levels. The expansion is structural (unfiltered); apply the
-        // same per-call, invocant-blind argument match `resolve_all_methods_with_owner` used to
-        // apply internally.
-        let all_candidates = self.matched_deferral_candidates(receiver_class, method_name, args);
+        // same per-call argument match as `resolve_all_methods_with_owner` used to
+        // apply internally, with the actual invocant available to `where` clauses.
+        let all_candidates =
+            self.matched_deferral_candidates(receiver_class, method_name, args, &invocant);
         // Fast path: with zero or one candidate there is nothing to defer to, so no
         // dispatch frame is ever pushed (the single candidate is the chosen one and
         // gets skipped, leaving `remaining` empty). Returning early here avoids the
@@ -1174,7 +1180,8 @@ impl Interpreter {
             return false;
         }
         // Identify the chosen candidate and skip exactly that one
-        let chosen = self.resolve_method_with_owner(receiver_class, method_name, args);
+        let chosen =
+            self.resolve_method_with_owner_invocant(receiver_class, method_name, args, &invocant);
         let chosen_fp = chosen
             .as_ref()
             .map(|(_, def)| self.method_def_fingerprint(def));

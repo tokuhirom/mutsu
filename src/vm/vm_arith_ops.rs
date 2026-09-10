@@ -1,5 +1,6 @@
 use super::*;
 use crate::token_kind::MetaAssignIdentity;
+use num_traits::ToPrimitive;
 
 /// Whether the assignment metaop must seed this LHS with the operator's
 /// zero-argument value. Mirrors rakudo's `nqp::isconcrete` test: type objects
@@ -38,6 +39,109 @@ pub(super) fn seed_meta_assign_identity(
 }
 
 impl Interpreter {
+    /// Execute a compiler-proven native integer `+`, `-`, or `*`. Native
+    /// declarations use machine-width registers for arithmetic: signed values
+    /// wrap as `i64`, unsigned values as `u64`; `int8`/`uint8` and the other
+    /// narrow declarations are narrowed later by their destination store.
+    pub(super) fn exec_native_int_arithmetic_op(
+        &mut self,
+        op: crate::opcode::CompoundBaseOp,
+        unsigned: bool,
+    ) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let op_name = match op {
+            crate::opcode::CompoundBaseOp::Add => "infix:<+>",
+            crate::opcode::CompoundBaseOp::Sub => "infix:<->",
+            crate::opcode::CompoundBaseOp::Mul => "infix:<*>",
+            _ => unreachable!("only native integer +, -, and * are emitted"),
+        };
+        // Native candidates remain overridable by a user-declared infix. Put
+        // the operands back and use the ordinary path so its junction and
+        // dispatch semantics stay unchanged.
+        if self.user_infix_override(op_name) {
+            self.stack.push(left);
+            self.stack.push(right);
+            match op {
+                crate::opcode::CompoundBaseOp::Add => self.exec_add_op()?,
+                crate::opcode::CompoundBaseOp::Sub => self.exec_sub_op()?,
+                crate::opcode::CompoundBaseOp::Mul => self.exec_mul_op()?,
+                _ => unreachable!(),
+            }
+            return Ok(());
+        }
+
+        let result = if unsigned {
+            let left = match left.view() {
+                ValueView::Int(value) => u64::try_from(value).ok(),
+                ValueView::BigInt(value) => value.to_u64(),
+                _ => None,
+            };
+            let right = match right.view() {
+                ValueView::Int(value) => u64::try_from(value).ok(),
+                ValueView::BigInt(value) => value.to_u64(),
+                _ => None,
+            };
+            match (left, right) {
+                (Some(left), Some(right)) => Some(match op {
+                    // Rakudo's native unsigned result is an integer register
+                    // whose bits are boxed as a signed Int. The destination
+                    // native store reinterprets negative values back into the
+                    // unsigned range, so `uint $x = 0; $x - uint(1)` returns
+                    // -1 while `$x -= uint(1)` stores uint64.max.
+                    crate::opcode::CompoundBaseOp::Add => {
+                        Value::int((left.wrapping_add(right)) as i64)
+                    }
+                    crate::opcode::CompoundBaseOp::Sub => {
+                        Value::int((left.wrapping_sub(right)) as i64)
+                    }
+                    crate::opcode::CompoundBaseOp::Mul => {
+                        Value::int((left.wrapping_mul(right)) as i64)
+                    }
+                    _ => unreachable!(),
+                }),
+                _ => None,
+            }
+        } else {
+            let left_value = match left.view() {
+                ValueView::Int(value) => Some(value),
+                ValueView::BigInt(value) => value.to_i64(),
+                _ => None,
+            };
+            let right_value = match right.view() {
+                ValueView::Int(value) => Some(value),
+                ValueView::BigInt(value) => value.to_i64(),
+                _ => None,
+            };
+            match (left_value, right_value) {
+                (Some(left), Some(right)) => Some(Value::int(match op {
+                    crate::opcode::CompoundBaseOp::Add => left.wrapping_add(right),
+                    crate::opcode::CompoundBaseOp::Sub => left.wrapping_sub(right),
+                    crate::opcode::CompoundBaseOp::Mul => left.wrapping_mul(right),
+                    _ => unreachable!(),
+                })),
+                _ => None,
+            }
+        };
+        if let Some(result) = result {
+            self.stack.push(result);
+            return Ok(());
+        }
+
+        // A value changed shape between compilation and execution. Preserve
+        // the ordinary arithmetic fallback rather than silently applying a
+        // native conversion to an incompatible value.
+        self.stack.push(left);
+        self.stack.push(right);
+        match op {
+            crate::opcode::CompoundBaseOp::Add => self.exec_add_op()?,
+            crate::opcode::CompoundBaseOp::Sub => self.exec_sub_op()?,
+            crate::opcode::CompoundBaseOp::Mul => self.exec_mul_op()?,
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
     /// Whether a user-declared `sub infix:<op>` is in scope for `canon`
     /// (e.g. `"infix:<+>"`). The set is empty in the overwhelming common
     /// case, keeping tight numeric loops free of any registry lookup.

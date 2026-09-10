@@ -601,6 +601,48 @@ impl Interpreter {
             .unwrap_or_else(|| Value::bigint(wrapped))
     }
 
+    /// Wrap the result of an in-place native integer operation. This differs
+    /// from [`Self::maybe_wrap_native_int`]: an ordinary assignment to a full-width
+    /// native integer rejects an out-of-range BigInt, while arithmetic on an
+    /// existing native value uses machine overflow semantics.
+    pub(crate) fn wrap_native_int_arithmetic_result(
+        &mut self,
+        var_name: &str,
+        value: Value,
+    ) -> Value {
+        let Some(constraint) = loan_env!(self, var_type_constraint(var_name)) else {
+            return value;
+        };
+        Self::wrap_native_int_arithmetic_for_constraint(&constraint, value)
+    }
+
+    /// Apply native arithmetic wrapping using an already-known type constraint.
+    /// This is also used for native array/hash elements and shared container
+    /// cells, where looking up a scalar variable name would be insufficient.
+    pub(crate) fn wrap_native_int_arithmetic_for_constraint(
+        constraint: &str,
+        value: Value,
+    ) -> Value {
+        use crate::runtime::native_types;
+        use num_traits::ToPrimitive;
+
+        let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
+        if !native_types::is_native_int_type(base) {
+            return value;
+        }
+        match value.view() {
+            ValueView::Int(n) => native_types::wrap_native_int_value(base, n).unwrap_or(value),
+            ValueView::BigInt(n) => {
+                let wrapped = native_types::wrap_native_int(base, &n);
+                wrapped
+                    .to_i64()
+                    .map(Value::int)
+                    .unwrap_or_else(|| Value::bigint(wrapped))
+            }
+            _ => value,
+        }
+    }
+
     /// Recursively flatten a value like a `*@` slurpy would: non-itemized
     /// Array/List elements are expanded, itemized containers are preserved.
     /// Ranges and Seqs are also expanded into their elements.

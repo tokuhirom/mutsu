@@ -455,6 +455,7 @@ impl Interpreter {
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.increment_value_smart(&val)?;
+                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(new_val);
                 return Ok(());
@@ -462,6 +463,7 @@ impl Interpreter {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.increment_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             self.propagate_incdec_sigilless_alias(code, name, &new_val);
@@ -488,12 +490,14 @@ impl Interpreter {
             let inner = arc.lock().unwrap().clone();
             let v = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.increment_value_smart(&v)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(new_val);
             return Ok(());
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.increment_value_smart(&val)?;
+        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);
@@ -550,6 +554,7 @@ impl Interpreter {
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.decrement_value_smart(&val)?;
+                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(new_val);
                 return Ok(());
@@ -557,6 +562,7 @@ impl Interpreter {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.decrement_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             self.propagate_incdec_sigilless_alias(code, name, &new_val);
@@ -583,12 +589,14 @@ impl Interpreter {
             let inner = arc.lock().unwrap().clone();
             let v = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.decrement_value_smart(&v)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(new_val);
             return Ok(());
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.decrement_value_smart(&val)?;
+        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);

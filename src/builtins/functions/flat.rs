@@ -202,6 +202,12 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
 pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
     match v.view() {
         ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. } => true,
+        // A Junction anywhere in the (recursively flattened) argument list
+        // must thread the whole `join` over its eigenstates
+        // (`("a"|"b","c","d").join` => `any(acd, bcd)`) — the pure
+        // `join_flat`/`flat_val` path can only stringify it in place, so
+        // route to `Interpreter::builtin_join`, which does the threading.
+        ValueView::Junction { .. } => true,
         // Exactly one level, no recursion past the cell: the bind puts the
         // Proxy directly behind it, whereas a cell holding a structure may be a
         // self-reference and following it walks the cycle forever.
@@ -211,6 +217,7 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
         ValueView::Array(items, kind) if !kind.is_itemized() => {
             items.iter().any(join_needs_interpreter)
         }
+        ValueView::Seq(items) => items.iter().any(join_needs_interpreter),
         _ => false,
     }
 }
@@ -241,4 +248,63 @@ pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<String> {
             .collect::<Vec<_>>()
             .join(sep),
     )
+}
+
+/// If a (already fully flattened) list of items contains a `Junction`
+/// anywhere, thread `render` across the cross product of every SAME-kind
+/// junction position's eigenstates, returning one flat `Junction` of that
+/// kind (`("a"|"b","c"|"d","e").join` => `any(ace, ade, bce, bde)`, not a
+/// junction of junctions — mirrors the flattening
+/// `eval_concat_with_junctions` applies for two same-kind operands, verified
+/// against Rakudo). A junction of a DIFFERENT kind is left for a recursive
+/// peel afterward, so mismatched kinds still nest, though this simple
+/// leftmost-first peel does not reproduce Rakudo's exact kind-label swap for
+/// a mixed-kind, multiple-junction list (verified only for a single
+/// junction, or several junctions of one kind, per the acceptance criteria
+/// this exists for — a mixed-kind multi-junction list is a deeper case left
+/// unfixed, same spirit as the issue's own "record, do not fix blind" note).
+/// Returns `None` when no item is a `Junction`, so the caller runs `render`
+/// on the unchanged items. `render` is pure (no interpreter access) — every
+/// current caller (`join`) only needs `.to_str_context()`.
+pub(crate) fn thread_junctions_in_items(
+    items: &[Value],
+    render: &dyn Fn(&[Value]) -> Value,
+) -> Option<Value> {
+    let first_idx = items
+        .iter()
+        .position(|v| matches!(v.view(), ValueView::Junction { .. }))?;
+    let ValueView::Junction {
+        kind: first_kind, ..
+    } = items[first_idx].view()
+    else {
+        unreachable!("position() just matched a Junction")
+    };
+    let same_kind_positions: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(i, v)| match v.view() {
+            ValueView::Junction { kind, .. } if kind == first_kind => Some(i),
+            _ => None,
+        })
+        .collect();
+    let mut combos: Vec<Vec<Value>> = vec![items.to_vec()];
+    for &i in &same_kind_positions {
+        let ValueView::Junction { values, .. } = items[i].view() else {
+            unreachable!("same_kind_positions only holds Junction indices")
+        };
+        let mut next = Vec::with_capacity(combos.len() * values.len());
+        for combo in &combos {
+            for val in values.iter() {
+                let mut c = combo.clone();
+                c[i] = val.clone();
+                next.push(c);
+            }
+        }
+        combos = next;
+    }
+    let results: Vec<Value> = combos
+        .iter()
+        .map(|c| thread_junctions_in_items(c, render).unwrap_or_else(|| render(c)))
+        .collect();
+    Some(Value::junction(first_kind, results))
 }

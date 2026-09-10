@@ -629,6 +629,15 @@ impl Interpreter {
         // `role W[::T, ::U]` bind different lists, and `role_type_params` records
         // only one of them per name.
         let candidate_type_params = resolved.as_ref().map(|(_, names, _)| names.clone());
+        // The candidate's per-parameter VALUES, already bound by name (not by
+        // position) via `bind_function_args_values` inside
+        // `resolve_role_candidate_with_args` — required for a named type
+        // parameter (`role R[Str:D :$v]`), whose value is not `role_args[i]`
+        // at all: `role_args` is call-site order, and for `R[:v<hi>]` that
+        // order holds one Pair, not the unwrapped `"hi"`. Falls back to the
+        // raw `role_args` only when resolution did not run (no candidate
+        // list, i.e. a role with a single unconditional definition).
+        let resolved_type_arg_values = resolved.as_ref().map(|(_, _, values)| values.clone());
         let role = match &resolved {
             Some((role_def, _, _)) => Some(role_def.clone()),
             None => self.registry().roles.get(role_name).cloned(),
@@ -736,7 +745,12 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or_default()
             });
-            for (param_name, type_arg) in param_names.iter().zip(role_args.iter()) {
+            // `resolved_type_arg_values` (name-bound) when a candidate was
+            // resolved; `role_args` (call-site order) only as a fallback for
+            // the no-candidate-list case, where every parameter is positional
+            // by construction and the order already matches.
+            let type_arg_values = resolved_type_arg_values.as_deref().unwrap_or(role_args);
+            for (param_name, type_arg) in param_names.iter().zip(type_arg_values.iter()) {
                 mixins.insert(
                     format!("__mutsu_role_param__{}", param_name),
                     type_arg.clone(),

@@ -456,24 +456,24 @@ impl Interpreter {
         Ok(())
     }
 
-    fn divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        Ok(Value::truth(self.is_divisible(left, right)?))
-    }
-
     /// `$a %% $b` is `$a % $b == 0`. Compute the modulo with the exact-rational
     /// semantics of `arith_mod` (so Rat/Num/BigInt operands work, not just Int),
-    /// then test the remainder for zero. A zero divisor reports the dividend and
-    /// `infix:<%%>`, matching Rakudo.
-    fn is_divisible(&self, left: Value, right: Value) -> Result<bool, RuntimeError> {
+    /// then test the remainder for zero. A zero divisor is a soft `Failure`
+    /// (dividend and `infix:<%%>`, matching Rakudo) — it is returned, not
+    /// thrown, so `grep: 10 %% *` treats it as false instead of dying.
+    fn divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         let (l, r) = runtime::coerce_numeric(left.clone(), right);
         if !r.truthy() {
-            return Err(RuntimeError::numeric_divide_by_zero_full(
+            return Ok(RuntimeError::divide_by_zero_failure(
                 Some(left),
                 Some("infix:<%%>"),
             ));
         }
         let remainder = crate::builtins::arith_mod(l, r)?;
-        Ok(!remainder.truthy())
+        if Self::is_failure_value(&remainder) {
+            return Ok(remainder);
+        }
+        Ok(Value::truth(!remainder.truthy()))
     }
 
     pub(super) fn exec_not_divisible_by_op(&mut self) -> Result<(), RuntimeError> {
@@ -494,7 +494,14 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `$a !%% $b` is `not ($a %% $b)`. Negating a `Failure` in a boolean
+    /// context marks it handled and reads as `False` (so `!%%` itself never
+    /// dies on a zero divisor), matching Rakudo's `6 !%% 0` => `True`.
     fn not_divisible_by_values(&self, left: Value, right: Value) -> Result<Value, RuntimeError> {
-        Ok(Value::truth(!self.is_divisible(left, right)?))
+        let result = self.divisible_by_values(left, right)?;
+        if Self::is_failure_value(&result) {
+            result.mark_failure_handled();
+        }
+        Ok(Value::truth(!result.truthy()))
     }
 }

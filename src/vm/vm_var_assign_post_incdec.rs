@@ -190,6 +190,7 @@ impl Interpreter {
             } else {
                 self.decrement_value_smart(&val)?
             };
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             self.check_incdec_type_constraint(name, &new_val)?;
             // `$.x++` is a read-modify-write through the PUBLIC accessor, and
             // `$.` is `self.x` itemized: for a non-`rw` scalar accessor the
@@ -244,6 +245,7 @@ impl Interpreter {
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.increment_value_smart(&val)?;
+                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(val);
                 return Ok(());
@@ -251,6 +253,7 @@ impl Interpreter {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.increment_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
@@ -279,6 +282,7 @@ impl Interpreter {
             let inner = arc.lock().unwrap().clone();
             let val = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.increment_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(val);
             return Ok(());
@@ -290,12 +294,14 @@ impl Interpreter {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
             let new_val = self.increment_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             loan_env!(self, assign_proxy_lvalue(raw_val, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.increment_value_smart(&val)?;
+        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
         self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
         self.stack.push(val);
         Ok(())
@@ -341,6 +347,7 @@ impl Interpreter {
                 let inner = arc.lock().unwrap().clone();
                 let val = self.normalize_incdec_source_with_type(name, inner);
                 let new_val = self.decrement_value_smart(&val)?;
+                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(val);
                 return Ok(());
@@ -348,6 +355,7 @@ impl Interpreter {
             let raw_val = self.locals[slot].clone();
             let val = self.normalize_incdec_source_with_type(name, raw_val);
             let new_val = self.decrement_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
@@ -375,12 +383,14 @@ impl Interpreter {
             let inner = arc.lock().unwrap().clone();
             let val = self.normalize_incdec_source_with_type(name, inner);
             let new_val = self.decrement_value_smart(&val)?;
+            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(val);
             return Ok(());
         }
         let val = self.normalize_incdec_source_with_type(name, raw_val);
         let new_val = self.decrement_value_smart(&val)?;
+        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
         self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
         self.stack.push(val);
         Ok(())
@@ -585,6 +595,13 @@ impl Interpreter {
                     None
                 }
             });
+        let wrap_element_result = |value: Value| {
+            element_constraint_incdec
+                .as_deref()
+                .map_or(value.clone(), |constraint| {
+                    Self::wrap_native_int_arithmetic_for_constraint(constraint, value)
+                })
+        };
         let (key, quanthash_elem) = if quanthash_target {
             let (k, e) = crate::runtime::utils::quanthash_elem_entry(&idx_val);
             (k, Some(e))
@@ -625,6 +642,7 @@ impl Interpreter {
             } else {
                 self.decrement_value_smart(&effective)?
             };
+            let new_val = wrap_element_result(new_val);
             attributes.with_attr_mut("__mutsu_array_storage", |st| {
                 let (mut items, kind) = match st.view() {
                     ValueView::Array(items, kind) => ((**items).clone(), kind),
@@ -691,6 +709,7 @@ impl Interpreter {
             } else {
                 self.decrement_value_smart(&effective)?
             };
+            let new_val = wrap_element_result(new_val);
             attributes.with_attr_mut("__mutsu_hash_storage", |st| {
                 st.with_hash_mut(|gc| {
                     crate::value::gc_data_mut(gc).insert(key.clone(), new_val.clone());
@@ -721,6 +740,12 @@ impl Interpreter {
                 } else {
                     self.decrement_value_smart(&effective)?
                 };
+                let new_val =
+                    if let Some(constraint) = crate::value::lookup_container_constraint(&arc) {
+                        Self::wrap_native_int_arithmetic_for_constraint(&constraint, new_val)
+                    } else {
+                        wrap_element_result(new_val)
+                    };
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack
                     .push(if return_new { new_val } else { effective });
@@ -776,6 +801,7 @@ impl Interpreter {
             } else {
                 self.decrement_value_smart(&effective)?
             };
+            let new_val = wrap_element_result(new_val);
             let mut updated = inner;
             // Container identity (§3): write through the shared backing node.
             if updated
@@ -901,7 +927,7 @@ impl Interpreter {
             } else {
                 self.decrement_value_smart(&effective)?
             };
-            (effective, new_val)
+            (effective, wrap_element_result(new_val))
         };
         // A Bag/BagHash holds non-negative integer counts: decrementing a weight
         // below 0 clamps the *returned* (and stored) value to 0 (the element is
