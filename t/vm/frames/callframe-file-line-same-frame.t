@@ -24,7 +24,7 @@ use FileVarFixture;
 plan 4;
 
 my $module = 't/lib/FileVarFixture.rakumod';
-my $script = 't/callframe-file-line-same-frame.t';
+my $script = 'callframe-file-line-same-frame.t';
 
 my $cf = FixtureMethodProbe.new.probe;
 

@@ -117,7 +117,12 @@ the same navigability problem this document exists to fix.
 
 Test files reach fixtures by a path relative to the repository root (`-I t/lib`,
 `use lib 't/lib'`), and `prove` runs from the repository root, so nesting a test file does **not**
-change how it loads its fixtures. No test body needs editing for the migration.
+change how it loads its fixtures — that is why the migration could be a pure `git mv`.
+
+The one thing nesting *does* change is a test that names **its own** path. Three did, and were
+switched to match on the basename instead, which is unique and stable even if a file's category is
+re-cut later. Prefer that over a hardcoded `t/<category>/<name>.t` when a test has to reason about
+its own file, and prefer `$?FILE` over any literal at all.
 
 ## 7. Discovery
 

@@ -5,10 +5,20 @@ The 3,948 flat `.t` files in `t/` moved into the sixteen subject categories defi
 [#7819](https://github.com/tokuhirom/mutsu/issues/7819). The design and the infrastructure landed
 first, in a separate PR; this is the move itself.
 
-The diff is **3,949 renames with zero insertions and zero deletions**. Nothing inside a test file
-changed, and nothing needed to: tests reach their fixtures by a path relative to the repository
-root (`-I t/lib`) and `prove` runs from the root, so nesting a test does not change how it loads
-anything.
+The move itself is **3,949 renames with zero insertions and zero deletions**: tests reach their
+fixtures by a path relative to the repository root (`-I t/lib`) and `prove` runs from the root, so
+nesting a test does not change how it loads anything.
+
+Four files did need editing, all for the same reason — they name a *path* rather than loading one:
+
+- three tests asserted on **their own** filename (`$?FILE`, `callframe.file`), and now match on the
+  basename, which stays unique and stable even if a category is re-cut later;
+- one Rust integration test, `tests/proto_method_body_compiled_once.rs`, executes a specific `t/`
+  file by path and now points at its new location. `cargo test` caught it immediately.
+
+Those four are the entire set: a sweep for executable `t/<name>.t` references across `src/`,
+`tests/`, `crates/`, `scripts/`, `.github/` and `t/` itself turned up nothing else (the remaining
+matches were `.txt`/`.tsv` filenames and prose in comments).
 
 ## What it looks like
 

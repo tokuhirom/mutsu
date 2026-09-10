@@ -19,7 +19,9 @@ use FileVarFixture;
 
 plan 14;
 
-my $script = 't/module-file-var-and-callframe.t';
+# Basename, not a path: t/ is a nested tree and a file's category may be
+# re-cut later, but basenames are unique and stable (docs/t-directory-layout.md).
+my $script = 'module-file-var-and-callframe.t';
 my $module = 't/lib/FileVarFixture.rakumod';
 
 ok $?FILE.contains($script), 'the main script reports its own file';

@@ -38,7 +38,7 @@ ok $d.abs ~~ Duration, 'Duration.abs (a Cool/Real method) works and keeps the ty
 is-deeply mro-names(IO::Path), <IO::Path Cool Any Mu>, 'IO::Path.^mro includes Cool';
 ok IO::Path ~~ Cool, 'IO::Path ~~ Cool';
 ok +IO::Path.^can('chars'), 'IO::Path.^can("chars") is non-zero (Cool method visible)';
-my $p = "t/adr0051-builtin-type-cool-ancestry.t".IO;
+my $p = $?FILE.IO;
 ok $p.chars > 0, 'IO::Path.chars (a Cool string-coercion method) works';
 
 # --- IO::Handle: negative control, does NOT inherit Cool ---
