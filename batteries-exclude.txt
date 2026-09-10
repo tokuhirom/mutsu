@@ -1,24 +1,56 @@
 # Battery test files the release gate must never run.
 #
-# The gate blocks a release, so a file whose verdict depends on a THIRD-PARTY
-# SERVICE being reachable and healthy does not belong in it: an outage at
-# github.com or httpbin.org would block a release that has nothing wrong with
-# it. (httpbin.org spent part of 2026-07-25 returning 503 — that is not
-# hypothetical.) Such files are skipped entirely, in both gate and `--update`
-# mode, so they can neither fail a release nor re-enter the baseline.
+# Two narrow categories qualify, and nothing else. Both share a rule: the file's
+# verdict must not be a statement about mutsu. This is NOT a place to park a
+# genuinely failing test.
 #
-# This is NOT a place to park a genuinely failing test. The bar is narrow: the
-# file must reach OUTSIDE this machine unconditionally. Most battery suites
-# already guard their live-network assertions behind `NETWORK_TESTING`, which
-# the gate does not set, so they need no entry here — that was verified by
-# re-running every whitelisted file inside a loopback-only network namespace;
-# only the two below failed.
+# (1) THIRD-PARTY SERVICE. The gate blocks a release, so a file whose verdict
+# depends on a service being reachable and healthy does not belong in it: an
+# outage at github.com or httpbin.org would block a release that has nothing
+# wrong with it. (httpbin.org spent part of 2026-07-25 returning 503 — that is
+# not hypothetical.) The bar is that the file must reach OUTSIDE this machine
+# unconditionally. Most battery suites already guard their live-network
+# assertions behind `NETWORK_TESTING`, which the gate does not set, so they need
+# no entry here — that was verified by re-running every whitelisted file inside a
+# loopback-only network namespace; only the two below failed.
+#
+# (2) THE UPSTREAM FILE RACES WITH ITSELF. A file whose own harness is
+# non-deterministic decides nothing about the interpreter under it, and on a
+# release gate it is worse than no coverage: it converts a green build into a
+# coin flip. The bar is that the non-determinism must be (a) root-caused to the
+# upstream file rather than to mutsu, (b) reported upstream, with the PR named
+# below, and (c) recorded with a restore condition, so the entry is a wait on
+# someone else's merge and not a quiet retirement. An entry that cannot name an
+# upstream fix in flight does not qualify — that is a mutsu bug to fix or a
+# `flaky-tests.txt` question, not an exclusion.
+#
+# Excluded files are skipped entirely, in both gate and `--update` mode, so they
+# can neither fail a release nor re-enter the baseline. They are still expected
+# to be run by hand — see the owning file under docs/batteries/.
 #
 # Format: name<TAB>testfile, the same identity batteries-whitelist.txt uses.
 # Sorted (LC_ALL=C).
 #
+# --- (1) third-party service ---
 # HTTP::UserAgent/082-exceptions: unguarded `$ua.get('http://httpbin.org/...')`.
 # IO::Socket::SSL/01-basic: connects to github.com:443 in its first two lines,
 #   before the file's own NETWORK_TESTING guard.
+#
+# --- (2) upstream file races with itself ---
+# Cro::HTTP/http2-request-parser: `test()` runs each request's checks inside a
+#   `start` block and calls `ok` from there. `Test` is not thread-safe, so with
+#   two concurrent HTTP/2 streams the requests interleave their TAP output and a
+#   test can leak past the `pass` that should follow it. Harmless under mutsu's
+#   native Rust provider, which serializes (20/20 idle and 20/20 under load on
+#   2026-09-10, 61/61 each); a coin flip under the vendored Test.rakumod, which
+#   is Raku code with a plain counter (29/30 idle, 11/20 with three CPU burners
+#   on a 4-core box). Fixed upstream by croservices/cro-http#217, which records
+#   each request's results into a Promise and reports them from the main thread
+#   in request order.
+#   RESTORE: when #217 (or an equivalent) is merged and `batteries.lock`'s
+#   Cro::HTTP commit is re-vendored past it — delete this entry, re-run
+#   `--update`, and check the row is back in batteries-whitelist.txt.
+#   Tracked by tokuhirom/mutsu#7555 item 3.
+Cro::HTTP	http2-request-parser.rakutest
 HTTP::UserAgent	082-exceptions.rakutest
 IO::Socket::SSL	01-basic.rakutest
