@@ -4,7 +4,7 @@ use Test;
 # A typed aggregate parameter requires a typed container, not just a container
 # whose current elements happen to satisfy the element constraint.
 
-plan 14;
+plan 16;
 
 sub pos(Int @a) { @a.elems }
 is pos(my Int @ = 1, 2, 3), 3, 'typed positional literal is accepted';
@@ -38,3 +38,13 @@ is user-pos(Array[User7774].new(User7774.new(:value(2)))), 1,
     'parameterized Array of user objects is accepted';
 throws-like { user-pos([User7774.new(:value(1)), 42]) }, X::TypeCheck::Binding::Parameter,
     'a wrong user-container element is rejected';
+
+class UserRow7774 {
+    has User7774 @.fields;
+}
+my $row = UserRow7774.new;
+is user-pos($row.fields), 0,
+    'a typed aggregate public accessor is accepted';
+$row.fields = [User7774.new(:value(3))];
+is user-pos($row.fields), 1,
+    'a typed aggregate public accessor keeps its type after assignment';

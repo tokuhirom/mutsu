@@ -392,6 +392,30 @@ impl Interpreter {
                 if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
+                // Aggregate accessors are normally kept on the interpreter
+                // path because their declared element type must travel with
+                // the returned container. The fast scalar accessor path also
+                // reaches them for a zero-argument read, however; attach the
+                // declaration here so a typed parameter sees `@.attr` as a
+                // typed container instead of inferring its type from values.
+                if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_))
+                    && let Some(attr) = self
+                        .collect_class_attributes(&cn)
+                        .into_iter()
+                        .find(|attr| attr.is_public && attr.name == method)
+                    && matches!(attr.sigil, '@' | '%')
+                    && let Some(tc) = self.get_attr_type_constraint(&cn, method)
+                    && !matches!(tc.as_str(), "Mu" | "Any")
+                {
+                    let (value_type, key_type) =
+                        crate::runtime::types::split_object_hash_constraint(&tc);
+                    let info = crate::runtime::ContainerTypeInfo {
+                        value_type: value_type.to_string(),
+                        key_type: key_type.map(str::to_string),
+                        declared_type: None,
+                    };
+                    return Some(self.tag_container_metadata(out, info));
+                }
                 Some(out)
             }
             // Public accessor exists but the attribute is unset.

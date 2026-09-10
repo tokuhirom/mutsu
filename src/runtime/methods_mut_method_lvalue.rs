@@ -1244,9 +1244,30 @@ impl Interpreter {
                 // original as well"). Keep the container, replace its contents.
                 if matches!(attr_sigil, '@' | '%')
                     && let Some(existing) = updated.get(&attr_key).map(|v| v.deref_container())
-                    && existing.replace_container_contents(&assigned_value)
                 {
-                    assigned_value = existing;
+                    // A custom constructor can leave a typed aggregate attribute
+                    // with an untyped seed. Tag that destination before the
+                    // in-place STORE; `replace_container_contents` deliberately
+                    // preserves destination metadata, so tagging only the incoming
+                    // value would lose the declaration when the destination is
+                    // still plain (`has CSV::Field @.fields` is one example).
+                    let existing = if self.container_type_metadata(&existing).is_none()
+                        && let Some(tc) =
+                            self.get_attr_type_constraint(&class_name.resolve(), method)
+                        && !matches!(tc.as_str(), "Mu" | "Any")
+                    {
+                        let tagged =
+                            self.finalize_typed_container_attr(method, attr_sigil, &tc, existing)?;
+                        updated.insert_through(attr_key.as_str(), tagged.clone());
+                        tagged
+                    } else {
+                        existing
+                    };
+                    if existing.replace_container_contents(&assigned_value) {
+                        assigned_value = existing;
+                    } else {
+                        updated.insert_through(attr_key.as_str(), assigned_value.clone());
+                    }
                 } else {
                     // Write through an existing `ContainerRef` slot (preserving any
                     // `:=`-bound alias of the attribute container); otherwise replace
