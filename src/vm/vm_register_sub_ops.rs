@@ -163,7 +163,7 @@ impl Interpreter {
                 // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
                 // inside a module is the shape that made this visible: the
                 // block could not reach its own compunit's private routines.
-                source_file: self.executing_source_file(),
+                source_file: self.declaring_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
@@ -233,7 +233,7 @@ impl Interpreter {
                 // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
                 // inside a module is the shape that made this visible: the
                 // block could not reach its own compunit's private routines.
-                source_file: self.executing_source_file(),
+                source_file: self.declaring_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);

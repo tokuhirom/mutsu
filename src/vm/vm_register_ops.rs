@@ -676,7 +676,7 @@ impl Interpreter {
                 // file by then). `executing_source_file()` instead reads the
                 // file baked onto the innermost enclosing routine frame's own
                 // `def_file`, which stays correct regardless of who is calling.
-                source_file: self.executing_source_file(),
+                source_file: self.declaring_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
@@ -786,7 +786,7 @@ impl Interpreter {
                 // keeps this correct for a closure literal that is (re)built
                 // each time an already-loaded module's routine runs, after
                 // the module's own `?FILE` scope has long since reverted.
-                source_file: self.executing_source_file(),
+                source_file: self.declaring_source_file(),
             }));
             self.stack.push(val);
             Ok(())

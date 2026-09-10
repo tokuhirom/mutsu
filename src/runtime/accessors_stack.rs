@@ -287,6 +287,45 @@ impl Interpreter {
         self.current_source_file()
     }
 
+    /// [`Self::executing_source_file`], for stamping the declaring file onto a
+    /// routine or closure *as it is created* — corrected for a declaration made
+    /// directly in a module's own top-level mainline.
+    ///
+    /// A module mainline runs via `run_block` and pushes no routine frame of its
+    /// own, so [`Self::executing_source_file`]'s frame walk reaches straight
+    /// past it to whatever routine is still on the stack underneath. That is the
+    /// *caller's* frame, and when the load was triggered from inside another
+    /// compunit's routine — `Test`'s `use-ok`, which is literally
+    /// `EVAL "use $module"` — it belongs to a different compunit entirely. Every
+    /// `sub` the module declares was then stamped with the invoking compunit's
+    /// file, and since `enter_compilation_unit` anchors `current_unit` from that
+    /// stamp on every call, the module's own `sub EXPORT` could not resolve its
+    /// own class (#7836):
+    ///
+    /// ```raku
+    /// sub EXPORT($t = 't') { %( $t => Terminal::ANSI::OO.new(:get-codes) ) }
+    /// ```
+    ///
+    /// This is the declaration-side twin of
+    /// [`Self::executing_unit_sym_for_module_load`], and uses the same test for
+    /// the same reason: `routine_stack.len()` unchanged since the innermost
+    /// still-loading module's mainline started means nothing has been CALLED
+    /// since, so that module IS what is running and `?FILE` — which
+    /// `load_module_inner` scopes to the module path for exactly this window —
+    /// is the authoritative answer. A change means a routine call happened, and
+    /// the frame-based answer is the correct one again, which is what keeps a
+    /// closure literal built each time an *already-loaded* module's routine runs
+    /// attributed to its own file rather than to the stale `?FILE`.
+    pub(crate) fn declaring_source_file(&self) -> Option<String> {
+        if let Some(&(_, depth_at_push)) = self.module_loading_unit_stack.last()
+            && self.routine_stack.len() == depth_at_push
+            && let Some(file) = self.current_source_file()
+        {
+            return Some(file);
+        }
+        self.executing_source_file()
+    }
+
     /// Current routine-stack depth. Paired with [`Self::truncate_routine_stack`] so a
     /// structured execution boundary (block scope, try/catch) can record its
     /// entry depth and restore it on exit, exception-safely.
