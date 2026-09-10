@@ -225,6 +225,19 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
 // re-entrant per thread (a `whenever` body that synchronously re-triggers a
 // same-group source on its own thread must not self-deadlock) and blocks across
 // threads via a condvar.
+//
+// The lock is **FIFO**: a waiter takes a ticket on arrival and the release hands
+// the lock to the next ticket in line, rather than letting whoever wins the
+// mutex race barge in. That is not a fairness nicety, it is the ordering
+// semantics Raku's own `Lock::Async` gives a supply block (its waiter queue is a
+// FIFO `Promise` queue), and supply-block output order is observable: with a
+// barging lock, two `whenever` reactions whose emits are queued in a definite
+// order -- e.g. a nested `whenever $p { emit ... }` created once per value by an
+// outer `whenever`, where value N's continuation reaches the lock a whole body
+// ahead of value N+1's -- still come out in whichever order the OS happened to
+// wake their threads in. `t/whenever-callback-recompile-semantics.t` subtest 5
+// and `t/supply-serialize-fifo.t` pin this (#7811). A barging lock can also
+// starve a waiter indefinitely under a steady stream of new emits.
 type SupplierSerializeGroupsMap = std::sync::Mutex<HashMap<u64, u64>>;
 
 fn supplier_serialize_groups() -> &'static SupplierSerializeGroupsMap {
@@ -270,6 +283,36 @@ struct GroupLock {
 struct GroupLockState {
     owner: Option<std::thread::ThreadId>,
     depth: u32,
+    /// Next ticket handed to an arriving (non-re-entrant) acquirer.
+    next_ticket: u64,
+    /// Ticket currently entitled to take the lock. Advanced by the release
+    /// that drops the depth to zero, so the queue is served in arrival order.
+    now_serving: u64,
+    /// Tickets reserved by [`reserve_supply_serialize`] and then dropped
+    /// without being redeemed. `now_serving` skips them instead of stalling
+    /// the whole group behind a reaction that will never arrive.
+    cancelled: std::collections::HashSet<u64>,
+}
+
+impl GroupLockState {
+    fn new() -> Self {
+        GroupLockState {
+            owner: None,
+            depth: 0,
+            next_ticket: 0,
+            now_serving: 0,
+            cancelled: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Finish with the ticket currently being served and move to the next one
+    /// that is still live.
+    fn retire_ticket(&mut self) {
+        self.now_serving = self.now_serving.wrapping_add(1);
+        while self.cancelled.remove(&self.now_serving) {
+            self.now_serving = self.now_serving.wrapping_add(1);
+        }
+    }
 }
 
 fn group_locks() -> &'static std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupLock>>> {
@@ -281,7 +324,7 @@ fn group_locks() -> &'static std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupL
 /// RAII guard for a held supply-block serialize group. Dropping it releases the
 /// group (decrements the re-entrancy depth; when it reaches zero, clears the
 /// owner and wakes a waiting thread).
-pub(in crate::runtime) struct SupplySerializeGuard {
+pub(crate) struct SupplySerializeGuard {
     lock: std::sync::Arc<GroupLock>,
 }
 
@@ -291,47 +334,126 @@ impl Drop for SupplySerializeGuard {
             st.depth = st.depth.saturating_sub(1);
             if st.depth == 0 {
                 st.owner = None;
-                self.lock.cv.notify_one();
+                // Only the outermost release retires a ticket: a re-entrant
+                // acquisition never took one.
+                st.retire_ticket();
+                // `notify_all`, not `notify_one`: exactly one waiter holds the
+                // ticket now being served and waking any other would leave the
+                // lock idle with a queue behind it.
+                self.lock.cv.notify_all();
             }
         }
     }
 }
 
-/// Acquire the serialize group `group`, blocking the current thread until no
-/// other thread holds it. Re-entrant on the same thread.
-pub(in crate::runtime) fn acquire_supply_serialize(group: u64) -> SupplySerializeGuard {
-    let lock = {
-        let mut map = group_locks().lock().unwrap();
-        map.entry(group)
-            .or_insert_with(|| {
-                std::sync::Arc::new(GroupLock {
-                    state: std::sync::Mutex::new(GroupLockState {
-                        owner: None,
-                        depth: 0,
-                    }),
-                    cv: std::sync::Condvar::new(),
-                })
+fn group_lock(group: u64) -> std::sync::Arc<GroupLock> {
+    let mut map = group_locks().lock().unwrap();
+    map.entry(group)
+        .or_insert_with(|| {
+            std::sync::Arc::new(GroupLock {
+                state: std::sync::Mutex::new(GroupLockState::new()),
+                cv: std::sync::Condvar::new(),
             })
-            .clone()
-    };
-    let me = std::thread::current().id();
-    let mut st = lock.state.lock().unwrap();
-    loop {
-        match st.owner {
-            None => {
-                st.owner = Some(me);
-                st.depth = 1;
-                break;
-            }
-            Some(owner) if owner == me => {
-                st.depth += 1;
-                break;
-            }
-            Some(_) => {
-                st = lock.cv.wait(st).unwrap();
+        })
+        .clone()
+}
+
+/// A place in a serialize group's queue, taken on one thread and redeemed on
+/// another.
+///
+/// A supply block publishes its reactions in the order they reach the group
+/// lock, but a reaction whose source is a resolved `Promise` does not reach it
+/// on the thread that resolved the promise -- it is handed to a pooled worker
+/// (`SharedPromise::dispatch_waiters`), and N such workers race each other's
+/// wake-up latency. The order those reactions *should* come out in is fixed
+/// long before that: it is the order the promises were resolved in. So the
+/// resolving thread takes the ticket, in that order, and the worker redeems
+/// it. Nothing else about the pool changes -- the tasks still run wherever
+/// there is a worker, they just enter the supply block in the order their
+/// sources produced them (#7811).
+///
+/// Dropping a ticket without redeeming it cancels it, so a dispatch that never
+/// reaches [`SupplyTicket::redeem`] (a panicking task, a waiter dropped during
+/// unwind) cannot wedge the group.
+pub(crate) struct SupplyTicket {
+    lock: std::sync::Arc<GroupLock>,
+    ticket: u64,
+    redeemed: bool,
+}
+
+impl Drop for SupplyTicket {
+    fn drop(&mut self) {
+        if self.redeemed {
+            return;
+        }
+        if let Ok(mut st) = self.lock.state.lock() {
+            if st.owner.is_none() && st.now_serving == self.ticket {
+                st.retire_ticket();
+                self.lock.cv.notify_all();
+            } else {
+                st.cancelled.insert(self.ticket);
             }
         }
     }
+}
+
+impl SupplyTicket {
+    /// Take the serialize group once this ticket comes up, blocking until then.
+    pub(crate) fn redeem(mut self) -> SupplySerializeGuard {
+        self.redeemed = true;
+        let lock = self.lock.clone();
+        let ticket = self.ticket;
+        let me = std::thread::current().id();
+        let mut st = lock.state.lock().unwrap();
+        while st.owner.is_some() || st.now_serving != ticket {
+            st = lock.cv.wait(st).unwrap();
+        }
+        st.owner = Some(me);
+        st.depth = 1;
+        drop(st);
+        SupplySerializeGuard { lock }
+    }
+}
+
+/// Reserve this thread's place in serialize group `group` without waiting for
+/// it. See [`SupplyTicket`].
+pub(crate) fn reserve_supply_serialize(group: u64) -> SupplyTicket {
+    let lock = group_lock(group);
+    let ticket = {
+        let mut st = lock.state.lock().unwrap();
+        let t = st.next_ticket;
+        st.next_ticket = st.next_ticket.wrapping_add(1);
+        t
+    };
+    SupplyTicket {
+        lock,
+        ticket,
+        redeemed: false,
+    }
+}
+
+/// Acquire the serialize group `group`, blocking the current thread until it is
+/// this thread's turn. Re-entrant on the same thread; **FIFO** across threads,
+/// so the reaction order a supply block publishes is decided by arrival at this
+/// lock and not by thread wake-up luck (see the module comment above).
+pub(in crate::runtime) fn acquire_supply_serialize(group: u64) -> SupplySerializeGuard {
+    let lock = group_lock(group);
+    let me = std::thread::current().id();
+    let mut st = lock.state.lock().unwrap();
+    // A re-entrant acquisition must not queue behind the waiters -- this thread
+    // already holds the lock, so nobody ahead of it can ever run.
+    if st.owner == Some(me) {
+        st.depth += 1;
+        drop(st);
+        return SupplySerializeGuard { lock };
+    }
+    let ticket = st.next_ticket;
+    st.next_ticket = st.next_ticket.wrapping_add(1);
+    while st.owner.is_some() || st.now_serving != ticket {
+        st = lock.cv.wait(st).unwrap();
+    }
+    st.owner = Some(me);
+    st.depth = 1;
     drop(st);
     SupplySerializeGuard { lock }
 }

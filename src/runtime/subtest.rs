@@ -676,30 +676,41 @@ impl Interpreter {
             // explicitly rather than trusting `ran.is_ok()`, since a
             // converted die returns `Ok` too (the conversion absorbs it).
             let emitter_supplier_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
-            shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
-                if status == "Kept" {
-                    let ran = thread_interp.call_supply_tap(callback, vec![result], true);
-                    let quit_fired = emitter_supplier_id
-                        .map(|sid| {
-                            crate::runtime::native_methods::supplier_snapshot(sid)
-                                .2
-                                .is_some()
-                        })
-                        .unwrap_or(false);
-                    if ran.is_ok()
-                        && !quit_fired
-                        && let Some(last_cb) = last_cb
-                    {
-                        let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+            // The enclosing supply block's emitter id is also its serialize
+            // group, so handing it to `on_resolve` makes the thread that
+            // resolves the promise reserve this body's place in the block
+            // before the pooled worker that will run it is even woken. That is
+            // what keeps N nested `whenever <Promise>` bodies -- one created
+            // per value by an outer `whenever`, each on its own promise -- in
+            // the order their promises were kept, instead of in whichever
+            // order N pooled workers happened to wake up in (#7811).
+            shared.on_resolve_in_supply_group(
+                Box::new(move |status, result, _output, _stderr| {
+                    if status == "Kept" {
+                        let ran = thread_interp.call_supply_tap(callback, vec![result], true);
+                        let quit_fired = emitter_supplier_id
+                            .map(|sid| {
+                                crate::runtime::native_methods::supplier_snapshot(sid)
+                                    .2
+                                    .is_some()
+                            })
+                            .unwrap_or(false);
+                        if ran.is_ok()
+                            && !quit_fired
+                            && let Some(last_cb) = last_cb
+                        {
+                            let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+                        }
+                    } else if let Some(quit_cb) = quit_cb {
+                        let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
                     }
-                } else if let Some(quit_cb) = quit_cb {
-                    let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
-                }
-                // One-shot source complete: leave the enclosing done group.
-                if let Some(marker) = marker {
-                    let _ = thread_interp.invoke_done_callback(marker);
-                }
-            }));
+                    // One-shot source complete: leave the enclosing done group.
+                    if let Some(marker) = marker {
+                        let _ = thread_interp.invoke_done_callback(marker);
+                    }
+                }),
+                emitter_supplier_id,
+            );
         } else if let Some(marker) = group_marker {
             // No subscription was registered for this source kind; undo the
             // group join so the enclosing supply's done is not held hostage.
