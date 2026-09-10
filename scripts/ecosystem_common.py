@@ -404,11 +404,18 @@ def tap_verdict(out: str, rc):
 def first_error_line(out: str) -> str:
     """The first meaningful error line, skipping the generic TAP-harness noise
     ('Runtime error: Test failures', '# You planned N ...') that reports only
-    that the run died, not why."""
+    that the run died, not why.
+
+    A `===SORRY!=== Error while compiling <path>` header is noise of the same
+    kind: it says a parse failed and then spends its width on a temp-directory
+    path. The reason is the line after it, which is what a reader needs to tell
+    one parse failure from another -- without this, every parse blocker in the
+    ledger reads as the same undifferentiated `===SORRY!===`.
+    """
     candidates = []
     for line in out.splitlines():
         s = line.strip()
-        if not s or _HARNESS_NOISE.search(s):
+        if not s or _HARNESS_NOISE.search(s) or s.startswith("===SORRY!==="):
             continue
         candidates.append(s)
     for s in candidates:
@@ -436,3 +443,60 @@ def first_failing_assertion(out: str) -> str:
 
 def rmtree(path: str) -> None:
     subprocess.run(["rm", "-rf", path], check=False)
+
+
+# --- self-test ---------------------------------------------------------------
+
+def _self_test() -> int:
+    """`python3 scripts/ecosystem_common.py --self-test`
+
+    The failure-line extractor decides what every blocked distribution in the
+    ledger *says*, so a regression there does not break a sweep -- it quietly
+    makes thirty distinct blockers read as one, which is how the first sweep's
+    parse failures were nearly triaged as a single cause.
+    """
+    cases = [
+        # A ===SORRY!=== header spends its width on a temp path; the reason is
+        # the line after it.
+        ("===SORRY!=== Error while compiling /tmp/x/lib/A.rakumod\n"
+         "expected statement: expected ')'\n"
+         "at lib/A.rakumod:50",
+         "expected statement: expected ')'"),
+        # Generic TAP-harness death lines report that a run died, not why.
+        ("1..3\nok 1 - a\nRuntime error: Test failures\n"
+         "No such method 'frobnicate' for invocant of type 'Str'",
+         "No such method 'frobnicate' for invocant of type 'Str'"),
+        ("Unknown role: CustomUnmarshaller", "Unknown role: CustomUnmarshaller"),
+    ]
+    failures = 0
+    for out, want in cases:
+        got = first_error_line(out)
+        if got != want:
+            print(f"first_error_line: want {want!r}, got {got!r}", file=sys.stderr)
+            failures += 1
+
+    # A `# TODO` failure is an expected one: TAP says the file still passes.
+    tap = "1..3\nok 1 - a\nnot ok 2 - b # TODO flaky\nok 3 - c\n"
+    if parse_tap(tap) != (3, 2, 0, 1, 0):
+        print(f"parse_tap: got {parse_tap(tap)}", file=sys.stderr)
+        failures += 1
+    for out, rc, want in [
+        (tap, 0, "pass"),
+        ("1..2\nok 1\nnot ok 2 - boom\n", 1, "fail"),
+        ("1..3\nok 1\n", 0, "die"),          # ran fewer than planned
+        ("no plan at all\n", 0, "die"),
+    ]:
+        got = tap_verdict(out, rc)
+        if got != want:
+            print(f"tap_verdict: want {want}, got {got} for {out!r}", file=sys.stderr)
+            failures += 1
+
+    print(f"ecosystem_common self-test: "
+          f"{'all cases pass' if not failures else f'{failures} failure(s)'}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        raise SystemExit(_self_test())
+    sys.exit("this module is imported by the sweeps; --self-test runs its checks")

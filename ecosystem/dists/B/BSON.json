@@ -1,0 +1,167 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Method::Also",
+      "OpenSSL",
+      "UUID"
+    ],
+    "unresolved": []
+  },
+  "dist": "BSON",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/Document-all-types.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Document-all-types.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Document-associative.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Document-associative.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Document-de-encode.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Document-de-encode.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Document-init.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Document-init.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Document-large-buf-test.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Document-large-buf-test.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Javascript.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Javascript.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Objectid.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Objectid.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Ordered.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-3pifh_df/dist/t/Ordered.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "BSON": "ok",
+    "BSON::Binary": "ok",
+    "BSON::Decimal128": "ok",
+    "BSON::Decimal128::Actions": "ok",
+    "BSON::Decimal128::Grammar": "ok",
+    "BSON::Decode": "raku_also_fails",
+    "BSON::Document": "raku_also_fails",
+    "BSON::Encode": "raku_also_fails",
+    "BSON::Javascript": "ok",
+    "BSON::ObjectId": "raku_also_fails",
+    "BSON::Ordered": "raku_also_fails",
+    "BSON::Regex": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/B/SO/BSON/1755919a53f1376a0f52b5c474968d3eb4c780d5.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.13.4"
+}

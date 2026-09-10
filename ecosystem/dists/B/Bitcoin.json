@@ -1,0 +1,47 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base58",
+      "Digest",
+      "EC",
+      "FiniteFields",
+      "JSON::Tiny"
+    ],
+    "unresolved": []
+  },
+  "dist": "Bitcoin",
+  "files": [],
+  "load": {
+    "BIP32": "raku_also_fails",
+    "BIP39": "ok",
+    "Bitcoin": "Variable $.x used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/B/IT/BITCOIN/73fbc0831786ce9dcf899f8a500f671f2f096aa0.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.7.1"
+}

@@ -1,0 +1,97 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Log::Async",
+      "OO::Monitors",
+      "Readline",
+      "Terminal::ANSI"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::termie",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 23.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-replace-vars.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Termie::Actions": "ok",
+    "Termie::Commander": "ok",
+    "Termie::Commander::Godot": "ok",
+    "Termie::Commander::Shellish": "ok",
+    "Termie::Commands": "ok",
+    "Termie::Tester": "ok",
+    "Termie::Tmux": "ok",
+    "Termie::Utils": "ok",
+    "Termie::Waiter": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_TERMIE/30e4e8618efe52500343d686fc677c3bd99bfaa5.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 7,
+    "baseline_files": 2,
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.2.4"
+}

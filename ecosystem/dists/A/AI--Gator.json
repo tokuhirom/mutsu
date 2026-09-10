@@ -1,0 +1,49 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTTP::Tiny",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "Log::Async",
+      "OO::Monitors",
+      "OpenSSL",
+      "Readline",
+      "TOML",
+      "Terminal::ANSI",
+      "Terminal::ANSIParser",
+      "Terminal::UI"
+    ],
+    "unresolved": [
+      "Unicode::UTF8"
+    ]
+  },
+  "dist": "AI::Gator",
+  "files": [],
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/I_/AI_GATOR/07aa6b0f600b2c651092632e2f8c712d8633567e.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.14"
+}

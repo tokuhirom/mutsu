@@ -1,0 +1,43 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Grammar",
+      "Color::Names",
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::Writer",
+  "files": [],
+  "load": {
+    "CSS::Writer": "Inconsistent class hierarchy for CSS::Grammar::CSS21"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "a7fe6d9",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_WRITER/770533e90213a48c7eed3b47e65fa671c056d8cf.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.3"
+}

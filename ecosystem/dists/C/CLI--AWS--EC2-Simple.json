@@ -1,0 +1,58 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "MIME::Base64",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "CLI::AWS::EC2-Simple",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-run.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /root/.cache/mutsu-ecosystem/run/ecosweep-gs1gbg_6/sbxhome/.raws-config/aws-ec2-launch.yaml: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "CLI::AWS::EC2-Simple": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "a7fe6d9",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/LI/CLI_AWS_EC2SIMPLE/9b7295c591e1e194d7d079315f2d68a5a7b9581c.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

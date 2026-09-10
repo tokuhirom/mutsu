@@ -1,0 +1,70 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibCurl",
+      "License::SPDX",
+      "META6",
+      "NativeLibs",
+      "Pod::From::Cache",
+      "Pod::Load",
+      "PrettyDump",
+      "Raku::Pod::Render",
+      "RakuConfig",
+      "Template::Mustache",
+      "Terminal::Spinners",
+      "Test::Deeply::Relaxed",
+      "Test::META",
+      "Test::Output",
+      "Test::Run",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Collection",
+  "files": [],
+  "load": {
+    "Collection": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/PrettyDump/dist/lib/PrettyDump.rakumod",
+    "Collection::Entities": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-7spiu4a8/dist/dist/lib/Collection/Entities.rakumod",
+    "Collection::Exceptions": "ok",
+    "Collection::Progress": "ok",
+    "Collection::RefreshPlugins": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:194:30:",
+    "Collection::TestPlugin": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/PrettyDump/dist/lib/PrettyDump.rakumod"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/OL/COLLECTION/176ca29ff827a5fd125b3b70817c2cbe4f48b764.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.18.0"
+}

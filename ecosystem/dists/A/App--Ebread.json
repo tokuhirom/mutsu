@@ -1,0 +1,47 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "File::Which",
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Ebread",
+  "files": [],
+  "load": {
+    "App::Ebread": "raku_also_fails",
+    "App::Ebread::Epub": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ho3pu70h/dist/dist/lib/App/Ebread/Epub.rakumod",
+    "App::Ebread::Epub::Unzip": "ok",
+    "App::Ebread::TextBrowserDump": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_EBREAD/dc62d4d04c6ef80e9687caaaf8d51a7e800beadc.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.3"
+}

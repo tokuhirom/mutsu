@@ -1,0 +1,45 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Terminal::ANSIColor",
+      "Terminal::Boxer",
+      "Terminal::Table",
+      "Terminal::WCWidth",
+      "Text::Tabs"
+    ],
+    "unresolved": []
+  },
+  "dist": "antlia",
+  "files": [],
+  "load": {
+    "Antlia::CLI": "No such method 'slurp' for invocant of type 'Any'"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/NT/ANTLIA/f124e25d1b9b216f7920cd968e08464f02b706a9.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.2"
+}

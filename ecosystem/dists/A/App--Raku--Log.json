@@ -1,0 +1,77 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::IRC::Log",
+      "Array::Sorted::Util",
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IRC::Channel::Log",
+      "IRC::Log",
+      "IRC::Log::Colabti",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "String::Color",
+      "String::Utils",
+      "Test::META",
+      "TinyFloats",
+      "URI",
+      "highlighter",
+      "if",
+      "xxirakup6-RandomColor"
+    ],
+    "unresolved": [
+      "has"
+    ]
+  },
+  "dist": "App::Raku::Log",
+  "files": [],
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAKU_LOG/7f32cda123345033b85ee88965a7575491b0dc01.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.37"
+}

@@ -1,0 +1,54 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Backtrace::Files",
+      "CLI::Version",
+      "Git::Files",
+      "IO::Path::AutoDecompress",
+      "JSON::Fast",
+      "JSON::Fast::Hyper",
+      "META::constants",
+      "Needle::Compile",
+      "String::Utils",
+      "Trap",
+      "highlighter",
+      "hyperize",
+      "paths",
+      "rak"
+    ],
+    "unresolved": [
+      "as",
+      "has",
+      "path"
+    ]
+  },
+  "dist": "App::Rak",
+  "files": [],
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAK/e3a1068f008ee801d73b9768bd8a03012d31d110.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.20"
+}

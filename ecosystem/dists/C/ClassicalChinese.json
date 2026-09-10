@@ -1,0 +1,66 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "ClassicalChinese",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 16.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "ClassicalChinese": "ok",
+    "古文": "raku_also_fails",
+    "文言": "raku_also_fails",
+    "文言文": "raku_also_fails",
+    "漢文": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/LA/CLASSICALCHINESE/5f091f8b4d0b9fc443bcef6f061caa57991d9a60.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 56,
+    "baseline_files": 1,
+    "mutsu_assertions": 56,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "XML",
+      "XML::Class"
+    ],
+    "unresolved": []
+  },
+  "dist": "Audio::Hydrogen",
+  "files": [],
+  "load": {
+    "Audio::Hydrogen": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+    "Audio::Hydrogen::Drumkit": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+    "Audio::Hydrogen::Instrument": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+    "Audio::Hydrogen::Pattern": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+    "Audio::Hydrogen::Song": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/UD/AUDIO_HYDROGEN/81627387cb2425d013de3435a26101662857e816.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.7"
+}

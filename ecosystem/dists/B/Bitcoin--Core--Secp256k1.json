@@ -1,0 +1,73 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Method::Protected",
+      "Test::Mock"
+    ],
+    "unresolved": []
+  },
+  "dist": "Bitcoin::Core::Secp256k1",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-x92kmn34/dist/dist/t/01.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-x92kmn34/dist/dist/t/02.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Bitcoin::Core::Secp256k1": "raku_also_fails",
+    "Bitcoin::Core::Secp256k1::Exception": "ok",
+    "Bitcoin::Core::Secp256k1::NativeLib": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/B/IT/BITCOIN_CORE_SECP256K1/be74345019a670bcb42c0a629a7fa209ba9629e6.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.28"
+}

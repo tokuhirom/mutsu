@@ -99,6 +99,10 @@ const EN = {
   distParity: 'distributions fully passing',
   fileParity: 'test files passing',
   measured: 'measured',
+  coverage: (n, total, pct) =>
+    `${n} of ${total} distributions measured (${pct}%) — the sweep runs shard by shard, ` +
+    `so these figures speak for the part of the ecosystem measured so far, not all of it`,
+  coverageAll: (total) => `all ${total} distributions measured`,
   search: 'Search for a distribution…',
   allStatuses: 'All statuses',
   shown: (n, total) => `${n} of ${total} distributions`,
@@ -123,6 +127,10 @@ const JA = {
   distParity: '完全に通ったディストリビューション',
   fileParity: '通ったテストファイル',
   measured: '計測時点',
+  coverage: (n, total, pct) =>
+    `${total} 件中 ${n} 件を計測済み (${pct}%) — スイープはシャード単位で進むため、` +
+    `これらの数値はエコシステム全体ではなく計測済みの範囲についてのものです`,
+  coverageAll: (total) => `全 ${total} 件を計測済み`,
   search: 'ディストリビューションを検索…',
   allStatuses: 'すべての状態',
   shown: (n, total) => `${total} 件中 ${n} 件`,
@@ -191,7 +199,14 @@ function paintChrome() {
     kpi(`${DATA.file_parity}%`, l.fileParity),
   );
   const m = DATA.measured || {};
+  const corpus = DATA.counts.corpus ?? 0;
+  const n = DATA.counts.distributions ?? 0;
+  // A partial sweep must never publish a parity figure that reads as the whole
+  // ecosystem's: say how much of the corpus these numbers speak for, first.
+  const cov = corpus && n < corpus ? l.coverage(n, corpus, DATA.coverage ?? 0)
+            : corpus ? l.coverageAll(corpus) : '';
   els.provenance.textContent =
+    (cov ? cov + '  ·  ' : '') +
     `${l.measured}: ${m.date ?? '?'} · mutsu ${m.mutsu_version ?? '?'} (${m.mutsu_commit ?? '?'})` +
     ` · rakudo ${m.raku_version ?? '?'}`;
 

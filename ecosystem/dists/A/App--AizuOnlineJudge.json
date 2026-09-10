@@ -1,0 +1,106 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebSocket",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "Docker::File",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Ignore",
+      "File::Temp",
+      "File::Which",
+      "HTTP::HPACK",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "Term::termios",
+      "Terminal::ANSIColor",
+      "Terminal::Getpass",
+      "Test::Util::ServerPort",
+      "TinyFloats",
+      "URI",
+      "YAMLish",
+      "cro",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::AizuOnlineJudge",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-81ahvuma/dist/raku-App-AizuOnlineJudge-498b11e5b0c501aab2e17eb9279b7f007f7806cf/t/01-basic.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "App::AizuOnlineJudge": "ok",
+    "App::AizuOnlineJudge::BasicCourse": "raku_also_fails",
+    "App::AizuOnlineJudge::IntroductionCourse": "raku_also_fails",
+    "App::AizuOnlineJudge::Submittable": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/A/App%3A%3AAizuOnlineJudge/App%3A%3AAizuOnlineJudge%3Aver%3C1.001001%3E%3Aauth%3Cgithub%3Atitsuki%3E.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.001001"
+}

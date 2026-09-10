@@ -1,0 +1,94 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Grammar",
+      "File::Find",
+      "File::Which",
+      "HTTP::Tiny",
+      "Hash::Merge",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LLM::Functions",
+      "LLM::Prompts",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "OpenSSL",
+      "Shell::Command",
+      "Test::META",
+      "Text::SubParsers",
+      "URI",
+      "WWW::Gemini",
+      "WWW::LLaMA",
+      "WWW::MistralAI",
+      "WWW::Ollama",
+      "WWW::OpenAI",
+      "WWW::OpenRouter",
+      "XDG::BaseDirectory"
+    ],
+    "unresolved": []
+  },
+  "dist": "Chatnik",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "circular module dependency detected: Chatnik -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 28.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Chatnik": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/HA/CHATNIK/8459f036001a69e1fd60886a60137cc4b36a7bc0.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.7"
+}

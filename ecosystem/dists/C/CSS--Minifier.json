@@ -1,0 +1,48 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "CSS::Minifier",
+  "files": [],
+  "load": {
+    "CSS::Minifier": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+    "CSS::Minifier::Document": "ok",
+    "CSS::Minifier::Normalizer": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+    "CSS::Minifier::Parser": "ok",
+    "CSS::Minifier::Pipeline": "ok",
+    "CSS::Minifier::Plugin": "ok",
+    "CSS::Minifier::Plugin::Dedup": "ok",
+    "CSS::Minifier::Plugin::Merging": "ok",
+    "CSS::Minifier::Util": "ok",
+    "CSS::Minifier::Writer": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "a7fe6d9",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_MINIFIER/1cf3f4d9ff395041663fbdffd743ac52bcf59a1e.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.14"
+}

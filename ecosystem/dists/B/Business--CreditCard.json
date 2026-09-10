@@ -1,0 +1,86 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Business::CreditCard",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "5100-2222 3333 4414 -> NotACreditCard",
+        "nok": 22,
+        "ok": 35,
+        "plan": 57,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-original-tests.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did '5212345678901234' produce 'MasterCard'",
+        "nok": 26,
+        "ok": 4,
+        "plan": 30,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-cpan-tests.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Business::CreditCard": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/B/US/BUSINESS_CREDITCARD/23fb2f85d615c2934cacdf6c86b400b0a714bc5a.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 87,
+    "baseline_files": 2,
+    "mutsu_assertions": 39,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.2"
+}

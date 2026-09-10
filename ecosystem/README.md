@@ -71,10 +71,14 @@ Requires `bubblewrap` (the sweep runs unaudited test suites and refuses to run a
 corpus without a sandbox) and a `raku` on PATH. Full runbook:
 [docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
 
-## Current state — validation set, not the corpus
+## Current state — a partial sweep, not the corpus
 
-**The records here are a small P1 validation set, not a survey.** They were
-measured to prove the harness works end to end; the corpus sweep and the first
-real KPI numbers are phase P2. There is deliberately no `summary.*` or
-`history.tsv` yet: a rollup over a handful of hand-picked distributions would
-read like a KPI, and it is not one.
+**The corpus sweep (P2) is in progress and these records cover only part of it.**
+`site/content/ecosystem.json` carries a `coverage` figure and the page leads with
+it, so a partial sweep can never publish a parity figure that reads as the whole
+ecosystem's.
+
+There is deliberately still no `summary.*` or `history.tsv`: `history.tsv` takes
+**one row per full sweep** (`--rollup --history`), and appending a row for a
+third of the corpus would put a point on the KPI chart that is not comparable
+with the ones after it.

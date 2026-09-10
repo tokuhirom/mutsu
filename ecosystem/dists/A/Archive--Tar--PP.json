@@ -1,0 +1,143 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Archive::Tar::PP",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-pax.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/doqeskufcbgvhplwmtnj: Read-only file system",
+        "nok": 0,
+        "ok": 2,
+        "plan": 5,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-gittar.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/vdwkginztlfrmhejuysq: Read-only file system",
+        "nok": 0,
+        "ok": 16,
+        "plan": 33,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::stat",
+        "nok": 0,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-refuse.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-peek.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/rwdolfuijnhksatzxpye: Read-only file system",
+        "nok": 0,
+        "ok": 9,
+        "plan": 18,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-write-peek.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/nucgxrwypsmqlthbeifd: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Archive::Tar::PP": "ok",
+    "Archive::Tar::PP::Tar": "ok",
+    "Archive::Tar::PP::Util": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/RC/ARCHIVE_TAR_PP/e89f5b41639825cb52b10d4a2cc31ec1dd4fe160.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "v0.0.1"
+}

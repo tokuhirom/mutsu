@@ -1,0 +1,277 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "HTTP::HPACK",
+      "Hash::Merge",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "License::SPDX",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "Method::Protected",
+      "OO::Monitors",
+      "OpenSSL",
+      "P5getpriority",
+      "P5localtime",
+      "Shell::Command",
+      "Term::termios",
+      "Terminal::ANSIColor",
+      "Terminal::ReadKey",
+      "Test::META",
+      "Test::Mock",
+      "TinyFloats",
+      "URI",
+      "URI::Encode",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Tasks",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/01-basic.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-config.t",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Any:U: BOOTStr); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-retitle.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/20-retitle.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-move.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/21-move.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-add-note.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/22-add-note.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-expire.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/23-expire.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-task-class.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/24-task-class.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 19.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-not-before.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/25-not-before.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-frequency.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/26-frequency.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-tags.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/27-tags.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-trello.rakutest",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/28-trello.rakutest",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/98-bug-yn-dialog.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/98-bug-yn-dialog.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/99-bug-display-gaps.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ivh3aiml/dist/App-Tasks-0.4.0/t/99-bug-display-gaps.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "App::Tasks": "raku_also_fails",
+    "App::Tasks::Config": "ok",
+    "App::Tasks::Config::Monitor": "ok",
+    "App::Tasks::Config::Trello": "ok",
+    "App::Tasks::Lock": "ok",
+    "App::Tasks::Task": "ok",
+    "App::Tasks::TaskBody": "ok",
+    "App::Tasks::TaskList": "ok",
+    "App::Tasks::Trello": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_TASKS/67e63f70957d1bd79f6d1d0526d7ffed05853861.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.4.0"
+}

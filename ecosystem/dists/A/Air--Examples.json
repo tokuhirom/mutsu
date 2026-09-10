@@ -1,0 +1,109 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Air",
+      "Air::Plugin::Asciinema",
+      "Air::Plugin::Donate",
+      "Air::Plugin::Hilite",
+      "Air::Plugin::MailForm",
+      "Air::Plugin::Rakudoc",
+      "Air::Plugin::Wordcloud",
+      "Base64",
+      "CBOR::Simple",
+      "CSS::Grammar",
+      "CSS::Nested",
+      "CSS::Writer",
+      "Color::Names",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::HTTP::Test",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Cromponent",
+      "Crypt::Random",
+      "DateTime::Format",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::MD5",
+      "Email::Simple",
+      "HTML::Escape",
+      "HTTP::HPACK",
+      "Hilite",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "Log::Timeline",
+      "MIME::Base64",
+      "Net::SMTP",
+      "OO::Monitors",
+      "OpenSSL",
+      "Rainbow",
+      "Test::Assertion",
+      "Text::Markdown",
+      "TinyFloats",
+      "UUID::V4",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Air::Examples",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Air::Examples": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/IR/AIR_EXAMPLES/353ec912a87821c6a466e5eb0c060302ca89ca15.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.26"
+}

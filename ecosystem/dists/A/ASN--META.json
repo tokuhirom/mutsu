@@ -1,0 +1,82 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "ASN::BER",
+      "ASN::Grammar",
+      "Type::EnumHOW"
+    ],
+    "unresolved": []
+  },
+  "dist": "ASN::META",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.t",
+      "raku": {
+        "first_failure": "===SORRY!===",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown role: Set",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-recursive-type.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "ASN::META": "raku_also_fails",
+    "ASN::META::Types": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/SN/ASN_META/12371b06006b3e28809f5735564b0f739323e5c6.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.5.3"
+}

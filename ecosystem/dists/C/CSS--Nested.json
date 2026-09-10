@@ -1,0 +1,42 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Grammar",
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::Nested",
+  "files": [],
+  "load": {
+    "CSS::Nested": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected right-h"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "a7fe6d9",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_NESTED/031c7b5f02cdeb72c3167c360dc7942a269bc906.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

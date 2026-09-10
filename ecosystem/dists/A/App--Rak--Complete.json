@@ -1,0 +1,80 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Rak",
+      "Array::Agnostic",
+      "Backtrace::Files",
+      "CLI::Version",
+      "Edit::Files",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Git::Blame::File",
+      "Git::Files",
+      "IO::Path::AutoDecompress",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Fast::Hyper",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Path",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "List::Agnostic",
+      "META6",
+      "META::constants",
+      "META::verauthapi",
+      "MoarVM::Bytecode",
+      "Needle::Compile",
+      "P5getgrnam",
+      "P5getpwnam",
+      "PDF::Extract",
+      "Slang::Tuxic",
+      "Slangify",
+      "String::Utils",
+      "Test::META",
+      "Text::CSV",
+      "Trap",
+      "URI",
+      "highlighter",
+      "hyperize",
+      "paths",
+      "rak",
+      "sourcery"
+    ],
+    "unresolved": [
+      "as",
+      "has",
+      "path"
+    ]
+  },
+  "dist": "App::Rak::Complete",
+  "files": [],
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAK_COMPLETE/02ab23e146ff6c3b6a6d7c46a8308ea5a213248a.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.13"
+}

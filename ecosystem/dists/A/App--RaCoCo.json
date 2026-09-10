@@ -1,0 +1,74 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::RaCoCo",
+  "files": [],
+  "load": {
+    "App::Racoco": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Cli": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::ConfigFile": "ok",
+    "App::Racoco::Configuration": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Coverable::Coverable": "ok",
+    "App::Racoco::Coverable::CoverableIndex": "ok",
+    "App::Racoco::Coverable::CoverableLinesSupplier": "ok",
+    "App::Racoco::Coverable::CoverableOutliner": "ok",
+    "App::Racoco::Coverable::Precomp::PrecompHashcodeReader": "ok",
+    "App::Racoco::Coverable::Precomp::PrecompLookup": "ok",
+    "App::Racoco::Coverable::Precomp::PrecompSupplier": "ok",
+    "App::Racoco::Coverable::Precomp::Precompiler": "ok",
+    "App::Racoco::CoverableLinesCollector": "ok",
+    "App::Racoco::CoveredLinesCollector": "ok",
+    "App::Racoco::Misc": "ok",
+    "App::Racoco::ModuleNames": "ok",
+    "App::Racoco::Paths": "ok",
+    "App::Racoco::ProjectName": "ok",
+    "App::Racoco::Report::Data": "ok",
+    "App::Racoco::Report::DataPart": "ok",
+    "App::Racoco::Report::Reporter": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterHtml": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterHtmlColorBlind": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterSimple": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::RunProc": "ok",
+    "App::Racoco::Sha": "ok",
+    "App::Racoco::X": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RACOCO/a5e03f95e3cdc154e2c6985afb96d8edd38b4400.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.0.1"
+}

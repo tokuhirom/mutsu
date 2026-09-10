@@ -1,0 +1,57 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "BDD::Behave",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "Test::Output",
+      "URI",
+      "WWW::Playwright"
+    ],
+    "unresolved": []
+  },
+  "dist": "BDD::Behave::Playwright",
+  "files": [],
+  "load": {
+    "BDD::Behave::Playwright": "Unknown function: of",
+    "BDD::Behave::Playwright::Diagnostics": "Unknown function: of",
+    "BDD::Behave::Playwright::Lifecycle": "Unknown function: of",
+    "BDD::Behave::Playwright::Matchers": "Unknown function: of",
+    "BDD::Behave::Playwright::Session": "Unknown function: of"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/B/DD/BDD_BEHAVE_PLAYWRIGHT/21cb1390806d0ae1032fbaaa4dd1f876fb956766.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.9.1"
+}
