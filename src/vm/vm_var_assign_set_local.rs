@@ -1679,7 +1679,22 @@ impl Interpreter {
             // capture `_`'s CURRENT referent in the target name; `_` itself must
             // never be promoted or written back into any ancestor frame.
             let is_percall_pseudo_var = matches!(resolved_source.as_str(), "_" | "@_" | "%_" | "!");
+            // A `__mutsu_bind_index_ref_N` source is excluded for the reason
+            // given at `synthetic_index_source`: it denotes nothing of its own,
+            // so there is no "source variable" for an ancestor frame to own —
+            // and the tag is numbered per COMPILATION UNIT, so two unrelated
+            // routines routinely mint the same name. Chained call envs then let
+            // a callee's lookup find a CALLER's temp under it, and this
+            // promotion adopted that stale cell as the bind's container: a
+            // rebind (`$root := $root{$k}`) silently kept naming the container
+            // the key was looked up in instead of the deferred entry, so a
+            // recursive path-walking routine descended into itself one step per
+            // path element (Config::TOML's `pwd`, #7539). Only frames that
+            // chain env at all could hit it, which is why the same routine
+            // behaved correctly with a signature of plain scalars (those take
+            // the slot-only light call path).
             let source_in_outer_frame = !is_percall_pseudo_var
+                && !synthetic_index_source
                 && self
                     .call_frames
                     .iter()
