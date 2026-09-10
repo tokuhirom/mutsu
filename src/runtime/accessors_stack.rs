@@ -236,6 +236,32 @@ impl Interpreter {
             .map(|f| format!("{}::{}", f.package, f.name))
     }
 
+    /// The compilation unit the frame `CALLER::` names belongs to — the
+    /// compunit-scoping counterpart of [`Self::caller_frame_package`], stamped
+    /// onto the pseudo-stash so `EVAL ..., context => $ctx` can compile the
+    /// snippet with the *caller's* import visibility rather than that of the
+    /// module which happens to call `EVAL` (#7837).
+    ///
+    /// Same walk as [`Self::executing_unit_sym`], started one frame lower: a
+    /// block frame carries no `def_file` of its own and belongs to whatever
+    /// encloses it, so it is skipped. With no caller frame at all the caller is
+    /// a mainline, whose unit is the one currently being loaded or run — which
+    /// is what `?FILE` (`current_source_file_sym`) names, exactly as
+    /// `executing_unit_sym` falls back to.
+    pub(crate) fn caller_frame_unit(&self) -> Symbol {
+        let len = self.routine_stack.len();
+        if len >= 2 {
+            for frame in self.routine_stack[..len - 1].iter().rev() {
+                match frame.def_file {
+                    Some(file) => return self.unit_of_source_sym(Some(file)),
+                    None if frame.is_block => continue,
+                    None => break,
+                }
+            }
+        }
+        self.unit_of_source_sym(self.current_source_file_sym())
+    }
+
     /// The file the code currently executing was *defined* in — the module path
     /// for a routine that came from a `use`d module, the script otherwise.
     ///
@@ -260,6 +286,31 @@ impl Interpreter {
             }
         }
         self.current_source_file()
+    }
+
+    /// [`Self::executing_source_file`], corrected for code running directly in
+    /// a module's own top-level mainline while an unrelated routine call is
+    /// still on `routine_stack` — the file-level counterpart of
+    /// [`Self::executing_unit_sym_for_module_load`], and correct for exactly
+    /// the same reason (see `module_loading_unit_stack`'s doc comment): a
+    /// module body runs via `run_block`, which pushes no routine frame, so the
+    /// plain frame walk answers whichever routine is still below it.
+    ///
+    /// Without it, `use`ing a module from inside an `EVAL` that itself runs
+    /// inside a routine stamped every routine the module declares with the
+    /// *calling* module's file — which then anchored the loaded module's own
+    /// `sub EXPORT` to the wrong compunit and made its qualified
+    /// self-reference (`Terminal::ANSI::OO.new` inside
+    /// `Terminal/ANSI/OO.rakumod`'s own `EXPORT`) fail the #7797 visibility
+    /// gate. That is the shape `Test.rakumod`'s `use-ok` produces (#7837).
+    pub(crate) fn executing_source_file_for_module_load(&self) -> Option<String> {
+        if let Some(&(unit, depth_at_push)) = self.module_loading_unit_stack.last()
+            && self.routine_stack.len() == depth_at_push
+            && unit != crate::runtime::main_unit()
+        {
+            return Some(unit.resolve());
+        }
+        self.executing_source_file()
     }
 
     /// Current routine-stack depth. Paired with [`Self::truncate_routine_stack`] so a

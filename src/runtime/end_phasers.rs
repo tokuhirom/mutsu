@@ -143,6 +143,7 @@ impl Interpreter {
             body,
             env,
             package,
+            unit: self.executing_unit_sym_for_module_load(),
             dead_keys,
             order,
             capture_seq: None,
@@ -185,11 +186,13 @@ impl Interpreter {
         };
         let captured_env = self.env.clone();
         let package = self.current_package();
+        let unit = self.executing_unit_sym_for_module_load();
         let mark = self.end_phaser_capture_seq;
         self.end_phaser_capture_seq += 1;
         let phaser = &mut self.end_phasers[slot];
         phaser.env = captured_env;
         phaser.package = package;
+        phaser.unit = unit;
         // A fresh capture supersedes whatever the previous one froze.
         phaser.dead_keys = crate::runtime::NameSet::default();
         phaser.capture_seq = Some(mark);
@@ -207,6 +210,7 @@ impl Interpreter {
             body,
             env: captured_env,
             package,
+            unit: self.executing_unit_sym_for_module_load(),
             dead_keys: crate::runtime::NameSet::default(),
             order,
             capture_seq: Some(mark),
