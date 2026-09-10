@@ -1,6 +1,6 @@
 ---
 name: ecosystem-dist-fix
-description: Make one real zef distribution's own test suite pass under mutsu — download the dist and its dependency closure, run every test file under rakudo and mutsu, fix the interpreter where the gap is bounded, file an issue where it needs a complex feature, and land it as a PR that also updates the ecosystem/ ledger record. Use when asked to make a named distribution's tests pass ("String::Utils のテストを通るようにして", "get Trie green", "fix the JSON::Fast suite"), or to work the red/partial/blocked_load records in ecosystem/.
+description: Make one real zef distribution's own test suite pass under mutsu by fixing mutsu — download the dist and its dependency closure, run every test file under rakudo and mutsu, fix the interpreter where the gap is bounded, file a tokuhirom/mutsu issue where it needs a complex feature, and land it as a PR to tokuhirom/mutsu that also updates the ecosystem/ ledger record. The distribution is the test subject, never the thing being patched, and no PR or issue ever goes to another repository. Use when asked to make a named distribution's tests pass ("String::Utils のテストを通るようにして", "get Trie green", "fix the JSON::Fast suite"), or to work the red/partial/blocked_load records in ecosystem/.
 metadata:
   short-description: Take one zef distribution from red to green
 ---
@@ -9,6 +9,26 @@ metadata:
 
 One distribution, end to end: from the `ecosystem/` ledger record to a merged PR. The unit of
 success is **a test file rakudo passes and mutsu now passes too** — not "the suite looks better".
+
+## The two things this skill is and is not
+
+**The goal is to fix mutsu.** The distribution is a *test subject*, not a client. Its suite is a
+supply of real-world Raku that roast does not cover, and every failure it exposes is a question
+about the interpreter: which language feature does mutsu get wrong? The deliverable is always a
+change under `src/` (or a recorded reason why that change is too large), never a change to the
+distribution. If a suite could be made green by patching the distribution, working around its idiom,
+teaching mutsu the module's name, or bundling the module, **the work has not been done** — you have
+moved the failure rather than fixed it. There is one legitimate exception, and it is not a fix: the
+distribution's own bug, which rakudo also fails, is `no_baseline` and belongs to nobody here.
+
+**Every PR and every issue goes to `tokuhirom/mutsu`, and nowhere else.** Not to the distribution's
+repository, not to `Raku/roast`, `Raku/doc` or `rakudo/rakudo`, not to a dependency's repository —
+no matter how clearly the bug looks like theirs, and no matter how small the patch. This holds for
+issues, pull requests, comments, labels and closes alike. An AI has actually mis-filed a mutsu issue
+into a Raku-org repository before, which is why `CLAUDE.md` states it as an absolute and why it is
+repeated here: this loop reads more third-party repositories than any other, so it is where the
+mistake is easiest to make. If a finding genuinely belongs upstream, record it in a
+`tokuhirom/mutsu` issue and stop — reporting it upstream is the user's call, not yours.
 
 The method, the metric definitions and the fairness contract are
 [docs/ecosystem-parity.md](../../../docs/ecosystem-parity.md); the decisions behind them are
@@ -153,7 +173,9 @@ not doing now, `todo:deep` for the design-needed cases above, `todo:perf` only w
 after the distribution ("`EXPORTHOW::DECLARE` … " not "String::Utils fails"), because the next
 distribution to hit it must find the issue. The body carries the §4 reduction with both
 interpreters' output, the distribution and test file it came from, and why it is large. One issue
-per finding; only ever in `tokuhirom/mutsu`.
+per finding, **filed in `tokuhirom/mutsu`** — the issue records a gap in *mutsu*, so it belongs in
+mutsu's tracker even when the reduction is quoted verbatim from someone else's distribution. Never
+open it, or a comment on it, anywhere else.
 
 Then say so in the PR: the distribution's remaining red files each name their issue number. A
 distribution that goes from `red` to `partial` with the residue filed is a good outcome. What is
@@ -202,11 +224,12 @@ MUTSU_BIN=target/release/mutsu scripts/ecosystem-sweep.py --only String::Utils -
 
 Commit the changed `ecosystem/dists/<S>/<Dist--Name>.json` in the same PR as the fix.
 
-## 8. Publish
+## 8. Publish — to `tokuhirom/mutsu`
 
-Branch off an updated `main`, commit (English, root cause in the message), push, open a
-**non-draft** PR, enable auto-merge with the **merge** method (squash is rejected by this
-repository), then immediately check `mergeStateStatus` is not `DIRTY` — the ledger records are
+Branch off an updated `main` **of `tokuhirom/mutsu`**, commit (English, root cause in the message),
+push, open a **non-draft** PR *against that repository*, enable auto-merge with the **merge** method
+(squash is rejected by this repository), then immediately check `mergeStateStatus` is not
+`DIRTY` — the ledger records are
 one-file-per-dist precisely so parallel PRs do not conflict, but `src/` still can. Watch CI in the
 background and fix forward. The full flow, including the one-branch-per-session case, is
 [`mutsu-ticket-flow`](../mutsu-ticket-flow/SKILL.md).
@@ -218,5 +241,7 @@ and the issue number for every file still red. Write the accomplishment up as
 ## Done means
 
 Either the distribution's record reads `green`, or every remaining non-`parity` baseline file is
-explained by an open issue named in the PR. "I improved some assertions" is not a finish line;
-"3 of 3 baseline files pass, and `t/02` needs #NNNN" is.
+explained by an open `tokuhirom/mutsu` issue named in the PR. "I improved some assertions" is not a
+finish line; "3 of 3 baseline files pass, and `t/02` needs #NNNN" is.
+
+And in both cases the distribution is exactly as you found it: every line that changed is mutsu's.
