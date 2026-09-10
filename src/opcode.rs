@@ -4254,6 +4254,10 @@ pub(crate) struct CompiledCode {
     /// is once per iteration.
     pub(crate) locals_deleted_index_sym: Vec<Symbol>,
     pub(crate) locals_bound_slice_sym: Vec<Symbol>,
+    /// Pre-interned Symbol of the `__mutsu_scalar_bind_no_container::<name>` env
+    /// key for each local — the one key of that family that still paid a
+    /// `format!` plus a `Symbol::intern` on every scalar `my` declaration.
+    pub(crate) locals_scalar_no_container_sym: Vec<Symbol>,
     /// Bitmap: true if `local[i]` is a *plain lexical* name — the sigil-less form
     /// the compiler stores scalars under (`my $x` -> `"x"`, a scalar param
     /// `$n` -> `"n"`), with no twigil (`*d`, `^a`), no attribute (`.x`, `!x`),
@@ -5369,6 +5373,7 @@ impl CompiledCode {
             locals_readonly_sym: Vec::new(),
             locals_deleted_index_sym: Vec::new(),
             locals_bound_slice_sym: Vec::new(),
+            locals_scalar_no_container_sym: Vec::new(),
             plain_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
@@ -5697,6 +5702,18 @@ impl CompiledCode {
         }
     }
 
+    /// The interned `__mutsu_scalar_bind_no_container::<name>` env key of local
+    /// `idx`. See [`CompiledCode::alias_sym`].
+    pub(crate) fn scalar_no_container_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_scalar_no_container_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self
+                .locals
+                .get(idx)
+                .map(|n| Symbol::intern(&crate::runtime::scalar_bind_no_container_key(n))),
+        }
+    }
+
     pub(crate) fn compute_locals_sym(&mut self) {
         self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
         self.locals_alias_sym = self
@@ -5718,6 +5735,11 @@ impl CompiledCode {
             .locals
             .iter()
             .map(|s| Symbol::intern(&crate::runtime::bound_array_slice_key(s)))
+            .collect();
+        self.locals_scalar_no_container_sym = self
+            .locals
+            .iter()
+            .map(|s| Symbol::intern(&crate::runtime::scalar_bind_no_container_key(s)))
             .collect();
     }
 

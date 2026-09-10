@@ -205,7 +205,16 @@ impl Interpreter {
         } else {
             match loan_env!(
                 self,
-                bind_function_args_values(&cf.param_defs, &cf.params, &args)
+                // `cf.param_name_syms` is `cf.param_defs[i].name` interned at
+                // registration time, so the binder names each parameter without
+                // re-hashing it per call (#7766).
+                bind_function_args_values_with_syms(
+                    &cf.param_defs,
+                    &cf.params,
+                    &args,
+                    None,
+                    &cf.param_name_syms
+                )
             ) {
                 Ok(bindings) => bindings,
                 Err(e) => {

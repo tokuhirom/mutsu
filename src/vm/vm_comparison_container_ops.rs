@@ -172,20 +172,25 @@ impl Interpreter {
         // value. A readonly *alias* with a container behind it — a non-`is rw`
         // parameter, a `for @a -> $v` alias — is deliberately not excluded:
         // rakudo reports `Scalar` for those.
-        !self.scalar_name_has_no_container(name)
-            && !self
-                .env()
-                .contains_key(&Self::scalar_bind_no_container_key(name))
+        if self.scalar_name_has_no_container(name) {
+            return false;
+        }
+        // The store-side half of the same decision. Gated on the monotonic
+        // key-family latch, so a program that never made such a binding spends
+        // neither the `format!` nor the env lookup.
+        if !crate::env::scalar_bind_no_container_possible() {
+            return true;
+        }
+        !self
+            .env()
+            .contains_key(&Self::scalar_bind_no_container_key(name))
     }
 
     /// Env key recording that a `$` name was `:=`-bound straight to a value and
     /// so owns no Scalar container. Written at the declaration's store; see
     /// `bind_marks_no_container` in `vm_var_assign_set_local.rs`.
     pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
-        format!(
-            "__mutsu_scalar_bind_no_container::{}",
-            name.trim_start_matches('$')
-        )
+        crate::runtime::scalar_bind_no_container_key(name)
     }
 
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
