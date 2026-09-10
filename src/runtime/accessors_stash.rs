@@ -127,6 +127,15 @@ impl Interpreter {
     /// `eval_context_routine` treats identically to "key not found".
     pub(crate) const STASH_ORIGIN_ROUTINE_ATTR: &str = "__mutsu_origin_routine";
 
+    /// Attribute a pseudo-stash carries to remember the *compilation unit* of
+    /// the frame it was taken from (#7837). Same invisibility convention as
+    /// `STASH_ORIGIN_PACKAGE_ATTR`. `EVAL ..., context => $stash` reads it back
+    /// (`eval_context_unit`) and parents the EVAL unit on it, so the snippet
+    /// inherits the *caller's* `use` grants instead of those of the module that
+    /// called `EVAL` — which is what makes the vendored `Test.rakumod`'s string
+    /// `throws-like` see the symbols the test file imported.
+    pub(crate) const STASH_ORIGIN_UNIT_ATTR: &str = "__mutsu_origin_unit";
+
     /// Attribute carried by a `CALLER::...::` stash to identify the live caller
     /// frame whose lexical pad it reflects.  The visible `symbols` hash is a
     /// snapshot; mutating operations such as `BIND-KEY` need this depth to reach
@@ -161,6 +170,36 @@ impl Interpreter {
                 Self::STASH_ORIGIN_ROUTINE_ATTR.to_string(),
                 Value::str(origin.to_string()),
             );
+        }
+    }
+
+    /// Stamp the compunit of the frame the stash was taken from
+    /// (`caller_frame_unit`), beside the package and routine identities above.
+    pub(crate) fn stamp_stash_origin_unit(stash: &Value, unit: Symbol) {
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_ORIGIN_UNIT_ATTR.to_string(),
+                Value::str(unit.resolve().to_string()),
+            );
+        }
+    }
+
+    /// The compilation unit an `EVAL ..., context => $ctx` should compile
+    /// inside — the one `$ctx` was captured from (#7837) — or `None` when the
+    /// context value says nothing about one (it is not a stamped pseudo-stash,
+    /// e.g. `context => SomePackage`, which names a package but no frame and
+    /// so leaves the ambient unit in place).
+    pub(crate) fn eval_context_unit(ctx: &Value) -> Option<Symbol> {
+        match ctx.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if is_stash_class_name(class_name.as_str()) => attributes
+                .as_map()
+                .get(Self::STASH_ORIGIN_UNIT_ATTR)
+                .map(|v| Symbol::intern(&v.to_string_value())),
+            _ => None,
         }
     }
 

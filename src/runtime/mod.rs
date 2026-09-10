@@ -1673,6 +1673,16 @@ pub(crate) struct EndPhaser {
     /// `current_package` has returned to GLOBAL — a phaser declared in a
     /// `unit module Foo` must still see `Foo`'s routines by their bare names.
     pub(crate) package: String,
+    /// The declaring *compunit*, the compunit-scoping counterpart of
+    /// [`package`](Self::package) (#7837). END bodies run at program exit,
+    /// when `current_unit` is back to the main script's — so a phaser
+    /// declared in a module whose qualified self-reference the #7797
+    /// visibility gate checks (`Log::Async.instance` inside
+    /// `Log/Async.rakumod`'s own `END`) would otherwise be judged against a
+    /// compunit that never `use`d it. That is not hypothetical for a module
+    /// pulled in by an `EVAL "use ..."` (`Test.rakumod`'s `use-ok`), where
+    /// no compunit on the exit-time chain ever named it.
+    pub(crate) unit: Symbol,
     /// Keys whose declaring scope has since died. At exit the captured value is
     /// the only surviving one, so it must win over a live same-named variable
     /// in an enclosing scope — `{ my $a = 42; END { say $a } }` prints 42 even
