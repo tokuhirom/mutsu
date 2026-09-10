@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::fmt;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 /// An interned symbol — a lightweight handle that supports O(1) equality
@@ -140,12 +141,6 @@ thread_local! {
     /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
     /// globally-shared `RwLock`.
     static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
-
-    /// Per-thread memo of [`SymFlags`], the pure string predicates the hot
-    /// merge/dispatch paths ask about a name. Same validity argument as
-    /// `RESOLVE_CACHE`: ids are append-only and a symbol's string never
-    /// changes, so a computed answer is good for the life of the process.
-    static FLAG_CACHE: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Pure, string-derived properties of a symbol, computed once per symbol.
@@ -265,6 +260,61 @@ fn compute_flags(s: &str) -> u16 {
         f |= flags::DYNAMIC_VAR_ENV_KEY;
     }
     f
+}
+
+/// log2 of [`FLAG_CHUNK_LEN`]: `idx >> FLAG_CHUNK_BITS` picks a symbol id's
+/// chunk and the low bits index within it. See [`FLAG_TABLE`].
+const FLAG_CHUNK_BITS: u32 = 12;
+/// Ids per flag chunk. See [`FLAG_TABLE`].
+const FLAG_CHUNK_LEN: usize = 1 << FLAG_CHUNK_BITS;
+/// How many flag chunks [`FLAG_TABLE`] can address — ids past
+/// `FLAG_CHUNKS * FLAG_CHUNK_LEN` go unmemoized.
+const FLAG_CHUNKS: usize = 512;
+
+/// Lock-free, process-global memo of [`compute_flags`], indexed by symbol id.
+///
+/// The flags word is a pure function of the symbol's string, and interned ids
+/// are global and append-only (an id, once assigned, is never reused or
+/// remapped) — the same invariant [`wk`] relies on to cache well-known symbols
+/// in a `OnceLock` for the life of the process. So the memo does not have to be
+/// per-thread, and it does not need a `RefCell`: each entry is written once,
+/// with the same value whoever writes it, and a reader that races a writer
+/// simply sees the not-yet-[`flags::COMPUTED`] zero and recomputes. Reads and
+/// writes of one entry are atomic operations on the same location, so they are
+/// coherent without any ordering stronger than `Relaxed`.
+///
+/// That matters because the read is hot: `capture_closure_env`'s filter asks
+/// for the flags of every visible env key on every closure creation, and the
+/// predecessor thread-local `RefCell<Vec<u16>>` charged 33 Ir for a *hit* — a
+/// thread-local access, two writes to the borrow counter plus the guard's drop,
+/// and a bounds-checked `Vec` index — where the answer is one 16-bit load
+/// ([#7856](https://github.com/tokuhirom/mutsu/issues/7856)).
+///
+/// Storage is chunked so nothing is preallocated: the static costs one pointer
+/// slot per chunk, and a chunk is allocated the first time an id lands in it.
+/// Ids past the table's reach fall back to recomputing, which is correct, just
+/// unmemoized.
+static FLAG_TABLE: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
+    [const { OnceLock::new() }; FLAG_CHUNKS];
+
+/// The already-allocated flag slot for `idx`, if any. `None` means "not
+/// memoized yet" (or an id beyond the table), never "no such symbol".
+#[inline]
+fn flag_slot(idx: usize) -> Option<&'static AtomicU16> {
+    let chunk = FLAG_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    Some(&chunk[idx & (FLAG_CHUNK_LEN - 1)])
+}
+
+/// Memoize `f` as the flags word of symbol id `idx`, allocating the chunk if
+/// this is the first id to land in it. Idempotent: every writer for a given id
+/// computes the same value from the same (immutable) string, so a lost race
+/// stores the identical word.
+fn store_flags(idx: usize, f: u16) {
+    let Some(cell) = FLAG_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
+        return;
+    };
+    let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
+    chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
 }
 
 /// Pre-interned symbols for names the VM resolves on hot paths.
@@ -443,6 +493,11 @@ impl Symbol {
         let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
         table.id_to_str.push(leaked);
         table.str_to_id.insert(leaked, sym);
+        // Prime the flags memo here, the one place an id is ever assigned, so
+        // `Symbol::flags` is a pure read for every id that exists. `compute_flags`
+        // is pure string arithmetic — it interns nothing — so calling it under the
+        // table's write lock cannot re-enter.
+        store_flags(id as usize, compute_flags(leaked));
         // Record the capture shape once, here, where a name becomes a symbol
         // for the first time. Doing it at the intern choke point rather than at
         // the (many) sites that insert a capture into the env is what makes the
@@ -493,21 +548,24 @@ impl Symbol {
     /// `sym.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0`.
     pub(crate) fn flags(self) -> u16 {
         let idx = self.0 as usize;
-        if let Some(f) = FLAG_CACHE.with(|c| c.borrow().get(idx).copied())
-            && f & flags::COMPUTED != 0
-        {
-            return f;
-        }
-        // `as_str` takes the resolve cache's borrow, so compute the value
-        // before taking the flag cache's — never hold both.
-        let f = compute_flags(self.as_str());
-        FLAG_CACHE.with(|c| {
-            let mut cache = c.borrow_mut();
-            if cache.len() <= idx {
-                cache.resize(idx + 1, 0);
+        if let Some(slot) = flag_slot(idx) {
+            let f = slot.load(Ordering::Relaxed);
+            if f & flags::COMPUTED != 0 {
+                return f;
             }
-            cache[idx] = f;
-        });
+        }
+        self.compute_and_store_flags(idx)
+    }
+
+    /// The miss half of [`Symbol::flags`]. Reached once per symbol in the
+    /// ordinary case (`intern_global` primes the memo as it assigns the id), and
+    /// on the losing side of a race between a thread that interns a name and one
+    /// that asks about it before the store lands.
+    #[cold]
+    #[inline(never)]
+    fn compute_and_store_flags(self, idx: usize) -> u16 {
+        let f = compute_flags(self.as_str());
+        store_flags(idx, f);
         f
     }
 
@@ -784,6 +842,74 @@ mod tests {
         let before = capture_shaped_symbols().0.len();
         let _ = Symbol::intern("31337");
         assert_eq!(capture_shaped_symbols().0.len(), before);
+    }
+
+    #[test]
+    fn flags_agree_with_a_fresh_computation() {
+        // The memo is the only reader of `compute_flags` on the hot paths, so
+        // it must answer exactly what a fresh scan of the string would.
+        for name in [
+            "flags_probe_plain",
+            "$!",
+            "!x",
+            "@!attr",
+            "%.attr",
+            "*dyn_flag_probe",
+            "__mutsu_type::flags_probe",
+            "__mutsu_callable_id::flags_probe",
+            "nqp::flags_probe",
+            "&flags_probe_code",
+            "0",
+            "<flags_probe_named>",
+        ] {
+            let sym = Symbol::intern(name);
+            assert_eq!(
+                sym.flags(),
+                compute_flags(name),
+                "memoized flags disagree for {name:?}"
+            );
+            // A second ask must serve the memo, not recompute a different word.
+            assert_eq!(
+                sym.flags(),
+                compute_flags(name),
+                "flags for {name:?} drifted"
+            );
+        }
+    }
+
+    #[test]
+    fn flags_are_visible_across_threads() {
+        // The memo is process-global precisely so a name interned on one thread
+        // is already answered on another -- the old thread-local table made every
+        // thread recompute, and a per-thread `RefCell` was what made the read
+        // cost 33 Ir (#7856).
+        let name = "flags_cross_thread_probe";
+        let sym = Symbol::intern(name);
+        let expected = sym.flags();
+        assert_eq!(expected, compute_flags(name));
+        let observed = std::thread::spawn(move || (sym.flags(), Symbol::intern(name).flags()))
+            .join()
+            .unwrap();
+        assert_eq!(observed, (expected, expected));
+    }
+
+    #[test]
+    fn flag_slots_are_primed_at_intern_time() {
+        // `intern_global` writes the memo as it assigns the id, so the very
+        // first `flags()` for a brand-new name is already a pure read.
+        let sym = Symbol::intern("flags_primed_at_intern_probe");
+        let slot = flag_slot(sym.raw() as usize).expect("no flag chunk for a freshly interned id");
+        assert_ne!(slot.load(Ordering::Relaxed) & flags::COMPUTED, 0);
+    }
+
+    #[test]
+    fn ids_beyond_the_table_fall_back_instead_of_panicking() {
+        // The chunk array is finite; an id past its reach must degrade to an
+        // unmemoized recompute, not an out-of-bounds index.
+        let beyond = FLAG_CHUNKS * FLAG_CHUNK_LEN;
+        assert!(flag_slot(beyond).is_none());
+        store_flags(beyond, flags::COMPUTED);
+        assert!(flag_slot(beyond).is_none());
     }
 
     #[test]
