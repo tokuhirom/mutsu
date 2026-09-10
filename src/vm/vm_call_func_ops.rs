@@ -418,6 +418,21 @@ impl Interpreter {
         if code.const_sym(name_idx).flags() & crate::symbol::flags::NQP_OP != 0 {
             return self.exec_nqp_call_op(code, name_idx, arity, arg_sources_idx);
         }
+        // #7797: same package-qualification gate as `exec_get_bare_word_op`
+        // (see its comment), applied to a qualified sub CALL (`Pkg::sub(...)`)
+        // rather than a bareword term -- a call name never reaches that
+        // function, so the two chokepoints need the same check independently.
+        {
+            let name_str = Self::const_str(code, name_idx);
+            if crate::runtime::utils::has_double_colon(name_str)
+                && !self.qualified_name_visible_here(name_str)
+            {
+                return Err(RuntimeError::new(format!(
+                    "Could not find symbol '{}'",
+                    name_str,
+                )));
+            }
+        }
         // `++`/`--` reach here as a call only because a user declared a `multi`
         // for the operator; the native implementation is one candidate of that
         // multi (rakudo's `Int:D`/`Bool`/`Num:D`/... core candidates), so rank

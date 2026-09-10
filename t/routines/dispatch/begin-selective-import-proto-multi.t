@@ -128,7 +128,10 @@ plan 1;
 say "single var ok";
 CODE
 
-%*ENV<MUTSU_REAL_TEST>:delete;
+# The vendored module is the default since 2026-09-10, so the native provider
+# has to be asked for explicitly -- `:delete` would leave the child on the
+# vendored half and test the same thing twice.
+%*ENV<MUTSU_REAL_TEST> = '0';
 is_run $begin_list_probe, { status => 0, out => "1..1\nok 1 - selective import survived\n" },
     'native provider: BEGIN + list-destructured selective import of Test still works';
 

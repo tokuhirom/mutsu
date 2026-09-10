@@ -4,11 +4,11 @@
 # (MUTSU_REAL_TEST=) and once with the vendored upstream Test.rakumod
 # (MUTSU_REAL_TEST=1) -- and report which files regress under the real module.
 #
-# The vendored module has been the DEFAULT provider since 2026-09-07
-# (news/2026-09/vendored-test-module-is-the-default-provider.md); CI therefore
-# covers the real half directly and this sweep's remaining job is to show the
-# native provider it replaces has nothing left that only it can do. It goes away
-# with that provider (`todo/deep/retire-the-native-test-provider.md`).
+# The vendored module is the DEFAULT provider (2026-09-10, tokuhirom/mutsu#7554;
+# an earlier attempt on 2026-09-07 was withdrawn); CI therefore covers the real
+# half directly and this sweep's remaining job is to show the native provider it
+# replaces has nothing left that only it can do. It goes away with that provider
+# (tokuhirom/mutsu#7566).
 #
 # Differences from the t/ sweep, all deliberate:
 #   * Files run IN PLACE from the repo root through scripts/run-roast-test.sh,

@@ -9,36 +9,37 @@ impl Interpreter {
     /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
     /// no-op that leaves mutsu's native TAP provider in charge.
     ///
-    /// **Opt-in.** The native TAP provider in `runtime/test_functions.rs` stays
-    /// in charge by default; `MUTSU_REAL_TEST=1` is how the vendored module is
-    /// driven, and the dual-provider sweeps
+    /// **The vendored module is the default** (2026-09-10). This is
+    /// `BATTERIES.md` rung 2 in its intended form: the real upstream module runs
+    /// verbatim under mutsu, so `use Test` resolves to it rather than to a
+    /// reimplementation. `MUTSU_REAL_TEST=0` (or the empty string, or `false`)
+    /// selects the native TAP provider in `runtime/test_functions.rs` instead —
+    /// the escape hatch the dual-provider sweeps
     /// (`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`)
-    /// use it.
+    /// drive, and the one thing keeping that provider reachable until it is
+    /// deleted (#7566).
     ///
-    /// Making it the default was attempted and **withdrawn** (2026-09-08). The
-    /// roast and `t/` suites both go green under the vendored module, but the
-    /// `Bundled-library test suites` gate does not: four upstream distributions
-    /// regress, on four unrelated interpreter gaps that only the real module's
-    /// code shapes reach. None is a `Test` compatibility problem, and none has a
-    /// fix small enough to ride along with the flip — the `NativeLibs` one was
-    /// tried and made things worse. They are recorded, root-caused as far as
-    /// they got, in vendored-test-battery-gate-regressions (#7555), which
-    /// is the entry point for resuming this.
-    ///
-    /// The interpreter fixes the exercise turned up were the campaign's real
-    /// product and are independent of which provider is default, so they landed
-    /// without it. Rung 2 of `BATTERIES.md` remains the goal: flip this once the
-    /// gate's four root causes are fixed, not before.
+    /// The flip was attempted once before and withdrawn (2026-09-08) because the
+    /// `Bundled-library test suites` gate regressed on four upstream
+    /// distributions. Those were four unrelated interpreter gaps that only the
+    /// real module's code shapes reached, not `Test` compatibility problems;
+    /// they were root-caused and fixed one at a time (#7653, #7663, #7714,
+    /// #7805, #7806, and the #7667 perf chain), and #7555 records the whole
+    /// chase. Measured on `main` before this flip, the gate passes under the
+    /// vendored module with *more* files green than under the native provider.
     pub(crate) fn real_test_module_enabled() -> bool {
-        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '1'` set
+        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '0'` set
         // mid-run in a parent process (as `t/vendored-real-test-module.t` does,
-        // to steer its `is_run` children) does NOT retroactively silence the
-        // native TAP provider already in charge of that process.
+        // to steer its `is_run` children) does NOT retroactively swap the
+        // provider already in charge of that process.
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ENABLED.get_or_init(|| {
+            // Unset means the default (the vendored module). Only an explicit
+            // off-value opts out — `MUTSU_REAL_TEST=` (empty) included, which is
+            // how the sweep scripts spell "the native half".
             std::env::var("MUTSU_REAL_TEST")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false)
+                .map(|v| !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false")))
+                .unwrap_or(true)
         })
     }
 
@@ -353,6 +354,24 @@ impl Interpreter {
                 for (short, qualified) in module_aliases {
                     entry.entry(short).or_insert(qualified);
                 }
+            }
+            // #7797: same gap as the aliasing copy just above, for package-
+            // qualified-name visibility instead of bare short-name aliasing.
+            // A re-`use` of an already-loaded module skips
+            // `load_module_inner` entirely, so the importer-scoped grant that
+            // runs there on first load (`compunit_visible_packages`) never
+            // fires for a second importer — e.g. `Issue7733::User.rakumod`'s
+            // own `use Issue7733::Conf;` is a no-op once the top-level script
+            // already loaded `Conf` first, yet `Issue7733::Conf.new` inside a
+            // `User`-declared method must still resolve.
+            {
+                let importer_unit = self.executing_unit_sym_for_module_load();
+                let top = module.split_once("::").map_or(module, |(top, _)| top);
+                let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+                    .entry(importer_unit)
+                    .or_default();
+                entry.insert(module.to_string());
+                entry.insert(top.to_string());
             }
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even

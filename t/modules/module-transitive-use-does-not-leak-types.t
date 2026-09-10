@@ -1,5 +1,6 @@
 use v6;
 use lib 't/lib';
+use MONKEY-SEE-NO-EVAL;
 use Test;
 use TransitiveLeakOuter;
 use TransitiveLeakDirect;
@@ -7,7 +8,7 @@ use TransitiveLeakGrand;
 use TransitiveLeakConstA;
 use TransitiveLeakConstB;
 
-plan 27;
+plan 32;
 
 # A module body runs in the *caller's* env, so the short-name type aliases a
 # module's own `use` statements install used to be left behind in whatever
@@ -113,3 +114,31 @@ is a-reads-shared(), 'from-A', 'each module reads its own same-named constant (A
 is b-reads-shared(), 'from-B', 'each module reads its own same-named constant (B)';
 is missing('SHARED-CONST-NAME'), 'MISSING',
     'and no arbitrary winner is left behind in the importer';
+
+# ---------------------------------------------------------------------------
+# #7797: the same leak, reached through a PACKAGE-QUALIFIED name instead of a
+# bare one. Every symbol below is ALSO a package symbol of the module that
+# declares it (`TransitiveLeakInner::InnerConst`, `::InnerClass`, ...), and
+# that qualified form is reachable from Inner's own code, and from Outer
+# (which DOES `use TransitiveLeakInner;`) -- but must NOT leak to a compunit
+# that only reaches Inner transitively, through Outer's `use`, exactly as the
+# bare names above don't. Unlike `::()`, `EVAL` also covers a method call,
+# not just a bare symbol lookup.
+sub qmissing($code) {
+    my $r = try EVAL $code;
+    $! ?? 'MISSING' !! $r.gist;
+}
+
+is qmissing('TransitiveLeakInner::InnerConst'), 'MISSING',
+    'a transitively-used module exported constant is not reachable qualified either';
+is qmissing('TransitiveLeakInner::INNER-PRIVATE'), 'MISSING',
+    'nor is its unexported constant, qualified';
+is qmissing('TransitiveLeakInner::InnerEnum'), 'MISSING',
+    'nor its enum type, qualified';
+is qmissing('TransitiveLeakInner::InnerClass.new.who'), 'MISSING',
+    'nor its class, qualified';
+
+# What stays reachable qualified: a module the importer DID `use` directly
+# (TransitiveLeakOuter::OUTER-PRIVATE above already pins the constant case).
+is TransitiveLeakOuter::OuterClass.new.who, 'outer-class',
+    'the used module class is still reachable qualified';
