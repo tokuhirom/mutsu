@@ -9,7 +9,7 @@ use Test;
 # nested `whenever <Promise>` bodies came out in whichever order N workers
 # happened to wake up in. `10 30 20` was roughly a coin flip at three values.
 
-plan 3;
+plan 4;
 
 # Three nested whenevers, one per emitted value, each on its own promise kept
 # inside the outer whenever body. The keeps happen in a definite order on one
@@ -58,3 +58,22 @@ $out.tap({ @mixed.push($_); $done.keep if @mixed.elems == 6 });
 $src.emit($_) for 1..6;
 await Promise.anyof($done, Promise.in(10));
 is @mixed, [1, 2, 3, 4, 5, 6], 'already-kept and later-kept promises interleave in value order';
+
+# Every promise kept before its nested `whenever` sees it, so every reaction
+# takes the already-resolved path. That path used to run the body inline on the
+# registering thread with no place in the block's sequencer at all (#7831), so
+# it had to be ordered by luck; it must be ordered by the reservation instead.
+my $src2 = Supplier.new;
+my @kept-first;
+my $done2 = Promise.new;
+my $out2 = supply {
+    whenever $src2 -> $v {
+        my $p = Promise.new;
+        $p.keep;
+        whenever $p { emit $v }
+    }
+};
+$out2.tap({ @kept-first.push($_); $done2.keep if @kept-first.elems == 10 });
+$src2.emit($_) for 1..10;
+await Promise.anyof($done2, Promise.in(10));
+is @kept-first, [1 .. 10], 'promises kept before registration stay in value order';

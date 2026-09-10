@@ -683,7 +683,10 @@ impl Interpreter {
             // what keeps N nested `whenever <Promise>` bodies -- one created
             // per value by an outer `whenever`, each on its own promise -- in
             // the order their promises were kept, instead of in whichever
-            // order N pooled workers happened to wake up in (#7811).
+            // order N pooled workers happened to wake up in (#7811). A promise
+            // already kept by the time this runs reserves its place right
+            // here, on this thread, so it queues behind the bodies created
+            // before it instead of running inline ahead of them (#7831).
             shared.on_resolve_in_supply_group(
                 Box::new(move |status, result, _output, _stderr| {
                     if status == "Kept" {

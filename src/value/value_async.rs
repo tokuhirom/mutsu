@@ -266,6 +266,8 @@ impl SharedPromise {
     /// already resolved, the callback runs synchronously on the caller's
     /// thread (matching the existing `.then`/`.andthen`/`.orelse` fast path
     /// for an already-kept/broken promise) and this returns `true`.
+    /// (A supply-block reaction is the exception — see
+    /// [`Self::on_resolve_in_supply_group`].)
     /// Otherwise the callback is queued and this returns `false`: some
     /// future `keep`/`try_keep`/`break_with`/`try_break` call will run every
     /// queued waiter, **in registration order**, on a single dedicated
@@ -287,6 +289,19 @@ impl SharedPromise {
     /// the supply block in that order, instead of in whichever order their two
     /// workers happened to wake up in. See [`SupplyTicket`].
     ///
+    /// An **already-resolved** promise takes its ticket here instead, on the
+    /// registering thread, and its reaction is handed to a pooled worker just
+    /// like a queued one. Both paths therefore enter the block through the one
+    /// sequencer, in the order the reactions were created. Running the reaction
+    /// inline, as [`Self::on_resolve`] does for a plain waiter, would let it
+    /// jump ahead of every reaction already ticketed and waiting for a worker
+    /// (#7831); redeeming the ticket inline instead is not an option either,
+    /// because this thread is typically running the enclosing supply block's
+    /// own reaction and so already holds the group lock, so parking it behind
+    /// an earlier ticket — whose worker is itself blocked on that lock — would
+    /// deadlock. So this returns `false` (the reaction has not run yet) even
+    /// when the promise was already resolved.
+    ///
     /// [`SupplyTicket`]: crate::runtime::native_methods::SupplyTicket
     pub(crate) fn on_resolve_in_supply_group(
         &self,
@@ -304,8 +319,17 @@ impl SharedPromise {
             let output = state.output.clone();
             let stderr = state.stderr_output.clone();
             drop(state);
-            waiter(status, result, output, stderr);
-            true
+            let Some(group) = group else {
+                waiter(status, result, output, stderr);
+                return true;
+            };
+            let ticket = crate::runtime::native_methods::reserve_supply_serialize(group);
+            crate::runtime::worker_pool::submit(move || {
+                // Held across the callback, exactly as in `dispatch_waiters`.
+                let _serialize_guard = ticket.redeem();
+                waiter(status, result, output, stderr);
+            });
+            false
         }
     }
 
