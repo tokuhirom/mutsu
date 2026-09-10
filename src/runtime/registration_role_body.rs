@@ -191,11 +191,38 @@ impl Interpreter {
             && !self.registry().classes.contains_key(&role_name_str)
             && !role_name_str.contains('[')
         {
-            let resolved = self.resolve_declared_type_name(&role_name_str);
-            if self.is_role_type_name(&resolved) {
-                resolved
+            if let Some((declaring_package, _)) = cx.name.rsplit_once("::") {
+                // A unit module's mainline runs with GLOBAL as the current
+                // package, even though the compiler has already qualified
+                // this role's storage name. Resolve a sibling parent from the
+                // role declaration's package in that case. The same relative
+                // probe handles a nested name such as `Q::R` inside the unit
+                // module: first try `M::Q::R`, then leave an unrelated fully
+                // qualified name untouched.
+                let relative = format!("{declaring_package}::{role_name_str}");
+                if self.is_role_type_name(&relative)
+                    || self.registry().classes.contains_key(&relative)
+                {
+                    relative
+                } else {
+                    let resolved = self.resolve_declared_type_name(&role_name_str);
+                    if self.is_role_type_name(&resolved)
+                        || self.registry().classes.contains_key(&resolved)
+                    {
+                        resolved
+                    } else {
+                        role_name_str
+                    }
+                }
             } else {
-                role_name_str
+                let resolved = self.resolve_declared_type_name(&role_name_str);
+                if self.is_role_type_name(&resolved)
+                    || self.registry().classes.contains_key(&resolved)
+                {
+                    resolved
+                } else {
+                    role_name_str
+                }
             }
         } else {
             role_name_str
