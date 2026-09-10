@@ -42,11 +42,22 @@ markdown table block to paste into docs/dist-compat-sweep.md.
 
 Env: MUTSU_BIN (default target/release/mutsu).
 """
-import argparse, collections, io, json, os, re, shutil, subprocess, sys, tarfile
-import tempfile, urllib.request
+import argparse, collections, json, os, re, subprocess, sys, tarfile
+import tempfile
 
-FEZ_INDEX = os.path.expanduser("~/.zef/store/fez/fez.json")
-FEZ_CDN = "https://360.zef.pm/"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ecosystem_common as eco
+
+# The index reader, the tarball cache, the bwrap wrapper and the TAP parser are
+# shared with scripts/ecosystem-sweep.py (ADR-0085): the sandbox that confines
+# unaudited distribution code must exist once, not as two copies that drift.
+from ecosystem_common import (  # noqa: F401
+    first_error_line, first_failing_assertion, have_bwrap, parse_tap,
+    sandbox_wrap, tap_verdict, version_key,
+)
+
+FEZ_INDEX = eco.FEZ_LOCAL
+FEZ_CDN = eco.FEZ_CDN
 CACHE_DIR = os.path.expanduser("~/.cache/mutsu-dist-sweep")
 
 DEEP = re.compile(
@@ -55,156 +66,19 @@ DEEP = re.compile(
 )
 NATIVE = re.compile(r"\buse\s+NativeCall\b|:from<C>|\bis\s+native\b")
 SRC_RE = re.compile(r"\.(rakumod|pm6|pm|raku|rakutest|t)$")
-TEST_RE = re.compile(r"\.(t|rakutest)$")
-
-PLAN_RE = re.compile(r"^1\.\.(\d+)\s*$", re.M)
-OK_RE = re.compile(r"^ok\b", re.M)
-NOTOK_RE = re.compile(r"^not ok\b")
 
 
 def find_test_files(root):
     """Test files under the dist's t/ (and test/, xt/) directories."""
-    files = []
-    for sub in ("t", "test", "xt"):
-        d = os.path.join(root, sub)
-        if not os.path.isdir(d):
-            continue
-        for dirpath, _, names in os.walk(d):
-            for nm in names:
-                if TEST_RE.search(nm):
-                    files.append(os.path.join(dirpath, nm))
-    return sorted(files)
-
-
-def parse_tap(out):
-    """(planned, ok_count, real_not_ok, todo_not_ok) from raw TAP output."""
-    m = PLAN_RE.search(out)
-    plan = int(m.group(1)) if m else None
-    ok = len(OK_RE.findall(out))
-    real_notok = todo = 0
-    for line in out.splitlines():
-        if NOTOK_RE.match(line):
-            if "todo" in line.lower():
-                todo += 1
-            else:
-                real_notok += 1
-    return plan, ok, real_notok, todo
-
-
-def tap_verdict(out, rc):
-    """Classify a single test run: 'pass' / 'fail' / 'die'.
-    'die' = crashed before/mid TAP (no plan, or ran fewer than planned, or a
-    non-zero exit with no failing assertion to blame). 'fail' = a real `not ok`.
-    """
-    plan, ok, notok, todo = parse_tap(out)
-    if plan is None:
-        return "die"
-    if notok > 0:
-        return "fail"
-    ran = ok + notok + todo
-    if ran < plan:
-        return "die"
-    if rc not in (0, None):
-        return "die"
-    return "pass"
-
-
-# Generic TAP-harness death lines that mask the real cause — never a useful
-# signature on their own.
-_HARNESS_NOISE = re.compile(
-    r"test failures|you planned|you failed|looks like you|^#|^1\.\.|dubious|"
-    r"^ok\b|^not ok\b", re.I)
-
-
-def first_error_line(out):
-    """The first meaningful error line, skipping generic TAP-harness noise
-    ('Runtime error: Test failures', '# You planned N ...') that only reports
-    that the run died, not why."""
-    candidates = []
-    for line in out.splitlines():
-        s = line.strip()
-        if not s or _HARNESS_NOISE.search(s):
-            continue
-        candidates.append(s)
-    for s in candidates:
-        low = s.lower()
-        if ("sorry" in low or "panicked" in low or "unhandled" in low
-                or s.startswith("X::") or "::" in s and "exception" in low
-                or "no such" in low or "unknown method" in low
-                or "unknown function" in low or "cannot" in low
-                or low.startswith("runtime error")):
-            return s[:200]
-    return candidates[0][:200] if candidates else ""
-
-
-def first_failing_assertion(out):
-    """The description of the first real (non-TODO) `not ok` line, e.g.
-    'not ok 3 - foo does bar' -> 'foo does bar'. Falls back to first_error_line."""
-    for line in out.splitlines():
-        if NOTOK_RE.match(line) and "todo" not in line.lower():
-            m = re.match(r"not ok\s+\d+\s*-?\s*(.*)", line.strip())
-            desc = (m.group(1).strip() if m else line.strip())
-            return desc[:200] if desc else line.strip()[:200]
-    return first_error_line(out)
-
-
-def version_key(v):
-    return [(0, int(x)) if x.isdigit() else (1, x) for x in re.split(r"[.\-+]", str(v))]
-
-
-def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400):
-    """Wrap `cmd` so untrusted dist code runs with NO network, a read-only
-    filesystem, an isolated throwaway HOME, its own PID namespace, and rlimits.
-    `sbx_home` must be an existing dir (a fresh tmpfs is mounted over it, so
-    nothing the code writes ever reaches the host). Requires bubblewrap (bwrap).
-
-    NOTE: `use <module>` executes arbitrary BEGIN/CHECK phasers and load-time
-    code from a real ecosystem dist — this is arbitrary code execution, hence
-    the sandbox. Download/extract happen OUTSIDE the sandbox (in Python); only
-    the mutsu run is confined, and it needs no network.
-    """
-    return [
-        "bwrap",
-        "--unshare-all",              # user+net+pid+ipc+uts+cgroup+mount (net = offline)
-        "--ro-bind", "/", "/",        # whole rootfs, read-only
-        "--dev", "/dev",
-        "--proc", "/proc",
-        "--tmpfs", "/run",
-        "--tmpfs", sbx_home,          # writable throwaway HOME (tmpfs over existing dir)
-        "--setenv", "HOME", sbx_home,
-        "--chdir", root,
-        "--die-with-parent",
-        "--new-session",
-        "bash", "-c", f"ulimit -v {mem_kb} -u {nproc} 2>/dev/null; exec \"$@\"", "_",
-    ] + cmd
-
-
-def have_bwrap():
-    return shutil.which("bwrap") is not None
+    return eco.find_test_files(root, include_xt=True)
 
 
 def load_index():
-    if not os.path.exists(FEZ_INDEX):
-        sys.exit(f"missing {FEZ_INDEX} — run an mzef/zef ecosystem op first")
-    best = {}
-    for m in json.load(open(FEZ_INDEX)):
-        if isinstance(m, dict) and m.get("name") and m.get("path"):
-            n = m["name"]
-            if n not in best or version_key(m.get("version", "0")) > version_key(
-                best[n].get("version", "0")
-            ):
-                best[n] = m
-    return best
+    return eco.load_fez_index(FEZ_INDEX)
 
 
 def fetch_tarball(meta):
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cache = os.path.join(CACHE_DIR, meta["path"].replace("/", "_"))
-    if not os.path.exists(cache):
-        data = urllib.request.urlopen(FEZ_CDN + meta["path"], timeout=60).read()
-        with open(cache, "wb") as f:
-            f.write(data)
-    return cache
+    return eco.fetch_tarball(FEZ_CDN + meta["path"], CACHE_DIR)
 
 
 def classify(module, dist_name, rc, out):
