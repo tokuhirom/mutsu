@@ -11,8 +11,11 @@
 #      .claude/skills/rustc-too-old/SKILL.md).
 #   2. raku — the Rakudo oracle used to check expected behaviour is absent
 #      entirely, and Ubuntu's packaged one is far too old to be useful.
+#   3. libmysqlclient — the base image ships libpq and libsqlite3 but not this
+#      one, so every DBIish MySQL file in the battery suite dies with a
+#      NativeCall "symbol 'mysql_init' not found ... dlsym failed".
 #
-# Both are mechanical to fix, so fix them here rather than paying for the
+# All three are mechanical to fix, so fix them here rather than paying for the
 # rediscovery every session.
 #
 # Local checkouts are left alone: a developer machine is pinned by .mise.toml
@@ -93,8 +96,66 @@ setup_raku() {
   say "raku installed: $(raku --version 2>/dev/null | head -n1)"
 }
 
+# ------------------------------------------------------ native C libraries --
+# The bundled batteries dlopen a handful of C libraries by SONAME at runtime.
+# When one is absent the failure surfaces as a NativeCall `dlsym failed` raised
+# from deep inside the module, which reads like a mutsu bug rather than a
+# missing package -- so install them up front.
+#
+# DBIish's mysql driver asks NativeLibs for `libmysqlclient.so.16..21`, so
+# Ubuntu's `libmysqlclient21` is exactly what it wants. Note that
+# `default-libmysqlclient-dev` is NOT a substitute: on Ubuntu it pulls MariaDB's
+# `libmariadb.so.3`, which that versioned search does not match.
+#
+# `libpq` and `libsqlite3` already ship in the base image; add a
+# "<soname> <package>" row here if a battery ever needs another.
+NATIVE_LIBS=(
+  "libmysqlclient.so.21 libmysqlclient21"
+)
+
+setup_native_libs() {
+  local row soname pkg
+  local missing=()
+  for row in "${NATIVE_LIBS[@]}"; do
+    soname="${row%% *}"
+    pkg="${row#* }"
+    # `ldconfig -p` prints "\t<soname> (libc6,x86-64) => <path>", so compare the
+    # first field exactly rather than substring-matching a line that starts
+    # with a tab.
+    if ldconfig -p 2>/dev/null | awk -v s="$soname" '$1 == s { hit = 1 } END { exit !hit }'; then
+      say "$soname already present"
+    else
+      missing+=("$pkg")
+    fi
+  done
+  if [ "${#missing[@]}" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ "$(id -u)" != 0 ] || ! command -v apt-get >/dev/null 2>&1; then
+    warn "missing native libraries (${missing[*]}) and no way to install them; the DBIish MySQL battery files will fail with 'dlsym failed'"
+    return 0
+  fi
+
+  say "installing native libraries: ${missing[*]}"
+  export DEBIAN_FRONTEND=noninteractive
+  if apt-get install -y --no-install-recommends "${missing[@]}" >/dev/null 2>&1; then
+    say "native libraries installed"
+    return 0
+  fi
+  # A stale package index is the usual reason the first attempt fails; an
+  # `apt-get update` is slow enough to be worth skipping unless it is needed.
+  apt-get update -qq >/dev/null 2>&1 || true
+  if apt-get install -y --no-install-recommends "${missing[@]}" >/dev/null 2>&1; then
+    say "native libraries installed (after apt-get update)"
+  else
+    warn "could not install ${missing[*]}; the DBIish MySQL battery files will fail with 'dlsym failed'"
+  fi
+}
+
 setup_rust
 setup_raku
+setup_native_libs
 
 # Warm the crate cache so the first build is compile-only. Cheap next to the
 # build itself, and the container image is snapshotted after this hook.

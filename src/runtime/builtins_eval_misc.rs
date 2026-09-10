@@ -393,7 +393,17 @@ impl Interpreter {
         // BY the EVAL'd code is scoped to the EVAL unit alone. Operator
         // visibility (`Interpreter::user_infix_override`) walks this chain.
         let unit_sym = Symbol::intern(&unit_name);
-        crate::runtime::note_eval_unit_parent(unit_sym, self.current_unit);
+        // `context => $ctx` moves that anchor: the snippet is compiled as if it
+        // stood at `$ctx`'s frame, so it must inherit the `use` grants of the
+        // compunit the context was captured from, not those of the module that
+        // called EVAL (#7837). Without this the vendored `Test.rakumod`'s
+        // string `throws-like` compiles the snippet inside `Test`'s own
+        // compunit, where nothing the *test file* imported is visible.
+        let parent_unit = context_arg
+            .as_ref()
+            .and_then(Self::eval_context_unit)
+            .unwrap_or(self.current_unit);
+        crate::runtime::note_eval_unit_parent(unit_sym, parent_unit);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));

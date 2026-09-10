@@ -1080,11 +1080,22 @@ impl Interpreter {
                 // in a `unit module Foo` would otherwise fail to resolve Foo's
                 // own routines by their bare names (Test::Compile's END calls
                 // its module-private `delete_compunits`).
+                //
+                // The declaring *compunit* is restored for the same reason
+                // (#7837): the #7797 qualified-name gate asks which compunit
+                // is running, and at exit that is the main script — which
+                // need never have `use`d the module whose END this is (a
+                // module pulled in by `Test.rakumod`'s `use-ok`, i.e. by an
+                // `EVAL "use ..."`, is reachable from no exit-time compunit
+                // at all), so `Log::Async.instance` inside `Log::Async`'s own
+                // END would read as an unknown symbol.
                 let saved_package = self.current_package();
                 if *package != saved_package {
                     self.set_current_package(package.clone());
                 }
+                let saved_unit = std::mem::replace(&mut self.current_unit, phaser.unit);
                 let body_result = self.run_block(body);
+                self.current_unit = saved_unit;
                 self.set_current_package(saved_package);
                 if self.halted {
                     // This phaser called `exit`. Whatever status it asked for is

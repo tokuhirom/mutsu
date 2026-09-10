@@ -453,6 +453,7 @@ impl Interpreter {
             let stash = self.caller_stash_value(name, depth);
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
+            Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
             self.stack.push(stash);
             return;
         }
@@ -494,6 +495,7 @@ impl Interpreter {
             let stash = loan_env!(self, package_stash_value(kind));
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
+            Self::stamp_stash_origin_unit(&stash, self.caller_frame_unit());
             self.stack.push(stash);
             return;
         }
