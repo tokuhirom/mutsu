@@ -14,7 +14,8 @@ Operations: docs/ecosystem-parity.md   Tracking issue: #7785
     scripts/ecosystem-sweep.py --all --jobs 8
     scripts/ecosystem-sweep.py --rollup
 
-Env: MUTSU_BIN (default target/release/mutsu), RAKU_BIN (default raku).
+Env: MUTSU_BIN (default target/release/mutsu), RAKU_BIN (default raku),
+MUTSU_ECO_HOST (what `measured.host` records; default `<uname>-<machine>`).
 """
 
 from __future__ import annotations
@@ -472,7 +473,13 @@ def preflight(args):
     args.mutsu, args.raku = mutsu, raku
     args.raku_version, args.raku_backend = version, backend
     args.mutsu_commit, args.mutsu_version = commit, mutsu_version
-    args.host = f"{os.uname().sysname.lower()}-{os.uname().machine}"
+    # `measured.host` exists so a number produced on another machine is
+    # identifiable rather than quietly mixed in (ADR-0085 D7/D9). uname alone
+    # cannot do that job -- a hosted runner and the maintainer's box are both
+    # `linux-x86_64` -- so MUTSU_ECO_HOST lets the caller name the machine, and
+    # .github/workflows/ecosystem-sweep.yml sets it to the runner it ran on.
+    args.host = (os.environ.get("MUTSU_ECO_HOST")
+                 or f"{os.uname().sysname.lower()}-{os.uname().machine}")
     args.sandbox = sandbox
     args.tarball_cache = os.path.join(eco.CACHE_DIR, "tarballs")
     args.extract_cache = os.path.join(eco.CACHE_DIR, "deps")

@@ -1,0 +1,573 @@
+name: Ecosystem sweep
+
+# Re-measure the ecosystem parity KPI (issue #7785) on hosted runners and land
+# the result as a pull request. This is the CI entry point to
+# `scripts/ecosystem-sweep.py`, whose numbers live in `ecosystem/` and are
+# published to `site/ecosystem.html`.
+#
+# Method and metric definitions: docs/ecosystem-parity.md
+# Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md (D9 + its
+# 2026-09-10 amendment, which is what allows this workflow to exist).
+#
+# Deliberately `workflow_dispatch` ONLY -- there is no `schedule:`. ADR-0085 D9
+# rejected a periodic sweep and that still stands: a full corpus run is ~20
+# CPU-hours to track a number that moves at the speed of interpreter fixes, so
+# it happens when someone decides the numbers are worth refreshing. What the
+# amendment adds is that "someone" no longer needs a 12-core box and a local
+# `bwrap` -- one dispatch does it.
+#
+# Three things it does NOT compromise on, because they are what make the number
+# mean anything (ADR-0085 D8):
+#   * One binary for the whole run. `build` compiles once and every shard
+#     downloads that artifact, so no shard can measure a different mutsu.
+#   * One rakudo for the whole run. `build` resolves the prebuilt version and
+#     every shard installs that exact release, not "the newest at the time this
+#     job started".
+#   * `bwrap` or nothing. The sweep runs unaudited third-party test suites; if
+#     the sandbox does not work on the runner the job fails instead of quietly
+#     continuing unsandboxed.
+#
+# Each record carries its own provenance, and `measured.host` says `gha-*` for
+# anything measured here, so a CI-measured number is never silently mixed with
+# one from the maintainer's box (docs/ecosystem-parity.md section 8). A run
+# whose records do not share one (mutsu commit, rakudo, host) triple still
+# lands its records but is refused a `history.tsv` row.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'What to measure'
+        type: choice
+        default: stale
+        options:
+          - stale        # records measured at another mutsu commit / rakudo -- "refresh the numbers"
+          - all          # the whole corpus (~20 CPU-hours; fans out to 27 shards)
+          - prefix       # one shard, e.g. every distribution starting with A
+          - only         # named distributions
+          - status       # every record currently at a given status
+      prefix:
+        description: 'scope=prefix: one letter A-Z, or _ for non-letter names'
+        type: string
+        default: ''
+      only:
+        description: 'scope=only: distribution names, comma or space separated'
+        type: string
+        default: ''
+      status:
+        description: 'scope=status: which record status to re-measure'
+        type: choice
+        default: partial
+        options: [partial, red, blocked_load, blocked_dep, no_baseline, green, skipped]
+      shards:
+        description: 'Fan out across the 27 letter shards? auto = only for scope=all'
+        type: choice
+        default: auto
+        options: [auto, letters, single]
+      jobs:
+        description: 'Parallel test processes per runner (hosted runners have 4 vCPU)'
+        type: string
+        default: '4'
+      attempts:
+        description: 'Attempts for a file that did not pass (both sides get the same budget)'
+        type: string
+        default: '3'
+      file_timeout:
+        description: 'Per-test-file timeout in seconds, both sides'
+        type: string
+        default: '120'
+      raku_version:
+        description: 'Pin the rakudo release (e.g. 2026.07); empty = newest prebuilt'
+        type: string
+        default: ''
+      rollup:
+        description: 'Regenerate ecosystem/summary.json + summary.md (skipped for a partial sweep that would create the FIRST one)'
+        type: boolean
+        default: true
+      history:
+        description: 'Append a history.tsv row + redraw the chart (full-corpus runs only)'
+        type: boolean
+        default: false
+      publish:
+        description: 'What to do with the updated records'
+        type: choice
+        default: pull-request
+        options: [pull-request, branch, none]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Never run two sweeps at once: they would race the same records, and the second
+# one to finish would land a mixture. Queue instead of cancelling -- a cancelled
+# sweep throws away hours of measurement.
+concurrency:
+  group: ecosystem-sweep
+  cancel-in-progress: false
+
+jobs:
+  # Plan the matrix and produce the two things every shard must share: one mutsu
+  # binary and one pinned rakudo release.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      chunks: ${{ steps.plan.outputs.chunks }}
+      count: ${{ steps.plan.outputs.count }}
+      full-corpus: ${{ steps.plan.outputs.full-corpus }}
+      raku-version: ${{ steps.raku.outputs.version }}
+      mutsu-commit: ${{ steps.plan.outputs.mutsu-commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The planner validates every dispatch input, so this catches a typo in
+      # ~1s instead of after a release build and 27 rakudo installs.
+      - name: Planner self-test
+        run: python3 scripts/ecosystem-ci.py --self-test
+
+      - name: Plan the matrix
+        id: plan
+        env:
+          # Inputs go through the environment, never through ${{ }} inside a
+          # `run:` body: the planner is what decides they are safe to word-split
+          # into an argv, and it can only do that if the shell never sees them
+          # first.
+          SCOPE: ${{ inputs.scope }}
+          PREFIX: ${{ inputs.prefix }}
+          ONLY: ${{ inputs.only }}
+          STATUS: ${{ inputs.status }}
+          SHARDS: ${{ inputs.shards }}
+          JOBS: ${{ inputs.jobs }}
+          ATTEMPTS: ${{ inputs.attempts }}
+          FILE_TIMEOUT: ${{ inputs.file_timeout }}
+        run: |
+          set -euo pipefail
+          for pair in "jobs:$JOBS" "attempts:$ATTEMPTS" "file_timeout:$FILE_TIMEOUT"; do
+            name=${pair%%:*}; value=${pair#*:}
+            case "$value" in
+              ''|*[!0-9]*) echo "::error::$name must be a positive integer, got '$value'"; exit 1 ;;
+              0) echo "::error::$name must be greater than zero"; exit 1 ;;
+            esac
+          done
+          python3 scripts/ecosystem-ci.py plan \
+            --scope "$SCOPE" --prefix "$PREFIX" --only "$ONLY" \
+            --status "$STATUS" --shards "$SHARDS"
+          echo "mutsu-commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: "ci-ecosystem"
+
+      # Every shard measures THIS binary. Building per shard would let 27
+      # slightly different compilations produce one KPI number.
+      - name: Build (release)
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+      - name: Upload the mutsu binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release/mutsu
+          retention-days: 1
+          if-no-files-found: error
+
+      # Fetch the fez + REA indexes ONCE, for the same reason the binary is
+      # built once: the sweep resolves each distribution's version and
+      # dependency closure from them, and `load_index()` reuses whatever is in
+      # the cache. Without this, a shard that starts three hours later can
+      # measure a different version of the same distribution, and
+      # `index-snapshot.json` would then describe only whichever shard wrote it
+      # last.
+      - name: Fetch and pin the ecosystem index
+        run: |
+          set -euo pipefail
+          python3 -c "import sys; sys.path.insert(0, 'scripts'); import ecosystem_common as eco; \
+            i = eco.load_index(refresh=True); print(len(i.targets), 'distributions')"
+          # Staged outside the cache directory because an action input is not
+          # shell-expanded: `~/.cache/...` in a `with:` would create a directory
+          # literally named `~`.
+          cp -a "$HOME/.cache/mutsu-ecosystem/index" /tmp/eco-index
+
+      - name: Upload the pinned index
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ecosystem-index
+          path: /tmp/eco-index
+          retention-days: 1
+          if-no-files-found: error
+
+      # Resolve the rakudo release ONCE. `install-raku.sh` otherwise picks "the
+      # newest prebuilt right now", which for a multi-hour sweep can differ
+      # between the first shard and the last -- a moving denominator inside one
+      # measurement.
+      - name: Resolve the rakudo release to pin
+        id: raku
+        env:
+          RAKU_VERSION: ${{ inputs.raku_version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$RAKU_VERSION" ]; then
+            url=$(.agents/skills/install-raku/install-raku.sh --print-url --version "$RAKU_VERSION")
+          else
+            url=$(.agents/skills/install-raku/install-raku.sh --print-url)
+          fi
+          version=$(printf '%s\n' "$url" | sed -nE 's#.*/rakudo-moar-([0-9]{4}\.[0-9]+(\.[0-9]+)?)-.*#\1#p')
+          if [ -z "$version" ]; then
+            echo "::error::could not read a rakudo version out of $url"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "pinned rakudo $version ($url)"
+
+      - name: Summary
+        env:
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          {
+            echo "## Ecosystem sweep plan"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| scope | \`$SCOPE\` |"
+            echo "| shard jobs | ${{ steps.plan.outputs.count }} |"
+            echo "| mutsu | \`${{ steps.plan.outputs.mutsu-commit }}\` |"
+            echo "| rakudo | ${{ steps.raku.outputs.version }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sweep:
+    needs: build
+    runs-on: ubuntu-latest
+    # A shard of the corpus can legitimately run for hours (its own suites, on
+    # both interpreters, with retries). Well under the 6h job ceiling, which is
+    # why the corpus fans out across 27 jobs instead of running as one.
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      # Hosted-runner concurrency is shared with CI on every open PR. 8 keeps a
+      # full sweep from starving the thing that gates merges.
+      max-parallel: 8
+      matrix:
+        chunk: ${{ fromJSON(needs.build.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the mutsu binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release
+
+      # Into the cache `ecosystem_common.load_index()` reads, so this shard
+      # resolves versions from the same index snapshot as every other shard.
+      - name: Download the pinned index
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ecosystem-index
+          path: /tmp/eco-index
+
+      # The path matters: bundled batteries (the vendored Test.rakumod among
+      # them) are found relative to the executable, `target/<profile>/../../modules`.
+      # Artifacts do not carry the executable bit.
+      - name: Restore the binary layout and the index cache
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/mutsu-ecosystem"
+          cp -a /tmp/eco-index "$HOME/.cache/mutsu-ecosystem/index"
+          chmod +x target/release/mutsu
+          target/release/mutsu --version
+          target/release/mutsu -e 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "vendored Test"'
+
+      # See ci.yml's "Use canonical apt mirror": the default runner mirror
+      # (azure.archive.ubuntu.com) has been observed hanging indefinitely.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+
+      # Loading a distribution runs its BEGIN phasers; running its suite runs
+      # arbitrary unaudited code. The sweep refuses a corpus without bwrap and
+      # so does this job -- there is no unsandboxed fallback, deliberately.
+      - name: Install and verify the sandbox
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          probe() { bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc \
+                      --die-with-parent true; }
+          if ! probe; then
+            # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor,
+            # which is exactly what --unshare-all needs. The runner gives us
+            # sudo, so lift it rather than dropping the sandbox.
+            echo "bwrap probe failed; relaxing kernel.apparmor_restrict_unprivileged_userns"
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+            probe || { echo "::error::bwrap does not work on this runner; refusing to measure unsandboxed"; exit 1; }
+          fi
+          echo "bwrap ok: $(bwrap --version)"
+
+      - name: Install the pinned rakudo
+        env:
+          RAKU_VERSION: ${{ needs.build.outputs.raku-version }}
+        run: |
+          set -euo pipefail
+          .agents/skills/install-raku/install-raku.sh --version "$RAKU_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Measure
+        env:
+          SWEEP_ARGS: ${{ matrix.chunk.args }}
+          JOBS: ${{ inputs.jobs }}
+          ATTEMPTS: ${{ inputs.attempts }}
+          FILE_TIMEOUT: ${{ inputs.file_timeout }}
+          MUTSU_BIN: target/release/mutsu
+        run: |
+          set -euo pipefail
+          raku --version
+          # `measured.host` has to distinguish this from the maintainer's box:
+          # both are linux-x86_64, and a history row that mixes them reports one
+          # triple for two machines.
+          export MUTSU_ECO_HOST="gha-${ImageOS:-ubuntu}-$(nproc)c"
+          # $SWEEP_ARGS is word-split on purpose. Every token in it was
+          # generated and validated by scripts/ecosystem-ci.py plan.
+          # shellcheck disable=SC2086
+          scripts/ecosystem-sweep.py $SWEEP_ARGS \
+            --jobs "$JOBS" --attempts "$ATTEMPTS" --timeout "$FILE_TIMEOUT"
+
+      # Only the records this shard actually changed. Shards are disjoint by
+      # distribution name, so the collect job can merge every artifact into one
+      # tree with no conflicts -- and an untouched record is never re-uploaded
+      # from a stale checkout on top of a fresher measurement.
+      - name: Stage the changed records
+        id: stage
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/eco-staging
+          git status --porcelain -- ecosystem | awk '{print $NF}' | sort -u > /tmp/eco-changed.txt
+          count=$(grep -c . /tmp/eco-changed.txt || true)
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            cp --parents "$path" /tmp/eco-staging/
+          done < /tmp/eco-changed.txt
+          echo "changed=$count" >> "$GITHUB_OUTPUT"
+          echo "shard ${{ matrix.chunk.id }}: $count record file(s) changed"
+
+      - name: Upload the records
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eco-records-${{ matrix.chunk.id }}
+          path: /tmp/eco-staging
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "- shard \`${{ matrix.chunk.id }}\` (\`${{ matrix.chunk.args }}\`): ${{ steps.stage.outputs.changed || 0 }} record(s) changed" >> "$GITHUB_STEP_SUMMARY"
+
+  # Merge every shard's records into one tree, roll the numbers up, and land it.
+  # Runs even when a shard failed: 26 measured shards are worth landing, and the
+  # failed one is simply re-dispatched (`scope: stale` picks up exactly what is
+  # still at an older commit).
+  collect:
+    needs: [build, sweep]
+    if: >-
+      always() && needs.build.result == 'success'
+      && needs.sweep.result != 'cancelled' && needs.sweep.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # A pull request opened with the default GITHUB_TOKEN does not start CI --
+      # GitHub suppresses workflow triggers from it. The repo already has an App
+      # for exactly this problem (tag-release.yml), so use it when configured
+      # and say so in the summary when it is not.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        if: ${{ vars.TAGPR_APP_CLIENT_ID != '' }}
+        with:
+          client-id: ${{ vars.TAGPR_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TAGPR_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
+          fetch-depth: 0
+
+      # A sweep whose every verdict matched what is already committed uploads no
+      # artifact at all (`if-no-files-found: ignore`), which is a real and
+      # expected outcome -- "the numbers did not move" -- not a download
+      # failure. The next step counts what actually arrived.
+      - name: Download every shard's records
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: eco-records-*
+          merge-multiple: true
+          path: /tmp/incoming
+
+      - name: Apply them to the tree
+        id: apply
+        run: |
+          set -euo pipefail
+          if [ -d /tmp/incoming ] && [ -n "$(find /tmp/incoming -type f -print -quit)" ]; then
+            cp -a /tmp/incoming/. .
+          fi
+          git status --porcelain -- ecosystem | awk '{print $NF}' | sort -u > /tmp/changed.txt
+          count=$(grep -c . /tmp/changed.txt || true)
+          echo "changed=$count" >> "$GITHUB_OUTPUT"
+          echo "$count record file(s) differ from main"
+
+      - name: Check the provenance
+        id: provenance
+        if: steps.apply.outputs.changed != '0'
+        run: |
+          set -euo pipefail
+          # Only the per-distribution records carry a `measured` block;
+          # index-snapshot.json and the generated summaries do not, and feeding
+          # them in would read as an unreadable record and veto the history row.
+          grep -E '^ecosystem/dists/.*\.json$' /tmp/changed.txt > /tmp/records.txt || true
+          python3 scripts/ecosystem-ci.py provenance --markdown /tmp/provenance.md < /tmp/records.txt
+
+      # `--history` is the one thing a partial or mixed run may not do: a
+      # history row reports a single (mutsu commit, rakudo, host) triple and a
+      # single corpus-wide rate, so appending one for a subset -- or for a run
+      # whose shards disagree about what measured them -- puts a point on the
+      # KPI chart that is not comparable with its neighbours.
+      - name: Roll the numbers up
+        id: rollup
+        if: ${{ inputs.rollup && steps.apply.outputs.changed != '0' }}
+        env:
+          FULL_CORPUS: ${{ needs.build.outputs.full-corpus }}
+          WANT_HISTORY: ${{ inputs.history }}
+          ALL_SHARDS_OK: ${{ needs.sweep.result == 'success' }}
+          UNIFORM: ${{ steps.provenance.outputs.uniform }}
+        run: |
+          set -euo pipefail
+          # `ecosystem/` deliberately carries no summary until a full corpus
+          # sweep has produced one: a rollup over a partial ledger reports a
+          # rate that reads as the ecosystem KPI and is not one
+          # (ecosystem/README.md). Refreshing a summary that already exists is
+          # fine -- creating the first one from a subset is not.
+          if [ ! -f ecosystem/summary.json ] && [ "$FULL_CORPUS" != "true" ]; then
+            echo "::notice title=no rollup::this would create the first ecosystem/summary.json from a partial sweep; run scope=all for that"
+            echo "appended-history=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          history=""
+          if [ "$WANT_HISTORY" = "true" ]; then
+            if [ "$FULL_CORPUS" != "true" ]; then
+              echo "::warning title=no history row::--history needs scope=all; this run measured a subset"
+            elif [ "$ALL_SHARDS_OK" != "true" ]; then
+              echo "::warning title=no history row::a shard failed, so this is not a complete corpus sweep"
+            elif [ "$UNIFORM" != "true" ]; then
+              echo "::warning title=no history row::records disagree about what measured them"
+            else
+              history="--history"
+            fi
+          fi
+          echo "appended-history=$([ -n "$history" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2086
+          scripts/ecosystem-sweep.py --rollup $history
+
+      - name: Write the report
+        id: report
+        run: |
+          set -euo pipefail
+          {
+            echo "## Ecosystem sweep"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| scope | \`${{ inputs.scope }}\` |"
+            echo "| mutsu | \`${{ needs.build.outputs.mutsu-commit }}\` |"
+            echo "| rakudo | ${{ needs.build.outputs.raku-version }} |"
+            echo "| shards | ${{ needs.build.outputs.count }} (\`${{ needs.sweep.result }}\`) |"
+            echo "| records changed | ${{ steps.apply.outputs.changed }} |"
+            # These are rates over the WHOLE ledger, not over this run's slice:
+            # that is what the published KPI is, and a per-run rate over a
+            # hand-picked subset is not one.
+            if [ -f ecosystem/summary.json ]; then
+              for metric in dist_parity file_parity assertion_parity; do
+                value=$(python3 -c "import json,sys;print(json.load(open('ecosystem/summary.json'))[sys.argv[1]])" "$metric")
+                echo "| $metric (whole ledger) | ${value}% |"
+              done
+              echo "| distributions in the ledger | $(python3 -c "import json;print(json.load(open('ecosystem/summary.json'))['distributions'])") |"
+            fi
+            echo "| history row appended | ${{ steps.rollup.outputs.appended-history || 'false' }} |"
+            echo ""
+            if [ -f /tmp/provenance.md ]; then
+              echo "### Provenance"
+              echo ""
+              cat /tmp/provenance.md
+              echo ""
+            fi
+            echo "Measured by [\`ecosystem-sweep.yml\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "on a hosted runner, so \`measured.host\` reads \`gha-*\`. Method:"
+            echo "[docs/ecosystem-parity.md](docs/ecosystem-parity.md); decisions:"
+            echo "[ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md)."
+            echo ""
+            echo "Refs #7785"
+            echo ""
+            echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+          } > /tmp/report.md
+          cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the branch and open the pull request
+        if: ${{ inputs.publish != 'none' && steps.apply.outputs.changed != '0' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          PUBLISH: ${{ inputs.publish }}
+          SCOPE: ${{ inputs.scope }}
+          HAVE_APP_TOKEN: ${{ steps.app-token.outputs.token != '' }}
+        run: |
+          set -euo pipefail
+          branch="ecosystem/sweep-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add ecosystem/
+          git commit -F - <<EOF
+          chore(ecosystem): refresh parity records (scope=${SCOPE})
+
+          Measured by .github/workflows/ecosystem-sweep.yml on a hosted runner:
+          mutsu ${{ needs.build.outputs.mutsu-commit }}, rakudo ${{ needs.build.outputs.raku-version }}.
+
+          Refs #7785
+          EOF
+          for attempt in 1 2 3; do
+            git push -u origin "$branch" && break
+            echo "push failed, retrying ($attempt)"
+            sleep $((attempt * 4))
+          done
+          if [ "$PUBLISH" != "pull-request" ]; then
+            echo "pushed \`$branch\`; open the pull request by hand" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A sweep dispatched from a feature ref measured that ref's mutsu,
+          # which is a legitimate thing to want -- but a pull request from it
+          # into main would carry every other commit on that ref alongside the
+          # records. Keep the measurement, skip the pull request.
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::warning title=no pull request::dispatched from $GITHUB_REF, not main; the records are pushed to \`$branch\` but a pull request from a feature ref would carry its other commits too"
+            echo "Records pushed to \`$branch\` (measured on \`$GITHUB_REF\`)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! gh pr create --base main --head "$branch" \
+                 --title "chore(ecosystem): refresh parity records (scope=${SCOPE})" \
+                 --body-file /tmp/report.md; then
+            echo "::warning title=could not open the pull request::the branch is pushed; open it from the compare view"
+            echo "Open it here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$HAVE_APP_TOKEN" != "true" ]; then
+            echo "::warning title=CI will not start by itself::the pull request was opened with the default GITHUB_TOKEN, which does not trigger workflows. Configure the TAGPR_APP_CLIENT_ID / TAGPR_APP_PRIVATE_KEY App credentials, or push one commit to the branch from a clone."
+          fi
+
+      - name: Nothing changed
+        if: steps.apply.outputs.changed == '0'
+        run: echo "No record changed — every selected distribution measured identically to what is on main." >> "$GITHUB_STEP_SUMMARY"

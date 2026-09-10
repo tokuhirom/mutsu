@@ -19,7 +19,9 @@ sides, and publish the difference.
 > record store, and the public page (`site/ecosystem.html`) all exist. **P2, the
 > corpus sweep, is what produces the first real KPI numbers**, and until it runs
 > `ecosystem/` holds a partial set rather than a survey; see
-> [ecosystem/README.md](../ecosystem/README.md).
+> [ecosystem/README.md](../ecosystem/README.md). A sweep can be run either
+> locally (§8) or from GitHub Actions (§8.1) — the numbers no longer depend on
+> having a many-core box to hand.
 
 ## 1. What gets measured
 
@@ -247,8 +249,9 @@ scripts/ecosystem-sweep.py --only String::Utils
 # one shard — "all modules that start with A"
 scripts/ecosystem-sweep.py --prefix A --jobs 8
 
-# everything currently red, after a fix lands
-scripts/ecosystem-sweep.py --status regression
+# everything currently red, after a fix lands (a record `status`, so `red` /
+# `partial` — `regression` is a per-FILE verdict, not a selectable status)
+scripts/ecosystem-sweep.py --status partial
 
 # records measured at an older mutsu commit or an older rakudo
 scripts/ecosystem-sweep.py --stale
@@ -266,7 +269,16 @@ dist, to bound a pathological suite), `--include-xt`, `--sandbox {bwrap,none}`,
 plan without executing), `--json -` (emit records to stdout instead of the tree).
 
 Environment: `MUTSU_BIN` (default `target/release/mutsu`), `RAKU_BIN` (default
-`raku`).
+`raku`), `MUTSU_ECO_HOST` (what `measured.host` records; default
+`<uname>-<machine>`, which cannot tell a hosted runner from the maintainer's box
+— §8.1 sets it to `gha-*`).
+
+`scripts/ecosystem-ci.py` is the CI-side companion: `plan` turns
+`.github/workflows/ecosystem-sweep.yml`'s dispatch inputs into a validated job
+matrix, and `provenance` groups a set of records by the
+`(mutsu commit, rakudo, host)` triple that measured them. Both are useful
+locally too — `--self-test` covers them, so a change to either is checked without
+dispatching a run.
 
 ### Cost model
 
@@ -350,25 +362,34 @@ dark README; browsers that ignore it get the light palette.
 | ~~**P1**~~ | ~~`scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1~~ | **done** — records round-trip, `--rollup` produces summary + history + chart, and the first eight distributions surfaced real findings |
 | **P2** | first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row | `file_parity` / `assertion_parity` / `dist_parity` exist as real numbers |
 | ~~**P3**~~ | ~~`ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring~~ | **done** — `site/ecosystem.html` is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml` and the nav, and covered by `site/e2e.test.mjs`. The README link waits on P2, which is what produces the chart |
-| **P4** | the operator runbook (§8) — one `make`-level entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | a maintainer can go from a clean checkout to a merged sweep by following one page |
+| **P4** | the operator runbook (§8) — one entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | **partly done** — `.github/workflows/ecosystem-sweep.yml` (§8.1) is that entry point for anyone with dispatch rights: it plans, builds once, measures, rolls up and opens the PR. What is left is the local `make`-level convenience wrapper |
 | **P5** | root-cause grouping of `regression` records into `todo:ticket` issues, in the shape `scripts/dist-compat-tickets.py` already produces; `docs/triage.md` picks them up | the KPI feeds the work queue |
 
 P1 and P2 are the campaign; P3-P5 make it repeatable. Do not start P2 before
 P1's `--only` round-trips a record.
 
-**There is deliberately no scheduled CI phase** (ADR-0085 D9): a full sweep is
-~20 CPU-hours, which a 12-core box does in ~2.5 h for nothing and a hosted
-runner would charge for weekly, on fewer cores, to track a number that moves at
-the speed of interpreter fixes. The cost is that the headline updates only when
-someone runs it — a documented state, since D7 makes staleness computable — and
-that PLAN.md §1 B1's "working-module regression CI" stays a separate, unstarted
-item rather than being closed by this campaign.
+**There is deliberately no *scheduled* CI sweep** (ADR-0085 D9): a full sweep is
+~20 CPU-hours, and paying a hosted runner for it weekly, on fewer cores, to
+track a number that moves at the speed of interpreter fixes, buys nothing. The
+headline updates when someone decides to refresh it — a documented state, since
+D7 makes staleness computable — and PLAN.md §1 B1's "working-module regression
+CI" stays a separate, unstarted item rather than being closed by this campaign.
+
+**Operator-*dispatched* CI is supported**, though, and is now the ordinary way to
+refresh the numbers: §8.1. That is the D9 amendment — it removes the
+"you need a 12-core box with `bwrap`" precondition without adding a schedule.
 
 ## 8. Operator runbook
 
-The sweep is run by hand on a machine with the cores to spare (ADR-0085 D9) —
-the maintainer's 12-core box, not a CI runner and not an ephemeral remote
-container (4 cores, a fixed disk allowance, and no `bwrap`).
+Two ways to refresh the numbers: **locally** (below) when a many-core box is at
+hand, or **from GitHub Actions** (§8.1) otherwise. They produce the same records
+and differ only in `measured.host`, so pick either — but do not run both at once
+on overlapping selections, or the second to finish overwrites the first.
+
+### 8.0 Locally
+
+A machine with the cores to spare — the maintainer's 12-core box, not an
+ephemeral remote container (4 cores, a fixed disk allowance, and no `bwrap`).
 
 ```sh
 apt-get install bubblewrap          # required; the sweep refuses to run a corpus without it
@@ -382,10 +403,77 @@ git checkout -b ecosystem/sweep-YYYY-MM-DD && git add ecosystem/ && …   # land
 Before landing a sweep, check that `measured.host` is uniform across what
 changed: a shard measured on a different machine is identifiable by design, but
 mixing hosts inside one `history.tsv` row makes the row mean less than it looks.
+`scripts/ecosystem-ci.py provenance` answers that in one command:
+
+```sh
+git status --porcelain -- ecosystem | awk '{print $NF}' \
+  | grep -E '^ecosystem/dists/.*\.json$' \
+  | scripts/ecosystem-ci.py provenance
+```
 
 After a **rakudo upgrade**, every baseline is invalid at once (§5) — run a full
 sweep rather than a shard, and say so in the PR, because the denominator moved
 and the KPI is not comparable across that boundary.
+
+### 8.1 From GitHub Actions
+
+`.github/workflows/ecosystem-sweep.yml`, **Run workflow** (or
+`gh workflow run ecosystem-sweep.yml -f scope=…`). One dispatch does the whole
+runbook: plan, build, measure, roll up, open the pull request.
+
+| input | what it selects | maps to |
+|---|---|---|
+| `scope: stale` (default) | records measured at another mutsu commit or rakudo — "refresh the numbers" | `--stale` |
+| `scope: all` | the whole corpus, fanned out across the 27 letter shards | `--prefix A` … `--prefix _` |
+| `scope: prefix` + `prefix: A` | one shard | `--prefix A` |
+| `scope: only` + `only: BTree, Trie` | named distributions | `--only …` |
+| `scope: status` + `status: partial` | every record currently at that status | `--status partial` |
+
+`shards` controls the fan-out (`auto` = letters for `scope: all`, one job
+otherwise; `letters` forces it, which is what a large `stale` selection wants);
+`jobs` / `attempts` / `file_timeout` are the harness flags; `raku_version` pins
+the oracle; `rollup` regenerates `summary.*`; `history` asks for a `history.tsv`
+row; `publish` chooses `pull-request` (default), `branch`, or `none`.
+
+`rollup` is on by default but will not *create* the first `summary.json` from a
+partial sweep — until a `scope: all` run has produced one, a subset run skips the
+rollup and says so, for the same reason `ecosystem/` has carried no summary since
+P1 ([ecosystem/README.md](../ecosystem/README.md)). Once a full sweep has
+established it, every later run keeps it in step with the records.
+
+What the workflow guarantees, and why it is not simply 27 independent sweeps —
+one mutsu binary, one rakudo release and one ecosystem index snapshot are
+produced by the `build` job and handed to every shard, so nothing inside a single
+KPI number was measured against a different denominator. `bwrap` is verified on
+each runner and the job fails rather than measuring unsandboxed.
+
+Dispatch it **from `main`**. Measuring a feature ref is supported and sometimes
+what you want (it measures that ref's mutsu), but the records are then only
+pushed to a branch: a pull request from a feature ref into `main` would carry
+that ref's other commits alongside the records, so the workflow declines to open
+one and says so.
+
+Two things it will refuse to do:
+
+- **Append a `history.tsv` row for anything but a complete, uniform sweep.** Not
+  a subset (`scope` other than `all`), not a run where a shard failed, not a run
+  whose records disagree about the `(mutsu commit, rakudo, host)` triple that the
+  row would claim. The records still land in all three cases; only the chart
+  point is withheld, and the run summary says which guard fired.
+- **Measure without a sandbox.** There is no fallback flag.
+
+Reading the result: records measured on a runner carry `measured.host` of the
+form `gha-ubuntu24-4c`, so they are never silently mixed with locally-measured
+ones. A hosted runner has ~4 cores, so `--timeout 120` bites earlier in
+wall-clock terms than on a 12-core box — symmetrically for both interpreters, so
+such a file lands in `no_baseline` rather than being charged to mutsu, but it
+does make the measurable baseline slightly smaller than a local sweep's.
+
+If the pull request opens with no CI running on it, the repository's GitHub App
+credentials (`TAGPR_APP_CLIENT_ID` / `TAGPR_APP_PRIVATE_KEY`) are not configured
+and it was opened with the default `GITHUB_TOKEN`, which GitHub does not let
+trigger workflows; the run summary says so. Push one commit to the branch from a
+clone to start CI.
 
 ## 9. Known limits and follow-ups
 

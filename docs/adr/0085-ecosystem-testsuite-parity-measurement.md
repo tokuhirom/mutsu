@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Accepted (design confirmed 2026-09-10; P1 implemented — see "Implementation status")
+- Status: Accepted (design confirmed 2026-09-10; P1 implemented — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep)
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -259,6 +259,50 @@ Because the sweep is tied to one machine, `measured.host` is part of every
 record (D7) so a number produced elsewhere is identifiable rather than quietly
 mixed in.
 
+#### Amendment, 2026-09-10: operator-dispatched CI is allowed; scheduled is still not
+
+`.github/workflows/ecosystem-sweep.yml` gives the sweep a **`workflow_dispatch`**
+entry point: one dispatch measures a selection (`stale` / `all` / one shard / a
+list of distributions / one status), fans the corpus out across the 27 letter
+shards, and lands the updated records as an ordinary pull request.
+
+What this changes is *who needs the hardware*, not *when the sweep runs*. The
+argument above rejected a **weekly** sweep and that stands — there is no
+`schedule:` in the workflow, and adding one needs a new decision, not an edit
+here. Refreshing the numbers no longer requires a 12-core box with `bwrap`
+configured, so "the KPI updates only when someone runs it" now costs one button
+instead of an afternoon on a specific machine. PLAN.md §1 B1's "working-module
+regression CI" is still a separate item: this workflow is a measurement anyone
+can start, not a gate on anything.
+
+Three properties of D8's fairness contract had to be *engineered* to survive a
+hosted, sharded run, and they are the reason the workflow is shaped the way it
+is rather than being 27 independent sweeps:
+
+- **One binary.** The `build` job compiles once and every shard downloads that
+  artifact. Per-shard builds would let 27 slightly different compilations
+  contribute to one number.
+- **One rakudo.** `build` resolves the prebuilt release and every shard installs
+  that exact version, rather than each asking for "the newest" hours apart.
+- **One ecosystem index.** `build` fetches the fez + REA indexes once and seeds
+  every shard's cache with them, so no two shards resolve different versions of
+  the same distribution.
+
+Two honesty guards come with it. `measured.host` reads `gha-*` for anything
+measured on a runner (`MUTSU_ECO_HOST`), because a runner and the maintainer's
+box are both `linux-x86_64` and D7's identifiability would otherwise be lost;
+and a run whose records do not share one `(mutsu commit, rakudo, host)` triple —
+or that measured only part of the corpus — lands its records but is refused a
+`history.tsv` row, since that row reports one triple and one corpus-wide rate.
+
+The costs are accepted and recorded: hosted runners have ~4 cores, so a corpus
+sweep is wall-clock slower per shard and its `--timeout 120` bites at a
+different point than on a 12-core box (symmetrically for both interpreters, so a
+timing difference lands in `no_baseline` rather than being charged to mutsu); and
+a pull request opened with the default `GITHUB_TOKEN` does not start CI, so the
+workflow uses the repository's GitHub App token when it is configured and says
+so in the run summary when it is not.
+
 ## Consequences
 
 - The project gains a compatibility number that is defensible, reproducible, and
@@ -292,9 +336,9 @@ Phases are listed in [docs/ecosystem-parity.md](../ecosystem-parity.md) §7.
 | phase | state |
 |---|---|
 | **P1** — harness, dependency resolver, sandbox, record store, `--only`/`--prefix`/`--rollup` | **done** — `scripts/ecosystem-sweep.py` + `scripts/ecosystem_common.py`; validated on eight distributions, which surfaced real interpreter findings on the first pass |
-| **P2** — first corpus sweep, the first KPI numbers | open; needs a many-core box (D9) |
+| **P2** — first corpus sweep, the first KPI numbers | open; a many-core box (D9), or the `Ecosystem sweep` workflow with `scope: all` (D9 amendment) |
 | **P3** — `ecosystem/history.svg` in the README, `site/ecosystem.html` | open |
-| **P4** — operator runbook | open |
+| **P4** — operator runbook | partly done — `.github/workflows/ecosystem-sweep.yml` is the dispatch path (D9 amendment) and docs/ecosystem-parity.md §8 documents both it and the local one |
 | **P5** — root-cause grouping of `regression` records into issues | open |
 
 Two decisions were tested by the implementation rather than only argued:
