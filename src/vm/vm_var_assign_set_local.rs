@@ -1005,6 +1005,7 @@ impl Interpreter {
                 ));
             }
             if is_bind {
+                self.check_associative_bind_value(name, &raw_popped)?;
                 // `:=` binding preserves containers — skip coercion. But the
                 // bound container must conform to a typed-hash variable's
                 // declared value type: `my Int %h := <untyped hash>` dies
