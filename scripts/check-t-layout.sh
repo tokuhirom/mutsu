@@ -75,10 +75,16 @@ cd "$(dirname "$0")/.." || exit 1
 status=0
 
 # --- directories directly under t/ -----------------------------------------
+# Only directories that actually hold a test are judged. Test runs leave empty
+# scratch directories behind under t/ (`make roast` creates t/spec/S22-package-format,
+# for one), and failing CI over an untracked artifact that contains nothing
+# would be noise. A stray directory that does hold a `.t` is still caught, both
+# here and by the per-file check below.
 for dir in t/*/; do
   [ -d "$dir" ] || continue
   name="${dir#t/}"; name="${name%/}"
   if is_support_dir "$name" || is_category "$name"; then continue; fi
+  [ -n "$(find "$dir" -name '*.t' -type f -print -quit)" ] || continue
   echo "t/$name/ is neither a known category nor a support directory." >&2
   echo "    Categories are listed in docs/t-directory-layout.md §2; fixtures go in t/lib or t/fixtures." >&2
   status=1
