@@ -2398,7 +2398,11 @@ struct PromiseState {
     /// guarantee and could run in either order depending on OS scheduling
     /// — observable as an intermittent CI-only failure under load
     /// (S17-promise/then.t "simple keep"/"simple break").
-    waiters: Vec<PromiseWaiter>,
+    /// Each entry is the callback plus, when the callback's effect is a
+    /// reaction of a supply block, that block's serialize group. The group is
+    /// what lets `dispatch_waiters` order these reactions by resolution order
+    /// rather than by pooled-worker wake-up luck -- see `SupplyTicket`.
+    waiters: Vec<(PromiseWaiter, Option<u64>)>,
     /// Has a `Promise::Vow` been taken for this promise? Rakudo's
     /// `Promise.vow`, `Promise.keep` and `Promise.break` all consume the
     /// single available vow: the first of them to run sets this, and every

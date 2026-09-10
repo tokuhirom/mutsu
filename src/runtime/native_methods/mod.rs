@@ -84,6 +84,7 @@ pub(in crate::runtime) use state_supplier::{
     zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info, zip_source_done,
     zip_state_info,
 };
+pub(crate) use state_supplier::{SupplyTicket, reserve_supply_serialize};
 pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
 };

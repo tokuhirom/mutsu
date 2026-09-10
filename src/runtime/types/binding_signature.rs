@@ -1785,7 +1785,29 @@ impl Interpreter {
                         // leaf variable is bound via the rename recursion below.
                         // Mirrors `bind_sub_signature_from_value`'s line-778 rule.
                         if let Some(sub_params) = &pd.sub_signature {
-                            bind_named_rename_sub_signature(self, sub_params, val)?;
+                            // A sigiled named aggregate such as
+                            // `:@foo [$first, *@rest]` is a real destructuring
+                            // signature.  The same `sub_signature` field also
+                            // represents a scalar named alias (`:foo($value)`),
+                            // so use the aggregate sigil to distinguish the two
+                            // forms.  Treating `:@foo [...]` as an alias binds
+                            // every inner scalar to the whole array and skips
+                            // the inner slurpy entirely.
+                            if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                                self.bind_param_value_sym(
+                                    &pd.name,
+                                    pd_name_sym(),
+                                    bound_value.clone(),
+                                );
+                                self.bind_param_type_constraint_sym(
+                                    &pd.name,
+                                    pd_name_sym(),
+                                    pd.type_constraint.clone(),
+                                );
+                                bind_sub_signature_from_value(self, sub_params, &bound_value)?;
+                            } else {
+                                bind_named_rename_sub_signature(self, sub_params, val)?;
+                            }
                         } else {
                             // Named `$` params are item bindings too (raku:
                             // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw

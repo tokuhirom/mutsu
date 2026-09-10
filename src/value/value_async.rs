@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::runtime::native_methods::SupplyTicket;
+
 impl std::fmt::Debug for PromiseState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PromiseState")
@@ -273,10 +275,28 @@ impl SharedPromise {
     /// independent `.then` alongside an `.andthen` chain) deterministically
     /// ordered instead of racing each other's OS thread wake-up latency.
     pub(crate) fn on_resolve(&self, waiter: PromiseWaiter) -> bool {
+        self.on_resolve_in_supply_group(waiter, None)
+    }
+
+    /// [`Self::on_resolve`], for a waiter whose effect is a reaction of the
+    /// supply block whose serialize group is `group`.
+    ///
+    /// Resolving the promise then reserves this reaction's place in that group
+    /// **on the resolving thread**, before the pooled worker that will run it
+    /// has been woken. Two promises resolved one after another therefore reach
+    /// the supply block in that order, instead of in whichever order their two
+    /// workers happened to wake up in. See [`SupplyTicket`].
+    ///
+    /// [`SupplyTicket`]: crate::runtime::native_methods::SupplyTicket
+    pub(crate) fn on_resolve_in_supply_group(
+        &self,
+        waiter: PromiseWaiter,
+        group: Option<u64>,
+    ) -> bool {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
         if state.status == "Planned" {
-            state.waiters.push(waiter);
+            state.waiters.push((waiter, group));
             false
         } else {
             let status = state.status.clone();
@@ -293,7 +313,7 @@ impl SharedPromise {
     /// resolving a promise never blocks the resolver on arbitrary user
     /// callback code). No-op when there is nothing queued.
     fn dispatch_waiters(
-        waiters: Vec<PromiseWaiter>,
+        waiters: Vec<(PromiseWaiter, Option<u64>)>,
         status: String,
         result: Value,
         output: String,
@@ -302,11 +322,26 @@ impl SharedPromise {
         if waiters.is_empty() {
             return;
         }
+        // Supply-block reactions take their place in the block's queue here,
+        // on the resolving thread and in resolution order, so the pooled task
+        // below cannot reorder them by winning a wake-up race (#7811).
+        let waiters: Vec<(PromiseWaiter, Option<SupplyTicket>)> = waiters
+            .into_iter()
+            .map(|(waiter, group)| {
+                (
+                    waiter,
+                    group.map(crate::runtime::native_methods::reserve_supply_serialize),
+                )
+            })
+            .collect();
         // Pooled (ADR-0020 slice 3): fires on every promise resolution that
         // has queued waiters. Ordering is preserved — all of this promise's
         // waiters run in registration order inside the single pooled task.
         crate::runtime::worker_pool::submit(move || {
-            for waiter in waiters {
+            for (waiter, ticket) in waiters {
+                // Held across the callback; the `emit` inside it re-enters the
+                // same group on this thread, which the lock allows.
+                let _serialize_guard = ticket.map(|t| t.redeem());
                 waiter(
                     status.clone(),
                     result.clone(),
