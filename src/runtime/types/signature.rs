@@ -819,7 +819,9 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 // Slurpy *@rest or *$rest: collect remaining positional values
                 let remaining: Vec<Value> = positional[nested_positional_idx..].to_vec();
                 nested_positional_idx = positional.len();
-                let remaining_value = Value::array(remaining);
+                // A destructured slurpy is an Array in Raku, not the List
+                // representation used for ordinary listified values.
+                let remaining_value = Value::real_array(remaining);
                 if !sub_pd.name.is_empty() {
                     bind_sub_param_name(interpreter, &sub_pd.name, remaining_value.clone());
                 }
