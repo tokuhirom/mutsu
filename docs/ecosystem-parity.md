@@ -15,8 +15,10 @@ sides, and publish the difference.
   release gate on the ~40 *bundled* dists. This campaign is neither: it is an
   exhaustive, re-runnable ledger over the whole ecosystem.
 
-> **Status: design only.** Nothing in this document is implemented yet. The
-> phases in §7 are the build order; each is one PR.
+> **Status: P1 landed** — `scripts/ecosystem-sweep.py` and the record store
+> exist and have been run end to end. P2 (the corpus sweep, and therefore the
+> first real KPI numbers) has not. `ecosystem/` currently holds a small
+> validation set, not a survey; see [ecosystem/README.md](../ecosystem/README.md).
 
 ## 1. What gets measured
 
@@ -341,7 +343,7 @@ dark README; browsers that ignore it get the light palette.
 
 | # | Deliverable | Done when |
 |---|---|---|
-| **P1** | `scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1 | the `A` shard measures end to end and its records land under `ecosystem/dists/A/` |
+| ~~**P1**~~ | ~~`scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1~~ | **done** — records round-trip, `--rollup` produces summary + history + chart, and the first eight distributions surfaced real findings |
 | **P2** | first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row | `file_parity` / `assertion_parity` / `dist_parity` exist as real numbers |
 | **P3** | `ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring | a user can see the KPI trend from the README and look up a single dist on the public site |
 | **P4** | the operator runbook (§8) — one `make`-level entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | a maintainer can go from a clean checkout to a merged sweep by following one page |
@@ -382,6 +384,11 @@ sweep rather than a shard, and say so in the PR, because the denominator moved
 and the KPI is not comparable across that boundary.
 
 ## 9. Known limits and follow-ups
+
+- **`--attempts` multiplies the cost of a red corpus.** The retry runs only on a
+  file that did not pass, which is the right side to spend it on, but early in
+  the campaign most files are that side. Lower it (`--attempts 1`) for a scouting
+  run and restore it for a sweep whose numbers are going to be published.
 
 - **Network-dependent suites are invisible.** They fail on both sides and land
   in `no_baseline`. Recorded as a count so the size of the blind spot is known;

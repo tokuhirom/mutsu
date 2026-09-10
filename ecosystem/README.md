@@ -1,0 +1,73 @@
+# `ecosystem/` — the parity ledger
+
+Machine-readable measurements of **how mutsu does against rakudo on real zef
+distributions**: each distribution's own test suite run under both interpreters,
+with rakudo as the denominator.
+
+- **Method and metric definitions**: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md)
+- **Why it is shaped this way**: [ADR-0085](../docs/adr/0085-ecosystem-testsuite-parity-measurement.md)
+- **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
+
+## What is here
+
+| path | what it is |
+|---|---|
+| `dists/<S>/<Dist--Name>.json` | one record per distribution — the measurement |
+| `index-snapshot.json` | which ecosystem index snapshot the run drew from (fez + REA, with digests) |
+| `summary.json` / `summary.md` | generated rollup — **do not edit**, regenerate with `--rollup` |
+| `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
+
+`<S>` is the uppercased first letter of the distribution name (`_` when it is
+not an ASCII letter), and `::` is written `--` in the filename:
+`String::Utils` → `dists/S/String--Utils.json`.
+
+One file per distribution is not an accident. It is what keeps parallel PRs from
+conflicting (the same reasoning as `news/`), and it makes re-measuring one
+distribution a one-file change.
+
+## Reading a record
+
+```jsonc
+{
+  "dist": "BTree", "version": "0.0.4", "status": "partial",
+  "axis": "pure",                       // pure / guts (nqp, MOP) / native (NativeCall)
+  "measured": { "date": …, "mutsu_commit": …, "raku_version": … },
+  "deps": { "resolved": [...], "unresolved": [] },
+  "load": { "BTree": "ok" },            // per provided module
+  "files": [
+    { "path": "t/…", "raku": {…}, "mutsu": {…}, "cmp": "regression" }
+  ],
+  "totals": { "baseline_files": 2, "parity_files": 1, … }
+}
+```
+
+`cmp` is the per-file comparison. **`regression` and `partial` are the
+actionable ones**: rakudo passes the file and mutsu does not. `no_baseline`
+means rakudo did not pass it either, so it is excluded from the KPI — it is
+never charged to mutsu.
+
+`status` rolls that up per distribution: `green` (every baseline file passes) ·
+`partial` · `red` · `no_baseline` · `blocked_load` (a provided module does not
+`use`) · `blocked_dep` (its dependency closure cannot be resolved, so it runs on
+neither side) · `skipped`.
+
+## Re-measuring
+
+```sh
+scripts/ecosystem-sweep.py --only BTree          # one distribution
+scripts/ecosystem-sweep.py --prefix A --jobs 8   # everything starting with A
+scripts/ecosystem-sweep.py --status regression   # everything currently red
+scripts/ecosystem-sweep.py --rollup              # regenerate summary.* and the chart
+```
+
+Requires `bubblewrap` (the sweep runs unaudited test suites and refuses to run a
+corpus without a sandbox) and a `raku` on PATH. Full runbook:
+[docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
+
+## Current state — validation set, not the corpus
+
+**The records here are a small P1 validation set, not a survey.** They were
+measured to prove the harness works end to end; the corpus sweep and the first
+real KPI numbers are phase P2. There is deliberately no `summary.*` or
+`history.tsv` yet: a rollup over a handful of hand-picked distributions would
+read like a KPI, and it is not one.
