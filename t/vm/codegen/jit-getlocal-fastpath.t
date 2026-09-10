@@ -7,8 +7,15 @@ use Test;
 # ContainerRef cells (`:=` / `is rw`), boxed (non-word) values like Str,
 # and Nil-slot declaration checks. Run under the default JIT; CI's
 # jit-stress job re-runs with MUTSU_JIT_THRESHOLD=2.
+#
+# Tests 9-11 pin the two probes the emitted guard was reduced to (#7737):
+# the single `LOCAL_READ_SPOILERS` latch, which every spoiler source must
+# still bump (atomic variables and sigilless attributes had only a
+# per-interpreter flag before), and the ordered page-range test, which must
+# keep admitting exactly Int/Num/Bool/Package -- Whatever sits one kind id
+# below Bool and must still take the shim.
 
-plan 8;
+plan 11;
 
 # 1. Plain Int local, hot recursive body (fast path shape).
 sub sum-to($n) {
@@ -73,3 +80,36 @@ sub niler() {
 my $d = True;
 for ^150 { $d = niler() }
 nok $d, 'Nil slots keep the interpreter declaration semantics';
+
+# 9. Atomic-variable spoiler: registering atomic storage must route every
+#    later inline read through the shim, whichever interpreter saw it.
+my atomicint $counter = 0;
+sub read-through($n) {
+    my $local = $n;
+    return $local + atomic-fetch($counter);
+}
+my $sum = 0;
+for ^150 { atomic-fetch-add($counter, 1); $sum = read-through($_) }
+is $sum, 149 + 150, 'atomic storage spoils the inline read without losing values';
+
+# 10. Sigilless attribute alias: the alias table must still be consulted for
+#     a bare-name read once any `has $x` attribute has been materialized.
+class Holder {
+    has $x = 7;
+    method bump-sum($n) {
+        my $acc = 0;
+        for ^$n { $acc = $acc + $x }
+        return $acc;
+    }
+}
+is Holder.new.bump-sum(150), 7 * 150, 'sigilless attribute reads stay correct in a hot body';
+
+# 11. Whatever local: one kind id below Bool, so the guard's ordered range
+#     must exclude it and let the shim answer.
+sub whatever-kind($n) {
+    my $w = *;
+    return $w.^name ~ $n;
+}
+my $wn = "";
+for ^150 { $wn = whatever-kind($_) }
+is $wn, "Whatever149", 'Whatever locals stay off the inline fast path';

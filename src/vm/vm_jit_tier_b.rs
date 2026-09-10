@@ -499,10 +499,10 @@ impl TierB {
     }
 
     /// `GetLocal` of a statically-eligible plain local (ADR-0004 J4d): when
-    /// no dynamic spoiler exists — no `ContainerRef` cell anywhere in the
-    /// process, no `$CALLER::x := ...` alias, no atomic variable on this
-    /// interpreter, no sigilless attribute alias — and the slot word is a
-    /// refcount-free scalar (small Int / Num / Bool / Package), the
+    /// no dynamic spoiler exists (`vm_jit::LOCAL_READ_SPOILERS` is zero — no
+    /// `ContainerRef` cell anywhere in the process, no `$CALLER::x := ...`
+    /// alias, no atomic variable, no sigilless attribute alias) and the slot
+    /// word is a refcount-free scalar (small Int / Num / Bool / Package), the
     /// interpreter arm reduces to `stack.push(locals[idx].clone())`, which is
     /// emitted here as two loads and a store. Every other combination calls
     /// the Tier A shim, which re-runs the full `exec_get_local_op` guard
@@ -521,40 +521,26 @@ impl TierB {
         let slow_blk = b.create_block();
         let done = b.create_block();
 
-        // -- process-global spoiler latches (see vm_jit::CONTAINER_CELLS /
-        // CALLER_VAR_BINDS): both zero ⟺ the resolve_binding and env
-        // cell-adoption probes are provably no-ops everywhere.
-        let cells_addr = std::ptr::addr_of!(super::vm_jit::CONTAINER_CELLS) as usize;
-        let cells_addr = b.ins().iconst(self.ptr_ty, cells_addr as i64);
-        let cells = b.ins().load(types::I32, Self::mf(), cells_addr, 0);
-        let binds_addr = std::ptr::addr_of!(super::vm_jit::CALLER_VAR_BINDS) as usize;
-        let binds_addr = b.ins().iconst(self.ptr_ty, binds_addr as i64);
-        let binds = b.ins().load(types::I32, Self::mf(), binds_addr, 0);
-        let global_spoil = b.ins().bor(cells, binds);
-        // -- per-interpreter spoiler flags (plain bool fields, 0 or 1).
-        let atomic = b
-            .ins()
-            .load(types::I8, Self::mf(), self.interp, self.lay.atomic_var_seen);
-        let sigil = b.ins().load(
-            types::I8,
-            Self::mf(),
-            self.interp,
-            self.lay.sigilless_attrs_active,
-        );
-        let interp_spoil = b.ins().bor(atomic, sigil);
-        let interp_spoil = b.ins().uextend(types::I32, interp_spoil);
-        let spoiled = b.ins().bor(global_spoil, interp_spoil);
-        let word_chk = b.create_block();
-        b.ins().brif(spoiled, slow_blk, &[], word_chk, &[]);
+        // -- one process-global spoiler latch (vm_jit::LOCAL_READ_SPOILERS):
+        // zero ⟺ `resolve_binding`, the env cell-adoption probe, the
+        // atomic-variable read and the sigilless-alias lookup are all no-ops
+        // everywhere, so the arm reduces to the slot read below.
+        let spoil_addr = std::ptr::addr_of!(super::vm_jit::LOCAL_READ_SPOILERS) as usize;
+        let spoil_addr = b.ins().iconst(self.ptr_ty, spoil_addr as i64);
+        let spoiled = b.ins().load(types::I32, Self::mf(), spoil_addr, 0);
+        let bounds_chk = b.create_block();
+        b.ins().brif(spoiled, slow_blk, &[], bounds_chk, &[]);
 
         // -- slot word load. Slots live in one shared stack and the executing
         // frame starts at `locals_base` (ADR-0077), so slot `idx` is the
-        // absolute element `base + idx`, and the frame's length is
-        // `len - base`. Both words are loaded per access — a push can
-        // reallocate the stack and every call moves the base, so neither may be
-        // cached across an access. Bounds-checked because a non-standard runner
-        // may have installed a shorter frame; the shim handles that shape.
-        b.switch_to_block(word_chk);
+        // absolute element `base + idx`. All three words are loaded per access
+        // — a push can reallocate the stack and every call moves the base, so
+        // none may be cached across an access. `base + idx < len` is the
+        // element's own in-bounds condition (it subsumes `base <= len`, since
+        // `idx >= 0`), and the sum is the index the load below needs anyway;
+        // bounds-checked at all because a non-standard runner may have
+        // installed a shorter frame, a shape the shim handles.
+        b.switch_to_block(bounds_chk);
         let lptr = b.ins().load(
             self.ptr_ty,
             Self::mf(),
@@ -570,46 +556,47 @@ impl TierB {
         let lbase = b
             .ins()
             .load(types::I64, Self::mf(), self.interp, self.lay.locals_base);
-        // `len - base` is the frame's slot count. An unsigned compare against
-        // it also rejects the (impossible, but not statically provable) case of
-        // a base past the length: the wrapped-around difference is huge, so
-        // guard the subtraction with `base <= len` first.
-        let base_ok = b.ins().icmp(IntCC::UnsignedLessThanOrEqual, lbase, llen);
-        let len_chk = b.create_block();
-        b.ins().brif(base_ok, len_chk, &[], slow_blk, &[]);
-        b.switch_to_block(len_chk);
-        let frame_len = b.ins().isub(llen, lbase);
-        let inbounds = b
-            .ins()
-            .icmp_imm(IntCC::UnsignedGreaterThan, frame_len, idx as i64);
+        let abs = b.ins().iadd_imm(lbase, idx as i64);
+        let inbounds = b.ins().icmp(IntCC::UnsignedLessThan, abs, llen);
         let tag_chk = b.create_block();
         b.ins().brif(inbounds, tag_chk, &[], slow_blk, &[]);
 
         b.switch_to_block(tag_chk);
-        // byte offset = (base + idx) * 8, computed from the base register since
-        // only `idx` is a compile-time constant.
-        let abs = b.ins().iadd_imm(lbase, idx as i64);
         let byte_off = b.ins().imul_imm(abs, 8);
         let slot_addr = b.ins().iadd(lptr, byte_off);
         let word = b.ins().load(types::I64, Self::mf(), slot_addr, 0);
-        // Refcount-free scalar probe: small Int page, encoded-Num page range,
-        // Bool kind, or Package kind. Everything else (Nil included — the arm
-        // has a whole undeclared-check branch for it) goes to the shim.
+        // Refcount-free scalar probe, as two *ordered range tests* rather than
+        // four predicates ORed together (the OR form cost 19 instructions, of
+        // which three were 64-bit constant loads from the code's own pool).
+        // Pages `INT_PAGE ..= NUM_PAGE_MAX` are exactly the small Int and Num
+        // words — the overwhelmingly common case, so it branches straight to
+        // the push. Anything above that page range is a kind word, where only
+        // Bool and Package may be duplicated as raw bits; they are adjacent
+        // kind ids, so `masked - BOOL_PATTERN <= BOOL_PACKAGE_SPAN` admits
+        // exactly those two. Everything else (Nil included — the arm has a
+        // whole undeclared-check branch for it) goes to the shim.
         let page = self.page(b, word);
-        let is_int = self.is_int_page(b, page);
-        let is_num = self.is_num_page(b, page);
-        let masked = b.ins().band_imm(word, w::KIND_MASK as i64);
-        let is_bool = b
-            .ins()
-            .icmp_imm(IntCC::Equal, masked, w::BOOL_PATTERN as i64);
-        let is_pkg = b
-            .ins()
-            .icmp_imm(IntCC::Equal, masked, w::PACKAGE_PATTERN as i64);
-        let num_or_int = b.ins().bor(is_int, is_num);
-        let inline_kind = b.ins().bor(is_bool, is_pkg);
-        let ok = b.ins().bor(num_or_int, inline_kind);
+        let page_rel = b.ins().iadd_imm(page, -(w::INT_PAGE as i64));
+        let int_or_num = b.ins().icmp_imm(
+            IntCC::UnsignedLessThanOrEqual,
+            page_rel,
+            (w::NUM_PAGE_MAX - w::INT_PAGE) as i64,
+        );
+        let kind_chk = b.create_block();
         let push_chk = b.create_block();
-        b.ins().brif(ok, push_chk, &[], slow_blk, &[]);
+        b.ins().brif(int_or_num, push_chk, &[], kind_chk, &[]);
+
+        b.switch_to_block(kind_chk);
+        let masked = b.ins().band_imm(word, w::KIND_MASK as i64);
+        let kind_rel = b
+            .ins()
+            .iadd_imm(masked, (w::BOOL_PATTERN as i64).wrapping_neg());
+        let inline_kind = b.ins().icmp_imm(
+            IntCC::UnsignedLessThanOrEqual,
+            kind_rel,
+            w::BOOL_PACKAGE_SPAN as i64,
+        );
+        b.ins().brif(inline_kind, push_chk, &[], slow_blk, &[]);
 
         // -- push (only a full stack falls back, mirroring emit_load_const).
         b.switch_to_block(push_chk);

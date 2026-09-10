@@ -164,6 +164,11 @@ fn build(
     end: usize,
     targets: &std::collections::HashSet<usize>,
 ) -> Option<JitEntryFn> {
+    // `MUTSU_JIT_DUMP` (#7737): when on, every emitted instruction is tagged
+    // with its source opcode index so the dump can report a per-opcode byte
+    // range (and a profiler a per-opcode cost). Off by default; the only cost
+    // then is this `OnceLock` read.
+    let dump = super::vm_jit_dump::mode();
     let mut guard = ENGINE.lock().unwrap();
     let engine = match guard.as_mut() {
         Some(e) => e,
@@ -260,6 +265,9 @@ fn build(
             // Straight-line code right after a terminator with no incoming
             // jump: unreachable, skip.
             continue;
+        }
+        if dump.on() {
+            b.set_srcloc(cranelift_codegen::ir::SourceLoc::new(i as u32));
         }
         match op {
             OpCode::LoadConst(idx) => {
@@ -626,10 +634,13 @@ fn build(
     let id = module
         .declare_function(&name, Linkage::Local, &ctx.func.signature)
         .ok()?;
+    super::vm_jit_dump::before_define(dump, &name, code, start, end, &mut ctx);
     module.define_function(id, &mut ctx).ok()?;
+    let code_len = super::vm_jit_dump::after_define(dump, &name, &ctx);
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;
     let addr = module.get_finalized_function(id);
+    super::vm_jit_dump::after_finalize(dump, &name, addr, code_len);
     // SAFETY: `addr` is the finalized code for the signature declared above,
     // which matches `JitEntryFn` exactly; the module (and thus the code
     // memory) lives for the process lifetime.

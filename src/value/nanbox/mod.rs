@@ -539,6 +539,24 @@ pub(crate) mod jit_words {
     /// duplicate them as raw bits.
     pub(crate) const PACKAGE_PATTERN: u64 = word_for_kind(Kind::Package, 0).get();
 
+    /// `word & KIND_MASK` distance from [`BOOL_PATTERN`] to [`PACKAGE_PATTERN`],
+    /// so "Bool or Package" is one *ordered range* test (`masked -
+    /// BOOL_PATTERN <= BOOL_PACKAGE_SPAN`) instead of two full-word equality
+    /// probes against 64-bit constants. Sound because `word_for_kind` is
+    /// strictly monotonic in the kind id (page = `KIND_PAGE_BASE + k / 8`,
+    /// subkind = `k % 8`) and `Package` is `Bool + 1`, both asserted below: the
+    /// only *kind* words in that closed interval are exactly those two.
+    pub(crate) const BOOL_PACKAGE_SPAN: u64 = PACKAGE_PATTERN - BOOL_PATTERN;
+    const _: () = assert!(Kind::Package as u8 == Kind::Bool as u8 + 1);
+
+    /// Pages `INT_PAGE ..= NUM_PAGE_MAX` are exactly the Int and Num words, so
+    /// "small Int or Num" is likewise one ordered range test on the page rather
+    /// than an equality probe ORed with a second range test. Page 0 is unused
+    /// (the niche) and is deliberately *outside* the range — it is not assumed
+    /// impossible, it simply fails the test and takes the shim.
+    const _: () = assert!(NUM_PAGE_MIN == INT_PAGE + 1);
+    const _: () = assert!(NUM_PAGE_MAX < KIND_PAGE_BASE);
+
     /// True when duplicating/discarding this word needs no refcount or GC
     /// bookkeeping: small Int, Num, or a payload-free inline kind. The Tier B
     /// `LoadConst` emitter inlines the push of such a constant as a raw

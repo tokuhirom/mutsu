@@ -98,6 +98,7 @@ pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
 #[inline]
 pub(crate) fn note_container_cell() {
     CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    note_local_read_spoiler();
 }
 
 /// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
@@ -112,6 +113,42 @@ pub(crate) static CALLER_VAR_BINDS: std::sync::atomic::AtomicU32 =
 #[inline]
 pub(crate) fn note_caller_var_binding() {
     CALLER_VAR_BINDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    note_local_read_spoiler();
+}
+
+/// Process-wide, monotonic count of events that spoil the Tier B inline
+/// `GetLocal` fast path (ADR-0004 J4d). Zero proves that every probe the
+/// interpreter's `exec_get_local_op` arm runs *before* it reaches the slot is
+/// a no-op everywhere, so the inline read may go straight from the slot word
+/// to the stack:
+///
+/// - a `ContainerRef` cell was packed ([`CONTAINER_CELLS`]) — the env
+///   cell-adoption probe could find something;
+/// - a `$CALLER::x := ...` alias was registered ([`CALLER_VAR_BINDS`]) —
+///   `resolve_binding` could answer;
+/// - an atomic variable was registered (`Interpreter::mark_atomic_var_seen`) —
+///   the atomic-read branch could fire;
+/// - a sigilless attribute alias was materialized
+///   (`Interpreter::sigilless_attrs_active`) — the alias table must be
+///   consulted.
+///
+/// **One counter, not four latches.** Each input is already monotonic and is
+/// never cleared, so their OR *is* a counter that every source bumps — and the
+/// emitted form is what makes the difference: four loads, three `or`s and a
+/// test were 12 of the 48 instructions one inline local read cost on
+/// `bench-fib` ([#7737](https://github.com/tokuhirom/mutsu/issues/7737)),
+/// against four for a single load and test. Folding in the two
+/// *per-interpreter* flags makes the latch conservative across interpreters —
+/// one interpreter using sigilless attributes routes every interpreter's
+/// inline read through the shim — which can only cost speed, exactly like the
+/// process-global counters above. Never decremented.
+pub(crate) static LOCAL_READ_SPOILERS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one Tier B local-read spoiler (see [`LOCAL_READ_SPOILERS`]).
+#[inline]
+pub(crate) fn note_local_read_spoiler() {
+    LOCAL_READ_SPOILERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.

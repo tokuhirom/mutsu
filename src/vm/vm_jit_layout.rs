@@ -22,14 +22,10 @@ pub(super) struct JitLayout {
     /// the current frame is at `locals_base + i`.
     pub(super) locals: i32,
     /// Byte offset of the executing frame's base word (a `usize`) inside
-    /// `Interpreter::locals`. Tier B must add it to every slot index and
-    /// subtract it from the length when bounds-checking; it changes on every
+    /// `Interpreter::locals`. Tier B adds it to every slot index and
+    /// bounds-checks the sum against the stack's length; it changes on every
     /// call, so it is loaded per access exactly like the `Vec` header words.
     pub(super) locals_base: i32,
-    /// Byte offsets of the per-Interpreter gate flags the GetLocal fast path
-    /// loads (both plain `bool` fields).
-    pub(super) atomic_var_seen: i32,
-    pub(super) sigilless_attrs_active: i32,
     /// Byte offsets of the data pointer / length / capacity words inside
     /// `Vec<Value>` (relative to the start of the `Vec`).
     pub(super) vec_ptr: i32,
@@ -79,9 +75,6 @@ pub(super) fn layout() -> Option<&'static JitLayout> {
                     + crate::runtime::Locals::SLOTS_BYTE_OFFSET) as i32,
                 locals_base: (std::mem::offset_of!(Interpreter, locals)
                     + crate::runtime::Locals::BASE_BYTE_OFFSET) as i32,
-                atomic_var_seen: std::mem::offset_of!(Interpreter, atomic_var_seen) as i32,
-                sigilless_attrs_active: std::mem::offset_of!(Interpreter, sigilless_attrs_active)
-                    as i32,
                 vec_ptr,
                 vec_len,
                 vec_cap,
