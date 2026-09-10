@@ -19,6 +19,8 @@ pub(crate) struct SigParam {
     pub(crate) type_constraint: Option<String>,
     pub(crate) multi_invocant: bool,
     pub(crate) named: bool,
+    #[serde(default)]
+    pub(crate) named_alias: bool,
     pub(crate) slurpy: bool,
     pub(crate) double_slurpy: bool,
     pub(crate) onearg: bool,
@@ -302,6 +304,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         // separator, even though it is not an explicit invocant in the AST.
         multi_invocant: p.multi_invocant && !is_implicit_topic,
         named: p.named,
+        named_alias: p.named_alias,
         slurpy: p.slurpy && !is_capture,
         double_slurpy: p.double_slurpy,
         onearg: p.onearg,
@@ -745,7 +748,7 @@ fn definedness_modifier(type_constraint: Option<&str>) -> &'static str {
 /// records both in the same slot; only the destructure is a real
 /// `.sub_signature` in rakudo.
 fn is_named_alias_sub_signature(p: &SigParam, sub: &[SigParam]) -> bool {
-    p.named && !sub.is_empty() && sub.iter().all(|s| s.named)
+    p.named_alias && sub.iter().all(|child| child.sub_signature.is_none())
 }
 
 /// Construct the `.raku` string for a Parameter instance from its attributes.

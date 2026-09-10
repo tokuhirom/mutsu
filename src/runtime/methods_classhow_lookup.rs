@@ -367,6 +367,7 @@ impl Interpreter {
             multi_invocant: true,
             required: false,
             named: false,
+            named_alias: false,
             slurpy: false,
             double_slurpy: false,
             onearg: false,

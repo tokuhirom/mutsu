@@ -431,6 +431,7 @@ impl Compiler {
                 multi_invocant: true,
                 required: false,
                 named: false,
+                named_alias: false,
                 slurpy: false,
                 sigilless: false,
                 type_constraint: None,

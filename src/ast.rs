@@ -63,6 +63,12 @@ pub(crate) struct ParamDef {
     pub(crate) multi_invocant: bool,
     pub(crate) required: bool,
     pub(crate) named: bool,
+    /// True when a named parameter uses the alias form (`:key($value)`).
+    /// Named variable parameters with a following sub-signature (`:$key
+    /// ($value)`) destructure instead; both forms otherwise share
+    /// `sub_signature`.
+    #[serde(default)]
+    pub(crate) named_alias: bool,
     pub(crate) slurpy: bool,
     pub(crate) double_slurpy: bool,
     /// True for single-argument rule slurpy (`+@a`, `+%h`, etc.)
@@ -232,7 +238,9 @@ impl ParamDef {
                 .to_string()
         };
         let mut keys = vec![strip(&self.name)];
-        if let Some(aliases) = &self.sub_signature {
+        if self.named_alias
+            && let Some(aliases) = &self.sub_signature
+        {
             keys.extend(
                 aliases
                     .iter()
@@ -3370,6 +3378,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     multi_invocant: true,
                     required: false,
                     named: false,
+                    named_alias: false,
                     slurpy: true,
                     double_slurpy: false,
                     onearg: false,
@@ -3416,6 +3425,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                         multi_invocant: true,
                         required: false,
                         named: is_named,
+                        named_alias: false,
                         slurpy: false,
                         sigilless: false,
                         type_constraint: None,
