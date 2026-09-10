@@ -699,6 +699,11 @@ impl Interpreter {
             .last()
             .cloned()
             .unwrap_or_else(|| self.current_package());
+        // #7797: which COMPUNIT (not package) is doing the importing, captured
+        // before anything below switches `?FILE`/`current_unit` to this
+        // load's own module. See `Interpreter::executing_unit_sym_for_module_load`
+        // for why plain `executing_unit_sym` alone is not enough here.
+        let importer_unit = self.executing_unit_sym_for_module_load();
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
@@ -772,6 +777,10 @@ impl Interpreter {
         let mut module_scope_names: HashMap<String, Value> = HashMap::new();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
+        // Hoisted above the `should_skip_runtime_for_use_only_module` branch
+        // (#7797) so the package-visibility bookkeeping after that branch can
+        // read it too, for a use-only module that skips the branch entirely.
+        let unit_name = Self::detect_unit_package_name(&stmts);
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
@@ -780,15 +789,21 @@ impl Interpreter {
             // instead of `Export_PackA::foo`).
             let saved_package = self.current_package();
             self.set_current_package("GLOBAL".to_string());
+            // #7797: this load's own compunit identity, pushed for the
+            // duration of its mainline regardless of whether it declares a
+            // `unit module`/`unit class` -- see `module_loading_unit_stack`.
+            let module_unit_for_loading_stack =
+                self.unit_of_source(Some(&source_path.to_string_lossy()));
+            self.module_loading_unit_stack
+                .push((module_unit_for_loading_stack, self.routine_stack_len()));
             // If the module file is a `unit module X` (or unit package/class),
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
-            let unit_name = Self::detect_unit_package_name(&stmts);
             if let Some(name) = unit_name.as_deref() {
-                let source = source_path.to_string_lossy();
-                let unit = self.unit_of_source(Some(&source));
-                crate::runtime::cow_table_mut(&mut self.unit_module_packages)
-                    .insert(unit, crate::symbol::Symbol::intern(name));
+                crate::runtime::cow_table_mut(&mut self.unit_module_packages).insert(
+                    module_unit_for_loading_stack,
+                    crate::symbol::Symbol::intern(name),
+                );
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
@@ -1016,6 +1031,7 @@ impl Interpreter {
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
             }
+            self.module_loading_unit_stack.pop();
             self.set_current_package(saved_package);
             if result.is_ok() {
                 // A `sub MAIN` defined in a used module is NOT the program's MAIN
@@ -1066,6 +1082,55 @@ impl Interpreter {
             )
             .cloned()
             .collect();
+        // #7797: record that `importer_unit` may reference this load's own
+        // package(s) qualified (`Module::whatever`), but NOT a package
+        // reached only through one of ITS `use` statements — `owned_types`'
+        // filter just below already draws exactly that line for bare-name
+        // aliasing, so this reuses it rather than re-deriving "which of
+        // `new_types` belongs to this load" a second way.
+        //
+        // Full-name granularity, NOT a truncated first `::`-segment: a real
+        // multi-file distribution routinely has several UNRELATED compunits
+        // sharing a namespace prefix (`XML::Entity` and `XML::Element` are
+        // separate `unit class`-scoped files, both under `XML::`). Keying
+        // this by `"XML"` let whichever of them loaded first claim the
+        // whole prefix and made every sibling's OWN qualified self-reference
+        // to its OWN name look foreign — caught by `battery-testsuite.sh`,
+        // not by `make test`/`make roast`.
+        let module_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
+        let mut granted_packages: HashSet<&str> = HashSet::new();
+        granted_packages.insert(module);
+        if let Some(name) = unit_name.as_deref() {
+            granted_packages.insert(name);
+        }
+        for qualified in &new_types {
+            if *qualified == module || qualified.starts_with(&format!("{module}::")) {
+                granted_packages.insert(qualified);
+            }
+        }
+        {
+            let declaring = crate::runtime::cow_table_mut(&mut self.package_declaring_units);
+            for pkg in &granted_packages {
+                declaring.entry(pkg.to_string()).or_insert(module_unit);
+            }
+        }
+        // The grant side additionally records each package's top-level
+        // `::`-segment (never `package_declaring_units`, which stays
+        // full-name-only — see the comment above): a distribution's own
+        // files reference each other by shared top-level namespace alone,
+        // not only by the exact package an individual `use` names (verified
+        // against real rakudo: `IO::Socket::Async::SSL.rakumod` reads
+        // `OpenSSL::Version::version_num()` in a top-level `constant`
+        // without ever `use`ing `OpenSSL::Version` itself, only sibling
+        // packages under the same `OpenSSL::` prefix).
+        let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+            .entry(importer_unit)
+            .or_default();
+        for pkg in &granted_packages {
+            visible_here.insert(pkg.to_string());
+            let top = pkg.split_once("::").map_or(*pkg, |(top, _)| top);
+            visible_here.insert(top.to_string());
+        }
         // Make each newly-declared class/role's bare short name resolvable from
         // the IMPORTER's own package/class too, not just from the declaring
         // module's own package-ancestor chain. An ordinary `use Foo::Native;`

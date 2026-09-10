@@ -59,6 +59,27 @@ impl Interpreter {
                 "Undeclared name:\n    _ used at line 1",
             ));
         }
+        // #7797: a package-qualified bareword (a constant, enum value/type,
+        // class, role, or sub reached as `Pkg::name`) is only in scope for a
+        // compunit that `use`/`need`/`require`d `Pkg` itself — reaching it
+        // transitively, through a module that DID, must not leak it, exactly
+        // as a *bare* name from such a module already doesn't (#7743/#7764/
+        // #7791). Checked before every resolution branch below (env probe,
+        // `has_type`, `resolve_type_in_current_package`, ...) rather than
+        // threading the gate through each of them individually: they all
+        // exist to find SOME value for a qualified name, and none of them
+        // should get the chance once visibility alone says no. A name whose
+        // leading package was never `use`d anywhere (a builtin like
+        // `Bool::True`, a pseudo-package like `OUR::foo`, a same-compunit
+        // `package Foo { }` block) is unaffected — see
+        // `Interpreter::qualified_name_visible_here`.
+        if crate::runtime::utils::has_double_colon(name) && !self.qualified_name_visible_here(name)
+        {
+            return Err(RuntimeError::new(format!(
+                "Could not find symbol '{}'",
+                name,
+            )));
+        }
         // A bareword with a type smiley whose base is a bound generic type
         // parameter (`T:D` inside a role method where `T` -> `Int`) resolves to
         // the parameterized type with the smiley applied (`Int:D`). Plain

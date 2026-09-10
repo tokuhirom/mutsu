@@ -1936,6 +1936,27 @@ pub struct Interpreter {
     /// private routines. Method parameter defaults use this metadata before the
     /// method's routine frame exists as well.
     pub(crate) class_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// #7797: the compunit that declared each `use`/`need`/`require`d
+    /// top-level package, keyed by the first `::`-segment of the `use`
+    /// argument (or the module's own `unit module` name — the two normally
+    /// agree). A package NOT in this map has no known foreign declaring
+    /// compunit, so `Interpreter::qualified_name_visible_here` treats a
+    /// reference to it as permissive (same-compunit `package Foo { }`
+    /// blocks, and a script's own top-level `unit module`, never populate
+    /// this table, so they are never mistakenly gated).
+    pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
+    /// module, the top-level package names (same first-segment granularity
+    /// as `package_declaring_units`) it is therefore entitled to reference
+    /// package-qualified — e.g. `use OuterConst;` grants `"OuterConst"`, but
+    /// NOT `"InnerConst"` even though `OuterConst.rakumod` itself `use`d
+    /// `InnerConst`: rakudo installs a `use`d package into the *importing*
+    /// compunit's `MY::` only, so visibility does not transit through a
+    /// second `use`. `Interpreter::qualified_name_visible_here` walks the
+    /// `EVAL` parent chain (`eval_unit_parent`) from the executing unit
+    /// consulting this table, exactly as `prelude_visible_here` does for
+    /// prelude splices.
+    pub(crate) compunit_visible_packages: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
@@ -2625,6 +2646,33 @@ pub struct Interpreter {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     unit_module_loading_stack: Vec<String>,
+    /// #7797: stack of compunits whose OWN mainline is currently executing
+    /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
+    /// the same window as `unit_module_loading_stack` (but keyed by every
+    /// load, not only ones with a `unit module`/`unit class` name). Each
+    /// entry also carries `routine_stack.len()` at the moment it was pushed,
+    /// so `Interpreter::executing_unit_sym_for_module_load` can tell "still
+    /// directly in this module's mainline" (the length hasn't grown, so
+    /// nothing has been CALLED since) from "a routine call happened since"
+    /// (the length grew, so a fresh frame -- possibly from yet another
+    /// compunit -- is what's actually running now).
+    ///
+    /// `Interpreter::executing_unit_sym` cannot serve this purpose on its
+    /// own: it prioritizes `routine_stack`'s topmost frame, which is correct
+    /// for an ordinary call but wrong here — a module body runs via
+    /// `run_block`, which pushes no routine frame, so a `use` (or any other
+    /// qualified-name resolution) reached from a module's mainline while
+    /// some UNRELATED routine call is still on the stack (`DBIish
+    /// .install-driver` doing `require ::($module)`, whose loaded module in
+    /// turn does its own top-level `use NativeLibs;`, or even just reads
+    /// `NativeLibs::is-win` in a top-level `constant` initializer) would
+    /// otherwise misattribute to that routine's own compunit instead of to
+    /// the module whose mainline is actually running. `?FILE` alone has the
+    /// opposite problem: an ordinary (non-loading) routine call never
+    /// updates it, so consulting it OUTSIDE a load would misattribute to
+    /// whichever compunit happened to load last. This stack is unambiguous
+    /// exactly because `load_module_inner` is the only writer.
+    module_loading_unit_stack: Vec<(Symbol, usize)>,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
