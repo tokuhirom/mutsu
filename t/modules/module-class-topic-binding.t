@@ -1,5 +1,5 @@
 use v6;
-use lib $?FILE.IO.parent.child('lib').Str;
+use lib 't/lib';
 use Test;
 
 # A module whose body registers a class (declared inline or via a nested

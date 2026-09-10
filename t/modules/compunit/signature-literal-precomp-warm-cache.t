@@ -13,7 +13,7 @@ use Test;
 # does for the other replay effects.
 plan 3;
 
-my $lib = $?FILE.IO.parent.add('lib').Str;
+my $lib = 't/lib';
 my $cache = $*TMPDIR.add("mutsu-sig-precomp-{$*PID}");
 my $script = $cache.add('probe.raku');
 

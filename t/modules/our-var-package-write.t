@@ -1,4 +1,4 @@
-use lib $*PROGRAM.parent.add('lib');
+use lib 't/lib';
 use Test;
 use OurVarExport;
 

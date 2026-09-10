@@ -1,5 +1,5 @@
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 # Tests that run on a spawned thread (e.g. a Promise `.then` callback kept by

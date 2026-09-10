@@ -1,4 +1,4 @@
-use lib $*PROGRAM.parent.child("lib").Str;
+use lib 't/lib';
 use Test;
 use CoercionReturnOtf;
 

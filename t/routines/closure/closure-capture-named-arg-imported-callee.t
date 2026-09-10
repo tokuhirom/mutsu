@@ -1,6 +1,6 @@
 use v6;
 use Test;
-use lib $*PROGRAM.parent.add('lib');
+use lib 't/lib';
 use ClosureShadowCallee;
 
 # A closure passed as a NAMED argument to an imported routine must keep its own

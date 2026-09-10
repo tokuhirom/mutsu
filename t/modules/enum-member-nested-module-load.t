@@ -1,5 +1,5 @@
 use v6;
-use lib $?FILE.IO.parent.child('lib').Str;
+use lib 't/lib';
 use Test;
 
 # `unit class EnumHolder; our enum EHFormat <... EhLists>;` — when that class

@@ -5,20 +5,34 @@ The 3,948 flat `.t` files in `t/` moved into the sixteen subject categories defi
 [#7819](https://github.com/tokuhirom/mutsu/issues/7819). The design and the infrastructure landed
 first, in a separate PR; this is the move itself.
 
-The move itself is **3,949 renames with zero insertions and zero deletions**: tests reach their
-fixtures by a path relative to the repository root (`-I t/lib`) and `prove` runs from the root, so
-nesting a test does not change how it loads anything.
+The move itself is **3,949 renames with zero insertions and zero deletions**. It was not quite a
+pure rename overall, though, and the reason is the most useful thing this change turned up.
 
-Four files did need editing, all for the same reason — they name a *path* rather than loading one:
+## The one real cost: file-relative fixture paths
 
-- three tests asserted on **their own** filename (`$?FILE`, `callframe.file`), and now match on the
-  basename, which stays unique and stable even if a category is re-cut later;
-- one Rust integration test, `tests/proto_method_body_compiled_once.rs`, executes a specific `t/`
-  file by path and now points at its new location. `cargo test` caught it immediately.
+**129 test files addressed their fixtures relative to their own file rather than to the repository
+root**, and that only ever worked because every test sat directly in `t/`:
 
-Those four are the entire set: a sweep for executable `t/<name>.t` references across `src/`,
-`tests/`, `crates/`, `scripts/`, `.github/` and `t/` itself turned up nothing else (the remaining
-matches were `.txt`/`.tsv` filenames and prose in comments).
+```raku
+use lib $?FILE.IO.parent.add('lib').Str;                          # -> t/lib, before
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+```
+
+One level down, the first points at `t/<category>/lib` and the second at `t/` — so the tests could
+not find `Test::Util` at all and aborted before running a single assertion. They now use
+root-relative literals (`use lib 't/lib'`), which is depth-independent because `prove`, `make test`
+and CI all run from the repository root, and is exactly what the 100+ tests already saying
+`use lib 't/lib'` had been doing all along.
+
+Four more files named a *path* rather than loading one: three asserted on their **own** filename
+(`$?FILE`, `callframe.file`) and now match on the basename, which stays unique and stable even if a
+category is re-cut later; and one Rust integration test,
+`tests/proto_method_body_compiled_once.rs`, executes a specific `t/` file by path. That last one was
+caught instantly by `cargo test` — which, because it aborts `make test` before `prove` runs, is also
+why the first full-suite attempt never reached the TAP files at all.
+
+`docs/t-directory-layout.md` now states the rule directly: address a fixture from the repository
+root, never from the test file.
 
 ## What it looks like
 

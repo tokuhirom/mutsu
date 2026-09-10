@@ -4,7 +4,7 @@
 # calls), exported operators, declared type names, and enum values. The first
 # `use` here is the scan miss; the ones in later blocks are cache hits, so
 # every assertion after the first block exercises the replay path.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 8;

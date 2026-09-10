@@ -1,5 +1,5 @@
 use v6;
-use lib $?FILE.IO.parent.add('lib');
+use lib 't/lib';
 use Test;
 use ImportedDefiniteType;
 

@@ -1,5 +1,5 @@
 use Test;
-use lib $?FILE.IO.parent.add('lib-need-nested-import').Str;
+use lib 't/lib-need-nested-import';
 
 plan 1;
 

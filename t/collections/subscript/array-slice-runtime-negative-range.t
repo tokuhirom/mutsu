@@ -1,5 +1,5 @@
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 # An inclusive `a .. b` subscript whose endpoint arrives through a VARIABLE that

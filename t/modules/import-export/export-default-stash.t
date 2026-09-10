@@ -34,7 +34,7 @@ plan 9;
 
 # A module loaded from source -- unaffected, and pinned because the ticket
 # claimed it was broken too.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use ExportStashMod;
 is ::("ExportStashMod::EXPORT").WHO.keys.sort, ('ALL', 'DEFAULT', 'extra'),
     'a source module lists every export tag';

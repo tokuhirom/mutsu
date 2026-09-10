@@ -23,7 +23,7 @@ use Test;
 
 plan 1;
 
-use lib $*PROGRAM.parent.add('lib').add('Issue7806').Str;
+use lib 't/lib/Issue7806';
 use Issue7806Loader;
 
 issue7806-use-ok('Issue7806Own');

@@ -20,7 +20,7 @@
 # of the five helper names -- or the module's name -- in *code* here, even
 # inside a string, would inject the prelude into this compunit and legitimately
 # declare the names. So every name below is assembled at runtime.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 5;

@@ -9,7 +9,7 @@ plan 4;
 # (Cro::HTTP::RequestParser declares `my enum Expecting <RequestLine Header
 # Body>` while Cro::HTTP::Header has a lexical `my grammar Header`.)
 
-use lib $*PROGRAM.parent.add('suppressed-type-vs-local-decl-lib').Str;
+use lib 't/suppressed-type-vs-local-decl-lib';
 use SuppMod;
 
 my enum E <A Header B>;

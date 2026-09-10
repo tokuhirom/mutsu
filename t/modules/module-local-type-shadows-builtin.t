@@ -1,5 +1,5 @@
 use v6;
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 # Inside a module, a user-declared type whose short name collides with a

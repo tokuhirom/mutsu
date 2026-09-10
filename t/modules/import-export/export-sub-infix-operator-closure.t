@@ -8,7 +8,7 @@ plan 7;
 # routine ref for operators, which dangled once EXPORT returned and re-dispatched
 # the operator by name forever (infinite recursion / stack overflow). (Understitch)
 
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 
 use ExportInfix;   # installs infix:<jn> that joins with "-"
 

@@ -7,7 +7,7 @@
 # suite, so a re-emergence would not have been caught by CI. This file IS that
 # combination, kept green as the guard.
 use Test;
-use lib $?FILE.IO.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 6;

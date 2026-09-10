@@ -1,6 +1,6 @@
 use v6;
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 # A NativeCall prelude helper (`cglobal`, `nativecast`, `nativesizeof`,
@@ -29,7 +29,7 @@ use Test::Util;
 
 plan 1;
 
-my $root = $*PROGRAM.parent(2);
+my $root = '.'.IO;
 my @inc = <modules/DBIish/lib modules/NativeLibs/lib modules/NativeHelpers-Blob/lib>
     .map({ '-I' , $root.add($_).absolute })
     .flat;

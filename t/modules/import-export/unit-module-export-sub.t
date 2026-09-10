@@ -12,7 +12,7 @@ use Test;
 # form and leaves the below-the-line one alone.
 plan 5;
 
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use UnitModuleExportSub;
 use UnitModuleExportSubBelow;
 

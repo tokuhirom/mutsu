@@ -11,7 +11,7 @@
 # mutsu runs them.
 use Test;
 use NativeCall;
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 
 plan 4;
 

@@ -3,7 +3,7 @@
 # along the paths the old pre-Say `sync_env_from_locals` / post-Say
 # `env_dirty = true` round-trip was meant to protect.
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 7;

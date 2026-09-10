@@ -13,7 +13,7 @@ plan 8;
 # Baseline: this unit is 6.e, so the sign precedes the radix prefix.
 is sprintf('%#x', -256), '-0x100', '6.e sprintf semantics at unit start';
 
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 is sprintf('%#x', -256), '-0x100', '`use lib` does not reset the revision';
 
 use LanguageVersionLeak;

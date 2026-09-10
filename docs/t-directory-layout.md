@@ -115,14 +115,27 @@ fixtures belong in `t/lib/`; new data fixtures in `t/fixtures/`. The nine existi
 `*-lib` directories are grandfathered — do not add more, because a per-test top-level directory is
 the same navigability problem this document exists to fix.
 
-Test files reach fixtures by a path relative to the repository root (`-I t/lib`,
-`use lib 't/lib'`), and `prove` runs from the repository root, so nesting a test file does **not**
-change how it loads its fixtures — that is why the migration could be a pure `git mv`.
+**Address a fixture from the repository root, never from the test file.** `prove`, `make test`
+and CI all run from the repository root, so `use lib 't/lib'` and
+`use lib 'roast/packages/Test-Helpers/lib'` work from any depth:
 
-The one thing nesting *does* change is a test that names **its own** path. Three did, and were
-switched to match on the basename instead, which is unique and stable even if a file's category is
-re-cut later. Prefer that over a hardcoded `t/<category>/<name>.t` when a test has to reason about
-its own file, and prefer `$?FILE` over any literal at all.
+```raku
+use lib 't/lib';                             # right: depth-independent
+use lib $?FILE.IO.parent.add('lib').Str;     # wrong: assumes the file sits in t/
+use lib $*PROGRAM.parent(2).add(...);        # wrong: the 2 is a depth
+```
+
+This is the one rule the migration actually cost something to learn. 129 test files addressed
+their fixtures *relative to their own file* — `$?FILE.IO.parent.add('lib')`,
+`$*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib")` — which silently resolved to the right
+place only while every test sat directly in `t/`. Moving them one level down pointed those paths at
+`t/<category>/lib`, and the tests failed to find `Test::Util` at all. They were rewritten to
+root-relative literals, which is what the 100+ tests already saying `use lib 't/lib'` had been
+doing all along.
+
+A test that names **its own** path has the same problem. Prefer `$?FILE` itself; where a literal is
+needed, match on the **basename**, which is unique and stable even if a file's category is re-cut
+later.
 
 ## 7. Discovery
 

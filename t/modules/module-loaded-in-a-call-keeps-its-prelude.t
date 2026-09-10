@@ -20,7 +20,7 @@
 # `roast/S11-modules/require.t` test 10). A prelude splice is not an alias, so
 # only the splice is exempted.
 use Test;
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use NativeCall;
 
 plan 2;

@@ -1,4 +1,4 @@
-use lib $?FILE.IO.parent.add("lib").Str;
+use lib 't/lib';
 use Test;
 use WhenMatcherTypes;
 

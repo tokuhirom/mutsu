@@ -11,7 +11,7 @@ plan 4;
 # the real zef CLI: its git fetcher does `use Zef::Utils::URI :internals` and
 # calls `uri(...)` from its own methods.
 
-use lib $?FILE.IO.parent.add('lib-tagged-export').Str;
+use lib 't/lib-tagged-export';
 
 use UsesInternals;
 my $o = UsesInternals.new;

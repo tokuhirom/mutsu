@@ -5,7 +5,7 @@
 # the block unconditionally (`todo/tickets/use-inside-a-block-leaks-to-the-
 # enclosing-scope.md`), so a module-exported `&`-sigil sub or `$`-sigil
 # constant stayed callable/readable by its bare name after the block exited.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 6;

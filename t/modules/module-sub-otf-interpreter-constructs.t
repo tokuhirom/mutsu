@@ -1,4 +1,4 @@
-use lib $*PROGRAM.parent.child("lib").Str;
+use lib 't/lib';
 use Test;
 use InterpConstructOtf;
 
@@ -54,7 +54,7 @@ is oc-eval-topic(), "10,20,30", "EVAL sees the loop topic";
 is oc-eval-sibling(), "sekrit!", "EVAL calls a module-private sibling sub";
 is oc-eval-nested("abc"), "abc-wrapped", "EVAL inside a nested my sub sees captures";
 is oc-eval-catch(), "caught:boom", "CATCH catches a die from EVAL'd code";
-is oc-evalfile($*PROGRAM.parent.child("lib/evalfile-fixture.raku").Str), 42,
+is oc-evalfile("t/lib/evalfile-fixture.raku"), 42,
     "EVALFILE runs a file and returns its last value";
 # second call: the OTF-compiled body is cached; EVAL re-evaluates per call
 is oc-eval-write(), 5, "EVAL lexical write is fresh on a second call";

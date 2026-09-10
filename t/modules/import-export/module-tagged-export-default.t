@@ -9,7 +9,7 @@ plan 2;
 # `:internals`, so a tag-free `use TagExp` leaves it undeclared while the
 # default-tagged `always` is imported.
 
-use lib $?FILE.IO.parent.add('lib-tagged-export').Str;
+use lib 't/lib-tagged-export';
 
 use TagExp;
 

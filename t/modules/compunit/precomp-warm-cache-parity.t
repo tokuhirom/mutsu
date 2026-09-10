@@ -20,7 +20,7 @@ use Test;
 
 plan 5;
 
-my $lib = $?FILE.IO.parent.add('lib').Str;
+my $lib = 't/lib';
 my $cache = $*TMPDIR.add("mutsu-precomp-parity-{$*PID}");
 my $script = $cache.add('probe.raku');
 

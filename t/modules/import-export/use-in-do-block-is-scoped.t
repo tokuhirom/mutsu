@@ -10,7 +10,7 @@
 #     (VarRef-wrapped array) instead of the core listop's flattened one.
 # roast/S32-list/skip.t is the file this was found on: it imports `Test`
 # selectively through exactly this shape so the core `skip` stays reachable.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 7;

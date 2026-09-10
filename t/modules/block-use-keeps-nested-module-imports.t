@@ -18,7 +18,7 @@
 # prelude splice to the compunits it was spliced into. It is asserted at the
 # bottom of this file, and covered in full by
 # `t/nested-module-native-prelude-not-visible-to-user.t`.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 5;

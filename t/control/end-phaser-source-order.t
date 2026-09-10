@@ -14,7 +14,7 @@ use Test;
 # compunit's ENDs by source line, so several ENDs on one physical line still
 # tie (see todo/deep/end-phasers-install-at-compile-time.md).
 
-use lib $?FILE.IO.parent(2).add('roast/packages/Test-Helpers/lib').Str;
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 5;

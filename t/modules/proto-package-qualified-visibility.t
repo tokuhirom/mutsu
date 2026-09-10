@@ -1,5 +1,5 @@
 use Test;
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use PrivateProtoModule;
 
 plan 5;

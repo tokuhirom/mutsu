@@ -1,5 +1,5 @@
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 # Using a bare type object in a string context warns

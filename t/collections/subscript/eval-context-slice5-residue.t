@@ -1,6 +1,6 @@
 use v6;
 use MONKEY-SEE-NO-EVAL;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
@@ -51,7 +51,7 @@ no-fatal-throws-like 'return 1', X::ControlFlow::Return,
 # (`pending_eval_context_routine` stays `None` for it), but worth pinning so a
 # future EVALFILE change cannot silently break it.
 sub evalfile-caller() {
-    my $x = EVALFILE($*PROGRAM.parent.child('lib/evalfile-return-fixture.raku').Str);
+    my $x = EVALFILE('t/lib/evalfile-return-fixture.raku');
     return "got:$x";
 }
 # The EVALFILE'd `return 5` is an ordinary (untargeted) non-local return: it
@@ -64,7 +64,7 @@ is evalfile-caller(), 5,
 # And EVALFILE run with no enclosing routine at all still throws
 # X::ControlFlow::Return, matching a bare EVAL 'return' at file scope.
 {
-    my $bare = try EVALFILE($*PROGRAM.parent.child('lib/evalfile-return-fixture.raku').Str);
+    my $bare = try EVALFILE('t/lib/evalfile-return-fixture.raku');
     is $!.^name, 'X::ControlFlow::Return',
         'EVALFILE with no enclosing routine throws X::ControlFlow::Return, same as EVAL';
 }

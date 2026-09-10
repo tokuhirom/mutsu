@@ -17,7 +17,7 @@ use Test;
 
 plan 3;
 
-use lib $*PROGRAM.parent.add('lib').add('Issue7806').Str;
+use lib 't/lib/Issue7806';
 use Issue7806Export;
 
 my \exported = ::('NativeCall');

@@ -11,7 +11,7 @@ use Test;
 # `.schedule-on($*SCHEDULER)` and declares `my enum Expecting <StatusLine
 # Header Body>` while Cro::HTTP::Header has a lexical `my grammar Header`.
 
-use lib $*PROGRAM.parent.add('suppressed-type-vs-local-decl-lib').Str;
+use lib 't/suppressed-type-vs-local-decl-lib';
 use SuppMod;
 
 plan 1;

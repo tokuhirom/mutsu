@@ -75,7 +75,7 @@ class Holder { has $.slot is rw }
 
 # An enum's values travel with it into an importing file.
 {
-    use lib $?FILE.IO.parent.add('lib-enum-ternary').Str;
+    use lib 't/lib-enum-ternary';
     use EnumTernaryValues;
     is (1 ?? CRIMSON !! AZURE).key, 'CRIMSON', 'imported enum value in then-position';
     is (1 ?? FOUND !! GONE).value, 200, 'imported pair-list enum value in then-position';

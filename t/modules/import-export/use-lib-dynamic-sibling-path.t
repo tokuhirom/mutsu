@@ -6,7 +6,7 @@ plan 3;
 # Regression test for
 # todo/deep/use-lib-dynamic-path-defers-declaration-visibility-to-parser.md:
 #
-# `use lib $*PROGRAM.sibling('lib');` -- a non-literal EXPR argument, unlike
+# `use lib 't/lib';` -- a non-literal EXPR argument, unlike
 # `use lib 'lib';` -- used to be invisible to the PARSER's static `use lib`
 # path resolution (only string literals and `$*PROGRAM.parent(N).add(...)`
 # chains were recognized). That meant the module it pulled in was never

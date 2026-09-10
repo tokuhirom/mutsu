@@ -9,7 +9,7 @@ use Test;
 
 plan 3;
 
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use RoleRev6c;
 use RoleRev6e;
 

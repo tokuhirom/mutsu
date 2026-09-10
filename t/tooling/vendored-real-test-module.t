@@ -1,6 +1,6 @@
 use v6;
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 10;
@@ -11,7 +11,7 @@ plan 10;
 # `todo/tickets/vendor-real-test-module.md`: exercise the real module without
 # yet swapping the foundation the whole suite stands on.
 
-my $vendored = $*PROGRAM.parent(2).add("modules/Rakudo-Core/lib/Test.rakumod");
+my $vendored = "modules/Rakudo-Core/lib/Test.rakumod".IO;
 ok $vendored.e, 'the upstream Test.rakumod is vendored in the repository';
 like $vendored.slurp, /'unit module Test;'/,
     'the vendored file is the upstream module, unrenamed';

@@ -1,6 +1,6 @@
 use v6;
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Fancy/lib").Str;
+use lib 'roast/packages/Fancy/lib';
 
 plan 3;
 

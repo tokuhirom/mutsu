@@ -1,5 +1,5 @@
 use Test;
-use lib $?FILE.IO.parent.add('lib-cstruct-module').Str;
+use lib 't/lib-cstruct-module';
 use NativeCall;
 use CStructInModule;
 

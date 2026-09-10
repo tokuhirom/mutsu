@@ -9,7 +9,7 @@ plan 4;
 # plugin, so a FileSystem repo that rejected it left zef unable to load any
 # fetch/repository backend.
 
-use lib $?FILE.IO.parent.add('lib-need-instance').Str;
+use lib 't/lib-need-instance';
 
 my $spec = CompUnit::DependencySpecification.new(
     short-name      => 'NeedMe',

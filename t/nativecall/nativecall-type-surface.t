@@ -1,5 +1,5 @@
 use Test;
-use lib $?FILE.IO.parent.add('lib-nativecall-surface').Str;
+use lib 't/lib-nativecall-surface';
 use NativeCall;
 use NCSurface;
 

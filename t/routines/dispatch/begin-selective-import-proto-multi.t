@@ -1,7 +1,7 @@
 use v6;
 use lib 't/lib';
 use Test;
-use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 8;

@@ -20,7 +20,7 @@ use Test;
 
 plan 3;
 
-my $dir = $*PROGRAM.parent.add('lib').add('eval-import').Str;
+my $dir = 't/lib/eval-import';
 
 # `EvalImport::Outer` uses `EvalImport::Inner`, which imports `nativecast` from
 # NativeCall into its own scope; `outer-probe` reports whether that import is
@@ -28,7 +28,7 @@ my $dir = $*PROGRAM.parent.add('lib').add('eval-import').Str;
 is (EVAL "use lib '$dir'; use EvalImport::Outer; 1"), 1,
    'the module loads inside an EVAL';
 
-use lib $*PROGRAM.parent.add('lib').add('eval-import').Str;
+use lib 't/lib/eval-import';
 use EvalImport::Outer;
 
 is outer-probe(), 'visible',

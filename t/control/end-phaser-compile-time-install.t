@@ -13,7 +13,7 @@ use Test;
 # Every case runs in a child process, since an END's whole point is that it
 # runs at exit. Expected outputs below were measured against rakudo 2026.07.
 
-use lib $?FILE.IO.parent(2).add('roast/packages/Test-Helpers/lib').Str;
+use lib 'roast/packages/Test-Helpers/lib';
 use Test::Util;
 
 plan 19;

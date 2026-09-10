@@ -4,7 +4,7 @@
 # survive the first block's import-scope pop (pop_import_scope), exactly like
 # its package-qualified functions already do. Dropping them left method
 # dispatch on the class dying with X::Method::NotFound in the second block.
-use lib $?FILE.IO.parent.add('lib').Str;
+use lib 't/lib';
 use Test;
 
 plan 4;

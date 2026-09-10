@@ -1,5 +1,5 @@
-use lib $*PROGRAM.parent(1).add("lib");
-use lib $*PROGRAM.parent(1).add("..").add("roast/packages/Test-Helpers/lib");
+use lib 't/lib';
+use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
