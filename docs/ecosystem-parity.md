@@ -37,14 +37,22 @@ distributions — those are dependency supply, not measurement targets.
 
 With *B* = the set of baseline files:
 
-- **`file_parity`** = `count(f in B where mutsu passes f) / count(B)` —
-  **the KPI**, the number to move.
-- **`assertion_parity`** = `sum over B of min(mutsu_ok, raku_ok) / sum over B of
-  raku_ok` — moves even when no file flips, so a sweep that halves a suite's
-  failures is visible before the file turns green.
 - **`dist_parity`** = `count(dists whose whole baseline set passes on mutsu) /
-  count(dists with a non-empty baseline set)` — the user-facing "which modules
-  work" number.
+  count(dists with a non-empty baseline set)` — **the published headline**. It
+  is what a user means by "does my module work?", and it weights every
+  distribution equally.
+- **`file_parity`** = `count(f in B where mutsu passes f) / count(B)` — **the
+  number the work is steered by**: it moves smoothly enough to tell whether a
+  slice helped.
+- **`assertion_parity`** = `sum over B of min(mutsu_ok, raku_ok) / sum over B of
+  raku_ok` — the finest signal; moves even when no file flips, so a sweep that
+  halves a suite's failures is visible before the file turns green.
+
+The roles are split because one number cannot do both jobs (ADR-0085 D3).
+`dist_parity` is a step function — a distribution with 51 test files stays at
+zero until the last one goes green — so steering by it would hide real progress.
+`file_parity` moves continuously but weights that distribution 51× a one-file
+one, so publishing it would overstate reach.
 
 Per-file comparison verdicts (`cmp` in the record):
 
@@ -299,14 +307,44 @@ denominator change, per ADR-0085.
 | **P1** | `scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1 | the `A` shard measures end to end and its records land under `ecosystem/dists/A/` |
 | **P2** | first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row | `file_parity` / `assertion_parity` / `dist_parity` exist as real numbers |
 | **P3** | `site/ecosystem.html` + manifest generator + `pages.yml` wiring | a user can look up a dist on the public site |
-| **P4** | `.github/workflows/ecosystem.yml` — scheduled (weekly) + `workflow_dispatch` with a shard input; opens a PR with the updated records and the history row; **report-only, never gates a PR** | a sweep lands without a human running it (this also closes PLAN.md §1 B1's "working-module regression CI") |
+| **P4** | the operator runbook (§8) — one `make`-level entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | a maintainer can go from a clean checkout to a merged sweep by following one page |
 | **P5** | root-cause grouping of `regression` records into `todo:ticket` issues, in the shape `scripts/dist-compat-tickets.py` already produces; `docs/triage.md` picks them up | the KPI feeds the work queue |
 
-P1 and P2 are the campaign; P3-P5 make it self-sustaining. Do not start P2
-before P1's `--only` round-trips a record, and do not start P4 before P2 has
-produced a number worth watching.
+P1 and P2 are the campaign; P3-P5 make it repeatable. Do not start P2 before
+P1's `--only` round-trips a record.
 
-## 8. Known limits and follow-ups
+**There is deliberately no scheduled CI phase** (ADR-0085 D9): a full sweep is
+~20 CPU-hours, which a 12-core box does in ~2.5 h for nothing and a hosted
+runner would charge for weekly, on fewer cores, to track a number that moves at
+the speed of interpreter fixes. The cost is that the headline updates only when
+someone runs it — a documented state, since D7 makes staleness computable — and
+that PLAN.md §1 B1's "working-module regression CI" stays a separate, unstarted
+item rather than being closed by this campaign.
+
+## 8. Operator runbook
+
+The sweep is run by hand on a machine with the cores to spare (ADR-0085 D9) —
+the maintainer's 12-core box, not a CI runner and not an ephemeral remote
+container (4 cores, a fixed disk allowance, and no `bwrap`).
+
+```sh
+apt-get install bubblewrap          # required; the sweep refuses to run a corpus without it
+touch src/main.rs && cargo build --release   # a stale binary is measured silently otherwise
+scripts/ecosystem-sweep.py --prefix A --jobs 8      # ~10-15 min, to check the setup
+scripts/ecosystem-sweep.py --all --jobs 8           # ~2.5 h
+scripts/ecosystem-sweep.py --rollup                 # summary.json / summary.md / history.tsv
+git checkout -b ecosystem/sweep-YYYY-MM-DD && git add ecosystem/ && …   # land it as an ordinary PR
+```
+
+Before landing a sweep, check that `measured.host` is uniform across what
+changed: a shard measured on a different machine is identifiable by design, but
+mixing hosts inside one `history.tsv` row makes the row mean less than it looks.
+
+After a **rakudo upgrade**, every baseline is invalid at once (§5) — run a full
+sweep rather than a shard, and say so in the PR, because the denominator moved
+and the KPI is not comparable across that boundary.
+
+## 9. Known limits and follow-ups
 
 - **Network-dependent suites are invisible.** They fail on both sides and land
   in `no_baseline`. Recorded as a count so the size of the blind spot is known;
