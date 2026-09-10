@@ -3,11 +3,10 @@
 # (MUTSU_REAL_TEST=) and once with the vendored upstream Test.rakumod
 # (MUTSU_REAL_TEST=1) -- and report which files regress under the real module.
 #
-# The vendored module has been the DEFAULT provider since 2026-09-07
-# (news/2026-09/vendored-test-module-is-the-default-provider.md), so this script
-# now measures the native provider it is replacing, not the other way round. It
-# exists only until that provider is deleted
-# (`todo/deep/retire-the-native-test-provider.md`), at which point there is
+# The vendored module is the DEFAULT provider (2026-09-10, tokuhirom/mutsu#7554;
+# an earlier attempt on 2026-09-07 was withdrawn), so this script measures the
+# native provider it replaces, not the other way round. It exists only until
+# that provider is deleted (tokuhirom/mutsu#7566), at which point there is
 # nothing left to compare and this file goes with it.
 #
 # The two runs are deliberately NOT compared byte-for-byte. The real module is

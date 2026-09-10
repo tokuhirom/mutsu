@@ -247,13 +247,15 @@ by fixing the interpreter (rung 2), never reimplemented natively (rung 3)** — 
 decision 2026-08-01. The consequences are visible in the code: the native `Test::Util` /
 `Test::Tap` overrides were retired (`news/2026-08/retired-native-test-util-overrides.md`),
 `Pod::To::Text` became the real rakudo module, and rakudo's real `Test.rakumod` is now
-vendored behind `MUTSU_REAL_TEST=1` pending the flip.
+what a bare `use Test` resolves to (the flip landed 2026-09-10; the native provider survives
+only behind `MUTSU_REAL_TEST=0`, pending its deletion).
 
 **Why this belongs in an architecture review**: the vendored suites are now the strictest
 correctness oracle the project has (stricter than roast, which is mined out), and the
 remaining native providers are an explicitly enumerated exception list — currently
 `NativeCall` (measured non-vendorable, `todo/deep/nativecall-cannot-be-vendored.md`),
-`JSON::Fast`, and `Test` (mid-retirement). That exception list is a first-class piece of the
+`JSON::Fast`, and `Test` (no longer the default provider; the native code is awaiting
+deletion). That exception list is a first-class piece of the
 architecture and should shrink monotonically or be justified in writing.
 
 ### 1.9 Metaobject protocol (new since rev10) — user HOWs on top of AST registration
