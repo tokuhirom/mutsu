@@ -1042,7 +1042,7 @@ impl Interpreter {
             return_type: return_type.cloned(),
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
-            source_file: self.executing_source_file(),
+            source_file: self.executing_source_file_for_module_load(),
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
