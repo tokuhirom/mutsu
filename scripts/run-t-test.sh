@@ -3,7 +3,8 @@
 # quarantine retry. The roast suite has had `scripts/run-roast-test.sh` for a
 # while; this is the t/ counterpart, so both suites go through one retry engine.
 #
-# Used via: prove -e 'scripts/run-t-test.sh' t/
+# Used via: prove -r -e 'scripts/run-t-test.sh' t/   (-r: t/ is a nested tree,
+# see docs/t-directory-layout.md)
 #
 # Usage: scripts/run-t-test.sh <test-file>
 #

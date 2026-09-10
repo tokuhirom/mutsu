@@ -18,7 +18,7 @@ before starting one of these tasks:
 | [`test-util-workout`](.agents/skills/test-util-workout/SKILL.md) | A "Test::Util workout" request |
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
-| [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast*.t`) |
+| [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 
 ## Where this session is running — check before following any shell recipe
 
@@ -127,7 +127,8 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 
 ### Test infrastructure
 
-- `t/*.t`: Local tests in Raku syntax, run via prove
+- `t/<category>/**/*.t`: Local tests in Raku syntax, run via prove. `t/` is a **nested tree, not a flat directory** — a new test goes in one of the sixteen categories, and **[docs/t-directory-layout.md](docs/t-directory-layout.md) is the authority on which one**. Read it before adding a file. In short: place by what the test would catch if it broke (not by the syntax it uses), keep basenames globally unique, never nest more than two levels below `t/`, and never put a `.t` at `t/` top level or under `t/lib` / `t/fixtures` / `t/packages`. `make check-t-layout` (also a `make test` prerequisite and a CI step) enforces all of that.
+- Every invocation of the suite passes `prove -r` — prove does not descend into subdirectories without it.
 - `roast/`: Official Raku spec test suite (vendored, read-only)
 - `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
 - `TODO_roast/BLOCKERS.md`: the single ledger of all non-whitelisted roast tests, tracked per file and by root cause, with a raku-baseline column. Use this to decide which feature to implement next for maximum roast progress. (The per-synopsis `TODO_roast/S*.md` checklists were retired 2026-07-15 and merged into it.)
@@ -585,7 +586,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
     - **clippy with `jit` off** and **clippy for wasm32.** Do NOT assume these matter only when you touch `#[cfg(feature)]` code: a type whose shape differs per feature (e.g. `ValueView::Mixin` handing out `&Gc<_>` in one configuration) makes perfectly ordinary code lint differently, so any file can fail a configuration you did not compile.
   - The ~5 minutes is still cheaper than a red `lint-configs`, the wake it triggers, and a second commit. The one case you may skip it is a **documentation-only** change, where CI skips those jobs too (`scripts/ci-docs-only.sh` — see the PR workflow section).
 - Keep each Rust source file under 500 lines. When a file exceeds 500 lines, split it into smaller modules immediately — do not defer.
-- Write feature tests using prove (`t/*.t`).
+- Write feature tests using prove, under the right `t/` category — see [docs/t-directory-layout.md](docs/t-directory-layout.md).
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
 - Every feature addition must include tests.
 - When implementing a temporary workaround or shortcut instead of the correct solution, always leave a `// TODO:` comment explaining what the correct approach would be and why the current implementation is insufficient. This ensures technical debt is visible and trackable.

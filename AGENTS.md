@@ -54,7 +54,8 @@ Key directories:
 - `src/parser/`, `src/compiler/`, `src/vm/`: execution pipeline.
 - `src/builtins/`, `src/value/`: native behavior and values.
 - `src/runtime/`: remaining dispatch/runtime machinery.
-- `t/`: local TAP integration tests.
+- `t/`: local TAP integration tests, nested by subject. `docs/t-directory-layout.md`
+  decides which category a new file goes in; `make check-t-layout` enforces it.
 - `tests/`: Rust-driven TAP tests.
 - `roast/`: read-only upstream specification tests.
 - `docs/adr/`: architectural decisions; read applicable ADRs before changing
@@ -78,7 +79,8 @@ Raku documentation.
 - `cargo fmt --all`: format Rust.
 - `cargo clippy -- -D warnings`: lint with warnings denied.
 
-Add a focused regression test for each behavior change, normally under `t/`.
+Add a focused regression test for each behavior change, normally under `t/` — in
+the category `docs/t-directory-layout.md` names for it, never at `t/` top level.
 Run a targeted test while iterating. Before publishing a code PR, run
 `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and `make roast`
 once each. After either full command runs, inspect its saved log. A failing

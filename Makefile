@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -24,8 +24,12 @@ PROVE_JOBS ?= 4
 # `mutsu` package alone -- does not reach it. CI runs it as its own step; run it
 # here too so `make test` still means the same thing locally.
 #
-# `prove -e scripts/run-t-test.sh`: routes t/ through the same per-file timeout
-# + flaky-quarantine wrapper the roast suite uses (docs/flaky-test-policy.md).
+# `prove -r -e scripts/run-t-test.sh`: routes t/ through the same per-file
+# timeout + flaky-quarantine wrapper the roast suite uses
+# (docs/flaky-test-policy.md). `-r` is what lets t/ be a nested tree rather
+# than 3938 flat files -- prove does not descend without it, and it still
+# matches *.t only, so the t/lib fixtures stay invisible. See
+# docs/t-directory-layout.md.
 #
 # `MUTSU_BIN=.../release/mutsu`: run t/ on the RELEASE binary, the same one
 # `make roast` uses, matching CI's TAP step. `cargo test` still builds and runs
@@ -33,9 +37,9 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-value-wall check-flaky-list
+test: check-value-wall check-flaky-list check-t-layout
 	@mkdir -p tmp
-	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -55,6 +59,9 @@ check-value-wall:
 
 check-flaky-list:
 	scripts/check-flaky-list.sh
+
+check-t-layout:
+	scripts/check-t-layout.sh
 
 roast:
 	@mkdir -p tmp
