@@ -221,6 +221,8 @@ mod error_typed;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
+/// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
+mod identity_hash;
 pub use hash_key::HashKey;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
@@ -1960,7 +1962,7 @@ pub struct RegexClosure {
     pub scope: Arc<HashMap<String, Value>>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum VersionPart {
     Num(i64),
     Str(String),

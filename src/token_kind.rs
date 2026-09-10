@@ -1,8 +1,9 @@
 use crate::value::VersionPart;
 use num_bigint::BigInt as NumBigInt;
+use std::hash::{Hash, Hasher};
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum DStrPart {
     Lit(String),
     Var(String),
@@ -19,7 +20,7 @@ pub(crate) enum DStrPart {
 /// instead. Keeping the substitution in its own step is what lets the bare
 /// infix ops stay strict — `Int + 1` throws `X::Numeric::Uninitialized` while
 /// `my Int $a; $a += 1` still yields `1`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum MetaAssignIdentity {
     /// `infix:<+>()` / `infix:<->()` are `0`.
     Zero,
@@ -203,6 +204,53 @@ pub(crate) enum TokenKind {
     },
     Semicolon,
     Eof,
+}
+
+/// Structural hash of a token, for the AST identity fingerprints in
+/// [`crate::ast`] (`Expr` and `Stmt` embed `TokenKind`, so their derived
+/// `Hash` needs one here).
+///
+/// Hand-written only because two variants carry an `f64`, which has no `Hash`.
+/// They are hashed by bit pattern: this is a *declaration identity* hash, not a
+/// numeric one, so distinguishing `NaN` payloads and `0.0` from `-0.0` is
+/// correct here — two source texts that lex to different bits are different
+/// declarations. `mem::discriminant` covers the ~110 unit variants, which are
+/// fully identified by their tag.
+impl Hash for TokenKind {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            TokenKind::Number(n) => n.hash(state),
+            TokenKind::BigNumber(n) => n.hash(state),
+            TokenKind::Float(f) | TokenKind::Imaginary(f) => f.to_bits().hash(state),
+            TokenKind::Str(s)
+            | TokenKind::Regex(s)
+            | TokenKind::Ident(s)
+            | TokenKind::Var(s)
+            | TokenKind::CaptureVar(s)
+            | TokenKind::HashVar(s)
+            | TokenKind::ArrayVar(s)
+            | TokenKind::CodeVar(s) => s.hash(state),
+            TokenKind::DStr(parts) => parts.hash(state),
+            TokenKind::Subst {
+                pattern,
+                replacement,
+            } => {
+                pattern.hash(state);
+                replacement.hash(state);
+            }
+            TokenKind::QWords(words) => words.hash(state),
+            TokenKind::MetaAssignIdentity(id) => id.hash(state),
+            TokenKind::VersionLiteral { parts, plus, minus } => {
+                parts.hash(state);
+                plus.hash(state);
+                minus.hash(state);
+            }
+            // Every remaining variant is a unit variant: the discriminant
+            // hashed above already identifies it completely.
+            _ => {}
+        }
+    }
 }
 
 pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
