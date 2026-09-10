@@ -303,12 +303,22 @@ impl Interpreter {
     /// self-reference (`Terminal::ANSI::OO.new` inside
     /// `Terminal/ANSI/OO.rakumod`'s own `EXPORT`) fail the #7797 visibility
     /// gate. That is the shape `Test.rakumod`'s `use-ok` produces (#7837).
+    ///
+    /// The corrected answer is `?FILE` ([`Self::current_source_file`]), NOT the
+    /// unit symbol on `module_loading_unit_stack`, even though the two name the
+    /// same file for a plain module mainline. `?FILE` is the dynamically-scoped
+    /// "unit being compiled" marker, so [`Self::enter_source_file`] can retarget
+    /// it — which it does for a deferred **role body**, re-run at each
+    /// composition from the composing scope (`RoleDef::decl_file`). The unit
+    /// stack still names the composing module there, so reading it would stamp
+    /// the role's own lexical subs with the wrong file and make the role's
+    /// methods unable to call them (zef's `role Plugin`'s `sub DEBUG`, caught by
+    /// the bundled-library gate).
     pub(crate) fn executing_source_file_for_module_load(&self) -> Option<String> {
-        if let Some(&(unit, depth_at_push)) = self.module_loading_unit_stack.last()
+        if let Some(&(_, depth_at_push)) = self.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push
-            && unit != crate::runtime::main_unit()
         {
-            return Some(unit.resolve());
+            return self.current_source_file();
         }
         self.executing_source_file()
     }
