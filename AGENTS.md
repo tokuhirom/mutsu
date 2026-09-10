@@ -38,7 +38,8 @@ than in this file; read the matching one before starting such a task. Currently:
 `cut-release` (releasing), `install-raku` (installing the Rakudo oracle when
 `raku` is missing), `roast-triage` (choosing and investigating roast work),
 `test-util-workout`, `reclaim-disk` (stale worktrees and cargo caches),
-`mutsu-ticket-flow`, and `rakuast-implementation`.
+`mutsu-ticket-flow`, `rakuast-implementation`, and `ecosystem-dist-fix`
+(taking one zef distribution's own test suite from red to green).
 
 ## Architecture
 
