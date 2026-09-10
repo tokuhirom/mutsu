@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Proposed
+- Status: Accepted (design confirmed by the maintainer 2026-09-10; implementation not started)
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -54,7 +54,7 @@ Adopt **per-distribution test-suite parity against a same-host rakudo run** as
 mutsu's ecosystem KPI, measured by a dedicated, exhaustive, re-runnable harness
 whose per-distribution results are committed to the repository.
 
-The eight decisions below are the ones that are costly to reverse once thousands
+The nine decisions below are the ones that are costly to reverse once thousands
 of records exist. Everything else — CLI spelling, output formatting, phasing —
 is operational and lives in [docs/ecosystem-parity.md](../ecosystem-parity.md).
 
@@ -88,15 +88,23 @@ Consequence: a test file rakudo does not pass cleanly is **excluded from the KPI
 denominator** and recorded as `no_baseline`. It is never counted as a mutsu
 failure, and never as a mutsu success.
 
-### D3. Three parity numbers, and `file_parity` is the headline
+### D3. Three parity numbers with separated roles — `dist_parity` is published, `file_parity` drives the work
 
 Let *B* be the set of test files that rakudo passes cleanly in this sweep.
 
 | metric | definition | role |
 |---|---|---|
-| `file_parity` | `count(f in B where mutsu passes f) / count(B)` | **the KPI** — the number to move |
-| `assertion_parity` | `sum over B of min(mutsu_ok, raku_ok) / sum over B of raku_ok` | fine-grained progress; moves even when no file flips |
-| `dist_parity` | `count(dists whose whole baseline set passes on mutsu) / count(dists with a non-empty baseline set)` | the user-facing "which modules work" number |
+| `dist_parity` | `count(dists whose whole baseline set passes on mutsu) / count(dists with a non-empty baseline set)` | **the published headline** — it answers the user's question, "does my module work?", and weights every distribution equally |
+| `file_parity` | `count(f in B where mutsu passes f) / count(B)` | **the number the work is steered by** — moves smoothly enough to tell whether a slice helped |
+| `assertion_parity` | `sum over B of min(mutsu_ok, raku_ok) / sum over B of raku_ok` | the finest signal; moves even when no file flips |
+
+The split is deliberate, because one number cannot do both jobs. `dist_parity`
+is what a user means by compatibility, but it is a step function: a
+distribution with 51 test files stays at zero until the last one goes green, so
+a release that halves the failures can show no movement at all. `file_parity`
+moves continuously, but it weights a 51-file distribution 51× a 1-file one, so
+it is a poor claim to publish. Reporting one as *the* KPI would either hide
+progress or overstate reach.
 
 All three are reported, and both sides' raw TAP counts are stored per file, so
 any other aggregate can be recomputed later **without re-running anything**.
@@ -226,6 +234,30 @@ the harness at startup, not left to the operator:
   is retired, so this is a guard against regression rather than a switch, but a
   sweep that cannot confirm it aborts rather than publishing a flattered
   number.
+
+### D9. The sweep is operator-run, not CI-scheduled
+
+A full sweep is ~20 CPU-hours. It runs **on the maintainer's box, started by
+hand**, and its results reach `main` as an ordinary pull request. There is no
+scheduled GitHub Actions workflow.
+
+The alternative — a weekly hosted-runner sweep — buys automation the project
+does not need yet and costs 20 CPU-hours of Actions time every week, on runners
+with a fraction of the cores, for a number that moves on the timescale of
+interpreter fixes rather than of pushes. A 12-core box does the same work in
+about 2.5 hours for nothing, and `bwrap` is easier to guarantee there.
+
+Two consequences follow and are not to be papered over:
+
+- **The KPI updates only when someone runs it.** A stale headline is a
+  documented state (D7 makes staleness computable), not a silent one.
+- **This does not close PLAN.md §1 B1's "working-module regression CI."** That
+  remains a separate, unstarted item; an earlier draft of this design claimed
+  otherwise.
+
+Because the sweep is tied to one machine, `measured.host` is part of every
+record (D7) so a number produced elsewhere is identifiable rather than quietly
+mixed in.
 
 ## Consequences
 

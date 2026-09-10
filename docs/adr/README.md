@@ -110,4 +110,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0082](0082-a-collecting-for-gathers-containers-not-snapshots.md) | A value-collecting `for` gathers containers, not snapshots | Superseded by 0083 |
 | [0083](0083-a-collected-for-retains-containers-past-the-loop.md) | A collected `for` retains lvalue containers past the loop | Accepted (implemented) |
 | [0084](0084-the-frame-env-is-not-the-programs-symbol-table.md) | The per-frame `Env` is not the program's symbol table — type/package names and internal markers move to side tables | Proposed (design complete; implementation not started) |
-| [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Proposed (design complete; implementation not started) |
+| [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Accepted (design confirmed 2026-09-10; implementation not started) |
