@@ -623,13 +623,13 @@ impl Interpreter {
             None => trait_name,
         };
 
-        // `my @a is CustomClass` where CustomClass subclasses `Array` (e.g.
-        // `class Array::Rounded is Array {...}`) or composes `Positional`:
-        // back the variable with a blessed instance, so indexing overrides
-        // (AT-POS/ASSIGN-POS/DELETE-POS/...) and other methods dispatch to
-        // the class's own methods, mirroring the `%`-sigil tied-hash block
-        // below. Raku ties an `@` variable to ANY class named by `is` — the
-        // `@` sigil supplies the positional semantics.
+        // `my @a is CustomClass` names the class/role of the positional
+        // container. Raku ties an `@` variable to ANY class named by `is` —
+        // the `@` sigil supplies the positional semantics. Classes that
+        // inherit Array use their constructor to populate the backing array;
+        // custom containers use STORE. A class with neither protocol still
+        // gets the Foo.new binding, and its first initializer store is then
+        // rejected as an immutable value.
         // A user-declared `STORE` names the custom-container protocol
         // (`Language/subscripts.rakudoc`'s `my @string is DNA = 'GAATCC'`), which
         // is what `@`-sigil ties use in real Raku: the variable is bound to
@@ -643,14 +643,6 @@ impl Interpreter {
         if name.starts_with('@')
             && (self.registry().classes.contains_key(&trait_name)
                 || self.registry().roles.contains_key(&trait_name))
-            && (self.class_mro(&trait_name).iter().any(|n| n == "Array")
-                || self.class_does_role(&trait_name, "Positional")
-                || self.has_user_method_including_role(&trait_name, "AT-POS")
-                // Raku ties an `@` variable to ANY class named by `is` — the
-                // `@` sigil supplies the positional semantics, so a plain class
-                // that only implements `STORE` (the documented custom-container
-                // shape) ties just as well as one composing `Positional`.
-                || at_sigil_user_store)
         {
             if has_arg {
                 self.stack.pop();
@@ -662,6 +654,8 @@ impl Interpreter {
             let init_source = self
                 .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
+            let store_arg = Self::custom_container_store_arg(stashed_init, init_source.clone());
+            let is_array_subclass = self.class_mro(&trait_name).iter().any(|n| n == "Array");
             let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
                 Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
                 Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
@@ -677,7 +671,6 @@ impl Interpreter {
                 if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
                     self.set_env_with_main_alias(&name_str, instance.clone());
                 }
-                let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
                 if let Some(list_arg) = store_arg {
                     let stored = self.try_compiled_method_or_interpret(
                         instance.clone(),
@@ -695,26 +688,32 @@ impl Interpreter {
                 }
                 return Ok(());
             }
-            let instance = self.try_compiled_method_or_interpret(type_obj, "new", init_values)?;
+            if is_array_subclass {
+                let instance =
+                    self.try_compiled_method_or_interpret(type_obj, "new", init_values)?;
+                if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
+                    self.set_env_with_main_alias(&name_str, instance);
+                }
+                return Ok(());
+            }
+            let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
-                self.set_env_with_main_alias(&name_str, instance);
+                self.set_env_with_main_alias(&name_str, instance.clone());
+            }
+            if store_arg.is_some() {
+                return Err(RuntimeError::assignment_ro_typename(
+                    &trait_name,
+                    &crate::runtime::utils::gist_value(&instance),
+                ));
             }
             return Ok(());
         }
 
-        // `my %h is CustomClass` where CustomClass composes `Associative` (e.g.
-        // `does Hash::Agnostic`): back the variable with a blessed instance, so
-        // subscripting (AT-KEY/ASSIGN-KEY/DELETE-KEY), iteration and coercion
-        // methods (.Str/.raku/.List/.Slip/.gist/...) all dispatch to the class's
-        // (possibly role-provided) methods — a "tied hash". The instance keeps
-        // its identity across `%h = ...` (STORE) reassignments.
-        // Raku ties a `%` variable to ANY class named by `is` — the `%` sigil
-        // supplies the associative semantics, so the class need not declare
-        // `does Associative` (e.g. `Hash::str`, which only defines AT-KEY/STORE
-        // via nqp ops). We tie when the class either composes `Associative` or
-        // defines the associative protocol (STORE / AT-KEY), which covers both
-        // the role-composed (`Hash::Agnostic`) and the plain-class (`Hash::str`)
-        // styles without grabbing unrelated `is <Type>` container traits.
+        // `my %h is CustomClass` names the class/role of the associative
+        // container. Raku ties a `%` variable to ANY class named by `is` — the
+        // `%` sigil supplies the associative semantics. A class with no STORE
+        // still receives the Foo.new binding, but an initializer store is
+        // rejected as immutable.
         // A *role* names a tie just as well as a class (`my %h is TypeConverter`):
         // raku puns it, and `Value::package(name).new` already takes the punning
         // path a role-typed attribute (`has %.C is TypeConverter`) uses. The
@@ -723,20 +722,6 @@ impl Interpreter {
         if name.starts_with('%')
             && (self.registry().classes.contains_key(&trait_name)
                 || self.registry().roles.contains_key(&trait_name))
-            && (self.class_does_role(&trait_name, "Associative")
-                || self.has_user_method_including_role(&trait_name, "STORE")
-                || self.has_user_method_including_role(&trait_name, "AT-KEY")
-                // `class Bar is Hash {}` (or `is Map`): a native-inheritance
-                // Associative subclass, not a role composition or a
-                // hand-written AT-KEY/STORE tie. Mirrors the `@`-sigil gate's
-                // `class_mro(...).any(|n| n == "Array")` check above — without
-                // this, `my %h is Bar = ...` fell through to the generic
-                // `trait_mod:<is>` handler, which does not bless a real `Bar`
-                // instance (`.^name` wrongly stayed `Hash`).
-                || self
-                    .class_mro(&trait_name)
-                    .iter()
-                    .any(|n| n == "Hash" || n == "Map"))
         {
             if has_arg {
                 self.stack.pop();
@@ -748,6 +733,12 @@ impl Interpreter {
             let init_source = self
                 .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
+            let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
+            let has_store = self
+                .class_mro(&trait_name)
+                .iter()
+                .any(|n| n == "Hash" || n == "Map")
+                || self.has_user_method_including_role(&trait_name, "STORE");
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Bind the instance to the variable first, then STORE the initializer
@@ -756,29 +747,36 @@ impl Interpreter {
             if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
                 self.set_env_with_main_alias(&name_str, instance.clone());
             }
-            if let Some(list_arg) = Self::custom_container_store_arg(stashed_init, init_source) {
-                // Pass the initializer as a single positional list (not as
-                // separate Pair args, which STORE's signature would bind as
-                // *named* arguments); STORE's slurpy `*@values` flattens it.
-                // Raku passes `:INITIALIZE` on the *declaration* assignment
-                // (`my %h is Foo = ...`) but NOT on a later `%h = ...`
-                // reassignment, so a write-once tie can distinguish the initial
-                // population from a forbidden overwrite (WriteOnceHash's STORE
-                // gates on `:$INITIALIZE`). A STORE that ignores it absorbs the
-                // extra named arg through its implicit `*%_`.
-                let stored = self.try_compiled_method_or_interpret(
-                    instance.clone(),
-                    "STORE",
-                    vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
-                )?;
-                let bound = if Self::is_tie_bindable(&stored) {
-                    stored
-                } else {
-                    instance
-                };
-                if !self.write_var_trait_target(code, eff_slot, &name_str, bound.clone()) {
-                    self.set_env_with_main_alias(&name_str, bound);
+            if has_store {
+                if let Some(list_arg) = store_arg {
+                    // Pass the initializer as a single positional list (not as
+                    // separate Pair args, which STORE's signature would bind as
+                    // *named* arguments); STORE's slurpy `*@values` flattens it.
+                    // Raku passes `:INITIALIZE` on the *declaration* assignment
+                    // (`my %h is Foo = ...`) but NOT on a later `%h = ...`
+                    // reassignment, so a write-once tie can distinguish the initial
+                    // population from a forbidden overwrite (WriteOnceHash's STORE
+                    // gates on `:$INITIALIZE`). A STORE that ignores it absorbs the
+                    // extra named arg through its implicit `*%_`.
+                    let stored = self.try_compiled_method_or_interpret(
+                        instance.clone(),
+                        "STORE",
+                        vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
+                    )?;
+                    let bound = if Self::is_tie_bindable(&stored) {
+                        stored
+                    } else {
+                        instance
+                    };
+                    if !self.write_var_trait_target(code, eff_slot, &name_str, bound.clone()) {
+                        self.set_env_with_main_alias(&name_str, bound);
+                    }
                 }
+            } else if store_arg.is_some() {
+                return Err(RuntimeError::assignment_ro_typename(
+                    &trait_name,
+                    &crate::runtime::utils::gist_value(&instance),
+                ));
             }
             return Ok(());
         }

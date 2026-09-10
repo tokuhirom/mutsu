@@ -131,6 +131,119 @@ impl Interpreter {
         Err(err)
     }
 
+    /// Type-check a `:=` bind to an untyped `%`-sigiled target.
+    ///
+    /// `%` variables carry an implicit `Associative` constraint even when no
+    /// element type was declared. Assignment may coerce an arbitrary value to
+    /// a Hash, but binding aliases the RHS and therefore must reject a plain
+    /// object such as `Foo.new`.
+    pub(crate) fn check_associative_bind_value(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        if !name.starts_with('%') {
+            return Ok(());
+        }
+        // A declaration with a type-named `is` trait stashes its raw
+        // initializer for `ApplyVarTrait`. QuantHash declarations deliberately
+        // use the bind marker to preserve that raw value until the trait handler
+        // populates the container; the handler also owns the custom-container
+        // error for a non-container class/role. Do not mistake that internal
+        // marker for a user `:=` bind here.
+        if self.vardecl_init_raw.is_some() {
+            return Ok(());
+        }
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name)) {
+            let base = constraint
+                .split_once('[')
+                .map(|(head, _)| head)
+                .unwrap_or(&constraint);
+            if matches!(
+                base,
+                "Set"
+                    | "SetHash"
+                    | "Bag"
+                    | "BagHash"
+                    | "Mix"
+                    | "MixHash"
+                    | "Map"
+                    | "Hash"
+                    | "Associative"
+                    | "QuantHash"
+            ) {
+                return Ok(());
+            }
+        }
+        let mut candidate = value.deref_container();
+        let mut mixin_composes_associative = false;
+        if let ValueView::Mixin(inner, mixins) = candidate.view() {
+            mixin_composes_associative = mixins.keys().any(|key| {
+                key.strip_prefix("__mutsu_role__")
+                    .is_some_and(|role| role == "Associative")
+            });
+            candidate = inner.as_ref().clone();
+        }
+        let is_associative = mixin_composes_associative
+            || match candidate.view() {
+                ValueView::Hash(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..) => true,
+                ValueView::Package(name) => {
+                    let name = name.resolve();
+                    let base = name.split('[').next().unwrap_or(&name);
+                    matches!(base, "Associative" | "Hash" | "Map" | "Set" | "Bag" | "Mix")
+                        || (self.registry().classes.contains_key(base)
+                            || self.registry().roles.contains_key(base))
+                            && (self.class_does_role(base, "Associative")
+                                || self
+                                    .class_mro(base)
+                                    .iter()
+                                    .any(|n| n == "Hash" || n == "Map"))
+                }
+                ValueView::Instance { class_name, .. } => {
+                    let class_name = class_name.resolve();
+                    matches!(class_name.as_str(), "Hash" | "Map" | "Set" | "Bag" | "Mix")
+                        || self
+                            .class_composed_roles(&class_name)
+                            .is_some_and(|roles| roles.iter().any(|role| role == "Associative"))
+                        || self
+                            .class_mro(&class_name)
+                            .iter()
+                            .any(|n| n == "Hash" || n == "Map")
+                        || self.has_user_method_including_role(&class_name, "STORE")
+                        || self.has_user_method_including_role(&class_name, "AT-KEY")
+                }
+                _ => false,
+            };
+        if is_associative {
+            return Ok(());
+        }
+        let got_type = crate::runtime::utils::value_type_name(value);
+        let message = format!(
+            "Type check failed in binding; expected Associative but got {}",
+            got_type
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("got".to_string(), value.clone());
+        attrs.insert(
+            "expected".to_string(),
+            Value::package(crate::symbol::Symbol::intern("Associative")),
+        );
+        attrs.insert("symbol".to_string(), Value::str_from(name));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+            attrs,
+        );
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
     /// Identity-preserving STORE for a declared QuantHash variable:
     /// `%s = <a b>` on a `my %s is SetHash` writes the coerced contents INTO
     /// the variable's existing container node (keeping the node's embedded
