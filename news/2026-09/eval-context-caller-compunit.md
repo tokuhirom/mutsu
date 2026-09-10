@@ -48,6 +48,18 @@ it.
    `executing_source_file_for_module_load()`, the file-level counterpart of the
    existing `executing_unit_sym_for_module_load()` correction.
 
+   The corrected answer has to be `?FILE`, not the unit symbol on
+   `module_loading_unit_stack`, even though the two name the same file for a
+   plain module mainline. `?FILE` is dynamically scoped and `enter_source_file()`
+   retargets it for a deferred **role body**, which is re-run at each
+   composition from the composing scope (`RoleDef::decl_file`); the unit stack
+   still names the composing module there. Reading the unit stack stamped every
+   lexical sub a role declares with the wrong file, so the role's own methods
+   could no longer call it — zef's `role Plugin` has a lexical `sub DEBUG` that
+   `method !try-load` calls, and `zef/t/distribution-depends-parsing.rakutest`
+   aborted at test 18 of 35 with "Unknown function: DEBUG". The bundled-library
+   gate caught it; neither `make test` nor `make roast` did.
+
 3. **`END` phasers.** An `EndPhaser` already remembered its declaring *package*
    so a phaser in a `unit module Foo` could still reach `Foo`'s routines by bare
    name at exit; it now remembers its declaring *compunit* for the same reason.
