@@ -748,6 +748,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = parse_char(r, ')')?;
         let (r, _) = ws(r)?;
         let (r, required, opt_marker) = super::helpers::parse_required_suffix(r);
+        let (r, tail) = super::helpers::parse_subsig_tail(r)?;
         let mut p = super::helpers::make_param("__subsig__".to_string());
         p.sub_signature = Some(sub_params);
         p.named = named;
@@ -757,6 +758,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.type_constraint = type_constraint;
         p.required = required;
         p.optional_marker = opt_marker;
+        p.traits = tail.traits;
+        p.where_constraint = tail.where_constraint;
+        p.default = tail.default;
         return Ok((r, p));
     }
 
@@ -1152,18 +1156,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (r, _) = parse_char(r, ')')?;
             let (r, _) = ws(r)?;
             let (r, post_required, post_opt_marker) = super::helpers::parse_required_suffix(r);
-            let (r, _) = ws(r)?;
-            let mut param_traits = Vec::new();
-            let (mut r, _) = ws(r)?;
-            while let Some(r2) = super::super::keyword("is", r) {
-                let (r2, _) = ws1(r2)?;
-                let (r2, trait_name) = super::super::ident(r2)?;
-                let (r2, _) =
-                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
-                param_traits.push(trait_name);
-                let (r2, _) = ws(r2)?;
-                r = r2;
-            }
+            let (r, tail) = super::helpers::parse_subsig_tail(r)?;
             let mut p = super::helpers::make_param(format!("&{name}"));
             p.required = required || post_required;
             p.optional_marker = opt_marker || post_opt_marker;
@@ -1174,7 +1167,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = type_constraint;
             p.sub_signature = Some(sig_params.clone());
             p.code_signature = Some((sig_params, sig_ret));
-            p.traits = param_traits;
+            p.traits = tail.traits;
+            p.where_constraint = tail.where_constraint;
+            p.default = tail.default;
             return Ok((r, p));
         }
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
@@ -1183,17 +1178,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = ws(r)?;
         // Handle optional (?) / required (!) suffix after sub-signature
         let (r, post_required, post_opt_marker) = super::helpers::parse_required_suffix(r);
-        let (r, _) = ws(r)?;
-        let mut param_traits = Vec::new();
-        let (mut r, _) = ws(r)?;
-        while let Some(r2) = super::super::keyword("is", r) {
-            let (r2, _) = ws1(r2)?;
-            let (r2, trait_name) = super::super::ident(r2)?;
-            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
-            param_traits.push(trait_name);
-            let (r2, _) = ws(r2)?;
-            r = r2;
-        }
+        let (r, tail) = super::helpers::parse_subsig_tail(r)?;
         let param_name = if slurpy {
             match slurpy_sigil {
                 Some('%') => format!("%{}", name),
@@ -1217,7 +1202,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
-        p.traits = param_traits;
+        p.traits = tail.traits;
+        p.where_constraint = tail.where_constraint;
+        p.default = tail.default;
         return Ok((r, p));
     }
 
@@ -1231,17 +1218,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         let (r, _) = ws(r)?;
         // Handle optional (?) / required (!) suffix after sub-signature
         let (r, post_required, post_opt_marker) = super::helpers::parse_required_suffix(r);
-        let (r, _) = ws(r)?;
-        let mut param_traits = Vec::new();
-        let (mut r, _) = ws(r)?;
-        while let Some(r2) = super::super::keyword("is", r) {
-            let (r2, _) = ws1(r2)?;
-            let (r2, trait_name) = super::super::ident(r2)?;
-            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
-            param_traits.push(trait_name);
-            let (r2, _) = ws(r2)?;
-            r = r2;
-        }
+        let (r, tail) = super::helpers::parse_subsig_tail(r)?;
         let param_name = if slurpy {
             match slurpy_sigil {
                 Some('%') => format!("%{}", name),
@@ -1265,7 +1242,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.onearg = onearg;
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
-        p.traits = param_traits;
+        p.traits = tail.traits;
+        p.where_constraint = tail.where_constraint;
+        p.default = tail.default;
         return Ok((r, p));
     }
 

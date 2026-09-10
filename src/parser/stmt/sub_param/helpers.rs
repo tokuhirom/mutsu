@@ -71,6 +71,61 @@ pub(crate) fn starts_with_sigil_param(input: &str) -> bool {
     matches!(input.as_bytes().first(), Some(b'$' | b'@' | b'%' | b'&'))
 }
 
+/// The optional tail a parameter may carry after a destructuring sub-signature:
+/// `is` traits, a `where` post-constraint, and a default value.
+pub(crate) struct SubsigTail {
+    pub(crate) traits: Vec<String>,
+    pub(crate) where_constraint: Option<Box<Expr>>,
+    pub(crate) default: Option<Expr>,
+}
+
+/// Parse whatever follows a parameter's sub-signature.
+///
+/// A parameter may carry a sub-signature *and* a post-constraint at once —
+/// `sub f($x ($a, $b) where { ... })`, `:$x! (*@a) where { ... }` — with the
+/// `where` testing the parameter's own value while the sub-signature unpacks it.
+/// Each sub-signature branch in `param_inner` used to stop after its `is` trait
+/// loop, so the `where` was left unconsumed and the signature failed to parse at
+/// the closing paren. Sharing one tail parser keeps the four branches (bare
+/// `(...)`, `$x (...)`, `&cb (...)`, `@a [...]`) in step.
+pub(crate) fn parse_subsig_tail(input: &str) -> PResult<'_, SubsigTail> {
+    use crate::parser::helpers::{ws, ws1};
+
+    let (mut rest, _) = ws(input)?;
+    let mut traits = Vec::new();
+    while let Some(r) = super::super::keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = super::super::ident(r)?;
+        let (r, _) = super::super::sub::validate_param_trait(&trait_name, &traits, r)?;
+        traits.push(trait_name);
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
+    let (rest, where_constraint) = if let Some(r) = super::super::keyword("where", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, constraint) = super::where_constraint::parse_where_constraint_expr(r)?;
+        (r, Some(Box::new(constraint)))
+    } else {
+        (rest, None)
+    };
+    let (rest, _) = ws(rest)?;
+    let (rest, default) = if rest.starts_with('=') && !rest.starts_with("==") {
+        let (r, _) = ws(&rest[1..])?;
+        let (r, expr) = crate::parser::expr::expression(r)?;
+        (r, Some(expr))
+    } else {
+        (rest, None)
+    };
+    Ok((
+        rest,
+        SubsigTail {
+            traits,
+            where_constraint,
+            default,
+        },
+    ))
+}
+
 /// Returns (rest, required, optional_marker).
 /// `!` → required=true, optional_marker=false
 /// `?` → required=false, optional_marker=true
