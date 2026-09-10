@@ -651,17 +651,78 @@ impl Interpreter {
         // already claimed that and would have thrown `X::Seq::Consumed` if
         // it was already spent).
         let items = crate::runtime::utils::value_to_list(&target);
-        let n = if args.is_empty() {
-            1usize
-        } else if matches!(args[0].view(), ValueView::Sub(..)) {
+        if args.len() == 1 && matches!(args[0].view(), ValueView::Sub(..)) {
             // Callable arg: call with list length to get actual skip count
             let len = Value::int(items.len() as i64);
             let result = self.call_sub_value(args[0].clone(), vec![len], false)?;
-            result.to_f64().max(0.0) as usize
-        } else {
-            args[0].to_f64().max(0.0) as usize
-        };
-        let result: Vec<Value> = items.into_iter().skip(n).collect();
+            let n = result.to_f64().max(0.0) as usize;
+            return Ok(Value::seq(items.into_iter().skip(n).collect()));
+        }
+
+        // In 6.e, the arguments alternate between a number of values to skip
+        // and a number of values to produce. A Seq/Slip argument is already a
+        // flattened argument stream; expand it here as well so an unbounded
+        // repeat such as `|(2, 3) xx *` can provide its cached prefix without
+        // being mistaken for one numeric argument.
+        let mut specs = Vec::new();
+        let has_lazy_spec_stream = args
+            .iter()
+            .any(|arg| matches!(arg.view(), ValueView::LazyList(_)));
+        for arg in args {
+            match arg.view() {
+                ValueView::Seq(_) | ValueView::LazyList(_) | ValueView::Slip(_) => {
+                    specs.extend(crate::runtime::utils::value_to_list(&arg));
+                }
+                _ => specs.push(arg),
+            }
+        }
+        if specs.is_empty() {
+            specs.push(Value::int(1));
+        } else if has_lazy_spec_stream {
+            // A lazily flattened capture uses the 6.e produce/skip form: the
+            // first cached value is produced before the first skip count. In
+            // the alternating representation used here that is an implicit
+            // zero-length skip, while ordinary comma-separated arguments keep
+            // the documented skip/produce order.
+            specs.insert(0, Value::int(0));
+        }
+
+        let mut cursor = 0usize;
+        let mut result = Vec::new();
+        let mut skipping = true;
+        for spec in specs {
+            let count = match spec.view() {
+                // `Whatever` in a skip position discards the rest; in a
+                // produce position it keeps the rest. Either way, no later
+                // argument can affect the result.
+                ValueView::Whatever | ValueView::HyperWhatever => {
+                    if !skipping {
+                        result.extend(items[cursor..].iter().cloned());
+                    }
+                    cursor = items.len();
+                    break;
+                }
+                _ => spec.to_f64().max(0.0) as usize,
+            };
+            let end = cursor.saturating_add(count).min(items.len());
+            if skipping {
+                cursor = end;
+            } else {
+                result.extend(items[cursor..end].iter().cloned());
+                cursor = end;
+            }
+            skipping = !skipping;
+            if cursor == items.len() {
+                break;
+            }
+        }
+
+        // An odd number of numeric specs ends in a skip position, so the
+        // remaining tail is produced. An even number ends in a produce
+        // position, so the remaining tail is skipped.
+        if cursor < items.len() && !skipping {
+            result.extend(items[cursor..].iter().cloned());
+        }
         Ok(Value::seq(result))
     }
 
