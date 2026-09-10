@@ -1,6 +1,54 @@
 use super::*;
 
 impl Interpreter {
+    /// Type-check a `:=` bind to a typed-array variable.
+    ///
+    /// Binding (unlike assignment) does not coerce — it aliases the RHS
+    /// container directly. Raku therefore requires the RHS to be a declared
+    /// `Positional[T]`, not merely an untyped Array whose current elements all
+    /// happen to match `T`.
+    pub(crate) fn check_array_bind_value_type(
+        &mut self,
+        name: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        if !name.starts_with('@') {
+            return Ok(());
+        }
+        let Some(constraint) = loan_env!(self, var_type_constraint(name)) else {
+            return Ok(());
+        };
+        if matches!(constraint.as_str(), "" | "Any" | "Mu") {
+            return Ok(());
+        }
+        if self.typed_container_param_matches(name, &constraint, value, None, None) {
+            return Ok(());
+        }
+        let got = crate::runtime::utils::value_type_name(value);
+        let message = format!(
+            "Type check failed in binding; expected Positional[{}] but got {}",
+            constraint, got
+        );
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("got".to_string(), value.clone());
+        attrs.insert(
+            "expected".to_string(),
+            Value::package(crate::symbol::Symbol::intern(&format!(
+                "Positional[{}]",
+                constraint
+            ))),
+        );
+        attrs.insert("symbol".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+            attrs,
+        );
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
     /// Type-check a `:=` bind to a typed-hash variable.
     ///
     /// Binding (unlike assignment) does not coerce — it aliases the RHS

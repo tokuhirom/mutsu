@@ -1020,6 +1020,13 @@ impl Interpreter {
                 self.coerce_hash_var_value(name, raw_popped)?
             }
         } else if name.starts_with('@') {
+            if is_bind {
+                // `:=` binding preserves the RHS container directly, but a
+                // typed array target still requires a declared Positional[T].
+                // Do not accept an untyped Array merely because its current
+                // elements happen to match the target element type.
+                self.check_array_bind_value_type(name, &raw_popped)?;
+            }
             if (has_explicit_initializer || !is_vardecl)
                 && !is_constant
                 && !is_bind

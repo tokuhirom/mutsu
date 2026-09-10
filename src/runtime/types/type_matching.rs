@@ -217,7 +217,7 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn typed_container_param_matches(
+    pub(crate) fn typed_container_param_matches(
         &mut self,
         name: &str,
         constraint: &str,
@@ -271,78 +271,10 @@ impl Interpreter {
                 .type_matches_value(base, &Value::package(Symbol::intern(&metadata.value_type)));
         }
 
-        if name.starts_with('@') {
-            return match value.view() {
-                ValueView::Array(items, ..) => {
-                    if items.is_empty() {
-                        return source_constraint.is_some_and(|source| {
-                            self.type_matches_value(
-                                &resolved_constraint,
-                                &Value::package(Symbol::intern(source)),
-                            )
-                        });
-                    }
-                    !items.is_empty()
-                        && items
-                            .iter()
-                            .all(|item| self.type_matches_value(&resolved_constraint, item))
-                }
-                ValueView::Slip(items) => {
-                    if items.is_empty() {
-                        return source_constraint.is_some_and(|source| {
-                            self.type_matches_value(
-                                &resolved_constraint,
-                                &Value::package(Symbol::intern(source)),
-                            )
-                        });
-                    }
-                    !items.is_empty()
-                        && items
-                            .iter()
-                            .all(|item| self.type_matches_value(&resolved_constraint, item))
-                }
-                _ => false,
-            };
-        }
-
-        if name.starts_with('%') {
-            return match value.view() {
-                ValueView::Hash(map) => {
-                    if map.is_empty() {
-                        return source_constraint.is_some_and(|source| {
-                            self.type_matches_value(
-                                &resolved_constraint,
-                                &Value::package(Symbol::intern(source)),
-                            )
-                        });
-                    }
-                    !map.is_empty()
-                        && map
-                            .values()
-                            .all(|item| self.type_matches_value(&resolved_constraint, item))
-                }
-                ValueView::Array(items, ..) => {
-                    if items.is_empty() {
-                        return source_constraint.is_some_and(|source| {
-                            self.type_matches_value(
-                                &resolved_constraint,
-                                &Value::package(Symbol::intern(source)),
-                            )
-                        });
-                    }
-                    !items.is_empty()
-                        && items.iter().all(|item| {
-                            if let ValueView::Pair(_, value) = item.view() {
-                                self.type_matches_value(&resolved_constraint, value)
-                            } else {
-                                false
-                            }
-                        })
-                }
-                _ => false,
-            };
-        }
-
+        // A typed aggregate parameter requires the argument's container type
+        // to be declared, not merely inferred from its current elements. An
+        // untyped Array/Hash containing only matching values is still an
+        // untyped container and must not satisfy Positional[T]/Associative[T].
         false
     }
 
