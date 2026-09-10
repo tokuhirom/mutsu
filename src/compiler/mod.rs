@@ -2663,8 +2663,9 @@ impl Compiler {
         }
     }
 
-    /// Bitmask of the argument positions written as a LITERAL of a type that
-    /// has a native counterpart (`Int`, `Num`, `Str`), for
+    /// Bitmask of the argument positions written as a literal, or as an
+    /// anonymous native scalar declaration, of a type that has a native
+    /// counterpart (`Int`, `Num`, `Str`), for
     /// `OpCode::CallFunc`'s `literal_native_args`. A literal carries no source
     /// variable, so multi dispatch had no `var_type` to rank a native candidate
     /// with and `multi d(int)` / `multi d(Int)` called as `d(5)` answered `Int`
@@ -2685,7 +2686,12 @@ impl Compiler {
         mask
     }
 
-    /// One position's test for `literal_native_args_mask`. A NEGATED numeric
+    /// One position's test for `literal_native_args_mask`. An anonymous native
+    /// scalar declaration is included as well: `my uint32 $ = 1` has no named
+    /// lexical metadata for the runtime matcher to inspect, but its call-site
+    /// shape still identifies it as a native argument.
+    ///
+    /// A NEGATED numeric
     /// literal counts: `-3` parses as `Unary { Minus, Literal(3) }` rather than
     /// a negative literal, and rakudo ranks `d(-3)` on `int` exactly as it ranks
     /// `d(3)`.
@@ -2708,6 +2714,24 @@ impl Compiler {
                     | crate::value::ValueView::Str(_)
             )
         };
+        if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl {
+                name,
+                type_constraint: Some(type_constraint),
+                ..
+            } = stmt.as_ref()
+            && name == "__ANON_STATE__"
+            && crate::runtime::native_types::is_native_array_element_type(type_constraint)
+        {
+            return true;
+        }
+        if let Expr::Var(name) = arg
+            && self.local_types.get(name).is_some_and(|type_constraint| {
+                crate::runtime::native_types::is_native_array_element_type(type_constraint)
+            })
+        {
+            return true;
+        }
         // The literal shapes are recognised without folding, so they still
         // rank native in a unit that declares an operator (which turns folding
         // off entirely).

@@ -106,6 +106,23 @@ pub(crate) fn native_family_name(name: &str) -> &'static str {
     }
 }
 
+/// Return the dispatch family for a native type, or `None` for boxed and
+/// ordinary user-defined types.  Native widths within one family are equally
+/// specific during multi dispatch: `int`, `int8`, and `int32` are all the
+/// signed-integer family, while `uint*`, `num*`, and `str` form their own
+/// families.
+pub(crate) fn native_family(name: &str) -> Option<&'static str> {
+    match name {
+        "int" | "int8" | "int16" | "int32" | "int64" | "atomicint" | "long" | "longlong"
+        | "ssize_t" | "bool" => Some("int"),
+        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" | "ulong" | "ulonglong"
+        | "size_t" => Some("uint"),
+        "num" | "num32" | "num64" => Some("num"),
+        "str" => Some("str"),
+        _ => None,
+    }
+}
+
 /// Returns (min, max) bounds for a native integer type as BigInt values.
 /// `byte` is an alias for `uint8`.
 /// `int` is an alias for `int64`, `uint` is an alias for `uint64`.

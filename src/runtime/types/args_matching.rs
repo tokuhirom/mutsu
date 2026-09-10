@@ -113,6 +113,27 @@ impl Interpreter {
         args: &[Value],
         param_defs: &[ParamDef],
     ) -> bool {
+        self.args_match_param_types_inner(args, param_defs, false)
+    }
+
+    /// Match a signature while selecting among multi candidates.  Native type
+    /// constraints are deliberately stricter in this context: a boxed value
+    /// does not make a native-only candidate applicable, although ordinary
+    /// single-candidate binding still accepts and unboxes it.
+    pub(crate) fn args_match_multi_candidate(
+        &mut self,
+        args: &[Value],
+        param_defs: &[ParamDef],
+    ) -> bool {
+        self.args_match_param_types_inner(args, param_defs, true)
+    }
+
+    fn args_match_param_types_inner(
+        &mut self,
+        args: &[Value],
+        param_defs: &[ParamDef],
+        multi_dispatch: bool,
+    ) -> bool {
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
         // *later* param's `where {...}` / sub-signature / code-signature can
@@ -453,7 +474,15 @@ impl Interpreter {
                         {
                             return false;
                         }
-                    } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {
+                    } else if (multi_dispatch
+                        && !self.native_dispatch_arg_matches(
+                            &resolved_constraint,
+                            args,
+                            arg_idx,
+                            &dispatch_arg,
+                        ))
+                        || !self.type_matches_value(&resolved_constraint, &dispatch_arg)
+                    {
                         return false;
                     }
                     if is_coercion_constraint(&resolved_constraint) {
@@ -814,6 +843,58 @@ impl Interpreter {
             self.env = saved_env;
         }
         result
+    }
+
+    /// Whether a native constraint is applicable during multi dispatch.  The
+    /// value itself is boxed by the time this matcher runs, so provenance must
+    /// come from the source VarRef metadata or the call-site literal mask.
+    fn native_dispatch_arg_matches(
+        &self,
+        constraint: &str,
+        args: &[Value],
+        arg_idx: Option<usize>,
+        value: &Value,
+    ) -> bool {
+        let base = Self::constraint_base_name(constraint);
+        if crate::runtime::native_types::native_family(base).is_none() {
+            return true;
+        }
+
+        let source_name = arg_idx
+            .and_then(|idx| args.get(idx))
+            .and_then(varref_from_value)
+            .map(|(name, _)| name)
+            .or_else(|| {
+                arg_idx.and_then(|idx| {
+                    self.pending_call_arg_sources
+                        .as_ref()
+                        .and_then(|sources| sources.get(idx))
+                        .and_then(|name| name.as_ref())
+                        .cloned()
+                })
+            });
+        if let Some(source_name) = source_name {
+            let source_constraint = self.var_type_constraint(&source_name).or_else(|| {
+                self.var_type_constraint(source_name.trim_start_matches(['$', '@', '%', '&']))
+            });
+            if source_constraint.is_some_and(|source| {
+                crate::runtime::native_types::native_family(Self::constraint_base_name(&source))
+                    .is_some()
+            }) {
+                return true;
+            }
+        }
+
+        // A literal has no VarRef, but the compiler records its source shape
+        // separately so `multi f(int)` can outrank `multi f(Int)` for `f(5)`.
+        arg_idx.is_some_and(|idx| {
+            idx < 32
+                && self.literal_native_args & (1 << idx) != 0
+                && matches!(
+                    value.view(),
+                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
+                )
+        })
     }
 
     pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {

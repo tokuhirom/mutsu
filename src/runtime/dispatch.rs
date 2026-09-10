@@ -83,11 +83,19 @@ impl Interpreter {
                     // that `Int() $` and `Str() $` (both `(Any)`) are seen as
                     // the same shape and can be reported as ambiguous once
                     // ranking has tied them.
-                    Some(
-                        crate::runtime::types::parse_coercion_type(tc)
-                            .map(|(_, source)| source.unwrap_or("Any").to_string())
-                            .unwrap_or_else(|| tc.to_string()),
+                    let shape = crate::runtime::types::parse_coercion_type(tc)
+                        .map(|(_, source)| source.unwrap_or("Any").to_string())
+                        .unwrap_or_else(|| tc.to_string());
+                    // Rakudo ignores the width within a native family when
+                    // deciding whether equally-ranked candidates are
+                    // ambiguous: `int`, `int8`, and `int32` all describe the
+                    // same dispatch shape.
+                    let shape = crate::runtime::native_types::native_family(
+                        Self::constraint_base_name(&shape),
                     )
+                    .map(|family| format!("__native_{family}__"))
+                    .unwrap_or(shape);
+                    Some(shape)
                 } else if !p.slurpy && p.name.starts_with('@') {
                     Some("__sigil_@__".to_string())
                 } else if !p.slurpy && p.name.starts_with('%') {

@@ -1283,7 +1283,7 @@ impl Interpreter {
             // Find the first candidate whose signature matches the (possibly new) args.
             let mut matched_idx = None;
             for (i, cand) in candidates.iter().enumerate() {
-                if self.args_match_param_types(&call_args, &cand.param_defs) {
+                if self.args_match_multi_candidate(&call_args, &cand.param_defs) {
                     matched_idx = Some(i);
                     break;
                 }
@@ -1543,7 +1543,7 @@ impl Interpreter {
         // have dispatched to, skipping non-matching candidates.
         let mut matched_idx = None;
         for (i, cand) in candidates.iter().enumerate() {
-            if self.args_match_param_types(&orig_args, &cand.param_defs) {
+            if self.args_match_multi_candidate(&orig_args, &cand.param_defs) {
                 matched_idx = Some(i);
                 break;
             }

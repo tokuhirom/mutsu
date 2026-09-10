@@ -281,6 +281,36 @@ impl Compiler {
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
+        // The VM carries a loop parameter's type in `ForLoopSpec` for bind-time
+        // checking, but the compiler's call-site provenance mask also needs to
+        // know that a native loop parameter is native when it is passed to a
+        // multi candidate inside the body. Keep this temporary compiler-side
+        // entry scoped to the loop body so an untyped shadow cannot inherit the
+        // enclosing parameter's native shape.
+        let loop_param_types: Vec<(String, Option<String>)> = if let Some(def) = param_def
+            .as_ref()
+            .filter(|def| def.type_constraint.is_some())
+        {
+            let name = param.clone().unwrap_or_else(|| def.name.clone());
+            let old = self.local_types.insert(
+                name.clone(),
+                def.type_constraint.clone().unwrap_or_default(),
+            );
+            vec![(name, old)]
+        } else {
+            params
+                .iter()
+                .zip(params_def.iter())
+                .filter_map(|(name, def)| {
+                    let type_constraint = def.type_constraint.as_ref()?;
+                    let name = name.strip_prefix('\\').unwrap_or(name).to_string();
+                    let old = self
+                        .local_types
+                        .insert(name.clone(), type_constraint.clone());
+                    Some((name, old))
+                })
+                .collect()
+        };
         // A single scalar for-loop param is this compiled code's OWN
         // declaration, not something it could ever need to capture from an
         // enclosing scope -- record it so `compute_free_vars` (opcode.rs)
@@ -505,6 +535,13 @@ impl Compiler {
             }
         } else {
             self.compile_scope_restored_loop_body(&loop_body);
+        }
+        for (name, old) in loop_param_types {
+            if let Some(old) = old {
+                self.local_types.insert(name, old);
+            } else {
+                self.local_types.remove(&name);
+            }
         }
         self.callframe_block_depth -= 1;
         for n in &newly_registered {
