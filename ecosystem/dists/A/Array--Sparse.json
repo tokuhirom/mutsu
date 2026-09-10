@@ -1,0 +1,41 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Agnostic"
+    ],
+    "unresolved": []
+  },
+  "dist": "Array::Sparse",
+  "files": [],
+  "load": {
+    "Array::Sparse": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-99es008r/dist/Array-Sparse-0.0.13/lib/Array/Sparse.rakumod"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/RR/ARRAY_SPARSE/6851b8c18f9dfec544542421ba8ee15ec7602798.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.13"
+}

@@ -1,19 +1,2029 @@
 {
  "counts": {
-  "distributions": 0,
-  "graded": 0,
-  "green": 0
+  "corpus": 1623,
+  "distributions": 223,
+  "graded": 113,
+  "green": 59
  },
- "dist_parity": 0.0,
- "distributions": [],
- "file_parity": 0.0,
+ "coverage": 13.7,
+ "dist_parity": 52.2,
+ "distributions": [
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "AccountableBagHash",
+   "passed": 0,
+   "reason": "No such method 'STORE' for invocant of type 'AccountableBagHash'",
+   "status": "red",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::BaseCJK",
+   "passed": 0,
+   "reason": "base CJK is idempotent for 0x15A1DBAD",
+   "status": "red",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Cow",
+   "passed": 0,
+   "reason": "Use of Nil in string context",
+   "status": "red",
+   "version": "0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Text::UpsideDown",
+   "passed": 0,
+   "reason": "did ASCII text get rotated",
+   "status": "red",
+   "version": "0.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Actionable",
+   "passed": 0,
+   "reason": "No such method 'abs' for invocant of type 'Real'",
+   "status": "red",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Algorithm::Kruskal",
+   "passed": 0,
+   "reason": "Two terms in a row",
+   "status": "red",
+   "version": "*"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Algorithm::LCS",
+   "passed": 0,
+   "reason": "thread 'mutsu-main' (3) has overflowed its stack",
+   "status": "red",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 13,
+   "dist": "ANTLR4::Grammar",
+   "passed": 0,
+   "reason": "not ok 1 -",
+   "status": "red",
+   "version": "0.6.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "App::Stouch",
+   "passed": 0,
+   "reason": "Use of Nil in string context",
+   "status": "red",
+   "version": "0.3.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Uni",
+   "passed": 0,
+   "reason": "No such method 'path-spec' for invocant of type 'CompUnit::Repository::FileSystem'",
+   "status": "red",
+   "version": "1.0.4"
+  },
+  {
+   "axis": "guts",
+   "baseline": 1,
+   "dist": "are",
+   "passed": 0,
+   "reason": "Unsupported nqp:: op: nqp::getattr",
+   "status": "red",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Array::Circular",
+   "passed": 0,
+   "reason": "is circular() requires a compile-time constant value",
+   "status": "red",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "guts",
+   "baseline": 1,
+   "dist": "Array::Rounded",
+   "passed": 0,
+   "reason": "is 1 ok on Array::Rounded",
+   "status": "red",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "ASN::Grammar",
+   "passed": 0,
+   "reason": "Unable to parse regex; couldn't find delimiter",
+   "status": "red",
+   "version": "0.3.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "ASN::META",
+   "passed": 0,
+   "reason": "Unknown role: Set",
+   "status": "red",
+   "version": "0.5.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "Badger",
+   "passed": 0,
+   "reason": "Use of Nil in string context",
+   "status": "red",
+   "version": "1.2.0"
+  },
+  {
+   "axis": "guts",
+   "baseline": 2,
+   "dist": "Benchy",
+   "passed": 0,
+   "reason": "Type check failed in assignment to $!args; where constraint failed",
+   "status": "red",
+   "version": "1.001001"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Bencode",
+   "passed": 0,
+   "reason": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse",
+   "status": "red",
+   "version": "0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Business::CreditCard",
+   "passed": 0,
+   "reason": "5100-2222 3333 4414 -> NotACreditCard",
+   "status": "red",
+   "version": "0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Chinese",
+   "passed": 0,
+   "reason": "Unknown function: 且",
+   "status": "red",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "CLI::Graphing::BarChart",
+   "passed": 0,
+   "reason": "bad bare graph",
+   "status": "red",
+   "version": "1.0.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "CLI::Help",
+   "passed": 0,
+   "reason": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&proto'; expected Callable but got Str (proto)",
+   "status": "red",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "P5caller",
+   "passed": 0,
+   "reason": "did we get the right package",
+   "status": "red",
+   "version": "0.0.13"
+  },
+  {
+   "axis": "pure",
+   "baseline": 10,
+   "dist": "ABC",
+   "passed": 3,
+   "reason": "\"_D,5/4\" has base note D",
+   "status": "partial",
+   "version": "0.6.13"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "Acme::Anguish",
+   "passed": 2,
+   "reason": "Calling test() will never work with declared signature (Str:D $output-type, Str:D $op-name, Str:D $routine-name, &code, $expected, Str $test-name)",
+   "status": "partial",
+   "version": "1.001002"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Acme::Insult::Lala",
+   "passed": 1,
+   "reason": "No such method 'chars' for invocant of type 'Any'",
+   "status": "partial",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "ake",
+   "passed": 1,
+   "reason": "Task “fred” does not exist",
+   "status": "partial",
+   "version": "0.1.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Algorithm::Diff",
+   "passed": 2,
+   "reason": "Unknown function: keyGen",
+   "status": "partial",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 6,
+   "dist": "Algorithm::Evolutionary::Simple",
+   "passed": 2,
+   "reason": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@chromosome'; expected Positional but got Hash ({10 => (Any), 9 => (Any)})",
+   "status": "partial",
+   "version": "0.0.8"
+  },
+  {
+   "axis": "pure",
+   "baseline": 6,
+   "dist": "Algorithm::Treap",
+   "passed": 5,
+   "reason": "It should handle TOrder::ASC or TOrder::DESC",
+   "status": "partial",
+   "version": "0.10.3"
+  },
+  {
+   "axis": "native",
+   "baseline": 2,
+   "dist": "App::Ariza",
+   "passed": 1,
+   "reason": "versions compare numerically without an integer-size limit",
+   "status": "partial",
+   "version": "0.2.4"
+  },
+  {
+   "axis": "native",
+   "baseline": 7,
+   "dist": "Archive::Libarchive",
+   "passed": 6,
+   "reason": "Cannot resolve caller filetype(Archive::Libarchive::Entry:D: ); none of these signatures matches:",
+   "status": "partial",
+   "version": "0.0.17"
+  },
+  {
+   "axis": "native",
+   "baseline": 6,
+   "dist": "Archive::Libarchive::Raw",
+   "passed": 5,
+   "reason": "close writer",
+   "status": "partial",
+   "version": "0.1.5"
+  },
+  {
+   "axis": "guts",
+   "baseline": 2,
+   "dist": "Archive::Tar::PP",
+   "passed": 1,
+   "reason": "Unsupported nqp:: op: nqp::stat",
+   "status": "partial",
+   "version": "v0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Array::Shaped::Console",
+   "passed": 1,
+   "reason": "Constraint type check failed in binding to parameter '@array'; expected anonymous constraint to be met but got Array (Array.new(:shape(2,), [[-1, 1], [1, -1]]))",
+   "status": "partial",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "as-cli-arguments",
+   "passed": 1,
+   "reason": "do @arguments give foo bar baz?",
+   "status": "partial",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Attribute::Lazy",
+   "passed": 2,
+   "reason": "Cannot resolve caller trait_mod:<will>(Any:D); none of these signatures matches:",
+   "status": "partial",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "native",
+   "baseline": 3,
+   "dist": "Audio::Convert::Samplerate",
+   "passed": 2,
+   "reason": "Error while importing from 'NativeCall': no such tag 'TEST' declared",
+   "status": "partial",
+   "version": "0.0.11"
+  },
+  {
+   "axis": "native",
+   "baseline": 3,
+   "dist": "Audio::Fingerprint::Chromaprint",
+   "passed": 2,
+   "reason": "Error while importing from 'NativeCall': no such tag 'TEST' declared",
+   "status": "partial",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "native",
+   "baseline": 3,
+   "dist": "Audio::PortAudio",
+   "passed": 2,
+   "reason": "Error while importing from 'NativeCall': no such tag 'TEST' declared",
+   "status": "partial",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "native",
+   "baseline": 5,
+   "dist": "Audio::PortMIDI",
+   "passed": 2,
+   "reason": "Error while importing from 'NativeCall': no such tag 'TEST' declared",
+   "status": "partial",
+   "version": "0.0.12"
+  },
+  {
+   "axis": "native",
+   "baseline": 6,
+   "dist": "Audio::Sndfile",
+   "passed": 2,
+   "reason": "Error while importing from 'NativeCall': no such tag 'TEST' declared",
+   "status": "partial",
+   "version": "0.0.16"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Automata::Cellular",
+   "passed": 1,
+   "reason": "Numeric rule",
+   "status": "partial",
+   "version": "0.2.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Bench",
+   "passed": 1,
+   "reason": "Timing test",
+   "status": "partial",
+   "version": "0.2.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Benchmark",
+   "passed": 1,
+   "reason": "Type check failed for return value; expected Hash:D[Duration:D] but got Hash (max\t-0.00004673004150390625",
+   "status": "partial",
+   "version": "2.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Bin::Utils",
+   "passed": 2,
+   "reason": "Unknown function: checkrules",
+   "status": "partial",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "BinaryHeap",
+   "passed": 1,
+   "reason": "No such method 'BIND-POS' for invocant of type 'Any'",
+   "status": "partial",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "BSON::Simple",
+   "passed": 1,
+   "reason": "No implementation of keys method found for Hash::Ordered.",
+   "status": "partial",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "BTree",
+   "passed": 1,
+   "reason": "Impossible coercion from 'Str' into 'IntTree': no acceptable coercion method found",
+   "status": "partial",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 9,
+   "dist": "C::Parser",
+   "passed": 1,
+   "reason": "gives a Grammar",
+   "status": "partial",
+   "version": "0.3.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 7,
+   "dist": "Cache::Async",
+   "passed": 6,
+   "reason": "Cache entry should never be older than .5s",
+   "status": "partial",
+   "version": "0.3.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "CLDR::List",
+   "passed": 1,
+   "reason": "root: 3 Num elements",
+   "status": "partial",
+   "version": "*"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "Prime::Factor",
+   "passed": 1,
+   "reason": "divisors() not defined for Int parameters. Coerce to Int before calling.",
+   "status": "partial",
+   "version": "0.4.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Trie",
+   "passed": 1,
+   "reason": "Can never assign default value Bool (True) to attribute '$!of', it expects: Mu:U",
+   "status": "partial",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "AccessorFacade",
+   "passed": 0,
+   "reason": "AccessorFacade: Runtime error: Failed to parse module 'AccessorFacade': X::Undeclared::Symbols: Undeclared routine:",
+   "status": "blocked_load",
+   "version": "0.1.2"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "AI::FANN",
+   "passed": 0,
+   "reason": "AI::FANN::Raw: No such method 'hash' for invocant of type 'Stash'",
+   "status": "blocked_load",
+   "version": "0.2.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air",
+   "passed": 0,
+   "reason": "Air::Base::Tags: Unknown role: Str",
+   "status": "blocked_load",
+   "version": "0.1.32"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::Donate",
+   "passed": 0,
+   "reason": "Air::Plugin::Donate: Unknown role: Str",
+   "status": "blocked_load",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::Hilite",
+   "passed": 0,
+   "reason": "Air::Plugin::Hilite: Unknown role: Str",
+   "status": "blocked_load",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Algorithm::Elo",
+   "passed": 0,
+   "reason": "Algorithm::Elo: Runtime error: Failed to parse module 'Algorithm::Elo': X::Redeclaration: Redeclaration of symbol '$left'",
+   "status": "blocked_load",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Algorithm::KDimensionalTree",
+   "passed": 0,
+   "reason": "Algorithm::KDimensionalTree: circular module dependency detected: Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::D",
+   "status": "blocked_load",
+   "version": "0.1.2"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "annotations",
+   "passed": 0,
+   "reason": "annotations::core: Runtime error: Failed to parse module 'annotations::core': X::Syntax::Malformed: Malformed my (did you mean to declare a sigilless \\var or $v",
+   "status": "blocked_load",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "antlia",
+   "passed": 0,
+   "reason": "Antlia::CLI: No such method 'slurp' for invocant of type 'Any'",
+   "status": "blocked_load",
+   "version": "0.1.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "APISports::Football",
+   "passed": 0,
+   "reason": "APISports::Football::Club: Unknown role: CustomUnmarshaller",
+   "status": "blocked_load",
+   "version": "0.2.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::ByWord",
+   "passed": 0,
+   "reason": "App::ByWord: Variable $.dwSize used where no 'self' is available",
+   "status": "blocked_load",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Ebread",
+   "passed": 0,
+   "reason": "App::Ebread::Epub: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ho3pu70h/dist/dist/lib/App/Ebread/Epub.rakumod",
+   "status": "blocked_load",
+   "version": "0.2.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Ecosystems",
+   "passed": 0,
+   "reason": "App::Ecosystems: Runtime error: Failed to parse module 'Ecosystem': Precedence of , is too loose to use inside ?? !!; please parenthesize",
+   "status": "blocked_load",
+   "version": "0.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Lorea",
+   "passed": 0,
+   "reason": "App::Lorea: Runtime error: Failed to parse module 'App::Lorea': X::Syntax::Missing: Missing block",
+   "status": "blocked_load",
+   "version": "0.2.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Mi6",
+   "passed": 0,
+   "reason": "App::Mi6: X::InvalidType: Invalid typename 'TAP::Entry::Handler'",
+   "status": "blocked_load",
+   "version": "3.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::MoarVM::Debug",
+   "passed": 0,
+   "reason": "App::MoarVM::Debug: An exception occurred while evaluating a CHECK",
+   "status": "blocked_load",
+   "version": "0.2"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "App::MoarVM::HeapAnalyzer::Model",
+   "passed": 0,
+   "reason": "App::MoarVM::HeapAnalyzer::Model: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-otoeptq0/dist/App-MoarVM-HeapAnalyzer-Model-0.2/l",
+   "status": "blocked_load",
+   "version": "0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::ModuleSnap",
+   "passed": 0,
+   "reason": "App::ModuleSnap: Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+   "status": "blocked_load",
+   "version": "0.0.14"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Moneymoor",
+   "passed": 0,
+   "reason": "App::Moneymoor::Handlers::Boot: Invalid typename 'Sizing' in parameter declaration.",
+   "status": "blocked_load",
+   "version": "0.4.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Prove6",
+   "passed": 0,
+   "reason": "App::Prove6: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-uyycyxb8/dist/App-Prove6-0.0.18/lib/App/Prove6.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.18"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "App::RaCoCo",
+   "passed": 0,
+   "reason": "App::Racoco: Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+   "status": "blocked_load",
+   "version": "2.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Racoco::Report::ReporterCoveralls",
+   "passed": 0,
+   "reason": "App::Racoco::Report::ReporterCoveralls: Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+   "status": "blocked_load",
+   "version": "2.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::ShowPath",
+   "passed": 0,
+   "reason": "App::ShowPath: Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (correspond",
+   "status": "blocked_load",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Archive::SimpleZip",
+   "passed": 0,
+   "reason": "Archive::SimpleZip: An exception occurred while evaluating a CHECK",
+   "status": "blocked_load",
+   "version": "0.8.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Arithmetic::PaperAndPencil",
+   "passed": 0,
+   "reason": "Arithmetic::PaperAndPencil: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-0dvb_o2s/dist/dist/lib/Arithmetic/PaperAndPencil/Number",
+   "status": "blocked_load",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Array::Agnostic",
+   "passed": 0,
+   "reason": "Array::Agnostic: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-boklcnl1/dist/Array-Agnostic-0.0.18/lib/Array/Agnostic.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.18"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Array::Sorted::Map",
+   "passed": 0,
+   "reason": "Array::Sorted::Map: Unsupported nqp:: op: nqp::list",
+   "status": "blocked_load",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Array::Sorted::Util",
+   "passed": 0,
+   "reason": "Array::Sorted::Util: Unsupported nqp:: op: nqp::list",
+   "status": "blocked_load",
+   "version": "0.0.11"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Array::Sparse",
+   "passed": 0,
+   "reason": "Array::Sparse: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-99es008r/dist/Array-Sparse-0.0.13/lib/Array/Sparse.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.13"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "ASN::BER",
+   "passed": 0,
+   "reason": "ASN::Parser: Unknown role: Set",
+   "status": "blocked_load",
+   "version": "0.7.3"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Asserter",
+   "passed": 0,
+   "reason": "Asserter: Could not find QAST in:",
+   "status": "blocked_load",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "ASTQuery",
+   "passed": 0,
+   "reason": "ASTQuery::Match: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-o04cxcg8/dist/ASTQuery-0.0.7/lib/ASTQuery/Match.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Astro::Utils",
+   "passed": 0,
+   "reason": "Astro::Utils: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Math__FractionalPart/Math-FractionalPart-0.0.6/lib/Math/FractionalPart.rakumo",
+   "status": "blocked_load",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Async::Workers",
+   "passed": 0,
+   "reason": "Async::Workers: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-m8t4iyyr/dist/Async-Workers-v0.3.1/lib/Async/Workers.rakumod",
+   "status": "blocked_load",
+   "version": "0.3.1"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "AttrX::Mooish",
+   "passed": 0,
+   "reason": "AttrX::Mooish: An exception occurred while evaluating a CHECK",
+   "status": "blocked_load",
+   "version": "1.0.10"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Audio::Encode::LameMP3",
+   "passed": 0,
+   "reason": "Audio::Encode::LameMP3: Runtime error: Failed to parse module 'AccessorFacade': X::Undeclared::Symbols: Undeclared routine:",
+   "status": "blocked_load",
+   "version": "0.0.15"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Audio::Hydrogen",
+   "passed": 0,
+   "reason": "Audio::Hydrogen: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Audio::Icecast",
+   "passed": 0,
+   "reason": "Audio::Icecast: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Audio::Libshout",
+   "passed": 0,
+   "reason": "Audio::Libshout: Runtime error: Failed to parse module 'AccessorFacade': X::Undeclared::Symbols: Undeclared routine:",
+   "status": "blocked_load",
+   "version": "0.0.15"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Audio::Playlist::JSPF",
+   "passed": 0,
+   "reason": "Audio::Playlist::JSPF: Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+   "status": "blocked_load",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Backtrace::Files",
+   "passed": 0,
+   "reason": "Backtrace::Files: No such method 'key' for invocant of type 'PseudoStash'",
+   "status": "blocked_load",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "BDD::Behave",
+   "passed": 0,
+   "reason": "BDD::Behave::DSL: Unknown function: of",
+   "status": "blocked_load",
+   "version": "0.9.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "BDD::Behave::Playwright",
+   "passed": 0,
+   "reason": "BDD::Behave::Playwright: Unknown function: of",
+   "status": "blocked_load",
+   "version": "0.9.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "BigRoot",
+   "passed": 0,
+   "reason": "BigRoot: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-eq5c77qc/dist/BigRoot-0.1.1/lib/BigRoot.rakumod",
+   "status": "blocked_load",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Bitcoin",
+   "passed": 0,
+   "reason": "Bitcoin: Variable $.x used where no 'self' is available",
+   "status": "blocked_load",
+   "version": "0.7.1"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "Bits",
+   "passed": 0,
+   "reason": "Bits: An exception occurred while evaluating a CHECK",
+   "status": "blocked_load",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Blogin",
+   "passed": 0,
+   "reason": "Blogin: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ldtfot8g/dist/dist/lib/Blogin/Markdown.rakumod",
+   "status": "blocked_load",
+   "version": "0.9.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "BuildToolchainRepo",
+   "passed": 0,
+   "reason": "BuildToolchainRepo::Lang::CProbeHelpers: SWEEP-TIMEOUT",
+   "status": "blocked_load",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CellularAutomata",
+   "passed": 0,
+   "reason": "CellularAutomata: circular module dependency detected: CellularAutomata -> CellularAutomata::Scan -> Data::Transformers -> Data::TypeSystem::Predicates -> Data:",
+   "status": "blocked_load",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CRDT",
+   "passed": 0,
+   "reason": "CRDT: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.16"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Font::Resources",
+   "passed": 0,
+   "reason": "CSS::Font::Resources::Source: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/CSS__Properties/CSS-Properties-0.10.9/lib/CSS/Properties.raku",
+   "status": "blocked_load",
+   "version": "0.0.11"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Grammar",
+   "passed": 0,
+   "reason": "CSS::Grammar::AST: Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSSelector' declared",
+   "status": "blocked_load",
+   "version": "0.4.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Minifier",
+   "passed": 0,
+   "reason": "CSS::Minifier: Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+   "status": "blocked_load",
+   "version": "0.0.14"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "CSS::Module",
+   "passed": 0,
+   "reason": "CSS::Module: Inconsistent class hierarchy for CSS::Grammar::CSS21",
+   "status": "blocked_load",
+   "version": "0.7.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Module::CSS3::Selectors",
+   "passed": 0,
+   "reason": "CSS::Module::CSS3::Selectors: Inconsistent class hierarchy for CSS::Grammar::CSS21",
+   "status": "blocked_load",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Nested",
+   "passed": 0,
+   "reason": "CSS::Nested: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-ilba_6s2/dist/CSS-Nested-0.0.1/lib/CSS/Nested.rakumod",
+   "status": "blocked_load",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "CSS::Properties",
+   "passed": 0,
+   "reason": "CSS::Font: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-pf627hyp/dist/CSS-Properties-0.10.9/lib/CSS/Properties.rakumod",
+   "status": "blocked_load",
+   "version": "0.10.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Selector::To::XPath",
+   "passed": 0,
+   "reason": "CSS::Selector::To::XPath: Inconsistent class hierarchy for CSS::Grammar::CSS21",
+   "status": "blocked_load",
+   "version": "0.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Specification",
+   "passed": 0,
+   "reason": "CSS::Specification: Inconsistent class hierarchy for CSS::Grammar::CSS21",
+   "status": "blocked_load",
+   "version": "0.5.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Stylesheet",
+   "passed": 0,
+   "reason": "CSS::Media: ===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-sjpdjvb0/dist/CSS-Stylesheet-0.1.5/lib/CSS/Media.rakumod",
+   "status": "blocked_load",
+   "version": "0.1.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::TagSet",
+   "passed": 0,
+   "reason": "CSS::TagSet::XHTML: Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:",
+   "status": "blocked_load",
+   "version": "0.1.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS::Writer",
+   "passed": 0,
+   "reason": "CSS::Writer: Inconsistent class hierarchy for CSS::Grammar::CSS21",
+   "status": "blocked_load",
+   "version": "0.3.3"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "String::Utils",
+   "passed": 0,
+   "reason": "String::Utils: An exception occurred while evaluating a CHECK",
+   "status": "blocked_load",
+   "version": "0.0.40"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "AI::Gator",
+   "passed": 0,
+   "reason": "missing dependency: Unicode::UTF8",
+   "status": "blocked_dep",
+   "version": "0.0.14"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "Air-Plugin-RakuDoc",
+   "passed": 0,
+   "reason": "missing dependency: RakuAST::Deparse::Highlight",
+   "status": "blocked_dep",
+   "version": "0.2.1"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::IRC::Log",
+   "passed": 0,
+   "reason": "missing dependency: has",
+   "status": "blocked_dep",
+   "version": "0.0.54"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::Rak",
+   "passed": 0,
+   "reason": "missing dependency: as, has, path",
+   "status": "blocked_dep",
+   "version": "0.3.20"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::Rak::Complete",
+   "passed": 0,
+   "reason": "missing dependency: as, has, path",
+   "status": "blocked_dep",
+   "version": "0.0.13"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::Rak::Markdown",
+   "passed": 0,
+   "reason": "missing dependency: as, has, path",
+   "status": "blocked_dep",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::Raku::Log",
+   "passed": 0,
+   "reason": "missing dependency: has",
+   "status": "blocked_dep",
+   "version": "0.0.37"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::RakuCron",
+   "passed": 0,
+   "reason": "missing dependency: https",
+   "status": "blocked_dep",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "App::samaki",
+   "passed": 0,
+   "reason": "missing dependency: Unicode::UTF8",
+   "status": "blocked_dep",
+   "version": "0.0.34"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "Ask",
+   "passed": 0,
+   "reason": "missing dependency: Digest::SHA",
+   "status": "blocked_dep",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "Chemistry::Elements",
+   "passed": 0,
+   "reason": "missing dependency: Test::Meta",
+   "status": "blocked_dep",
+   "version": "1.001001"
+  },
+  {
+   "axis": "",
+   "baseline": 0,
+   "dist": "CLI::Ecosystem",
+   "passed": 0,
+   "reason": "missing dependency: shorten",
+   "status": "blocked_dep",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 9,
+   "dist": "Abbreviations",
+   "passed": 9,
+   "reason": "",
+   "status": "green",
+   "version": "2.2.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Don't",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Acme::Meow",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Rautavistic::Sort",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Scrub",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.2.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Acme::Test::Module::Zef",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "guts",
+   "baseline": 1,
+   "dist": "actions",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Adverb::Eject",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Air::Examples",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.26"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Air::Play",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.12"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Algorithm::BinaryIndexedTree",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.05"
+  },
+  {
+   "axis": "native",
+   "baseline": 1,
+   "dist": "Algorithm::LibSVM",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.20"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Algorithm::Soundex",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "*"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "Algorithm::TernarySearchTree",
+   "passed": 4,
+   "reason": "",
+   "status": "green",
+   "version": "0.04"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Algorithm::ZobristHashing",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.03"
+  },
+  {
+   "axis": "pure",
+   "baseline": 6,
+   "dist": "AlgorithmsIT",
+   "passed": 6,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "allow-no",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "App::APOTD",
+   "passed": 4,
+   "reason": "",
+   "status": "green",
+   "version": "1.0.9"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Backup",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Browser",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Doc-N-Save",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.14"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::FIT2GPX",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::fix.raku",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Gitstatus",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Heater",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::InstallerMaker::WiX",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::JSONDiff",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::pack.raku",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.53"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "App::RakuDocToPDF",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Rakus",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "App::SudokuHelper",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.9.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "App::termie",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.2.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "App::tmeta",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 10,
+   "dist": "App::Unicode::Mangle",
+   "passed": 10,
+   "reason": "",
+   "status": "green",
+   "version": "1.0.7"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::upgrade-raku.raku",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "App::Workflows::Github",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.3.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Archive::Ar",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Array::Unsorted::Map",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "ASCII::To::Uni",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "Astro::Sunrise",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Attribute::Predicate",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 5,
+   "dist": "Audio::Liquidsoap",
+   "passed": 5,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 4,
+   "dist": "Audio::Silan",
+   "passed": 4,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "auto-dynamic",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "AVL-Tree",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "AWS::SNS::Notification",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "bird",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.11"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "Brazilian::FederalDocuments",
+   "passed": 3,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 1,
+   "dist": "BusyIndicator",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.6.2"
+  },
+  {
+   "axis": "guts",
+   "baseline": 7,
+   "dist": "CBOR::Simple",
+   "passed": 7,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 3,
+   "dist": "CheckSocket",
+   "passed": 3,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "Class::Loader::Dynamic",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "CLI::Version",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "CPAN::Uploader::Tiny",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 1,
+   "dist": "CSV-Autoclass",
+   "passed": 1,
+   "reason": "",
+   "status": "green",
+   "version": "0.2.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "CSV-AutoClass",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 2,
+   "dist": "CSV::Native",
+   "passed": 2,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 5,
+   "dist": "CSV::Parser",
+   "passed": 5,
+   "reason": "",
+   "status": "green",
+   "version": "0.1.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 9,
+   "dist": "CSV::Table",
+   "passed": 9,
+   "reason": "",
+   "status": "green",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "ACME::Fez",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Acme::Overreact",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::Asciinema",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::MailForm",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::Rakudoc",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Air::Plugin::Wordcloud",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Algorithm::KdTree",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.05"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Algorithm::XGBoost",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.6"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Anolis",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "1.0.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "apotd",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "1.0.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::AizuOnlineJudge",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "1.001001"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Cal",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.9.1"
+  },
+  {
+   "axis": "guts",
+   "baseline": 0,
+   "dist": "App::Crag",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.57"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Nopaste",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "1.001001"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::pixel::pick",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::pixelpick",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "1.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::SerializerPerf",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.5"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "App::Tasks",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.4.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Whiff",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.1.0"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App::Zef-Deps",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.9.8"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "App:Racl",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Async::Command",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.2.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Audio::TagLib",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.7"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Base64::Native",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.10"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "Bitcoin::Core::Secp256k1",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.28"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "BSON",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.13.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Calendar",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.4"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Chart::EasyGnuplot",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.1.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "Chart::Gnuplot",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.23"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CLI::AWS::EC2-Simple",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.11"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CLI::Wordpress",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CLI::Wordpress::Migrator",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.0.1"
+  },
+  {
+   "axis": "native",
+   "baseline": 0,
+   "dist": "CRoaring",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.2.3"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CSS",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "0.1.2"
+  },
+  {
+   "axis": "pure",
+   "baseline": 0,
+   "dist": "CWT-Repository-Hash",
+   "passed": 0,
+   "reason": "",
+   "status": "no_baseline",
+   "version": "v0.0.3"
+  }
+ ],
+ "file_parity": 65.3,
  "generated_from": "ecosystem/dists",
  "has_chart": false,
  "measured": {
-  "date": null,
-  "host": null,
-  "mutsu_commit": null,
-  "mutsu_version": null,
-  "raku_version": null
+  "date": "2026-09-10",
+  "host": "linux-x86_64",
+  "mutsu_commit": "671a11d",
+  "mutsu_version": "0.23.0",
+  "raku_version": "2026.07"
  }
 }

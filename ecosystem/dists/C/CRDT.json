@@ -1,0 +1,53 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "String::Utils",
+      "UUID"
+    ],
+    "unresolved": []
+  },
+  "dist": "CRDT",
+  "files": [],
+  "load": {
+    "CRDT": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "CRDT::Storage": "An exception occurred while evaluating a CHECK",
+    "CRDT::Timestamp": "ok",
+    "G-Counter": "Runtime error: Failed to parse module 'G-Counter': X::Syntax::Signature::InvocantNotAllowed: Can only use the : invocant marker in the signature for a method",
+    "G-Set": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "LWW-Element-Set": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "LWW-Hash": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "LWW-Register": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "OR-Set": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "P2-Set": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod",
+    "PN-Counter": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-jlfivw47/dist/CRDT-0.0.16/lib/CRDT.rakumod"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/RD/CRDT/ef8294cbc8534369b1a7eecc6b54a397692ebb65.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.16"
+}

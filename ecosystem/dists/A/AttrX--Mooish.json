@@ -1,0 +1,57 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "AttrX::Mooish",
+  "files": [],
+  "load": {
+    "AttrX::Mooish": "An exception occurred while evaluating a CHECK",
+    "AttrX::Mooish::Attribute": "ok",
+    "AttrX::Mooish::ClassHOW": "ok",
+    "AttrX::Mooish::Helper": "ok",
+    "AttrX::Mooish::ParametricRoleHOW": "ok",
+    "AttrX::Mooish::X": "No such private method 'wrappee-message' for invocant of type 'AttrX::Mooish::X::StoreValue'",
+    "AttrX::Mooish::X::Wrapper": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/TT/ATTRX_MOOISH/9f8227d0681bf87ccfb0771db4f35dd86e0446f6.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.0.10"
+}

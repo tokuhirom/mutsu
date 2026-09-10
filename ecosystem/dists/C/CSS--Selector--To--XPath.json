@@ -1,0 +1,44 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Grammar",
+      "CSS::Module::CSS3::Selectors",
+      "JSON::Fast",
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::Selector::To::XPath",
+  "files": [],
+  "load": {
+    "CSS::Selector::To::XPath": "Inconsistent class hierarchy for CSS::Grammar::CSS21"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_SELECTOR_TO_XPATH/d693d2f5d2bf110fc96edc146bafddda25284801.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.9"
+}

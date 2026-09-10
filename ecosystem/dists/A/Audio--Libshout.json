@@ -1,0 +1,42 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AccessorFacade",
+      "CheckSocket"
+    ],
+    "unresolved": []
+  },
+  "dist": "Audio::Libshout",
+  "files": [],
+  "load": {
+    "Audio::Libshout": "Runtime error: Failed to parse module 'AccessorFacade': X::Undeclared::Symbols: Undeclared routine:"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/UD/AUDIO_LIBSHOUT/47e3c61494736c7eb26a236a64c30d4f6959cc74.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.15"
+}

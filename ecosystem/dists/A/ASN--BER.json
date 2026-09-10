@@ -1,0 +1,43 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "ASN::BER",
+  "files": [],
+  "load": {
+    "ASN::Parser": "Unknown role: Set",
+    "ASN::Parser::Async": "Unknown role: Set",
+    "ASN::Serializer": "Unknown role: Set",
+    "ASN::Serializer::Async": "Unknown role: Set",
+    "ASN::Types": "Unknown role: Set"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/SN/ASN_BER/e660e2bdd840a3432451a948bdabb9d7dbf7e451.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.7.3"
+}

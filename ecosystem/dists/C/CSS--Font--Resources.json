@@ -1,0 +1,70 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Grammar",
+      "CSS::Module",
+      "CSS::Module::CSS3::Selectors",
+      "CSS::Properties",
+      "CSS::Specification",
+      "CSS::Writer",
+      "Color",
+      "Color::Names",
+      "Digest",
+      "File::Directory::Tree",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "LWP::Simple",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Method::Also",
+      "Temp::Path",
+      "Test::META",
+      "Testo",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::Font::Resources",
+  "files": [],
+  "load": {
+    "CSS::Font::Resources": "raku_also_fails",
+    "CSS::Font::Resources::Source": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/CSS__Properties/CSS-Properties-0.10.9/lib/CSS/Properties.rakumod",
+    "CSS::Font::Resources::Source::Local": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/CSS__Properties/CSS-Properties-0.10.9/lib/CSS/Properties.rakumod",
+    "CSS::Font::Resources::Source::Url": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/CSS__Properties/CSS-Properties-0.10.9/lib/CSS/Properties.rakumod",
+    "CSS::URI": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_FONT_RESOURCES/be6fd4d3d2e949e6a9e9482e04ac9f95a13c0211.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

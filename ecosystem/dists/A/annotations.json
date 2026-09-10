@@ -15,10 +15,11 @@
     "annotations::how": "ok"
   },
   "measured": {
+    "attempts": 2,
     "date": "2026-09-10",
     "harness": 1,
     "host": "linux-x86_64",
-    "mutsu_commit": "9c41901",
+    "mutsu_commit": "12d29a1",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

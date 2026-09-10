@@ -1,0 +1,68 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "App::RaCoCo",
+      "DateTime::Parse",
+      "Digest",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Test::Util::ServerPort",
+      "URI",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Racoco::Report::ReporterCoveralls",
+  "files": [],
+  "load": {
+    "App::Racoco::Report::ReporterCoveralls": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::CI": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::Executor": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::Externals": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::Factory": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::Git": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::MD5": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
+    "App::Racoco::Report::ReporterCoveralls::Transport": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RACOCO_REPORT_REPORTERCOVERALLS/4a0f89f232154e652870f1e0ec729c63f8374fdf.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.0.2"
+}

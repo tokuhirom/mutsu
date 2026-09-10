@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AttrX::Lazy",
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Math::Matrix",
+      "Slang::Tuxic",
+      "Slangify",
+      "Test::META",
+      "Text::CSV",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Chemistry::Stoichiometry",
+  "files": [],
+  "load": {
+    "Chemistry::Stoichiometry": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Math__Matrix/dist/lib/Math/Matrix.rakumod",
+    "Chemistry::Stoichiometry::Actions::EquationBalance": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Math__Matrix/dist/lib/Math/Matrix.rakumod",
+    "Chemistry::Stoichiometry::Actions::EquationMatrix": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Math__Matrix/dist/lib/Math/Matrix.rakumod",
+    "Chemistry::Stoichiometry::Actions::MolecularMass": "No such method 'instance' for invocant of type 'Int'",
+    "Chemistry::Stoichiometry::Actions::WL::System": "ok",
+    "Chemistry::Stoichiometry::Grammar": "ok",
+    "Chemistry::Stoichiometry::Grammar::ChemicalElement": "ok",
+    "Chemistry::Stoichiometry::Grammar::ChemicalEquation": "ok",
+    "Chemistry::Stoichiometry::ResourceAccess": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/HE/CHEMISTRY_STOICHIOMETRY/351810d181a39429b020e9309dc8501e056a09ae.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.10"
+}

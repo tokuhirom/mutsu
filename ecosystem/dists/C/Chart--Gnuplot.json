@@ -1,0 +1,335 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Chart::Gnuplot",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 15.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-terminal.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-plot.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-splot.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-label.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-range.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-tics.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-legend.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-border.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-grid.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-timestamp.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-rectangle.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-ellipse.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-circle.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-polygon.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-title.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-arrow.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-multiplot.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-gnuplot-bin.t",
+      "raku": {
+        "first_failure": "Unhandled exception in code scheduled on thread 4",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-no-bundle.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-16ve81xl/dist/Chart-Gnuplot-0.0.23/t/20-no-bundle.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Chart::Gnuplot": "ok",
+    "Chart::Gnuplot::Arrow": "ok",
+    "Chart::Gnuplot::Border": "ok",
+    "Chart::Gnuplot::CustomBuilder": "raku_also_fails",
+    "Chart::Gnuplot::Grid": "ok",
+    "Chart::Gnuplot::Label": "ok",
+    "Chart::Gnuplot::Legend": "ok",
+    "Chart::Gnuplot::Object": "ok",
+    "Chart::Gnuplot::Output": "ok",
+    "Chart::Gnuplot::Range": "ok",
+    "Chart::Gnuplot::Subset": "ok",
+    "Chart::Gnuplot::Terminal": "ok",
+    "Chart::Gnuplot::Tics": "ok",
+    "Chart::Gnuplot::Timestamp": "ok",
+    "Chart::Gnuplot::Title": "ok",
+    "Chart::Gnuplot::Util": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/HA/CHART_GNUPLOT/8aefb6491be42de07c76db873bcd85200ea7e06c.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.23"
+}

@@ -1,0 +1,193 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "CSS::Font::Resources",
+      "CSS::Grammar",
+      "CSS::Module",
+      "CSS::Module::CSS3::Selectors",
+      "CSS::Properties",
+      "CSS::Selector::To::XPath",
+      "CSS::Specification",
+      "CSS::Stylesheet",
+      "CSS::TagSet",
+      "CSS::Writer",
+      "Color",
+      "Color::Names",
+      "Digest",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "LWP::Simple",
+      "LibXML",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Method::Also",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Temp::Path",
+      "Test::META",
+      "Testo",
+      "URI",
+      "W3C::DOM",
+      "XML",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/css-basic.t",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 90.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/import.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/import.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 39.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/link-status.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/link-status.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/link.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/link.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/selector-specificity.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/selector-specificity.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tag-set-pango.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/tag-set-pango.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tag-set-pdf.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/tag-set-pdf.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tag-set-xhtml.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-4qjfij06/dist/CSS-0.1.2/t/tag-set-xhtml.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "CSS": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS/223d300286cae912774bf1948d039a928c0730a2.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.2"
+}

@@ -1,0 +1,97 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Log::Async",
+      "OO::Monitors",
+      "Readline",
+      "Terminal::ANSI"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::tmeta",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 22.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-replace-vars.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "tmeta::actions": "ok",
+    "tmeta::commander": "ok",
+    "tmeta::commander::godot": "ok",
+    "tmeta::commander::shellish": "ok",
+    "tmeta::commands": "ok",
+    "tmeta::tester": "ok",
+    "tmeta::tmux": "ok",
+    "tmeta::utils": "ok",
+    "tmeta::waiter": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_TMETA/5a2c385233561005da55ebc860906708d7ef1104.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 7,
+    "baseline_files": 2,
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.1.1"
+}

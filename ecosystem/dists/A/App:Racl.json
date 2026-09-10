@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "FatRatStr",
+      "Grammar::Debugger",
+      "HTTP::Tiny",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Math::Constants",
+      "OpenSSL",
+      "Physics::Constants",
+      "Physics::Error",
+      "Physics::Measure",
+      "Physics::Navigation",
+      "Physics::Unit",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "URI",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "App:Racl",
+  "files": [],
+  "load": {
+    "App::Ralc": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APPRACL/d9d7a2bb3d3f64bc22425a89d1e3027d5d5b69ec.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

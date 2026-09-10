@@ -1,0 +1,73 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Font::Resources",
+      "CSS::Grammar",
+      "CSS::Module",
+      "CSS::Module::CSS3::Selectors",
+      "CSS::Properties",
+      "CSS::Selector::To::XPath",
+      "CSS::Specification",
+      "CSS::Stylesheet",
+      "CSS::Writer",
+      "Color",
+      "Color::Names",
+      "Digest",
+      "File::Directory::Tree",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "LWP::Simple",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Method::Also",
+      "Temp::Path",
+      "Test::META",
+      "Testo",
+      "URI",
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::TagSet",
+  "files": [],
+  "load": {
+    "CSS::TagSet": "ok",
+    "CSS::TagSet::Pango": "raku_also_fails",
+    "CSS::TagSet::TaggedPDF": "raku_also_fails",
+    "CSS::TagSet::XHTML": "Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_TAGSET/095dbd2cdc57ece26ec7cdf31726aabd1d0a88df.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.4"
+}

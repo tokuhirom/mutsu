@@ -1,0 +1,54 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Arithmetic::PaperAndPencil",
+  "files": [],
+  "load": {
+    "Arithmetic::PaperAndPencil": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-0dvb_o2s/dist/dist/lib/Arithmetic/PaperAndPencil/Number.rakumod",
+    "Arithmetic::PaperAndPencil::Action": "ok",
+    "Arithmetic::PaperAndPencil::Char": "ok",
+    "Arithmetic::PaperAndPencil::Label": "ok",
+    "Arithmetic::PaperAndPencil::Number": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-0dvb_o2s/dist/dist/lib/Arithmetic/PaperAndPencil/Number.rakumod"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/RI/ARITHMETIC_PAPERANDPENCIL/a445736fbea200e6b2d816d67cbb52feca82d438.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

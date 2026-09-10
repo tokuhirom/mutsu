@@ -1,0 +1,168 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64::Native",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::API6",
+      "PDF::Class",
+      "PDF::Content",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::RakuDocToPDF",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/0-load-test.t",
+      "raku": {
+        "first_failure": "Module 'App::RakuDocToPDF' used okay",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 12.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/1-media.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/2-reader.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/rakudoc-reader-2.rakudoc: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/3-layout.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/4-pdf.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-9sxml1hz/dist/App-RakuDocToPDF-0.0.1/t/4-pdf.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/5-reproducible.t",
+      "raku": {
+        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-9sxml1hz/dist/App-RakuDocToPDF-0.0.1/t/5-reproducible.t",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "App::RakuDocToPDF": "raku_also_fails",
+    "App::RakuDocToPDF::Layout": "ok",
+    "App::RakuDocToPDF::Media": "ok",
+    "App::RakuDocToPDF::Reader": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAKUDOCTOPDF/4c26cc24c03aee528f041e00e37bf5232be83f7f.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 14,
+    "baseline_files": 2,
+    "mutsu_assertions": 14,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

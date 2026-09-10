@@ -1,0 +1,54 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Term::Choose",
+      "Term::Choose::Util",
+      "Term::TablePrint",
+      "Term::termios",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::ShowPath",
+  "files": [],
+  "load": {
+    "App::ShowPath": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_SHOWPATH/bf882c99a69038d5a0cbd4aee40f39d35132c4b5.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

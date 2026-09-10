@@ -86,12 +86,26 @@ def main() -> int:
     # page, and the generator already knows the answer.
     has_chart = os.path.exists(os.path.join(REPO, "ecosystem", "history.svg"))
 
+    # How much of the corpus these numbers speak for. A sweep runs shard by
+    # shard and the site is redeployed from whatever has landed, so without this
+    # a third of the corpus would publish a parity figure that reads as the
+    # whole ecosystem's. Read from the index snapshot the sweep wrote, so it
+    # cannot drift from what was actually swept.
+    corpus_total = 0
+    snapshot_path = os.path.join(REPO, "ecosystem", "index-snapshot.json")
+    if os.path.exists(snapshot_path):
+        with open(snapshot_path, encoding="utf-8") as fh:
+            corpus_total = (json.load(fh).get("fez") or {}).get("dists", 0)
+
     manifest = {
         "generated_from": "ecosystem/dists",
         "has_chart": has_chart,
         "measured": {k: measured.get(k) for k in
                      ("date", "mutsu_commit", "mutsu_version", "raku_version", "host")},
-        "counts": {"distributions": len(rows), "graded": len(graded), "green": len(green)},
+        "counts": {"distributions": len(rows), "graded": len(graded),
+                   "green": len(green), "corpus": corpus_total},
+        "coverage": (round(100.0 * len(rows) / corpus_total, 1)
+                     if corpus_total else 0.0),
         "dist_parity": round(100.0 * len(green) / len(graded), 1) if graded else 0.0,
         "file_parity": (round(100.0 * passed_files / baseline_files, 1)
                         if baseline_files else 0.0),

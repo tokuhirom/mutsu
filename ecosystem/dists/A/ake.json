@@ -1,0 +1,274 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp"
+    ],
+    "unresolved": []
+  },
+  "dist": "ake",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Task “fred” does not exist",
+        "nok": 0,
+        "ok": 1,
+        "plan": 5,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-original-task.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 5.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-original-file.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/ake-590941' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-dispatch.t",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-signatures.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-tasks.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-files.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-deps.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-task-task.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-parallel.t",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-default.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-current-task.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-help.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-customfile.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/35-security.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/38-graph.t",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Ake": "ok",
+    "Ake::Task": "ok",
+    "Ake::Task::IO": "ok",
+    "Ake::TaskStore": "ok",
+    "Sake": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "12d29a1",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/KE/AKE/de380cb52a4d60dcb7ec7b9369308ff153d04626.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 23,
+    "baseline_files": 2,
+    "mutsu_assertions": 19,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "0.1.3"
+}

@@ -1,0 +1,48 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Transformers",
+      "Data::TypeSystem",
+      "Math::SparseMatrix",
+      "Math::SparseMatrix::Native",
+      "NativeHelpers::Array"
+    ],
+    "unresolved": []
+  },
+  "dist": "CellularAutomata",
+  "files": [],
+  "load": {
+    "CellularAutomata": "circular module dependency detected: CellularAutomata -> CellularAutomata::Scan -> Data::Transformers -> Data::TypeSystem::Predicates -> Data::Transformers::Arrays -> Data::Transformers::Arrays",
+    "CellularAutomata::Scan": "circular module dependency detected: CellularAutomata::Scan -> Data::Transformers -> Data::TypeSystem::Predicates -> Data::Transformers::Arrays -> Data::Transformers::Arrays",
+    "CellularAutomata::Sparse": "ok",
+    "CellularAutomata::Utilities": "ok"
+  },
+  "measured": {
+    "attempts": 2,
+    "date": "2026-09-10",
+    "harness": 1,
+    "host": "linux-x86_64",
+    "mutsu_commit": "671a11d",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/EL/CELLULARAUTOMATA/183f8d4299122625ea7d44735e3ff9db2dd1df7d.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}
