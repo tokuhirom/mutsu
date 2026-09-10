@@ -152,6 +152,7 @@ mod param_fill_tests {
             multi_invocant: false,
             required: true,
             named: false,
+            named_alias: false,
             slurpy: false,
             double_slurpy: false,
             onearg: false,

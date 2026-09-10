@@ -12,6 +12,7 @@ fn scalar_param(name: &str) -> crate::ast::ParamDef {
         multi_invocant: true,
         required: false,
         named: false,
+        named_alias: false,
         slurpy: false,
         double_slurpy: false,
         onearg: false,

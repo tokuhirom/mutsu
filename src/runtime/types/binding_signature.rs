@@ -77,6 +77,9 @@ impl Interpreter {
     /// (`minutes`, `__ANON_STATE__`) because the alias/param names are
     /// caller-facing keys only and are never bound as body variables.
     fn rename_leaf_value_name(pd: &ParamDef) -> Option<String> {
+        if !pd.named_alias {
+            return None;
+        }
         let mut sub = pd.sub_signature.as_ref()?;
         loop {
             let child = sub.first()?;
@@ -1054,7 +1057,9 @@ impl Interpreter {
                 // level's name a valid caller key, so exclude them all from the
                 // slurpy `*%rest` capture too.
                 let mut keys = vec![name.to_string()];
-                if let Some(sub_params) = &pd.sub_signature {
+                if pd.named_alias
+                    && let Some(sub_params) = &pd.sub_signature
+                {
                     keys.extend(collect_nested_named_alias_keys(sub_params));
                 }
                 keys
@@ -1851,23 +1856,23 @@ impl Interpreter {
                             // trait pass below keeps raw params writable, which
                             // matches the positional arm's behavior for now).
                         }
-                        // A rename param `:min(:$minutes)` names a caller key
+                        // A named alias param `:min(:$minutes)` names a caller key
                         // only; its OWN name (`min`) is NOT a body variable
                         // (raku: `min` in the body resolves to the outer
-                        // routine/constant, not the argument). Only bind the
-                        // param's own name when it has no sub-signature; the
-                        // leaf variable is bound via the rename recursion below.
-                        // Mirrors `bind_sub_signature_from_value`'s line-778 rule.
+                        // routine/constant, not the argument). Named variable
+                        // parameters such as `:$value ($item)` bind both the
+                        // outer value and the destructured leaves. The parser's
+                        // `named_alias` flag distinguishes these forms.
                         if let Some(sub_params) = &pd.sub_signature {
-                            // A sigiled named aggregate such as
-                            // `:@foo [$first, *@rest]` is a real destructuring
-                            // signature.  The same `sub_signature` field also
-                            // represents a scalar named alias (`:foo($value)`),
-                            // so use the aggregate sigil to distinguish the two
-                            // forms.  Treating `:@foo [...]` as an alias binds
-                            // every inner scalar to the whole array and skips
-                            // the inner slurpy entirely.
-                            if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            // A named variable with a sub-signature, such as
+                            // `:$foo [$first, *@rest]`, is a real destructuring
+                            // signature. The parser records the distinct
+                            // `:foo($value)` alias form in `named_alias`; use that
+                            // source-level distinction instead of the parameter's
+                            // sigil here. Treating a variable destructure as an
+                            // alias binds every inner scalar to the whole value
+                            // and skips the inner slurpy entirely.
+                            if !pd.named_alias {
                                 self.bind_param_value_sym(
                                     &pd.name,
                                     pd_name_sym(),
@@ -1901,7 +1906,10 @@ impl Interpreter {
                 // Alias matching: for :a(:$b), also accept b => val. A nested
                 // chain (`:variety(:style(:sort($x)))`) lets the caller use any
                 // level's name, so match against every alias key down the chain.
-                if !found && let Some(sub_params) = &pd.sub_signature {
+                if !found
+                    && pd.named_alias
+                    && let Some(sub_params) = &pd.sub_signature
+                {
                     let alias_keys = collect_nested_named_alias_keys(sub_params);
                     'alias: for inner_key in &alias_keys {
                         for arg in args.iter().rev() {
@@ -1943,11 +1951,11 @@ impl Interpreter {
                         )
                         .with_parameter_object(pd, Some(&*self)));
                     }
-                    // A rename param `:min(:$minutes)` binds only its leaf
+                    // A named alias param `:min(:$minutes)` binds only its leaf
                     // variable (below); its own name is a caller key, not a body
-                    // variable — so skip binding `pd.name` when a sub-signature
-                    // is present.
-                    let is_rename = pd.sub_signature.is_some();
+                    // variable. A named variable with a destructuring
+                    // sub-signature binds the outer parameter too.
+                    let is_rename = pd.named_alias;
                     if let Some(captured_name) = pd
                         .type_constraint
                         .as_deref()
@@ -1998,9 +2006,9 @@ impl Interpreter {
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
                     let value = Self::missing_optional_param_value(pd);
-                    // A rename param binds only its leaf variable (below); skip
-                    // binding the param's own name when a sub-signature exists.
-                    if pd.sub_signature.is_none() {
+                    // A named alias binds only its leaf variable (below); skip
+                    // binding the parameter's own name in that form.
+                    if !pd.named_alias {
                         self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
                         self.bind_param_type_constraint_sym(
                             &pd.name,
@@ -2890,7 +2898,8 @@ impl Interpreter {
                         // Also check inner named aliases from sub-signatures,
                         // descending a nested alias chain (`:variety(:style(...))`)
                         // so a caller key at any level is recognized.
-                        if let Some(sub_params) = &pd.sub_signature
+                        if pd.named_alias
+                            && let Some(sub_params) = &pd.sub_signature
                             && collect_nested_named_alias_keys(sub_params)
                                 .iter()
                                 .any(|k| k == key)

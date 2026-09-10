@@ -514,18 +514,15 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         {
             return false;
         }
-        // A named sub-param's parens are either a RENAME/alias target
-        // (`:key($k)`, `:die(:$throw)` — plain inner params with no nested
-        // signature of their own) or a genuine destructure (`:value((:key($d),
-        // …))`). Only the latter takes the candidate apart; a rename binds the
-        // whole candidate to the inner name and so always matches. Treating a
-        // rename as a destructure asked the candidate for a positional element
-        // it does not have (a `Pair`/`Array` value under `:value($rest)`), so
-        // the candidate was rejected. `bind_sub_signature_from_value` already
-        // draws this distinction; dispatch matching has to agree with it or a
-        // signature that binds fine is never selected.
+        // A named parameter's parens are either a RENAME/alias target
+        // (`:key($k)`, `:die(:$throw)`) or a genuine destructure
+        // (`:$value (:key($d), ...)`). The parser records that source-level
+        // distinction in `named_alias`; only the latter takes the candidate
+        // apart. Treating a rename as a destructure asks the candidate for a
+        // positional element it does not have, so a signature that binds fine
+        // would be rejected during dispatch matching.
         if let Some(sub) = &pd.sub_signature
-            && !(pd.named && sub.iter().all(|p| p.sub_signature.is_none()))
+            && !is_named_rename_sub_signature(pd)
             && !sub_signature_matches_value(interpreter, sub, &candidate)
         {
             return false;
@@ -615,6 +612,18 @@ pub(in crate::runtime) fn collect_nested_named_alias_keys(sub_params: &[ParamDef
     keys
 }
 
+/// Whether a named parameter uses the direct rename form (`:name($value)` or
+/// `:name(:$value)`). An alias may also wrap a positional sub-signature, such
+/// as `:value((:key($k), :value($v)))`; that outer value is an alias, but its
+/// contents still require ordinary destructuring.
+pub(in crate::runtime) fn is_named_rename_sub_signature(pd: &ParamDef) -> bool {
+    pd.named_alias
+        && pd
+            .sub_signature
+            .as_ref()
+            .is_some_and(|sub| sub.iter().all(|p| p.sub_signature.is_none()))
+}
+
 pub(in crate::runtime) fn bind_named_rename_sub_signature(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
@@ -626,6 +635,15 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         }
         let bind_name = &sub_pd.name;
         if bind_name.is_empty() {
+            continue;
+        }
+        // `:value((:key($k), :value($v)))` is an alias whose value is wrapped
+        // in an anonymous positional sub-signature. The wrapper itself is not
+        // a rename target; unpack it with the ordinary destructuring binder.
+        if sub_pd.name == "__subsig__"
+            && let Some(nested) = &sub_pd.sub_signature
+        {
+            bind_sub_signature_from_value(interpreter, nested, value)?;
             continue;
         }
         // An UNSUPPLIED renamed named param arrives here with the outer
@@ -995,7 +1013,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 )));
             }
         }
-        let bind_alias_name = !(sub_pd.named && sub_pd.sub_signature.is_some());
+        let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
             bind_sub_param_name(interpreter, &sub_pd.name, candidate.clone());
             // Neither shape of a destructured leaf ever got marked readonly:
@@ -1046,7 +1064,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // signature) or a genuine destructure (`:value((:key($d), ...))` —
             // the inner param carries its own sub_signature). Rename binds the
             // whole candidate to each inner name; destructure recurses into it.
-            let is_rename = sub_pd.named && nested.iter().all(|p| p.sub_signature.is_none());
+            let is_rename = is_named_rename_sub_signature(sub_pd);
             if is_rename {
                 bind_named_rename_sub_signature(interpreter, nested, &candidate)?;
             } else {
@@ -1124,6 +1142,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         multi_invocant: true,
                         required: true,
                         named: false,
+                        named_alias: false,
                         slurpy: false,
                         double_slurpy: false,
                         onearg: false,
@@ -1158,6 +1177,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         multi_invocant: true,
                         required: true,
                         named: false,
+                        named_alias: false,
                         slurpy: false,
                         double_slurpy: false,
                         onearg: false,

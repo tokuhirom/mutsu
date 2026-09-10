@@ -788,6 +788,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             {
                 let mut p = super::helpers::make_param(alias_name.clone());
                 p.named = true;
+                p.named_alias = true;
                 p.slurpy = slurpy;
                 p.double_slurpy = double_slurpy;
                 p.onearg = onearg;
@@ -890,6 +891,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             // Multiple params or complex: treat as sub-signature
             let mut p = super::helpers::make_param(alias_name);
             p.named = true;
+            p.named_alias = true;
             p.slurpy = slurpy;
             p.double_slurpy = double_slurpy;
             p.onearg = onearg;

@@ -110,8 +110,9 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
         // (`:key($key)`), the outer `p.name` ("key") is only the external
         // argument key — the bound variable is the inner sub-signature param
         // (`$key`), collected below. Counting both made `:key($key)` look like a
-        // self-redeclaration of `$key`.
-        if !(p.named && p.sub_signature.is_some()) {
+        // self-redeclaration of `$key`. A named variable with a destructuring
+        // sub-signature (`:$key ($value)`) declares both bindings.
+        if !p.named_alias {
             all_var_names.push(display_name);
         }
 

@@ -12,7 +12,7 @@ use Test;
 # alone, positional and named) are pinned here alongside the four that did
 # not, so a future change cannot fix one half by breaking the other.
 
-plan 16;
+plan 18;
 
 # --- the four spellings that always worked ---------------------------------
 
@@ -36,17 +36,25 @@ is pos-sig-where((3, 4)), '3/4', 'positional: sub-signature then where';
 sub pos-slurpy-where($x (*@a) where { $_.elems == 2 }) { 'called' }
 is pos-slurpy-where((5, 6)), 'called', 'positional: slurpy sub-signature then where';
 
-# The named spellings are pinned at the level this ticket is about -- the
-# signature parses and the call binds. What the constraint's topic is for a
-# named parameter carrying a sub-signature is a separate, pre-existing gap:
-# mutsu still reads `:$x! ($a, $b)` as the RENAME form `:x(:$a)` rather than
-# as destructuring, so neither `$x` nor the inner variables bind the way
-# rakudo binds them -- tracked as #7865. Do not pin that behavior here.
-sub named-sig-where(:$x! ($a, $b) where { True }) { 'called' }
-is named-sig-where(x => (7, 8)), 'called', 'named: sub-signature then where';
+sub named-sig-where(:$x! ($a, $b) where { $_.elems == 2 }) {
+    [$x.elems, $a, $b].join('/')
+}
+is named-sig-where(x => (7, 8)), '2/7/8',
+    'named: scalar sub-signature destructures and binds the outer value';
+dies-ok { named-sig-where(x => (7, 8, 9)) },
+    'named: scalar sub-signature enforces its where constraint';
 
-sub named-slurpy-where(:$x! (*@a) where { True }) { 'called' }
-is named-slurpy-where(x => (9, 10)), 'called', 'named: slurpy sub-signature then where';
+sub named-slurpy-where(:$x! (*@a) where { $_.elems == 2 }) {
+    [$x.elems, @a.^name, @a.join(',')].join('|')
+}
+is named-slurpy-where(x => (9, 10)), '2|Array|9,10',
+    'named: scalar slurpy sub-signature binds an Array';
+
+sub named-bracket-where(:$x! [$first, *@rest] where { $_.elems == 3 }) {
+    [$x.elems, $first, @rest.^name, @rest.join(',')].join('|')
+}
+is named-bracket-where(x => [11, 12, 13]), '3|11|Array|12,13',
+    'named: scalar bracket sub-signature destructures';
 
 # --- the other two sub-signature spellings ---------------------------------
 

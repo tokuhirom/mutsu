@@ -21,6 +21,7 @@ fn param(name: &str) -> ParamDef {
         multi_invocant: true,
         required: true,
         named: false,
+        named_alias: false,
         slurpy: false,
         double_slurpy: false,
         onearg: false,

@@ -732,6 +732,7 @@ fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
         multi_invocant: true,
         required: false,
         named: false,
+        named_alias: false,
         slurpy,
         double_slurpy: false,
         onearg: false,

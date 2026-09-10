@@ -15,6 +15,7 @@ pub(crate) fn make_wc_param(name: String) -> ParamDef {
         multi_invocant: true,
         required: false,
         named: false,
+        named_alias: false,
         slurpy: false,
         double_slurpy: false,
         onearg: false,

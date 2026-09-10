@@ -3264,6 +3264,7 @@ fn implicit_legacy_param(name: &str) -> ParamDef {
         multi_invocant: true,
         required: false,
         named: false,
+        named_alias: false,
         slurpy: true,
         double_slurpy: false,
         onearg: false,
