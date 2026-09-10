@@ -41,6 +41,12 @@ is run-nested(20), [(1..20).map(* * 10)],
 # A promise kept BEFORE its nested `whenever` is registered runs the body
 # synchronously on the registering thread; it must still land in sequence
 # rather than jumping ahead of an earlier value's pending continuation.
+#
+# This alternating shape is the one that actually detects the #7831 hole, and
+# the only one in this file that can: with the ticket reservation for the
+# already-resolved path removed, it failed 18 of 20 release runs on a 4-core
+# container (#7838), while tests 1, 2 and 4 stayed green every time. Do not
+# fold it into test 4 -- see the note there.
 my $src = Supplier.new;
 my @mixed;
 my $done = Promise.new;
@@ -63,6 +69,14 @@ is @mixed, [1, 2, 3, 4, 5, 6], 'already-kept and later-kept promises interleave 
 # takes the already-resolved path. That path used to run the body inline on the
 # registering thread with no place in the block's sequencer at all (#7831), so
 # it had to be ordered by luck; it must be ordered by the reservation instead.
+#
+# Note what this test can and cannot catch. It pins the reservation: if the
+# tickets stopped ordering the pooled workers, ten reactions racing for them
+# would come out shuffled. It cannot catch a *return* to running the body
+# inline, because then every reaction runs on the registering thread in
+# registration order and is trivially sorted -- which is why it stayed green
+# through all 20 of the reverted runs noted on test 3. Test 3 is the pin;
+# this one guards the mechanism that replaced the inline path.
 my $src2 = Supplier.new;
 my @kept-first;
 my $done2 = Promise.new;
