@@ -30,12 +30,20 @@ produced nothing.
 
 Three ways a running sweep dies, all seen:
 
-- **The container restarts.** `uptime` says `up N min` and every background process is gone.
-  Nothing prevents this; committing after each shard is the whole answer.
+- **The container restarts when the session goes idle.** Measured three times in one session
+  (`uptime` reporting `up 0 min` right after a wake, every background process gone). `setsid`
+  does not help — the machine, not the process group, is going away.
 - **`git stash`** — including `git stash -u` to move the branch — **takes the untracked
   records the sweep is writing**. Never stash while a sweep runs.
-- **The session's process group is cleaned up.** Launch with `setsid nohup … &` so the sweep
-  is not a child of the tool call.
+- **The session's process group is cleaned up.** `setsid nohup … &` covers this one.
+
+**So in a remote container, do not launch a sweep and go idle — it will not be there when you
+come back.** Drive one shard *per turn*, waiting for it inside the turn (a background command
+plus an `until ! ps aux | grep -q '[e]cosystem-sweep'; do sleep 20; done` loop keeps the
+session active and the container alive), commit, and let a scheduled check-in start the next
+one. That turns the restart from the thing that kills the sweep into the thing that paces it.
+A 4-hour unattended corpus run is not available here; on the maintainer's box it is, which is
+what ADR-0085 D9 assumes.
 
 Restart from the shard after the last `done` line in the driver's log; already-measured
 distributions are cheap to redo but not free.

@@ -1138,7 +1138,7 @@
    "baseline": 0,
    "dist": "CSS::Grammar",
    "passed": 0,
-   "reason": "CSS::Grammar::AST: Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSTrait' declared",
+   "reason": "CSS::Grammar::AST: Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSObject' declared",
    "status": "blocked_load",
    "version": "0.4.3"
   },
@@ -2274,7 +2274,7 @@
  "measured": {
   "date": "2026-09-10",
   "host": "linux-x86_64",
-  "mutsu_commit": "a7fe6d9",
+  "mutsu_commit": "6d9dfba",
   "mutsu_version": "0.23.0",
   "raku_version": "2026.07"
  }
