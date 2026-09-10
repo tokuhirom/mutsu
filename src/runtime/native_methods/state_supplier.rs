@@ -225,6 +225,13 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
 // re-entrant per thread (a `whenever` body that synchronously re-triggers a
 // same-group source on its own thread must not self-deadlock) and blocks across
 // threads via a condvar.
+//
+// The lock itself stays a plain mutual-exclusion lock: whoever wins the race
+// takes it. That matters for throughput -- a hot `Supply.act` stream (400
+// callbacks across several threads in Log::Async's `05-concurrent`) would pay a
+// context switch per handoff under a strict queue. Ordering, where it is
+// observable, is layered on top as a separate ticket sequencer instead, which
+// an acquirer that holds no ticket never touches: see [`SupplyTicket`].
 type SupplierSerializeGroupsMap = std::sync::Mutex<HashMap<u64, u64>>;
 
 fn supplier_serialize_groups() -> &'static SupplierSerializeGroupsMap {
@@ -265,11 +272,54 @@ pub(in crate::runtime) fn supplier_serialize_group(trigger_supplier_id: u64) -> 
 struct GroupLock {
     state: std::sync::Mutex<GroupLockState>,
     cv: std::sync::Condvar,
+    seq: std::sync::Mutex<GroupSeqState>,
 }
 
 struct GroupLockState {
     owner: Option<std::thread::ThreadId>,
     depth: u32,
+}
+
+/// The ticket sequencer that rides alongside a group lock, under its own mutex.
+/// Keeping it off the lock is the point: an acquirer that holds no ticket
+/// neither waits on it nor advances it, so ordering the reactions that need it
+/// costs the ones that do not nothing at all.
+struct GroupSeqState {
+    /// Next ticket handed out by [`reserve_supply_serialize`].
+    next_ticket: u64,
+    /// The ticket currently entitled to proceed.
+    now_serving: u64,
+    /// Tickets dropped without being redeemed. `now_serving` skips them rather
+    /// than stalling the group behind a reaction that will never arrive.
+    cancelled: std::collections::HashSet<u64>,
+    /// Parked ticket holders, each with its own condvar so a handoff wakes
+    /// exactly the one thread whose turn it now is. A single shared condvar
+    /// would wake every waiter on every handoff.
+    parked: std::collections::VecDeque<(u64, std::sync::Arc<std::sync::Condvar>)>,
+}
+
+impl GroupSeqState {
+    fn new() -> Self {
+        GroupSeqState {
+            next_ticket: 0,
+            now_serving: 0,
+            cancelled: std::collections::HashSet::new(),
+            parked: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// Finish with the ticket being served, skip any that were cancelled while
+    /// queued, and wake whichever holder is now entitled to proceed.
+    fn retire_ticket(&mut self) {
+        self.now_serving = self.now_serving.wrapping_add(1);
+        while self.cancelled.remove(&self.now_serving) {
+            self.now_serving = self.now_serving.wrapping_add(1);
+        }
+        if let Some(pos) = self.parked.iter().position(|(t, _)| *t == self.now_serving) {
+            let (_, cv) = self.parked.remove(pos).expect("position was just found");
+            cv.notify_one();
+        }
+    }
 }
 
 fn group_locks() -> &'static std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupLock>>> {
@@ -278,10 +328,26 @@ fn group_locks() -> &'static std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupL
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+fn group_lock(group: u64) -> std::sync::Arc<GroupLock> {
+    let mut map = group_locks().lock().unwrap();
+    map.entry(group)
+        .or_insert_with(|| {
+            std::sync::Arc::new(GroupLock {
+                state: std::sync::Mutex::new(GroupLockState {
+                    owner: None,
+                    depth: 0,
+                }),
+                cv: std::sync::Condvar::new(),
+                seq: std::sync::Mutex::new(GroupSeqState::new()),
+            })
+        })
+        .clone()
+}
+
 /// RAII guard for a held supply-block serialize group. Dropping it releases the
 /// group (decrements the re-entrancy depth; when it reaches zero, clears the
 /// owner and wakes a waiting thread).
-pub(in crate::runtime) struct SupplySerializeGuard {
+pub(crate) struct SupplySerializeGuard {
     lock: std::sync::Arc<GroupLock>,
 }
 
@@ -300,20 +366,10 @@ impl Drop for SupplySerializeGuard {
 /// Acquire the serialize group `group`, blocking the current thread until no
 /// other thread holds it. Re-entrant on the same thread.
 pub(in crate::runtime) fn acquire_supply_serialize(group: u64) -> SupplySerializeGuard {
-    let lock = {
-        let mut map = group_locks().lock().unwrap();
-        map.entry(group)
-            .or_insert_with(|| {
-                std::sync::Arc::new(GroupLock {
-                    state: std::sync::Mutex::new(GroupLockState {
-                        owner: None,
-                        depth: 0,
-                    }),
-                    cv: std::sync::Condvar::new(),
-                })
-            })
-            .clone()
-    };
+    acquire_group_lock(group_lock(group))
+}
+
+fn acquire_group_lock(lock: std::sync::Arc<GroupLock>) -> SupplySerializeGuard {
     let me = std::thread::current().id();
     let mut st = lock.state.lock().unwrap();
     loop {
@@ -334,6 +390,117 @@ pub(in crate::runtime) fn acquire_supply_serialize(group: u64) -> SupplySerializ
     }
     drop(st);
     SupplySerializeGuard { lock }
+}
+
+/// A place in a serialize group's queue, taken on one thread and redeemed on
+/// another.
+///
+/// A supply block publishes its reactions in the order they reach the group
+/// lock, but a reaction whose source is a resolved `Promise` does not reach it
+/// on the thread that resolved the promise -- it is handed to a pooled worker
+/// (`SharedPromise::dispatch_waiters`), and N such workers race each other's
+/// wake-up latency. The order those reactions *should* come out in is fixed
+/// long before that: it is the order the promises were resolved in. So the
+/// resolving thread takes the ticket, in that order, and the worker redeems it.
+/// Nothing else about the pool changes -- the tasks still run wherever there is
+/// a worker, they just enter the supply block in the order their sources
+/// produced them (#7811).
+///
+/// The sequencer is separate from the group lock and strictly ordered, while
+/// the lock itself stays first-come-first-served: a reaction that took no
+/// ticket is not slowed down by one that did, and a redeemed ticket still has
+/// to take the lock like anybody else once its turn comes.
+///
+/// Dropping a ticket without redeeming it cancels it, so a dispatch that never
+/// reaches [`SupplyTicket::redeem`] (a panicking task, a waiter dropped during
+/// unwind) cannot wedge the group.
+pub(crate) struct SupplyTicket {
+    lock: std::sync::Arc<GroupLock>,
+    ticket: u64,
+    redeemed: bool,
+}
+
+impl Drop for SupplyTicket {
+    fn drop(&mut self) {
+        if self.redeemed {
+            return;
+        }
+        if let Ok(mut seq) = self.lock.seq.lock() {
+            if seq.now_serving == self.ticket {
+                seq.retire_ticket();
+            } else {
+                seq.cancelled.insert(self.ticket);
+            }
+        }
+    }
+}
+
+/// A redeemed [`SupplyTicket`]: holds the group lock, and keeps the sequencer
+/// parked on this ticket until dropped, so the next ticket cannot start its
+/// reaction until this one's has finished.
+pub(crate) struct SupplyTicketGuard {
+    lock: std::sync::Arc<GroupLock>,
+    ticket: u64,
+    /// Dropped first, releasing the group lock before the sequencer advances.
+    _lock_guard: SupplySerializeGuard,
+}
+
+impl Drop for SupplyTicketGuard {
+    fn drop(&mut self) {
+        if let Ok(mut seq) = self.lock.seq.lock() {
+            debug_assert_eq!(seq.now_serving, self.ticket);
+            seq.retire_ticket();
+        }
+    }
+}
+
+impl SupplyTicket {
+    /// Wait for this ticket's turn, then take the group lock.
+    pub(crate) fn redeem(mut self) -> SupplyTicketGuard {
+        self.redeemed = true;
+        let lock = self.lock.clone();
+        let ticket = self.ticket;
+        {
+            let mut seq = lock.seq.lock().unwrap();
+            let cv = std::sync::Arc::new(std::sync::Condvar::new());
+            while seq.now_serving != ticket {
+                seq.parked.push_back((ticket, cv.clone()));
+                seq = cv.wait(seq).unwrap();
+                // A spurious wake leaves us queued; drop that entry so the
+                // next loop can re-park without accumulating duplicates.
+                if let Some(pos) = seq
+                    .parked
+                    .iter()
+                    .position(|(t, c)| *t == ticket && std::sync::Arc::ptr_eq(c, &cv))
+                {
+                    seq.parked.remove(pos);
+                }
+            }
+        }
+        let lock_guard = acquire_group_lock(lock.clone());
+        SupplyTicketGuard {
+            lock,
+            ticket,
+            _lock_guard: lock_guard,
+        }
+    }
+}
+
+/// Reserve this thread's place in serialize group `group` without waiting for
+/// it. See [`SupplyTicket`].
+pub(crate) fn reserve_supply_serialize(group: u64) -> SupplyTicket {
+    let lock = group_lock(group);
+    let ticket = {
+        let mut seq = lock.seq.lock().unwrap();
+        let t = seq.next_ticket;
+        seq.next_ticket = seq.next_ticket.wrapping_add(1);
+        t
+    };
+    SupplyTicket {
+        lock,
+        ticket,
+        redeemed: false,
+    }
 }
 
 /// Drop the serialize-group registration for a torn-down trigger supplier so

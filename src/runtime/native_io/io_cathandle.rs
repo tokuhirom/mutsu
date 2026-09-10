@@ -10,7 +10,7 @@
 //! - `active`   — the currently-open `IO::Handle` value, or `Nil`
 //! - `chomp`    — Bool (applied to each handle as it is opened)
 //! - `nl-in`    — line separator(s), Str or Array
-//! - `encoding` — Str (default `utf8`)
+//! - `encoding` — Str (default `utf8`, or `bin` in binary mode)
 //! - `closed`   — Bool, set by `.close`/`.DESTROY` (reads then yield `Nil`)
 //! - `on-switch`— Callable invoked when the active handle changes, or `Nil`
 use super::*;
@@ -23,6 +23,19 @@ fn val_int(v: &Value) -> Option<i64> {
 }
 
 impl Interpreter {
+    fn cat_sources_len(attrs: &AttrMap) -> usize {
+        match attrs.get("sources").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.len(),
+            _ => 0,
+        }
+    }
+
+    fn cat_is_exhausted(attrs: &AttrMap) -> bool {
+        Self::cat_active_handle(attrs).is_none()
+            && attrs.get("pos").and_then(val_int).unwrap_or(0)
+                >= Self::cat_sources_len(attrs) as i64
+    }
+
     /// Build a fresh `IO::CatHandle` instance from positional source values and
     /// `:chomp` / `:nl-in` / `:encoding` named args (the `.new` constructor).
     pub(crate) fn build_io_cathandle(&mut self, class_name: Symbol, args: &[Value]) -> Value {
@@ -40,7 +53,14 @@ impl Interpreter {
                 ValueView::Pair(k, v) => match k.as_str() {
                     "chomp" => chomp = v.clone(),
                     "nl-in" => nl_in = v.clone(),
-                    "encoding" | "enc" => encoding = v.clone(),
+                    "encoding" | "enc" => {
+                        if v.is_nil() {
+                            bin = true;
+                            encoding = Value::str("bin".to_string());
+                        } else {
+                            encoding = v.clone();
+                        }
+                    }
                     "on-switch" => on_switch = v.clone(),
                     "bin" => bin = v.truthy(),
                     _ => {}
@@ -135,7 +155,9 @@ impl Interpreter {
         if let Some(nl_in) = attrs.get("nl-in").cloned() {
             let _ = self.native_io_handle_method(&active, "nl-in", vec![nl_in]);
         }
-        if let Some(enc) = attrs.get("encoding").cloned() {
+        if attrs.get("bin").is_some_and(|v| v.truthy()) {
+            let _ = self.native_io_handle_method(&active, "encoding", vec![Value::NIL]);
+        } else if let Some(enc) = attrs.get("encoding").cloned() {
             let _ = self.native_io_handle_method(&active, "encoding", vec![enc]);
         }
     }
@@ -152,6 +174,7 @@ impl Interpreter {
             .get("encoding")
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf8".to_string());
+        let bin = attrs.get("bin").is_some_and(|v| v.truthy());
         match src.view() {
             ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
                 // Already a handle: ensure it is opened, then push the cat's
@@ -175,10 +198,12 @@ impl Interpreter {
                 };
                 let _ = self.native_io_handle_method(&handle, "chomp", vec![chomp]);
                 let _ = self.native_io_handle_method(&handle, "nl-in", vec![nl_in]);
-                if enc != "utf8" {
-                    let _ =
-                        self.native_io_handle_method(&handle, "encoding", vec![Value::str(enc)]);
-                }
+                let encoding_arg = if bin {
+                    Value::NIL
+                } else {
+                    Value::str(enc.clone())
+                };
+                let _ = self.native_io_handle_method(&handle, "encoding", vec![encoding_arg]);
                 Some(handle)
             }
             _ => {
@@ -198,12 +223,16 @@ impl Interpreter {
                 let io_path = self.make_io_path_instance(&path_str);
                 let mut h_attrs: AttrMap = AttrMap::new();
                 h_attrs.insert("path".to_string(), io_path);
-                let open_args = vec![
+                let mut open_args = vec![
                     Value::pair("r".to_string(), Value::TRUE),
                     Value::pair("chomp".to_string(), chomp),
                     Value::pair("nl-in".to_string(), nl_in),
-                    Value::pair("enc".to_string(), Value::str(enc)),
                 ];
+                if bin {
+                    open_args.push(Value::pair("bin".to_string(), Value::TRUE));
+                } else {
+                    open_args.push(Value::pair("enc".to_string(), Value::str(enc)));
+                }
                 match self.native_io_handle(&h_attrs, "open", open_args) {
                     Ok(v) if matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") => {
                         Some(v)
@@ -347,6 +376,12 @@ impl Interpreter {
         if attrs.get("closed").is_some_and(|v| v.truthy()) {
             return Ok(Value::NIL);
         }
+        // An empty source queue, or a cat that has already advanced past its
+        // final source, returns Nil. An active empty file still returns an
+        // empty string/buffer, so this check must happen before the read loop.
+        if Self::cat_is_exhausted(attrs) {
+            return Ok(Value::NIL);
+        }
         // A binary-mode cat slurps raw bytes into a `Buf[uint8]`.
         if attrs.get("bin").is_some_and(|v| v.truthy()) {
             let mut bytes: Vec<u8> = Vec::new();
@@ -413,6 +448,51 @@ impl Interpreter {
             self.cat_close(attrs);
         }
         Ok(Value::seq(lines))
+    }
+
+    /// Collect whitespace-delimited words while keeping each source-handle
+    /// boundary as a word boundary. Slurping the whole cat first would merge
+    /// the final word of one source with the first word of the next source.
+    fn cat_words(&mut self, attrs: &mut AttrMap, args: &[Value]) -> Result<Value, RuntimeError> {
+        let mut limit: Option<usize> = None;
+        let mut close = false;
+        for arg in args {
+            match arg.view() {
+                ValueView::Pair(k, v) if k == "close" => close = v.truthy(),
+                _ => {
+                    if let Some(n) = numeric_limit_arg(arg) {
+                        limit = Some(n);
+                    }
+                }
+            }
+        }
+
+        let mut words = Vec::new();
+        if limit != Some(0) {
+            'lines: loop {
+                if let Some(n) = limit
+                    && words.len() >= n
+                {
+                    break;
+                }
+                let line = self.cat_get(attrs)?;
+                if line.is_nil() {
+                    break;
+                }
+                for word in line.to_string_value().split_whitespace() {
+                    words.push(Value::str(word.to_string()));
+                    if let Some(n) = limit
+                        && words.len() >= n
+                    {
+                        break 'lines;
+                    }
+                }
+            }
+        }
+        if close {
+            self.cat_close(attrs);
+        }
+        Ok(Value::seq(words))
     }
 
     /// Close the active handle and all `IO::Handle` sources, marking the cat
@@ -516,32 +596,25 @@ impl Interpreter {
             "getc" => self.cat_getc(&mut attrs)?,
             "lines" => self.cat_lines(&mut attrs, &args)?,
             "slurp" => self.cat_slurp(&mut attrs)?,
-            "words" => {
-                let slurped = self.cat_slurp(&mut attrs)?;
-                if slurped.is_nil() {
-                    return Ok((Value::NIL, attrs));
-                }
-                let text = slurped.to_string_value();
-                let words: Vec<Value> = text
-                    .split_whitespace()
-                    .map(|w| Value::str(w.to_string()))
-                    .collect();
-                Value::seq(words)
-            }
+            "words" => self.cat_words(&mut attrs, &args)?,
             "comb" => {
                 let slurped = self.cat_slurp(&mut attrs)?;
-                if slurped.is_nil() {
-                    return Ok((Value::NIL, attrs));
-                }
-                let str_val = Value::str(slurped.to_string_value());
+                let text = if slurped.is_nil() {
+                    String::new()
+                } else {
+                    slurped.to_string_value()
+                };
+                let str_val = Value::str(text);
                 self.call_method_with_values(str_val, "comb", args)?
             }
             "split" => {
                 let slurped = self.cat_slurp(&mut attrs)?;
-                if slurped.is_nil() {
-                    return Ok((Value::NIL, attrs));
-                }
-                let str_val = Value::str(slurped.to_string_value());
+                let text = if slurped.is_nil() {
+                    String::new()
+                } else {
+                    slurped.to_string_value()
+                };
+                let str_val = Value::str(text);
                 self.call_method_with_values(str_val, "split", args)?
             }
             "readchars" => {
@@ -674,11 +747,21 @@ impl Interpreter {
             }
             "encoding" => {
                 if let Some(arg) = args.into_iter().next() {
+                    if arg.is_nil() || arg.to_string_value() == "bin" {
+                        attrs.insert("bin".to_string(), Value::TRUE);
+                        attrs.insert("encoding".to_string(), Value::str("bin".to_string()));
+                        self.cat_sync_active_settings(&attrs);
+                        return Ok((Value::NIL, attrs));
+                    }
                     let s = arg.to_string_value();
+                    attrs.insert("bin".to_string(), Value::FALSE);
                     attrs.insert("encoding".to_string(), Value::str(s.clone()));
                     self.cat_sync_active_settings(&attrs);
                     Value::str(s)
                 } else {
+                    if attrs.get("bin").is_some_and(|v| v.truthy()) {
+                        return Ok((Value::NIL, attrs));
+                    }
                     attrs
                         .get("encoding")
                         .cloned()

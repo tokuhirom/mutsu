@@ -142,7 +142,12 @@ impl Interpreter {
                     return false;
                 }
                 if pd.named {
-                    pd.type_constraint.is_none()
+                    // Named aggregate destructuring (`:@a [$first, *@rest]`)
+                    // needs the general binder to unpack the value. The light
+                    // named plan only binds alias leaves to the whole value,
+                    // which would make every destructured scalar see the
+                    // original array and would skip inner slurpies.
+                    pd.type_constraint.is_none() && pd.sub_signature.is_none()
                 } else {
                     // Positional params in a mixed signature: the
                     // positional-light constraints (see

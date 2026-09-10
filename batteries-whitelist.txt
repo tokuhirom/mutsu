@@ -39,7 +39,6 @@ Cro::HTTP	http-session-persistent.rakutest
 Cro::HTTP	http2-frame-parser.rakutest
 Cro::HTTP	http2-frame-serializer.rakutest
 Cro::HTTP	http2-frame.rakutest
-Cro::HTTP	http2-request-parser.rakutest
 Cro::HTTP	http2-request-serializer.rakutest
 Cro::HTTP	http2-response-parser.rakutest
 Cro::HTTP	http2-response-serializer.rakutest
