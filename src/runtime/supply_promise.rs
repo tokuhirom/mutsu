@@ -283,9 +283,11 @@ impl Interpreter {
     /// and the tap's `quit` handler see it.
     ///
     /// Callers must run this only after registering the taps for the rewritten
-    /// markers. The waiter runs on whichever thread resolves the promise (or
-    /// synchronously here when it already has), so it drives a thread clone of
-    /// this interpreter — the same pair `promise_chain_method` uses for `.then`.
+    /// markers. The waiter runs on a pooled worker — woken by whichever thread
+    /// resolves the promise, or, when it is already resolved, reserving its
+    /// place in the group here and running just as asynchronously (#7831) — so
+    /// it drives a thread clone of this interpreter, the same pair
+    /// `promise_chain_method` uses for `.then`.
     pub(crate) fn arm_pending_promise_whenevers(&mut self) {
         for (promise, supplier) in std::mem::take(&mut self.pending_promise_whenever_arms) {
             // The stand-in's serialize group was recorded when the rewritten
@@ -293,7 +295,10 @@ impl Interpreter {
             // Handing it to `on_resolve` makes the resolving thread reserve
             // this reaction's place in the supply block before the pooled
             // worker that runs it is even woken, so N promises resolved in a
-            // row reach the block in resolution order (#7811).
+            // row reach the block in resolution order (#7811). An already
+            // resolved promise reserves its place here instead, so it queues
+            // behind the reactions created before it rather than running
+            // inline ahead of them (#7831).
             let group = match supplier.view() {
                 ValueView::Instance { attributes, .. } => {
                     supplier_id_from_attrs(&attributes.as_map())
