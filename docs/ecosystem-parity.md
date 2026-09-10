@@ -9,6 +9,11 @@ sides, and publish the difference.
   one file per distribution, the sandbox and environment contract). Read it
   before changing the method; this file is the *how*.
 - **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
+- **Running one, or triaging what it found**:
+  [`.agents/skills/ecosystem-sweep`](../.agents/skills/ecosystem-sweep/SKILL.md) — the
+  procedure and the traps (shard-by-shard survival, the distribution-vs-module counting
+  trap, reducing a cluster to a minimal repro). Read it before starting a sweep; this file
+  is the reference it points back to.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
   [BATTERIES.md](../BATTERIES.md) / `scripts/battery-testsuite.sh` is the

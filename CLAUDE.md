@@ -19,6 +19,7 @@ before starting one of these tasks:
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
+| [`ecosystem-sweep`](.agents/skills/ecosystem-sweep/SKILL.md) | Running the ecosystem parity sweep, or triaging what it found into issues |
 
 ## Where this session is running — check before following any shell recipe
 

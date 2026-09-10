@@ -7,6 +7,7 @@ with rakudo as the denominator.
 - **Method and metric definitions**: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md)
 - **Why it is shaped this way**: [ADR-0085](../docs/adr/0085-ecosystem-testsuite-parity-measurement.md)
 - **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
+- **Running a sweep, or triaging one**: [`.agents/skills/ecosystem-sweep`](../.agents/skills/ecosystem-sweep/SKILL.md)
 
 ## What is here
 
