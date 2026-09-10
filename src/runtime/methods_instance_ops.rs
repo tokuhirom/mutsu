@@ -1450,13 +1450,6 @@ impl Interpreter {
             {
                 return result;
             }
-            if method == "name" && args.is_empty() {
-                return Ok(attributes
-                    .as_map()
-                    .get("name")
-                    .cloned()
-                    .unwrap_or(Value::NIL));
-            }
             if method == "clone"
                 && let Some(result) = self.native_instance_clone_value(&target, &args)
             {
@@ -2211,26 +2204,41 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
-            "name" if args.is_empty() => match target.view() {
-                ValueView::Routine { name, .. } => {
-                    Ok(Value::str(format_operator_name(&name.resolve())))
+            "name"
+                if args.is_empty()
+                    && matches!(
+                        target.view(),
+                        ValueView::Routine { .. }
+                            | ValueView::Package(_)
+                            | ValueView::Str(_)
+                            | ValueView::Sub(_)
+                    ) =>
+            {
+                match target.view() {
+                    ValueView::Routine { name, .. } => {
+                        Ok(Value::str(format_operator_name(&name.resolve())))
+                    }
+                    // `.name` on a *type object* whose class declares its own public
+                    // attribute `$.name` resolves to that accessor, and reading an
+                    // instance attribute off a type object is an error (raku). Only
+                    // divert when the class actually has a `name` attribute; otherwise
+                    // keep the type-name introspection behaviour.
+                    ValueView::Package(name)
+                        if self.has_public_accessor(&name.resolve(), "name") =>
+                    {
+                        Err(RuntimeError::new(format!(
+                            "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                            name.resolve()
+                        )))
+                    }
+                    ValueView::Package(name) => Ok(Value::str(name.resolve())),
+                    ValueView::Str(name) => Ok(Value::str_arc(name.clone())),
+                    ValueView::Sub(data) => {
+                        Ok(Value::str(format_operator_name(&data.name.resolve())))
+                    }
+                    _ => unreachable!("the .name receiver was checked above"),
                 }
-                // `.name` on a *type object* whose class declares its own public
-                // attribute `$.name` resolves to that accessor, and reading an
-                // instance attribute off a type object is an error (raku). Only
-                // divert when the class actually has a `name` attribute; otherwise
-                // keep the type-name introspection behaviour.
-                ValueView::Package(name) if self.has_public_accessor(&name.resolve(), "name") => {
-                    Err(RuntimeError::new(format!(
-                        "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
-                        name.resolve()
-                    )))
-                }
-                ValueView::Package(name) => Ok(Value::str(name.resolve())),
-                ValueView::Str(name) => Ok(Value::str_arc(name.clone())),
-                ValueView::Sub(data) => Ok(Value::str(format_operator_name(&data.name.resolve()))),
-                _ => Ok(Value::NIL),
-            },
+            }
             "package" if args.is_empty() => match target.view() {
                 ValueView::Sub(data) => Ok(Value::package(data.package)),
                 ValueView::Routine { package, .. } => Ok(Value::package(package)),
