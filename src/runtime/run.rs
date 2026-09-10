@@ -822,8 +822,13 @@ impl Interpreter {
     fn stmt_tail_is_fresh_rvalue(stmt: &Stmt) -> bool {
         match stmt {
             // Bare `EVAL "..."` parses as a `Stmt::Call`; other bare sub calls
-            // are excluded (see the doc comment).
-            Stmt::Call { name, .. } => matches!(name.resolve().as_str(), "EVAL" | "EVALFILE"),
+            // are excluded (see the doc comment). `chdir` and `indir` are
+            // builtins whose Failure result is sunk by a bare statement in
+            // Raku, so a failed navigation must report its exception while
+            // still remaining a Failure in value position.
+            Stmt::Call { name, .. } => {
+                matches!(name.resolve().as_str(), "EVAL" | "EVALFILE")
+            }
             // A `(while ...)` / `(loop ...)` expression tail is a fresh lazy
             // Seq (never a Failure), included so the tail-sink drain above
             // runs its side effects.
@@ -840,6 +845,7 @@ impl Interpreter {
     fn expr_is_fresh_rvalue(expr: &crate::ast::Expr) -> bool {
         use crate::ast::Expr;
         match expr {
+            Expr::Call { name, .. } => matches!(name.resolve().as_str(), "chdir" | "indir"),
             Expr::MethodCall { .. }
             | Expr::DynamicMethodCall { .. }
             | Expr::HyperMethodCall { .. } => true,
