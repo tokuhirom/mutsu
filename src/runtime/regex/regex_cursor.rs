@@ -304,9 +304,12 @@ impl Interpreter {
             .unwrap_or(cursor)
     }
 
-    /// The class a cursor reports. `match_dispatch_class` answers only for a
-    /// still-lazy Match, and a stamped cursor is an eager `Instance`, so read
-    /// the instance's own class first.
+    /// The class a cursor reports (`Match`, or a grammar's own type). Every
+    /// cursor that reaches this protocol is an eager `Instance` — one
+    /// `!cursor_init` minted, or one already carrying a stamped regexsub — so
+    /// the instance's own class name is the answer. `match_dispatch_class`
+    /// answers only for a still-lazy `Match`, which is why it is the fallback
+    /// rather than the first choice.
     fn cursor_class_of(cursor: &Value) -> String {
         match cursor.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
@@ -319,13 +322,13 @@ impl Interpreter {
     /// details (the zero-width bump, and resuming un-started so the
     /// re-invocation scans).
     fn cursor_more(&mut self, cursor: &Value) -> Result<Value, RuntimeError> {
-        let from = cursor.match_from().unwrap_or(CURSOR_NOT_STARTED);
-        let pos = cursor.match_to().unwrap_or(CURSOR_FAIL_POS);
         let Some(regexsub) = cursor.match_cursor_regexsub() else {
             return Err(RuntimeError::new(
                 "CURSOR_MORE: no regex to resume (only a cursor a Regex was called on can be advanced)",
             ));
         };
+        let from = cursor.match_from().unwrap_or(CURSOR_NOT_STARTED);
+        let pos = cursor.match_to().unwrap_or(CURSOR_FAIL_POS);
         if pos < 0 {
             return Err(RuntimeError::new(
                 "CURSOR_MORE: cannot advance a cursor whose match failed",
