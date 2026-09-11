@@ -387,7 +387,12 @@ the history row, which is what keeps the series comparable.
   impact-ordered interpreter bugs the project has, at a moment when roast is
   mined out (PLAN.md §3). They feed the existing queue in the shape
   `scripts/dist-compat-tickets.py` already produces — root cause first, dists
-  affected as the impact count — rather than a new process.
+  affected as the impact count — rather than a new process. **Borne out** by the
+  first P5 batch, with one correction: the grouping had to be done over the
+  ledger's own records rather than over that sampler's TSV rows (hence
+  `scripts/ecosystem-tickets.py`), because the exhaustive ledger carries the
+  `blocked_load` module errors and the per-file `first_failure` that the sampler
+  does not.
 - A rakudo upgrade moves the denominator. That is recorded per record and noted
   in the KPI history, and is the accepted cost of D2.
 - Suites that need the network are invisible to the KPI (they fail on both
@@ -404,10 +409,10 @@ Phases are listed in [docs/ecosystem-parity.md](../ecosystem-parity.md) §7.
 | phase | state |
 |---|---|
 | **P1** — harness, dependency resolver, sandbox, record store, `--only`/`--prefix`/`--rollup` | **done** — `scripts/ecosystem-sweep.py` + `scripts/ecosystem_common.py`; validated on eight distributions, which surfaced real interpreter findings on the first pass |
-| **P2** — first corpus sweep, the first KPI numbers | open; a many-core box (D9), or the `Ecosystem sweep` workflow with `scope: all` (D9 amendment) |
-| **P3** — `ecosystem/history.svg` in the README, `site/ecosystem.html` | open |
-| **P4** — operator runbook | partly done — `.github/workflows/ecosystem-sweep.yml` is the dispatch path (D9 amendment) and docs/ecosystem-parity.md §8 documents both it and the local one |
-| **P5** — root-cause grouping of `regression` records into issues | open |
+| **P2** — first corpus sweep, the first KPI numbers | **done** (2026-09-11) — [run 34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231), all 1624 dists at one commit, 27/27 shards green: 41.2% dist / 53.6% file / 62.4% assertion parity, first `history.tsv` row appended |
+| **P3** — `ecosystem/history.svg` in the README, `site/ecosystem.html` | **done** — the page is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml`, covered by `site/e2e.test.mjs` |
+| **P4** — operator runbook | partly done — `.github/workflows/ecosystem-sweep.yml` is the dispatch path (D9 amendment) and docs/ecosystem-parity.md §8 documents both it and the local one; a local `make`-level wrapper is the only piece missing |
+| **P5** — root-cause grouping of the actionable records into issues | **first batch done** (2026-09-11) — `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ranked by distributions affected; fifteen issues filed, covering ~330 distribution slots. Method, and the "a cluster is a hypothesis" rule it produced, in [docs/ecosystem-parity.md](../ecosystem-parity.md) §9 |
 
 Two decisions were tested by the implementation rather than only argued:
 

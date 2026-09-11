@@ -31,8 +31,8 @@ sides, and publish the difference.
 > **41.2%** dist parity — 53.6% file parity, 62.4% assertion parity. The first
 > `history.tsv` row and the chart exist as of that sweep. A sweep runs either
 > locally (§8) or from GitHub Actions (§8.1), so the numbers do not depend on
-> having a many-core box to hand. What is left is **P5**: turning the red and
-> `blocked_load` records into root-caused tickets.
+> having a many-core box to hand. **P5 has produced its first batch** — fifteen
+> root-caused issues covering ~330 distribution slots, see section 9.
 
 ## 1. What gets measured
 
@@ -408,10 +408,10 @@ dark README; browsers that ignore it get the light palette.
 | ~~**P2**~~ | ~~first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row~~ | **done** — run 34566091231 (2026-09-11) measured all 1624 dists at one commit with 27/27 shards green: 41.2% dist / 53.6% file / 62.4% assertion parity, and the first history row is appended. It took three attempts; the two that lost data did so silently, and what they cost is recorded in `news/2026-09/` |
 | ~~**P3**~~ | ~~`ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring~~ | **done** — `site/ecosystem.html` is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml` and the nav, and covered by `site/e2e.test.mjs`; the README's Status section now carries the figure and links the chart, which P2 was the thing producing |
 | **P4** | the operator runbook (§8) — one entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | **partly done** — `.github/workflows/ecosystem-sweep.yml` (§8.1) is that entry point for anyone with dispatch rights: it plans, builds once, measures, rolls up and opens the PR. What is left is the local `make`-level convenience wrapper |
-| **P5** | root-cause grouping of `regression` records into `todo:ticket` issues, in the shape `scripts/dist-compat-tickets.py` already produces; `docs/triage.md` picks them up | the KPI feeds the work queue |
+| **P5** | root-cause grouping of the actionable records into `todo:*` issues | **first batch done** — `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ordered by distributions affected, and fifteen issues were filed from the corpus at `7807eb5` (section 9). Two harness fixes came out of it: a warning can no longer be recorded as a blocker, and a parse failure keeps its location. The remaining tail is a sampling job, not a queue to drain |
 
-P1 and P2 are the campaign; P3-P5 make it repeatable. **P5 is the next phase**,
-and the ledger now says how to start it: of the 393 `blocked_load` records, 53
+P1 and P2 are the campaign; P3-P5 make it repeatable. **P5's method is section
+9**, and the reading that started it still holds: of the 393 `blocked_load` records, 53
 are `raku_also_fails` (rakudo does not load them either, so they are not mutsu's
 to fix and belong outside the numerator), and the remaining 340 normalise to 133
 distinct load errors whose top ten cover a third of them (110 of 340) —
@@ -421,16 +421,13 @@ activation. The 560 `red`/`partial` records have a much longer tail (513 with a
 recorded first failure, 336 distinct), so the cheap grouping is on the load
 axis and the file axis wants sampling rather than exhaustive triage.
 
-**There is deliberately no *scheduled* CI sweep** (ADR-0085 D9): a full sweep is
-~20 CPU-hours, and paying a hosted runner for it weekly, on fewer cores, to
-track a number that moves at the speed of interpreter fixes, buys nothing. The
-headline updates when someone decides to refresh it — a documented state, since
-D7 makes staleness computable — and PLAN.md §1 B1's "working-module regression
-CI" stays a separate, unstarted item rather than being closed by this campaign.
-
-**Operator-*dispatched* CI is supported**, though, and is now the ordinary way to
-refresh the numbers: §8.1. That is the D9 amendment — it removes the
-"you need a 12-core box with `bwrap`" precondition without adding a schedule.
+**The sweep is scheduled nightly, and dispatchable on demand** — §8.1. D9
+originally argued for neither (a full sweep looked like ~20 CPU-hours, too much
+to pay a hosted runner for on a number that moves at the speed of interpreter
+fixes); both amendments to it rest on the measured cost instead, which is 78
+minutes of wall time and ~5.5 hours of job time across 27 shards. PLAN.md §1 B1's
+"working-module regression CI" is still **not** closed by this: a measurement is
+not a gate, and that stays a separate item.
 
 ## 8. Operator runbook
 
@@ -598,7 +595,114 @@ and it was opened with the default `GITHUB_TOKEN`, which GitHub does not let
 trigger workflows; the run summary says so. Push one commit to the branch from a
 clone to start CI.
 
-## 9. Known limits and follow-ups
+## 9. From the ledger to tickets (P5)
+
+`scripts/ecosystem-tickets.py` reads the records back and answers *why*, grouped.
+Every actionable failure site — a `blocked_load` module error, and the
+`first_failure` of every `regression`/`partial` test file — is normalised into a
+root-cause **signature**, and signatures are clustered so that one cluster is one
+interpreter fix.
+
+```sh
+scripts/ecosystem-tickets.py                      # the table, biggest first
+scripts/ecosystem-tickets.py --min-dists 1 --all  # the whole tail
+scripts/ecosystem-tickets.py --family no-such-method
+scripts/ecosystem-tickets.py --issue b98eb9ef     # a ready-to-file issue body
+scripts/ecosystem-tickets.py --json tmp/t.json    # machine-readable
+scripts/ecosystem-tickets.py --self-test
+```
+
+Four decisions are worth knowing before reading its output:
+
+- **Impact is counted in distributions, never in failure sites.** A message
+  repeated across forty modules of one distribution is one bug worth one
+  distribution. The raw per-module counts in the ledger say otherwise, and
+  ranking by them puts `Gnome::Gtk3` at the top of every list.
+- **A cluster key keeps the payload that identifies the fix and drops what is
+  volatile.** `No such method '<m>' on <type>` keys on both; `nqp::<op>` keys on
+  the op. Where the members share one cause by construction — an unknown
+  attribute trait, an invalid typename, a stack overflow — the cluster is the
+  *family*, and the payloads are listed inside it as "what varies".
+- **A message that carries no shared cause is keyed per distribution**, not
+  merged: `not ok 7 -` (an *unnamed* failing assertion) is the same string for
+  every such test in the corpus, and merging those two dozen would produce a
+  mega-ticket no single fix can close.
+- **The output is filed as GitHub issues** ([issue-workflow.md](issue-workflow.md)),
+  not committed as a queue file. A generated queue over ~1600 records would
+  conflict on every sweep, and an issue number keeps resolving after the finding
+  is fixed where a path in a generated file does not. Each body carries
+  `eco-cluster: <id>`, a digest of the signature and therefore stable across
+  sweeps, so "is this cluster already filed?" is a tracker search rather than
+  state in the repository.
+
+### A cluster is a hypothesis. Verify it before filing.
+
+The first batch's clusters were right about *what* fails and wrong about *why*
+often enough that this is a rule, not advice. Half an hour with the `raku` oracle
+turned vague tickets into minimised ones and killed two that would have been
+false:
+
+| the cluster said | what it actually was |
+|---|---|
+| `unknown trait 'is' -> 'json-skip-null'` (61 dists) | not the trait — mutsu handles user attribute traits across module boundaries. `JSON::Class` **re-exports** the trait it imported with `OUR::{'&trait_mod:<is>'} := &trait_mod:<is>`, and that binding is invisible to importers ([#7989](https://github.com/tokuhirom/mutsu/issues/7989)) |
+| `No such method 'AST' for invocant of type 'Str'` (13 dists) | `'say 1'.AST` works today. The L10N tests call `.AST("AF")` — the *localised slang* form, a 1-arity candidate that does not exist ([#8001](https://github.com/tokuhirom/mutsu/issues/8001)) |
+| `Variable $.x used where no 'self' is available` (35 dists) | two unrelated gaps: NativeCall's `HAS` declarator ([#7991](https://github.com/tokuhirom/mutsu/issues/7991)) and `has Int ($.x, $.y)` ([#7992](https://github.com/tokuhirom/mutsu/issues/7992)) |
+| `has overflowed its stack` (17 dists) | not deep recursion — *infinite* recursion: an imported `proto`/`multi` does not shadow an enclosing same-named `my sub`, so lizmat's `P5*` wrappers call themselves ([#7994](https://github.com/tokuhirom/mutsu/issues/7994)) |
+| `Use of Nil in string context` (10 dists) | **nothing.** Both interpreters print that as a warning and carry on; it was the harness recording a warning as the blocker. Not filed — fixed in the harness instead (below) |
+
+So: run the minimal case on both interpreters, and only then write the body. A
+ticket that names the construct is worth ten that quote a message.
+
+### Two harness fixes this phase produced
+
+Both are in `first_error_line()` (`scripts/ecosystem_common.py`), and both change
+what *future* sweeps record — existing records carry the old text until
+re-measured:
+
+- **A warning is no longer a cause.** `Use of Nil in string context`, `Use of
+  uninitialized value`, `Potential difficulties` and friends are printed by
+  rakudo too, and execution continues past them; a line matching them is used
+  only when the run produced nothing else. Ten distributions had a warning
+  recorded as their blocker, which hid ten real causes.
+- **A parse failure keeps its location.** mutsu prints `at <path>:<line>` and a
+  caret line under the reason; both were being dropped. The location is now
+  appended as `... [at dist/lib/A.rakumod:50]`, which is the difference between a
+  triageable record and "the parser was unhappy somewhere in this distribution"
+  — 99 distributions were in the second state. The caret line stays dropped: it
+  carries source text, which would fragment a cluster into one per offending
+  line. Consumers strip the suffix before clustering.
+
+### The first batch (2026-09-11)
+
+Fifteen issues from the corpus measured at `7807eb5`, covering ~330 of the
+~1200 non-green distribution slots:
+[#7988](https://github.com/tokuhirom/mutsu/issues/7988) (99 parse gaps, `todo:deep`),
+[#7989](https://github.com/tokuhirom/mutsu/issues/7989) (61, `OUR::` re-export),
+[#7991](https://github.com/tokuhirom/mutsu/issues/7991) (44, `HAS`),
+[#7993](https://github.com/tokuhirom/mutsu/issues/7993) (21, invalid typename),
+[#7995](https://github.com/tokuhirom/mutsu/issues/7995) (20, timeouts, `todo:perf`),
+[#7996](https://github.com/tokuhirom/mutsu/issues/7996) (20, unknown parent type),
+[#7994](https://github.com/tokuhirom/mutsu/issues/7994) (17, infinite recursion),
+[#8000](https://github.com/tokuhirom/mutsu/issues/8000) (17, `CHECK` swallows its exception),
+[#7999](https://github.com/tokuhirom/mutsu/issues/7999) (16, one parse gap in `Terminal::Widgets`),
+[#7997](https://github.com/tokuhirom/mutsu/issues/7997) (13, `use NativeCall :TEST`),
+[#8001](https://github.com/tokuhirom/mutsu/issues/8001) (13, `Str.AST($lang)`),
+[#8002](https://github.com/tokuhirom/mutsu/issues/8002) (11, duplicate composed attribute),
+[#8003](https://github.com/tokuhirom/mutsu/issues/8003) (9, default constructor),
+[#8004](https://github.com/tokuhirom/mutsu/issues/8004) (9, `%?RESOURCES`),
+[#7992](https://github.com/tokuhirom/mutsu/issues/7992) (2, parenthesised attribute list).
+
+Three of them are **diagnostics** tickets — #8000, #7999 and the message half of
+#7988 — and they are deliberately near the front: 17 distributions report only
+`An exception occurred while evaluating a CHECK`, so nothing can be said about
+what they need until that message carries its inner exception. Fixing a message
+splits a cluster, which is progress even though it moves no KPI.
+
+What is left after this batch is a long tail: 985 clusters in total, of which
+these fifteen are the ones affecting ten or more distributions. The tail is a
+**sampling** job (`--min-dists 1`), not an exhaustive-triage one.
+
+## 10. Known limits and follow-ups
 
 - **`--attempts` multiplies the cost of a red corpus.** The retry runs only on a
   file that did not pass, which is the right side to spend it on, but early in

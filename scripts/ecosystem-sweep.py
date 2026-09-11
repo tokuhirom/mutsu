@@ -356,34 +356,9 @@ def write_record(record):
 
 
 def load_records():
-    """Every record in the ledger, keyed by nothing but its own `dist` field.
-
-    Two files claiming the same distribution is a hard error rather than a
-    silently double-counted denominator. That is not hypothetical: it is exactly
-    what a change to `record_filename()` produces if the rename of the existing
-    records is forgotten, and a rollup would then report a corpus larger than
-    the corpus with one distribution's numbers counted twice.
-    """
-    out = []
-    where = {}
-    for dirpath, _dirs, names in os.walk(DISTS_DIR):
-        for n in sorted(names):
-            if not n.endswith(".json"):
-                continue
-            path = os.path.join(dirpath, n)
-            with open(path, encoding="utf-8") as fh:
-                record = json.load(fh)
-            dist = record.get("dist")
-            if dist in where:
-                raise SystemExit(
-                    f"two records claim the distribution {dist!r}:\n"
-                    f"  {where[dist]}\n  {path}\n"
-                    "One of them is stale -- most likely the filename rule "
-                    "changed and an old-named record was left behind. Delete it."
-                )
-            where[dist] = path
-            out.append(record)
-    return out
+    # The implementation lives in ecosystem_common so that the rollup and
+    # ecosystem-tickets.py cannot disagree about what the corpus is.
+    return eco.load_records(DISTS_DIR)
 
 
 def write_index_snapshot(index, args):
