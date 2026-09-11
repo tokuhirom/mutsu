@@ -49,6 +49,25 @@ impl Interpreter {
             .insert(name, val);
     }
 
+    /// Capture an `is export` regex declarator's bodies so `import_module` can
+    /// re-install them under the importing package. Keyed by the module being
+    /// loaded (any kind: unit, package-block or bare file), matching how
+    /// `register_exported_sub` attributes an export to its owner. Outside a
+    /// module load there is nothing to import into, so nothing is recorded.
+    pub(crate) fn record_exported_token_defs(
+        &mut self,
+        name: &str,
+        defs: Vec<std::sync::Arc<FunctionDef>>,
+    ) {
+        let Some(owner) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        crate::runtime::cow_table_mut(&mut self.exported_token_defs)
+            .entry(owner)
+            .or_default()
+            .insert(name.to_string(), defs);
+    }
+
     pub(crate) fn register_exported_sub(
         &mut self,
         package: String,
@@ -457,6 +476,26 @@ impl Interpreter {
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
             if imported_proto {
                 self.registry_mut().proto_subs_insert(target_single.clone());
+            }
+
+            // A `token`/`rule`/`regex` marked `is export` lives in
+            // `Registry::token_defs`, not `functions`, and a lexical one is
+            // dropped when the module's scope exits — so it is re-installed
+            // here from the defs captured at declaration time. Registering it
+            // under the importing package is what makes `&name` (a lazy
+            // by-name Routine) and `<name>` inside the importer's own regexes
+            // both resolve.
+            if let Some(defs) = self
+                .exported_token_defs
+                .get(module)
+                .and_then(|m| m.get(&name))
+                .cloned()
+            {
+                self.registry_mut()
+                    .token_defs
+                    .insert(Symbol::intern(&target_single), defs);
+                crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
             // If this exported sub carried a trait-modified value (e.g. a role

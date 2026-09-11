@@ -1254,14 +1254,28 @@ impl Interpreter {
         plan_idx: u32,
     ) -> Result<(), RuntimeError> {
         let plan = &code.token_decl_plans[plan_idx as usize];
+        let name = plan.name.resolve();
         self.register_token_decl(
-            &plan.name.resolve(),
+            &name,
             &plan.params,
             &plan.param_defs,
             &plan.raw_body,
             plan.multi,
             plan.source_line,
         );
+        // `token foo is export` installs a Regex under `&foo`, exactly like a
+        // `sub foo is export` installs a Sub, so it is recorded in the same
+        // export table and `use`-ing the module imports it by name.
+        if plan.is_export && !self.suppress_exports {
+            let pkg = self.current_package().to_string();
+            let tags = plan.export_tags.clone();
+            let key = Symbol::intern(&format!("{}::{}", pkg, name));
+            let defs = self.registry().token_defs.get(&key).cloned();
+            if let Some(defs) = defs {
+                self.record_exported_token_defs(&name, defs);
+            }
+            self.register_exported_sub(pkg, name.to_string(), tags);
+        }
         Ok(())
     }
 

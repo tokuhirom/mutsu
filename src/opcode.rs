@@ -4199,6 +4199,11 @@ pub(crate) struct CompiledTokenDeclPlan {
     /// role's deferred body, recompiled standalone at composition time with
     /// no line history — see `run_composed_role_deferred_body`).
     pub(crate) source_line: Option<i64>,
+    /// `token foo is export` — the registered Regex is also recorded as an
+    /// export of the enclosing package, so `use`-ing the module imports `&foo`.
+    pub(crate) is_export: bool,
+    /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
+    pub(crate) export_tags: Vec<String>,
 }
 
 /// Build a [`CompiledTokenDeclPlan`] from a `Stmt::TokenDecl`/`RuleDecl`.
@@ -4224,8 +4229,22 @@ fn build_token_decl_plan(stmt: &Stmt, source_line: Option<i64>) -> CompiledToken
             param_defs,
             body,
             multi,
+            ..
         } => (name, params, param_defs, body, *multi),
         _ => panic!("build_token_decl_plan expects TokenDecl/RuleDecl"),
+    };
+    let (is_export, export_tags) = match stmt {
+        Stmt::TokenDecl {
+            is_export,
+            export_tags,
+            ..
+        }
+        | Stmt::RuleDecl {
+            is_export,
+            export_tags,
+            ..
+        } => (*is_export, export_tags.clone()),
+        _ => unreachable!("build_token_decl_plan expects TokenDecl/RuleDecl"),
     };
     CompiledTokenDeclPlan {
         name: *name,
@@ -4234,6 +4253,8 @@ fn build_token_decl_plan(stmt: &Stmt, source_line: Option<i64>) -> CompiledToken
         multi,
         raw_body: body.clone(),
         source_line,
+        is_export,
+        export_tags,
     }
 }
 

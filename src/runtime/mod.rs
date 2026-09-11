@@ -13,6 +13,10 @@ pub(crate) type PackageLexicals = PackageKeyed<Value>;
 /// The full, specificity-sorted candidate list a multi dispatch frame carries
 /// (`push_multi_dispatch_frame`), shared between the frames that reuse it.
 pub(crate) type MultiCandidateList = std::sync::Arc<Vec<std::sync::Arc<FunctionDef>>>;
+
+/// `is export`-ed regex declarator bodies, keyed by the module that declared
+/// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
+type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
 /// `(name, current package, frame lexical package) -> candidate list`: see
 /// `Interpreter::multi_dispatch_candidates_memo`.
 pub(crate) type MultiDispatchCandidatesMemo =
@@ -2669,6 +2673,17 @@ pub struct Interpreter {
     /// `is export` registration time so `import` can restore the `&name` env
     /// binding with the role mixed in, rather than just the plain FunctionDef.
     exported_sub_values: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
+    /// Regex bodies of `token`/`rule`/`regex` declarations marked `is export`,
+    /// keyed by the module being loaded and the declarator's name.
+    ///
+    /// A regex declarator does not live in `Registry::functions` like a sub —
+    /// it lives in `Registry::token_defs` (ADR-0009: no compiled body), and a
+    /// *lexical* one (`my token foo`) is dropped by the block-scope restore
+    /// when the module's own scope exits. So the defs are captured here at
+    /// registration time and re-installed under the importing package by
+    /// `import_module`, which is what makes both `&foo` and `<foo>` resolve in
+    /// the importer.
+    exported_token_defs: std::sync::Arc<ExportedTokenDefs>,
     /// Mirrored export tables for modules declared with `unit module X`
     /// when the actual runtime package registration used "GLOBAL".
     /// Populated during `load_module` so that `import_module` can perform

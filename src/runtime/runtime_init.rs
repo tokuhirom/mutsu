@@ -3063,6 +3063,7 @@ impl Interpreter {
             unit_module_packages: Default::default(),
             exported_subs: Default::default(),
             exported_sub_values: Default::default(),
+            exported_token_defs: Default::default(),
             exported_vars: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),

@@ -1151,6 +1151,10 @@ pub(crate) enum Stmt {
         is_my: bool,
         /// `our token foo` — package scoped; a duplicate is X::Redeclaration.
         is_our: bool,
+        /// `token foo is export` — the Regex is importable under `&foo`.
+        is_export: bool,
+        /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
+        export_tags: Vec<String>,
     },
     RuleDecl {
         name: Symbol,
@@ -1158,6 +1162,10 @@ pub(crate) enum Stmt {
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
         multi: bool,
+        /// `rule foo is export` — the Regex is importable under `&foo`.
+        is_export: bool,
+        /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
+        export_tags: Vec<String>,
     },
     #[allow(dead_code)]
     ProtoToken {

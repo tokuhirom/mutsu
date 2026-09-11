@@ -888,6 +888,36 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
                         is_test_assertion: false,
                     });
             }
+            // `my token foo is export { ... }` exports a Regex under `&foo`,
+            // the same namespace a `sub foo is export` uses, so a plain
+            // `use Module` must learn the name too.
+            Stmt::TokenDecl {
+                name,
+                is_export,
+                export_tags,
+                ..
+            }
+            | Stmt::RuleDecl {
+                name,
+                is_export,
+                export_tags,
+                ..
+            } if *is_export => {
+                if export_tags
+                    .iter()
+                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
+                {
+                    let resolved = name.resolve();
+                    exports
+                        .entry(resolved.clone())
+                        .or_insert(InlineModuleExport {
+                            name: resolved,
+                            precedence: None,
+                            associativity: None,
+                            is_test_assertion: false,
+                        });
+                }
+            }
             Stmt::Package { body, .. }
             | Stmt::ClassDecl { body, .. }
             | Stmt::RoleDecl { body, .. } => {

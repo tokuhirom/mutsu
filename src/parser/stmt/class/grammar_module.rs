@@ -79,6 +79,15 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         (rest, (Vec::new(), Vec::new()))
     };
 
+    // Traits between the signature and the body: `my token n is export { ... }`,
+    // `token n is export(:tag) { ... }`. A regex declarator is a routine, so it
+    // takes the routine trait grammar; `is export` is the one with semantics
+    // here (the Regex becomes importable under `&n`) and the rest are accepted
+    // and dropped, which is strictly better than the hard parse error a single
+    // unimplemented trait used to make of the whole compilation unit.
+    let (rest, traits) = crate::parser::stmt::parse_sub_traits_pub(rest)?;
+    let (is_export, export_tags) = (traits.is_export, traits.export_tags);
+
     let (rest, _) = ws(rest)?;
     let (rest, mut pattern) = parse_raw_braced_regex_body(rest)?;
     // An empty `token`/`regex`/`rule` body is a null regex.
@@ -110,6 +119,8 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 multi: is_multi,
+                is_export,
+                export_tags,
             },
         ))
     } else {
@@ -123,6 +134,8 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 multi: is_multi,
                 is_my: false,
                 is_our: false,
+                is_export,
+                export_tags,
             },
         ))
     }

@@ -1776,6 +1776,7 @@ impl Interpreter {
                 param_defs,
                 body,
                 multi,
+                ..
             } => (name, params, param_defs, body, *multi),
             _ => unreachable!("register_token_decl_from_stmt expects TokenDecl/RuleDecl"),
         };

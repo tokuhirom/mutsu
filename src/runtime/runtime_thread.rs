@@ -702,6 +702,7 @@ impl Interpreter {
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             exported_sub_values: self.exported_sub_values.clone(),
+            exported_token_defs: self.exported_token_defs.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
             module_loading_unit_stack: Vec::new(),
