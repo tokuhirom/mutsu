@@ -531,23 +531,32 @@ impl Interpreter {
                         // Create a one-shot channel for the promise
                         let (tx, rx) =
                             crate::runtime::native_methods::supply_channel::supply_event_channel();
-                        let shared_clone = shared.clone();
-                        // Registered spawn: `wait()` clones the resolved
-                        // result `Value` and the promise handle drops at
-                        // thread exit — both are `Gc` mutations that must not
-                        // race a cycle scan (the wait itself is STW-aware).
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(
-                            "promise-wait",
-                            move || {
-                                let (result, _, _) = shared_clone.wait();
-                                if shared_clone.status() == "Broken" {
-                                    let _ = tx.send(SupplyEvent::Quit(result));
-                                } else {
-                                    let _ = tx.send(SupplyEvent::Emit(result));
-                                    let _ = tx.send(SupplyEvent::Done);
-                                }
-                            },
-                        );
+                        // Delivery rides the promise's own waiter list rather
+                        // than an OS thread parked in `wait()`: a `whenever
+                        // <Promise>` costs no thread, and a react that ends
+                        // before its promise settles leaves nothing behind
+                        // (issue #7609 — `roast/S17-procasync/stress.t`'s
+                        // 1200 `whenever Promise.in(5)` blocks peaked at 420
+                        // concurrent `promise-wait` threads, each pinned for
+                        // the timer's whole 5s long after its react was
+                        // over). `mark_observed` is what `wait()` used to do
+                        // for us: a Broken promise consumed by a `whenever`
+                        // must not also trip the destruction-time
+                        // "unhandled" diagnostic. The waiter runs either
+                        // inline here (already-resolved promise, on this
+                        // registered thread) or on a pooled worker from
+                        // `dispatch_waiters`; both are registered GC
+                        // mutators, which the `Value` clone in `send`
+                        // requires.
+                        shared.mark_observed();
+                        shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
+                            if status == "Broken" {
+                                let _ = tx.send(SupplyEvent::Quit(result));
+                            } else {
+                                let _ = tx.send(SupplyEvent::Emit(result));
+                                let _ = tx.send(SupplyEvent::Done);
+                            }
+                        }));
                         react_subs.push(ReactSubscription {
                             whenever_id,
                             receiver: Some(rx),
