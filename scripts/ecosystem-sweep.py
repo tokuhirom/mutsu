@@ -300,7 +300,10 @@ def shard_of(name):
 
 
 def record_path(name):
-    return os.path.join(DISTS_DIR, shard_of(name), name.replace("::", "--") + ".json")
+    # The filename mapping lives in ecosystem_common (with its own self-test):
+    # a name that reaches the filesystem unescaped can fail an artifact upload
+    # and take a whole shard's measurements with it.
+    return os.path.join(DISTS_DIR, shard_of(name), eco.record_filename(name))
 
 
 def write_record(record):
