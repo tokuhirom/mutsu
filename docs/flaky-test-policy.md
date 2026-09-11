@@ -27,10 +27,15 @@ So four out of ten red builds were noise, and essentially every red build on
 independent instruments:
 
 **(a) Job spread — free, from CI history.** Every PR runs the same suite three
-times: `test`, `gc-stress`, `jit-stress`. A genuine regression fails in all
-three, because the code is broken in every configuration. A test that fails in
-exactly ONE of the three, with the other two green on the same commit, is
-non-deterministic by construction: same binary, same inputs, different verdict.
+times, in three configurations: default, GC on, JIT hot. Since the CI jobs were
+split into halves, the three jobs running a given file are `test-suites` /
+`gc-stress-tap` / `jit-stress-tap` for a `t/` file and `test-suites` /
+`gc-stress-roast` / `jit-stress-roast` for a roast file (`test`, `gc-stress` and
+`jit-stress` are now aggregator jobs that run no tests). A genuine regression
+fails in all three, because the code is broken in every configuration. A test
+that fails in exactly ONE of the three, with the other two green on the same
+commit, is non-deterministic by construction: same binary, same inputs,
+different verdict.
 A failure on a `push: main` run is stronger still — main is protected, so that
 exact tree passed the full suite minutes earlier on its PR.
 
