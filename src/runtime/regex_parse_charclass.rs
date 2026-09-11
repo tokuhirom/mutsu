@@ -1,5 +1,6 @@
 use super::regex_parse::*;
 use super::*;
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 /// Result of statically folding a grammar token referenced in an enumerated
 /// char class (see `token_class_fold`).
@@ -303,9 +304,53 @@ impl Interpreter {
             negated
         };
         Some(CharClass {
-            items,
+            items: Self::compose_char_class_items(items),
             negated: final_negated,
         })
+    }
+
+    /// Raku character classes enumerate graphemes, rather than independent
+    /// codepoints. In particular, `[ a \x[308] ]` denotes the single NFG entry
+    /// `ä`, so it must not also admit the bare `a`. The parser already keeps
+    /// escaped combining marks as ordinary `Char` items; compose adjacent
+    /// exact entries here before the class is lowered to a matcher atom.
+    fn compose_char_class_items(items: Vec<ClassItem>) -> Vec<ClassItem> {
+        let mut composed = Vec::with_capacity(items.len());
+        let mut index = 0;
+        while index < items.len() {
+            let ClassItem::Char(base) = &items[index] else {
+                composed.push(items[index].clone());
+                index += 1;
+                continue;
+            };
+
+            let mut grapheme = base.to_string();
+            let mut next = index + 1;
+            while next < items.len() {
+                let ClassItem::Char(mark) = items[next] else {
+                    break;
+                };
+                if !is_combining_mark(mark) {
+                    break;
+                }
+                grapheme.push(mark);
+                next += 1;
+            }
+
+            let normalized: String = grapheme.nfc().collect();
+            let mut normalized_chars = normalized.chars();
+            match (normalized_chars.next(), normalized_chars.next()) {
+                (Some(ch), None) if next > index + 1 => {
+                    composed.push(ClassItem::Char(ch));
+                }
+                _ => {
+                    composed.push(ClassItem::Char(*base));
+                    composed.extend(items[index + 1..next].iter().cloned());
+                }
+            }
+            index = next;
+        }
+        composed
     }
 
     /// Parse bracket character class expressions like `[a..z]-[aeiou]` or `+[a..z]-[aeiou]-[y]`.
