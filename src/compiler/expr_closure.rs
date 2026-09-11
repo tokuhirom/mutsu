@@ -191,6 +191,7 @@ impl Compiler {
         return_type: &Option<String>,
         body: &[Stmt],
         is_rw: bool,
+        is_raw: bool,
         is_whatever_code: bool,
         is_sub: bool,
     ) {
@@ -320,10 +321,10 @@ impl Compiler {
         } else if is_whatever_code {
             self.compile_closure_body_with_promoted_decls(params, param_defs, body, &promoted_decls)
         } else {
-            // An anonymous `sub (...) is rw { ... }` hands out its tail's
-            // container (ADR-0059 Slice 2); a pointy block's `is_rw` is a
-            // loop-parameter trait and does not reach here.
-            self.compile_routine_closure_body(params, param_defs, body, is_rw)
+            // An anonymous `sub (...) is rw`/`is raw { ... }` hands out its
+            // tail's container (ADR-0059 Slice 2); a pointy block's `is_rw` is
+            // a loop-parameter trait and does not reach here.
+            self.compile_routine_closure_body(params, param_defs, body, is_rw || is_raw)
         };
         if is_pointy {
             compiled.is_pointy_block = true;
@@ -342,7 +343,7 @@ impl Compiler {
             body: body.to_vec(),
             multi: false,
             is_rw,
-            is_raw: false,
+            is_raw,
             is_export: false,
             export_tags: Vec::new(),
             is_test_assertion: false,
@@ -764,6 +765,7 @@ impl Compiler {
                         Expr::AnonSub {
                             body: vec![Stmt::Expr(value.clone())],
                             is_rw: false,
+                            is_raw: false,
                             is_block: true,
                         },
                     ],

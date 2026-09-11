@@ -36,6 +36,7 @@ pub(crate) fn make_anon_method(body: Vec<crate::ast::Stmt>) -> Expr {
         return_type: None,
         body,
         is_rw: false,
+        is_raw: false,
         is_whatever_code: false,
         is_sub: false,
     }
@@ -102,6 +103,7 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         return_type,
         body,
         is_rw,
+        is_raw,
         is_whatever_code,
         is_sub,
     } = expr
@@ -136,6 +138,7 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         return_type,
         body: new_body,
         is_rw,
+        is_raw,
         is_whatever_code,
         is_sub,
     }
@@ -166,6 +169,7 @@ pub(crate) fn parse_anon_sub_rest(
             return_type,
             body,
             is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
             is_whatever_code: false,
             is_sub,
         },
@@ -183,9 +187,15 @@ pub(crate) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
 
 pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
     match expr {
-        Expr::AnonSub { body, is_block, .. } => Expr::AnonSub {
+        Expr::AnonSub {
+            body,
+            is_raw,
+            is_block,
+            ..
+        } => Expr::AnonSub {
             body,
             is_rw,
+            is_raw,
             is_block,
         },
         Expr::AnonSubParams {
@@ -193,6 +203,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             param_defs,
             return_type,
             body,
+            is_raw,
             is_whatever_code,
             is_sub,
             ..
@@ -202,6 +213,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             return_type,
             body,
             is_rw,
+            is_raw,
             is_whatever_code,
             is_sub,
         },

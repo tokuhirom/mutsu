@@ -132,6 +132,7 @@ impl Compiler {
                 Expr::AnonSub {
                     body: body.to_vec(),
                     is_rw: rw_block,
+                    is_raw: false,
                     is_block: true,
                 }
             } else {
@@ -149,6 +150,7 @@ impl Compiler {
                     return_type: None,
                     body: body.to_vec(),
                     is_rw: rw_block,
+                    is_raw: false,
                     is_whatever_code: false,
                     is_sub: false,
                 }

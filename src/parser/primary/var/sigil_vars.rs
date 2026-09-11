@@ -504,6 +504,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
             Expr::AnonSub {
                 body,
                 is_rw: false,
+                is_raw: false,
                 is_block: true,
             },
         ));

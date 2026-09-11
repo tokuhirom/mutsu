@@ -89,6 +89,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
                 quoted: false,
             })],
             is_rw: false,
+            is_raw: false,
             is_whatever_code: true,
             is_sub: false,
         };
@@ -118,6 +119,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             return_type: None,
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
+            is_raw: false,
             is_whatever_code: true,
             is_sub: false,
         }
@@ -132,6 +134,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             return_type: None,
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
+            is_raw: false,
             is_whatever_code: true,
             is_sub: false,
         }

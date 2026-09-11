@@ -878,6 +878,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::AnonSub {
                             body,
                             is_rw: false,
+                            is_raw: false,
                             is_block: false,
                         },
                     ));
@@ -928,6 +929,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 return_type: Some(type_name.to_string()),
                                 body,
                                 is_rw: false,
+                                is_raw: false,
                                 is_whatever_code: false,
                                 // `anon Type sub { }` IS a sub: this selects the
                                 // Sub compile path, so `(anon Str sub {}).^name`
@@ -971,6 +973,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::AnonSub {
                         body,
                         is_rw: false,
+                        is_raw: false,
                         is_block: false,
                     },
                 ));
@@ -992,6 +995,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let mut expr = Expr::AnonSub {
                     body,
                     is_rw: traits.is_rw,
+                    is_raw: traits.is_raw,
                     is_block: false,
                 };
                 if traits.is_rw {
@@ -1060,6 +1064,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         ref param_defs,
                         ref body,
                         is_rw,
+                        is_raw,
                         ..
                     } = stmt
                 {
@@ -1070,6 +1075,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         return_type: None,
                         body: body.clone(),
                         is_rw,
+                        is_raw,
                         is_whatever_code: false,
                         // One candidate of an anonymous `multi sub` -- still a sub.
                         is_sub: true,

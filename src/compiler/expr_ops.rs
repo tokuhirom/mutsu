@@ -369,6 +369,7 @@ impl Compiler {
                 .map(|item| Expr::AnonSub {
                     body: vec![Stmt::Expr(item.clone())],
                     is_rw: false,
+                    is_raw: false,
                     is_block: true,
                 })
                 .collect();
@@ -394,6 +395,7 @@ impl Compiler {
                 .map(|elem| Expr::AnonSub {
                     body: vec![Stmt::Expr(elem.clone())],
                     is_rw: false,
+                    is_raw: false,
                     is_block: true,
                 })
                 .collect(),
@@ -444,6 +446,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
                 is_rw: false,
+                is_raw: false,
                 is_block: true,
             };
             let rewritten = Expr::Call {
@@ -505,6 +508,7 @@ impl Compiler {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
                 is_rw: false,
+                is_raw: false,
                 is_block: true,
             };
             let rewritten = Expr::Call {
@@ -537,6 +541,7 @@ impl Compiler {
                 let thunked = Expr::AnonSub {
                     body: vec![Stmt::Expr(eval_right.clone())],
                     is_rw: false,
+                    is_raw: false,
                     is_block: true,
                 };
                 let rewritten = Expr::Call {
@@ -569,6 +574,7 @@ impl Compiler {
                 let thunked = Expr::AnonSub {
                     body: vec![Stmt::Expr(eval_left.clone())],
                     is_rw: false,
+                    is_raw: false,
                     is_block: true,
                 };
                 let rewritten = Expr::Call {

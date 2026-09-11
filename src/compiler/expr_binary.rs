@@ -325,6 +325,7 @@ impl Compiler {
                 let thunk = Expr::AnonSub {
                     body: vec![Stmt::Expr(reevaluated_lhs)],
                     is_rw: false,
+                    is_raw: false,
                     is_block: true,
                 };
                 self.compile_expr(&thunk);

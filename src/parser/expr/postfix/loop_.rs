@@ -3496,6 +3496,7 @@ fn postfix_expr_loop_from(
                         Expr::AnonSub {
                             body,
                             is_rw: false,
+                            is_raw: false,
                             is_block: true,
                         },
                     ) {

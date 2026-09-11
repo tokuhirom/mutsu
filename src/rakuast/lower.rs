@@ -1173,6 +1173,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::Block => Ok(Expr::AnonSub {
             body: lower_block(node)?,
             is_rw: false,
+            is_raw: false,
             is_block: true,
         }),
         // A nameless `RakuAST::Sub` in expression position is an anonymous
@@ -1194,6 +1195,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(Expr::AnonSub {
                     body,
                     is_rw: false,
+                    is_raw: false,
                     is_block: false,
                 });
             }
@@ -1203,6 +1205,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return_type,
                 body,
                 is_rw: false,
+                is_raw: false,
                 is_whatever_code: false,
                 is_sub: true,
             })
@@ -1228,6 +1231,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     return_type: None,
                     body,
                     is_rw: false,
+                    is_raw: false,
                     is_whatever_code: false,
                     is_sub: false,
                 }),

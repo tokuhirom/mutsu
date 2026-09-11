@@ -63,6 +63,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         return_type: None,
                         body: vec![Stmt::Expr(body_expr)],
                         is_rw: false,
+                        is_raw: false,
                         is_whatever_code: false,
                         is_sub: false,
                     };

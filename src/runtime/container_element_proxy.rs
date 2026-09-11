@@ -32,13 +32,14 @@ use super::Interpreter;
 use crate::ast::Stmt;
 use crate::value::{RuntimeError, Value};
 
-// `is rw` marks the routine rw-capable, which is what lets
+// Spelled the way Rakudo spells `Baggy::AT-KEY`: sigilless parameters, and
+// `is raw` — the trait that marks the routine rw-capable, which is what lets
 // `nextone(self,$key) = $value` write through the `Proxy` it returns
 // (`assign_callable_lvalue_with_values`).
-const CONTAINER_ELEMENT_PROXY_SRC: &str = r#"sub ($obj, $key) is rw {
+const CONTAINER_ELEMENT_PROXY_SRC: &str = r#"sub (\obj, \key) is raw {
     Proxy.new(
-        FETCH => { $obj.__mutsu_container_at_key($key) },
-        STORE => -> $, $value { $obj.__mutsu_container_assign_key($key, $value) }
+        FETCH => { obj.__mutsu_container_at_key(key) },
+        STORE => -> $, \value { obj.__mutsu_container_assign_key(key, value) }
     )
 }"#;
 

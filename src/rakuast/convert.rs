@@ -1598,10 +1598,14 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::AnonSub {
             body,
             is_rw,
+            is_raw,
             is_block,
         } => {
             if *is_rw {
                 return Err(unsupported("`is rw` block"));
+            }
+            if *is_raw {
+                return Err(unsupported("`is raw` block"));
             }
             if *is_block {
                 // A bare `{ ... }` block.
