@@ -80,10 +80,28 @@ a parse. The no-argument `.AST` is untouched.
 ## Result
 
 `L10N::JA` 0.0.3 goes from `red` to `green`: 1 of 1 baseline file, matching
-rakudo. `t/lang/parsing/slang-l10n-vocabulary.t` pins the mechanism against a
-miniature of the generated role shape (`t/lib/L10N/Testish.rakumod`) — and
-passes under **rakudo** as well as mutsu, all twelve assertions, which is what
-establishes that the replacement/alias split is rakudo's and not an invention.
+rakudo.
+
+The gap was never one distribution's. Twelve sibling `L10N::*` records carried
+the identical `No such method 'AST' for invocant of type 'Str'`, and
+re-measuring them turned **twelve of the fifteen L10N records green** — `AF`,
+`CY`, `DE`, `EN`, `EO`, `FR`, `HU`, `IT`, `JA`, `NL`, `PT`, `TLH`. `L10N::ZH`
+goes `red` → `partial` (1 of 9 files; its other eight are pre-existing RakuAST
+converter gaps — `Package`, `EnumDecl`, method traits, `Redo` — nothing to do
+with localization), and `L10N` itself stays `blocked_load` on an unrelated
+parse failure in the module.
+
+Measuring the neighbours also paid for itself directly: `L10N::TLH` stayed red
+where the other eleven went green, because its generator emits the
+`<category>2ast` translation map as a plain `my %mapping = ...` where
+`L10N::JA`'s emits `my constant %mapping = ...`. Requiring the `constant` trait
+read only one of the two shapes — a bug no amount of work on `L10N::JA` alone
+would have surfaced.
+
+`t/lang/parsing/slang-l10n-vocabulary.t` pins the mechanism against a miniature
+of the generated role shape (`t/lib/L10N/Testish.rakumod`) — and passes under
+**rakudo** as well as mutsu, all twelve assertions, which is what establishes
+that the replacement/alias split is rakudo's and not an invention.
 
 ## What is deliberately still inert
 
