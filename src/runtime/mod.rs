@@ -825,6 +825,7 @@ pub(crate) mod slang_activation;
 mod source_code_text;
 pub(super) mod sprintf;
 mod sprintf_helpers;
+mod sprintf_hexfloat;
 mod sprintf_validate;
 pub(crate) mod str_numeric;
 mod supply_classify;
