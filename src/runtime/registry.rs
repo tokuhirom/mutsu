@@ -1031,9 +1031,11 @@ impl Registry {
             // catalog's own chain directly rather than recursing through
             // `class_mro`, whose `compute_class_mro` fallback would otherwise
             // treat an un-registered `base` like "Array" as parentless.
-            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(base) {
+            if let Some(base_mro) =
+                crate::builtins::builtin_type_catalog::builtin_type_mro_syms(base)
+            {
                 let mut mro = vec![Symbol::intern(class_name)];
-                mro.extend(info.mro.iter().map(|s| Symbol::intern(s)));
+                mro.extend_from_slice(&base_mro);
                 return mro.into();
             }
         }
@@ -1070,9 +1072,11 @@ impl Registry {
                     mro.extend(self.class_mro_readonly(base)?.iter().copied());
                     return Some(mro.into());
                 }
-                if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(base) {
+                if let Some(base_mro) =
+                    crate::builtins::builtin_type_catalog::builtin_type_mro_syms(base)
+                {
                     let mut mro = vec![Symbol::intern(class_name)];
-                    mro.extend(info.mro.iter().map(|s| Symbol::intern(s)));
+                    mro.extend_from_slice(&base_mro);
                     return Some(mro.into());
                 }
             }
@@ -1091,9 +1095,14 @@ impl Registry {
             // base (`Blob`) from `mro` (tracked instead via `roles`), so
             // matching it here first would drop `Blob` from the chain that
             // branch already builds correctly.
-            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(class_name)
+            // Interned once per process (`builtin_type_mro_syms`): this is the
+            // MRO every builtin-receiver method dispatch walks, and re-interning
+            // the chain plus allocating a fresh `Arc` per call put it on the
+            // per-assertion `Symbol::intern` budget (#7766).
+            if let Some(mro) =
+                crate::builtins::builtin_type_catalog::builtin_type_mro_syms(class_name)
             {
-                return Some(info.mro.iter().map(|s| Symbol::intern(s)).collect());
+                return Some(mro);
             }
             // Not a registered class at all: the write side computes but has no
             // `ClassDef` to cache into, so the result is identical read-only.

@@ -562,11 +562,81 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     ),
 ];
 
+/// One catalog row with its `mro` already interned, in both shapes dispatch asks
+/// for: `Symbol`s for the registry's `Arc<[Symbol]>` MRO API, and [`crate::type_id::TypeId`]s for
+/// the E1 classifier's chains.
+///
+/// Both are constant for the life of the process — the rows are `&'static str`
+/// and a symbol id, once assigned, is never reused or remapped — but every
+/// consumer re-derived them per call: `receiver_class::catalog_chain_for_name`
+/// interned the whole ancestor chain and allocated a fresh `Vec<TypeId>` on
+/// every dispatch that reached it, and `Registry::class_mro_readonly` did the
+/// same into an `Arc<[Symbol]>`. Measured on `use Test; plan 2000; for ^2000 {
+/// ok 1, "x" }` that was 16.5 of the ~35 `Symbol::intern` calls *per assertion*
+/// and 1.28% of the program's retired instructions (#7766).
+struct InternedRow {
+    info: &'static BuiltinTypeInfo,
+    mro_syms: std::sync::Arc<[crate::symbol::Symbol]>,
+    mro_ids: Box<[crate::type_id::TypeId]>,
+}
+
+/// The catalog indexed by row name, with each row's `mro` interned once.
+///
+/// Doubles as the name index: [`builtin_type_info`] was a linear scan of all 88
+/// rows with a string compare each, and it sits under both of the MRO lookups
+/// above plus `Registry::class_mro_readonly`'s builtin path.
+fn interned_catalog() -> &'static rustc_hash::FxHashMap<&'static str, InternedRow> {
+    static INTERNED: std::sync::OnceLock<rustc_hash::FxHashMap<&'static str, InternedRow>> =
+        std::sync::OnceLock::new();
+    INTERNED.get_or_init(|| {
+        CATALOG
+            .iter()
+            .map(|info| {
+                (
+                    info.name,
+                    InternedRow {
+                        info,
+                        mro_syms: info
+                            .mro
+                            .iter()
+                            .map(|s| crate::symbol::Symbol::intern(s))
+                            .collect(),
+                        mro_ids: info
+                            .mro
+                            .iter()
+                            .map(|s| crate::type_id::TypeId::intern(s))
+                            .collect(),
+                    },
+                )
+            })
+            .collect()
+    })
+}
+
 /// Look up a builtin type's catalog row by its canonical (post-alias) name.
 /// `Buf`/`Blob` sized aliases (`buf8`, `blob16`, ...) must be normalized first — see
 /// `crate::runtime::utils::normalize_buf_type_name`.
 pub(crate) fn builtin_type_info(name: &str) -> Option<&'static BuiltinTypeInfo> {
-    CATALOG.iter().find(|row| row.name == name)
+    interned_catalog().get(name).map(|row| row.info)
+}
+
+/// `builtin_type_info(name).mro`, interned to `Symbol`s once per process.
+///
+/// The `Arc` is cloned, not rebuilt: a caller that hands the chain straight back
+/// as an `Arc<[Symbol]>` (`Registry::class_mro_readonly`) pays a refcount bump
+/// instead of an intern per ancestor plus a fresh allocation.
+pub(crate) fn builtin_type_mro_syms(name: &str) -> Option<std::sync::Arc<[crate::symbol::Symbol]>> {
+    interned_catalog().get(name).map(|row| row.mro_syms.clone())
+}
+
+/// `builtin_type_info(name).mro`, interned to [`crate::type_id::TypeId`]s once per process.
+///
+/// Borrowed rather than cloned: the E1 classifier splices chains together, so it
+/// wants to copy the elements into a chain it is building, not own the table's.
+/// Minting `TypeId`s here keeps the type's invariant intact — the catalog is one
+/// of the two places allowed to produce one (see [`crate::type_id`]).
+pub(crate) fn builtin_type_mro_ids(name: &str) -> Option<&'static [crate::type_id::TypeId]> {
+    interned_catalog().get(name).map(|row| &*row.mro_ids)
 }
 
 /// Every catalog row, for exhaustive tests and (eventually) E1b/E2 table generation.
@@ -601,6 +671,39 @@ mod tests {
                 row.name
             );
         }
+    }
+
+    /// The two pre-interned views (`builtin_type_mro_syms`,
+    /// `builtin_type_mro_ids`) must name exactly the row's own `mro`, in order,
+    /// for every row — a memo that drops or reorders an ancestor would silently
+    /// change method dispatch rather than merely slow it down (#7766). Also
+    /// pins the `builtin_type_info` name index against the raw `CATALOG`, which
+    /// it replaced a linear scan of.
+    #[test]
+    fn interned_views_agree_with_their_row() {
+        for row in all_builtin_type_info() {
+            assert_eq!(
+                builtin_type_info(row.name).map(|r| r.name),
+                Some(row.name),
+                "row {} must be reachable by name",
+                row.name
+            );
+            let syms: Vec<&str> = builtin_type_mro_syms(row.name)
+                .unwrap_or_else(|| panic!("row {} has no interned symbol mro", row.name))
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            assert_eq!(syms, row.mro, "symbol mro for {}", row.name);
+            let ids: Vec<&str> = builtin_type_mro_ids(row.name)
+                .unwrap_or_else(|| panic!("row {} has no interned TypeId mro", row.name))
+                .iter()
+                .map(|t| t.as_str())
+                .collect();
+            assert_eq!(ids, row.mro, "TypeId mro for {}", row.name);
+        }
+        assert!(builtin_type_info("NotACatalogType").is_none());
+        assert!(builtin_type_mro_syms("NotACatalogType").is_none());
+        assert!(builtin_type_mro_ids("NotACatalogType").is_none());
     }
 
     #[test]
