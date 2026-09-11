@@ -1,0 +1,96 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AlgorithmsIT",
+      "Crypt::Random",
+      "Date::Event",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "JSON::Fast",
+      "Text::Utils",
+      "UUID::V4",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Date::Easter",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/1-gregorian-easter.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 5.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Ambiguous call to 'etype(Date::Event: )'; these signatures all match:",
+        "nok": 0,
+        "ok": 6,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/2-easter-events.t",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Date::Easter": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATE_EASTER/27e87fe2563c68e16950047e945e6aa3a108e379.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 57,
+    "baseline_files": 2,
+    "mutsu_assertions": 26,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "0.0.5"
+}

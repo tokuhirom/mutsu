@@ -1,0 +1,104 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Gzz::Prompt",
+      "Gzz::Text::Utils",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "OO::Monitors",
+      "Syntax::Highlighters",
+      "Term::termios",
+      "Terminal::ANSI",
+      "Terminal::WCWidth",
+      "Terminal::Width",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Display::Listings",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Signature constraint check failed in binding to parameter '&include-row'; expected :(Str:D $pref, Regex $pat, Str:D $k, Str:D @f, %r) but got :(Str:D $prefix, Regex:D $pattern, Str:D $key, Str:D @fiel",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/000-Display::Listings.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 21.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-Meta-test.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.51,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Display::Listings": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/IS/DISPLAY_LISTINGS/6d5ff3ddfdec696cc0fd3026aec7c74b4bbd3621.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 5,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "0.1.9"
+}

@@ -1,0 +1,241 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Clipboard",
+      "DSL::Shared",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::English::RecommenderWorkflows",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-Profile-finding-commands.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 27.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-Recommendations-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-Recommendations-processing-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-Creation-and-data-load-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 1,
+        "plan": 17,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-LSI-functions-application-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-Classification-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 1,
+        "plan": 8,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-Queries-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 19,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-Recommender-algebra-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-Anomalies-finding-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-Tag-type-recommender-making-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-General-commands-parsing.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 1,
+        "plan": 2,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-Misspelled-commands-parsing.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "DSL::English::RecommenderWorkflows": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::Bulgarian::Standard": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::English::Standard": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::Python::SMRMon": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::R::SMRMon": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::R::tidyverse": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::Raku::SBR": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::Raku::SMRMon": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::Russian::Standard": "ok",
+    "DSL::English::RecommenderWorkflows::Actions::WL::SMRMon": "ok",
+    "DSL::English::RecommenderWorkflows::Grammar": "ok",
+    "DSL::English::RecommenderWorkflows::Grammar::LSIApplyCommand": "ok",
+    "DSL::English::RecommenderWorkflows::Grammar::RecommenderPhrases": "ok",
+    "DSL::English::RecommenderWorkflows::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_ENGLISH_RECOMMENDERWORKFLOWS/b9bf74007276aa91b86fcee2c90041dba6e40779.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.6.7"
+}

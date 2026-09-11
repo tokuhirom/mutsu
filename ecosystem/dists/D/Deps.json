@@ -1,0 +1,47 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Deps",
+  "files": [],
+  "load": {
+    "Deps": "expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "Deps::Funcs": "ok",
+    "Deps::Item": "ok",
+    "Deps::Item::New": "ok",
+    "Deps::Item::Scope": "ok",
+    "Deps::Item::Store": "ok",
+    "Deps::LifeCycle": "ok",
+    "Deps::Module": "ok",
+    "Deps::Priority": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/EP/DEPS/bea77f64935dfde9372eabc6b688325d150d3f48.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

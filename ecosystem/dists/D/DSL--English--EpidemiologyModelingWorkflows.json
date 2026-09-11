@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DSL::Shared",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::English::EpidemiologyModelingWorkflows",
+  "files": [],
+  "load": {
+    "DSL::English::EpidemiologyModelingWorkflows": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::English::EpidemiologyModelingWorkflows::Actions::Bulgarian::Standard": "ok",
+    "DSL::English::EpidemiologyModelingWorkflows::Actions::Python::ECMMon": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::English::EpidemiologyModelingWorkflows::Actions::R::ECMMon": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::English::EpidemiologyModelingWorkflows::Actions::WL::ECMMon": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::English::EpidemiologyModelingWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::English::EpidemiologyModelingWorkflows::Grammar::EpidemiologyPhrases": "ok",
+    "DSL::English::EpidemiologyModelingWorkflows::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_ENGLISH_EPIDEMIOLOGYMODELINGWORKFLOWS/92611bcfe5890e5058b09bead579889ca34faf8f.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.5.0"
+}

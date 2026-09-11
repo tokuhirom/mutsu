@@ -1,0 +1,57 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Cache::Dir",
+      "Color",
+      "Color::Names",
+      "Color::Scheme",
+      "Digest::SHA1::Native",
+      "File::Find",
+      "File::Which",
+      "JSON::Fast",
+      "LibraryMake",
+      "Log::Async",
+      "OO::Monitors",
+      "Pod::To::Raku",
+      "Pretty::Table",
+      "Shell::Command",
+      "Terminal::ANSI",
+      "Terminal::ANSIParser",
+      "Terminal::UI",
+      "Text::Wrap"
+    ],
+    "unresolved": [
+      "Unicode::UTF8",
+      "git"
+    ]
+  },
+  "dist": "Draku",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/RA/DRAKU/a79cb51d8836f338adb6963eaa727848148147a1.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

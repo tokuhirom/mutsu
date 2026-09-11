@@ -1,0 +1,879 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "NativeHelpers::Blob",
+      "NativeLibs"
+    ],
+    "unresolved": []
+  },
+  "dist": "DBIish",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 28.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.08,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.45,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-lib-util.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-mock.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-types.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 89,
+        "plan": 89,
+        "secs": 0.19,
+        "skip": 89,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-mysql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 89,
+        "plan": 89,
+        "secs": 1.87,
+        "skip": 89,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/24-mysql-types-json.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.47,
+        "skip": 5,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/24-mysql-types.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.81,
+        "skip": 5,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.23,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/25-mysql-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.44,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.49,
+        "skip": 10,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/26-mysql-blob.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.72,
+        "skip": 10,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.44,
+        "skip": 11,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/27-mysql-datetime.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.59,
+        "skip": 11,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.51,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/28-mysql-connection-lock.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.52,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.28,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/28-mysql-threads.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.72,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/30-pg.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.64,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/34-pg-types.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.75,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.27,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/35-pg-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.64,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.68,
+        "skip": 46,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/36-pg-array.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 1.25,
+        "skip": 46,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.63,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/36-pg-blob.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.69,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.24,
+        "skip": 26,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/36-pg-enum.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.84,
+        "skip": 26,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.71,
+        "skip": 19,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/36-pg-native.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.76,
+        "skip": 19,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.69,
+        "skip": 13,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/37-pg-datetime.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.92,
+        "skip": 13,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.64,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/38-pg-connection-lock.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.84,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.88,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/38-pg-errors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.94,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.27,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/38-pg-threads.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.31,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/44-sqlite-memory.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.57,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.27,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/45-sqlite-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.54,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/46-sqlite-blob.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/48-sqlite-errors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.26,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/55-oracle-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.59,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.25,
+        "skip": 18,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/56-oracle-blob.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.68,
+        "skip": 18,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 58,
+        "plan": 58,
+        "secs": 0.26,
+        "skip": 58,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/57-oracle-datetime.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 58,
+        "plan": 58,
+        "secs": 0.99,
+        "skip": 58,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 135,
+        "plan": 135,
+        "secs": 0.24,
+        "skip": 135,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/58-oracle-cursor-bug.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 135,
+        "plan": 135,
+        "secs": 0.87,
+        "skip": 135,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.36,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/70-sqlcipher-memory.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.56,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.25,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/71-sqlcipher-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 0.62,
+        "skip": 109,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.41,
+        "skip": 20,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/72-sqlcipher-blob.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 5.81,
+        "skip": 20,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.4,
+        "skip": 16,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/73-sqlcipher-errors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.79,
+        "skip": 16,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.42,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/74-key-issues.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.79,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "DBDish": "ok",
+    "DBDish::Connection": "ok",
+    "DBDish::ErrorHandling": "ok",
+    "DBDish::Oracle": "ok",
+    "DBDish::Oracle::Connection": "ok",
+    "DBDish::Oracle::Native": "ok",
+    "DBDish::Oracle::StatementHandle": "ok",
+    "DBDish::Pg": "ok",
+    "DBDish::Pg::Connection": "ok",
+    "DBDish::Pg::ErrorHandling": "ok",
+    "DBDish::Pg::Native": "ok",
+    "DBDish::Pg::StatementHandle": "ok",
+    "DBDish::SQLCipher": "ok",
+    "DBDish::SQLCipher::Connection": "ok",
+    "DBDish::SQLCipher::Native": "ok",
+    "DBDish::SQLCipher::StatementHandle": "ok",
+    "DBDish::SQLite": "ok",
+    "DBDish::SQLite::Connection": "ok",
+    "DBDish::SQLite::Native": "ok",
+    "DBDish::SQLite::StatementHandle": "ok",
+    "DBDish::StatementHandle": "ok",
+    "DBDish::TestMock": "ok",
+    "DBDish::TestMock::Connection": "ok",
+    "DBDish::TestMock::StatementHandle": "ok",
+    "DBDish::mysql": "ok",
+    "DBDish::mysql::Connection": "ok",
+    "DBDish::mysql::ErrorHandling": "ok",
+    "DBDish::mysql::Native": "ok",
+    "DBDish::mysql::StatementHandle": "ok",
+    "DBIish": "ok",
+    "DBIish::Common": "ok",
+    "DBIish::CommonTesting": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/BI/DBIISH/f9782172a0190151348229f15a63229639854e6a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1386,
+    "baseline_files": 36,
+    "mutsu_assertions": 1386,
+    "parity_files": 36,
+    "regressed_files": 0
+  },
+  "version": "0.6.8"
+}

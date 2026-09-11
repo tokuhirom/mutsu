@@ -1,0 +1,134 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Text::Table::Simple"
+    ],
+    "unresolved": []
+  },
+  "dist": "Dan",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "DataSlice[0..2]",
+        "nok": 2,
+        "ok": 5,
+        "plan": 30,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-ser.t",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 5.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Preceding context expects a term, but found infix , instead.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-dfr.t",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 5.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": ".map.map",
+        "nok": 5,
+        "ok": 3,
+        "plan": 28,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-dfo.t",
+      "raku": {
+        "nok": 0,
+        "ok": 28,
+        "plan": 28,
+        "secs": 5.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 0",
+        "nok": 0,
+        "ok": 0,
+        "plan": 18,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-upd.t",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 5.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Dan": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AN/DAN/168ae7eccc305521ca9190a826e9f97a00109dc9.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 113,
+    "baseline_files": 4,
+    "mutsu_assertions": 8,
+    "parity_files": 0,
+    "regressed_files": 4
+  },
+  "version": "0.0.3"
+}

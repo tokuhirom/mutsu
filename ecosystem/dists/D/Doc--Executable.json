@@ -1,0 +1,45 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Resources::Menu",
+      "Menu::Simple",
+      "Test::Output"
+    ],
+    "unresolved": []
+  },
+  "dist": "Doc::Executable",
+  "files": [],
+  "load": {
+    "Doc::Executable": "Type check failed in assignment to $!resources; expected Distribution::Resources but got Hash",
+    "Doc::Executable::Parser": "ok",
+    "Doc::Executable::Subroutines": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/OC/DOC_EXECUTABLE/f3df3b2dce737e47a5e4bf1f5c0d7a17931bb8a3.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

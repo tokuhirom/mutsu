@@ -1,0 +1,109 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Docker::File",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Str(Docker::File::Label:D: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 29,
+        "plan": 37,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/generate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Could not parse Docker file",
+        "nok": 0,
+        "ok": 5,
+        "plan": 49,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/parse-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Could not parse Docker file",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/parse-complex.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Docker::File": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/OC/DOCKER_FILE/542465f8bf3ba68ab04f417ac63741eb6ef698a0.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 89,
+    "baseline_files": 3,
+    "mutsu_assertions": 34,
+    "parity_files": 0,
+    "regressed_files": 3
+  },
+  "version": "1.1"
+}

@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "Dev::ContainerizedService",
+  "files": [],
+  "load": {
+    "Dev::ContainerizedService": "ok",
+    "Dev::ContainerizedService::Spec": "ok",
+    "Dev::ContainerizedService::Spec::ClickHouse": "Attribute $!port:8123 not declared in class Dev::ContainerizedService::Spec::ClickHouse",
+    "Dev::ContainerizedService::Spec::Postgres": "Attribute $!port:5432 not declared in class Dev::ContainerizedService::Spec::Postgres",
+    "Dev::ContainerizedService::Spec::Redis": "Attribute $!port:6379 not declared in class Dev::ContainerizedService::Spec::Redis",
+    "Dev::ContainerizedService::Tool": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/EV/DEV_CONTAINERIZEDSERVICE/f22ae8ad6bf7f81168fff42ff6461eb84ec05873.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.4"
+}

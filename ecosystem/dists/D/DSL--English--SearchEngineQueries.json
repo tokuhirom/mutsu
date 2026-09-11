@@ -1,0 +1,71 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Clipboard",
+      "DSL::Shared",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::English::SearchEngineQueries",
+  "files": [],
+  "load": {
+    "DSL::English::SearchEngineQueries": "ok",
+    "DSL::English::SearchEngineQueries::Actions::CLI::invoke-smr": "ok",
+    "DSL::English::SearchEngineQueries::Actions::Elasticsearch::Standard": "ok",
+    "DSL::English::SearchEngineQueries::Actions::MongoDB::Standard": "ok",
+    "DSL::English::SearchEngineQueries::Actions::R::SMRMon": "ok",
+    "DSL::English::SearchEngineQueries::Actions::R::tidyverse": "ok",
+    "DSL::English::SearchEngineQueries::Actions::Raku::Ecosystem": "ok",
+    "DSL::English::SearchEngineQueries::Actions::WL::SMRMon": "ok",
+    "DSL::English::SearchEngineQueries::Actions::WL::System": "ok",
+    "DSL::English::SearchEngineQueries::Grammar": "ok",
+    "DSL::English::SearchEngineQueries::Grammar::SearchPhrases": "ok",
+    "DSL::English::SearchEngineQueries::Grammar::SearchQueryCommand": "ok",
+    "DSL::English::SearchEngineQueries::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_ENGLISH_SEARCHENGINEQUERIES/183d6c1724672d070226f7875dd98ba16947ba1c.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.5.0"
+}

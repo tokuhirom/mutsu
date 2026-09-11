@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Lingua::EN::Numbers"
+    ],
+    "unresolved": []
+  },
+  "dist": "Date::Discordian",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "takes a Date",
+        "nok": 1,
+        "ok": 16,
+        "plan": 17,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 4.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Date::Discordian": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATE_DISCORDIAN/d8e0c196d681d0a047381899ac3bd6367f619a4c.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 17,
+    "baseline_files": 1,
+    "mutsu_assertions": 16,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

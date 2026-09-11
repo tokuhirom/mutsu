@@ -1,0 +1,66 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Pretty::Table",
+      "Slang::Tuxic",
+      "Slangify",
+      "Test::META",
+      "Text::CSV",
+      "Text::Wrap",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::Reshapers",
+  "files": [],
+  "load": {
+    "Data::Reshapers": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Data::Reshapers::Adapters": "ok",
+    "Data::Reshapers::CrossTabulate": "ok",
+    "Data::Reshapers::JoinAcross": "ok",
+    "Data::Reshapers::ToLongFormat": "ok",
+    "Data::Reshapers::ToPrettyTable": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Data::Reshapers::ToWideFormat": "ok",
+    "Data::Reshapers::Transpose": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_RESHAPERS/7756bc390da1e9404be1450c7a677a57abae8108.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.8"
+}

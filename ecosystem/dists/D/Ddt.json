@@ -1,0 +1,75 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Ignore",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "License::Software",
+      "META6",
+      "OO::Monitors",
+      "Pluggable",
+      "Pod::Load",
+      "Pod::To::HTML",
+      "Pod::To::Markdown",
+      "Template::Mustache",
+      "Test::META",
+      "Test::Output",
+      "URI",
+      "zef"
+    ],
+    "unresolved": []
+  },
+  "dist": "Ddt",
+  "files": [],
+  "load": {
+    "Ddt": "ok",
+    "Ddt::Distribution": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+    "Ddt::JSON": "ok",
+    "Ddt::License": "Invalid typename 'License::Software::Year' in parameter declaration.",
+    "Ddt::Plugins::Build": "Useless use of () in sink context",
+    "Ddt::Plugins::Deps": "Useless use of () in sink context",
+    "Ddt::Plugins::Hack": "Useless use of () in sink context",
+    "Ddt::Plugins::New": "Useless use of () in sink context",
+    "Ddt::Plugins::Release": "Useless use of () in sink context",
+    "Ddt::Plugins::Test": "Useless use of () in sink context",
+    "Ddt::Plugins::Unit-Generator": "Useless use of () in sink context",
+    "Ddt::Plugins::Watch": "Useless use of () in sink context",
+    "Ddt::Template": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/DT/DDT/d1b9dcbef89dd5aeea1d19c67b3969a916b276bc.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.8.2"
+}

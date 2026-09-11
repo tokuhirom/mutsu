@@ -1,0 +1,68 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "OO::Monitors",
+      "Terminal-API",
+      "Terminal::ANSIColor",
+      "Terminal::Print",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::Dump::Tree",
+  "files": [],
+  "load": {
+    "DDT": "raku_also_fails",
+    "DDTR::ColorBlobLevel": "raku_also_fails",
+    "Data::Dump::Tree": "ok",
+    "Data::Dump::Tree::Colorizer": "ok",
+    "Data::Dump::Tree::DHTML": "ok",
+    "Data::Dump::Tree::Ddt": "ok",
+    "Data::Dump::Tree::DescribeBaseObjects": "ok",
+    "Data::Dump::Tree::Diff": "ok",
+    "Data::Dump::Tree::Enums": "ok",
+    "Data::Dump::Tree::ExtraRoles": "ok",
+    "Data::Dump::Tree::Foldable": "ok",
+    "Data::Dump::Tree::Horizontal": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expected statement: expected expression statement or ')'",
+    "Data::Dump::Tree::LayHorizontal": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expected statement: expected expression statement or ')'",
+    "Data::Dump::Tree::MultiColumns": "ok",
+    "Data::Dump::Tree::TerminalFoldable": "Variable $.dwSize used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_DUMP_TREE/2022d1a70428ccb72a3462f3c6a9d50ec6a68f0e.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.9.4"
+}

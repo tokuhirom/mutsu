@@ -1,0 +1,114 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Desktop::Notify",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01notify.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libnotify.so.4': libnotify.so.4: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02simple.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libnotify.so.4': libnotify.so.4: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.36,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Desktop::Notify": "ok",
+    "Desktop::Notify::Raw": "ok",
+    "Desktop::Notify::Simple": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/ES/DESKTOP_NOTIFY/4b3044eea23481fd2cec595a195960908108e4e6.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 4,
+    "baseline_files": 2,
+    "mutsu_assertions": 4,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "1.0.1"
+}
