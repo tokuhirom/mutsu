@@ -87,12 +87,25 @@ multi method AT-KEY(::?CLASS:D: $key is raw) is raw {
 and stores back through both, which also needed value-context reads to fetch a
 `Proxy` all the way down rather than one level.
 
+A fifth bug surfaced only in CI, on the `jit-stress` job, and is pre-existing
+(it reproduces unchanged on `main`): **the JIT's `CallMethod` shim was missing
+the ADR-0072 throw-site hook.** A `.throw` inside a callee hot enough to go
+native never reached `try_catch_inline`, so a resume-capable `CATCH` several
+frames up ran through the ordinary region path instead — the handler still ran,
+but `.resume` cannot resume across `CompiledCode` boundaries there, and every
+statement after the throw in the *caller's* block was silently skipped. A plain
+`sub f($v) { $v > 0 ?? $v !! X::Neg.new.throw }` called twenty times then thrown
+from inside a `CATCH` region reproduces it with nothing else involved. The shim
+now carries the same `throw_base` / `try_catch_inline` hook its own doc comment
+says it mirrors.
+
 `AccountableBagHash`'s suite is 16/16 now. Pinned by
 `t/collections/set-bag-mix/quanthash-subclass-backing.t`,
 `t/collections/set-bag-mix/quanthash-store-refill.t`,
-`t/collections/subscript/subscript-override-nextcallee.t` and
-`t/exceptions/catch-resume-subscript-assign-writeback.t`, all four verified
-against rakudo.
+`t/collections/subscript/subscript-override-nextcallee.t`,
+`t/exceptions/catch-resume-subscript-assign-writeback.t` and
+`t/exceptions/catch-resume-across-jit-frame.t`, all five verified against
+rakudo.
 
 One adjacent gap is left open and *not* fixed here: a sigilless lexical
 (`\obj`) captured by a `Proxy` STORE closure reads back as its own name. The
