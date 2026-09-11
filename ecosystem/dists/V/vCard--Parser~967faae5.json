@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.23,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 0.18,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,30 +48,29 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 0.81,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unsupported use of ${:group(\"MyGroup\")}. In Raku please use: $(:group(\"MyGroup\")) for hard ref or $::(:group(\"MyGroup\")) for symbolic ref.",
         "nok": 0,
-        "ok": 7,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.15,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-actions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.65,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +82,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.15,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +92,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.59,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,9 +107,9 @@
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
-    "harness": 1,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "harness": 2,
+    "host": "linux-x86_64",
+    "mutsu_commit": "eb8a2af5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -121,13 +120,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/V/CA/VCARD_PARSER/44ecbda53fdaab15f4e3ad4bc0ad1769363cdd39.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 34,
     "baseline_files": 4,
-    "mutsu_assertions": 32,
-    "parity_files": 3,
-    "regressed_files": 1
+    "mutsu_assertions": 34,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }
