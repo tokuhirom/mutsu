@@ -23,6 +23,7 @@ pub(crate) use adverb::{parse_adverb_value_pub, parse_anon_adverb_value};
 pub(in crate::parser) use ident::parse_qualified_ident_prefix_with_hyphens;
 pub(crate) use ident::{is_pseudo_package, parse_ident_with_hyphens};
 pub(crate) use perl5::detect_perl5_scalar_var;
+pub(crate) use perl5::{brace_deref_text, is_brace_contextualizer};
 pub(in crate::parser) use scalar::mint_anon_state_name;
 pub(in crate::parser) use scalar::parse_symbolic_deref_segments;
 

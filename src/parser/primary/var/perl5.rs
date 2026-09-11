@@ -4,6 +4,49 @@
 /// and emit structured `X::Syntax::Perl5Var` error messages.
 use crate::parser::helpers::{is_raku_identifier_continue, is_raku_identifier_start};
 
+/// Does `$sigil{...}` spell a Raku contextualizer rather than a Perl 5 deref?
+///
+/// `${...}` is ambiguous: it is the Perl 5 scalar dereference (diagnosed with
+/// `X::Obsolete`), but it is also Raku's contextualizer applied to the `{...}`
+/// circumfix — `${a => 1}` is an itemized hash, and rakudo's
+/// `special_variable:sym<${ }>` is guarded so the diagnosis never swallows it:
+///
+/// ```text
+/// <!{ $<text> ~~ / '=>' || ':'<:alpha> || '|%' / }>
+/// <!{ $<text> ~~ / ^ \s* $ / }>
+/// ```
+///
+/// `text` is the source between the brace and the *first* `}`, exactly as
+/// rakudo's non-greedy `$<text>=[.*?] '}'` captures it. When any of those
+/// patterns hits, the braces hold a hash composer (or a block) and the
+/// construct is Raku, not a P5ism.
+pub(crate) fn is_brace_contextualizer(text: &str) -> bool {
+    if text.trim().is_empty() {
+        return true;
+    }
+    if text.contains("=>") || text.contains("|%") {
+        return true;
+    }
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == ':' && chars.clone().next().is_some_and(char::is_alphabetic) {
+            return true;
+        }
+    }
+    false
+}
+
+/// The `text` [`is_brace_contextualizer`] wants, given a source slice that
+/// starts at the opening `{`: everything up to the first `}` (or, when the
+/// brace is unterminated, the rest of the input).
+pub(crate) fn brace_deref_text(at_brace: &str) -> &str {
+    let inner = at_brace.strip_prefix('{').unwrap_or(at_brace);
+    match inner.find('}') {
+        Some(end) => &inner[..end],
+        None => inner,
+    }
+}
+
 /// Detect Perl 5 special variables that are unsupported in Raku.
 /// Returns `Some(error_message)` if the input starts with a Perl 5 variable pattern,
 /// or `None` if it is a valid Raku variable.

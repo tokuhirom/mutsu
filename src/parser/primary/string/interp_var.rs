@@ -352,8 +352,20 @@ pub(crate) fn try_interpolate_var<'a>(
                 }
             }
         }
-        // ${...} is Perl 5 scalar dereference syntax — throw X::Obsolete
+        // `${...}` is either Raku's item contextualizer over the `{...}`
+        // circumfix (`"${:a}"` interpolates the one-pair hash) or the Perl 5
+        // scalar dereference, which is X::Obsolete. rakudo's guard decides —
+        // see `is_brace_contextualizer`.
         if next == '{' {
+            if let Ok((remainder, expr)) =
+                crate::parser::primary::container::itemized_brace_expr(rest)
+            {
+                if !current.is_empty() {
+                    parts.push(Expr::Literal(literal_str(std::mem::take(current))));
+                }
+                parts.push(expr);
+                return Some(remainder);
+            }
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
@@ -459,8 +471,17 @@ pub(crate) fn try_interpolate_var<'a>(
         {
             return Some(result);
         }
-        // @{...} is Perl 5 array dereference syntax — throw X::Obsolete
-        if next == '{' {
+        // `@{...}` is the Perl 5 array dereference — X::Obsolete — unless
+        // rakudo's guard exempts the braces (see `is_brace_contextualizer`).
+        // When it does, the `@` is *not* an interpolation trigger at all:
+        // rakudo leaves it as a literal `@` and interpolates `{...}` as an
+        // ordinary block, so `"@{:a}"` is `@` followed by the hash. Falling
+        // through here reproduces that.
+        if next == '{'
+            && !crate::parser::primary::var::is_brace_contextualizer(
+                crate::parser::primary::var::brace_deref_text(&rest[1..]),
+            )
+        {
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
