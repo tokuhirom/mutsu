@@ -184,15 +184,23 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // the original text so a sink-context "Useless use" warning preserves it.
     // Confined to this statement position so the wrapper never leaks into
     // signatures / type checks / ranges (see `number::wrap_divergent_literal`).
-    let expr = if matches!(expr, Expr::Literal(_)) {
-        let consumed = &input[..input.len() - rest.len()];
-        crate::parser::primary::wrap_divergent_literal(expr, consumed)
-    } else {
+    //
+    // `consumed_span` rather than an `input.len() - rest.len()` subtraction: a
+    // heredoc whose marker line carries trailing code (`Foo.new(:n(qq:to/E/)).throw
+    // unless $ok`) resumes the parse on a freshly built buffer, so `rest` is not a
+    // tail slice of `input` and the subtraction lands at an arbitrary offset — a
+    // mid-character one panics (Collection, #7954). No contiguous source span then
+    // exists to record, and neither wrapper has anything to preserve without one.
+    let consumed = crate::parser::expr::consumed_span(input, rest);
+    let expr = match (matches!(expr, Expr::Literal(_)), consumed) {
+        (_, None) => expr,
+        (true, Some(consumed)) => crate::parser::primary::wrap_divergent_literal(expr, consumed),
         // A bare colonpair statement (`:foo(42)`) parses to the same
         // `Binary { FatArrow }` as a fatarrow; record its source so a
         // sink-context warning echoes the colonpair form, not `foo => 42`.
-        let consumed = &input[..input.len() - rest.len()];
-        crate::parser::primary::wrap_colonpair_sink_source(expr, consumed)
+        (false, Some(consumed)) => {
+            crate::parser::primary::wrap_colonpair_sink_source(expr, consumed)
+        }
     };
 
     if let Expr::BareWord(name) = &expr

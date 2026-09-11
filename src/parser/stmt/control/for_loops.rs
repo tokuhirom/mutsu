@@ -305,7 +305,15 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     } else {
         block(rest)?
     };
-    let consumed_block = &block_input[..block_input.len() - rest.len()];
+    // `consumed_span` rather than an `input.len() - rest.len()` subtraction: a
+    // heredoc inside the body whose marker line carries trailing code resumes the
+    // parse on a freshly built buffer, so `rest` is not a tail slice of
+    // `block_input` and the subtraction lands at an arbitrary offset — a
+    // mid-character one panics (#7954). Falling back to the whole remaining source
+    // can only over-detect `&?BLOCK`, which enables the block-magic binding rather
+    // than dropping it.
+    let consumed_block =
+        crate::parser::expr::consumed_span(block_input, rest).unwrap_or(block_input);
     let uses_block_magic = consumed_block.contains("&?BLOCK");
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
