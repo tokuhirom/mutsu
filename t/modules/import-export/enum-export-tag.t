@@ -10,8 +10,9 @@ import EnumTaggedExportFixture :TypedTag;
 import EnumTaggedExportFixture :SubTag;
 
 enum PairBody is export (PAIR_FOUND => 100, PAIR_GONE => 410);
+enum ColonPairBody is export (:COLON_FOUND(200), :COLON_GONE(420));
 
-plan 9;
+plan 11;
 
 is tagged-control(), 'sub', 'a tagged sub remains importable';
 is A.key, 'A', 'an `our` enum value imports through its named tag';
@@ -22,3 +23,5 @@ is E.value, 'e', 'a typed enum value imports through its named tag';
 is F.value, 'f', 'the second typed enum value imports through its named tag';
 is PAIR_FOUND.value, 100, 'an exported pair-list enum keeps its declaration body';
 is PAIR_GONE.value, 410, 'the second exported pair-list enum value is preserved';
+is COLON_FOUND.value, 200, 'a colon-pair enum body remains intact';
+is COLON_GONE.value, 420, 'the second colon-pair enum value is preserved';

@@ -99,18 +99,30 @@ pub(super) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
 
 /// Return whether the optional parenthesized argument after `is export` is a
 /// tag list rather than a declaration body. Enum pair-list bodies use the same
-/// parentheses, so `is export (A => 1)` must be left for the enum parser.
+/// parentheses, so `is export (A => 1)` and `is export (:A(1))` must be left
+/// for the enum parser.
 pub(super) fn has_export_tag_argument(input: &str) -> bool {
     let Ok((rest, _)) = ws(input) else {
         return false;
     };
-    let Some(inner) = rest.strip_prefix('(') else {
+    let Some(mut inner) = rest.strip_prefix('(') else {
         return false;
     };
-    inner
-        .chars()
-        .find(|c| !c.is_whitespace() && *c != ',')
-        .is_some_and(|c| c == ':')
+    inner = inner.trim_start_matches(|c: char| c.is_whitespace() || c == ',');
+    let Some(after_colon) = inner.strip_prefix(':') else {
+        return false;
+    };
+    let after_colon = after_colon.strip_prefix('!').unwrap_or(after_colon);
+    let name_len = after_colon
+        .char_indices()
+        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .last()
+        .map_or(0, |(i, c)| i + c.len_utf8());
+    if name_len == 0 {
+        return false;
+    }
+    let after_name = after_colon[name_len..].trim_start();
+    !after_name.starts_with('(') && !after_name.starts_with("=>")
 }
 
 pub(super) fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
