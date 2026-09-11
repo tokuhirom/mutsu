@@ -407,7 +407,15 @@ impl Interpreter {
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
         self.push_samewith_context(&name, None, None);
-        let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(&name, &args));
+        // The winner is already in hand — this function was *given* the
+        // resolved candidate — so the frame takes it instead of resolving the
+        // name all over again. For a value-dependent `multi` (a `where`
+        // constraint, a subset, a literal) that second resolution was not
+        // cacheable and re-ran user code (#7886).
+        let pushed_dispatch = loan_env!(
+            self,
+            push_multi_dispatch_frame_with_winner(&name, &args, Some(def))
+        );
 
         // Prefer the routine's own nested-sub table over the caller's: a
         // caller with no table of its own (e.g. `sub EXPORT` dispatch) must

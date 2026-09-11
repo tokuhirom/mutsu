@@ -17,10 +17,23 @@ impl Interpreter {
     /// `dispatch_func_call_inner` needs the same winner immediately afterwards
     /// when this returns `None` for a `multi` name, and used to resolve it a
     /// second time — rebuilding `multi_arg_type_keys` (a `Symbol` per argument
-    /// property) for an answer already in hand. `memo` is filled only when the
-    /// resolution came from the type-keyed path, which by construction cannot
-    /// depend on anything about the call that changed in between; see
-    /// [`Interpreter::resolve_function_multi_cached_keyed`] (#7573).
+    /// property) for an answer already in hand.
+    ///
+    /// The memo is filled for **every** resolution, type-keyed or not, and is
+    /// valid for the rest of the dispatch that requested it. It was originally
+    /// restricted to the type-keyed path (#7573), on the grounds that only such
+    /// an answer is a pure function of `(package, name, argument type keys)`
+    /// whereas the un-keyed fallback also reads `pending_call_arg_sources` (an
+    /// `is rw` parameter accepts only a writable lvalue). But that restriction
+    /// withheld the memo from exactly the value-dependent multis whose
+    /// resolution is *not* cacheable and therefore runs user code — a `where`
+    /// clause ran once per resolution, where rakudo evaluates it once per call
+    /// (#7886). Both callers resolve and consume inside one dispatch of one
+    /// call, so the pending sources cannot have changed under them: in
+    /// `OpCode::ExecCallPairs` nothing touches them in between, and in
+    /// `dispatch_func_call_inner` the probe runs with the call's own
+    /// `arg_sources` installed while the consumer ran with them already
+    /// cleared — so the memoised answer is the more accurate of the two.
     pub(super) fn find_compiled_function_memo<'a>(
         &mut self,
         compiled_fns: &'a CompiledFns,
@@ -92,11 +105,8 @@ impl Interpreter {
         // resolution itself is still cacheable whenever the candidates are
         // type+arity deterministic, and for a `multi` this call was otherwise a
         // full candidate walk on every single dispatch.
-        let (resolved_def, type_keyed) =
-            loan_env!(self, resolve_function_multi_cached_keyed(name, args));
-        if type_keyed {
-            memo.clone_from(&resolved_def);
-        }
+        let resolved_def = loan_env!(self, resolve_function_multi_cached(name, args));
+        memo.clone_from(&resolved_def);
         let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.

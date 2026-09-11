@@ -864,34 +864,27 @@ impl Interpreter {
     /// args (named/Junction/container), value-dependent multis, and AMBIGUOUS
     /// results (which must re-raise their pending dispatch error every call).
     /// Behaviorally identical to `resolve_function_with_types` for the caller.
+    ///
+    /// This used to have a `_keyed` twin reporting whether the answer came from
+    /// the sound *type-keyed* path — i.e. was a pure function of
+    /// `(package, name, argument type keys)` and so depended on nothing else
+    /// about the call, `pending_call_arg_sources` included. That flag existed to
+    /// license `find_compiled_function_memo` handing one resolution forward to a
+    /// second consumer, on the reasoning that the un-keyed fallback runs the
+    /// full `resolve_function_with_types` candidate walk, which *does* read
+    /// `pending_call_arg_sources` (an `is rw` parameter accepts only a writable
+    /// lvalue), so two resolutions of the same call under different pending
+    /// sources may legitimately differ (#7573). Both consumers of that memo turn
+    /// out to resolve and consume inside a single dispatch of a single call,
+    /// where the pending sources are fixed, so the memo is handed over
+    /// unconditionally and the flag has no reader left (#7886).
     pub(crate) fn resolve_function_multi_cached(
         &mut self,
         name: &str,
         args: &[Value],
     ) -> Option<Arc<FunctionDef>> {
-        self.resolve_function_multi_cached_keyed(name, args).0
-    }
-
-    /// [`Self::resolve_function_multi_cached`], plus whether the answer came
-    /// from the sound *type-keyed* path — i.e. is a pure function of
-    /// `(package, name, argument type keys)` and so depends on nothing else
-    /// about the call, `pending_call_arg_sources` included.
-    ///
-    /// Only a `true` here licenses reusing one resolution for two consumers:
-    /// the un-keyed fallback runs the full `resolve_function_with_types`
-    /// candidate walk, which *does* read `pending_call_arg_sources` (an `is rw`
-    /// parameter accepts only a writable lvalue), so two resolutions of the
-    /// same call under different pending sources may legitimately differ. A
-    /// candidate set containing an `is rw` parameter is exactly what
-    /// `func_multi_dispatch_type_cacheable` refuses, so the two conditions line
-    /// up (#7573).
-    pub(crate) fn resolve_function_multi_cached_keyed(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> (Option<Arc<FunctionDef>>, bool) {
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
-            return (self.resolve_function_with_types(name, args), false);
+            return self.resolve_function_with_types(name, args);
         };
         // The atomic mirror, not `current_package()`: the owned form is a
         // `RwLock` read plus a `String` heap allocation on a path that runs on
@@ -899,11 +892,11 @@ impl Interpreter {
         let pkg_sym = self.current_package_sym();
         let name_sym = Symbol::intern(name);
         if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
-            return (self.resolve_function_with_types(name, args), false);
+            return self.resolve_function_with_types(name, args);
         }
         let key = (pkg_sym, name_sym, arg_keys);
         if let Some(hit) = self.func_multi_resolve_cache.get(&key) {
-            return (hit.clone(), true);
+            return hit.clone();
         }
         let resolved = self.resolve_function_with_types(name, args);
         // Ambiguity is signaled by `None` + a pending dispatch error; that must be
@@ -912,7 +905,7 @@ impl Interpreter {
         if !ambiguous {
             self.func_multi_resolve_cache.insert(key, resolved.clone());
         }
-        (resolved, !ambiguous)
+        resolved
     }
 
     /// True when `class_name`'s MRO (or direct parents) includes a builtin
@@ -1327,6 +1320,26 @@ impl Interpreter {
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
     /// Returns true if a frame was pushed (i.e. there are remaining candidates).
     pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
+        self.push_multi_dispatch_frame_with_winner(name, args, None)
+    }
+
+    /// [`Self::push_multi_dispatch_frame`], told which candidate is being
+    /// called instead of resolving the name a second time.
+    ///
+    /// The frame only needs the winner to (a) exclude it from `remaining` and
+    /// (b) read its scalar `is rw` params, so a caller that already holds the
+    /// resolved `FunctionDef` — `compile_and_call_function_def` is handed one —
+    /// can hand it over. That matters beyond the saved registry walk: for a
+    /// `multi` whose candidates carry `where` constraints the resolution is not
+    /// cacheable (`func_multi_dispatch_type_cacheable` refuses a value-dependent
+    /// multi), so a second resolution *re-runs user code*. Rakudo resolves a
+    /// call once; so should we (#7886).
+    pub(crate) fn push_multi_dispatch_frame_with_winner(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        winner: Option<&FunctionDef>,
+    ) -> bool {
         // Collect ALL multi candidates regardless of arg matching. This is
         // needed because callwith() can re-dispatch with different args, so
         // candidates that don't match the original args may match the new ones.
@@ -1371,12 +1384,19 @@ impl Interpreter {
         // skips the registry walk + match/rank for a type+arity-deterministic
         // multi) and reuse it for both the fingerprint identity and the rw-param
         // capture below — the previous code resolved it twice per call.
-        let saved_err = self.take_pending_dispatch_error();
-        let current_def = self.resolve_function_multi_cached(name, args);
-        let current_fp = current_def.as_ref().map(|def| def.body_fingerprint());
-        if let Some(err) = saved_err {
-            self.set_pending_dispatch_error(err);
-        }
+        let resolved_def;
+        let current_def: Option<&FunctionDef> = match winner {
+            Some(def) => Some(def),
+            None => {
+                let saved_err = self.take_pending_dispatch_error();
+                resolved_def = self.resolve_function_multi_cached(name, args);
+                if let Some(err) = saved_err {
+                    self.set_pending_dispatch_error(err);
+                }
+                resolved_def.as_deref()
+            }
+        };
+        let current_fp = current_def.map(|def| def.body_fingerprint());
         let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
             .iter()
             .filter(|c| {
@@ -1388,7 +1408,6 @@ impl Interpreter {
         // Capture the FIRST (winning) candidate's scalar rw params so a
         // nextsame+rw redispatch can chain the rw value through it (§D).
         let rw_params = current_def
-            .as_ref()
             .map(|def| super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs))
             .unwrap_or_default();
         let dispatch_token = self.next_dispatch_token();

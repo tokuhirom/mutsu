@@ -262,8 +262,8 @@ impl Interpreter {
         crate::vm::vm_stats::record_dispatch_entry_outcome(
             "execcallpairs",
             if resolved_memo.is_some() {
-                // The probe above resolved the winner type-keyed and the carrier
-                // reuses it: one resolution per call instead of two.
+                // The probe above resolved the winner and the carrier reuses
+                // it: one resolution per call instead of two.
                 "carrier-preresolved"
             } else {
                 "carrier"
