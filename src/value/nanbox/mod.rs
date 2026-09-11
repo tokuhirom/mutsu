@@ -589,9 +589,8 @@ unsafe impl Send for NanBox {}
 unsafe impl Sync for NanBox {}
 
 impl NanBox {
-    /// Raw word bits (tests / future tag-dispatch fast paths).
+    /// Raw word bits (tests; `Value::nanbox_bits`).
     #[inline]
-    #[allow(dead_code)]
     pub(in crate::value) fn bits(&self) -> u64 {
         self.0.get()
     }

@@ -1297,14 +1297,13 @@ impl Interpreter {
             if self.is_native_method(&class_name.resolve(), method) {
                 let mut all_args = method_args.clone();
                 all_args.push(value.clone());
-                match self.call_native_instance_method_mut(
+                match self.call_native_instance_method_mut_in_place(
+                    &attributes,
                     &class_name.resolve(),
-                    attributes.to_map(),
                     method,
                     all_args,
                 ) {
-                    Ok((result, updated_attrs)) => {
-                        attributes.commit_attrs(updated_attrs);
+                    Ok(result) => {
                         if let Some(var_name) = target_var {
                             self.env.insert_through(
                                 var_name.to_string(),

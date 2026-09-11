@@ -3002,16 +3002,19 @@ impl Interpreter {
                     }
                 }
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
-                match self.call_native_instance_method_mut(
+                match self.call_native_instance_method_mut_in_place(
+                    &attributes,
                     &class_name.resolve(),
-                    attributes.to_map(),
                     method,
                     args.clone(),
                 ) {
-                    Ok((result, updated)) => {
+                    Ok(result) => {
+                        // The delta commit already landed in the shared cell, so
+                        // rebinding the name is all that is left (no second write
+                        // of a whole map, which is what lost concurrent updates).
                         self.env.insert(
                             target_var.to_string(),
-                            Value::write_back_sharing(&attributes, class_name, updated, target_id),
+                            Value::instance_sharing_cell(&attributes, class_name, target_id),
                         );
                         return Ok(result);
                     }

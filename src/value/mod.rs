@@ -266,7 +266,7 @@ mod seq_body_shapes;
 
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
-pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
+pub(crate) use attr_map::{AttrBits, AttrKey, AttrMap, attr_twigil_base};
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
@@ -405,9 +405,42 @@ thread_local! {
     static PENDING_CELL_WRITES: RefCell<Vec<PendingCellWrite>> = const { RefCell::new(Vec::new()) };
 }
 
-/// A deferred cell write: `(cell address, cell, new map)`. See
+/// A deferred cell write: `(cell address, cell, what to write)`. See
 /// [`PENDING_CELL_WRITES`].
-type PendingCellWrite = (usize, AttrCell, AttrMap);
+type PendingCellWrite = (usize, AttrCell, PendingWrite);
+
+/// What a deferred cell write does once it can take the write lock.
+#[derive(Debug)]
+pub(crate) enum PendingWrite {
+    /// Replace the whole map ([`InstanceAttrs::commit_attrs`]).
+    Replace(AttrMap),
+    /// Apply a per-key delta ([`InstanceAttrs::commit_attrs_delta`]): `Some(v)`
+    /// stores, `None` removes. Keys absent from the list keep whatever the cell
+    /// holds — which is the whole point, since another thread may have written
+    /// them while this write was queued.
+    Delta(Vec<(Symbol, Option<Value>)>),
+}
+
+impl PendingWrite {
+    /// Apply to an already-locked map.
+    fn apply(self, map: &mut AttrMap) {
+        match self {
+            PendingWrite::Replace(new) => *map = new,
+            PendingWrite::Delta(ops) => {
+                for (key, op) in ops {
+                    match op {
+                        Some(value) => {
+                            map.insert(key, value);
+                        }
+                        None => {
+                            map.remove(key);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// How many deferred cell writes exist across all threads. Deferral is a rare
 /// self-deadlock escape hatch, but EVERY [`AttrReadGuard`] drop had to consult
@@ -694,14 +727,14 @@ pub fn make_frozen_container(value: Value, constraint: Option<&str>) -> Value {
 /// When this thread is *not* reading the cell we take a blocking write lock,
 /// which is required for correctness under genuine cross-thread contention
 /// (e.g. concurrent `cas` on a shared instance attribute must not drop updates).
-fn write_cell_respecting_reads(cell: &AttrCell, map: AttrMap) {
+fn write_cell_respecting_reads(cell: &AttrCell, write: PendingWrite) {
     let addr = cell_addr(cell);
     if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
-        PENDING_CELL_WRITES.with(|p| p.borrow_mut().push((addr, cell.clone(), map)));
+        PENDING_CELL_WRITES.with(|p| p.borrow_mut().push((addr, cell.clone(), write)));
         note_pending_cell_write_pushed();
         return;
     }
-    *write_attrs(cell) = map;
+    write.apply(&mut write_attrs(cell));
 }
 
 /// Recover the map from a poisoned lock instead of propagating the panic. A
@@ -1350,27 +1383,29 @@ impl std::fmt::Debug for Value {
     }
 }
 
-/// Raw NaN-box word access for the JIT Tier B inline emitter (see
-/// `jit_words`). Read-only: exposing the bits does not breach the newtype
-/// seal's ownership rules (the word still owns its payload reference).
-#[cfg(feature = "jit")]
 impl Value {
+    /// Raw NaN-box word: the bit-identical inline payload, or the heap address
+    /// for a pointer variant. Read-only, so exposing the bits does not breach
+    /// the newtype seal's ownership rules (the word still owns its payload
+    /// reference).
+    ///
+    /// Used by the JIT Tier B inline emitter (see `jit_words`) and, as a
+    /// *stored* before-image, by [`AttrBits`] — which needs the bits themselves
+    /// rather than [`Self::same_binding`]'s pairwise compare, because it keeps
+    /// them after the values it read are gone.
+    #[inline]
     pub(crate) fn nanbox_bits(&self) -> u64 {
         self.0.bits()
     }
-}
 
-impl Value {
     /// O(1) *binding* identity: the same immediate value, or the same heap
     /// allocation. Unlike `PartialEq` it never walks container contents, so it is
     /// usable on hot paths that only need to know whether a name was **rebound**
     /// (as opposed to its container being mutated in place, which leaves the
     /// binding — and these bits — unchanged).
-    ///
-    /// Available in every build, unlike the `jit`-gated `nanbox_bits`.
     #[inline]
     pub(crate) fn same_binding(&self, other: &Value) -> bool {
-        self.0.bits() == other.0.bits()
+        self.nanbox_bits() == other.nanbox_bits()
     }
 }
 

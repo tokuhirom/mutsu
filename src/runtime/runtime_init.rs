@@ -1066,7 +1066,7 @@ impl Interpreter {
                 // `.listen()` before tapping it (e.g. IO::Socket::Async::SSL's
                 // `!server-setup`, which fell through to treating the listener
                 // itself as a single accepted connection when the smartmatch
-                // failed). See `call_native_instance_method_mut`'s hardcoded
+                // failed). See `dispatch_native_instance_method_mut`'s hardcoded
                 // class list in `native_methods/mod.rs`, which must also list this
                 // class name explicitly -- its MRO-walk fallback would otherwise
                 // now match `Supply` and route `tap`/`act` to the wrong (generic,

@@ -271,14 +271,63 @@ impl Interpreter {
         }
     }
 
-    /// Dispatch a mutable native instance method.
-    /// Returns (result_value, updated_attributes).
-    pub(super) fn call_native_instance_method_mut(
+    /// Dispatch a mutable native instance method against the receiver's **live**
+    /// attribute cell, committing only what the handler actually changed.
+    ///
+    /// Every mutable native method is a read-modify-write over the attribute map:
+    /// the handler takes the map by value and hands back the version it wants
+    /// stored. Committing that with `InstanceAttrs::commit_attrs` *replaces* the
+    /// map, so a write another thread landed between the read and the commit was
+    /// silently discarded — two threads on one `Proc::Async` lost `.start`'s
+    /// `started`/`pid` to a concurrent `.ready`, and the next `.kill` threw
+    /// `X::Proc::Async::MustBeStarted` (tokuhirom/mutsu#7923). Routing the commit
+    /// through [`crate::value::InstanceAttrs::commit_attrs_delta`] keeps the keys the handler
+    /// never touched, so the concurrent write survives.
+    ///
+    /// This is the **only** entry to the mutable native handlers: having one place
+    /// own the snapshot-dispatch-commit triple is what keeps the lost update from
+    /// being reintroduced at a fifth call site.
+    pub(super) fn call_native_instance_method_mut_in_place(
+        &mut self,
+        attributes: &crate::value::InstanceAttrs,
+        class_name: &str,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let working = attributes.to_map();
+        let before = working.bits_image();
+        let (result, updated) = self.dispatch_native_instance_method_mut(
+            class_name,
+            working,
+            method,
+            args,
+            Some(attributes),
+        )?;
+        attributes.commit_attrs_delta(&before, &updated);
+        Ok(result)
+    }
+
+    /// Run the per-class mutable native handler and hand back
+    /// `(result, updated_attributes)`.
+    ///
+    /// Deliberately private: the only way in is
+    /// [`Interpreter::call_native_instance_method_mut_in_place`], so the
+    /// whole-map write-back that lost concurrent updates
+    /// (tokuhirom/mutsu#7923) cannot be written at a call site again.
+    ///
+    /// `cell` is the receiver's live attribute cell, for handlers that must make a
+    /// mutation **visible before they return** because they also publish a promise
+    /// or wake another thread mid-flight: committing at return is too late,
+    /// whatever the commit does. `Proc::Async.start` is the case that forced it —
+    /// it keeps the `.ready` promise as soon as the child is spawned, and the
+    /// thread that wakes on it immediately reads `started`.
+    fn dispatch_native_instance_method_mut(
         &mut self,
         class_name: &str,
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
+        cell: Option<&crate::value::InstanceAttrs>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let dispatch_class = if matches!(
             class_name,
@@ -333,7 +382,7 @@ impl Interpreter {
             "Supplier" | "Supplier::Preserving" => {
                 self.native_supplier_mut(attributes, method, args)
             }
-            "Proc::Async" => self.native_proc_async_mut(attributes, method, args),
+            "Proc::Async" => self.native_proc_async_mut(attributes, method, args, cell),
             "Encoding::Decoder" => Self::native_encoding_decoder_mut(attributes, method, args),
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 Interpreter::native_scheduler_mut(attributes, method, args)

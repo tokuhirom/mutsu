@@ -37,22 +37,25 @@ impl Drop for AttrReadGuard<'_> {
         if !super::pending_cell_writes_possible() {
             return;
         }
+        // Partition rather than `retain` + clone: a `PendingWrite` owns its map
+        // (or its delta ops), and the queue is drained in push order.
         let flush = PENDING_CELL_WRITES.with(|p| {
             let mut v = p.borrow_mut();
-            let mut mine: Vec<(AttrCell, AttrMap)> = Vec::new();
-            v.retain(|(a, cell, map)| {
-                if *a == self.addr {
-                    mine.push((cell.clone(), map.clone()));
-                    false
+            let mut mine: Vec<(AttrCell, PendingWrite)> = Vec::new();
+            let mut keep: Vec<PendingCellWrite> = Vec::new();
+            for (addr, cell, write) in std::mem::take(&mut *v) {
+                if addr == self.addr {
+                    mine.push((cell, write));
                 } else {
-                    true
+                    keep.push((addr, cell, write));
                 }
-            });
+            }
+            *v = keep;
             mine
         });
         super::note_pending_cell_writes_drained(flush.len());
-        for (cell, map) in flush {
-            *write_attrs(&cell) = map;
+        for (cell, write) in flush {
+            write.apply(&mut write_attrs(&cell));
         }
     }
 }
@@ -284,7 +287,58 @@ impl InstanceAttrs {
     /// (`overwrite_instance_bindings_by_identity` / `update_instance_cell`), which
     /// computed an updated `HashMap` and looked the cell up by id.
     pub(crate) fn commit_attrs(&self, map: AttrMap) {
-        write_cell_respecting_reads(&self.attributes, map);
+        write_cell_respecting_reads(&self.attributes, PendingWrite::Replace(map));
+    }
+
+    /// Commit only what actually changed, instead of replacing the whole map.
+    ///
+    /// `before` is the [`AttrMap::bits_image`] of the map as it was read, and
+    /// `updated` is the map the caller produced from it. Keys whose boxed word is
+    /// unchanged are left alone; keys that were added or rewritten are stored;
+    /// keys that were in `before` and are gone from `updated` are removed. The
+    /// whole delta goes in under **one** write lock.
+    ///
+    /// This is what makes a read-modify-write over the attribute map safe to run
+    /// concurrently on one instance. [`Self::commit_attrs`] replaces the map, so
+    /// the snapshot-dispatch-commit shape every mutable *native* method goes
+    /// through (`Interpreter::call_native_instance_method_mut_in_place`) silently threw
+    /// away any key another thread committed in between: two threads on one
+    /// `Proc::Async` would lose `.start`'s `started`/`pid` to a concurrent
+    /// `.ready`, and `.kill` would then throw `X::Proc::Async::MustBeStarted`
+    /// (tokuhirom/mutsu#7923). A key *neither* side touched is not in the delta at
+    /// all, so the other thread's write survives.
+    ///
+    /// Tie-break when both threads rewrote the same key: last commit wins. There
+    /// is no happens-before between them to prefer, and it matches what a single
+    /// write lock per key would have given.
+    pub(crate) fn commit_attrs_delta(&self, before: &AttrBits, updated: &AttrMap) {
+        let mut ops: Vec<(Symbol, Option<Value>)> = Vec::new();
+        // How many of `updated`'s keys were also in `before`. Removals exist iff
+        // that overlap is smaller than `before` — so the usual case (a method that
+        // only inserts or rewrites) never scans `before` at all.
+        let mut overlap = 0usize;
+        for (key, value) in updated.iter() {
+            match before.bits(*key) {
+                Some(bits) => {
+                    overlap += 1;
+                    if bits != value.nanbox_bits() {
+                        ops.push((*key, Some(value.clone())));
+                    }
+                }
+                None => ops.push((*key, Some(value.clone()))),
+            }
+        }
+        if overlap < before.len() {
+            for key in before.keys() {
+                if !updated.contains_key(*key) {
+                    ops.push((*key, None));
+                }
+            }
+        }
+        if ops.is_empty() {
+            return;
+        }
+        write_cell_respecting_reads(&self.attributes, PendingWrite::Delta(ops));
     }
 
     /// Phase 3 cell-CAS: atomically compare-and-swap one attribute under a
@@ -407,3 +461,6 @@ impl Drop for InstanceAttrs {
         self.finalize_destroy();
     }
 }
+
+#[cfg(test)]
+mod tests;
