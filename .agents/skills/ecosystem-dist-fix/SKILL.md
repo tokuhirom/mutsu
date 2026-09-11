@@ -213,7 +213,7 @@ The change goes where `CLAUDE.md` says it goes: implement in `compiler/` and `vm
 
 **Every fix commits a focused regression test under `t/`** — the §4 reduction, placed by
 [docs/t-directory-layout.md](../../../docs/t-directory-layout.md) (by what it would catch, not by
-the syntax it uses). The ecosystem sweep is operator-run and not in CI, so this `t/` file is the
+the syntax it uses). The ecosystem sweep only measures, and nightly at that, so this `t/` file is the
 *only* thing standing between your fix and a silent regression. Name it after the capability, and
 say in a comment which distribution it came from.
 

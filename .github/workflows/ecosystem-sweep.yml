@@ -15,12 +15,21 @@ name: Ecosystem sweep
 # Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md (D9 + its
 # 2026-09-10 amendment, which is what allows this workflow to exist).
 #
-# Deliberately `workflow_dispatch` ONLY -- there is no `schedule:`. ADR-0085 D9
-# rejected a periodic sweep and that still stands: a full corpus run is ~20
-# CPU-hours to track a number that moves at the speed of interpreter fixes, so
-# it happens when someone decides the numbers are worth refreshing. What the
-# amendment adds is that "someone" no longer needs a 12-core box and a local
-# `bwrap` -- one dispatch does it.
+# Two entry points: a nightly `schedule:` that measures the whole corpus, and
+# `workflow_dispatch` for anything else (one shard, a named distribution, a
+# status). The schedule was added by ADR-0085 D9's SECOND amendment
+# (2026-09-11), which reversed the original "operator-run only" decision on
+# measured cost: the rejection assumed ~20 CPU-hours per sweep, and the first
+# real corpus run took 78 minutes of wall time and about 5.5 hours of job time
+# across 27 shards. Read that amendment before changing the cadence.
+#
+# IMPORTANT for anyone editing this file: on a `schedule:` event `inputs.*` are
+# ALL EMPTY -- a workflow_dispatch default does not apply. Every input is
+# therefore read as `inputs.x || <default>`, and the two booleans as
+# `inputs.x || github.event_name == 'schedule'`, so the nightly run is a full
+# `scope: all` sweep that rolls up and appends a history row. Adding a new input
+# means adding its fallback too, or the nightly run silently gets the empty
+# value.
 #
 # Three things it does NOT compromise on, because they are what make the number
 # mean anything (ADR-0085 D8):
@@ -40,6 +49,12 @@ name: Ecosystem sweep
 # lands its records but is refused a `history.tsv` row.
 
 on:
+  # 18:20 UTC = 03:20 JST, every day. JST has no daylight saving, so the local
+  # time does not drift. Twenty past rather than on the hour: GitHub queues
+  # scheduled jobs hardest at :00, and a 27-shard matrix waiting for runners is
+  # the one delay this run cannot shorten.
+  schedule:
+    - cron: '20 18 * * *'
   workflow_dispatch:
     inputs:
       scope:
@@ -143,14 +158,14 @@ jobs:
           # `run:` body: the planner is what decides they are safe to word-split
           # into an argv, and it can only do that if the shell never sees them
           # first.
-          SCOPE: ${{ inputs.scope }}
+          SCOPE: ${{ inputs.scope || 'all' }}
           PREFIX: ${{ inputs.prefix }}
           ONLY: ${{ inputs.only }}
-          STATUS: ${{ inputs.status }}
-          SHARDS: ${{ inputs.shards }}
-          JOBS: ${{ inputs.jobs }}
-          ATTEMPTS: ${{ inputs.attempts }}
-          FILE_TIMEOUT: ${{ inputs.file_timeout }}
+          STATUS: ${{ inputs.status || 'partial' }}
+          SHARDS: ${{ inputs.shards || 'auto' }}
+          JOBS: ${{ inputs.jobs || '4' }}
+          ATTEMPTS: ${{ inputs.attempts || '3' }}
+          FILE_TIMEOUT: ${{ inputs.file_timeout || '120' }}
         run: |
           set -euo pipefail
           for pair in "jobs:$JOBS" "attempts:$ATTEMPTS" "file_timeout:$FILE_TIMEOUT"; do
@@ -237,7 +252,7 @@ jobs:
 
       - name: Summary
         env:
-          SCOPE: ${{ inputs.scope }}
+          SCOPE: ${{ inputs.scope || 'all' }}
         run: |
           {
             echo "## Ecosystem sweep plan"
@@ -333,9 +348,9 @@ jobs:
       - name: Measure
         env:
           SWEEP_ARGS: ${{ matrix.chunk.args }}
-          JOBS: ${{ inputs.jobs }}
-          ATTEMPTS: ${{ inputs.attempts }}
-          FILE_TIMEOUT: ${{ inputs.file_timeout }}
+          JOBS: ${{ inputs.jobs || '4' }}
+          ATTEMPTS: ${{ inputs.attempts || '3' }}
+          FILE_TIMEOUT: ${{ inputs.file_timeout || '120' }}
           MUTSU_BIN: target/release/mutsu
         run: |
           set -euo pipefail
@@ -506,10 +521,10 @@ jobs:
       # KPI chart that is not comparable with its neighbours.
       - name: Roll the numbers up
         id: rollup
-        if: ${{ inputs.rollup && steps.apply.outputs.changed != '0' }}
+        if: ${{ (inputs.rollup || github.event_name == 'schedule') && steps.apply.outputs.changed != '0' }}
         env:
           FULL_CORPUS: ${{ needs.build.outputs.full-corpus }}
-          WANT_HISTORY: ${{ inputs.history }}
+          WANT_HISTORY: ${{ inputs.history || github.event_name == 'schedule' }}
           ALL_SHARDS_OK: ${{ needs.sweep.result == 'success' }}
           UNIFORM: ${{ steps.provenance.outputs.uniform }}
         run: |
@@ -556,7 +571,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| scope | \`${{ inputs.scope }}\` |"
+            echo "| scope | \`${{ inputs.scope || 'all' }}\` (${{ github.event_name }}) |"
             echo "| mutsu | \`${{ needs.build.outputs.mutsu-commit }}\` |"
             echo "| rakudo | ${{ needs.build.outputs.raku-version }} |"
             echo "| shards | ${{ needs.build.outputs.count }} (\`${{ needs.sweep.result }}\`) |"
@@ -594,11 +609,11 @@ jobs:
           cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Push the branch and open the pull request
-        if: ${{ inputs.publish != 'none' && steps.apply.outputs.changed != '0' }}
+        if: ${{ (inputs.publish || 'pull-request') != 'none' && steps.apply.outputs.changed != '0' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
-          PUBLISH: ${{ inputs.publish }}
-          SCOPE: ${{ inputs.scope }}
+          PUBLISH: ${{ inputs.publish || 'pull-request' }}
+          SCOPE: ${{ inputs.scope || 'all' }}
           HAVE_APP_TOKEN: ${{ steps.app-token.outputs.token != '' }}
         run: |
           set -euo pipefail
