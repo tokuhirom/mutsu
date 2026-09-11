@@ -91,6 +91,21 @@ The gate on "the module declares `sub EXPORT`" is what keeps the
 over-approximation confined. A module with `is export` traits is unaffected; the
 approximation only ever applies where the scan's current answer is the empty set.
 
+> **Amended 2026-09-11 ([#7939](https://github.com/tokuhirom/mutsu/issues/7939)).**
+> The decision here is unchanged, but it now covers a second case, so the
+> sentence above no longer holds as written: a module with `is export` traits
+> *is* affected, in one bounded way. The scan used to keep only the subs whose
+> export trait carried the `DEFAULT` or `MANDATORY` tag; it now keeps every
+> `is export` sub whatever tag it carries. The tag filter could not implement
+> import semantics in the first place — `register_module_exports` is handed the
+> module name and never the importer's tag list, so it could not tell `use M`
+> (where a `:extra` sub really is not imported) from `use M :extra` (where it
+> is), and guessed wrong for every tagged import. The soundness argument above
+> carries over verbatim: the widened set is still parse-time knowledge only,
+> and a name the importer's tag list withholds still fails to resolve at run
+> time. Pinned by `t/modules/import-export/imported-listop-angle-arg.t` and
+> `t/modules/import-export/tag-export-parse-time-only.t`.
+
 ## Alternatives considered
 
 ### 1. Load modules at parse time (rakudo's model)
