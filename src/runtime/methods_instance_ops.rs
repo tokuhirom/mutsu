@@ -1245,14 +1245,12 @@ impl Interpreter {
                         | "stderr"
                         | "Supply"
                 ) {
-                    let (result, updated) = self.call_native_instance_method_mut(
+                    return self.call_native_instance_method_mut_in_place(
+                        &attributes,
                         &class_name.resolve(),
-                        attributes.to_map(),
                         method,
                         args,
-                    )?;
-                    attributes.commit_attrs(updated);
-                    return Ok(result);
+                    );
                 }
                 if matches!(
                     method,
@@ -1278,14 +1276,12 @@ impl Interpreter {
                 // Every IO::CatHandle method advances internal read state, so route
                 // through the mutable path and commit the updated attributes back to
                 // the receiver's shared cell.
-                let (result, updated) = self.call_native_instance_method_mut(
+                return self.call_native_instance_method_mut_in_place(
+                    &attributes,
                     &class_name.resolve(),
-                    attributes.to_map(),
                     method,
                     args,
-                )?;
-                attributes.commit_attrs(updated);
-                return Ok(result);
+                );
             }
             // A user-defined method shadows an inherited native one: for a user
             // subclass of a builtin (`class S is IO::Handle { method Str {...} }`),

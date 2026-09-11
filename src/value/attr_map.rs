@@ -221,6 +221,46 @@ impl AttrMap {
             }
         }
     }
+
+    /// The boxed-word before-image of this map; see [`AttrBits`].
+    pub(crate) fn bits_image(&self) -> AttrBits {
+        AttrBits(self.0.iter().map(|(k, v)| (*k, v.nanbox_bits())).collect())
+    }
+}
+
+/// The boxed-word image of an [`AttrMap`] — the before-image a delta commit
+/// diffs against (see [`super::InstanceAttrs::commit_attrs_delta`]).
+///
+/// Why not just keep a cloned `AttrMap` as the before-image: cloning the map
+/// clones every `Value`, which for the pointer variants means a refcount bump
+/// per attribute on a path that already pays one full clone (the working copy
+/// handed to the native method). The *only* question the diff asks of the
+/// before-image is "is the value still the same boxed word", and that is one
+/// `u64` per key — no `Value` clones, one allocation.
+///
+/// Safe against address reuse (an ABA on a pointer variant) because the
+/// working copy the handler holds keeps every snapshotted value alive until the
+/// commit: the addresses in here cannot be recycled in between.
+#[derive(Default)]
+pub(crate) struct AttrBits(FxHashMap<Symbol, u64>);
+
+impl AttrBits {
+    /// The boxed word `key` held when the image was taken, or `None` if the key
+    /// was absent. Equal bits mean the entry was never touched.
+    #[inline]
+    pub(crate) fn bits(&self, key: Symbol) -> Option<u64> {
+        self.0.get(&key).copied()
+    }
+
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    pub(crate) fn keys(&self) -> std::collections::hash_map::Keys<'_, Symbol, u64> {
+        self.0.keys()
+    }
 }
 
 impl Extend<(Symbol, Value)> for AttrMap {
