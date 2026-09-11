@@ -5592,6 +5592,7 @@ impl CompiledCode {
     /// thread-local hash lookup) off the per-call dispatch path: method names
     /// are string constants that would otherwise be re-interned on every
     /// `CallMethod`.
+    #[inline]
     pub(crate) fn const_sym(&self, idx: u32) -> Symbol {
         if let Some(Some(sym)) = self.const_syms.get(idx as usize) {
             return *sym;
@@ -5602,7 +5603,11 @@ impl CompiledCode {
         self.intern_const_sym(idx as usize)
     }
 
-    /// Intern the string constant at `i` without consulting `const_syms`.
+    /// Intern the string constant at `i` without consulting `const_syms`. Kept
+    /// out of line so that inlining `const_sym` into a dispatch site copies only
+    /// the indexed load, not `Symbol::intern`'s hash probe.
+    #[cold]
+    #[inline(never)]
     fn intern_const_sym(&self, i: usize) -> Symbol {
         match self.constants[i].view() {
             ValueView::Str(s) => Symbol::intern(s.as_str()),
