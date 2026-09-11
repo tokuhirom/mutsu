@@ -25,6 +25,56 @@ fn register_enum_values(variants: &[(String, Option<Expr>)]) {
     }
 }
 
+/// Collect literal names supplied by top-level `slip` entries in a dynamic
+/// parenthesized enum body. The runtime still evaluates the complete body, but
+/// the parser needs these names before the following statements are parsed so
+/// they are treated as complete enum-value terms.
+pub(in crate::parser::stmt) fn collect_dynamic_enum_value_names(
+    body: &Expr,
+    out: &mut Vec<String>,
+) {
+    let Expr::ArrayLiteral(items) = body.peel_parens() else {
+        return;
+    };
+    for item in items {
+        let Expr::Call { name, args } = item.peel_parens() else {
+            continue;
+        };
+        if name.resolve() != "slip" {
+            continue;
+        }
+        for arg in args {
+            collect_literal_enum_value_names(arg, out);
+        }
+    }
+}
+
+fn collect_literal_enum_value_names(expr: &Expr, out: &mut Vec<String>) {
+    match expr.peel_parens() {
+        Expr::Literal(value) | Expr::LiteralSrc(value, _) => {
+            if let Some(name) = value.as_str()
+                && !out.iter().any(|existing| existing == name)
+            {
+                out.push(name.to_string());
+            }
+        }
+        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) => {
+            for item in items {
+                collect_literal_enum_value_names(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn register_dynamic_enum_values(body: &Expr) {
+    let mut names = Vec::new();
+    collect_dynamic_enum_value_names(body, &mut names);
+    for name in names {
+        super::super::simple::register_user_enum_value(&name);
+    }
+}
+
 /// Skip a balanced `[...]` role-parameterization argument. Returns the input
 /// past the closing `]`, or `None` when the input does not start with `[`.
 fn skip_balanced_brackets(input: &str) -> Option<&str> {
@@ -397,6 +447,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             None => {
                 // Computed body (operators like `X~`, `Z=>`, `|`, a `%hash`, …):
                 // keep the whole expression and let the runtime build the enum.
+                register_dynamic_enum_values(&body);
                 return Ok((
                     r,
                     Stmt::EnumDecl {

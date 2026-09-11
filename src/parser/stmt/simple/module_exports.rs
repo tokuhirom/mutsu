@@ -723,6 +723,12 @@ fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
                         .map(|(name, _)| name.clone())
                         .filter(|name| name != "__DYNAMIC__" && !name.is_empty()),
                 );
+                if variants.len() == 1
+                    && variants[0].0 == "__DYNAMIC__"
+                    && let Some(body) = variants[0].1.as_ref()
+                {
+                    super::super::decl::collect_dynamic_enum_value_names(body, out);
+                }
             }
             Stmt::ClassDecl { body, .. }
             | Stmt::RoleDecl { body, .. }
