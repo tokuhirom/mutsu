@@ -407,7 +407,7 @@ dark README; browsers that ignore it get the light palette.
 | ~~**P1**~~ | ~~`scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1~~ | **done** — records round-trip, `--rollup` produces summary + history + chart, and the first eight distributions surfaced real findings |
 | ~~**P2**~~ | ~~first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row~~ | **done** — run 34566091231 (2026-09-11) measured all 1624 dists at one commit with 27/27 shards green: 41.2% dist / 53.6% file / 62.4% assertion parity, and the first history row is appended. It took three attempts; the two that lost data did so silently, and what they cost is recorded in `news/2026-09/` |
 | ~~**P3**~~ | ~~`ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring~~ | **done** — `site/ecosystem.html` is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml` and the nav, and covered by `site/e2e.test.mjs`; the README's Status section now carries the figure and links the chart, which P2 was the thing producing |
-| **P4** | the operator runbook (§8) — one entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | **partly done** — `.github/workflows/ecosystem-sweep.yml` (§8.1) is that entry point for anyone with dispatch rights: it plans, builds once, measures, rolls up and opens the PR. What is left is the local `make`-level convenience wrapper |
+| ~~**P4**~~ | ~~the operator runbook (§8) — one entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as~~ | **done** — `.github/workflows/ecosystem-sweep.yml` (§8.1) is that entry point: it plans, builds once, measures, rolls up and opens the PR, nightly or on dispatch. The local `make`-level wrapper it once also called for was **dropped** (user decision, 2026-09-11) — see below |
 | **P5** | root-cause grouping of the actionable records into `todo:*` issues | **first batch done** — `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ordered by distributions affected, and fifteen issues were filed from the corpus at `7807eb5` (section 9). Two harness fixes came out of it: a warning can no longer be recorded as a blocker, and a parse failure keeps its location. The remaining tail is a sampling job, not a queue to drain |
 
 P1 and P2 are the campaign; P3-P5 make it repeatable. **P5's method is section
@@ -430,6 +430,17 @@ minutes of wall time and ~5.5 hours of job time across 27 shards. PLAN.md §1 B1
 not a gate, and that stays a separate item.
 
 ## 8. Operator runbook
+
+**There is deliberately no `make` target for a sweep.** It would buy an alias for
+a command this section already spells out, and it would cost the thing that makes
+a sweep cheap to land: `scripts/ci-docs-only.sh --check-inputs` fails if the
+Makefile names any path on the documentation allowlist, and `scripts/*.py` is on
+it. A `make ecosystem-sweep` line naming `scripts/ecosystem-sweep.py` fails that
+CI step immediately (verified, not predicted), and the only way out would be to
+take the sweep scripts off the allowlist — which puts five build jobs back on
+every ~1300-record data PR, exactly the cost
+[#7928](https://github.com/tokuhirom/mutsu/pull/7928) removed. Call the script, or
+dispatch the workflow.
 
 Two ways to refresh the numbers: **locally** (below) when a many-core box is at
 hand, or **from GitHub Actions** (§8.1) otherwise. They produce the same records
