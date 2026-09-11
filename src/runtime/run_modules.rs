@@ -871,6 +871,14 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
+            // `sub EXPORT` is per-compunit: hide whatever hook an enclosing
+            // compunit already registered so this module's own (hoisted)
+            // declaration lands on a clean `GLOBAL::EXPORT` instead of tripping
+            // the redeclaration check (#7947). Restored below, *after*
+            // `apply_module_export` has run and dropped this module's own --
+            // see `hide_export_routines` for why this pair cannot share
+            // `hidden_toplevel`'s restore point.
+            let hidden_export = self.hide_export_routines();
             let result = self.run_block(&stmts);
             // Snapshot the env exactly as the module body left it, before any
             // of the restoration below (the `leaked_packages` removal, the
@@ -1060,10 +1068,18 @@ impl Interpreter {
             self.restore_toplevel_global_routines(hidden_toplevel);
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
-            result?;
             // If the module defined `sub EXPORT`, call it with the `use` args and
-            // install the symbols it returns into the caller's scope.
-            self.apply_module_export(export_args.unwrap_or_default(), module_body_env)?;
+            // install the symbols it returns into the caller's scope. The
+            // enclosing compunit's hook comes back either way -- an aborted
+            // load must not leave it hidden.
+            let export_result = match result {
+                Ok(()) => {
+                    self.apply_module_export(export_args.unwrap_or_default(), module_body_env)
+                }
+                Err(err) => Err(err),
+            };
+            self.restore_export_routines(hidden_export);
+            export_result?;
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of

@@ -354,6 +354,9 @@ impl Interpreter {
     /// module's stale `GLOBAL::EXPORT` over the inner module's fresh one
     /// before `apply_module_export` got to read it, silently breaking every
     /// `is export`/`sub EXPORT` symbol in that shape (`t/sub-export.t`).
+    /// `EXPORT` still needs per-compunit scoping -- it just needs a restore
+    /// point on the far side of `apply_module_export`, which
+    /// [`Interpreter::hide_export_routines`] provides (#7947).
     pub(crate) fn is_toplevel_global_routine_key(key: &str) -> bool {
         Self::toplevel_global_routine_name(key).is_some()
     }

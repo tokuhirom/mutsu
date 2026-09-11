@@ -132,3 +132,14 @@ file — and every other call shape benefits too.
 - Pinned by `t/modules/import-export/runtime-export-listop-parse.t`, which
   covers both directions: the listop call must parse, and a unit-scope routine
   the hook deliberately withholds must still be unresolvable at run time.
+- The scan detects the hook **per module file**, which is the right unit: the
+  run-time hook is per-compunit too. That invariant was not held on the run-time
+  side at first — a module body runs under `GLOBAL`, so every module's
+  `sub EXPORT` registered under the one `GLOBAL::EXPORT` key, and two modules in
+  a single load chain that each declared one collided with `X::Redeclaration`
+  ([#7947](https://github.com/tokuhirom/mutsu/issues/7947)). `load_module` now
+  hides the enclosing compunit's hook for the duration of a nested load
+  (`Interpreter::hide_export_routines`, restored only *after*
+  `apply_module_export` has consumed the nested module's own), so the two sides
+  agree on the unit. Nothing in the approximation above changes: the scan
+  already read one file at a time.
