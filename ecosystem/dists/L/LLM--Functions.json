@@ -1,0 +1,75 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Grammar",
+      "HTTP::Tiny",
+      "Hash::Merge",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::META",
+      "Text::SubParsers",
+      "URI",
+      "WWW::Gemini",
+      "WWW::LLaMA",
+      "WWW::MistralAI",
+      "WWW::Ollama",
+      "WWW::OpenAI",
+      "WWW::OpenRouter"
+    ],
+    "unresolved": []
+  },
+  "dist": "LLM::Functions",
+  "files": [],
+  "load": {
+    "LLM::Function": "ok",
+    "LLM::Functions": "circular module dependency detected: LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+    "LLM::Functions::Chat": "ok",
+    "LLM::Functions::Configuration": "ok",
+    "LLM::Functions::Evaluator": "ok",
+    "LLM::Functions::EvaluatorChat": "ok",
+    "LLM::Functions::EvaluatorChatGemini": "ok",
+    "LLM::Functions::EvaluatorChatPaLM": "ok",
+    "LLM::Functions::Tooled": "ok",
+    "LLM::Functions::TooledChatGPT": "ok",
+    "LLM::Functions::TooledGemini": "ok",
+    "LLM::Tooling": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/LM/LLM_FUNCTIONS/6bf4cecdef73997cd656dd630b288669db917d79.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.5.10"
+}

@@ -1,0 +1,83 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "FastCGI::NativeCall",
+      "HTTP::Status",
+      "JSON::Fast",
+      "PSGI",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "FastCGI::NativeCall::PSGI",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.62,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/010-basic.t",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 7.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "FastCGI::NativeCall::PSGI": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/AS/FASTCGI_NATIVECALL_PSGI/31ad3697e88875a7d4978cae790772464dd626c5.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

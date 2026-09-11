@@ -1,0 +1,167 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Agnostic",
+      "Code::Coverable",
+      "Code::Coverage",
+      "ForwardIterables",
+      "Identity::Utils",
+      "List::Agnostic",
+      "META::constants",
+      "META::verauthapi",
+      "MoarVM::Bytecode",
+      "String::Utils",
+      "Test::Coverage",
+      "paths"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pod::TreeWalker",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "pod comment",
+        "nok": 1,
+        "ok": 3,
+        "plan": 9,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 5.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "declarators",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/declarators.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/document.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "=for item with numbered items",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/lists.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/no-descend.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Pod::TreeWalker": "ok",
+    "Pod::TreeWalker::Listener": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OD/POD_TREEWALKER/32c216da28e177e61eed61946253a28514e5410a.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 18,
+    "baseline_files": 5,
+    "mutsu_assertions": 10,
+    "parity_files": 2,
+    "regressed_files": 3
+  },
+  "version": "0.0.6"
+}

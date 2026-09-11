@@ -1,0 +1,53 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "MacOS::NativeLib",
+      "Method::Also"
+    ],
+    "unresolved": []
+  },
+  "dist": "HarfBuzz",
+  "files": [],
+  "load": {
+    "HarfBuzz": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Blob": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Buffer": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Face": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Feature": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Font": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Glyph": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Map": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Raw": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Raw::Defs": "ok",
+    "HarfBuzz::Set": "Variable $!var used where no 'self' is available",
+    "HarfBuzz::Shaper": "Variable $!var used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/AR/HARFBUZZ/b12ea87821a3aba0a5aa26e0f7d39c6c088d83b6.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.7"
+}

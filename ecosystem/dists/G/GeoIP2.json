@@ -1,0 +1,86 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "GeoIP2",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 0",
+        "nok": 0,
+        "ok": 6,
+        "plan": 9,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-reader.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot convert fec0 0 0 0 0 0 0 0 to a radix-16 number: please supply a Str value, not a Array",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-products.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "GeoIP2": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEOIP2/501ea81fc4f6a512c779a7ea22ece0731bfb614b.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 16,
+    "baseline_files": 2,
+    "mutsu_assertions": 6,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "1.1.4"
+}

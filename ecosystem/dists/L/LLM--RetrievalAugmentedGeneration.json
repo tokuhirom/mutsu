@@ -1,0 +1,81 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Algorithm::KDimensionalTree",
+      "CBOR::Simple",
+      "DateTime::Grammar",
+      "File::Find",
+      "File::Which",
+      "HTTP::Tiny",
+      "Hash::Merge",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LLM::Functions",
+      "LLM::Prompts",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "ML::FindTextualAnswer",
+      "Math::DistanceFunctions",
+      "Math::DistanceFunctions::Edit",
+      "Math::DistanceFunctions::Native",
+      "Math::Nearest",
+      "NativeHelpers::Array",
+      "OpenSSL",
+      "Shell::Command",
+      "Test::META",
+      "Text::SubParsers",
+      "TinyFloats",
+      "URI",
+      "UUID",
+      "WWW::Gemini",
+      "WWW::LLaMA",
+      "WWW::MistralAI",
+      "WWW::Ollama",
+      "WWW::OpenAI",
+      "WWW::OpenRouter",
+      "XDG::BaseDirectory"
+    ],
+    "unresolved": []
+  },
+  "dist": "LLM::RetrievalAugmentedGeneration",
+  "files": [],
+  "load": {
+    "LLM::RetrievalAugmentedGeneration": "raku_also_fails",
+    "LLM::RetrievalAugmentedGeneration::VectorDatabase": "circular module dependency detected: LLM::RetrievalAugmentedGeneration::VectorDatabase -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/LM/LLM_RETRIEVALAUGMENTEDGENERATION/83cd30b7e25ddcb25b23bc7d81ebbd16a8db63db.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.8"
+}

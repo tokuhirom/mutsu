@@ -1,0 +1,117 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "LEB128"
+    ],
+    "unresolved": []
+  },
+  "dist": "Wasm::Emitter",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.57,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/expressions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 19.56,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.55,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/hello-world.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.16,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.59,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/module.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.72,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Wasm::Emitter": "ok",
+    "Wasm::Emitter::Data": "ok",
+    "Wasm::Emitter::Elements": "ok",
+    "Wasm::Emitter::Exports": "ok",
+    "Wasm::Emitter::Expression": "ok",
+    "Wasm::Emitter::Function": "ok",
+    "Wasm::Emitter::Global": "ok",
+    "Wasm::Emitter::Imports": "ok",
+    "Wasm::Emitter::Name": "ok",
+    "Wasm::Emitter::Types": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/AS/WASM_EMITTER/5860deddc15bea9abbe6edd446d6201231c249b6.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 3,
+    "mutsu_assertions": 3,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.9.1"
+}

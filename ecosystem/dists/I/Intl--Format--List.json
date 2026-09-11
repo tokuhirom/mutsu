@@ -1,0 +1,87 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Intl::CLDR",
+      "Intl::LanguageTag",
+      "Intl::LanguageTaggish",
+      "User::Language"
+    ],
+    "unresolved": []
+  },
+  "dist": "Intl::Format::List",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-tests.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-ast.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Intl::Format::List": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/NT/INTL_FORMAT_LIST/5ee0ca80ff70d5b5c51dd30bf575497c8d115ca2.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.6.0+"
+}

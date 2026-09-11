@@ -1,0 +1,75 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64::Native",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::Class",
+      "PDF::Content",
+      "PDF::Grammar",
+      "PDF::ISO_32000",
+      "PDF::ISO_32000_2",
+      "PDF::Lite",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "FDF",
+  "files": [],
+  "load": {
+    "FDF": "raku_also_fails",
+    "FDF::Annot": "Invalid typename 'IndRef' in parameter declaration.",
+    "FDF::Catalog": "raku_also_fails",
+    "FDF::Dict": "raku_also_fails",
+    "FDF::Field": "raku_also_fails",
+    "FDF::Field::AdditionalActions": "Invalid typename 'IndRef' in parameter declaration.",
+    "FDF::IconFit": "Invalid typename 'IndRef' in parameter declaration.",
+    "FDF::JavaScript": "Invalid typename 'IndRef' in parameter declaration.",
+    "FDF::NamedPageRef": "Invalid typename 'IndRef' in parameter declaration.",
+    "FDF::Page": "raku_also_fails",
+    "FDF::Template": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/DF/FDF/4c0d33a9d26a9ee335c099369c9dec10efd5a706.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

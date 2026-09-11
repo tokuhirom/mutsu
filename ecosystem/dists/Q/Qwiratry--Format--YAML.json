@@ -1,0 +1,112 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Glob::Grammar",
+      "Implementation::Loader",
+      "MIME::Base64",
+      "Qwiratry",
+      "Qwiratry::Test",
+      "Slangify",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "Qwiratry::Format::YAML",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "first_failure": "Qwiratry::Format::YAML module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 7,
+        "secs": 9.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-yaml-behavior.rakutest",
+      "raku": {
+        "first_failure": "'Qwiratry::Format::YAML::Parse' cannot inherit from 'Qwiratry::Format::Base::Parse' because it is unknown.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.23,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-autoload.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.08,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-conformance.rakutest",
+      "raku": {
+        "first_failure": "'Qwiratry::Format::YAML::Parse' cannot inherit from 'Qwiratry::Format::Base::Parse' because it is unknown.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Qwiratry::Format::YAML": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/Q/WI/QWIRATRY_FORMAT_YAML/50d6a1ad23cbb25d8ff19c8695d4b670b909a933.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 6,
+    "baseline_files": 1,
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

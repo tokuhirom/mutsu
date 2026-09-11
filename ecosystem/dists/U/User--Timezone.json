@@ -1,0 +1,43 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "User::Timezone",
+  "files": [],
+  "load": {
+    "Intl::UserTimezone": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?",
+    "User::Timezone": "circular module dependency detected: User::Timezone -> User::Timezone::Windows -> User::Timezone::Windows",
+    "User::Timezone::Linux": "ok",
+    "User::Timezone::Mac": "ok",
+    "User::Timezone::Windows": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/U/SE/USER_TIMEZONE/0754aab7e7f762322322f95f4681a9e6e501b076.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.3"
+}

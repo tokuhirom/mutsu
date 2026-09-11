@@ -1,0 +1,44 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTML::Entity::Fast",
+      "Test::Output"
+    ],
+    "unresolved": []
+  },
+  "dist": "CoreHackers::Q",
+  "files": [],
+  "load": {
+    "CoreHackers::Q": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:194:30:",
+    "CoreHackers::Q::Parser": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:194:30:",
+    "CoreHackers::Q::Parser::Actions": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:194:30:"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/OR/COREHACKERS_Q/f583ffdf7bc4c7e1220cf5b6f5aa4214801278e6.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.003000"
+}

@@ -1,0 +1,154 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Intl::CLDR",
+      "Intl::LanguageTag",
+      "Intl::LanguageTaggish",
+      "User::Language"
+    ],
+    "unresolved": []
+  },
+  "dist": "Intl::Format::Number",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.t",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-decimal.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-former-problems.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-special-values.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Count of minimum integer digits is correct",
+        "nok": 12,
+        "ok": 0,
+        "plan": 12,
+        "secs": 10.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-grammar.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-rounding.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-access-methods.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/deps/Intl__LanguageTag/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Intl::Format::Number": "raku_also_fails",
+    "Intl::Format::Number::Actions": "ok",
+    "Intl::Format::Number::Grammar": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/NT/INTL_FORMAT_NUMBER/561695cdabd414996639a84920b81bcb3d9751ea.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 12,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.4.0"
+}

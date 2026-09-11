@@ -1,0 +1,72 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Hash::Agnostic",
+      "Hash::Ordered",
+      "JSON::Fast",
+      "Terminal::ANSIColor",
+      "Terminal::Capabilities",
+      "Text::MiscUtils"
+    ],
+    "unresolved": []
+  },
+  "dist": "Terminal::Tests",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid attribute name 'bold'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 14.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Terminal::Tests": "ok",
+    "Terminal::Tests::App::FullTest": "ok",
+    "Terminal::Tests::App::QuickTest": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ER/TERMINAL_TESTS/a5e9be5817502b68db390effae494be0fe5be6bb.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.18"
+}

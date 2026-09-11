@@ -1,0 +1,79 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Compress::Bzip2",
+      "Compress::Bzip2::Raw",
+      "Crypt::LibGcrypt",
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "HTTP::Status",
+      "HTTP::Tiny",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Method::Protected",
+      "NativeLibs",
+      "Net::Ethereum",
+      "Node::Ethereum::Keccak256::Native",
+      "OpenSSL",
+      "Shell::Command",
+      "Test::META",
+      "Test::Mock",
+      "Test::Util::ServerPort",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Node::Ethereum::KZG",
+  "files": [],
+  "load": {
+    "Node::Ethereum::KZG": "raku_also_fails",
+    "Node::Ethereum::KZG::Blob": "Unknown function: HAS",
+    "Node::Ethereum::KZG::Constants": "ok",
+    "Node::Ethereum::KZG::EIP7594": "ok",
+    "Node::Ethereum::KZG::Exception": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/OD/NODE_ETHEREUM_KZG/841d15057cef561b4d6fd9ffb5608f18e08af12e.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.33"
+}

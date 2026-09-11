@@ -1,0 +1,103 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "FastCGI::NativeCall",
+      "JSON::Fast",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "FastCGI::NativeCall::Async",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.63,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/010-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/020-basic.t",
+      "raku": {
+        "first_failure": "A react block:",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "FastCGI::NativeCall::Async": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/AS/FASTCGI_NATIVECALL_ASYNC/9c1a97f63087fadc0aa225479c29fc907582d148.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

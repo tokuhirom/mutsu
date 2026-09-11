@@ -1,0 +1,361 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Tiny",
+      "MIME::Base64",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "LWP::Simple",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/000-load-module.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 8.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.39,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/basic-auth.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.8,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/custom-headers-and-content.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/delete-headers.t",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 3.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/get-404.t",
+      "raku": {
+        "first_failure": "did we throws-like LWP::Simple::X::LWP::Simple::Response?",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/get-binary-camelia.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/get-chunked-6guts.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'strangelyconsistent.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/get-headers.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/get-perl6-org.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      },
+      "path": "t/get-unsized.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.31,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/get-w3-latin1-utf8.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.7,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.32,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/get-w3-redirect.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.68,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/getstore.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'www.google.com' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/head.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.36,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/issue-7.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.7,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/parse-url.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/put-request.t",
+      "raku": {
+        "first_failure": "Failed to resolve host name 'eu.httpbin.org' with family 0.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/stringify-headers.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "LWP::Simple": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/WP/LWP_SIMPLE/e7634dd54754b55a001b7ebef2554d1d77b9eebf.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 46,
+    "baseline_files": 8,
+    "mutsu_assertions": 45,
+    "parity_files": 7,
+    "regressed_files": 1
+  },
+  "version": "0.109"
+}

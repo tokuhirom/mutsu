@@ -1,0 +1,65 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Terminal::ANSIColor"
+    ],
+    "unresolved": []
+  },
+  "dist": "Grammar::Tracer::Compact",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "grammar.parse(...) with the tracer works",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/tracer.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Grammar::Tracer::Compact": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAMMAR_TRACER_COMPACT/946dadb005e3150020aa1ccac438a0d4e8e9b1cc.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "1.0"
+}

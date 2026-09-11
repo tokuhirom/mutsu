@@ -1,0 +1,75 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Clipboard",
+      "Data::TypeSystem",
+      "DateTime::Grammar",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Tiny",
+      "Hash::Merge",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LLM::Functions",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "ML::FindTextualAnswer",
+      "OpenSSL",
+      "Slang::Tuxic",
+      "Slangify",
+      "Test::META",
+      "Text::CSV",
+      "Text::SubParsers",
+      "URI",
+      "WWW::Gemini",
+      "WWW::LLaMA",
+      "WWW::MistralAI",
+      "WWW::Ollama",
+      "WWW::OpenAI",
+      "WWW::OpenRouter"
+    ],
+    "unresolved": []
+  },
+  "dist": "ML::NLPTemplateEngine",
+  "files": [],
+  "load": {
+    "ML::NLPTemplateEngine": "raku_also_fails",
+    "ML::NLPTemplateEngine::Core": "circular module dependency detected: ML::NLPTemplateEngine::Core -> ML::FindTextualAnswer -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+    "ML::NLPTemplateEngine::Ingestion": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/L_/ML_NLPTEMPLATEENGINE/719260f3f33b7a598b0c6e847302568ed3102c3d.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.9"
+}

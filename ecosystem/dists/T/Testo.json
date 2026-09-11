@@ -1,0 +1,188 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Testo",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'test'; expected Testo::Test::Result:D, got Junction",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-is.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'test'; expected Testo::Test::Result:D, got Junction",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-is-eqv.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'CALL-ME' for invocant of type 'Pair'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-group.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!args; where constraint failed",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-is-run.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-skip.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-is-true-or-false.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Testo": "ok",
+    "Testo::Out": "ok",
+    "Testo::Out::TAP": "ok",
+    "Testo::Test": "ok",
+    "Testo::Test::Group": "raku_also_fails",
+    "Testo::Test::Is": "raku_also_fails",
+    "Testo::Test::IsEqv": "raku_also_fails",
+    "Testo::Test::IsFalse": "raku_also_fails",
+    "Testo::Test::IsRun": "raku_also_fails",
+    "Testo::Test::IsTrue": "raku_also_fails",
+    "Testo::Test::Result": "ok",
+    "Testo::Test::Skip": "raku_also_fails",
+    "Testo::Tester": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TESTO/b66ff967264804228323fec60809f6afe1669f19.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 31,
+    "baseline_files": 6,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 6
+  },
+  "version": "1.003009"
+}

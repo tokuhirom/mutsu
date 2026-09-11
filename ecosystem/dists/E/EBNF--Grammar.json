@@ -1,0 +1,165 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "FunctionalParsers"
+    ],
+    "unresolved": []
+  },
+  "dist": "EBNF::Grammar",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "equivalence",
+        "nok": 3,
+        "ok": 11,
+        "plan": 14,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-standard-ebnf-parsing.t",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 43.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Do not know how to process the argument style.Expected values are <Inverted Relaxed Standard> or Whatever",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-relaxed-ebnf-interpretation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Comma separated",
+        "nok": 9,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-ebnf-parsing-any-sequences.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: EBNFRule\t<top>\tEBNFAlternatives\t EBNFTerminal\t\"a\" EBNFTerminal\t\"b\"",
+        "nok": 1,
+        "ok": 5,
+        "plan": null,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-ebnf-parsing.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller trace(FunctionalParsers::EBNF::Actions::MermaidJS::Graph:D: Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-grammar-graph.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "EBNF::Actions::EBNF::Standard": "ok",
+    "EBNF::Actions::JavaScript::Nearley": "ok",
+    "EBNF::Actions::MermaidJS::Graph": "ok",
+    "EBNF::Actions::Raku::AST": "ok",
+    "EBNF::Actions::Raku::FunctionalParsers": "ok",
+    "EBNF::Actions::Raku::Grammar": "ok",
+    "EBNF::Actions::WL::FunctionalParsers": "ok",
+    "EBNF::Grammar": "ok",
+    "EBNF::Grammar::Standardish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/BN/EBNF_GRAMMAR/1472e47f984b90e6c9b640bc626f0ee7a27248cb.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 61,
+    "baseline_files": 5,
+    "mutsu_assertions": 16,
+    "parity_files": 0,
+    "regressed_files": 5
+  },
+  "version": "0.1.6"
+}

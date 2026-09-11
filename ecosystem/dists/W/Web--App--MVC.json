@@ -1,0 +1,60 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DB::Model::Easy",
+      "DBIish",
+      "FastCGI",
+      "HTML::Template",
+      "HTTP::Easy",
+      "HTTP::Status",
+      "JSON::Tiny",
+      "MIME::Types",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "Netstring",
+      "P5pack",
+      "PSGI",
+      "SCGI",
+      "Template6",
+      "Template::Mojo",
+      "Web::App",
+      "Web::Template"
+    ],
+    "unresolved": []
+  },
+  "dist": "Web::App::MVC",
+  "files": [],
+  "load": {
+    "Web::App::MVC": "ok",
+    "Web::App::MVC::Controller": "ok",
+    "Web::App::MVC::Controller::MethodDispatch": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/EB/WEB_APP_MVC/5445ab5a1053af54039719269fd9ac4f64eaa487.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

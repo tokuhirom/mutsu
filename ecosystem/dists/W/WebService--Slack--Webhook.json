@@ -1,0 +1,42 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "Net::HTTP"
+    ],
+    "unresolved": []
+  },
+  "dist": "WebService::Slack::Webhook",
+  "files": [],
+  "load": {
+    "WebService::Slack::Webhook": "expected statement: expected expected statement: expected expression statement or ')'"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/EB/WEBSERVICE_SLACK_WEBHOOK/afeb372b75b7c039632d8a64b451db3c34badb9c.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.3"
+}

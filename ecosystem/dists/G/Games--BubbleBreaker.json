@@ -1,0 +1,56 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "SDL"
+    ],
+    "unresolved": []
+  },
+  "dist": "Games::BubbleBreaker",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-run.t",
+      "raku": {
+        "first_failure": "bubble-breaker ran 0.597065018 seconds",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "Games::BubbleBreaker": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/G/Games%3A%3ABubbleBreaker/Games%3A%3ABubbleBreaker%3Aver%3C%2A%3E%3Aauth%3Cgithub%3AFROGGS%3E.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "*"
+}

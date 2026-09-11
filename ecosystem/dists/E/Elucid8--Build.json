@@ -1,0 +1,75 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Dump::Tree",
+      "Digest::SHA1::Native",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Which",
+      "Git::Blame::File",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibCurl",
+      "LibraryMake",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Method::Protected",
+      "NativeLibs",
+      "OO::Monitors",
+      "PrettyDump",
+      "Rainbow",
+      "RakuConfig",
+      "Rakuast::RakuDoc::Render",
+      "Shell::Command",
+      "Terminal-API",
+      "Terminal::ANSIColor",
+      "Terminal::Print",
+      "Test::Deeply::Relaxed",
+      "Test::META",
+      "Test::Output",
+      "Test::Run",
+      "Test::When",
+      "Text::MiscUtils",
+      "URI",
+      "XML",
+      "YAMLish"
+    ],
+    "unresolved": [
+      "RakuAST::Deparse::Highlight"
+    ]
+  },
+  "dist": "Elucid8::Build",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/LU/ELUCID8_BUILD/47db78de6c57458eeceaf7c833cffb72201f8424.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.12.11"
+}

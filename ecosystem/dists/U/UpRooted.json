@@ -1,0 +1,280 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DBIish",
+      "NativeHelpers::Blob",
+      "NativeLibs"
+    ],
+    "unresolved": []
+  },
+  "dist": "UpRooted",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "UpRooted::Table",
+        "nok": 2,
+        "ok": 2,
+        "plan": 4,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/10-schema.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-schema-mysql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-schema-postgresql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-tree.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 4.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/30-reader.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-reader-mysql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/32-reader-postgresql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/40-writer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "File generated",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/41-writer-mysqlfile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 30.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/42-writer-mysql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Pointer but got Whatever (*)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/43-writer-postgresqlfile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 16.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/44-writer-postgresql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "UpRooted::Column": "ok",
+    "UpRooted::Helper::DBIConnection": "ok",
+    "UpRooted::Helper::FQN": "ok",
+    "UpRooted::Helper::Quoter": "ok",
+    "UpRooted::Path": "ok",
+    "UpRooted::Reader": "ok",
+    "UpRooted::Reader::Helper::DBISelect": "ok",
+    "UpRooted::Reader::MySQL": "ok",
+    "UpRooted::Reader::PostgreSQL": "ok",
+    "UpRooted::Relation": "ok",
+    "UpRooted::Schema": "ok",
+    "UpRooted::Schema::Helper::Information": "ok",
+    "UpRooted::Schema::MySQL": "ok",
+    "UpRooted::Schema::PostgreSQL": "ok",
+    "UpRooted::Table": "ok",
+    "UpRooted::Tree": "ok",
+    "UpRooted::Writer": "ok",
+    "UpRooted::Writer::Helper::DBIInsert": "ok",
+    "UpRooted::Writer::Helper::File": "ok",
+    "UpRooted::Writer::Helper::FileInsert": "ok",
+    "UpRooted::Writer::MySQL": "ok",
+    "UpRooted::Writer::MySQLFile": "ok",
+    "UpRooted::Writer::PostgreSQL": "ok",
+    "UpRooted::Writer::PostgreSQLFile": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/U/PR/UPROOTED/e43930aa8473fd288fac1049dbc7d13e6a9fb82f.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 33,
+    "baseline_files": 6,
+    "mutsu_assertions": 27,
+    "parity_files": 3,
+    "regressed_files": 3
+  },
+  "version": "1.8.3"
+}

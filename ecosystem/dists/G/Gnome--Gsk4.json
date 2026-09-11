@@ -1,0 +1,649 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Gnome::GObject",
+      "Gnome::Gdk4",
+      "Gnome::Gio",
+      "Gnome::Glib",
+      "Gnome::Graphene",
+      "Gnome::N"
+    ],
+    "unresolved": []
+  },
+  "dist": "Gnome::Gsk4",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/BlendNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BlurNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BorderNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CairoNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CairoRenderer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ClipNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorMatrixNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ConicGradientNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ContainerNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CrossFadeNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DebugNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GLRenderer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GLShader.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GLShaderNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/InsetShadowNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LinearGradientNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MaskNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-ShaderArgsBuilder.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Types.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/OpacityNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/OutsetShadowNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RadialGradientNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RenderNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Renderer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RepeatNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RepeatingLinearGradientNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RepeatingRadialGradientNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RoundedClipNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShadowNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-enums.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-path.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-rendernode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-roundedrect.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-stroke.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-transform.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextureNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextureScaleNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TransformNode.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Gnome::Gsk4::BlendNode": "raku_also_fails",
+    "Gnome::Gsk4::BlurNode": "raku_also_fails",
+    "Gnome::Gsk4::BorderNode": "raku_also_fails",
+    "Gnome::Gsk4::CairoNode": "raku_also_fails",
+    "Gnome::Gsk4::CairoRenderer": "raku_also_fails",
+    "Gnome::Gsk4::ClipNode": "raku_also_fails",
+    "Gnome::Gsk4::ColorMatrixNode": "raku_also_fails",
+    "Gnome::Gsk4::ColorNode": "raku_also_fails",
+    "Gnome::Gsk4::ConicGradientNode": "raku_also_fails",
+    "Gnome::Gsk4::ContainerNode": "raku_also_fails",
+    "Gnome::Gsk4::CrossFadeNode": "raku_also_fails",
+    "Gnome::Gsk4::DebugNode": "raku_also_fails",
+    "Gnome::Gsk4::GLRenderer": "raku_also_fails",
+    "Gnome::Gsk4::GLShader": "raku_also_fails",
+    "Gnome::Gsk4::GLShaderNode": "raku_also_fails",
+    "Gnome::Gsk4::InsetShadowNode": "raku_also_fails",
+    "Gnome::Gsk4::LinearGradientNode": "raku_also_fails",
+    "Gnome::Gsk4::MaskNode": "raku_also_fails",
+    "Gnome::Gsk4::N-RoundedRect": "raku_also_fails",
+    "Gnome::Gsk4::N-ShaderArgsBuilder": "raku_also_fails",
+    "Gnome::Gsk4::N-Transform": "raku_also_fails",
+    "Gnome::Gsk4::OpacityNode": "raku_also_fails",
+    "Gnome::Gsk4::OutsetShadowNode": "raku_also_fails",
+    "Gnome::Gsk4::RadialGradientNode": "raku_also_fails",
+    "Gnome::Gsk4::RenderNode": "raku_also_fails",
+    "Gnome::Gsk4::Renderer": "raku_also_fails",
+    "Gnome::Gsk4::RepeatNode": "raku_also_fails",
+    "Gnome::Gsk4::RepeatingLinearGradientNode": "raku_also_fails",
+    "Gnome::Gsk4::RepeatingRadialGradientNode": "raku_also_fails",
+    "Gnome::Gsk4::RoundedClipNode": "raku_also_fails",
+    "Gnome::Gsk4::ShadowNode": "raku_also_fails",
+    "Gnome::Gsk4::T-enums": "ok",
+    "Gnome::Gsk4::T-glshader": "raku_also_fails",
+    "Gnome::Gsk4::T-path": "raku_also_fails",
+    "Gnome::Gsk4::T-rendernode": "raku_also_fails",
+    "Gnome::Gsk4::T-roundedrect": "raku_also_fails",
+    "Gnome::Gsk4::T-stroke": "raku_also_fails",
+    "Gnome::Gsk4::T-transform": "raku_also_fails",
+    "Gnome::Gsk4::T-types": "ok",
+    "Gnome::Gsk4::TextNode": "raku_also_fails",
+    "Gnome::Gsk4::TextureNode": "raku_also_fails",
+    "Gnome::Gsk4::TextureScaleNode": "raku_also_fails",
+    "Gnome::Gsk4::TransformNode": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/NO/GNOME_GSK4/cddaf7da6cf30562c20ac811fa561a6278afe1f0.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.0"
+}

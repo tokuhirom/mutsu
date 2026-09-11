@@ -1,0 +1,50 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "L10N",
+      "L10N::CY",
+      "L10N::DE",
+      "L10N::EN",
+      "L10N::EO",
+      "L10N::FR",
+      "L10N::HU",
+      "L10N::IT",
+      "L10N::JA",
+      "L10N::NL",
+      "L10N::PT",
+      "L10N::ZH"
+    ],
+    "unresolved": []
+  },
+  "dist": "L10N::Complete",
+  "files": [],
+  "load": {},
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/10/L10N_COMPLETE/92238efcbde8f2946cf3d0ed506839932a647102.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

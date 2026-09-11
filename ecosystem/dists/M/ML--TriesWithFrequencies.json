@@ -1,0 +1,48 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "ML::TriesWithFrequencies",
+  "files": [],
+  "load": {
+    "ML::TriesWithFrequencies": "Redeclaration of routine 'leafQ'. Did you mean to declare a multi-sub?",
+    "ML::TriesWithFrequencies::ChildRandomChooser": "ok",
+    "ML::TriesWithFrequencies::LeafProbabilitiesGatherer": "ok",
+    "ML::TriesWithFrequencies::ParetoBasedRemover": "ok",
+    "ML::TriesWithFrequencies::PathsGatherer": "ok",
+    "ML::TriesWithFrequencies::RegexBasedRemover": "ok",
+    "ML::TriesWithFrequencies::ThresholdBasedRemover": "ok",
+    "ML::TriesWithFrequencies::Trie": "Redeclaration of routine 'leafQ'. Did you mean to declare a multi-sub?",
+    "ML::TriesWithFrequencies::TrieTraverse": "ok",
+    "ML::TriesWithFrequencies::Trieish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/L_/ML_TRIESWITHFREQUENCIES/1cac7578628affc9bae7fe62c1c9aec9f092d2aa.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.6.7"
+}

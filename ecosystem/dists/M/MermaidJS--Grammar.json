@@ -1,0 +1,72 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "MermaidJS::Grammar",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "sample 2 parses",
+        "nok": 2,
+        "ok": 6,
+        "plan": 8,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-flowchart.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 11.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MermaidJS::Actions::GraphvizDOT": "ok",
+    "MermaidJS::Actions::JSON": "ok",
+    "MermaidJS::Actions::PlantUML": "ok",
+    "MermaidJS::Actions::Raku": "ok",
+    "MermaidJS::Actions::WL::Association": "ok",
+    "MermaidJS::Actions::WL::Graph": "ok",
+    "MermaidJS::Grammar": "ok",
+    "MermaidJS::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/ER/MERMAIDJS_GRAMMAR/83e98aa1f98ed156f18e2ebe7f43b5425678b2e4.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 1,
+    "mutsu_assertions": 6,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.2"
+}

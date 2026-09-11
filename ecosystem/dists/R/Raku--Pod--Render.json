@@ -1,0 +1,68 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibCurl",
+      "License::SPDX",
+      "META6",
+      "NativeLibs",
+      "Pod::Load",
+      "PrettyDump",
+      "RakuConfig",
+      "Template::Mustache",
+      "Test::Deeply::Relaxed",
+      "Test::META",
+      "Test::Output",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Raku::Pod::Render",
+  "files": [],
+  "load": {
+    "InstallAtomHighlighter": "ok",
+    "Pod::To::HTML2": "Unknown function: returns",
+    "Pod::To::MarkDown2": "Unknown function: returns",
+    "ProcessedPod": "Unknown function: returns",
+    "RenderPod::Exceptions": "ok",
+    "RenderPod::Highlighting": "ok",
+    "RenderPod::Templating": "ok",
+    "RenderPod::Test-Templates": "Unknown function: returns"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AK/RAKU_POD_RENDER/e3b7077f690a9a64fea1a9658390c482a65815c5.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "4.10.6"
+}

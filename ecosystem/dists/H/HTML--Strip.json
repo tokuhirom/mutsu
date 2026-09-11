@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTML::Entity::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "HTML::Strip",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "basic tag strip",
+        "nok": 8,
+        "ok": 19,
+        "plan": 27,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/test.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 4.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "HTML::Strip": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/TM/HTML_STRIP/64d14b39b99875f7aae7355793d332e6b8bf3fee.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 27,
+    "baseline_files": 1,
+    "mutsu_assertions": 19,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.3"
+}

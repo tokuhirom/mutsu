@@ -1,0 +1,74 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Cairo",
+      "Gnome::GObject",
+      "Gnome::Gdk4",
+      "Gnome::Gio",
+      "Gnome::Glib",
+      "Gnome::Graphene",
+      "Gnome::Gsk4",
+      "Gnome::Gtk4",
+      "Gnome::N",
+      "Gnome::Pango",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI",
+      "XML",
+      "XML::XPath"
+    ],
+    "unresolved": []
+  },
+  "dist": "GnomeTools",
+  "files": [],
+  "load": {
+    "GnomeTools::Gio::Menu": "raku_also_fails",
+    "GnomeTools::Gtk::Application": "raku_also_fails",
+    "GnomeTools::Gtk::DND": "raku_also_fails",
+    "GnomeTools::Gtk::Dialog": "raku_also_fails",
+    "GnomeTools::Gtk::DropDown": "raku_also_fails",
+    "GnomeTools::Gtk::GridView": "raku_also_fails",
+    "GnomeTools::Gtk::ListBox": "raku_also_fails",
+    "GnomeTools::Gtk::ListView": "raku_also_fails",
+    "GnomeTools::Gtk::MessageDialog": "raku_also_fails",
+    "GnomeTools::Gtk::R-ListModel": "raku_also_fails",
+    "GnomeTools::Gtk::Shortcut": "raku_also_fails",
+    "GnomeTools::Gtk::Statusbar": "raku_also_fails",
+    "GnomeTools::Gtk::Theming": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/NO/GNOMETOOLS/61463bdb12cd83c454bf183ba8386db5857bf9b1.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.8.3"
+}

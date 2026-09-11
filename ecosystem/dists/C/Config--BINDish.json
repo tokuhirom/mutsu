@@ -1,0 +1,62 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AttrX::Mooish",
+      "IP::Addr",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::Async",
+      "Test::META",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Config::BINDish",
+  "files": [],
+  "load": {
+    "Config::BINDish": "An exception occurred while evaluating a CHECK",
+    "Config::BINDish::AST": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Config::BINDish::Actions": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Config::BINDish::Expandable": "An exception occurred while evaluating a CHECK",
+    "Config::BINDish::Grammar": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Config::BINDish::INET": "An exception occurred while evaluating a CHECK",
+    "Config::BINDish::Ops": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Config::BINDish::Test": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Config::BINDish::X": "Unknown function: is"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONFIG_BINDISH/35c811494feb02682a91e3d56b9421415ce4dd16.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.18"
+}

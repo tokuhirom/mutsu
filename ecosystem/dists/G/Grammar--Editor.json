@@ -1,0 +1,53 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Grammar::Extractor",
+      "Notcurses::Native",
+      "Selkie",
+      "Selkie::UI",
+      "UUID"
+    ],
+    "unresolved": []
+  },
+  "dist": "Grammar::Editor",
+  "files": [],
+  "load": {
+    "Grammar::Editor": "ok",
+    "Grammar::Editor::Match": "raku_also_fails",
+    "Grammar::Editor::Pane::Error": "raku_also_fails",
+    "Grammar::Editor::Pane::Grammar": "Invalid typename 'CrossAlign' in parameter declaration.",
+    "Grammar::Editor::Pane::Input": "Invalid typename 'CrossAlign' in parameter declaration.",
+    "Grammar::Editor::Pane::Match": "ok",
+    "Grammar::Editor::Pane::Trace": "Invalid typename 'CrossAlign' in parameter declaration.",
+    "Grammar::Editor::Styles": "Invalid typename 'CrossAlign' in parameter declaration.",
+    "Grammar::Editor::Trace": "Invalid typename 'CrossAlign' in parameter declaration."
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAMMAR_EDITOR/74e5835dcf748674c4290a8612fbc00dc124e8fb.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

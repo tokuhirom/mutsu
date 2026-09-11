@@ -1,0 +1,70 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTML::Entity",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::Util::ServerPort",
+      "URI",
+      "URI::Encode"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pastebin::Shadowcat",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-paste.t",
+      "raku": {
+        "first_failure": "Could not find HTML::Entity in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Pastebin::Shadowcat": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/P/Pastebin%3A%3AShadowcat/Pastebin%3A%3AShadowcat%3Aver%3C2.001003%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.001003"
+}

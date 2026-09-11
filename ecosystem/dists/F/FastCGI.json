@@ -1,0 +1,73 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTTP::Status",
+      "P5pack",
+      "PSGI"
+    ],
+    "unresolved": []
+  },
+  "dist": "FastCGI",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 14.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "FastCGI": "ok",
+    "FastCGI::Connection": "ok",
+    "FastCGI::Constants": "ok",
+    "FastCGI::Errors": "ok",
+    "FastCGI::Logger": "ok",
+    "FastCGI::Protocol": "ok",
+    "FastCGI::Protocol::Constants": "ok",
+    "FastCGI::Request": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/AS/FASTCGI/12f7cad0f7d43256516c0d6972e073f459ca9f53.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 1,
+    "mutsu_assertions": 8,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.9.0"
+}

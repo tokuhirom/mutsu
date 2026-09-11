@@ -1,0 +1,71 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Cairo",
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::META",
+      "Test::Util::ServerPort",
+      "Test::When",
+      "URI",
+      "WWW"
+    ],
+    "unresolved": []
+  },
+  "dist": "octans",
+  "files": [],
+  "load": {
+    "Octans::CLI": "Runtime error: Failed to parse module 'Octans::CLI': Unsupported use of -> as postfix. In Raku please use: either . to call a method, or whitespace to delimit a pointy block.",
+    "Octans::GenerateFrame": "ok",
+    "Octans::Hex2RGB": "ok",
+    "Octans::Neighbors": "ok",
+    "Octans::Puzzle": "ok",
+    "Octans::Puzzle::Get": "ok",
+    "Octans::RangeSearch": "ok",
+    "Octans::WordSearch": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/CT/OCTANS/a7c5e7f0b88297ee9f47ac83489eee5e43bb322a.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.5"
+}

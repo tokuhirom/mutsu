@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Hash::Agnostic"
+    ],
+    "unresolved": []
+  },
+  "dist": "Hash::Ordered",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "in sub keys at /home/runner/.cache/mutsu-ecosystem/deps/Hash__Agnostic/Hash-Agnostic-0.0.20/lib/Hash/Agnostic.rakumod line 22",
+        "nok": 0,
+        "ok": 0,
+        "plan": 18,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Hash::Ordered": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/AS/HASH_ORDERED/8f99759ea8536165e6e34d888d903b082e3cd72f.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 18,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.9"
+}

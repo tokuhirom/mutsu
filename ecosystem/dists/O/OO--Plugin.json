@@ -1,0 +1,62 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Async::Workers",
+      "AttrX::Mooish",
+      "File::Find",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::Async",
+      "Test::META",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "OO::Plugin",
+  "files": [],
+  "load": {
+    "OO::Plugin": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized",
+    "OO::Plugin::Class": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized",
+    "OO::Plugin::Declarations": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized",
+    "OO::Plugin::Exception": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized",
+    "OO::Plugin::Manager": "expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ...",
+    "OO::Plugin::Metamodel::PlugRoleHOW": "'OO::Plugin::Metamodel::PlugRoleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "OO::Plugin::Metamodel::PluginHOW": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized",
+    "OO::Plugin::Registry": "Runtime error: Failed to parse module 'OO::Plugin::Class': Variable '$.stage' of type 'Str:D' must be initialized"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/O_/OO_PLUGIN/ee5ef01f889627ed444deb63df51260d07ac4b0c.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.8"
+}

@@ -35,7 +35,7 @@
   "dist": "DSL::Bulgarian",
   "files": [],
   "load": {
-    "DSL::Bulgarian": "circular module dependency detected: DSL::Bulgarian -> DSL::Bulgarian::ClassificationWorkflows::Grammar -> DSL::Bulgarian::ClassificationWorkflows::Grammar::ClassificationPhrases -> DSL::Shared::Utili",
+    "DSL::Bulgarian": "raku_also_fails",
     "DSL::Bulgarian::ClassificationWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
     "DSL::Bulgarian::ClassificationWorkflows::Grammar::ClassificationPhrases": "ok",
     "DSL::Bulgarian::DataQueryWorkflows::Grammar": "ok",
@@ -52,7 +52,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "134a1da",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -12,16 +12,109 @@
     "unresolved": []
   },
   "dist": "CSS::Selector::To::XPath",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller xpath(CSS::Selector::To::XPath:D: Nil:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 14,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01_xpath.t",
+      "raku": {
+        "nok": 0,
+        "ok": 118,
+        "plan": 119,
+        "secs": 27.57,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: X::Undeclared::Symbols: Undeclared routine:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02_html.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.94,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03_custom_pseudos.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04_fallback_pseudos.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "CSS::Selector::To::XPath": "Inconsistent class hierarchy for CSS::Grammar::CSS21"
+    "CSS::Selector::To::XPath": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "a7fe6d9",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -32,13 +125,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_SELECTOR_TO_XPATH/d693d2f5d2bf110fc96edc146bafddda25284801.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 129,
+    "baseline_files": 4,
+    "mutsu_assertions": 14,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 4
   },
   "version": "0.0.9"
 }

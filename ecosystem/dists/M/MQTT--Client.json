@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "MQTT::Client",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "4.7.2.1, '$SYS/monitor/Clients' should not match '+/monitor/Clients'",
+        "nok": 54,
+        "ok": 506,
+        "plan": 560,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/regex.t",
+      "raku": {
+        "nok": 0,
+        "ok": 560,
+        "plan": 560,
+        "secs": 16.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MQTT::Client": "ok",
+    "MQTT::Client::MyPack": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/M/MQTT%3A%3AClient/MQTT%3A%3AClient%3Aver%3C%2A%3E%3Aauth%3Cgithub%3AJuerd%3E.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 560,
+    "baseline_files": 1,
+    "mutsu_assertions": 506,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "*"
+}

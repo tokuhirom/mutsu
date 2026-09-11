@@ -1,0 +1,56 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Importers",
+      "Data::TypeSystem",
+      "HTTP::Tiny",
+      "Image::Markup::Utilities",
+      "JSON::Fast",
+      "MIME::Base64",
+      "URI",
+      "URI::Encode"
+    ],
+    "unresolved": []
+  },
+  "dist": "H2O::Client",
+  "files": [],
+  "load": {
+    "H2O::Client": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client::Column": "ok",
+    "H2O::Client::Connector": "ok",
+    "H2O::Client::Exception": "ok",
+    "H2O::Client::Frame": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client::Job": "ok",
+    "H2O::Client::Rapids::Expr": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client::Rapids::GroupBy": "ok",
+    "H2O::Client::Transport": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/2O/H2O_CLIENT/78b5b8bdafee218d82305c102c86b798fb10af1f.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

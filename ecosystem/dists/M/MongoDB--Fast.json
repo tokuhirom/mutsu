@@ -1,0 +1,206 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "MongoDB::Fast",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "An operation first awaited:",
+        "nok": 0,
+        "ok": 1,
+        "plan": 4,
+        "secs": 13.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-bson.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-wire.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-bson-edge-cases.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-simple-concurrent.rakutest",
+      "raku": {
+        "first_failure": "An operation first awaited:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-stress-concurrent.rakutest",
+      "raku": {
+        "first_failure": "An operation first awaited:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-large-dataset.rakutest",
+      "raku": {
+        "first_failure": "An operation first awaited:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-reconnection.rakutest",
+      "raku": {
+        "first_failure": "An operation first awaited:",
+        "nok": 0,
+        "ok": 7,
+        "plan": 12,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      },
+      "path": "t/08-request-id-unique.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MongoDB::Fast": "ok",
+    "MongoDB::Fast::BSON": "ok",
+    "MongoDB::Fast::Collection": "ok",
+    "MongoDB::Fast::Connection": "ok",
+    "MongoDB::Fast::Cursor": "ok",
+    "MongoDB::Fast::Database": "ok",
+    "MongoDB::Fast::ObjectID": "ok",
+    "MongoDB::Fast::Wire": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/ON/MONGODB_FAST/c20678c8e0e76ca09c9e5e1e53697726e2c026e7.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 60,
+    "baseline_files": 4,
+    "mutsu_assertions": 57,
+    "parity_files": 3,
+    "regressed_files": 1
+  },
+  "version": "0.2.2"
+}

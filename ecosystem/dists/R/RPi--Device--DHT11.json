@@ -1,0 +1,45 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "JSON::Fast",
+      "Method::Protected",
+      "System::Query",
+      "Test::Mock"
+    ],
+    "unresolved": []
+  },
+  "dist": "RPi::Device::DHT11",
+  "files": [],
+  "load": {
+    "RPi::Device::DHT11": "Unknown function: HAS"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/PI/RPI_DEVICE_DHT11/fe8a873392d57cd08ed7afe0deab739463b5f865.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

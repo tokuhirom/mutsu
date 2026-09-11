@@ -1,0 +1,67 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem",
+      "FEN::Grammar",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Math::SpecialFunctions",
+      "Statistics::Distributions",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "JavaScript::D3",
+  "files": [],
+  "load": {
+    "JavaScript::D3": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Charts": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Chess": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::CodeSnippets": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::CodeSnippets3D": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Gauge": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Graph": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Images": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Plots": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Plots3D": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3::Predicates": "ok",
+    "JavaScript::D3::Random": "expected statement: expected expected statement: expected expression statement or ')'",
+    "JavaScript::D3::Utilities": "No such method 'IO' for invocant of type 'Any'"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/J/AV/JAVASCRIPT_D3/cc1a7cc73f0a2e20045f0aec2fe39cf4b172f9c9.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.1"
+}

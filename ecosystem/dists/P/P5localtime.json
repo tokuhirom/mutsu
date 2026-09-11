@@ -1,0 +1,63 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "P5localtime",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@t'; expected Positional but got Str (Fri Sep 11 03:31:17 2026)",
+        "nok": 0,
+        "ok": 2,
+        "plan": 51,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 51,
+        "plan": 51,
+        "secs": 2.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "P5localtime": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/5L/P5LOCALTIME/874d3bab2e24037bc1ad81f0147734862ab76bb8.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 51,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.11"
+}

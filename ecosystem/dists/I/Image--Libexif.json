@@ -1,0 +1,43 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "NativeHelpers::Blob"
+    ],
+    "unresolved": []
+  },
+  "dist": "Image::Libexif",
+  "files": [],
+  "load": {
+    "Image::Libexif": "Unknown function: HAS",
+    "Image::Libexif::Constants": "ok",
+    "Image::Libexif::Raw": "Unknown function: HAS"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/MA/IMAGE_LIBEXIF/d94cda305f7e7517fe59807fd8e1f39e7280eddc.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.3"
+}

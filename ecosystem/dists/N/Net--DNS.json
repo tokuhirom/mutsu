@@ -1,0 +1,189 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Net::DNS",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-types.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.17,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 12.16,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.18,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-lookup-ips.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.73,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.18,
+        "skip": 4,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-lookup-mx.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.69,
+        "skip": 4,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.23,
+        "skip": 8,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-lookup-rrsig.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.69,
+        "skip": 8,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.08,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.47,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Net::DNS": "ok",
+    "Net::DNS::Message": "ok",
+    "Net::DNS::Message::DomainName": "ok",
+    "Net::DNS::Message::Header": "ok",
+    "Net::DNS::Message::Question": "ok",
+    "Net::DNS::Message::Resource": "ok",
+    "Net::DNS::Message::Resource::A": "ok",
+    "Net::DNS::Message::Resource::AAAA": "ok",
+    "Net::DNS::Message::Resource::CNAME": "ok",
+    "Net::DNS::Message::Resource::MX": "ok",
+    "Net::DNS::Message::Resource::NS": "ok",
+    "Net::DNS::Message::Resource::PTR": "ok",
+    "Net::DNS::Message::Resource::RRSIG": "ok",
+    "Net::DNS::Message::Resource::SOA": "ok",
+    "Net::DNS::Message::Resource::SPF": "ok",
+    "Net::DNS::Message::Resource::SRV": "ok",
+    "Net::DNS::Message::Resource::TXT": "ok",
+    "Net::DNS::Type": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/ET/NET_DNS/0bf5938106699dbd3386011765bd4282468ceb60.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 41,
+    "baseline_files": 6,
+    "mutsu_assertions": 41,
+    "parity_files": 6,
+    "regressed_files": 0
+  },
+  "version": "1.4"
+}

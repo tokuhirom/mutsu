@@ -1,0 +1,57 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CheckSocket",
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::Util::ServerPort",
+      "URI",
+      "URI::Template",
+      "XML",
+      "XML::Class"
+    ],
+    "unresolved": []
+  },
+  "dist": "Monitor::Monit",
+  "files": [],
+  "load": {
+    "Monitor::Monit": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/ON/MONITOR_MONIT/793aedd78b6e84e787dd1d306ffd474ce14f91dc.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

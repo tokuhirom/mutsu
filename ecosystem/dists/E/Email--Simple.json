@@ -1,0 +1,40 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Email::Simple",
+  "files": [],
+  "load": {
+    "Email::Simple": "X::Comp::Trait::Duplicate: attribute 'headers' already exists in class 'Email::Simple::Header' (possibly from role composition)",
+    "Email::Simple::Header": "X::Comp::Trait::Duplicate: attribute 'headers' already exists in class 'Email::Simple::Header' (possibly from role composition)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/MA/EMAIL_SIMPLE/ac3c6617014940d3a34519d4a74ed166a66b0427.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.1.4"
+}

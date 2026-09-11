@@ -1,0 +1,70 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Color",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "TOML::Thumb",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pop",
+  "files": [],
+  "load": {
+    "Pop": "expected statement: expected expected statement: expected expected statement: expected expression statement or ']'",
+    "Pop::Color": "ok",
+    "Pop::Config": "ok",
+    "Pop::Drawable": "ok",
+    "Pop::Entities": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or ']'",
+    "Pop::Graphics": "ok",
+    "Pop::Images": "ok",
+    "Pop::Inputs": "expected statement: expected expected statement: expected expected statement: expected expression statement or ']'",
+    "Pop::Point": "ok",
+    "Pop::Rect": "ok",
+    "Pop::SDL": "ok",
+    "Pop::SDL::GFX": "ok",
+    "Pop::SDL::Image": "ok",
+    "Pop::Singleton": "ok",
+    "Pop::Sprite": "ok",
+    "Pop::Surface": "ok",
+    "Pop::Texture": "ok",
+    "Pop::Textures": "An exception occurred while evaluating a CHECK"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OP/POP/a674870e4fb5eedfe13627519b3fa2bfca06f8e9.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

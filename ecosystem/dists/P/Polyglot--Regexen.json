@@ -1,0 +1,45 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Polyglot::Regexen",
+  "files": [],
+  "load": {
+    "Polyglot::Regex::ECMA262::Actions": "ok",
+    "Polyglot::Regex::ECMA262::Actions-Mixin": "Could not find QAST in:",
+    "Polyglot::Regex::ECMA262::Classes": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on RakuAST::Regex::CharClassEnumerationElement::Character",
+    "Polyglot::Regex::ECMA262::Grammar": "ok",
+    "Polyglot::Regex::ECMA262::Grammar-Mixin": "ok",
+    "Polyglot::Regex::ECMA262::Role": "ok",
+    "Polyglot::Regexen": "circular module dependency detected: Polyglot::Regexen -> Polyglot::Regex::ECMA262::Grammar-Mixin -> Polyglot::Regex::ECMA262::Grammar -> Polyglot::Regex::ECMA262::Grammar-Mixin"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OL/POLYGLOT_REGEXEN/17071274ecb11bce167fcb8d42ae1a45eba739f5.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.0"
+}

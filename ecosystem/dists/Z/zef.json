@@ -1,0 +1,251 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "zef",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 21.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/build.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/36002.49068340261' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/distribution-depends-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/extract.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/73932.87839094216' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/fetch.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/69352.44657513205' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/identity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/install.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/repository.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/test.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/78711.47637488981' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/utils-filesystem.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/1789098277/1/base-delete.me: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Zef": "ok",
+    "Zef::Build": "ok",
+    "Zef::CLI": "ok",
+    "Zef::Client": "ok",
+    "Zef::Config": "ok",
+    "Zef::Distribution": "ok",
+    "Zef::Distribution::DependencySpecification": "ok",
+    "Zef::Distribution::Local": "ok",
+    "Zef::Extract": "ok",
+    "Zef::Fetch": "ok",
+    "Zef::Identity": "ok",
+    "Zef::Install": "ok",
+    "Zef::Report": "ok",
+    "Zef::Repository": "ok",
+    "Zef::Repository::Ecosystems": "ok",
+    "Zef::Repository::LocalCache": "ok",
+    "Zef::Service::FetchPath": "ok",
+    "Zef::Service::FileReporter": "ok",
+    "Zef::Service::InstallRakuDistribution": "ok",
+    "Zef::Service::Shell::DistributionBuilder": "ok",
+    "Zef::Service::Shell::LegacyBuild": "ok",
+    "Zef::Service::Shell::Test": "ok",
+    "Zef::Service::Shell::curl": "ok",
+    "Zef::Service::Shell::git": "ok",
+    "Zef::Service::Shell::tar": "ok",
+    "Zef::Service::Shell::unzip": "ok",
+    "Zef::Service::Shell::wget": "ok",
+    "Zef::Service::TAP": "ok",
+    "Zef::Test": "ok",
+    "Zef::Utils::FileSystem": "ok",
+    "Zef::Utils::SystemQuery": "ok",
+    "Zef::Utils::URI": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/Z/EF/ZEF/85c962f16e6dde324979228a7dd750fd684c3a55.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 45,
+    "baseline_files": 5,
+    "mutsu_assertions": 45,
+    "parity_files": 5,
+    "regressed_files": 0
+  },
+  "version": "1.1.3"
+}

@@ -1,0 +1,83 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Tokenizers",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01_wrapper.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02_tokenizers.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
+        "nok": 0,
+        "ok": 1,
+        "plan": 14,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03_tiktoken.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'tokenizers_new_from_tiktoken' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Tokenizers": "ok",
+    "Tokenizers::Wrapper": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/OK/TOKENIZERS/4664ac7a478e54c4355f071f055312ef006956c7.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.0"
+}

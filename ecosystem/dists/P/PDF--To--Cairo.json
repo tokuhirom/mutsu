@@ -1,0 +1,144 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64::Native",
+      "Cairo",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "Font::AFM",
+      "Font::FreeType",
+      "FontConfig",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "LibraryMake",
+      "MacOS::NativeLib",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::Class",
+      "PDF::Content",
+      "PDF::Font::Loader",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "PDF::Native",
+      "Path::Finder",
+      "Pod::Usage",
+      "Shell::Command",
+      "TAP",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "PDF::To::Cairo",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/draw.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/save-as.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/text.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/transforms.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/xobject.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "PDF::To::Cairo": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/DF/PDF_TO_CAIRO/2269e076e02b5525853f168a2a0eed13b513d1e3.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.8"
+}

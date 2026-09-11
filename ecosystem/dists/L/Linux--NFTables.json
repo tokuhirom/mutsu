@@ -1,0 +1,45 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "JSON::Fast",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "Linux::NFTables",
+  "files": [],
+  "load": {
+    "Linux::NFTables": "expected statement: expected expression after multiplicative operator or '.' or digits or generic radix literal or unicode numeric literal or ...",
+    "Linux::NFTables::Constants": "ok",
+    "Linux::NFTables::Raw": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IN/LINUX_NFTABLES/1142a605a13231915be89a4e93d2c28da4f66b16.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

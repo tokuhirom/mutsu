@@ -1,0 +1,47 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Test::Describe",
+  "files": [],
+  "load": {
+    "Test::Describe": "Unknown function: matcher",
+    "Test::Describe::Describe": "Runtime error: Failed to parse module 'Test::Describe::Describe': Confused: Two terms in a row",
+    "Test::Describe::Expect": "expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Test::Describe::Helpers": "ok",
+    "Test::Describe::It": "Failed to parse module 'Test::Describe::It': Unexpected block in infix position (missing statement control word before the expression?)",
+    "Test::Describe::Match": "ok",
+    "Test::Describe::Match::Change": "ok",
+    "Test::Describe::MatchFunctions": "ok",
+    "Test::Describe::Root": "Runtime error: Failed to parse module 'Test::Describe::Root': Confused: Two terms in a row"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TEST_DESCRIBE/3164e55e7bee3e5f0fd091a71b3bb8a0f5df8b2d.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

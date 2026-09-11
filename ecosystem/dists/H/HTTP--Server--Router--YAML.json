@@ -1,0 +1,66 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Find",
+      "File::Which",
+      "HTTP::Roles",
+      "HTTP::Server",
+      "HTTP::Server::Async",
+      "HTTP::Server::Router",
+      "HTTP::Status",
+      "JSON::Fast",
+      "LibraryMake",
+      "Shell::Command",
+      "YAML::Parser::LibYAML"
+    ],
+    "unresolved": []
+  },
+  "dist": "HTTP::Server::Router::YAML",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-basic.t",
+      "raku": {
+        "first_failure": "Could not find HTTP::Server in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "HTTP::Server::Router::YAML": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/TT/HTTP_SERVER_ROUTER_YAML/671186ef78d475a2ee63899b29eabe367e84033e.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

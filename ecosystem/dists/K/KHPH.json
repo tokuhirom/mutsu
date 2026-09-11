@@ -1,0 +1,53 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64::Native",
+      "Compress::Bzip2",
+      "Compress::Bzip2::Raw",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Term::termios",
+      "Terminal::Getpass",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "KHPH",
+  "files": [],
+  "load": {
+    "KHPH": "Type check failed for return value; expected int32 but got Whatever (*)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/K/HP/KHPH/0ba732867608fbafe2d3ed45f2fd826f7794f2d7.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.0"
+}

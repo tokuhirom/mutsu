@@ -9,23 +9,162 @@
     "unresolved": []
   },
   "dist": "CSS::Grammar",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller json-eqv(Nil, Hash:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 32,
+        "plan": null,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/compat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 733,
+        "plan": 733,
+        "secs": 16.86,
+        "skip": 5,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%a'; expected Associative but got Nil (Nil)",
+        "nok": 1,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/css3-syntax.t",
+      "raku": {
+        "nok": 0,
+        "ok": 125,
+        "plan": 125,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller json-eqv(Array:D, Array:D); none of these signatures matches",
+        "nok": 1,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/error-handling.t",
+      "raku": {
+        "nok": 0,
+        "ok": 59,
+        "plan": 59,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'at-decl' for invocant of type 'Match'",
+        "nok": 2,
+        "ok": 2,
+        "plan": null,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/parse-stylesheets.t",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'at-decl' for invocant of type 'Match'",
+        "nok": 4,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/parse-warnings.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "css3 term: 70deg",
+        "nok": 19,
+        "ok": 90,
+        "plan": 109,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/regex-tokens.t",
+      "raku": {
+        "nok": 0,
+        "ok": 109,
+        "plan": 109,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "CSS::Grammar": "ok",
-    "CSS::Grammar::AST": "Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSTrait' declared",
-    "CSS::Grammar::Actions": "Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSTrait' declared",
+    "CSS::Grammar::AST": "ok",
+    "CSS::Grammar::Actions": "ok",
     "CSS::Grammar::CSS1": "ok",
-    "CSS::Grammar::CSS21": "Inconsistent class hierarchy for CSS::Grammar::CSS21",
-    "CSS::Grammar::CSS3": "Inconsistent class hierarchy for CSS::Grammar::CSS21",
+    "CSS::Grammar::CSS21": "ok",
+    "CSS::Grammar::CSS3": "ok",
     "CSS::Grammar::Defs": "ok",
     "CSS::Grammar::Test": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "a7fe6d9",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -36,13 +175,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_GRAMMAR/5de0dc5873f5e1768dc427bf48cbeef8ce450f8a.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 1056,
+    "baseline_files": 6,
+    "mutsu_assertions": 126,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 6
   },
   "version": "0.4.3"
 }

@@ -1,0 +1,77 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTTP::Tiny",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL"
+    ],
+    "unresolved": []
+  },
+  "dist": "WWW::Ollama",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 20.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "WWW::Ollama": "ok",
+    "WWW::Ollama::Client": "ok",
+    "WWW::Ollama::Config": "ok",
+    "WWW::Ollama::ExecResolver": "ok",
+    "WWW::Ollama::HTTPClient": "ok",
+    "WWW::Ollama::ProcessManager": "ok",
+    "WWW::Ollama::RequestNormalizer": "ok",
+    "WWW::Ollama::StreamingParser": "ok",
+    "WWW::Ollama::Utilities": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/WW/WWW_OLLAMA/82997286df6225de56e7377dcab62ee1496c42cc.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.7"
+}

@@ -1,0 +1,318 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Digest::SHA256::Native",
+      "File::Find",
+      "File::Which",
+      "JSON::Fast",
+      "JSONL",
+      "LibraryMake",
+      "Shell::Command"
+    ],
+    "unresolved": []
+  },
+  "dist": "LLM::Data::Pipeline",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-context.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 4.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-step.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-plan.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-runner.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 12.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-main.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-events.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-events-test-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-retry.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-retry-test-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-basic.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 3.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-cancel.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-cancel-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-faults.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-faults-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-partial.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-partial-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-resume.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-resume-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-retry.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-retry-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-retrydead.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-retrydead-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-stress.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-stress-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-items-telemetry.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-items-telem-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-until-done.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/pipeline-until-done-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "LLM::Data::Pipeline": "ok",
+    "LLM::Data::Pipeline::Context": "ok",
+    "LLM::Data::Pipeline::Event": "ok",
+    "LLM::Data::Pipeline::Exceptions": "ok",
+    "LLM::Data::Pipeline::Plan": "ok",
+    "LLM::Data::Pipeline::RetryPolicy": "ok",
+    "LLM::Data::Pipeline::Runner": "ok",
+    "LLM::Data::Pipeline::Step": "ok",
+    "LLM::Data::Pipeline::Step::Items": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/LM/LLM_DATA_PIPELINE/b0ee8643f692b10e08aebc4490b56a74056e3db6.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 32,
+    "baseline_files": 3,
+    "mutsu_assertions": 32,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.7.1"
+}

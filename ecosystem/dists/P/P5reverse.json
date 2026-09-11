@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "P5reverse",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did we get a good implicit 3 2 1",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "P5reverse": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/5R/P5REVERSE/24de5f0229526e66d935bbff86e122c9239ee91c.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 6,
+    "baseline_files": 1,
+    "mutsu_assertions": 5,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.10"
+}

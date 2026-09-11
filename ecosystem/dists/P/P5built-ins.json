@@ -1,0 +1,70 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "P5__FILE__",
+      "P5caller",
+      "P5chdir",
+      "P5chomp",
+      "P5chr",
+      "P5defined",
+      "P5each",
+      "P5fileno",
+      "P5getgrnam",
+      "P5getnetbyname",
+      "P5getpriority",
+      "P5getprotobyname",
+      "P5getpwnam",
+      "P5getservbyname",
+      "P5hex",
+      "P5index",
+      "P5lcfirst",
+      "P5length",
+      "P5localtime",
+      "P5math",
+      "P5opendir",
+      "P5pack",
+      "P5print",
+      "P5quotemeta",
+      "P5readlink",
+      "P5ref",
+      "P5reset",
+      "P5reverse",
+      "P5seek",
+      "P5sleep",
+      "P5substr",
+      "P5times"
+    ],
+    "unresolved": [
+      "P5"
+    ]
+  },
+  "dist": "P5built-ins",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/5B/P5BUILTINS/2bd6e98b3edf053b832239e3c8798a9abc672b6c.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.31"
+}

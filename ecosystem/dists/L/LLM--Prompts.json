@@ -1,0 +1,48 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Find",
+      "File::Which",
+      "JSON::Fast",
+      "Shell::Command",
+      "XDG::BaseDirectory"
+    ],
+    "unresolved": []
+  },
+  "dist": "LLM::Prompts",
+  "files": [],
+  "load": {
+    "LLM::Prompts": "Failed to slurp '(Any)': No such file or directory (os error 2)",
+    "LLM::Prompts::Actionish": "Failed to slurp '(Any)': No such file or directory (os error 2)",
+    "LLM::Prompts::DSL": "Failed to slurp '(Any)': No such file or directory (os error 2)",
+    "LLM::Prompts::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/LM/LLM_PROMPTS/494ef19fa1f0a47496cc9a2c14051a2f40e33d5d.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.15"
+}

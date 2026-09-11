@@ -1,0 +1,69 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Agnostic",
+      "Code::Coverable",
+      "Code::Coverage",
+      "ForwardIterables",
+      "Identity::Utils",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "List::Agnostic",
+      "META6",
+      "META::constants",
+      "META::verauthapi",
+      "MoarVM::Bytecode",
+      "String::Utils",
+      "Test::Coverage",
+      "Test::META",
+      "Test::Output",
+      "URI",
+      "paths"
+    ],
+    "unresolved": []
+  },
+  "dist": "CoreHackers::NfaChainsaw",
+  "files": [],
+  "load": {
+    "CoreHackers::NfaChainsaw::Extractor": "Could not find Perl6::Grammar in:",
+    "CoreHackers::NfaChainsaw::NFA": "ok",
+    "CoreHackers::NfaChainsaw::NfaRunner": "Failed to parse module 'CoreHackers::NfaChainsaw::NfaRunner': Unexpected block in infix position (missing statement control word before the expression?)",
+    "CoreHackers::NfaChainsaw::Optimizer": "ok",
+    "CoreHackers::NfaChainsaw::Optimizer::CustomOptimizations": "ok",
+    "CoreHackers::NfaChainsaw::Optimizer::NqpOptimizer": "ok",
+    "CoreHackers::NfaChainsaw::Utils::UserInterface": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/OR/COREHACKERS_NFACHAINSAW/96d1ecf3e0332db71842a96d1da2f04521572a07.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1.1"
+}

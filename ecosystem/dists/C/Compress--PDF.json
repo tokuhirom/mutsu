@@ -20,7 +20,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.76,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -30,11 +30,11 @@
       "cmp": "no_baseline",
       "path": "t/1-exe-compress-pdf.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-96tc3vv6/dist/Compress-PDF-0.5.0/t/1-exe-compress-pdf.t",
+        "first_failure": "Could not find File::Copy in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.91,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,11 +44,11 @@
       "cmp": "no_baseline",
       "path": "t/4-extra.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-96tc3vv6/dist/Compress-PDF-0.5.0/t/4-extra.t",
+        "first_failure": "Could not find File::Copy in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.75,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -58,11 +58,11 @@
       "cmp": "no_baseline",
       "path": "t/5-isa-pdf-file.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-96tc3vv6/dist/Compress-PDF-0.5.0/t/5-isa-pdf-file.t",
+        "first_failure": "Could not find File::Copy in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.75,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,11 +72,11 @@
       "cmp": "no_baseline",
       "path": "t/6-quiet.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-96tc3vv6/dist/Compress-PDF-0.5.0/t/6-quiet.t",
+        "first_failure": "Could not find File::Copy in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.85,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -86,11 +86,11 @@
       "cmp": "no_baseline",
       "path": "t/7-turn-off-exe-compress.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-96tc3vv6/dist/Compress-PDF-0.5.0/t/7-turn-off-exe-compress.t",
+        "first_failure": "Could not find File::Copy in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.93,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,11 +101,11 @@
     "Compress::PDF": "raku_also_fails"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "671a11d",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

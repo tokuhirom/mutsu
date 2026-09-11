@@ -1,0 +1,181 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Terminal::ANSIColor"
+    ],
+    "unresolved": []
+  },
+  "dist": "Terminal::QuickCharts",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 5.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "pick-color Seq: --> ~Int",
+        "nok": 4,
+        "ok": 34,
+        "plan": 63,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-helpers.t",
+      "raku": {
+        "nok": 0,
+        "ok": 63,
+        "plan": 63,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-screen-size-tp.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid attribute name 'green'",
+        "nok": 0,
+        "ok": 46,
+        "plan": 79,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-pieces.t",
+      "raku": {
+        "nok": 0,
+        "ok": 79,
+        "plan": 79,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-chartstyle.t",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 61,
+        "plan": 61,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-styledpieces.t",
+      "raku": {
+        "nok": 0,
+        "ok": 61,
+        "plan": 61,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Terminal::QuickCharts": "ok",
+    "Terminal::QuickCharts::ChartStyle": "ok",
+    "Terminal::QuickCharts::GeneralCharts": "ok",
+    "Terminal::QuickCharts::Helpers": "ok",
+    "Terminal::QuickCharts::Pieces": "ok",
+    "Terminal::QuickCharts::StyledPieces": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ER/TERMINAL_QUICKCHARTS/46e511bac5581ce8473a1f340f7428353ff23be4.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 264,
+    "baseline_files": 6,
+    "mutsu_assertions": 202,
+    "parity_files": 4,
+    "regressed_files": 2
+  },
+  "version": "0.0.2"
+}

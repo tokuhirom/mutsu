@@ -1,0 +1,157 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "OO::Monitors",
+      "Terminal::ANSI",
+      "Test::Output"
+    ],
+    "unresolved": []
+  },
+  "dist": "Log::Dispatch",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/000-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!level; expected LOG-LEVEL:D but got Str (\"INFO\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/010-generic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Calling test() will never work with declared signature (Str:D $output-type, Str:D $op-name, Str:D $routine-name, &code, $expected, Str $test-name)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/020-TTY.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 5.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/030-file.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Internal error: failed to spawn worker thread: Os { code: 11, kind: WouldBlock, message: \"Resource temporarily unavailable\" }",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/040-threaded.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Log::Dispatch": "ok",
+    "Log::Dispatch::Destination": "ok",
+    "Log::Dispatch::File": "ok",
+    "Log::Dispatch::Msg": "ok",
+    "Log::Dispatch::Processor": "ok",
+    "Log::Dispatch::Source": "ok",
+    "Log::Dispatch::TTY": "ok",
+    "Log::Dispatch::Types": "ok",
+    "Log::Dispatch::X": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/OG/LOG_DISPATCH/a31d5b8c76c20561b7bba495da79390bb627ddab.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 6,
+    "baseline_files": 4,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 3
+  },
+  "version": "0.0.8"
+}

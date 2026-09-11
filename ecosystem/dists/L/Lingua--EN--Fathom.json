@@ -1,0 +1,57 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Lingua::EN::Sentence",
+      "Lingua::EN::Syllable"
+    ],
+    "unresolved": []
+  },
+  "dist": "Lingua::EN::Fathom",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/main.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::EN::Sentence in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Lingua::EN::Fathom": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IN/LINGUA_EN_FATHOM/32660d03738b661a6dd9bf74e65e3f9fcc256517.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

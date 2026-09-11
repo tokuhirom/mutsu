@@ -1,0 +1,254 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Grammar::Modelica",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'S-CHAR' for invocant of type 'Match'",
+        "nok": 0,
+        "ok": 48,
+        "plan": 121,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/ClassDefinition.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 121,
+        "plan": 121,
+        "secs": 8.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 21 -",
+        "nok": 5,
+        "ok": 26,
+        "plan": 34,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/ComponentClause.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'S-CHAR' for invocant of type 'Match'",
+        "nok": 0,
+        "ok": 14,
+        "plan": 170,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Equations.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 170,
+        "plan": 170,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 15,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Expression_regression.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 19,
+        "ok": 51,
+        "plan": 168,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Expressions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 168,
+        "plan": 168,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 6,
+        "ok": 3,
+        "plan": 9,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Extends.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'S-CHAR' for invocant of type 'Match'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 90,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/LexicalConventions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 90,
+        "plan": 90,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 5,
+        "ok": 10,
+        "plan": 15,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Modelica.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 22 -",
+        "nok": 4,
+        "ok": 39,
+        "plan": 49,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Modification.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Grammar::Modelica": "ok",
+    "Grammar::Modelica::ClassDefinition": "ok",
+    "Grammar::Modelica::ComponentClause": "ok",
+    "Grammar::Modelica::Equations": "ok",
+    "Grammar::Modelica::Expressions": "ok",
+    "Grammar::Modelica::Extends": "ok",
+    "Grammar::Modelica::LexicalConventions": "ok",
+    "Grammar::Modelica::Modification": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAMMAR_MODELICA/cf609d989163d3c71bfee42fd718ff0437693735.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 671,
+    "baseline_files": 9,
+    "mutsu_assertions": 191,
+    "parity_files": 0,
+    "regressed_files": 9
+  },
+  "version": "0.1.3"
+}

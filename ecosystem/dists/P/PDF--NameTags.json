@@ -1,0 +1,150 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64::Native",
+      "Color",
+      "Compress::PDF",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "File::Copy",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "Font::FreeType",
+      "Getopt::Long",
+      "HarfBuzz",
+      "HarfBuzz::Font::FreeType",
+      "Hash::int",
+      "JSON::Fast",
+      "MacOS::NativeLib",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::API6",
+      "PDF::Class",
+      "PDF::Content",
+      "PDF::Font::Loader",
+      "PDF::Font::Loader::HarfBuzz",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "PDF::Tags",
+      "Path::Finder",
+      "Pod::Usage",
+      "QueryOS",
+      "TAP",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "PDF::NameTags",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/0-load-test.t",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/1-xform.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/2-graph-paper.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/3-print.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/do.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "PDF::GraphPaper": "ok",
+    "PDF::NameTags": "raku_also_fails",
+    "PDF::NameTags::FreeFonts": "raku_also_fails",
+    "PDF::NameTags::Help": "ok",
+    "PDF::NameTags::Subs": "ok",
+    "PDF::NameTags::Vars": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/DF/PDF_NAMETAGS/8ceb4e1e7bde1da2442f71f0c085e2ea7c420e20.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

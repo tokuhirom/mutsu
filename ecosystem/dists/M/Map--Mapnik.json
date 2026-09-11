@@ -1,0 +1,42 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "XML",
+      "XML::Class"
+    ],
+    "unresolved": []
+  },
+  "dist": "Map::Mapnik",
+  "files": [],
+  "load": {
+    "Map::Mapnik": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AP/MAP_MAPNIK/879ebc013050af4df718b7c46692663194890243.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

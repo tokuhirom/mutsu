@@ -1,0 +1,4337 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Cairo",
+      "Gnome::GObject",
+      "Gnome::Gdk4",
+      "Gnome::Gio",
+      "Gnome::Glib",
+      "Gnome::Graphene",
+      "Gnome::Gsk4",
+      "Gnome::N",
+      "Gnome::Pango",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI",
+      "XML",
+      "XML::XPath"
+    ],
+    "unresolved": []
+  },
+  "dist": "Gnome::Gtk4",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/AboutDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ActionBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ActivateAction.rakutest",
+      "raku": {
+        "first_failure": "Gnome::Gtk4::ActivateAction:api<2> module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Adjustment.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AlertDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AlternativeTrigger.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AnyFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Application.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Gio::T-ioenums:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ApplicationWindow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Gio::T-ioenums:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AspectFrame.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Assistant.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AssistantPage.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BinLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BoolFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Box.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BoxLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Builder.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/BuilderListItemFactory.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Button.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Calendar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CallbackAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellArea.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellAreaBox.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRenderer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererAccel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererCombo.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererPixbuf.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererProgress.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererSpin.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererSpinner.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererText.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererToggle.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CenterBox.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CenterLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CheckButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColumnView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ComboBox.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ComboBoxText.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Constraint.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ConstraintLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ConstraintLayoutChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CssProvider.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CustomLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Dialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DragIcon.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DragSource.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DrawingArea.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DropControllerMotion.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DropDown.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DropTarget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DropTargetAsync.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EditableLabel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EmojiChooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Entry.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EntryBuffer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EntryCompletion.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EventController.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EveryFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Expander.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Expression.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Filter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Fixed.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FixedLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FixedLayoutChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FlowBox.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FlowBoxChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FontButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FontChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FontChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Frame.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GLArea.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Gesture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureClick.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureDrag.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureLongPress.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GesturePan.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureRotate.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureSingle.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureStylus.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureSwipe.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GestureZoom.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Grid.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GridLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GridLayoutChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/GridView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/HeaderBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/IconPaintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/IconTheme.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/IconView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Image.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/InfoBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/KeyvalTrigger.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Label.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LayoutChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LayoutManager.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LevelBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LinkButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListBase.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListBox.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListBoxRow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListItem.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListItemFactory.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListStore.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LockButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MediaControls.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MenuButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MessageDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MnemonicAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MnemonicTrigger.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MultiFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MultiSelection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MultiSorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Bitset.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-BitsetIter.rakutest",
+      "raku": {
+        "first_failure": "Gnome::Gtk4::N-BitsetIter:api<2> module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 2.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Border.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-CssSection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Requisition.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-TextIter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-slist:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-TreeIter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-TreePath.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-TreeRowReference.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NamedAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NeverTrigger.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NoSelection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Notebook.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NotebookPage.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NothingAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/NumericSorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Overlay.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/OverlayLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/OverlayLayoutChild.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PageSetupUnixDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Paned.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PasswordEntry.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Picture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Popover.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PopoverMenu.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PopoverMenuBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PrintOperation.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PrintUnixDialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ProgressBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Accessible.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Actionable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-AppChooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Buildable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/R-BuilderScope.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-CellEditable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-CellLayout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-ColorChooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-ConstraintTarget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Editable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-FileChooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-FontChooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Native.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Orientable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-PrintOperationPreview.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Root.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Scrollable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-SelectionModel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-StyleProvider.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-SymbolicPaintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-TreeDragDest.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-TreeDragSource.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-TreeModel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-TreeSortable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Range.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Revealer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Scale.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ScaleButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Scrollbar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ScrolledWindow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SearchBar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SearchEntry.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Separator.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Shortcut.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutController.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutLabel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutTrigger.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutsGroup.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutsSection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutsShortcut.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ShortcutsWindow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SignalAction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SignalListItemFactory.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SingleSelection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Snapshot.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Sorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SpinButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Spinner.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Stack.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StackPage.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StackSidebar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StackSwitcher.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Statusbar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StringFilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StringList.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StringObject.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StringSorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StyleContext.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Switch.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-aboutdialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-accessible.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-application.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-assistant.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-bitset.rakutest",
+      "raku": {
+        "first_failure": "Gnome::Gtk4::T-bitset:api<2> module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-builder.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-builderscope.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-cellrenderer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-cellrendereraccel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-csslocation.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-csssection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-dialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-editable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-entry.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-enums.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-expression.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-filechooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-filter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-fontchooser.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-iconpaintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-iconview.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-image.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-levelbar.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-messagedialog.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-native.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-notebook.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-popovermenu.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-printoperation.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-revealer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-scrolledwindow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-shortcutaction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-shortcutsshortcut.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-show.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-sorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-spinbutton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-stack.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-stringfilter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-stylecontext.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-styleprovider.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-textiter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-textview.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-treedragdest.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-treesortable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-treeview.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-treeviewcolumn.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-types.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Text.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextBuffer.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-slist:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextChildAnchor.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextMark.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextTag.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextTagTable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToggleButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Variant:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Tooltip.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeExpander.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeListModel.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeListRow.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeListRowSorter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeModelSort.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeSelection.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-list:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeStore.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeView.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeViewColumn.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Video.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Viewport.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/VolumeButton.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Widget.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/WidgetPaintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Window.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-List:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/WindowControls.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/WindowHandle.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Gnome::Gtk4::AboutDialog": "raku_also_fails",
+    "Gnome::Gtk4::ActionBar": "raku_also_fails",
+    "Gnome::Gtk4::ActivateAction": "raku_also_fails",
+    "Gnome::Gtk4::Adjustment": "raku_also_fails",
+    "Gnome::Gtk4::AlertDialog": "raku_also_fails",
+    "Gnome::Gtk4::AlternativeTrigger": "raku_also_fails",
+    "Gnome::Gtk4::AnyFilter": "raku_also_fails",
+    "Gnome::Gtk4::AppChooserButton": "raku_also_fails",
+    "Gnome::Gtk4::AppChooserDialog": "raku_also_fails",
+    "Gnome::Gtk4::AppChooserWidget": "raku_also_fails",
+    "Gnome::Gtk4::Application": "raku_also_fails",
+    "Gnome::Gtk4::ApplicationWindow": "raku_also_fails",
+    "Gnome::Gtk4::AspectFrame": "raku_also_fails",
+    "Gnome::Gtk4::Assistant": "raku_also_fails",
+    "Gnome::Gtk4::AssistantPage": "raku_also_fails",
+    "Gnome::Gtk4::BinLayout": "raku_also_fails",
+    "Gnome::Gtk4::BoolFilter": "raku_also_fails",
+    "Gnome::Gtk4::Box": "raku_also_fails",
+    "Gnome::Gtk4::BoxLayout": "raku_also_fails",
+    "Gnome::Gtk4::Builder": "raku_also_fails",
+    "Gnome::Gtk4::BuilderListItemFactory": "raku_also_fails",
+    "Gnome::Gtk4::Button": "raku_also_fails",
+    "Gnome::Gtk4::Calendar": "raku_also_fails",
+    "Gnome::Gtk4::CallbackAction": "raku_also_fails",
+    "Gnome::Gtk4::CellArea": "raku_also_fails",
+    "Gnome::Gtk4::CellAreaBox": "raku_also_fails",
+    "Gnome::Gtk4::CellRenderer": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererAccel": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererCombo": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererPixbuf": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererProgress": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererSpin": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererSpinner": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererText": "raku_also_fails",
+    "Gnome::Gtk4::CellRendererToggle": "raku_also_fails",
+    "Gnome::Gtk4::CellView": "raku_also_fails",
+    "Gnome::Gtk4::CenterBox": "raku_also_fails",
+    "Gnome::Gtk4::CenterLayout": "raku_also_fails",
+    "Gnome::Gtk4::CheckButton": "raku_also_fails",
+    "Gnome::Gtk4::ColorButton": "raku_also_fails",
+    "Gnome::Gtk4::ColorChooserDialog": "raku_also_fails",
+    "Gnome::Gtk4::ColorChooserWidget": "raku_also_fails",
+    "Gnome::Gtk4::ColumnView": "raku_also_fails",
+    "Gnome::Gtk4::ComboBox": "raku_also_fails",
+    "Gnome::Gtk4::ComboBoxText": "raku_also_fails",
+    "Gnome::Gtk4::Constraint": "raku_also_fails",
+    "Gnome::Gtk4::ConstraintLayout": "raku_also_fails",
+    "Gnome::Gtk4::ConstraintLayoutChild": "raku_also_fails",
+    "Gnome::Gtk4::CssProvider": "raku_also_fails",
+    "Gnome::Gtk4::CustomLayout": "raku_also_fails",
+    "Gnome::Gtk4::Dialog": "raku_also_fails",
+    "Gnome::Gtk4::DragIcon": "raku_also_fails",
+    "Gnome::Gtk4::DragSource": "raku_also_fails",
+    "Gnome::Gtk4::DrawingArea": "raku_also_fails",
+    "Gnome::Gtk4::DropControllerMotion": "raku_also_fails",
+    "Gnome::Gtk4::DropDown": "raku_also_fails",
+    "Gnome::Gtk4::DropTarget": "raku_also_fails",
+    "Gnome::Gtk4::DropTargetAsync": "raku_also_fails",
+    "Gnome::Gtk4::EditableLabel": "raku_also_fails",
+    "Gnome::Gtk4::EmojiChooser": "raku_also_fails",
+    "Gnome::Gtk4::Entry": "raku_also_fails",
+    "Gnome::Gtk4::EntryBuffer": "raku_also_fails",
+    "Gnome::Gtk4::EntryCompletion": "raku_also_fails",
+    "Gnome::Gtk4::EventController": "raku_also_fails",
+    "Gnome::Gtk4::EveryFilter": "raku_also_fails",
+    "Gnome::Gtk4::Expander": "raku_also_fails",
+    "Gnome::Gtk4::Expression": "raku_also_fails",
+    "Gnome::Gtk4::FileChooserDialog": "raku_also_fails",
+    "Gnome::Gtk4::FileChooserWidget": "raku_also_fails",
+    "Gnome::Gtk4::FileFilter": "raku_also_fails",
+    "Gnome::Gtk4::Filter": "raku_also_fails",
+    "Gnome::Gtk4::Fixed": "raku_also_fails",
+    "Gnome::Gtk4::FixedLayout": "raku_also_fails",
+    "Gnome::Gtk4::FixedLayoutChild": "raku_also_fails",
+    "Gnome::Gtk4::FlowBox": "raku_also_fails",
+    "Gnome::Gtk4::FlowBoxChild": "raku_also_fails",
+    "Gnome::Gtk4::FontButton": "raku_also_fails",
+    "Gnome::Gtk4::FontChooserDialog": "raku_also_fails",
+    "Gnome::Gtk4::FontChooserWidget": "raku_also_fails",
+    "Gnome::Gtk4::Frame": "raku_also_fails",
+    "Gnome::Gtk4::GLArea": "raku_also_fails",
+    "Gnome::Gtk4::Gesture": "raku_also_fails",
+    "Gnome::Gtk4::GestureClick": "raku_also_fails",
+    "Gnome::Gtk4::GestureDrag": "raku_also_fails",
+    "Gnome::Gtk4::GestureLongPress": "raku_also_fails",
+    "Gnome::Gtk4::GesturePan": "raku_also_fails",
+    "Gnome::Gtk4::GestureRotate": "raku_also_fails",
+    "Gnome::Gtk4::GestureSingle": "raku_also_fails",
+    "Gnome::Gtk4::GestureStylus": "raku_also_fails",
+    "Gnome::Gtk4::GestureSwipe": "raku_also_fails",
+    "Gnome::Gtk4::GestureZoom": "raku_also_fails",
+    "Gnome::Gtk4::Grid": "raku_also_fails",
+    "Gnome::Gtk4::GridLayout": "raku_also_fails",
+    "Gnome::Gtk4::GridLayoutChild": "raku_also_fails",
+    "Gnome::Gtk4::GridView": "raku_also_fails",
+    "Gnome::Gtk4::HeaderBar": "raku_also_fails",
+    "Gnome::Gtk4::IconPaintable": "raku_also_fails",
+    "Gnome::Gtk4::IconTheme": "raku_also_fails",
+    "Gnome::Gtk4::IconView": "raku_also_fails",
+    "Gnome::Gtk4::Image": "raku_also_fails",
+    "Gnome::Gtk4::InfoBar": "raku_also_fails",
+    "Gnome::Gtk4::KeyvalTrigger": "raku_also_fails",
+    "Gnome::Gtk4::Label": "raku_also_fails",
+    "Gnome::Gtk4::LayoutChild": "raku_also_fails",
+    "Gnome::Gtk4::LayoutManager": "raku_also_fails",
+    "Gnome::Gtk4::LevelBar": "raku_also_fails",
+    "Gnome::Gtk4::LinkButton": "raku_also_fails",
+    "Gnome::Gtk4::ListBase": "raku_also_fails",
+    "Gnome::Gtk4::ListBox": "raku_also_fails",
+    "Gnome::Gtk4::ListBoxRow": "raku_also_fails",
+    "Gnome::Gtk4::ListItem": "raku_also_fails",
+    "Gnome::Gtk4::ListItemFactory": "raku_also_fails",
+    "Gnome::Gtk4::ListStore": "raku_also_fails",
+    "Gnome::Gtk4::ListView": "raku_also_fails",
+    "Gnome::Gtk4::LockButton": "raku_also_fails",
+    "Gnome::Gtk4::MediaControls": "raku_also_fails",
+    "Gnome::Gtk4::MenuButton": "raku_also_fails",
+    "Gnome::Gtk4::MessageDialog": "raku_also_fails",
+    "Gnome::Gtk4::MnemonicAction": "raku_also_fails",
+    "Gnome::Gtk4::MnemonicTrigger": "raku_also_fails",
+    "Gnome::Gtk4::MultiFilter": "raku_also_fails",
+    "Gnome::Gtk4::MultiSelection": "raku_also_fails",
+    "Gnome::Gtk4::MultiSorter": "raku_also_fails",
+    "Gnome::Gtk4::N-AccessibleList": "raku_also_fails",
+    "Gnome::Gtk4::N-Bitset": "raku_also_fails",
+    "Gnome::Gtk4::N-BitsetIter": "raku_also_fails",
+    "Gnome::Gtk4::N-Border": "raku_also_fails",
+    "Gnome::Gtk4::N-CssSection": "raku_also_fails",
+    "Gnome::Gtk4::N-Requisition": "raku_also_fails",
+    "Gnome::Gtk4::N-ScrollInfo": "raku_also_fails",
+    "Gnome::Gtk4::N-TextIter": "raku_also_fails",
+    "Gnome::Gtk4::N-TreeIter": "raku_also_fails",
+    "Gnome::Gtk4::N-TreePath": "raku_also_fails",
+    "Gnome::Gtk4::N-TreeRowReference": "raku_also_fails",
+    "Gnome::Gtk4::NamedAction": "raku_also_fails",
+    "Gnome::Gtk4::NeverTrigger": "raku_also_fails",
+    "Gnome::Gtk4::NoSelection": "raku_also_fails",
+    "Gnome::Gtk4::Notebook": "raku_also_fails",
+    "Gnome::Gtk4::NotebookPage": "raku_also_fails",
+    "Gnome::Gtk4::NothingAction": "raku_also_fails",
+    "Gnome::Gtk4::NumericSorter": "raku_also_fails",
+    "Gnome::Gtk4::Overlay": "raku_also_fails",
+    "Gnome::Gtk4::OverlayLayout": "raku_also_fails",
+    "Gnome::Gtk4::OverlayLayoutChild": "raku_also_fails",
+    "Gnome::Gtk4::PageSetupUnixDialog": "raku_also_fails",
+    "Gnome::Gtk4::Paned": "raku_also_fails",
+    "Gnome::Gtk4::PasswordEntry": "raku_also_fails",
+    "Gnome::Gtk4::Picture": "raku_also_fails",
+    "Gnome::Gtk4::Popover": "raku_also_fails",
+    "Gnome::Gtk4::PopoverMenu": "raku_also_fails",
+    "Gnome::Gtk4::PopoverMenuBar": "raku_also_fails",
+    "Gnome::Gtk4::PrintOperation": "raku_also_fails",
+    "Gnome::Gtk4::PrintUnixDialog": "raku_also_fails",
+    "Gnome::Gtk4::ProgressBar": "raku_also_fails",
+    "Gnome::Gtk4::R-Accessible": "raku_also_fails",
+    "Gnome::Gtk4::R-Actionable": "raku_also_fails",
+    "Gnome::Gtk4::R-AppChooser": "raku_also_fails",
+    "Gnome::Gtk4::R-Buildable": "raku_also_fails",
+    "Gnome::Gtk4::R-BuilderScope": "raku_also_fails",
+    "Gnome::Gtk4::R-CellEditable": "raku_also_fails",
+    "Gnome::Gtk4::R-CellLayout": "raku_also_fails",
+    "Gnome::Gtk4::R-ColorChooser": "raku_also_fails",
+    "Gnome::Gtk4::R-ConstraintTarget": "raku_also_fails",
+    "Gnome::Gtk4::R-Editable": "raku_also_fails",
+    "Gnome::Gtk4::R-FileChooser": "raku_also_fails",
+    "Gnome::Gtk4::R-FontChooser": "raku_also_fails",
+    "Gnome::Gtk4::R-Native": "raku_also_fails",
+    "Gnome::Gtk4::R-Orientable": "raku_also_fails",
+    "Gnome::Gtk4::R-PrintOperationPreview": "raku_also_fails",
+    "Gnome::Gtk4::R-Root": "raku_also_fails",
+    "Gnome::Gtk4::R-Scrollable": "raku_also_fails",
+    "Gnome::Gtk4::R-SelectionModel": "raku_also_fails",
+    "Gnome::Gtk4::R-ShortcutManager": "raku_also_fails",
+    "Gnome::Gtk4::R-StyleProvider": "raku_also_fails",
+    "Gnome::Gtk4::R-SymbolicPaintable": "raku_also_fails",
+    "Gnome::Gtk4::R-TreeDragDest": "raku_also_fails",
+    "Gnome::Gtk4::R-TreeDragSource": "raku_also_fails",
+    "Gnome::Gtk4::R-TreeModel": "raku_also_fails",
+    "Gnome::Gtk4::R-TreeSortable": "raku_also_fails",
+    "Gnome::Gtk4::Range": "raku_also_fails",
+    "Gnome::Gtk4::Revealer": "raku_also_fails",
+    "Gnome::Gtk4::Scale": "raku_also_fails",
+    "Gnome::Gtk4::ScaleButton": "raku_also_fails",
+    "Gnome::Gtk4::Scrollbar": "raku_also_fails",
+    "Gnome::Gtk4::ScrolledWindow": "raku_also_fails",
+    "Gnome::Gtk4::SearchBar": "raku_also_fails",
+    "Gnome::Gtk4::SearchEntry": "raku_also_fails",
+    "Gnome::Gtk4::Separator": "raku_also_fails",
+    "Gnome::Gtk4::Shortcut": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutAction": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutController": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutLabel": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutTrigger": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutsGroup": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutsSection": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutsShortcut": "raku_also_fails",
+    "Gnome::Gtk4::ShortcutsWindow": "raku_also_fails",
+    "Gnome::Gtk4::SignalAction": "raku_also_fails",
+    "Gnome::Gtk4::SignalListItemFactory": "raku_also_fails",
+    "Gnome::Gtk4::SingleSelection": "raku_also_fails",
+    "Gnome::Gtk4::Snapshot": "raku_also_fails",
+    "Gnome::Gtk4::Sorter": "raku_also_fails",
+    "Gnome::Gtk4::SpinButton": "raku_also_fails",
+    "Gnome::Gtk4::Spinner": "raku_also_fails",
+    "Gnome::Gtk4::Stack": "raku_also_fails",
+    "Gnome::Gtk4::StackPage": "raku_also_fails",
+    "Gnome::Gtk4::StackSidebar": "raku_also_fails",
+    "Gnome::Gtk4::StackSwitcher": "raku_also_fails",
+    "Gnome::Gtk4::Statusbar": "raku_also_fails",
+    "Gnome::Gtk4::StringFilter": "raku_also_fails",
+    "Gnome::Gtk4::StringList": "raku_also_fails",
+    "Gnome::Gtk4::StringObject": "raku_also_fails",
+    "Gnome::Gtk4::StringSorter": "raku_also_fails",
+    "Gnome::Gtk4::StyleContext": "raku_also_fails",
+    "Gnome::Gtk4::Switch": "raku_also_fails",
+    "Gnome::Gtk4::T-aboutdialog": "raku_also_fails",
+    "Gnome::Gtk4::T-accessible": "raku_also_fails",
+    "Gnome::Gtk4::T-activateaction": "ok",
+    "Gnome::Gtk4::T-application": "ok",
+    "Gnome::Gtk4::T-assistant": "ok",
+    "Gnome::Gtk4::T-bitset": "raku_also_fails",
+    "Gnome::Gtk4::T-border": "raku_also_fails",
+    "Gnome::Gtk4::T-builder": "ok",
+    "Gnome::Gtk4::T-builderscope": "ok",
+    "Gnome::Gtk4::T-cellrenderer": "ok",
+    "Gnome::Gtk4::T-cellrendereraccel": "ok",
+    "Gnome::Gtk4::T-csssection": "raku_also_fails",
+    "Gnome::Gtk4::T-dialog": "ok",
+    "Gnome::Gtk4::T-editable": "raku_also_fails",
+    "Gnome::Gtk4::T-entry": "ok",
+    "Gnome::Gtk4::T-enums": "raku_also_fails",
+    "Gnome::Gtk4::T-expression": "raku_also_fails",
+    "Gnome::Gtk4::T-filechooser": "raku_also_fails",
+    "Gnome::Gtk4::T-filter": "ok",
+    "Gnome::Gtk4::T-fontchooser": "ok",
+    "Gnome::Gtk4::T-iconpaintable": "ok",
+    "Gnome::Gtk4::T-icontheme": "ok",
+    "Gnome::Gtk4::T-iconview": "ok",
+    "Gnome::Gtk4::T-image": "ok",
+    "Gnome::Gtk4::T-levelbar": "ok",
+    "Gnome::Gtk4::T-messagedialog": "ok",
+    "Gnome::Gtk4::T-native": "raku_also_fails",
+    "Gnome::Gtk4::T-notebook": "ok",
+    "Gnome::Gtk4::T-popovermenu": "ok",
+    "Gnome::Gtk4::T-printoperation": "raku_also_fails",
+    "Gnome::Gtk4::T-revealer": "ok",
+    "Gnome::Gtk4::T-scrolledwindow": "ok",
+    "Gnome::Gtk4::T-shortcutaction": "ok",
+    "Gnome::Gtk4::T-shortcutsshortcut": "ok",
+    "Gnome::Gtk4::T-show": "raku_also_fails",
+    "Gnome::Gtk4::T-sorter": "ok",
+    "Gnome::Gtk4::T-spinbutton": "ok",
+    "Gnome::Gtk4::T-stack": "ok",
+    "Gnome::Gtk4::T-stringfilter": "ok",
+    "Gnome::Gtk4::T-stylecontext": "ok",
+    "Gnome::Gtk4::T-styleprovider": "ok",
+    "Gnome::Gtk4::T-textiter": "raku_also_fails",
+    "Gnome::Gtk4::T-textview": "ok",
+    "Gnome::Gtk4::T-treednd": "raku_also_fails",
+    "Gnome::Gtk4::T-treedragdest": "raku_also_fails",
+    "Gnome::Gtk4::T-treemodel": "raku_also_fails",
+    "Gnome::Gtk4::T-treesortable": "ok",
+    "Gnome::Gtk4::T-treeview": "ok",
+    "Gnome::Gtk4::T-treeviewcolumn": "ok",
+    "Gnome::Gtk4::T-types": "raku_also_fails",
+    "Gnome::Gtk4::T-widget": "raku_also_fails",
+    "Gnome::Gtk4::Text": "raku_also_fails",
+    "Gnome::Gtk4::TextBuffer": "raku_also_fails",
+    "Gnome::Gtk4::TextChildAnchor": "raku_also_fails",
+    "Gnome::Gtk4::TextMark": "raku_also_fails",
+    "Gnome::Gtk4::TextTag": "raku_also_fails",
+    "Gnome::Gtk4::TextTagTable": "raku_also_fails",
+    "Gnome::Gtk4::TextView": "raku_also_fails",
+    "Gnome::Gtk4::ToggleButton": "raku_also_fails",
+    "Gnome::Gtk4::Tooltip": "raku_also_fails",
+    "Gnome::Gtk4::TreeExpander": "raku_also_fails",
+    "Gnome::Gtk4::TreeListModel": "raku_also_fails",
+    "Gnome::Gtk4::TreeListRow": "raku_also_fails",
+    "Gnome::Gtk4::TreeListRowSorter": "raku_also_fails",
+    "Gnome::Gtk4::TreeModelSort": "raku_also_fails",
+    "Gnome::Gtk4::TreeSelection": "raku_also_fails",
+    "Gnome::Gtk4::TreeStore": "raku_also_fails",
+    "Gnome::Gtk4::TreeView": "raku_also_fails",
+    "Gnome::Gtk4::TreeViewColumn": "raku_also_fails",
+    "Gnome::Gtk4::Video": "raku_also_fails",
+    "Gnome::Gtk4::Viewport": "raku_also_fails",
+    "Gnome::Gtk4::VolumeButton": "raku_also_fails",
+    "Gnome::Gtk4::Widget": "raku_also_fails",
+    "Gnome::Gtk4::WidgetPaintable": "raku_also_fails",
+    "Gnome::Gtk4::Window": "raku_also_fails",
+    "Gnome::Gtk4::WindowControls": "raku_also_fails",
+    "Gnome::Gtk4::WindowHandle": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/NO/GNOME_GTK4/da61339495884413e5902c0ea464f978cd7b1eba.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.2.10"
+}

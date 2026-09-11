@@ -1,0 +1,89 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Display::Listings",
+      "ECMA262Regex",
+      "File::Utils",
+      "GUI::Editors",
+      "Gzz::Prompt",
+      "Gzz::Text::Utils",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "OO::Monitors",
+      "Parse::Paths",
+      "Syntax::Highlighters",
+      "Term::termios",
+      "Terminal::ANSI",
+      "Terminal::WCWidth",
+      "Terminal::Width",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "GOTO",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.23,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-Meta-test.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.91,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Paths.rakumod": "raku_also_fails",
+    "g": "raku_also_fails",
+    "goto": "raku_also_fails",
+    "paths.raku": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/OT/GOTO/621cb1c029591dd8896b632282225874044b074e.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.1.7"
+}

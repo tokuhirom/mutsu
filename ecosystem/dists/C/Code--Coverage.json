@@ -18,14 +18,14 @@
   "dist": "Code::Coverage",
   "files": [],
   "load": {
-    "Code::Coverage": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/Code__Coverable/Code-Coverable-0.0.13/lib/Code/Coverable.rakumod"
+    "Code::Coverage": "Failed to parse module 'Code::Coverable': Unexpected block in infix position (missing statement control word before the expression?)"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "671a11d",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

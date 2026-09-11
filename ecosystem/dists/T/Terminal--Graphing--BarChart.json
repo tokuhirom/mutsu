@@ -1,0 +1,89 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Listicles"
+    ],
+    "unresolved": []
+  },
+  "dist": "Terminal::Graphing::BarChart",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "bad bare graph",
+        "nok": 4,
+        "ok": 1,
+        "plan": 5,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-vertical.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 3.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-horizontal.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "CLI::Graphing::BarChart::Core": "raku_also_fails",
+    "CLI::Graphing::BarChart::Horizontal": "raku_also_fails",
+    "CLI::Graphing::BarChart::Vertical": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ER/TERMINAL_GRAPHING_BARCHART/4f1c4547fe8bea7f7991e421d9d651d1812d78f6.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 10,
+    "baseline_files": 2,
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "2.0.0"
+}
