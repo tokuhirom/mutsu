@@ -10,6 +10,25 @@ use super::super::*;
 use super::regex_helpers::count_capture_groups;
 
 impl Interpreter {
+    /// Resolve a separator quantifier's bounds once for the current match
+    /// state. Block quantifiers use the same evaluator as their non-separated
+    /// counterparts; treating `RepeatCode` as the fallback one-item case
+    /// silently discarded a block's minimum and maximum.
+    pub(super) fn separated_quantifier_bounds(
+        &mut self,
+        token: &RegexToken,
+        current_caps: &RegexCaptures,
+    ) -> Option<(usize, Option<usize>)> {
+        match &token.quant {
+            RegexQuant::OneOrMore => Some((1, None)),
+            RegexQuant::ZeroOrMore => Some((0, None)),
+            RegexQuant::Repeat(lo, hi) => Some((*lo, *hi)),
+            RegexQuant::RepeatCode(code) => self.eval_regex_repeat_code(code, current_caps),
+            // `?` / exact-one don't form a separator list; treat as one.
+            _ => Some((1, Some(1))),
+        }
+    }
+
     /// Match a separator quantifier at `start`. Returns `(end, delta)` pairs in
     /// LOWEST-priority-first order (the engine iterates them in reverse):
     /// shortest match first, longest (greedy) last.
@@ -33,12 +52,8 @@ impl Interpreter {
             );
         }
         let sep = token.separator.as_ref().expect("separator present");
-        let (min, max) = match &token.quant {
-            RegexQuant::OneOrMore => (1usize, None),
-            RegexQuant::ZeroOrMore => (0usize, None),
-            RegexQuant::Repeat(lo, hi) => (*lo, *hi),
-            // `?` / exact-one don't form a separator list; treat as one.
-            _ => (1usize, Some(1usize)),
+        let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
+            return Vec::new();
         };
         let atom_stride = count_capture_groups(&token.atom);
         let sep_stride: usize = sep
@@ -145,12 +160,8 @@ impl Interpreter {
         current_caps: &RegexCaptures,
     ) -> Vec<(usize, RegexCaptures)> {
         let sep = token.separator.as_ref().expect("separator present");
-        let (min, max) = match &token.quant {
-            RegexQuant::OneOrMore => (1usize, None),
-            RegexQuant::ZeroOrMore => (0usize, None),
-            RegexQuant::Repeat(lo, hi) => (*lo, *hi),
-            // `?` / exact-one don't form a separator list; treat as one.
-            _ => (1usize, Some(1usize)),
+        let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
+            return Vec::new();
         };
         // Frugal (`*? %`) under ratchet commits to the minimal count; greedy
         // extends to `max` (or as far as the input allows).

@@ -102,12 +102,9 @@ impl Interpreter {
             return false;
         }
         let sep = token.separator.as_ref().expect("separator present");
-        let (min, max) = match &token.quant {
-            RegexQuant::OneOrMore => (1usize, None),
-            RegexQuant::ZeroOrMore => (0usize, None),
-            RegexQuant::Repeat(lo, hi) => (*lo, *hi),
-            // `?` / exact-one don't form a separator list; treat as one.
-            _ => (1usize, Some(1usize)),
+        let current_caps = store.caps().clone();
+        let Some((min, max)) = self.separated_quantifier_bounds(token, &current_caps) else {
+            return false;
         };
         let sep_stride: usize = sep
             .pattern
