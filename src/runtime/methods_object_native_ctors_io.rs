@@ -310,6 +310,23 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("cmd".to_string(), Value::array(positional));
         attrs.insert("started".to_string(), Value::FALSE);
+        // The spawn latch, kept with the pid by `.start`. It doubles as the
+        // promise `.ready` hands back, and it is built HERE rather than on
+        // demand for a reason: every other attribute is observed through a
+        // *snapshot* of this map (a native mut method takes a copy and the
+        // caller commits the result once it returns), so anything created
+        // inside one method and handed to another through the map is lost when
+        // the two run concurrently. A `.ready` racing `.start` used to mint a
+        // fresh promise from a pre-spawn snapshot, which `.start` — already
+        // past its own keep — never resolved; and a `.kill` woken by `.ready`
+        // read `started`/`pid` from a map the commit had not reached yet.
+        // A promise is shared by reference, so one built at construction is
+        // the same object in every snapshot and both problems disappear.
+        // See `proc_async_spawned_pid`.
+        attrs.insert(
+            "ready_promise".to_string(),
+            Value::promise(SharedPromise::new()),
+        );
         attrs.insert("enc".to_string(), enc);
         attrs.insert(
             "stdout".to_string(),

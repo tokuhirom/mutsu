@@ -387,6 +387,19 @@ impl SharedPromise {
         lock.lock().unwrap().status.clone()
     }
 
+    /// The kept value, or `None` while the promise is Planned or Broken.
+    ///
+    /// Unlike [`SharedPromise::result_blocking`] this never parks and never
+    /// marks the promise observed, so it is safe to ask from a thread that is
+    /// merely inspecting the promise as a state latch rather than awaiting it.
+    /// `keep`/`try_keep` publish `status` and `result` under the same lock, so
+    /// a `Kept` status always comes with its value.
+    pub(crate) fn peek_kept(&self) -> Option<Value> {
+        let (lock, _) = &*self.inner;
+        let state = lock.lock().unwrap();
+        (state.status == "Kept").then(|| state.result.clone())
+    }
+
     pub(crate) fn wait(&self) -> (Value, String, String) {
         self.mark_observed();
         // GC safepoint (§9.2a `await`): the await entry boundary, before the

@@ -210,6 +210,42 @@ pub(in crate::runtime) fn proc_async_error(
     }
 }
 
+/// Whether this `Proc::Async` has actually spawned, and as what pid, read
+/// without depending on when the attribute map was snapshotted.
+///
+/// The post-`.start` methods (`kill`, `write`, `say`/`put`/`print`,
+/// `close-stdin`) may run on a thread that was woken by `.ready` while the
+/// `.start` call is still in flight on another one. Because a native mut method
+/// receives a *copy* of the attributes and the caller only commits the result
+/// after it returns, such a thread can hold a map in which `started` is still
+/// `False` and `pid` absent, and would wrongly throw
+/// `X::Proc::Async::MustBeStarted`.
+///
+/// `ready_promise` is built at construction and kept with the pid by `.start`
+/// as soon as `spawn()` succeeds. A promise is shared by reference, not copied
+/// with the map, so every snapshot — however stale — reaches the same latch.
+/// `keep` publishes the status and the value under one lock before waking
+/// anyone, so a thread that `.ready` woke always sees the pid here.
+fn proc_async_spawned_pid(attrs: &AttrMap) -> Option<i64> {
+    if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+        return Some(pid);
+    }
+    let ValueView::Promise(latch) = attrs.get("ready_promise")?.view() else {
+        return None;
+    };
+    latch.peek_kept().and_then(|v| match v.view() {
+        ValueView::Int(pid) => Some(pid),
+        _ => None,
+    })
+}
+
+/// `started` as the post-`.start` methods must read it: the instance's own flag,
+/// or — for a thread whose snapshot predates the commit — the spawn latch.
+/// See [`proc_async_spawned_pid`].
+fn proc_async_started(attrs: &AttrMap) -> bool {
+    attrs.get("started").is_some_and(|v| v.truthy()) || proc_async_spawned_pid(attrs).is_some()
+}
+
 /// The exception value sent on a `SupplyEvent::Quit` when a Proc::Async output
 /// stream contains malformed UTF-8.
 pub(in crate::runtime) fn malformed_utf8_quit_value() -> Value {
@@ -504,7 +540,12 @@ impl Interpreter {
                     promise.try_keep(Value::int(2)).ok();
                 }
 
-                // Resolve ready promise if set
+                // Publish the spawn. This both resolves `.ready` and is how
+                // every later `kill`/`write`/`say`/`close-stdin` learns that
+                // the process exists and under what pid — they cannot rely on
+                // the `started`/`pid` entries above, which only reach the
+                // instance once `start` has returned and the caller has
+                // committed this map. See `proc_async_spawned_pid`.
                 if let Some(ValueView::Promise(ready)) = attrs.get("ready_promise").map(Value::view)
                 {
                     ready.try_keep(Value::int(pid as i64)).ok();
@@ -975,8 +1016,9 @@ impl Interpreter {
                 Ok((ret, attrs))
             }
             "kill" => {
-                let started = attrs.get("started").is_some_and(|v| v.truthy());
-                let has_pid = attrs.contains_key("pid");
+                let spawned_pid = proc_async_spawned_pid(&attrs);
+                let started = proc_async_started(&attrs);
+                let has_pid = spawned_pid.is_some();
                 if !started {
                     return Err(proc_async_error(
                         "X::Proc::Async::MustBeStarted",
@@ -987,7 +1029,7 @@ impl Interpreter {
                     return Ok((Value::NIL, attrs));
                 }
                 #[cfg(feature = "native")]
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                if let Some(pid) = spawned_pid {
                     let sig = args
                         .first()
                         .and_then(|v| match v.view() {
@@ -1018,8 +1060,9 @@ impl Interpreter {
                         &[("method", Value::str_from("write"))],
                     ));
                 }
-                let started = attrs.get("started").is_some_and(|v| v.truthy());
-                let has_pid = attrs.contains_key("pid");
+                let spawned_pid = proc_async_spawned_pid(&attrs);
+                let started = proc_async_started(&attrs);
+                let has_pid = spawned_pid.is_some();
                 let spawn_failed = attrs.contains_key("spawn_error");
                 if !started || (!has_pid && !spawn_failed) {
                     return Err(proc_async_error(
@@ -1066,7 +1109,7 @@ impl Interpreter {
                     _ => Vec::new(),
                 };
 
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                if let Some(pid) = spawned_pid {
                     let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
@@ -1088,8 +1131,9 @@ impl Interpreter {
                 Ok((Value::promise(p), attrs))
             }
             "close-stdin" => {
-                let started = attrs.get("started").is_some_and(|v| v.truthy());
-                let has_pid = attrs.contains_key("pid");
+                let spawned_pid = proc_async_spawned_pid(&attrs);
+                let started = proc_async_started(&attrs);
+                let has_pid = spawned_pid.is_some();
                 if !started {
                     return Err(proc_async_error(
                         "X::Proc::Async::MustBeStarted",
@@ -1099,7 +1143,7 @@ impl Interpreter {
                 if !has_pid {
                     return Ok((Value::TRUE, attrs));
                 }
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                if let Some(pid) = spawned_pid {
                     let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
@@ -1167,15 +1211,29 @@ impl Interpreter {
                     promise.break_with(err, String::new(), String::new());
                     return Ok((Value::promise(promise), attrs));
                 }
-                // Returns a Promise that resolves with the PID when the process
-                // has been started. If already started, resolves immediately.
-                let promise = SharedPromise::new();
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
-                    promise.keep(Value::int(pid), String::new(), String::new());
+                // The promise that resolves with the pid once the process has
+                // spawned. It is built by the constructor, not here: minting one
+                // per call and handing it to `.start` through the attribute map
+                // only works when the two never overlap. A `.ready` that raced
+                // `.start` got a promise nobody would ever keep — `.start` had
+                // already passed its own resolve point holding an older
+                // snapshot — so `await $p.ready` hung forever.
+                match attrs.get("ready_promise") {
+                    Some(promise) if matches!(promise.view(), ValueView::Promise(_)) => {
+                        Ok((promise.clone(), attrs))
+                    }
+                    // An instance that predates the constructor's latch (a
+                    // hand-rolled attribute map in a test, say): fall back to
+                    // the old behaviour rather than handing back a Nil.
+                    _ => {
+                        let promise = SharedPromise::new();
+                        if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                            promise.keep(Value::int(pid), String::new(), String::new());
+                        }
+                        attrs.insert("ready_promise".to_string(), Value::promise(promise.clone()));
+                        Ok((Value::promise(promise), attrs))
+                    }
                 }
-                // Store the ready promise so start can resolve it
-                attrs.insert("ready_promise".to_string(), Value::promise(promise.clone()));
-                Ok((Value::promise(promise), attrs))
             }
             "stdout" | "stderr" => {
                 if attrs
@@ -1292,8 +1350,9 @@ impl Interpreter {
                         &[("method", Value::str_from(method))],
                     ));
                 }
-                let started = attrs.get("started").is_some_and(|v| v.truthy());
-                let has_pid = attrs.contains_key("pid");
+                let spawned_pid = proc_async_spawned_pid(&attrs);
+                let started = proc_async_started(&attrs);
+                let has_pid = spawned_pid.is_some();
                 let spawn_failed = attrs.contains_key("spawn_error");
                 if !started || (!has_pid && !spawn_failed) {
                     return Err(proc_async_error(
@@ -1320,7 +1379,7 @@ impl Interpreter {
                 let bytes = self
                     .encode_with_encoding(&s, &enc)
                     .unwrap_or_else(|_| s.as_bytes().to_vec());
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                if let Some(pid) = spawned_pid {
                     let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
