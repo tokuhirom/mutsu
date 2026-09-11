@@ -107,7 +107,7 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
 
-            _ => return None,
+            _ => return self.call_nqp_op_text(op, args),
         })
     }
 

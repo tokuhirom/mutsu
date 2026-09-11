@@ -590,6 +590,8 @@ mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
 mod nqp_ops_process;
+mod nqp_ops_str;
+mod nqp_ops_text;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
