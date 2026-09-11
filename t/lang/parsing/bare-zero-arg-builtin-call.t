@@ -36,12 +36,16 @@ nok (my $m = min).defined, 'bare `min` returns an undefined value';
 # `sleep` is `sub sleep($seconds = Inf --> Nil)`, so a bare `sleep` sleeps
 # indefinitely. Run it in a child and assert it has NOT finished: a slow or
 # loaded machine can only make this pass, never fail.
+#
+# Two seconds, not more: a `sleep` that falls through as a bareword returns in
+# about 20ms, so this is already a hundredfold margin, and the wait is paid in
+# full by the serial `prove t/` of the gc-stress and jit-stress jobs.
 {
     my $prog = Proc::Async.new($*EXECUTABLE.absolute, '-e', 'sleep; print "RETURNED"');
     my $out = '';
     $prog.stdout.tap: { $out ~= $^a };
     my $promise = $prog.start;
-    await Promise.anyof(Promise.in(5), $promise);
+    await Promise.anyof(Promise.in(2), $promise);
     my $finished = $promise.status == Kept;
     $prog.kill unless $finished;
     nok $finished, 'bare `sleep;` blocks instead of returning the word "sleep"';
