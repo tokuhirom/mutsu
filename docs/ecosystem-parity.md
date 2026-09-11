@@ -24,13 +24,15 @@ sides, and publish the difference.
   release gate on the ~40 *bundled* dists. This campaign is neither: it is an
   exhaustive, re-runnable ledger over the whole ecosystem.
 
-> **Status: P1 and P3 landed** — the harness (`scripts/ecosystem-sweep.py`), the
-> record store, and the public page (`site/ecosystem.html`) all exist. **P2, the
-> corpus sweep, is what produces the first real KPI numbers**, and until it runs
-> `ecosystem/` holds a partial set rather than a survey; see
-> [ecosystem/README.md](../ecosystem/README.md). A sweep can be run either
-> locally (§8) or from GitHub Actions (§8.1) — the numbers no longer depend on
-> having a many-core box to hand.
+> **Status: P1, P2 and P3 landed.** The corpus has been measured: [run
+> 34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231)
+> (2026-09-11, `scope=all`, 27/27 shards green) covers all **1624**
+> distributions at mutsu `1557d41` against rakudo 2026.07, and the headline is
+> **41.2%** dist parity — 53.6% file parity, 62.4% assertion parity. The first
+> `history.tsv` row and the chart exist as of that sweep. A sweep runs either
+> locally (§8) or from GitHub Actions (§8.1), so the numbers do not depend on
+> having a many-core box to hand. What is left is **P5**: turning the red and
+> `blocked_load` records into root-caused tickets.
 
 ## 1. What gets measured
 
@@ -387,13 +389,21 @@ dark README; browsers that ignore it get the light palette.
 | # | Deliverable | Done when |
 |---|---|---|
 | ~~**P1**~~ | ~~`scripts/ecosystem_common.py` extracted from `dist-compat-sweep.py`; `scripts/ecosystem-sweep.py` with the dep resolver, sandbox, TAP compare, `--only` / `--prefix` / `--rollup`; schema v1~~ | **done** — records round-trip, `--rollup` produces summary + history + chart, and the first eight distributions surfaced real findings |
-| **P2** | first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row | `file_parity` / `assertion_parity` / `dist_parity` exist as real numbers |
-| ~~**P3**~~ | ~~`ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring~~ | **done** — `site/ecosystem.html` is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml` and the nav, and covered by `site/e2e.test.mjs`. The README link waits on P2, which is what produces the chart |
+| ~~**P2**~~ | ~~first full-corpus sweep; `ecosystem/` populated; `summary.*` + the first `history.tsv` row~~ | **done** — run 34566091231 (2026-09-11) measured all 1624 dists at one commit with 27/27 shards green: 41.2% dist / 53.6% file / 62.4% assertion parity, and the first history row is appended. It took three attempts; the two that lost data did so silently, and what they cost is recorded in `news/2026-09/` |
+| ~~**P3**~~ | ~~`ecosystem/history.svg` linked from `README.md`; `site/ecosystem.html` + manifest generator + `pages.yml` wiring~~ | **done** — `site/ecosystem.html` is generated from the ledger by `scripts/gen-ecosystem-manifest.py`, wired into `pages.yml` and the nav, and covered by `site/e2e.test.mjs`; the README's Status section now carries the figure and links the chart, which P2 was the thing producing |
 | **P4** | the operator runbook (§8) — one entry point for a full sweep and for a shard, plus the `--rollup` + `history.tsv` append and the PR it lands as | **partly done** — `.github/workflows/ecosystem-sweep.yml` (§8.1) is that entry point for anyone with dispatch rights: it plans, builds once, measures, rolls up and opens the PR. What is left is the local `make`-level convenience wrapper |
 | **P5** | root-cause grouping of `regression` records into `todo:ticket` issues, in the shape `scripts/dist-compat-tickets.py` already produces; `docs/triage.md` picks them up | the KPI feeds the work queue |
 
-P1 and P2 are the campaign; P3-P5 make it repeatable. Do not start P2 before
-P1's `--only` round-trips a record.
+P1 and P2 are the campaign; P3-P5 make it repeatable. **P5 is the next phase**,
+and the ledger now says how to start it: of the 393 `blocked_load` records, 53
+are `raku_also_fails` (rakudo does not load them either, so they are not mutsu's
+to fix and belong outside the numerator), and the remaining 340 normalise to 133
+distinct load errors whose top ten cover a third of them (110 of 340) —
+`X::Redeclaration` on a routine, "needs parens to avoid gobbling block", `No such
+method`, a handful of parse errors, `Could not find QAST in:`, and slang
+activation. The 560 `red`/`partial` records have a much longer tail (513 with a
+recorded first failure, 336 distinct), so the cheap grouping is on the load
+axis and the file axis wants sampling rather than exhaustive triage.
 
 **There is deliberately no *scheduled* CI sweep** (ADR-0085 D9): a full sweep is
 ~20 CPU-hours, and paying a hosted runner for it weekly, on fewer cores, to
