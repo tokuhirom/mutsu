@@ -74,14 +74,20 @@ impl Interpreter {
     /// must reinstate them: it rolls the whole registry back while
     /// `loaded_modules` keeps the module recorded as loaded, so without this the
     /// module is left permanently unable to resolve its own imports.
+    ///
+    /// Takes the snapshot as the copy-on-write `Arc` the registry itself holds
+    /// (see `Registry::functions`): the reinstatement is collected first and
+    /// the map copied only if there is actually something to put back, so the
+    /// common "nothing was declared" caller pays no copy at all.
     pub(crate) fn reinstate_module_functions(
         &self,
-        functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
+        functions: &mut std::sync::Arc<rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>>,
         include_global_aliases: bool,
     ) {
         if self.module_registered_functions.is_empty() {
             return;
         }
+        let mut missing: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
         let registry = self.registry();
         for key in self.module_registered_functions.iter() {
             if functions.contains_key(key) {
@@ -98,8 +104,12 @@ impl Interpreter {
                 continue;
             }
             if let Some(def) = registry.functions.get(key) {
-                functions.insert(*key, def.clone());
+                missing.push((*key, def.clone()));
             }
+        }
+        drop(registry);
+        if !missing.is_empty() {
+            crate::runtime::cow_table_mut(functions).extend(missing);
         }
     }
 
@@ -123,10 +133,10 @@ impl Interpreter {
         // Single guard for all six reads (avoids stacking read guards).
         let registry = self.registry();
         (
-            registry.functions.clone(),
-            registry.proto_functions.clone(),
-            registry.token_defs.clone(),
+            std::sync::Arc::clone(&registry.functions),
+            std::sync::Arc::clone(&registry.proto_functions),
             registry.proto_subs_snapshot(),
+            registry.token_defs.clone(),
             registry.proto_tokens.clone(),
             registry.our_scoped_functions.keys().copied().collect(),
             self.user_declared_infix_ops.clone(),
@@ -145,8 +155,8 @@ impl Interpreter {
         let (
             mut functions,
             proto_functions,
-            token_defs,
             proto_subs,
+            token_defs,
             proto_tokens,
             our_scoped_keys,
             user_infix_ops,
@@ -276,7 +286,7 @@ impl Interpreter {
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
             for (key, def) in new_our {
-                registry.functions.insert(key, def);
+                registry.functions_mut().insert(key, def);
             }
         }
         drop(registry);

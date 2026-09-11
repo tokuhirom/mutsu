@@ -448,6 +448,15 @@ impl Interpreter {
             std::mem::take(&mut self.pending_supply_authoritative_free_vars);
         let whenever_inherited_owned = std::mem::take(&mut self.pending_whenever_inherited_owned);
         let let_mark = self.let_saves_len();
+        // All five snapshots are refcount bumps, not copies: every one of these
+        // tables is a copy-on-write `Arc` (`Registry::functions`,
+        // `Registry::proto_functions`, `Registry::proto_subs`, and the two
+        // `Interpreter` operator tables), so the O(registered routines) copy
+        // happens on the block's first registry *write* — and only if this
+        // snapshot is still alive then. It used to be taken here unconditionally,
+        // which cost 3% of a grammar-action workload's instructions in
+        // `RawTable::clone` alone, all of it thrown away unused by the
+        // declaration-free block the guarded restore below describes (#7887).
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs_snapshot();
         let saved_proto_functions = self.registry().proto_functions.clone();

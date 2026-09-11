@@ -120,7 +120,7 @@ impl Interpreter {
         let mut fixed_arity = 0usize;
         let mut slurpy_min: Option<usize> = None;
 
-        for (key, def) in &self.registry().functions {
+        for (key, def) in self.registry().functions.iter() {
             let key_s = key.resolve();
             let loose_match = key_s.contains(&format!("::{name}/"));
             if !key_s.starts_with(&local_prefix)

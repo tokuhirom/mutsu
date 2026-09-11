@@ -372,7 +372,7 @@ impl Interpreter {
                             body_fp_cache: std::sync::OnceLock::new(),
                             body_facts_cache: std::sync::OnceLock::new(),
                         };
-                        self.registry_mut().functions.insert(
+                        self.registry_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
@@ -404,12 +404,12 @@ impl Interpreter {
                             body_fp_cache: std::sync::OnceLock::new(),
                             body_facts_cache: std::sync::OnceLock::new(),
                         };
-                        self.registry_mut().functions.insert(
+                        self.registry_mut().functions_mut().insert(
                             Symbol::intern(&resolved_method_name),
                             std::sync::Arc::new(func_def.clone()),
                         );
                         let qualified_name = format!("{}::{}", name, resolved_method_name);
-                        self.registry_mut().functions.insert(
+                        self.registry_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );

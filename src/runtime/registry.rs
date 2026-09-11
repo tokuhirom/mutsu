@@ -399,18 +399,30 @@ pub(crate) struct Registry {
     // ----- functions / subs / tokens (PR-A slice 5, final PR-A slice) -----
     /// User-defined subs: fully-qualified name -> [`FunctionDef`]. Read on the
     /// sub/multi-dispatch hot path; callers clone the matched `Arc<FunctionDef>`
-    /// (a cheap refcount bump) under a short-lived guard. Held behind `Arc` so
-    /// the per-call `snapshot_routine_registry` clone (taken whenever a routine
-    /// declaring inner `my sub`s is entered, to scope them) is an O(n) Arc-bump
-    /// rather than a deep copy of every routine body in the program.
-    pub(crate) functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    /// (a cheap refcount bump) under a short-lived guard. Each def is held
+    /// behind `Arc` so the whole-map clones share the def rather than deep-copying
+    /// every routine body in the program.
+    ///
+    /// The *map itself* is behind an `Arc` as well, making it one of the
+    /// copy-on-write program tables described on [`Interpreter`](super::Interpreter):
+    /// reads go through `Deref` unchanged, while every write goes through
+    /// [`Registry::functions_mut`], which copies only while a snapshot still
+    /// shares the map. That is what makes the scope snapshots taken *around*
+    /// routine and block bodies — `snapshot_routine_registry` (every routine
+    /// declaring inner `my sub`s) and `eval_block_value_inner` (every carrier
+    /// block, #7887) — a refcount bump instead of an O(registered routines)
+    /// copy that the overwhelmingly common declaration-free body then throws
+    /// away unused.
+    pub(crate) functions: std::sync::Arc<HashMap<Symbol, std::sync::Arc<FunctionDef>>>,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
     /// the same `Arc` is also what gets re-inserted into `functions`.
     pub(crate) our_scoped_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
-    pub(crate) proto_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    /// Copy-on-write behind an `Arc` for the same reason as
+    /// [`Registry::functions`]; write through [`Registry::proto_functions_mut`].
+    pub(crate) proto_functions: std::sync::Arc<HashMap<Symbol, std::sync::Arc<FunctionDef>>>,
     /// Grammar token/rule definitions: name -> `[overloads]`. Each overload is
     /// held behind `Arc` so the whole-map snapshot/restore clones (and the
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
@@ -419,8 +431,10 @@ pub(crate) struct Registry {
     /// `proto sub` declaration markers (existence set). Private: every
     /// mutation must go through the `proto_subs_*` accessors below so the
     /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`
-    /// can never miss a write (compiler-enforced completeness).
-    proto_subs: HashSet<String>,
+    /// can never miss a write (compiler-enforced completeness). Copy-on-write
+    /// behind an `Arc` for the same reason as [`Registry::functions`], which is
+    /// what makes `proto_subs_snapshot` O(1).
+    proto_subs: std::sync::Arc<HashSet<String>>,
     /// Monotonic invalidation generation for `proto_subs`. Bumped by every
     /// accessor that can change the set's contents; compared by
     /// `Interpreter::has_proto_cached`.
@@ -1258,27 +1272,45 @@ impl Registry {
 
     /// Insert a `proto sub` marker. Bumps `proto_gen`.
     pub(crate) fn proto_subs_insert(&mut self, key: String) {
-        self.proto_subs.insert(key);
+        crate::runtime::cow_table_mut(&mut self.proto_subs).insert(key);
         self.bump_proto_gen();
     }
 
     /// Retain-filter the `proto sub` markers (module unregistration). Bumps
     /// `proto_gen`.
     pub(crate) fn proto_subs_retain<F: FnMut(&String) -> bool>(&mut self, f: F) {
-        self.proto_subs.retain(f);
+        crate::runtime::cow_table_mut(&mut self.proto_subs).retain(f);
         self.bump_proto_gen();
     }
 
-    /// Owned snapshot of the marker set, for save/restore callers (EVAL
-    /// sandboxing, nested test interpreters, module snapshots).
-    pub(crate) fn proto_subs_snapshot(&self) -> HashSet<String> {
-        self.proto_subs.clone()
+    /// Snapshot of the marker set, for save/restore callers (EVAL sandboxing,
+    /// nested test interpreters, module snapshots, carrier blocks). An `Arc`
+    /// bump, not a copy — the copy happens on the next write, and only if this
+    /// snapshot is still alive then.
+    pub(crate) fn proto_subs_snapshot(&self) -> std::sync::Arc<HashSet<String>> {
+        std::sync::Arc::clone(&self.proto_subs)
     }
 
     /// Wholesale-replace the marker set from a snapshot. Bumps `proto_gen`.
-    pub(crate) fn proto_subs_restore(&mut self, set: HashSet<String>) {
+    pub(crate) fn proto_subs_restore(&mut self, set: std::sync::Arc<HashSet<String>>) {
         self.proto_subs = set;
         self.bump_proto_gen();
+    }
+
+    /// Copy-on-write mutable access to [`Registry::functions`]. The only way to
+    /// write the map: it is the `Arc::make_mut` that the copy-on-write share
+    /// described on that field needs.
+    #[inline]
+    pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        crate::runtime::cow_table_mut(&mut self.functions)
+    }
+
+    /// Copy-on-write mutable access to [`Registry::proto_functions`].
+    #[inline]
+    pub(crate) fn proto_functions_mut(
+        &mut self,
+    ) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        crate::runtime::cow_table_mut(&mut self.proto_functions)
     }
 
     /// Whether a `proto sub`/`proto` named `name` is declared, visible from the
@@ -1506,6 +1538,66 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The three scope-snapshotted routine tables are copy-on-write: taking a
+    /// snapshot is a refcount bump, and the copy happens on the next write --
+    /// which must not reach the snapshot. This is what lets
+    /// `eval_block_value_inner` snapshot on every carrier block without paying
+    /// an O(registered routines) copy for the declaration-free ones (#7887).
+    #[test]
+    fn routine_tables_snapshot_by_refcount_and_copy_on_write() {
+        let mut registry = Registry::default();
+        let outer = Arc::new(dummy_proto_def("GLOBAL", "f"));
+        registry
+            .functions_mut()
+            .insert(Symbol::intern("GLOBAL::f"), Arc::clone(&outer));
+        registry
+            .proto_functions_mut()
+            .insert(Symbol::intern("GLOBAL::p"), Arc::clone(&outer));
+        registry.proto_subs_insert("GLOBAL::p".to_string());
+
+        let saved_functions = Arc::clone(&registry.functions);
+        let saved_proto_functions = Arc::clone(&registry.proto_functions);
+        let saved_proto_subs = registry.proto_subs_snapshot();
+
+        // The snapshot shares the live tables until something writes.
+        assert!(Arc::ptr_eq(&saved_functions, &registry.functions));
+
+        // A write inside the "block" copies, leaving the snapshot alone.
+        registry
+            .functions_mut()
+            .insert(Symbol::intern("GLOBAL::inner"), Arc::clone(&outer));
+        registry
+            .proto_functions_mut()
+            .remove(&Symbol::intern("GLOBAL::p"));
+        registry.proto_subs_retain(|_| false);
+
+        assert!(!Arc::ptr_eq(&saved_functions, &registry.functions));
+        assert!(
+            registry
+                .functions
+                .contains_key(&Symbol::intern("GLOBAL::inner"))
+        );
+        assert!(!saved_functions.contains_key(&Symbol::intern("GLOBAL::inner")));
+        assert!(saved_proto_functions.contains_key(&Symbol::intern("GLOBAL::p")));
+        assert!(saved_proto_subs.contains("GLOBAL::p"));
+
+        // Restoring the snapshot puts the block's declarations back out of scope.
+        registry.functions = saved_functions;
+        registry.proto_functions = saved_proto_functions;
+        registry.proto_subs_restore(saved_proto_subs);
+        assert!(
+            !registry
+                .functions
+                .contains_key(&Symbol::intern("GLOBAL::inner"))
+        );
+        assert!(
+            registry
+                .functions
+                .contains_key(&Symbol::intern("GLOBAL::f"))
+        );
+        assert!(registry.proto_subs_contains("GLOBAL::p"));
+    }
 
     #[test]
     fn builtin_method_catalog_is_registry_owned_and_ordered() {

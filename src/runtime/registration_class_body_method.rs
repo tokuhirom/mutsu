@@ -434,7 +434,7 @@ impl Interpreter {
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
             };
-            self.registry_mut().functions.insert(
+            self.registry_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),
             );
@@ -470,13 +470,13 @@ impl Interpreter {
                 body_facts_cache: std::sync::OnceLock::new(),
             };
             // Register under the short name (lexical scope)
-            self.registry_mut().functions.insert(
+            self.registry_mut().functions_mut().insert(
                 Symbol::intern(&resolved_method_name),
                 std::sync::Arc::new(func_def.clone()),
             );
             // Also register under the qualified name for consistency
             let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
-            self.registry_mut().functions.insert(
+            self.registry_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),
             );

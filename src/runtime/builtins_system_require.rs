@@ -186,7 +186,7 @@ impl Interpreter {
             self.promote_exported_main_to_global();
             let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
-                &mut self.registry_mut().functions,
+                self.registry_mut().functions_mut(),
                 &before_function_keys,
                 main_exported,
             );
@@ -205,7 +205,7 @@ impl Interpreter {
             && !pkg.is_empty()
         {
             let mut fn_aliases: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
-            for (name, def) in &self.registry().functions {
+            for (name, def) in self.registry().functions.iter() {
                 if before_function_keys.contains(name) {
                     continue;
                 }
@@ -221,7 +221,7 @@ impl Interpreter {
                 }
             }
             for (alias, def) in fn_aliases {
-                self.registry_mut().functions.insert(alias, def);
+                self.registry_mut().functions_mut().insert(alias, def);
             }
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
@@ -312,7 +312,10 @@ impl Interpreter {
             for (key, def) in to_promote {
                 let global_key = key.replacen(&format!("{pkg}::"), "GLOBAL::", 1);
                 let gsym = Symbol::intern(&global_key);
-                self.registry_mut().functions.entry(gsym).or_insert(def);
+                self.registry_mut()
+                    .functions_mut()
+                    .entry(gsym)
+                    .or_insert(def);
             }
         }
     }
@@ -382,7 +385,7 @@ impl Interpreter {
             .collect();
         let mut functions = Vec::with_capacity(keys.len());
         for k in keys {
-            if let Some(v) = self.registry_mut().functions.remove(&k) {
+            if let Some(v) = self.registry_mut().functions_mut().remove(&k) {
                 functions.push((k, v));
             }
         }
@@ -419,7 +422,7 @@ impl Interpreter {
         let HiddenToplevelRoutines { functions, amp_env } = hidden;
         if !functions.is_empty() {
             for (k, v) in functions {
-                self.registry_mut().functions.insert(k, v);
+                self.registry_mut().functions_mut().insert(k, v);
             }
             self.fn_resolve_gen += 1;
         }
@@ -510,7 +513,7 @@ impl Interpreter {
                 })
                 .collect();
             for (k, v) in function_entries {
-                self.registry_mut().functions.insert(k, v);
+                self.registry_mut().functions_mut().insert(k, v);
             }
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
