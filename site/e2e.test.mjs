@@ -13,7 +13,7 @@
 
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
 
 import { parseCorpus } from './assets/corpus.js';
 import landingEn from './content/landing.en.js';
@@ -103,6 +103,13 @@ if (rendered.status !== 0) {
   console.error('Error: could not render the bench dashboard:', rendered.stderr);
   process.exit(1);
 }
+
+// The ecosystem parity chart is copied out of the ledger at deploy time
+// (pages.yml), and the manifest's `has_chart` is what makes the page ask for it.
+// Stage it the same way here so that wiring is exercised rather than 404ing.
+const ECO_CHART = 'site/history.svg';
+const ECO_CHART_STAGED = !existsSync(ECO_CHART) && existsSync('ecosystem/history.svg');
+if (ECO_CHART_STAGED) copyFileSync('ecosystem/history.svg', ECO_CHART);
 
 // Start HTTP server
 server = spawn('python3', ['-m', 'http.server', String(PORT), '-d', 'site'], {
@@ -263,24 +270,32 @@ try {
 
   assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Ecosystem',
          'the ecosystem page is in the nav and marked current');
-  // The table renders at most a page's worth; the corpus is ~1600 rows and the
-  // filter is what the page is for.
-  const ecoExpected = Math.min(ecoManifest.distributions.length, 400);
+  // Every measured distribution gets a row: the table is not capped, so the
+  // count printed above it and the rows below it cannot disagree. (A 400-row cap
+  // used to hide every green distribution, since the default sort is
+  // worst-first.)
+  const ecoExpected = ecoManifest.distributions.length;
   assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoExpected,
          `every measured distribution has a row (${ecoExpected})`);
   assert(await page.evaluate(() =>
     document.documentElement.scrollWidth <= document.documentElement.clientWidth),
     'the ecosystem page does not scroll sideways');
+  assert(await page.locator('#eco-chart').isVisible() === !!ecoManifest.has_chart,
+         `the parity chart follows the manifest's has_chart (${!!ecoManifest.has_chart})`);
 
   if (ecoManifest.distributions.length) {
     console.log('Test: ecosystem search narrows the table');
     const first = ecoManifest.distributions[0].dist;
+    // Exactly the rows the filter matches -- not "at most the full count", which
+    // a truncating table would also satisfy.
+    const ecoMatching = ecoManifest.distributions.filter(
+      (d) => d.dist.toLowerCase().includes(first.toLowerCase())).length;
     await page.fill('#eco-search', first);
     await page.waitForFunction(
-      (n) => document.querySelectorAll('table.eco tbody tr.eco-row').length <= n,
-      ecoExpected, { timeout: 5000 });
+      (n) => document.querySelectorAll('table.eco tbody tr.eco-row').length === n,
+      ecoMatching, { timeout: 5000 });
     const narrowed = await page.locator('table.eco tbody tr.eco-row').count();
-    assert(narrowed >= 1 && narrowed < ecoExpected + 1,
+    assert(narrowed === ecoMatching && narrowed <= ecoExpected,
            `searching for ${first} narrows the table to ${narrowed} row(s)`);
     assert((await page.textContent('table.eco tbody tr td')).includes(first.split('::')[0]),
            'and the match is the distribution searched for');
@@ -685,6 +700,7 @@ try {
   server.kill();
   rmSync(BENCH_TSV, { force: true });
   rmSync(BENCH_HTML, { force: true });
+  if (ECO_CHART_STAGED) rmSync(ECO_CHART, { force: true });
 }
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`);

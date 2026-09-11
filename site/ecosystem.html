@@ -252,10 +252,13 @@ function paintRows() {
     return;
   }
 
-  // Render at most a page's worth at a time: the corpus is ~1600 rows and a
-  // filtered view is what the page is for.
+  // Render every match, not a capped slice. The default view is sorted
+  // worst-first, so a cap hid whole status classes (every green distribution
+  // fell past it) while the count above still claimed the full total -- the page
+  // looked broken. One fragment, appended once, keeps a full corpus render cheap
+  // enough to redo on each keystroke.
   const frag = document.createDocumentFragment();
-  for (const d of matches.slice(0, 400)) {
+  for (const d of matches) {
     const tr = document.createElement('tr');
     tr.className = 'eco-row';
 
