@@ -18,6 +18,7 @@
 #
 #   scripts/ci-docs-only.sh              # classify the current CI event
 #   scripts/ci-docs-only.sh --self-test  # verify the classifier (runs in CI)
+#   scripts/ci-docs-only.sh --check-inputs  # no build input may look like a doc
 #   printf 'a\nb\n' | scripts/ci-docs-only.sh --classify   # classify a list
 #
 # It also answers the inverse question for the Miri gate (ADR-0013 §4 phase 4),
@@ -33,14 +34,22 @@
 set -u
 
 # A path is documentation iff it matches one of these. Everything else --
-# src/, t/, roast/, scripts/, site/, modules/, vendor/, benchmarks/,
-# Cargo.*, Makefile, roast-whitelist.txt, flaky-tests.txt, and crucially
-# .github/** itself -- forces the full suite.
+# src/, t/, roast/, site/, modules/, vendor/, benchmarks/, crates/, tools/,
+# Cargo.*, Makefile, roast-whitelist.txt, flaky-tests.txt, and every shell/mjs
+# script under scripts/ -- forces the full suite.
+#
+# The test each entry has to pass is NOT "does this look like prose". It is
+# "can any of the five build jobs read this file". `check_inputs` below turns
+# that from a claim into something CI derives and enforces, so read it before
+# adding an entry here.
 #
 # Deliberately NOT `**/*.md`: a README under modules/ or site/ sits next
 # to files the build reads, and the blast radius of guessing wrong there is a
 # silently-untested merge. Top-level *.md (PLAN, README, CLAUDE, ANALYSIS,
-# PERFORMANCE, BATTERIES, AGENTS) is safe and covers the common case.
+# PERFORMANCE, BATTERIES, AGENTS) is safe and covers the common case. Top-level
+# *.tsv / *.svg is the same case in a different extension: HISTORY.tsv and
+# HISTORY-pass.svg are the roast-history record and its chart, appended by
+# scripts/roast-history.sh and read by nothing that builds or tests.
 #
 # `.claude/**` and `.agents/**` are agent configuration and agent-facing
 # documentation (skills, settings). Nothing in the build reads either -- not
@@ -48,20 +57,113 @@ set -u
 # single test result, and adding a skill used to cost a full ~25 min suite for
 # one markdown file. They are on the allowlist as whole directories rather than
 # just their `skills/**` subtrees because the same argument covers everything
-# CI ignores; if something under one ever does become an input to a job, that
-# job's workflow file changes too, and `.github/**` forces the full suite.
+# CI ignores.
 # (`.agents/` is where this repo's own skills live -- the table at the top of
 # CLAUDE.md points at `.agents/skills/` -- so leaving it off meant every
 # SKILL.md edit paid the full suite. It was an oversight, not a distinction.)
+#
+# `ecosystem/**` is the zef-distribution parity ledger (one JSON record per
+# distribution, plus history.tsv/.svg and the index snapshot). It is a
+# *measurement of* mutsu, never an input to it: the writer is
+# .github/workflows/ecosystem-sweep.yml and the only reader is pages.yml, which
+# has its own `paths:` trigger on the same tree. A 250-file re-measurement sweep
+# used to pay for two cargo builds and three roast runs to confirm that
+# recording what mutsu did does not change what mutsu does.
+# NOTE the asymmetry with `site/`, which stays OFF the allowlist even for the
+# generated ecosystem projection: `site/e2e.test.mjs` (the wasm-e2e job) loads
+# `site/ecosystem.html` and cross-checks it against `site/content/ecosystem.json`,
+# so those two really are build inputs.
+#
+# `.github/**` except ci.yml: issue templates, the release-note config, and the
+# other six workflows (pages, bench, docker, release, tag-release, label-pr,
+# ecosystem-sweep) are read by GitHub, not by any job here -- and each one is
+# exercised by its own run, which the five build jobs tell you nothing about.
+# `.github/workflows/ci.yml` is the exception and must stay off the allowlist,
+# because it *defines* those five jobs: a change to it is precisely the change
+# they exist to demonstrate, and skipping them would merge an edit to the test
+# pipeline that has never once been executed. (`is_gc_value_path` below lists
+# ci.yml for the same reason, in the same direction.)
+#
+# `scripts/*.py`: the Python under scripts/ is reporting and campaign tooling --
+# ecosystem sweeps, roast/bench/backlog plots, manifest generation, one-off
+# surveys. None of it is on the `make test` / `make roast` / ci.yml path, with
+# the single exception denied below. The shell and .mjs scripts are a different
+# story (CI runs run-t-test.sh, run-roast-test.sh, check-site-snippets.sh, ...),
+# so scripts/ as a whole stays off the allowlist.
 is_doc_path() {
   case "$1" in
     docs/*|news/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
     .claude/*|.agents/*) return 0 ;;
+    ecosystem/*) return 0 ;;
+    # Before `.github/*`: order decides, and this one must lose.
+    .github/workflows/ci.yml) return 1 ;;
+    .github/*) return 0 ;;
+    # `make check-t-layout` (a `make test` prerequisite and a CI step) runs it.
+    scripts/migrate-t-layout.py) return 1 ;;
+    scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
-    *.md) return 0 ;;         # top-level markdown only
+    *.md|*.tsv|*.svg) return 0 ;;   # top-level records only
     *) return 1 ;;
   esac
+}
+
+# Guard: nothing the build reads may be classified as documentation.
+#
+# Every entry in `is_doc_path` is a claim about *consumers* -- "no job in
+# ci.yml reads this tree". Such a claim rots silently and in the dangerous
+# direction: wire a new `scripts/*.py` into `make test` the way
+# `scripts/migrate-t-layout.py` already is, and a change to it starts reading
+# as documentation, skipping the very suite that runs it. Nothing would say so.
+#
+# So derive the claim instead of trusting it. Every repository path named by
+# the Makefile or by ci.yml is a build input by construction; this fails if any
+# of them is on the allowlist. Adding a genuinely-new input then costs one
+# `return 1` line here rather than a silently-untested merge.
+#
+# Comment lines are stripped first: both files cite documentation in prose
+# (`docs/flaky-test-policy.md`, `docs/adr/0075-...`), and a citation is not an
+# input. Paths that do not exist are dropped -- the scan also picks up runner
+# paths (`/etc/apt/sources.list`) and `target/<profile>/mutsu` fragments, which
+# are noise, not repository files.
+#
+# Only ONE hop is scanned. A path reached *through* a shell script that CI runs
+# is not covered (scanning those too drowns the signal: run-roast-test.sh and
+# friends cite docs/ and news/ in running text). When you add that kind of
+# indirection, either name the file in the Makefile or ci.yml as well, or deny
+# it in `is_doc_path` by hand.
+CI_INPUT_SOURCES="Makefile .github/workflows/ci.yml"
+
+check_inputs() {
+  local f missing=0
+  for f in $CI_INPUT_SOURCES; do
+    [ -f "$f" ] || { echo "not ok - $f is not in this checkout" >&2; missing=1; }
+  done
+  if [ "$missing" -ne 0 ]; then
+    echo "ci-docs-only --check-inputs: cannot run without the files above" >&2
+    return 1
+  fi
+
+  local failures=0 path
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    [ -f "$path" ] || continue
+    if is_doc_path "$path"; then
+      echo "not ok - $path is read by the build but is on the documentation allowlist" >&2
+      failures=$((failures + 1))
+    fi
+  done <<EOF
+$(sed -E 's/^[[:space:]]*#.*$//' $CI_INPUT_SOURCES \
+    | grep -ohE '(\.agents|\.claude|\.github|TODO_roast|benchmarks|crates|docs|ecosystem|modules|news|old-design-docs|raku-doc|roast|scripts|site|src|t|tests|tools|vendor)/[A-Za-z0-9_./-]+' \
+    | sed -E 's/[.,:;)]+$//' | sort -u)
+EOF
+
+  if [ "$failures" -ne 0 ]; then
+    echo "ci-docs-only --check-inputs: $failures build input(s) classified as documentation" >&2
+    echo "Either deny the path in is_doc_path, or stop reading it from the build." >&2
+    return 1
+  fi
+  echo "ci-docs-only --check-inputs: no build input is on the documentation allowlist"
 }
 
 # Reads file paths on stdin, one per line. Empty input => `false`: an empty
@@ -189,6 +291,22 @@ self_test() {
   check false 'nested README'           modules/YAMLish/README.md
   check false 'Cargo manifest'          Cargo.toml
   check false 'empty diff'              ''
+  check true  'ecosystem record'        ecosystem/dists/S/String--Utils.json
+  check true  'ecosystem sweep'         ecosystem/dists/B/BTree.json ecosystem/history.tsv ecosystem/history.svg
+  check false 'ecosystem + its site projection' ecosystem/dists/B/BTree.json site/content/ecosystem.json
+  check false 'ecosystem + src'         ecosystem/dists/B/BTree.json src/vm/vm.rs
+  check true  'issue template'          .github/ISSUE_TEMPLATE/ticket.md
+  check true  'another workflow'        .github/workflows/pages.yml
+  check true  'release-note config'     .github/release.yml
+  check false 'ci.yml itself'           .github/workflows/ci.yml
+  check false 'ci.yml among workflows'  .github/workflows/pages.yml .github/workflows/ci.yml
+  check true  'roast history record'    HISTORY.tsv HISTORY-pass.svg
+  check true  'reporting python'        scripts/plot_roast_history.py
+  check true  'ecosystem tooling'       scripts/ecosystem-sweep.py scripts/ecosystem_common.py
+  check false 'a python make test runs' scripts/migrate-t-layout.py
+  check false 'shell script'            scripts/run-t-test.sh
+  check false 'node script'             scripts/check-site-snippets.mjs
+  check false 'nested tsv'              t/fixtures/data.tsv
 
   check_gc() { # check_gc <expected> <label> <files...>
     local expected="$1" label="$2"; shift 2
@@ -213,6 +331,20 @@ self_test() {
   check_gc false 'docs only'             PLAN.md docs/adr/0013-x.md
   check_gc false 'value in another tree' modules/URI/lib/value.rakumod
 
+  # The allowlist cases above only pin what the rules *say*. Run the guard too
+  # whenever the checkout has the files it reads, so a local run catches a
+  # build input that drifted onto the allowlist; CI calls it as its own step so
+  # a sparse checkout that omits them fails loudly instead of skipping it.
+  local f have_sources=1
+  for f in $CI_INPUT_SOURCES; do
+    [ -f "$f" ] || have_sources=0
+  done
+  if [ "$have_sources" -eq 1 ]; then
+    check_inputs || failures=$((failures + 1))
+  else
+    echo "ok - (skipping --check-inputs: $CI_INPUT_SOURCES not in this checkout)"
+  fi
+
   if [ "$failures" -ne 0 ]; then
     echo "ci-docs-only self-test: $failures failure(s)" >&2
     return 1
@@ -222,6 +354,7 @@ self_test() {
 
 case "${1:-}" in
   --self-test)          self_test; exit $? ;;
+  --check-inputs)       check_inputs; exit $? ;;
   --classify)           classify; exit 0 ;;
   --classify-gc-value)  classify_gc_value; exit 0 ;;
 esac

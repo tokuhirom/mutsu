@@ -20,9 +20,11 @@ concurrency:
 
 jobs:
   # Classifies the change as documentation-only so the five build jobs below
-  # can skip themselves. Roughly one in six commits here touches only docs/,
-  # news/, todo/, TODO_roast/ or a top-level *.md, and each one was paying for
-  # two full cargo builds plus three roast sweeps.
+  # can skip themselves. Roughly one commit in six touches only prose and
+  # records -- docs/, news/, TODO_roast/, .agents/, ecosystem/, a top-level
+  # *.md -- and each one was paying for two full cargo builds plus three roast
+  # sweeps. scripts/ci-docs-only.sh holds the allowlist and the reasoning for
+  # every entry on it.
   #
   # This must be a job-level `if:`, not a workflow-level `paths-ignore`. With
   # `paths-ignore` GitHub never creates the check run, so the required status
@@ -31,9 +33,10 @@ jobs:
   # protection, which is exactly the semantics we want.
   #
   # The classifier is an allowlist and fails safe: anything it does not
-  # recognise as documentation -- including .github/** itself -- yields
-  # `false` and runs everything. It self-tests on each run (~1s) so a bad edit
-  # to the path rules is caught here rather than by a silently-untested merge.
+  # recognise as documentation -- including this file, which defines the very
+  # jobs a skip would skip -- yields `false` and runs everything. It self-tests
+  # on each run (~1s) so a bad edit to the path rules is caught here rather
+  # than by a silently-untested merge.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -43,11 +46,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: scripts/ci-docs-only.sh
+          # The Makefile and this workflow are what `--check-inputs` below
+          # reads: they name every path the build consumes, and no such path
+          # may be on the classifier's documentation allowlist. Leading slashes
+          # anchor each pattern to the repository root -- a bare `Makefile` in
+          # non-cone mode would also drag in every vendored one.
+          sparse-checkout: |
+            /scripts/ci-docs-only.sh
+            /Makefile
+            /.github/workflows/ci.yml
           sparse-checkout-cone-mode: false
 
       - name: Classifier self-test
         run: scripts/ci-docs-only.sh --self-test
+
+      - name: No build input is classified as documentation
+        # The allowlist is a claim that no job below reads these paths, and it
+        # would rot silently: wiring a `scripts/*.py` into `make test` would
+        # quietly turn an untested change into a "documentation" one. This
+        # derives the claim from the Makefile and this file instead of trusting
+        # it. Separate from --self-test so an incomplete sparse-checkout above
+        # fails here rather than skipping the guard.
+        run: scripts/ci-docs-only.sh --check-inputs
 
       - name: Detect documentation-only change
         id: detect
