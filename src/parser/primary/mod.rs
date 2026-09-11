@@ -10,6 +10,7 @@ pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 pub(crate) use misc::next_anon_role_name;
+mod hexfloat;
 mod number;
 pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
@@ -295,6 +296,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         }
 
         try_primary!(number::dot_decimal(input));
+        try_primary!(hexfloat::hex_float(input));
         try_primary!(number::decimal(input));
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
