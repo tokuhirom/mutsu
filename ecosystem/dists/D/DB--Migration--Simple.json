@@ -1,0 +1,67 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DBIish",
+      "NativeHelpers::Blob",
+      "NativeLibs"
+    ],
+    "unresolved": []
+  },
+  "dist": "DB::Migration::Simple",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "table version 1 populated",
+        "nok": 2,
+        "ok": 13,
+        "plan": 15,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 14.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "DB::Migration::Simple": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/B_/DB_MIGRATION_SIMPLE/7dfcfdbd9c18462857ff72bc842dda7b0d311749.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 15,
+    "baseline_files": 1,
+    "mutsu_assertions": 13,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "1.1"
+}

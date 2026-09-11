@@ -1,0 +1,51 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "annotations"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::Record",
+  "files": [],
+  "load": {
+    "Data::Record": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "Data::Record::Exceptions": "ok",
+    "Data::Record::Instance": "ok",
+    "Data::Record::Lifter": "expected statement: expected expected statement: expected expected statement: expected expression statement or identifier after '::'",
+    "Data::Record::List": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "Data::Record::Map": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "Data::Record::Mode": "ok",
+    "Data::Record::Operators": "ok",
+    "Data::Record::Tuple": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "MetamodelX::RecordHOW": "ok",
+    "MetamodelX::RecordTemplateHOW": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_RECORD/a280b4680690b7cb7525e0612ea83dd085c075c1.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.0.2"
+}

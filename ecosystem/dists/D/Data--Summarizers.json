@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Reshapers",
+      "Data::TypeSystem",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Pretty::Table",
+      "Slang::Tuxic",
+      "Slangify",
+      "Stats",
+      "Test::META",
+      "Text::CSV",
+      "Text::Wrap",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::Summarizers",
+  "files": [],
+  "load": {
+    "Data::Summarizers": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Data::Summarizers::ParetoPrincipleStatistic": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Data::Summarizers::Predicates": "ok",
+    "Data::Summarizers::RecordsSummary": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_SUMMARIZERS/b749a53127e6cb3a78b5699a9be2708155db475e.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.6"
+}

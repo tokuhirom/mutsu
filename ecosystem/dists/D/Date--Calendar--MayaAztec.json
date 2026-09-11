@@ -1,0 +1,152 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Abbreviations",
+      "Date::Calendar::Strftime",
+      "Date::Names",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Date::Calendar::MayaAztec",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 23.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-test-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 18.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 210,
+        "plan": 210,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-Aztec.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 210,
+        "plan": 210,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 246,
+        "plan": 246,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-Maya.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 246,
+        "plan": 246,
+        "secs": 4.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Date::Calendar::Aztec": "ok",
+    "Date::Calendar::Aztec::Common": "ok",
+    "Date::Calendar::Aztec::Cortes": "ok",
+    "Date::Calendar::Aztec::Names": "ok",
+    "Date::Calendar::Maya": "ok",
+    "Date::Calendar::Maya::Astronomical": "ok",
+    "Date::Calendar::Maya::Common": "ok",
+    "Date::Calendar::Maya::Names": "ok",
+    "Date::Calendar::Maya::Spinden": "ok",
+    "Date::Calendar::MayaAztec": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATE_CALENDAR_MAYAAZTEC/3bbeb3dd295efe38f3218aa7daea8ae68e5fa9f2.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 458,
+    "baseline_files": 4,
+    "mutsu_assertions": 457,
+    "parity_files": 3,
+    "regressed_files": 1
+  },
+  "version": "0.1.0"
+}

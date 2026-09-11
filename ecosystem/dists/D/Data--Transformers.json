@@ -1,0 +1,43 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::Transformers",
+  "files": [],
+  "load": {
+    "Data::Transformers": "circular module dependency detected: Data::Transformers -> Data::TypeSystem::Predicates -> Data::Transformers::Arrays -> Data::Transformers::Arrays",
+    "Data::Transformers::Arrays": "ok",
+    "Data::Transformers::Rescale": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_TRANSFORMERS/08d0dcbe603846d5651aaf3a8f70436527330222.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

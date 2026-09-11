@@ -1,0 +1,353 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::Shared",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 6 -",
+        "nok": 1,
+        "ok": 6,
+        "plan": 7,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Array-of-regexes-matches.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 5.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Commands-processing.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 25.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Determined-words-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'lines' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Entity-names-parsing-via-resources-access-object.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 8.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Global-commands-parsing.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 7,
+        "plan": null,
+        "secs": 3.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/List-management-command.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 22,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Pipeline-commands-parsing.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 23,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'regex-pattern-spec' for invocant of type 'Match'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Predicates-interpretation-to-Raku.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 17.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'regex-pattern-spec' for invocant of type 'Match'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Predicates-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Time-interval-specs-parsing.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 26,
+        "secs": 8.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/User-onboarding-commands-parsing.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 3.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Variables-parsing.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "DSL::Shared::Actions::Bulgarian::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Bulgarian::Raku::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Bulgarian::Raku::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Bulgarian::Standard::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Bulgarian::Standard::PipelineCommand": "ok",
+    "DSL::Shared::Actions::CommonStructures": "ok",
+    "DSL::Shared::Actions::English::Julia::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::Python::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::Python::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::R::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::R::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::Raku::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::Raku::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::RakuObject::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::SQL::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::SQL::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::Standard::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::Standard::PipelineCommand": "ok",
+    "DSL::Shared::Actions::English::TimeIntervalSpec": "ok",
+    "DSL::Shared::Actions::English::TimeIntervalSpecRefPoint": "ok",
+    "DSL::Shared::Actions::English::WL::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::English::WL::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Julia::CommonStructures": "ok",
+    "DSL::Shared::Actions::Julia::PredicateSpecification": "ok",
+    "DSL::Shared::Actions::Portuguese::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Portuguese::Raku::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Portuguese::Raku::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Python::CommonStructures": "ok",
+    "DSL::Shared::Actions::Python::PredicateSpecification": "ok",
+    "DSL::Shared::Actions::R::CommonStructures": "ok",
+    "DSL::Shared::Actions::R::PredicateSpecification": "ok",
+    "DSL::Shared::Actions::Raku::CommonStructures": "ok",
+    "DSL::Shared::Actions::Raku::PredicateSpecification": "ok",
+    "DSL::Shared::Actions::Russian::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Russian::Raku::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Russian::Raku::PipelineCommand": "ok",
+    "DSL::Shared::Actions::Russian::Standard::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Russian::Standard::PipelineCommand": "ok",
+    "DSL::Shared::Actions::SQL::CommonStructures": "ok",
+    "DSL::Shared::Actions::SQL::PredicateSpecification": "ok",
+    "DSL::Shared::Actions::Spanish::Standard::ListManagementCommand": "ok",
+    "DSL::Shared::Actions::Spanish::Standard::PipelineCommand": "ok",
+    "DSL::Shared::Actions::WL::CommonStructures": "ok",
+    "DSL::Shared::Actions::WL::PredicateSpecification": "ok",
+    "DSL::Shared::Entity::Actions::Raku::System": "ok",
+    "DSL::Shared::Entity::Actions::WL::System": "ok",
+    "DSL::Shared::Entity::Grammar::EntityNames": "ok",
+    "DSL::Shared::Entity::ResourceAccess": "ok",
+    "DSL::Shared::Entity::ResourceAccessSingleton": "ok",
+    "DSL::Shared::Entity::ResourceAccessish": "ok",
+    "DSL::Shared::FiniteStateMachines::CoreFSM": "ok",
+    "DSL::Shared::Roles::Bulgarian::CommonSpeechParts": "ok",
+    "DSL::Shared::Roles::Bulgarian::ListManagementCommand": "ok",
+    "DSL::Shared::Roles::Bulgarian::PipelineCommand": "ok",
+    "DSL::Shared::Roles::Bulgarian::PredicateSpecification": "ok",
+    "DSL::Shared::Roles::Bulgarian::TimeIntervalSpec": "ok",
+    "DSL::Shared::Roles::Bulgarian::TimeIntervalSpeechParts": "ok",
+    "DSL::Shared::Roles::CommonStructures": "ok",
+    "DSL::Shared::Roles::English::CommonParts": "ok",
+    "DSL::Shared::Roles::English::CommonSpeechParts": "ok",
+    "DSL::Shared::Roles::English::GlobalCommand": "ok",
+    "DSL::Shared::Roles::English::ListManagementCommand": "ok",
+    "DSL::Shared::Roles::English::PipelineCommand": "ok",
+    "DSL::Shared::Roles::English::PredicateSpecification": "ok",
+    "DSL::Shared::Roles::English::RudimentaryUserOnboarding": "ok",
+    "DSL::Shared::Roles::English::TimeIntervalSpec": "ok",
+    "DSL::Shared::Roles::English::TimeIntervalSpeechParts": "ok",
+    "DSL::Shared::Roles::ErrorHandling": "ok",
+    "DSL::Shared::Roles::Portuguese::CommonSpeechParts": "ok",
+    "DSL::Shared::Roles::Portuguese::ListManagementCommand": "ok",
+    "DSL::Shared::Roles::Portuguese::PipelineCommand": "ok",
+    "DSL::Shared::Roles::Portuguese::PredicateSpecification": "ok",
+    "DSL::Shared::Roles::Portuguese::TimeIntervalSpec": "ok",
+    "DSL::Shared::Roles::Portuguese::TimeIntervalSpeechParts": "ok",
+    "DSL::Shared::Roles::PredicateSpecification": "ok",
+    "DSL::Shared::Roles::Russian::CommonSpeechParts": "ok",
+    "DSL::Shared::Roles::Russian::ListManagementCommand": "ok",
+    "DSL::Shared::Roles::Russian::PipelineCommand": "ok",
+    "DSL::Shared::Roles::Russian::PredicateSpecification": "ok",
+    "DSL::Shared::Utilities::CommandProcessing": "ok",
+    "DSL::Shared::Utilities::DeterminedWordsMatching": "ok",
+    "DSL::Shared::Utilities::FuzzyMatching": "ok",
+    "DSL::Shared::Utilities::MetaSpecsProcessing": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_SHARED/d022fef2bb857616568b46967958e319b132313d.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 33,
+    "baseline_files": 5,
+    "mutsu_assertions": 9,
+    "parity_files": 1,
+    "regressed_files": 4
+  },
+  "version": "0.2.11"
+}
