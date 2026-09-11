@@ -594,6 +594,10 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         break;
     }
 
+    // A type can refer to itself from its own methods. Register its name before
+    // parsing the body so `when Name { ... }` is recognized as a type matcher
+    // instead of a bareword call that gobbles the block.
+    super::super::simple::register_user_type(&name);
     let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         block(r)?
@@ -625,10 +629,6 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             _ => None,
         })
     });
-    // Register the class name so the parser can disambiguate identifiers
-    // from regex/substitution operators (e.g. `S` vs `S///`).
-    super::super::simple::register_user_type(&name);
-
     // Record `is export` operator methods so `import ClassName` teaches the
     // parser the new operator symbols (`method infix:<as> is export` makes `as`
     // a usable infix in code parsed after the `import`).
