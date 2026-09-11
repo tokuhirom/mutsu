@@ -96,7 +96,7 @@
     "MUGS::App::TUI::Translations::Test": "ok",
     "MUGS::App::TUI::UIPrefsMenu": "Variable $.dwSize used where no 'self' is available",
     "MUGS::UI::TUI": "Failed to parse module 'Terminal::Widgets::Widget': Unexpected block in infix position (missing statement control word before the expression?)",
-    "MUGS::UI::TUI::Game::PFX": "Failed to parse module 'Terminal::Print::Widget': X::Comp::Group: Function 'Terminal::Print::Widget' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in t",
+    "MUGS::UI::TUI::Game::PFX": "Variable $.dwSize used where no 'self' is available",
     "MUGS::UI::TUI::Layout::PrimaryMenu": "Variable $.dwSize used where no 'self' is available",
     "MUGS::UI::TUI::Layout::StandardScreen": "Variable $.dwSize used where no 'self' is available",
     "MUGS::UI::TUI::Logo": "ok"
@@ -106,7 +106,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

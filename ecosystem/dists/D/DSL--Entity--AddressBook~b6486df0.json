@@ -28,7 +28,7 @@
   "dist": "DSL::Entity::AddressBook",
   "files": [],
   "load": {
-    "DSL::Entity::AddressBook": "No such method 'lines' for invocant of type 'Any'",
+    "DSL::Entity::AddressBook": "ok",
     "DSL::Entity::AddressBook::Actions::SQL::Standard": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
     "DSL::Entity::AddressBook::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
     "DSL::Entity::AddressBook::Grammar::EntityNames": "ok",
@@ -39,7 +39,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

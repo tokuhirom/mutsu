@@ -23,13 +23,13 @@
   "dist": "Pop",
   "files": [],
   "load": {
-    "Pop": "expected statement: expected expected statement: expected expected statement: expected expression statement or ']'",
+    "Pop": "Runtime error: Failed to parse module 'Pop::Graphics': Regex not terminated.",
     "Pop::Color": "ok",
     "Pop::Config": "ok",
     "Pop::Drawable": "ok",
     "Pop::Entities": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or ']'",
-    "Pop::Graphics": "ok",
-    "Pop::Images": "ok",
+    "Pop::Graphics": "Runtime error: Failed to parse module 'Pop::Graphics': Regex not terminated.",
+    "Pop::Images": "Runtime error: Failed to parse module 'Pop::Images': Regex not terminated.",
     "Pop::Inputs": "expected statement: expected expected statement: expected expected statement: expected expression statement or ']'",
     "Pop::Point": "ok",
     "Pop::Rect": "ok",
@@ -40,14 +40,14 @@
     "Pop::Sprite": "ok",
     "Pop::Surface": "ok",
     "Pop::Texture": "ok",
-    "Pop::Textures": "An exception occurred while evaluating a CHECK"
+    "Pop::Textures": "Runtime error: Failed to parse module 'Pop::Textures': Regex not terminated."
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

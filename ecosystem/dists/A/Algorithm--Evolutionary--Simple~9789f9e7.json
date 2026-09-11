@@ -22,11 +22,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@chromosome2'; expected Positional but got Str (Seq|False False True False False True False False True True False True Fals",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@chromosome1'; expected Positional but got Str (Seq|True True True True True True True False False False True True False Fa",
         "nok": 32,
         "ok": 5,
         "plan": null,
-        "secs": 0.68,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 3.44,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.18,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 1.64,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 12.13,
+        "secs": 12.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.85,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,7 +139,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.25,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -149,7 +149,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.08,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +165,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -9,16 +9,40 @@
     "unresolved": []
   },
   "dist": "span",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::push",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "span": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?"
+    "span": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -29,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/PA/SPAN/5c9497d92d50510c3074b962144015eb16549acb.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.2"
 }

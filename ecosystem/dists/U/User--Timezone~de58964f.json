@@ -7,10 +7,78 @@
     "unresolved": []
   },
   "dist": "User::Timezone",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: override-user-timezone",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-override.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-fallback.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Intl::UserTimezone": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?",
-    "User::Timezone": "circular module dependency detected: User::Timezone -> User::Timezone::Windows -> User::Timezone::Windows",
+    "Intl::UserTimezone": "ok",
+    "User::Timezone": "ok",
     "User::Timezone::Linux": "ok",
     "User::Timezone::Mac": "ok",
     "User::Timezone::Windows": "ok"
@@ -20,7 +88,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -31,13 +99,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/SE/USER_TIMEZONE/0754aab7e7f762322322f95f4681a9e6e501b076.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 4,
+    "baseline_files": 3,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.3.3"
 }

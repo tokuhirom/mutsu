@@ -41,16 +41,16 @@
   "files": [],
   "load": {
     "CSS::TagSet": "ok",
-    "CSS::TagSet::Pango": "raku_also_fails",
-    "CSS::TagSet::TaggedPDF": "Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:",
-    "CSS::TagSet::XHTML": "Could not instantiate role 'CSS::TagSet' because it died with X::AdHoc; exception details:"
+    "CSS::TagSet::Pango": "expected statement: expected expected statement: expected right-hand expression after '=' or expected statement: expected expression statement or expression after comparison operator or expression aft",
+    "CSS::TagSet::TaggedPDF": "Could not instantiate role 'CSS::TagSet' because it died with X::Attribute::Regex; exception details:",
+    "CSS::TagSet::XHTML": "Could not instantiate role 'CSS::TagSet' because it died with X::Attribute::Regex; exception details:"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

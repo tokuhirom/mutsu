@@ -59,7 +59,7 @@
   "files": [],
   "load": {
     "HTML::Canvas": "raku_also_fails",
-    "HTML::Canvas::Gradient": "No such method 'key' for invocant of type 'Str'",
+    "HTML::Canvas::Gradient": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex",
     "HTML::Canvas::Graphic": "ok",
     "HTML::Canvas::Image": "ok",
     "HTML::Canvas::ImageData": "Variable $.sx used where no 'self' is available",
@@ -74,7 +74,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

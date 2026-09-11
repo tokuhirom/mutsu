@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 37,
-        "secs": 0.24,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 3.67,
+        "secs": 4.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Could not parse Docker file",
+        "first_failure": "Type Array does not support associative indexing.",
         "nok": 0,
-        "ok": 5,
+        "ok": 36,
         "plan": 49,
-        "secs": 0.32,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,30 +48,29 @@
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 2.46,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Could not parse Docker file",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.25,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/parse-complex.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.76,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +85,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -97,13 +96,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/OC/DOCKER_FILE/542465f8bf3ba68ab04f417ac63741eb6ef698a0.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 89,
     "baseline_files": 3,
-    "mutsu_assertions": 34,
-    "parity_files": 0,
-    "regressed_files": 3
+    "mutsu_assertions": 68,
+    "parity_files": 1,
+    "regressed_files": 2
   },
   "version": "1.1"
 }

@@ -41,17 +41,110 @@
     "unresolved": []
   },
   "dist": "LLM::Graph",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-initialization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 93.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-evaluation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-evaluation-async.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-spec-synonyms.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "LLM::Graph": "raku_also_fails",
-    "LLM::Graph::Formatish": "circular module dependency detected: LLM::Graph::Formatish -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function"
+    "LLM::Graph": "ok",
+    "LLM::Graph::Formatish": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -62,13 +155,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_GRAPH/619556bb84540b661e1b7e3fc4d0431a97ff2ea5.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 16,
+    "baseline_files": 4,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 4
   },
   "version": "0.1.1"
 }

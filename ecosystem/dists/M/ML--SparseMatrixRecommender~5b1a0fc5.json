@@ -16,7 +16,7 @@
   "dist": "ML::SparseMatrixRecommender",
   "files": [],
   "load": {
-    "ML::SparseMatrixRecommender": "Variable $.csr-struct used where no 'self' is available",
+    "ML::SparseMatrixRecommender": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or '.' or digits or generic radix literal or unicode numeric literal or ...",
     "ML::SparseMatrixRecommender::DocumentTermWeightish": "Variable $.csr-struct used where no 'self' is available",
     "ML::SparseMatrixRecommender::Utilities": "ok"
   },
@@ -25,7 +25,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

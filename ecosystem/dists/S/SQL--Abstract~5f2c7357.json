@@ -9,7 +9,7 @@
   "dist": "SQL::Abstract",
   "files": [],
   "load": {
-    "SQL::Abstract": "Failed to parse module 'SQL::Abstract': X::Comp::Group: Function 'self' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "SQL::Abstract": "Invalid typename 'Column::List(Any)' in parameter declaration.",
     "SQL::Placeholders": "ok",
     "SQL::Query": "ok"
   },
@@ -18,7 +18,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

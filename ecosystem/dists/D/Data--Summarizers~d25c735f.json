@@ -31,17 +31,17 @@
   "dist": "Data::Summarizers",
   "files": [],
   "load": {
-    "Data::Summarizers": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "Data::Summarizers::ParetoPrincipleStatistic": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Data::Summarizers": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "Data::Summarizers::ParetoPrincipleStatistic": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
     "Data::Summarizers::Predicates": "ok",
-    "Data::Summarizers::RecordsSummary": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+    "Data::Summarizers::RecordsSummary": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

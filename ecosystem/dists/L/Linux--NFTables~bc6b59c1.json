@@ -11,9 +11,100 @@
     "unresolved": []
   },
   "dist": "Linux::NFTables",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot locate native library 'resources/libraries/libnfthelper.so': resources/libraries/libnfthelper.so: dlopen failed",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-raw.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.71,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot locate native library 'resources/libraries/libnfthelper.so': resources/libraries/libnfthelper.so: dlopen failed",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-oo.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.66,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.45,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Linux::NFTables": "expected statement: expected expression after multiplicative operator or '.' or digits or generic radix literal or unicode numeric literal or ...",
+    "Linux::NFTables": "ok",
     "Linux::NFTables::Constants": "ok",
     "Linux::NFTables::Raw": "ok"
   },
@@ -22,7 +113,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -33,13 +124,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/IN/LINUX_NFTABLES/1142a605a13231915be89a4e93d2c28da4f66b16.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 8,
+    "baseline_files": 4,
+    "mutsu_assertions": 4,
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "0.0.3"
 }

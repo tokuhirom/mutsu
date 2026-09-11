@@ -46,19 +46,19 @@
   "dist": "ML::AssociationRuleLearning",
   "files": [],
   "load": {
-    "ML::AssociationRuleLearning": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "ML::AssociationRuleLearning::Apriori": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "ML::AssociationRuleLearning::Eclat": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "ML::AssociationRuleLearning::Measures": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "ML::AssociationRuleLearning::Preprocessing": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "ML::AssociationRuleLearning::RuleFinding": "Failed to parse module 'Pretty::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+    "ML::AssociationRuleLearning": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "ML::AssociationRuleLearning::Apriori": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "ML::AssociationRuleLearning::Eclat": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "ML::AssociationRuleLearning::Measures": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "ML::AssociationRuleLearning::Preprocessing": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "ML::AssociationRuleLearning::RuleFinding": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

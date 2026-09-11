@@ -43,8 +43,8 @@
   "dist": "ML::NLPTemplateEngine",
   "files": [],
   "load": {
-    "ML::NLPTemplateEngine": "circular module dependency detected: ML::NLPTemplateEngine -> ML::NLPTemplateEngine::Core -> ML::FindTextualAnswer -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
-    "ML::NLPTemplateEngine::Core": "circular module dependency detected: ML::NLPTemplateEngine::Core -> ML::FindTextualAnswer -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+    "ML::NLPTemplateEngine": "raku_also_fails",
+    "ML::NLPTemplateEngine::Core": "Unknown function: openai-base-url",
     "ML::NLPTemplateEngine::Ingestion": "ok"
   },
   "measured": {
@@ -52,7 +52,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

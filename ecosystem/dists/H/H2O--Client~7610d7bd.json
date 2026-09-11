@@ -16,15 +16,150 @@
     "unresolved": []
   },
   "dist": "H2O::Client",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 49.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "list positional access preserves selector order",
+        "nok": 1,
+        "ok": 19,
+        "plan": 20,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-client-frame.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 2.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-job.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::Undeclared::Symbols: Undeclared name:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-transport.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-rapids.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-import-file.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "H2O::Client": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client": "ok",
     "H2O::Client::Column": "ok",
     "H2O::Client::Connector": "ok",
     "H2O::Client::Exception": "ok",
-    "H2O::Client::Frame": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client::Frame": "ok",
     "H2O::Client::Job": "ok",
-    "H2O::Client::Rapids::Expr": "Failed to parse module 'H2O::Client::Rapids::Expr': X::Comp::Group: Function 'H2O::Client::Rapids::Expr' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available ",
+    "H2O::Client::Rapids::Expr": "ok",
     "H2O::Client::Rapids::GroupBy": "ok",
     "H2O::Client::Transport": "ok"
   },
@@ -33,7 +168,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -44,13 +179,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/2O/H2O_CLIENT/78b5b8bdafee218d82305c102c86b798fb10af1f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 57,
+    "baseline_files": 6,
+    "mutsu_assertions": 53,
+    "parity_files": 4,
+    "regressed_files": 2
   },
   "version": "0.0.2"
 }

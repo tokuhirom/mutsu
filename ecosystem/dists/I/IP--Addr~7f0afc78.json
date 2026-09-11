@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.31,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 0.23,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 6.97,
+        "secs": 6.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +60,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "plain expanded",
-        "nok": 19,
-        "ok": 11,
+        "first_failure": "IPv4 mapped",
+        "nok": 4,
+        "ok": 26,
         "plan": 30,
-        "secs": 0.99,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 3.55,
+        "secs": 3.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.79,
+        "secs": 3.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.41,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.39,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 33,
-        "secs": 0.57,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 3.33,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +156,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 0.33,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,29 +166,6 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Confused. expected statement: expected expression statement or listop argument expression or expected statement: expected expression statement or listop argument expression or expression after infix o",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/040-ipv4-ops.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
         "secs": 1.26,
         "skip": 0,
         "todo": 0,
@@ -202,7 +179,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.29,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/040-ipv4-ops.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expression statement or listop argument expression or expected statement: expected expression statement or listop argument expression or expression after infix o",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.35,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +225,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.43,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.95,
+        "secs": 2.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -254,7 +254,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -269,7 +269,7 @@
   "totals": {
     "baseline_assertions": 105,
     "baseline_files": 9,
-    "mutsu_assertions": 11,
+    "mutsu_assertions": 26,
     "parity_files": 0,
     "regressed_files": 9
   },

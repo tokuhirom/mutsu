@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.72,
+        "secs": 0.51,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.74,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.14,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,9 +67,9 @@
       "path": "t/02-this_machine.t",
       "raku": {
         "nok": 0,
-        "ok": 91,
-        "plan": 91,
-        "secs": 0.92,
+        "ok": 62,
+        "plan": 62,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 0.14,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 332,
         "plan": 332,
-        "secs": 0.94,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 26,
-        "secs": 0.15,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.79,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +131,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -144,7 +144,7 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 452,
+    "baseline_assertions": 423,
     "baseline_files": 5,
     "mutsu_assertions": 9,
     "parity_files": 2,

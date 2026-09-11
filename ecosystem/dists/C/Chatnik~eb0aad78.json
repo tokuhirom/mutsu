@@ -38,40 +38,16 @@
     "unresolved": []
   },
   "dist": "Chatnik",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "circular module dependency detected: Chatnik -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/00-sanity.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 10.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Chatnik": "raku_also_fails"
+    "Chatnik": "Failed to slurp '(Any)': No such file or directory (os error 2)"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -82,13 +58,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/HA/CHATNIK/8459f036001a69e1fd60886a60137cc4b36a7bc0.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 2,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.7"
 }

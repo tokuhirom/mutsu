@@ -11,9 +11,102 @@
     "unresolved": []
   },
   "dist": "JobQueue",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 24,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-queue.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 17.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-coordinator.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 5.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-failed-registry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-injection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "JobQueue": "Redeclaration of routine 'keep-once'. Did you mean to declare a multi-sub?",
+    "JobQueue": "ok",
     "JobQueue::Coordinator": "ok",
     "JobQueue::EventSink": "ok",
     "JobQueue::FailedRegistry": "ok",
@@ -26,7 +119,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -37,13 +130,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/OB/JOBQUEUE/7ddc5816bf1db6f0ccd69c417dd354229fa003f3.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 51,
+    "baseline_files": 4,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 4
   },
   "version": "0.1.1"
 }

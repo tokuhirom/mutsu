@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 36,
-        "secs": 0.25,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 36,
         "plan": 36,
-        "secs": 2.46,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 2,
         "ok": 546,
         "plan": 548,
-        "secs": 2.04,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 548,
         "plan": 548,
-        "secs": 1.4,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 8,
         "ok": 16,
         "plan": 24,
-        "secs": 0.25,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.62,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 5,
         "ok": 11,
         "plan": 16,
-        "secs": 0.24,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -101,16 +101,15 @@
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Less: 1.0alpha Any cmp 1.0 upper",
-        "nok": 1,
-        "ok": 17,
+        "nok": 0,
+        "ok": 30,
         "plan": 30,
-        "secs": 0.19,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-bound.rakutest",
       "raku": {
@@ -130,7 +129,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 17,
-        "secs": 0.14,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +139,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.59,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +152,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 0.12,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -163,7 +162,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.48,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +177,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -189,13 +188,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/V/ER/VERSION_REPOLOGY/f248aa91c959df4c0334783468ecc772f06951d6.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 701,
     "baseline_files": 7,
-    "mutsu_assertions": 598,
-    "parity_files": 0,
-    "regressed_files": 7
+    "mutsu_assertions": 611,
+    "parity_files": 1,
+    "regressed_files": 6
   },
   "version": "0.0.5"
 }

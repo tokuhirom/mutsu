@@ -13,14 +13,14 @@
   "dist": "List::AllUtils",
   "files": [],
   "load": {
-    "List::AllUtils": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?"
+    "List::AllUtils": "No such method 'key' for invocant of type 'Stash'"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
