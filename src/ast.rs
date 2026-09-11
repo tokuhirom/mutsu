@@ -1362,6 +1362,9 @@ pub(crate) enum Stmt {
         name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
         is_export: bool,
+        /// Export tags declared by `is export`, or empty for an untagged enum.
+        #[serde(default)]
+        export_tags: Vec<String>,
         /// Whether declared with an explicit `my` scope (lexical). A `my enum`
         /// is private to its enclosing scope and, unlike a default our-scoped
         /// enum, is allowed inside a role body.

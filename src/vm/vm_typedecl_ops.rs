@@ -67,6 +67,7 @@ impl Interpreter {
             name,
             variants,
             is_export,
+            export_tags,
             is_my,
             base_type,
             roles,
@@ -82,6 +83,7 @@ impl Interpreter {
                     &name.resolve(),
                     variants,
                     *is_export,
+                    export_tags,
                     base_type.as_deref(),
                     roles,
                 )
