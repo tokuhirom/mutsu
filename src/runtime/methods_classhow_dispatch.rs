@@ -576,7 +576,12 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
                     ValueView::RakuAst(node) => node.class.printed_name().to_string(),
-                    _ => return Ok(Value::int(0)),
+                    // Concrete builtin values do not have a Package view, but
+                    // their dispatch owner chain carries the same nominal
+                    // ancestry as the corresponding type object.  Use that
+                    // chain instead of treating every concrete receiver as an
+                    // unrelated type.
+                    _ => self.mop_receiver_owner(&args[0]),
                 };
                 let other_name = match args[1].view() {
                     ValueView::Package(name) => name.resolve(),
