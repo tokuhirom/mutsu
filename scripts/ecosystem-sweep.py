@@ -39,7 +39,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(REPO, "ecosystem")
 DISTS_DIR = os.path.join(DATA_DIR, "dists")
 SCHEMA = 1
-HARNESS = 1
+HARNESS = 2
+
+# How much more time the one retry after a timeout gets. See measure().
+TIMEOUT_RETRY_FACTOR = 2
 
 # `use Test` must reach the vendored upstream Test.rakumod on both sides, or the
 # two are counting `ok` lines emitted by different harnesses. The module exports
@@ -96,18 +99,49 @@ def measure(cmd, cwd, timeout, sandbox, sbx_home, writable, attempts):
     A suite that flakes must not move the KPI, and retrying everything would
     triple the cost of a green corpus -- so the retry is spent only where the
     answer was not already 'pass'. Returns (side, flaky).
+
+    A timeout is the one verdict a same-budget retry can never learn anything
+    from. A genuine hang hangs again; and a file whose own runtime sits at the
+    budget is phase-locked into timing out again, because the thing that
+    decides its runtime also decides when the previous attempt ended.
+    DateTime::React's `t/01-basic.t` is the worked example: it sleeps until two
+    minute rollovers have fired, so it runs for `121 - second-of-minute`
+    seconds and therefore *always* ends at second-of-minute 1 -- which makes
+    every following run of it start at the one phase where it needs ~120.1s,
+    just over the default budget. Measured end-to-end, the file passes 8/8
+    under both interpreters; the sweep was throwing that away three times in a
+    row and stamping the survivor `flaky`.
+
+    So the first timeout buys a single retry at TIMEOUT_RETRY_FACTOR times the
+    budget, and does not itself count towards `flaky`: until a longer run has
+    disproved it, a timeout is a statement about the budget, not about the
+    file. If the longer run passes, the file was never non-deterministic, only
+    slower than the default. If it times out too, that is believed and the loop
+    stops -- so a real hang costs no more wall clock than the two same-budget
+    retries this replaces.
     """
     best = None
     verdicts = set()
+    budget = timeout
     for _ in range(attempts):
         start = dt.datetime.now()
-        rc, out = run(cmd, cwd, timeout, sandbox, sbx_home, writable)
+        rc, out = run(cmd, cwd, budget, sandbox, sbx_home, writable)
         side = side_result(rc, out, (dt.datetime.now() - start).total_seconds())
-        verdicts.add(side["verdict"])
-        if best is None or side["verdict"] == "pass":
+        timed_out = side["verdict"] == "timeout"
+        budget_limited = timed_out and budget == timeout and attempts > 1
+        if not budget_limited:
+            verdicts.add(side["verdict"])
+        # A budget-limited timeout is the weakest verdict there is, so any
+        # later attempt -- a pass, or a `die` that says what actually broke --
+        # replaces it.
+        if best is None or side["verdict"] == "pass" or best["verdict"] == "timeout":
             best = side
         if side["verdict"] == "pass":
             break
+        if timed_out:
+            if not budget_limited:
+                break
+            budget = timeout * TIMEOUT_RETRY_FACTOR
     return best, len(verdicts) > 1
 
 
@@ -703,5 +737,86 @@ def bundled_modules() -> set[str]:
     return names
 
 
+# --- self-test ---------------------------------------------------------------
+
+def _self_test() -> int:
+    """`python3 scripts/ecosystem-sweep.py --self-test`
+
+    Covers measure()'s retry budget, the one piece of this harness whose bugs
+    are invisible in the records it writes: a file wrongly called `timeout` just
+    disappears from the KPI, which looks exactly like a distribution that has
+    no baseline.
+    """
+    global run
+    real_run = run
+    failures = []
+
+    def check(name, cond):
+        print(f"{'ok' if cond else 'NOT OK'} - {name}")
+        if not cond:
+            failures.append(name)
+
+    def scripted(*plan):
+        """Stub `run` from a list of (budget_needed, output) pairs: the attempt
+        times out unless the budget it was given covers budget_needed."""
+        calls = []
+
+        def fake(cmd, cwd, timeout, sandbox, sbx_home, writable=()):
+            needed, out = plan[min(len(calls), len(plan) - 1)]
+            calls.append(timeout)
+            if needed > timeout:
+                return None, "SWEEP-TIMEOUT"
+            return 0, out
+        return fake, calls
+
+    passing = "ok 1 - fine\n1..1\n"
+    dying = "Died horribly\n"
+
+    # A file that needs a little more than the budget -- DateTime::React's
+    # t/01-basic.t -- must end up `pass`, and must NOT be called flaky: it is
+    # slow, not non-deterministic.
+    run, calls = scripted((130, passing))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 3)
+    check("slow file passes on the escalated retry", side["verdict"] == "pass")
+    check("slow file is not flaky", flaky is False)
+    check("escalated retry doubled the budget", calls == [120, 240])
+
+    # A genuine hang is still a timeout, and costs one escalated retry rather
+    # than two same-budget ones.
+    run, calls = scripted((10**9, passing))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 3)
+    check("a hang is still a timeout", side["verdict"] == "timeout")
+    check("a hang stops after the escalated retry", calls == [120, 240])
+
+    # A pass first time costs exactly one run, and retries are still spent on
+    # genuinely flaky non-timeout verdicts.
+    run, calls = scripted((0, passing))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 3)
+    check("a passing file runs once", calls == [120] and side["verdict"] == "pass")
+
+    run, calls = scripted((0, dying), (0, passing))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 3)
+    check("a die still retries at the same budget", calls == [120, 120])
+    check("die-then-pass is flaky", flaky is True and side["verdict"] == "pass")
+
+    # A timeout followed by a real failure reports the failure: the timeout was
+    # only ever a statement about the budget.
+    run, calls = scripted((130, dying))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 3)
+    check("a later verdict replaces a budget-limited timeout", side["verdict"] == "die")
+
+    # With no retry budget at all, nothing is escalated.
+    run, calls = scripted((130, passing))
+    side, flaky = measure(["x"], ".", 120, None, None, (), 1)
+    check("attempts=1 does not escalate", calls == [120] and side["verdict"] == "timeout")
+
+    run = real_run
+    print(f"ecosystem-sweep self-test: "
+          f"{'all cases pass' if not failures else f'{len(failures)} FAILED'}")
+    return 1 if failures else 0
+
+
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        raise SystemExit(_self_test())
     raise SystemExit(main())

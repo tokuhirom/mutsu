@@ -120,6 +120,20 @@ than leaving it to the operator:
    varies across attempts is marked `flaky: true` and excluded from the KPI on
    both sides. Only failures are retried, so the cost is proportional to the
    problem.
+8. **A timeout is a claim about the budget until a longer run disproves it.**
+   Re-running a timed-out file on the *same* budget is the one retry that can
+   never learn anything: a hang hangs again, and a file whose own runtime sits
+   at the budget is phase-locked into timing out again, because whatever sets
+   its runtime also sets when the previous attempt ended. So the first timeout
+   buys one retry at twice the budget and is not counted towards `flaky`; a
+   file that times out at the larger budget is believed and the retries stop,
+   which costs a genuine hang no more wall clock than the same-budget retries
+   it replaces. `DateTime::React`'s `t/01-basic.t` is the case that forced this
+   (`news/2026-09/`): it sleeps through two minute rollovers, so it runs for
+   `121 - second-of-minute` seconds and therefore always *ends* at
+   second-of-minute 1 — putting every following run at the one phase where it
+   needs ~120.1s, just over the 120s default. It passes 8/8 on both
+   interpreters; the sweep was discarding it as `flaky`.
 
 ## 3. Dependencies — a flat `-I` closure, resolved offline
 
@@ -214,7 +228,7 @@ never hand-edited — a conflict in them is resolved by regenerating, not mergin
     "date": "2026-09-10",
     "mutsu_commit": "66a1e4e", "mutsu_version": "0.23.0",
     "raku_version": "2026.07", "raku_backend": "moar 2026.07",
-    "host": "linux-x86_64", "sandbox": "bwrap", "harness": 1
+    "host": "linux-x86_64", "sandbox": "bwrap", "harness": 2
   },
   "deps": { "mode": "flat-closure", "digest": "sha256:…",
             "resolved": ["Foo::Bar"], "unresolved": [], "bundled_would_supply": [] },
@@ -279,7 +293,8 @@ scripts/ecosystem-sweep.py --all --jobs 8
 scripts/ecosystem-sweep.py --rollup
 ```
 
-Other flags: `--timeout` (default 120s/file, both sides), `--max-files` (per
+Other flags: `--timeout` (default 120s/file, both sides — a file that exhausts
+it gets one retry at twice the budget, see §2.8), `--max-files` (per
 dist, to bound a pathological suite), `--include-xt`, `--sandbox {bwrap,none}`,
 `--no-index-snapshot` (see below),
 `--mutsu-only` (see *Baseline caching* below), `--refresh-baseline`, `--dry-run` (resolve and print the
@@ -573,7 +588,9 @@ form `gha-ubuntu24-4c`, so they are never silently mixed with locally-measured
 ones. A hosted runner has ~4 cores, so `--timeout 120` bites earlier in
 wall-clock terms than on a 12-core box — symmetrically for both interpreters, so
 such a file lands in `no_baseline` rather than being charged to mutsu, but it
-does make the measurable baseline slightly smaller than a local sweep's.
+does make the measurable baseline slightly smaller than a local sweep's. The
+escalated retry of §2.8 recovers the files that only just exhaust the budget,
+which is most of what that gap was.
 
 If the pull request opens with no CI running on it, the repository's GitHub App
 credentials (`TAGPR_APP_CLIENT_ID` / `TAGPR_APP_PRIVATE_KEY`) are not configured
@@ -603,4 +620,7 @@ clone to start CI.
   red. Attractive, out of scope here.
 - **Timing/concurrency suites** (S17-flavoured) are the expected home of
   `flaky: true`; if the retry rule proves insufficient, quarantine them the way
-  `flaky-tests.txt` quarantines local tests rather than weakening the KPI.
+  `flaky-tests.txt` quarantines local tests rather than weakening the KPI. Rule
+  out §2.8 first: a suite that is merely *slow* used to arrive here wearing the
+  same label, and a `flaky: true` whose only non-passing verdict was a timeout
+  is that case, not a timing bug.
