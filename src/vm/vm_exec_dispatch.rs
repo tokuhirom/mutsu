@@ -3488,7 +3488,8 @@ impl Interpreter {
                             // under, and `.map`/`.grep`'s own native loop
                             // already enforces `use fatal` at the correct,
                             // per-element time.
-                            // Sinking a Proc with non-zero exitcode throws X::Proc::Unsuccessful
+                            // Sinking an unsuccessful Proc (non-zero exitcode, or killed
+                            // by a signal) throws X::Proc::Unsuccessful
                             if let ValueView::Instance {
                                 class_name,
                                 attributes,
@@ -3508,12 +3509,15 @@ impl Interpreter {
                                     attributes.as_map().get("live").map(Value::view),
                                     Some(ValueView::Bool(true))
                                 );
-                                if exitcode != 0 && !is_live {
-                                    let signal =
-                                        match attributes.as_map().get("signal").map(Value::view) {
-                                            Some(ValueView::Int(i)) => i,
-                                            _ => 0,
-                                        };
+                                let signal =
+                                    match attributes.as_map().get("signal").map(Value::view) {
+                                        Some(ValueView::Int(i)) => i,
+                                        _ => 0,
+                                    };
+                                // A signal-killed child reports `exitcode = 0`
+                                // (see `exit_status_parts`), so the signal is
+                                // the only evidence that it was unsuccessful.
+                                if (exitcode != 0 || signal != 0) && !is_live {
                                     let command = attributes
                                         .as_map()
                                         .get("command")

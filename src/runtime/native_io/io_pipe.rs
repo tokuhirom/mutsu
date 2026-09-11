@@ -169,17 +169,7 @@ impl Interpreter {
                         None
                     };
                     let (exitcode, signal): (i64, i64) = match state.child.wait() {
-                        Ok(status) => {
-                            let ec = status.code().unwrap_or(-1) as i64;
-                            #[cfg(unix)]
-                            let sig = {
-                                use std::os::unix::process::ExitStatusExt;
-                                status.signal().unwrap_or(0) as i64
-                            };
-                            #[cfg(not(unix))]
-                            let sig = 0i64;
-                            (ec, sig)
-                        }
+                        Ok(status) => super::builtins_system::exit_status_parts(&status),
                         Err(_) => (-1i64, 0i64),
                     };
                     if let Ok(mut fmap) = super::builtins_system::finalized_proc_map().lock() {

@@ -88,11 +88,18 @@ impl Value {
                 ..
             } => {
                 if class_name == "Proc" {
-                    // Proc is truthy when exitcode == 0
-                    return match attributes.as_map().get("exitcode").map(Value::view) {
+                    // Proc is truthy when the child both exited with 0 and was
+                    // not killed by a signal (a signal death reports
+                    // `exitcode = 0`, so the exit code alone is not enough).
+                    let exited_clean = match attributes.as_map().get("exitcode").map(Value::view) {
                         Some(ValueView::Int(code)) => code == 0,
                         _ => false,
                     };
+                    let signal = match attributes.as_map().get("signal").map(Value::view) {
+                        Some(ValueView::Int(sig)) => sig,
+                        _ => 0,
+                    };
+                    return exited_clean && signal == 0;
                 }
                 if class_name == "Failure" {
                     return false;
