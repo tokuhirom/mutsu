@@ -23,10 +23,25 @@
 //! fallback consolidation (E1c) is still out of scope here.
 
 use super::*;
-use crate::builtins::builtin_type_catalog::builtin_type_info;
+use crate::builtins::builtin_type_catalog::{builtin_type_info, builtin_type_mro_ids};
 use crate::type_id::{TypeId, well_known_types};
 use crate::value::ValueView;
+use std::borrow::Cow;
 use std::sync::Arc;
+
+/// An ordered owner chain, borrowed from the builtin-type catalog whenever the
+/// receiver's ancestry IS one of the catalog's rows.
+///
+/// Most receivers a dispatch classifies are plain builtin values (`Str`, `Int`,
+/// `Bool`, ...), whose chain is a constant the catalog already holds interned
+/// ([`crate::builtins::builtin_type_catalog::builtin_type_mro_ids`]). Returning
+/// an owned `Vec` meant allocating, copying and freeing that constant on every
+/// such dispatch — and every consumer only ever reads it (`.first()`,
+/// `.iter()`, `&chain` into `resolve_sequence`), so none of them needed to own
+/// one. The composed cases (an Enum's `[EnumType, ...base]`, a role mixin's
+/// role prefix, a user class's registry MRO plus catalog tail) still build a
+/// `Vec` and hand it over as `Cow::Owned` (#7766).
+pub(crate) type Chain = Cow<'static, [TypeId]>;
 
 /// Whether a receiver is a concrete value or a type object (`Foo` vs `Foo.new`).
 /// Mirrors the `:D`/`:U` smiley distinction; consulted by E4, not by any E1a probe.
@@ -108,20 +123,21 @@ impl Interpreter {
     /// its chain stops at itself and the cursor would relate to no type
     /// whatsoever. Rather than leave that hole, assert the invariant here — the
     /// one place a cursor's dispatch chain is computed.
-    fn ensure_match_in_chain(&mut self, mut chain: Vec<TypeId>) -> Vec<TypeId> {
+    fn ensure_match_in_chain(&mut self, chain: Chain) -> Chain {
         if chain.iter().any(|t| t.as_str() == "Match") {
             return chain;
         }
         let tail = self.class_chain("Match");
+        let mut chain = chain.into_owned();
         chain.retain(|t| !tail.contains(t));
-        chain.extend(tail);
-        chain
+        chain.extend_from_slice(&tail);
+        Cow::Owned(chain)
     }
 
     /// The full ordered owner chain (self first, `Mu` last except `Junction`, which
     /// raku itself skips `Any` for — see the catalog's `Junction` row) for `value`'s
     /// dispatch receiver.
-    pub(crate) fn dispatch_mro(&mut self, value: &Value) -> Vec<TypeId> {
+    pub(crate) fn dispatch_mro(&mut self, value: &Value) -> Chain {
         // Tag probe first: a lazy `Match` decodes to a `ValueView::Instance`
         // (see `value/nanbox/peek.rs`), which the `Instance` arm below would
         // answer with the same `class_chain` anyway — checking the tag avoids
@@ -149,11 +165,11 @@ impl Interpreter {
                     Some(cached) => self.dispatch_mro(&cached),
                     // Mirrors `value_type_name`'s uncached-thunk answer ("Scalar"),
                     // which is not itself a raku type — best-effort fallback only.
-                    None => vec![
+                    None => Cow::Owned(vec![
                         TypeId::intern("Scalar"),
                         well_known_types().any,
                         well_known_types().mu,
-                    ],
+                    ]),
                 }
             }
 
@@ -199,12 +215,12 @@ impl Interpreter {
                 enum_type, value, ..
             } => {
                 let mut chain = vec![TypeId::from_symbol(enum_type)];
-                chain.extend(self.catalog_chain_for_name(match value {
+                chain.extend_from_slice(&self.catalog_chain_for_name(match value {
                     crate::value::EnumValue::Str(_) => "Str",
                     crate::value::EnumValue::Int(_) => "Int",
                     crate::value::EnumValue::Generic(_) => "Any",
                 }));
-                chain
+                Cow::Owned(chain)
             }
 
             // Role mixins / allomorphs (V2, V4): see `mixin_chain`.
@@ -230,15 +246,20 @@ impl Interpreter {
     /// Falls back to a best-effort `[name, Any, Mu]` chain for names the catalog does
     /// not model (mutsu-internal types with no raku equivalent, e.g. `CustomType`) —
     /// never hit for a catalog-covered type.
-    fn catalog_chain_for_name(&self, name: &str) -> Vec<TypeId> {
-        if let Some(info) = builtin_type_info(name) {
-            return info.mro.iter().map(|s| TypeId::intern(s)).collect();
+    fn catalog_chain_for_name(&self, name: &str) -> Chain {
+        // The catalog's chains are interned once per process
+        // (`builtin_type_mro_ids`) and handed out BORROWED; this used to
+        // re-intern every ancestor name into a fresh `Vec` on every dispatch
+        // that reached it, which was the single largest `Symbol::intern` caller
+        // in the vendored `Test` assertion loop (#7766).
+        if let Some(mro) = builtin_type_mro_ids(name) {
+            return Cow::Borrowed(mro);
         }
         let normalized = crate::runtime::utils::normalize_buf_type_name(name);
         if normalized != name
-            && let Some(info) = builtin_type_info(&normalized)
+            && let Some(mro) = builtin_type_mro_ids(&normalized)
         {
-            return info.mro.iter().map(|s| TypeId::intern(s)).collect();
+            return Cow::Borrowed(mro);
         }
         // A parametrized name (`Array[Int]`, `array[int32]`, `CArray[uint8]`)
         // not itself in the catalog: strip the `[...]` argument and splice the
@@ -248,34 +269,34 @@ impl Interpreter {
         // dead-ended at itself, never reaching `Array`/`List`/`Any`/`Mu`.
         if let Some((base, _)) = name.split_once('[')
             && name.ends_with(']')
-            && let Some(info) = builtin_type_info(base)
+            && let Some(mro) = builtin_type_mro_ids(base)
         {
             let mut chain = vec![TypeId::intern(name)];
-            chain.extend(info.mro.iter().map(|s| TypeId::intern(s)));
-            return chain;
+            chain.extend_from_slice(mro);
+            return Cow::Owned(chain);
         }
-        vec![
+        Cow::Owned(vec![
             TypeId::intern(name),
             well_known_types().any,
             well_known_types().mu,
-        ]
+        ])
     }
 
     /// The dispatch chain for an Instance/Package/ParametricRole named `name`: a
     /// builtin-catalog chain if `name` (or its Buf/Blob-normalized form) is a catalog
     /// type, otherwise the registry's class MRO with a catalog tail spliced on where
     /// a builtin ancestor (e.g. a user class `is Array`) does not already carry one.
-    fn class_chain(&mut self, name: &str) -> Vec<TypeId> {
-        if let Some(info) = builtin_type_info(name) {
-            return info.mro.iter().map(|s| TypeId::intern(s)).collect();
+    fn class_chain(&mut self, name: &str) -> Chain {
+        if let Some(mro) = builtin_type_mro_ids(name) {
+            return Cow::Borrowed(mro);
         }
         let normalized = crate::runtime::utils::normalize_buf_type_name(name);
         if normalized != name
-            && let Some(info) = builtin_type_info(&normalized)
+            && let Some(mro) = builtin_type_mro_ids(&normalized)
         {
-            return info.mro.iter().map(|s| TypeId::intern(s)).collect();
+            return Cow::Borrowed(mro);
         }
-        self.class_chain_with_catalog_tail(name)
+        Cow::Owned(self.class_chain_with_catalog_tail(name))
     }
 
     /// The registry MRO for `class_name`, with a builtin catalog's tail spliced in the
@@ -303,8 +324,11 @@ impl Interpreter {
                     // would silently drop everything past this builtin ancestor.
                     chain.extend(reg_mro[i + 1..].iter().map(|s| TypeId::from_symbol(*s)));
                 } else {
-                    for tail_name in &info.mro[1..] {
-                        let tid = TypeId::intern(tail_name);
+                    // Same row, pre-interned: `builtin_type_mro_ids` and
+                    // `builtin_type_info` are two views of one table entry, so
+                    // the row's presence above guarantees this lookup hits.
+                    let row_ids = builtin_type_mro_ids(sym.as_str()).unwrap_or_default();
+                    for &tid in row_ids.iter().skip(1) {
                         if !chain.contains(&tid) {
                             chain.push(tid);
                         }
@@ -334,7 +358,7 @@ impl Interpreter {
         &mut self,
         inner: &Arc<Value>,
         mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
-    ) -> Vec<TypeId> {
+    ) -> Chain {
         // `allomorph_type_name` is the single oracle for "is this map an
         // allomorph?"; this used to re-derive the answer from
         // `mixins.contains_key("Str")` plus a local inner-type match, which
@@ -367,8 +391,8 @@ impl Interpreter {
             .into_iter()
             .map(|(_, name)| TypeId::intern(name))
             .collect();
-        chain.extend(self.dispatch_mro(inner.as_ref()));
-        chain
+        chain.extend_from_slice(&self.dispatch_mro(inner.as_ref()));
+        Cow::Owned(chain)
     }
 
     /// ADR-0019 **E1b**: the dispatch-owner chain for a **non-Instance,
@@ -396,7 +420,7 @@ impl Interpreter {
     /// Allomorphs (`<1/3>`, `IntStr` et al.) are exempted from the skip: their
     /// classifier chain already starts with the allomorph type itself, not a
     /// role, so `dispatch_mro`'s answer is already correct.
-    pub(crate) fn dispatch_owner_chain(&mut self, value: &Value) -> Vec<TypeId> {
+    pub(crate) fn dispatch_owner_chain(&mut self, value: &Value) -> Chain {
         // Tag probe first (`is_mixin_value`): almost every receiver is not a
         // Mixin, and forcing `view()` here would materialize a lazy Match for
         // nothing — `dispatch_mro` below already has its own lazy-Match fast
