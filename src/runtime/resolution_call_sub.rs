@@ -313,6 +313,19 @@ impl Interpreter {
             {
                 return res;
             }
+            // A cursor-protocol method value (`Match.^lookup("!cursor_init")`,
+            // #7883) is a METHOD, and `Match` is a builtin type with no
+            // `registry().classes` entry -- so the `has_class` method-dispatch
+            // fallback further down never fires for it and the name fell
+            // through to "Unknown function". Re-dispatch it on its first
+            // argument, which is the type object the cursor belongs to.
+            if super::regex::regex_cursor::is_cursor_protocol_method(&name.resolve())
+                && !args.is_empty()
+            {
+                let mut args = args;
+                let invocant = args.remove(0);
+                return self.call_method_with_values(invocant, &name.resolve(), args);
+            }
             if !package.is_empty() && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
