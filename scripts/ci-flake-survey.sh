@@ -10,11 +10,15 @@
 #   1. per-test failure tally, split by "job spread"
 #   2. the quarantine-relevant subset (single-job and/or push:main failures)
 #
-# Why the job spread matters: every PR runs the same suite three times, in the
-# `test`, `gc-stress` and `jit-stress` jobs. A genuine regression fails in all
-# three (the code is broken in every configuration). A test that fails in only
-# ONE of the three, with the other two green on the same commit, is by
-# construction non-deterministic -- the binary and the inputs were identical.
+# Why the job spread matters: every PR runs the same suite three times, in three
+# configurations (default, GC on, JIT hot). Since ci.yml split each of those
+# into a TAP half and a roast half, the three jobs that run a given file are
+# `test-suites` / `gc-stress-tap` / `jit-stress-tap` for a t/ file and
+# `test-suites` / `gc-stress-roast` / `jit-stress-roast` for a roast file. A
+# genuine regression fails in all three (the code is broken in every
+# configuration). A test that fails in only ONE of the three, with the other two
+# green on the same commit, is by construction non-deterministic -- the binary
+# and the inputs were identical.
 # A failure on a `push: main` run is an even stronger signal: main is protected,
 # so that exact tree already passed the full suite on its PR minutes earlier.
 #
@@ -51,6 +55,15 @@ while IFS=$'\t' read -r run_id event branch; do
     -q '.jobs[] | select(.conclusion=="failure") | [(.id|tostring), .name] | @tsv' 2>/dev/null)
   [ -z "$jobs" ] && continue
   while IFS=$'\t' read -r job_id job_name; do
+    case "$job_name" in
+      test | gc-stress | jit-stress)
+        # Aggregator jobs (see ci.yml): they run no tests and go red only to
+        # mirror a half that did. Their logs contain no failure of their own,
+        # so counting them would add a phantom "(no test-level failure found)"
+        # row to every genuine failure.
+        continue
+        ;;
+    esac
     log="$LOGDIR/$job_id.log"
     if [ ! -s "$log" ]; then
       gh api "repos/$REPO/actions/jobs/$job_id/logs" > "$log" 2>/dev/null
@@ -117,7 +130,7 @@ END {
 
 echo
 echo "Legend:"
-echo "  1-JOB     failed in exactly one of test/gc-stress/jit-stress on that run"
+echo "  1-JOB     failed in exactly one of the three configurations on that run"
 echo "            -> same binary, same inputs, different verdict = non-deterministic"
 echo "  N-JOB     failed in several jobs of the same run -> almost always a real regression"
 echo "  MAIN-PUSH failed on a push to main, i.e. on a tree that had just passed CI"

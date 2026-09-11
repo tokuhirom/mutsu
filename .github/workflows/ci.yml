@@ -18,8 +18,38 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# ── The shape of this workflow ──────────────────────────────────────────────
+#
+# `changes` classifies the diff, `build` compiles the release binary ONCE, and
+# every job that only *runs* the interpreter downloads that binary instead of
+# compiling its own. The three heavyweight units are each split into the half
+# that needs a compiler and the half that needs a suite, so a red check names
+# what broke instead of pointing at fifteen minutes of unrelated work:
+#
+#   build ──┬─> test-suites ─────┬─> test        (required)
+#           │   test-check ──────┘
+#           ├─> gc-stress-roast ─┬─> gc-stress   (required)
+#           │   gc-stress-tap ───┘
+#           └─> jit-stress-roast ┬─> jit-stress
+#               jit-stress-tap ──┘
+#
+# `test`, `gc-stress` and `jit-stress` are AGGREGATORS: they run no tests and
+# exist for their NAMES. Branch protection's required status checks are job
+# names (`test`, `wasm-e2e`, `gc-stress`), and a required check that is never
+# created does not fail the PR -- it leaves it pending forever, unmergeable,
+# with no error anywhere. So the halves take new names and the required names
+# stay put, which needs no branch-protection change. If you split, rename or
+# remove a job here, check its name against branch protection FIRST, and
+# verify on the PR itself that the required checks still appear.
+#
+# Each aggregator runs `if: always()` and fails unless every job it depends on
+# reports `success` -- including `build`, so a build failure cannot reach the
+# required check as an innocent-looking `skipped`. The one case where skipping
+# is success is a documentation-only change, and the aggregator recognises that
+# from the `changes` output rather than inferring it from a skip.
+
 jobs:
-  # Classifies the change as documentation-only so the five build jobs below
+  # Classifies the change as documentation-only so the build jobs below
   # can skip themselves. Roughly one commit in six touches only prose and
   # records -- docs/, news/, TODO_roast/, .agents/, ecosystem/, a top-level
   # *.md -- and each one was paying for two full cargo builds plus three roast
@@ -88,46 +118,56 @@ jobs:
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
 
-  test:
+  # ── The one release build the rest of the workflow shares ────────────────
+  #
+  # `cargo build --release` used to run three times on the same commit — in
+  # `test`, in `gc-stress` and in `jit-stress` — producing a byte-identical
+  # binary each time, because MUTSU_GC and MUTSU_JIT are runtime environment
+  # variables, not cargo features. (That is the same fact that already lets
+  # those jobs share one rust-cache key.) Measured on run 34582469117 that was
+  # 4m05s + 3m04s + 4m20s = 11m29s of runner time per CI run buying nothing.
+  #
+  # Build it once here and hand it to the consumers as an artifact, the way
+  # ecosystem-sweep.yml already builds one binary for its 27 shards. The
+  # consumers — `test-suites`, `gc-stress-roast`, `jit-stress-roast` — then
+  # need no toolchain, no cargo cache and no linker at all, which is why they
+  # start with a bare checkout.
+  #
+  # The jobs that still compile something of their own (`test-check` and the
+  # two TAP halves, which need a DEBUG binary and the debug_assert!s in it) do
+  # NOT wait for this job: they run alongside it.
+  build:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
-    # The job does one full cargo build (release, shared by `prove t/` and
-    # roast; ADR-0075 retired the separate debug build the TAP step used to
-    # need) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
-    # job was hitting the limit and getting canceled even when every test
-    # passed (roast printing "Result: PASS" immediately before cancellation).
-    # 25 min gave headroom for a cold/partial cargo cache; 30 since the Clippy
-    # step grew `--all-targets` (a measured 21 min run had only 4 to spare).
     timeout-minutes: 30
-    # Link with mold across every cargo invocation in this job — linking a
-    # binary this size dominates edit->rebuild latency, and mold is far faster
-    # than GNU ld. mold is installed in the "Install mold" step below.
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-      # Absolute, so every mutsu in the process tree reports to the one place
-      # the crash-report step collects. See the note on that step below.
-      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
 
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
-        with:
-          components: clippy, rustfmt
 
       # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
       # registry and the built dependencies (pruning the workspace crate so the
       # cache stays small and restores fast), which is far more reliable than
       # stuffing the whole multi-GB `target/` into actions/cache. `shared-key`
-      # is common across the three native Linux jobs (test/gc-stress/jit-stress):
-      # they compile byte-identical artifacts (GC/JIT are runtime env vars, not
-      # cargo features), so one shared dependency cache serves all three.
+      # is what lets jobs share one entry instead of each keeping its own.
+      #
+      # This job owns the RELEASE key and the debug-compiling jobs
+      # (`test-check`, `gc-stress-tap`, `jit-stress-tap`) share "ci-linux"
+      # between them. Two keys, not one, because rust-cache caches whatever
+      # dependency artifacts `target/` happens to hold: while every job built
+      # both profiles, one entry held both, but this job now builds only
+      # release and those three only debug. On a single shared key the save
+      # would be a race whose winner decides which profile everyone else has
+      # to recompile from scratch on every run. GC/JIT are still runtime env
+      # vars rather than cargo features, so the three debug jobs do compile
+      # byte-identical artifacts and one key genuinely serves them.
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "ci-linux"
+          shared-key: "ci-linux-release"
           # Only PRs restore; only main pushes save. This keeps the cache warm
           # from main without every PR writing its own entry and evicting others.
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -160,20 +200,93 @@ jobs:
           mold-version: '2.42.0'
           make-default: false
 
-      # A guard, not an install: this is expected to be a no-op, and exists so
-      # that a future runner image dropping perl degrades to the old apt cost
-      # rather than failing every TAP step in the workflow at once. The mirror
-      # pin moves in here with the apt call it protects.
-      - name: Ensure prove is available
-        run: |
-          if ! command -v prove >/dev/null; then
-            if [ -f /etc/apt/apt-mirrors.txt ]; then
-              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-            fi
-            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
-            sudo apt-get update && sudo apt-get install -y perl
-          fi
-          prove --version | head -1
+      - name: Build (release)
+        # The repo sets `[profile.release] debug = true` for local perf
+        # profiling. CI never profiles, and full debug info bloats the binary
+        # (~250MB -> ~27MB) and slows codegen/linking by ~70s. Override it to
+        # off for CI only; Cargo.toml stays debug=true for local use. It also
+        # keeps the artifact small enough that upload + download costs seconds
+        # against the ~4 minutes a rebuild costs.
+        #
+        # This one binary serves `prove t/`, all three roast sweeps and the
+        # bundled-library gate. The TAP suite used to run on a separate debug
+        # build; on release it is ~3.3x faster (ADR-0075).
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+      - name: Upload the release binary
+        # One day of retention: this is a build cache between jobs of one run,
+        # not a published artifact. `if-no-files-found: error` so a build that
+        # somehow produced nothing fails here instead of handing every consumer
+        # a missing-binary failure to diagnose.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release/mutsu
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── `test`, first half: everything that needs a COMPILER but no suite ────
+  #
+  # fmt, clippy, the unit tests, the language-server crate and the cheap ledger
+  # validators. None of them touches the release binary, so this half does not
+  # wait for the `build` job; it runs in parallel with it and reports its own
+  # red check when a lint or a unit test is what broke.
+  #
+  # `cargo test` also leaves a DEBUG binary at target/debug/mutsu as a side
+  # effect; nothing here depends on that, but see the note on the site-snippets
+  # step in `test-suites`, which used to.
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  test-check:
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    # Clippy with `--all-targets` on a cold cargo cache is the long pole here.
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The three ledger checks run FIRST, before any toolchain: they read
+      # files and finish in about a second each, so an unsorted whitelist or an
+      # expired quarantine entry should not have to wait out a clippy pass.
+      - name: Roast whitelist is sorted
+        run: make check-roast-whitelist
+
+      - name: t/ layout is valid
+        # Categories, depth cap and globally-unique basenames, per
+        # docs/t-directory-layout.md.
+        run: make check-t-layout
+
+      - name: Flaky quarantine ledger is valid and unexpired
+        # Fails when an entry in flaky-tests.txt is past its review date, so a
+        # quarantine cannot quietly become permanent. See
+        # docs/flaky-test-policy.md §5.
+        run: make check-flaky-list
+
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+        with:
+          components: clippy, rustfmt
+
+      # The "ci-linux" dependency cache, shared with the other two jobs that
+      # compile a debug build — see the `build` job for why the release build
+      # keeps a separate key.
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: "ci-linux"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Link with mold instead of GNU ld — see the `build` job for why it comes
+      # from its own release tarball rather than from apt.
+      - name: Install mold
+        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        with:
+          mold-version: '2.42.0'
+          make-default: false
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -188,7 +301,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Unit tests
-        # `--test-threads=1` for the same reason the gc-stress job below
+        # `--test-threads=1` for the same reason the gc-stress-tap job below
         # serializes: the collector's `COLLECTING` flag is process-global, so a
         # collect on one test thread trips `debug_assert!(!collecting())` inside
         # an unrelated test running concurrently. That produced two red main
@@ -211,18 +324,70 @@ jobs:
           cargo clippy -p mutsu-lsp --all-targets -- -D warnings
           cargo test -p mutsu-lsp
 
-      - name: Build (release, for TAP tests and roast)
-        # The repo sets `[profile.release] debug = true` for local perf
-        # profiling. CI never profiles, and full debug info bloats the binary
-        # (~250MB -> ~27MB) and slows codegen/linking by ~70s. Override it to
-        # off for CI only; Cargo.toml stays debug=true for local use.
-        #
-        # One build now serves both `prove t/` and roast. The TAP suite used to
-        # run on a separate debug build; on release it is ~3.3x faster and this
-        # job no longer compiles the crate twice. See ADR-0075.
-        run: cargo build --release
-        env:
-          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+  # ── `test`, second half: the suites, on the shared release binary ────────
+  #
+  # The TAP suite, the roast whitelist (cold and warm precomp cache) and the
+  # bundled-library gate. Every one of them runs the interpreter and none of
+  # them compiles it, so this job takes the binary from the `build` job and
+  # installs no toolchain, no cargo cache and no linker.
+  #
+  # Splitting it from `test-check` is not only about the build: a red check
+  # named `test-suites` says a program produced the wrong output, where a red
+  # `test` said "something in fifteen minutes of unrelated work went wrong".
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  test-suites:
+    needs: [changes, build]
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects. See the note on that step below.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Download the release binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release
+
+      - name: Restore the binary
+        # Two things the artifact does not carry, both of which this step puts
+        # back. (1) The executable bit: an artifact is a zip, so the downloaded
+        # file arrives mode 644 and every `prove -e` below would die with
+        # "Permission denied". (2) Its place in the tree: bundled batteries are
+        # resolved relative to the executable (`target/<profile>/../../modules`),
+        # so the binary has to land back inside the checkout it was built from,
+        # which is why the download path above is `target/release` and not a
+        # scratch directory. `--version` then proves both at once — a wrong mode
+        # or a truncated download fails here, in a two-second step, instead of
+        # once per test file for the rest of the job. Same shape as
+        # ecosystem-sweep.yml's "Restore the binary layout and the index cache".
+        run: |
+          set -euo pipefail
+          chmod +x target/release/mutsu
+          target/release/mutsu --version
+
+      # A guard, not an install: this is expected to be a no-op, and exists so
+      # that a future runner image dropping perl degrades to the old apt cost
+      # rather than failing every TAP step in the workflow at once. The mirror
+      # pin moves in here with the apt call it protects.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: TAP tests (prove t/)
         # Via the wrapper (not a bare `timeout 30 <bin>`) so t/ gets the same
@@ -244,7 +409,7 @@ jobs:
         # widen the budget rather than quarantining a real (if heavy) test.
         # Kept at 45 on the release binary too: the budget exists for the
         # heaviest file under contention, and headroom there is free.
-        # `mkdir -p tmp` like the gc-stress and jit-stress TAP steps and
+        # `mkdir -p tmp` like the two stress TAP steps and
         # `make test`: two dozen tests write scratch files to a relative
         # `tmp/`, which is gitignored and so absent from a fresh checkout.
         # This step was the only one of the four without it, and got away
@@ -265,20 +430,12 @@ jobs:
         # raku cross-check is skipped and this is a pure regression gate; the
         # cross-check runs locally when the expectations are regenerated.
         run: node scripts/check-site-snippets.mjs
-
-      - name: Roast whitelist is sorted
-        run: make check-roast-whitelist
-
-      - name: t/ layout is valid
-        # Categories, depth cap and globally-unique basenames, per
-        # docs/t-directory-layout.md.
-        run: make check-t-layout
-
-      - name: Flaky quarantine ledger is valid and unexpired
-        # Fails when an entry in flaky-tests.txt is past its review date, so a
-        # quarantine cannot quietly become permanent. See
-        # docs/flaky-test-policy.md §5.
-        run: make check-flaky-list
+        env:
+          # Explicit, and required now: the script's default is
+          # target/debug/mutsu, which this job never builds. It used to work
+          # only because the `cargo test` step that now lives in `test-check`
+          # left a debug binary behind as a side effect.
+          MUTSU_BIN: target/release/mutsu
 
       - name: Clean precomp cache and restore roast files
         run: |
@@ -437,6 +594,50 @@ jobs:
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
+
+  # REQUIRED STATUS CHECK. This job exists for its NAME: branch protection
+  # requires `test`, and a required check that is never created leaves the PR
+  # pending forever with no error anywhere (see the note at the top of this
+  # file). Splitting the work into halves therefore keeps an aggregator here
+  # rather than renaming the thing branch protection asks for.
+  #
+  # `build` is in `needs` as well as the two halves: a half that never ran
+  # because the build failed reports `skipped`, and without the build's own
+  # result this job could not tell that apart from a documentation-only skip.
+  #
+  # `if: always()` so it runs even when a half failed — without it the
+  # aggregator would itself be skipped, and a skipped required check counts as
+  # success. The body is what turns each half's result into this job's exit
+  # status; a half that was skipped because an EARLIER job failed reports
+  # `skipped`, so only `success` is accepted, and the documentation-only case
+  # is recognised explicitly rather than inferred from a skip.
+  test:
+    needs: [changes, build, test-check, test-suites]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every half succeeded
+        run: |
+          set -u
+          if [ "${{ needs.changes.outputs.docs-only }}" = "true" ]; then
+            echo "Documentation-only change: the halves are skipped by design."
+            exit 0
+          fi
+          rc=0
+          for half in \
+            "build=${{ needs.build.result }}" \
+            "test-check=${{ needs.test-check.result }}" \
+            "test-suites=${{ needs.test-suites.result }}"; do
+            name="${half%%=*}"
+            result="${half#*=}"
+            echo "$name: $result"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed (result: $result)"
+              rc=1
+            fi
+          done
+          exit $rc
 
   # Warnings only exist in the configuration you actually compile, and the
   # `test` job compiles exactly one: the default feature set on the host. The
@@ -684,7 +885,7 @@ jobs:
       - name: Run E2E tests
         run: node site/e2e.test.mjs
 
-  gc-stress:
+  # ── `gc-stress`, first half: the unit tests and the TAP suite under GC=on ─
     # Runs the whole test + roast suite with the GC cycle collector ON
     # (design doc §9.3's `GC=on` stress job). `MUTSU_GC_EVERY_CANDIDATE=N`
     # collects a cycle every N candidate pushes at the next safepoint, and
@@ -711,7 +912,15 @@ jobs:
     # `VERIFY FAIL` in the suite = heap corruption). A failure anywhere here
     # is a real GC regression.
     #
-    # Skipped on a documentation-only change — see the `changes` job.
+  #
+  # This half owns everything that runs on a DEBUG binary: `cargo test` (which
+  # builds that binary as a side effect, which is why the explicit debug build
+  # below measures 0s) and `prove t/`. The roast half is a separate job —
+  # they are independent, and welding them together made the job as long as
+  # their sum and its red check say nothing about which one failed.
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  gc-stress-tap:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
@@ -720,11 +929,6 @@ jobs:
       MUTSU_GC: "on"
       MUTSU_GC_EVERY_CANDIDATE: "1024"
       MUTSU_GC_VERIFY: "1"
-      # GC=on + VERIFY runs the roast suite ~2x slower across the board;
-      # scale every per-file timeout accordingly (see run-roast-test.sh) —
-      # S17-lowlevel/thread.t sat at ~24s against the 30s GC-off budget and
-      # timed out on a loaded runner the first time this step ran blocking.
-      MUTSU_ROAST_TIMEOUT_SCALE: "2"
       # Absolute, so every mutsu in the process tree reports to the one place
       # the crash-report step collects.
       MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
@@ -737,46 +941,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
 
-      # Shares the "ci-linux" dependency cache with the test/jit-stress jobs:
-      # identical build artifacts (MUTSU_GC is a runtime env var, not a feature).
+      # The "ci-linux" dependency cache, shared with the other two jobs that
+      # compile a debug build — see the `build` job for why the release build
+      # keeps a separate key.
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # mold comes from its own release tarball, NOT from apt. `apt-get
-      # update` was the only reason this job touched apt at all, and it is the
-      # most variable step in the workflow: 22s on a good day, 2m54s on a bad
-      # one -- enough on its own to push gc-stress past `timeout-minutes` with
-      # every test green (#7956) -- and it has a documented history of hanging
-      # indefinitely on the runner's default mirror list until the job timeout
-      # cancels it (2026-08-19, PRs #6684 #6691), with zero relation to the
-      # PR's diff.
-      #
-      # Nothing else in this job needs a package. The runner image already
-      # ships `perl` (a `dpkg-dev` dependency; `prove` comes with
-      # `perl-modules`) and `libssl-dev` (both in toolset-2404's
-      # `apt.common_packages`), so `mold` was the single genuinely missing
-      # package -- and it is a 6 MB tarball from its own GitHub release, which
-      # the action below is a three-line `wget` around. rui314 is mold's
-      # author; the action is pinned by SHA like every other action here.
-      #
-      # `make-default: false`: do not symlink /usr/bin/ld to mold. Every cargo
-      # invocation in this job already selects mold explicitly through
-      # RUSTFLAGS, so swapping the system linker for every `cc` in the job
-      # would widen the blast radius for nothing. `-fuse-ld=mold` finds
-      # `/usr/local/bin/ld.mold` on PATH.
+      # Link with mold instead of GNU ld — see the `build` job for why it comes
+      # from its own release tarball rather than from apt.
       - name: Install mold
         uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
 
-      # A guard, not an install: this is expected to be a no-op, and exists so
-      # that a future runner image dropping perl degrades to the old apt cost
-      # rather than failing every TAP step in the workflow at once. The mirror
-      # pin moves in here with the apt call it protects.
+      # A guard, not an install — see the `test-suites` job for the reasoning,
+      # and for why the apt mirror pin sits inside the fallback branch.
       - name: Ensure prove is available
         run: |
           if ! command -v prove >/dev/null; then
@@ -805,6 +988,8 @@ jobs:
           RUST_MIN_STACK: 8388608
 
       - name: Build (debug, for TAP tests)
+        # Normally 0s: the `cargo test` step above already built the bin target.
+        # It stays because the dependency is a side effect, not a contract.
         run: cargo build
 
       - name: TAP tests (prove t/, GC on)
@@ -843,10 +1028,120 @@ jobs:
           MUTSU_BIN: target/debug/mutsu
           MUTSU_T_TIMEOUT: "90"
 
-      - name: Build (release, for roast)
-        run: cargo build --release
-        env:
-          CARGO_PROFILE_RELEASE_DEBUG: "false"
+      - name: Flaky quarantine retries used (GC on)
+        if: always()
+        run: scripts/report-flaky-retries.sh
+
+      - name: No GC verify violations (TAP)
+        # `MUTSU_GC_VERIFY` logs `VERIFY FAIL` to stderr but does not by itself
+        # fail the process, so a heap-corruption bug could pass unnoticed. Fail
+        # the job if any collect reported a soundness violation.
+        #
+        # This half greps ITS OWN log only. The grep used to cover both logs at
+        # the end of one job; with the halves separated, each must check the
+        # file it produced, and neither may quietly pass because the other's
+        # file is absent — hence the explicit "log is missing" branch.
+        run: |
+          if [ ! -f tmp/gc-stress-t.log ]; then
+            echo "::error::tmp/gc-stress-t.log is missing — the TAP step did not run"
+            exit 1
+          fi
+          if grep -q "VERIFY FAIL" tmp/gc-stress-t.log; then
+            echo "::error::GC collector reported VERIFY FAIL under TAP stress"
+            grep -n "VERIFY FAIL" tmp/gc-stress-t.log | head -30
+            exit 1
+          fi
+          echo "No GC verify violations across the TAP suite."
+
+      - name: Crash reports (fatal signals, GC on)
+        # `always()`, not `failure()` -- see the "Crash reports (fatal
+        # signals)" step above for why (todo/deep/procasync-stress-segv.md).
+        if: always()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload GC stress TAP crash reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gc-stress-tap-crash-reports
+          path: tmp/crash/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload GC stress TAP log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gc-stress-tap-log
+          path: tmp/gc-stress-t.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ── `gc-stress`, second half: the roast whitelist under GC=on ────────────
+  #
+  # Same collector configuration as `gc-stress-tap` (see the comment there);
+  # this half runs the roast whitelist on the shared release binary and
+  # compiles nothing.
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  gc-stress-roast:
+    needs: [changes, build]
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MUTSU_GC: "on"
+      MUTSU_GC_EVERY_CANDIDATE: "1024"
+      MUTSU_GC_VERIFY: "1"
+      # GC=on + VERIFY runs the roast suite ~2x slower across the board;
+      # scale every per-file timeout accordingly (see run-roast-test.sh) —
+      # S17-lowlevel/thread.t sat at ~24s against the 30s GC-off budget and
+      # timed out on a loaded runner the first time this step ran blocking.
+      # Read only by run-roast-test.sh, so it belongs to this half.
+      MUTSU_ROAST_TIMEOUT_SCALE: "2"
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Download the release binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release
+
+      - name: Restore the binary
+        # Two things the artifact does not carry, both of which this step puts
+        # back. (1) The executable bit: an artifact is a zip, so the downloaded
+        # file arrives mode 644 and every `prove -e` below would die with
+        # "Permission denied". (2) Its place in the tree: bundled batteries are
+        # resolved relative to the executable (`target/<profile>/../../modules`),
+        # so the binary has to land back inside the checkout it was built from,
+        # which is why the download path above is `target/release` and not a
+        # scratch directory. `--version` then proves both at once — a wrong mode
+        # or a truncated download fails here, in a two-second step, instead of
+        # once per test file for the rest of the job. Same shape as
+        # ecosystem-sweep.yml's "Restore the binary layout and the index cache".
+        run: |
+          set -euo pipefail
+          chmod +x target/release/mutsu
+          target/release/mutsu --version
+
+      # A guard, not an install — see the `test-suites` job for the reasoning,
+      # and for why the apt mirror pin sits inside the fallback branch.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: Clean precomp cache and restore roast files
         run: |
@@ -858,7 +1153,7 @@ jobs:
         # GC=on since the three advisory-era failure classes were fixed — STW
         # spawn-churn starvation (#4205), shared-env phantom edges (#4213),
         # and the EVERY_CANDIDATE=64 quadratic (#4215, knob now 1024). A
-        # failure here is a real GC regression, same as the prove-t/ step.
+        # failure here is a real GC regression, same as the TAP half.
         # Keep `set -o pipefail` so prove's exit status survives the tee.
         run: |
           set -o pipefail
@@ -872,17 +1167,20 @@ jobs:
         if: always()
         run: scripts/report-flaky-retries.sh
 
-      - name: No GC verify violations
-        # `MUTSU_GC_VERIFY` logs `VERIFY FAIL` to stderr but does not by itself
-        # fail the process, so a heap-corruption bug could pass unnoticed. Fail
-        # the job if any collect reported a soundness violation.
+      - name: No GC verify violations (roast)
+        # See the same step in `gc-stress-tap`: each half greps its own log,
+        # and a missing log is a failure rather than a silent pass.
         run: |
-          if grep -q "VERIFY FAIL" tmp/gc-stress-t.log tmp/gc-stress-roast.log; then
-            echo "::error::GC collector reported VERIFY FAIL under stress"
-            grep -n "VERIFY FAIL" tmp/gc-stress-t.log tmp/gc-stress-roast.log | head -30
+          if [ ! -f tmp/gc-stress-roast.log ]; then
+            echo "::error::tmp/gc-stress-roast.log is missing — the roast step did not run"
             exit 1
           fi
-          echo "No GC verify violations across the suite."
+          if grep -q "VERIFY FAIL" tmp/gc-stress-roast.log; then
+            echo "::error::GC collector reported VERIFY FAIL under roast stress"
+            grep -n "VERIFY FAIL" tmp/gc-stress-roast.log | head -30
+            exit 1
+          fi
+          echo "No GC verify violations across the roast suite."
 
       - name: Crash reports (fatal signals, GC on)
         # `always()`, not `failure()` -- see the "Crash reports (fatal
@@ -890,27 +1188,65 @@ jobs:
         if: always()
         run: scripts/report-crash-reports.sh
 
-      - name: Upload GC stress crash reports
+      - name: Upload GC stress roast crash reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gc-stress-crash-reports
+          name: gc-stress-roast-crash-reports
           path: tmp/crash/
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload GC stress logs
+      - name: Upload GC stress roast log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gc-stress-logs
-          path: |
-            tmp/gc-stress-t.log
-            tmp/gc-stress-roast.log
+          name: gc-stress-roast-log
+          path: tmp/gc-stress-roast.log
           retention-days: 7
           if-no-files-found: ignore
 
-  jit-stress:
+  # REQUIRED STATUS CHECK. This job exists for its NAME: branch protection
+  # requires `gc-stress`, and a required check that is never created leaves the PR
+  # pending forever with no error anywhere (see the note at the top of this
+  # file). Splitting the work into halves therefore keeps an aggregator here
+  # rather than renaming the thing branch protection asks for.
+  #
+  # `if: always()` so it runs even when a half failed — without it the
+  # aggregator would itself be skipped, and a skipped required check counts as
+  # success. The body is what turns each half's result into this job's exit
+  # status; a half that was skipped because an EARLIER job failed reports
+  # `skipped`, so only `success` is accepted, and the documentation-only case
+  # is recognised explicitly rather than inferred from a skip.
+  gc-stress:
+    needs: [changes, build, gc-stress-tap, gc-stress-roast]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every half succeeded
+        run: |
+          set -u
+          if [ "${{ needs.changes.outputs.docs-only }}" = "true" ]; then
+            echo "Documentation-only change: the halves are skipped by design."
+            exit 0
+          fi
+          rc=0
+          for half in \
+            "build=${{ needs.build.result }}" \
+            "gc-stress-tap=${{ needs.gc-stress-tap.result }}" \
+            "gc-stress-roast=${{ needs.gc-stress-roast.result }}"; do
+            name="${half%%=*}"
+            result="${half#*=}"
+            echo "$name: $result"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed (result: $result)"
+              rc=1
+            fi
+          done
+          exit $rc
+
+  # ── `jit-stress`, first half: the TAP suite with the JIT forced hot ──────
     # Runs the whole test + roast suite with the Cranelift JIT forced hot
     # (ADR-0004 §2.5 J2, same shape as gc-stress). MUTSU_JIT defaults to ON
     # since J5, so the main test job already covers the default (threshold
@@ -921,8 +1257,12 @@ jobs:
     # byte-identical output to the interpreter, so every step is a BLOCKING
     # gate: any failure here that does not reproduce with MUTSU_JIT=off is a
     # JIT codegen/shim bug.
-    #
-    # Skipped on a documentation-only change — see the `changes` job.
+  #
+  # Split into a TAP half and a roast half for the same reasons as gc-stress:
+  # the two are independent, and a red check should name which one failed.
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  jit-stress-tap:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
@@ -942,46 +1282,25 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
 
-      # Shares the "ci-linux" dependency cache with the test/gc-stress jobs:
-      # identical build artifacts (MUTSU_JIT is a runtime env var, not a feature).
+      # The "ci-linux" dependency cache, shared with the other two jobs that
+      # compile a debug build — see the `build` job for why the release build
+      # keeps a separate key.
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # mold comes from its own release tarball, NOT from apt. `apt-get
-      # update` was the only reason this job touched apt at all, and it is the
-      # most variable step in the workflow: 22s on a good day, 2m54s on a bad
-      # one -- enough on its own to push gc-stress past `timeout-minutes` with
-      # every test green (#7956) -- and it has a documented history of hanging
-      # indefinitely on the runner's default mirror list until the job timeout
-      # cancels it (2026-08-19, PRs #6684 #6691), with zero relation to the
-      # PR's diff.
-      #
-      # Nothing else in this job needs a package. The runner image already
-      # ships `perl` (a `dpkg-dev` dependency; `prove` comes with
-      # `perl-modules`) and `libssl-dev` (both in toolset-2404's
-      # `apt.common_packages`), so `mold` was the single genuinely missing
-      # package -- and it is a 6 MB tarball from its own GitHub release, which
-      # the action below is a three-line `wget` around. rui314 is mold's
-      # author; the action is pinned by SHA like every other action here.
-      #
-      # `make-default: false`: do not symlink /usr/bin/ld to mold. Every cargo
-      # invocation in this job already selects mold explicitly through
-      # RUSTFLAGS, so swapping the system linker for every `cc` in the job
-      # would widen the blast radius for nothing. `-fuse-ld=mold` finds
-      # `/usr/local/bin/ld.mold` on PATH.
+      # Link with mold instead of GNU ld — see the `build` job for why it comes
+      # from its own release tarball rather than from apt.
       - name: Install mold
         uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
 
-      # A guard, not an install: this is expected to be a no-op, and exists so
-      # that a future runner image dropping perl degrades to the old apt cost
-      # rather than failing every TAP step in the workflow at once. The mirror
-      # pin moves in here with the apt call it protects.
+      # A guard, not an install — see the `test-suites` job for the reasoning,
+      # and for why the apt mirror pin sits inside the fallback branch.
       - name: Ensure prove is available
         run: |
           if ! command -v prove >/dev/null; then
@@ -1028,10 +1347,92 @@ jobs:
           MUTSU_BIN: target/debug/mutsu
           MUTSU_T_TIMEOUT: "90"
 
-      - name: Build (release, for roast)
-        run: cargo build --release
-        env:
-          CARGO_PROFILE_RELEASE_DEBUG: "false"
+      - name: Flaky quarantine retries used (JIT on)
+        if: always()
+        run: scripts/report-flaky-retries.sh
+
+      - name: Crash reports (fatal signals, JIT on)
+        # `always()`, not `failure()` -- see the "Crash reports (fatal
+        # signals)" step above for why (todo/deep/procasync-stress-segv.md).
+        if: always()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload JIT stress TAP crash reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jit-stress-tap-crash-reports
+          path: tmp/crash/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload JIT stress TAP log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jit-stress-tap-log
+          path: tmp/jit-stress-t.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ── `jit-stress`, second half: the roast whitelist with the JIT forced hot ─
+  #
+  # Same JIT configuration as `jit-stress-tap` (see the comment there); this
+  # half runs the roast whitelist on the shared release binary and compiles
+  # nothing.
+  #
+  # Skipped on a documentation-only change — see the `changes` job.
+  jit-stress-roast:
+    needs: [changes, build]
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MUTSU_JIT: "on"
+      MUTSU_JIT_THRESHOLD: "2"
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Download the release binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release
+
+      - name: Restore the binary
+        # Two things the artifact does not carry, both of which this step puts
+        # back. (1) The executable bit: an artifact is a zip, so the downloaded
+        # file arrives mode 644 and every `prove -e` below would die with
+        # "Permission denied". (2) Its place in the tree: bundled batteries are
+        # resolved relative to the executable (`target/<profile>/../../modules`),
+        # so the binary has to land back inside the checkout it was built from,
+        # which is why the download path above is `target/release` and not a
+        # scratch directory. `--version` then proves both at once — a wrong mode
+        # or a truncated download fails here, in a two-second step, instead of
+        # once per test file for the rest of the job. Same shape as
+        # ecosystem-sweep.yml's "Restore the binary layout and the index cache".
+        run: |
+          set -euo pipefail
+          chmod +x target/release/mutsu
+          target/release/mutsu --version
+
+      # A guard, not an install — see the `test-suites` job for the reasoning,
+      # and for why the apt mirror pin sits inside the fallback branch.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: Clean precomp cache and restore roast files
         run: |
@@ -1057,22 +1458,60 @@ jobs:
         if: always()
         run: scripts/report-crash-reports.sh
 
-      - name: Upload JIT stress crash reports
+      - name: Upload JIT stress roast crash reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jit-stress-crash-reports
+          name: jit-stress-roast-crash-reports
           path: tmp/crash/
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Upload JIT stress logs
+      - name: Upload JIT stress roast log
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jit-stress-logs
-          path: |
-            tmp/jit-stress-t.log
-            tmp/jit-stress-roast.log
+          name: jit-stress-roast-log
+          path: tmp/jit-stress-roast.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # REQUIRED STATUS CHECK. This job exists for its NAME: branch protection
+  # requires `jit-stress`, and a required check that is never created leaves the PR
+  # pending forever with no error anywhere (see the note at the top of this
+  # file). Splitting the work into halves therefore keeps an aggregator here
+  # rather than renaming the thing branch protection asks for.
+  #
+  # `if: always()` so it runs even when a half failed — without it the
+  # aggregator would itself be skipped, and a skipped required check counts as
+  # success. The body is what turns each half's result into this job's exit
+  # status; a half that was skipped because an EARLIER job failed reports
+  # `skipped`, so only `success` is accepted, and the documentation-only case
+  # is recognised explicitly rather than inferred from a skip.
+  jit-stress:
+    needs: [changes, build, jit-stress-tap, jit-stress-roast]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every half succeeded
+        run: |
+          set -u
+          if [ "${{ needs.changes.outputs.docs-only }}" = "true" ]; then
+            echo "Documentation-only change: the halves are skipped by design."
+            exit 0
+          fi
+          rc=0
+          for half in \
+            "build=${{ needs.build.result }}" \
+            "jit-stress-tap=${{ needs.jit-stress-tap.result }}" \
+            "jit-stress-roast=${{ needs.jit-stress-roast.result }}"; do
+            name="${half%%=*}"
+            result="${half#*=}"
+            echo "$name: $result"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed (result: $result)"
+              rc=1
+            fi
+          done
+          exit $rc
