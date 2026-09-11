@@ -103,6 +103,21 @@ locally-measured one.
 Full runbook, and what the workflow refuses to do:
 [docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
 
+## Asking what to fix first
+
+```sh
+scripts/ecosystem-tickets.py                   # root-cause clusters, most distributions first
+scripts/ecosystem-tickets.py --issue b98eb9ef  # one cluster as a ready-to-file issue body
+```
+
+`scripts/ecosystem-tickets.py` reads these records back and groups them by root
+cause, ranked by how many **distributions** each cause affects (never by failure
+sites — one distribution with forty modules is one bug). Its output is filed as
+GitHub issues rather than committed here; each body carries a stable
+`eco-cluster: <id>` so a later sweep can tell a new cluster from a filed one.
+Method, and the "verify a cluster before filing it" rule, in
+[docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §9.
+
 ## Fixing one
 
 Turning a red record green — check the distribution out, run both sides file by

@@ -360,6 +360,27 @@ _HARNESS_NOISE = re.compile(
     r"test failures|you planned|you failed|looks like you|^#|^1\.\.|dubious|"
     r"^ok\b|^not ok\b", re.I)
 
+# `at <path>:<line>` and the caret line under it: where a parse failure happened.
+# Both interpreters print them under the reason, and the reason alone cannot be
+# triaged -- 99 distributions in the first corpus sweep recorded a parse failure
+# with no indication of which line of which module it was.
+_LOCATION = re.compile(r"^at (?P<path>\S+):(?P<line>\d+)\s*$")
+_CARET = re.compile(r"^(------>|\s*\^\s*$)")
+
+# A backtrace frame (`in block <unit> at t/01.t line 4`) says where the failure
+# surfaced but not what it was, so it must never be the recorded cause -- which
+# it becomes for any message whose reason line matches none of the keywords.
+_BACKTRACE = re.compile(r"^in (block|sub|method|routine|any|code)\b.*\bline \d+")
+
+# Lines both interpreters print and then CARRY ON past. They are not why a file
+# died, but they are printed before the thing that killed it, so taking the first
+# candidate line makes them the recorded cause: ten distributions in the first
+# corpus sweep recorded `Use of Nil in string context` -- a warning rakudo prints
+# too -- as their blocker, which hid ten real causes.
+_WARNING = re.compile(
+    r"^Use of (Nil|uninitialized value)|^Potential difficulties|^Useless use of|"
+    r"^Saw \d+ occurrence|will never be called|^Duplicate free|^WARNING:", re.I)
+
 
 def parse_tap(out: str):
     """(planned, ok, real_not_ok, todo_not_ok, skipped) from raw TAP output.
@@ -401,6 +422,16 @@ def tap_verdict(out: str, rc):
     return "pass"
 
 
+def _short_location(path: str, line: str) -> str:
+    """`at /tmp/sweep-x9/lib/A/B.rakumod:50` -> `lib/A/B.rakumod:50`.
+
+    The absolute part is a temp directory that differs between two runs of the
+    same measurement, so keeping it would make an unchanged record churn in git;
+    the tail is what identifies the construct.
+    """
+    return "/".join(path.split("/")[-3:]) + ":" + line
+
+
 def first_error_line(out: str) -> str:
     """The first meaningful error line, skipping the generic TAP-harness noise
     ('Runtime error: Test failures', '# You planned N ...') that reports only
@@ -411,22 +442,56 @@ def first_error_line(out: str) -> str:
     path. The reason is the line after it, which is what a reader needs to tell
     one parse failure from another -- without this, every parse blocker in the
     ledger reads as the same undifferentiated `===SORRY!===`.
+
+    Two things the reason line alone could not do, both measured on the first
+    corpus sweep:
+
+    * **A warning is not a cause.** `Use of Nil in string context` and friends
+      are printed by rakudo too and execution continues past them, so a line
+      matching `_WARNING` is only used when the run produced nothing else.
+    * **A parse failure needs its location.** `at <path>:<line>` is appended as
+      `... [at lib/A.rakumod:50]`, which is the difference between a triageable
+      record and "the parser was unhappy somewhere in this distribution".
+      Consumers that cluster by root cause strip the suffix.
     """
-    candidates = []
+    candidates: list[str] = []
+    location_after: dict[int, str] = {}
     for line in out.splitlines():
         s = line.strip()
         if not s or _HARNESS_NOISE.search(s) or s.startswith("===SORRY!==="):
             continue
+        m = _LOCATION.match(s)
+        if m:
+            # Belongs to the candidate above it, not a candidate of its own.
+            if candidates:
+                location_after.setdefault(len(candidates) - 1,
+                                          _short_location(m["path"], m["line"]))
+            continue
+        if _CARET.match(s) or _BACKTRACE.match(s):
+            continue
         candidates.append(s)
-    for s in candidates:
-        low = s.lower()
-        if ("sorry" in low or "panicked" in low or "unhandled" in low
-                or s.startswith("X::") or ("::" in s and "exception" in low)
-                or "no such" in low or "unknown method" in low
-                or "unknown function" in low or "cannot" in low
-                or low.startswith("runtime error")):
-            return s[:200]
-    return candidates[0][:200] if candidates else ""
+
+    def pick(indices):
+        for i in indices:
+            s = candidates[i]
+            low = s.lower()
+            if ("sorry" in low or "panicked" in low or "unhandled" in low
+                    or s.startswith("X::") or ("::" in s and "exception" in low)
+                    or "no such" in low or "unknown method" in low
+                    or "unknown function" in low or "cannot" in low
+                    or low.startswith("runtime error")):
+                return i
+        return indices[0] if indices else None
+
+    real = [i for i, s in enumerate(candidates) if not _WARNING.match(s)]
+    i = pick(real)
+    if i is None:                       # nothing but warnings: report one anyway
+        i = pick(list(range(len(candidates))))
+    if i is None:
+        return ""
+    s = candidates[i][:200]
+    where = location_after.get(i)
+    return f"{s} [at {where}]" if where else s
 
 
 def first_failing_assertion(out: str) -> str:
@@ -498,6 +563,39 @@ def record_filename(dist: str) -> str:
     return f"{stem}~{digest}.json"
 
 
+def load_records(dists_dir: str) -> list[dict]:
+    """Every record in the ledger, keyed by nothing but its own `dist` field.
+
+    Two files claiming the same distribution is a hard error rather than a
+    silently double-counted denominator. That is not hypothetical: it is exactly
+    what a change to `record_filename()` produces if the rename of the existing
+    records is forgotten, and a rollup would then report a corpus larger than the
+    corpus with one distribution's numbers counted twice.
+
+    Shared by `--rollup` and by `ecosystem-tickets.py`, so a reader of the ledger
+    cannot get a different corpus than the rollup that published the KPI.
+    """
+    out = []
+    where = {}
+    for dirpath, _dirs, names in os.walk(dists_dir):
+        for n in sorted(names):
+            if not n.endswith(".json"):
+                continue
+            path = os.path.join(dirpath, n)
+            with open(path, encoding="utf-8") as fh:
+                record = json.load(fh)
+            dist = record.get("dist")
+            if dist in where:
+                raise SystemExit(
+                    f"two records claim the distribution {dist!r}:\n"
+                    f"  {where[dist]}\n  {path}\n"
+                    "One of them is stale -- most likely the filename rule "
+                    "changed and an old-named record was left behind. Delete it.")
+            where[dist] = path
+            out.append(record)
+    return out
+
+
 # --- self-test ---------------------------------------------------------------
 
 def _self_test() -> int:
@@ -510,16 +608,28 @@ def _self_test() -> int:
     """
     cases = [
         # A ===SORRY!=== header spends its width on a temp path; the reason is
-        # the line after it.
+        # the line after it, and the location under it is what makes the reason
+        # triageable. The caret line is dropped: it carries source text, which
+        # would fragment a root-cause cluster by the offending line.
         ("===SORRY!=== Error while compiling /tmp/x/lib/A.rakumod\n"
          "expected statement: expected ')'\n"
-         "at lib/A.rakumod:50",
-         "expected statement: expected ')'"),
+         "at /tmp/sweep-x9/dist/lib/A.rakumod:50\n"
+         "------>    my $x = (1,2;\n"
+         "                   ^",
+         "expected statement: expected ')' [at dist/lib/A.rakumod:50]"),
         # Generic TAP-harness death lines report that a run died, not why.
         ("1..3\nok 1 - a\nRuntime error: Test failures\n"
          "No such method 'frobnicate' for invocant of type 'Str'",
          "No such method 'frobnicate' for invocant of type 'Str'"),
         ("Unknown role: CustomUnmarshaller", "Unknown role: CustomUnmarshaller"),
+        # A warning both interpreters print, followed by the real cause: the
+        # warning must not be recorded as the blocker.
+        ("Use of Nil in string context\n"
+         "  in block <unit> at t/01.t line 4\n"
+         "Runtime error: X::Syntax::Malformed: Malformed my",
+         "Runtime error: X::Syntax::Malformed: Malformed my"),
+        # ... but if a warning is all there is, it is better than nothing.
+        ("Use of Nil in string context", "Use of Nil in string context"),
     ]
     failures = 0
     for out, want in cases:

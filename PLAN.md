@@ -105,10 +105,12 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       per-distribution machine-readable records in `ecosystem/`. **P1-P3 have landed: the corpus is
       measured.** Run 34566091231 (2026-09-11, `scope: all`, 27/27 shards green) covers all 1624
       distributions at one commit — **41.2%** dist parity, 53.6% file, 62.4% assertion — and the
-      first `history.tsv` row exists. The next step is **P5**: root-cause the 393 `blocked_load`
-      records (53 of them `raku_also_fails`, i.e. not mutsu's; the rest normalise to 133 distinct
-      load errors whose top ten cover ~1/3) into `todo:ticket` issues, so the KPI feeds the work
-      queue. P4's remaining sliver is a local `make`-level wrapper for the sweep.
+      first `history.tsv` row exists. **P5 has produced its first batch**:
+      `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ranked by distributions
+      affected, and fifteen issues covering ~330 distribution slots were filed from it
+      (docs/ecosystem-parity.md §9). What is left of P5 is the tail — 970 clusters below ten
+      distributions, a sampling job rather than a queue to drain. P4's remaining sliver is a local
+      `make`-level wrapper for the sweep.
       Decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md);
       operations manual and phases (P1-P5, one PR each):
       [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
