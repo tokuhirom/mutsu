@@ -579,6 +579,9 @@ impl Interpreter {
             .cloned()
             .collect();
         super::seed_native_subclass_payloads(&mut attributes, &class_mro, &args, &positional_args);
+        // See `quanthash_subclass`: a `Set`/`Bag`/`Mix` (or `*Hash`) subclass
+        // keeps its entries in `__baggy_data__`.
+        self.seed_quanthash_storage(cn_resolved, &mut attributes, &positional_args)?;
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
         crate::alloc_scope_end!(_sc_container);

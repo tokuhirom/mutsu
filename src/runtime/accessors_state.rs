@@ -1112,6 +1112,42 @@ impl Interpreter {
         });
     }
 
+    /// The subscript/`STORE` protocol whose native implementation on a
+    /// container subclass's backing storage is a deferral base candidate. See
+    /// `container_protocol_override` in [`Self::push_method_dispatch_frame`].
+    fn is_container_protocol_method(method: &str) -> bool {
+        matches!(
+            method,
+            "AT-KEY"
+                | "ASSIGN-KEY"
+                | "BIND-KEY"
+                | "DELETE-KEY"
+                | "EXISTS-KEY"
+                | "AT-POS"
+                | "ASSIGN-POS"
+                | "BIND-POS"
+                | "DELETE-POS"
+                | "EXISTS-POS"
+                | "STORE"
+        )
+    }
+
+    /// True when `class_key` inherits a builtin container whose data lives in a
+    /// backing attribute (`__mutsu_hash_storage` / `__mutsu_array_storage` /
+    /// `__baggy_data__`), i.e. one of the `native_*_storage_next_candidate`
+    /// fallbacks can serve as a deferral base.
+    fn class_has_native_container_backing(&mut self, class_key: &str) -> bool {
+        self.class_mro(class_key).iter().any(|n| {
+            let name = n.resolve();
+            Self::is_associative_base(&name)
+                || Self::is_positional_base(&name)
+                || matches!(
+                    name.as_str(),
+                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                )
+        })
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -1141,7 +1177,17 @@ impl Interpreter {
         // for BUILDALL/POPULATE, the native attribute-copying clone for clone).
         let mu_base_override = matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
             && self.has_user_method(receiver_class, method_name);
-        let native_base_override = grammar_parse_override || mu_base_override;
+        // A user (or role-composed) override of a native container protocol
+        // method on an `is Hash`/`is Array`/`is BagHash`-style subclass is the
+        // same situation: the native behavior on the instance's backing storage
+        // is a base candidate that is not a `MethodDef`, so without a frame the
+        // override's `nextsame`/`callsame` answered Nil and the write was
+        // dropped (`AccountableBagHash`'s `multi method ASSIGN-KEY`).
+        let container_protocol_override = Self::is_container_protocol_method(method_name)
+            && self.class_has_native_container_backing(receiver_class)
+            && self.has_user_method_including_role(receiver_class, method_name);
+        let native_base_override =
+            grammar_parse_override || mu_base_override || container_protocol_override;
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO can never produce a deferral frame (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`

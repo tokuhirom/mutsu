@@ -382,6 +382,19 @@ pub(super) unsafe extern "C" fn call_method(
         // Native code runs no per-op line update, so the callee's frame/backtrace
         // line must be pulled from the static ip -> line table at the call site.
         interp.sync_source_line(code, op_idx as usize);
+        // ADR-0072, mirroring the `CallMethod` arm of `exec_one_dispatch`: a
+        // `.throw` is a resumable throw site, so a resume-capable `CATCH`
+        // several frames up runs INLINE here with every Rust frame still live
+        // and `.resume` continues with the next statement of the *calling*
+        // body. Without this hook a chunk that went native lost the resume
+        // entirely — the handler still ran (through the ordinary region path)
+        // but everything after the throw in the caller's block was skipped,
+        // because the non-inline path can only resume within one
+        // `CompiledCode`. The base is the receiver+arguments start, so a
+        // resumed handler leaves the call's single `Any` value in their place.
+        let throw_base = interp
+            .method_name_is_resumable_throw(code, *name_idx)
+            .then(|| interp.stack.len().saturating_sub(*arity as usize + 1));
         let r = interp.exec_call_method_op(
             code,
             *name_idx,
@@ -391,6 +404,17 @@ pub(super) unsafe extern "C" fn call_method(
             *arg_sources_idx,
         );
         interp.current_code = code as *const CompiledCode as usize;
+        let r = match r {
+            Err(e) if throw_base.is_some() && !e.is_resume() => match interp.try_catch_inline(e) {
+                Ok(v) => {
+                    interp.stack.truncate(throw_base.unwrap_or(0));
+                    interp.stack.push(v);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+            other => other,
+        };
         match r {
             Ok(()) => {
                 interp.apply_pending_rw_writeback(code);

@@ -332,6 +332,32 @@ impl Compiler {
             self.compile_expr_call_on(&target, args);
             return;
         }
+        // `f(...) = v` where `f` is a `my &f` binding. The parser lowers the
+        // assignment to `__mutsu_assign_named_sub_lvalue("f", [args], value)`,
+        // which hides the callee behind a string constant: the runtime then
+        // resolves it against declared routines only, and — worse — the closure
+        // free-var analysis never sees a read of `&f`, so a closure that ONLY
+        // assigns through it does not capture it at all. Retarget the call at
+        // the code variable itself, the same way the bare-call branch just
+        // above does for a plain `f(...)`.
+        if name == "__mutsu_assign_named_sub_lvalue"
+            && args.len() == 3
+            && let Expr::Literal(callee) = &args[0]
+            && let Some(callee) = callee.as_str()
+            && self.amp_binding_in_active_scope(callee)
+        {
+            let rewritten = [
+                Expr::CodeVar(callee.to_string()),
+                args[1].clone(),
+                args[2].clone(),
+            ];
+            self.compile_expr_call_inner(
+                &crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
+                &rewritten,
+                suppress_listop_rewrite,
+            );
+            return;
+        }
         let suppress_listop_rewrite =
             suppress_listop_rewrite || self.user_listop_shadows.contains(&name.resolve());
         // `callframe`/`caller` inside N enclosing `for` blocks must report the

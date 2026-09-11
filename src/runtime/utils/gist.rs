@@ -519,6 +519,23 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     .unwrap_or_else(|| crate::value::Value::hash(std::collections::HashMap::new())),
             )
         }
+        // A QuantHash (`is Bag`/`is SetHash`/...) subclass instance gists as its
+        // backing container under its OWN type name (`ABH(a(42) b(666))`), the
+        // way raku renders a `BagHash` subclass — mirrors the `is Hash` and
+        // `is Array` arms above. See `runtime/quanthash_subclass.rs`.
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if attributes.contains_key("__baggy_data__") => {
+            let storage = attributes
+                .as_map()
+                .get("__baggy_data__")
+                .cloned()
+                .unwrap_or(crate::value::Value::NIL);
+            let name = class_name.resolve();
+            setbagmix_gist_named(&storage, Some(&name)).unwrap_or_else(|| gist_value(&storage))
+        }
         // `$(...)` itemized container: `.gist` never shows the itemization sigil,
         // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
         ValueView::Scalar(inner) => gist_value(inner),

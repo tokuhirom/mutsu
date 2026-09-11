@@ -191,6 +191,16 @@ impl Interpreter {
     /// of `Bot::Grammar` itself — an unbounded `Bot::Grammar -> Grammar ->
     /// Bot::Grammar` recursion that overflowed the stack (`Bot::Grammar[R]`,
     /// `todo/deep/grammar-metaclass-parameterize-stack-overflow.md`).
+    /// [`Self::resolved_class_parents`] for `quanthash_subclass`, which lives in
+    /// another module and needs the same "is this a user-declared class, and
+    /// what does it inherit" answer.
+    pub(crate) fn resolved_class_parents_for_quanthash(
+        &self,
+        name: &str,
+    ) -> Option<(String, Vec<String>)> {
+        self.resolved_class_parents(name)
+    }
+
     fn resolved_class_parents(&self, name: &str) -> Option<(String, Vec<String>)> {
         let reg = self.registry();
         if let Some(cd) = reg.classes.get(name) {

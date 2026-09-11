@@ -3733,104 +3733,13 @@ impl Interpreter {
             return result;
         }
 
-        // STORE for BagHash/SetHash/MixHash: re-initialize the container
+        // STORE for BagHash/SetHash/MixHash: re-initialize the container.
+        // See `runtime::quanthash_store` for the folding rules and why the
+        // store keys must be the `.WHICH`-derived ones.
         if method == "STORE"
-            && matches!(
-                target.view(),
-                ValueView::Bag(_, true) | ValueView::Set(_, true) | ValueView::Mix(_, true)
-            )
+            && let Some(stored) = crate::runtime::quanthash_store::quanthash_store(&target, &args)
         {
-            // STORE(@keys, @values) or STORE(@pairs)
-            // First, flatten all args into a list of items
-            let mut items: Vec<Value> = Vec::new();
-            for arg in &args {
-                match arg.view() {
-                    ValueView::Array(elems, _) => items.extend(elems.iter().cloned()),
-                    ValueView::Seq(elems) => items.extend(elems.iter().cloned()),
-                    ValueView::Slip(elems) => items.extend(elems.iter().cloned()),
-                    _ => items.push(arg.clone()),
-                }
-            }
-            // If items are all non-Pair and there are exactly 2 array args,
-            // zip them as keys => values
-            let has_pairs = items
-                .iter()
-                .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
-            let pairs: Vec<(String, i64)> = if has_pairs {
-                items
-                    .iter()
-                    .map(|v| match v.view() {
-                        ValueView::Pair(k, v) => {
-                            let count = match v.view() {
-                                ValueView::Int(i) => i,
-                                ValueView::Num(f) => f as i64,
-                                _ => 1,
-                            };
-                            (k.clone(), count)
-                        }
-                        ValueView::ValuePair(k, v) => {
-                            let count = match v.view() {
-                                ValueView::Int(i) => i,
-                                ValueView::Num(f) => f as i64,
-                                _ => 1,
-                            };
-                            (k.to_string_value(), count)
-                        }
-                        _ => (v.to_string_value(), 1),
-                    })
-                    .collect()
-            } else if args.len() == 2
-                && matches!(args[0].view(), ValueView::Array(..))
-                && matches!(args[1].view(), ValueView::Array(..))
-            {
-                // Zip keys and values
-                let keys = if let ValueView::Array(k, _) = args[0].view() {
-                    k.iter().map(|v| v.to_string_value()).collect::<Vec<_>>()
-                } else {
-                    vec![]
-                };
-                let values = if let ValueView::Array(v, _) = args[1].view() {
-                    v.iter()
-                        .map(|v| match v.view() {
-                            ValueView::Int(i) => i,
-                            ValueView::Num(f) => f as i64,
-                            _ => 1,
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![]
-                };
-                keys.into_iter().zip(values).collect()
-            } else {
-                items.iter().map(|v| (v.to_string_value(), 1i64)).collect()
-            };
-
-            match target.view() {
-                ValueView::Bag(_, _) => {
-                    let mut counts = std::collections::HashMap::new();
-                    for (k, v) in pairs {
-                        *counts.entry(k).or_insert(0i64) += v;
-                    }
-                    return Ok(Value::bag_hash(counts));
-                }
-                ValueView::Set(_, _) => {
-                    let mut elems = std::collections::HashSet::new();
-                    for (k, v) in pairs {
-                        if v > 0 {
-                            elems.insert(k);
-                        }
-                    }
-                    return Ok(Value::set_hash(elems));
-                }
-                ValueView::Mix(_, _) => {
-                    let mut weights = std::collections::HashMap::new();
-                    for (k, v) in pairs {
-                        *weights.entry(k).or_insert(0f64) += v as f64;
-                    }
-                    return Ok(Value::mix_hash(weights));
-                }
-                _ => {}
-            }
+            return Ok(stored);
         }
 
         // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on

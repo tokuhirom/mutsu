@@ -429,7 +429,8 @@ impl Interpreter {
         // itself defers to a real user override when the class declares one.
         if let Some(target) = self.env().get(&var_name).cloned()
             && let ValueView::Instance { attributes, .. } = target.view()
-            && attributes.contains_key("__mutsu_hash_storage")
+            && (attributes.contains_key("__mutsu_hash_storage")
+                || attributes.contains_key("__baggy_data__"))
         {
             let idx_arg = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
@@ -437,9 +438,23 @@ impl Interpreter {
                 ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
                 _ => idx.clone(),
             };
-            if let Some(result) =
-                self.try_hash_storage_delegate_mut(&var_name, &target, "DELETE-KEY", &[idx_arg])
-            {
+            let delegated = self.try_hash_storage_delegate_mut(
+                &var_name,
+                &target,
+                "DELETE-KEY",
+                std::slice::from_ref(&idx_arg),
+            );
+            // The QuantHash twin — see `vm_baggy_subclass_delegate.rs`.
+            let delegated = match delegated {
+                Some(result) => Some(result),
+                None => self.try_baggy_storage_delegate_mut(
+                    &var_name,
+                    &target,
+                    "DELETE-KEY",
+                    &[idx_arg],
+                ),
+            };
+            if let Some(result) = delegated {
                 self.stack.push(result?);
                 return Ok(());
             }

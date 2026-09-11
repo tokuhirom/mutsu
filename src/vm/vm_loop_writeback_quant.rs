@@ -38,6 +38,34 @@ impl Interpreter {
         elem: Option<&Value>,
         value: &Value,
     ) -> Result<(), RuntimeError> {
+        let source_val = self.get_env_with_main_alias(source);
+        let Some(source_val) = source_val else {
+            return Ok(());
+        };
+        let Some(updated) = Self::quanthash_with_weight(&source_val, key, elem, value)? else {
+            return Ok(());
+        };
+        self.set_env_with_main_alias(source, updated.clone());
+        self.update_local_if_exists(code, source, &updated);
+        Ok(())
+    }
+
+    /// The pure half of [`Self::quanthash_set_weight`]: given a MUTABLE
+    /// QuantHash `container`, return the container with `key`'s weight set from
+    /// `value` (Int for Bag, Real for Mix, truthiness for Set; a zero weight
+    /// removes the key). `elem` is the element OBJECT behind a `.WHICH` key,
+    /// recorded in `original_keys` on insert. `None` when `container` is not a
+    /// mutable QuantHash.
+    ///
+    /// Shared with the QuantHash-subclass delegation
+    /// (`vm_baggy_subclass_delegate.rs`), whose backing store is a plain
+    /// QuantHash value rather than a named variable.
+    pub(crate) fn quanthash_with_weight(
+        container: &Value,
+        key: String,
+        elem: Option<&Value>,
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
         let record = |originals: &mut Option<std::collections::HashMap<String, Value>>,
                       key: &str| {
             if let Some(el) = elem {
@@ -54,8 +82,7 @@ impl Interpreter {
                 ok.remove(key);
             }
         };
-        let source_val = self.get_env_with_main_alias(source);
-        let updated = match source_val.as_ref().map(Value::view) {
+        let updated = match Some(container.view()) {
             Some(ValueView::Bag(bag, true)) => {
                 let count = Self::bag_assignment_count(value)?;
                 let mut b = (**bag).clone();
@@ -94,11 +121,9 @@ impl Interpreter {
                 }
                 Value::set_parts(crate::gc::Gc::new(s), true)
             }
-            _ => return Ok(()),
+            _ => return Ok(None),
         };
-        self.set_env_with_main_alias(source, updated.clone());
-        self.update_local_if_exists(code, source, &updated);
-        Ok(())
+        Ok(Some(updated))
     }
 
     /// Write the loop variable back to a mutable QuantHash weight during

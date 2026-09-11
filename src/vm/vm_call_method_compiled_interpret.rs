@@ -350,6 +350,11 @@ impl Interpreter {
                 self.method_dispatch_pure = true;
                 return result;
             }
+            // The QuantHash twin — see `vm_baggy_subclass_delegate.rs`.
+            if let Some(result) = self.try_baggy_storage_delegate(&target, method_sym, &args) {
+                self.method_dispatch_pure = true;
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the

@@ -586,6 +586,7 @@ mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod compunit_scope;
+mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
@@ -756,6 +757,8 @@ mod output_sink;
 pub(crate) mod phasers;
 mod promise_broken_gist;
 mod promise_errors;
+pub(crate) mod quanthash_store;
+mod quanthash_subclass;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
@@ -2576,6 +2579,10 @@ pub struct Interpreter {
     /// Cleared per-name on subset redeclaration; starts empty per thread (the
     /// cache is a pure recomputable optimization). See `type_matches_value`.
     subset_predicate_cache: HashMap<String, SubsetPredicateCompiled>,
+    /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
+    /// container subclass's NATIVE `AT-KEY` when a user override asks for it
+    /// with `nextcallee`. Built on first use; see `container_element_proxy`.
+    container_element_proxy: Option<Value>,
     /// Side-channel: the exception raised by the most recent subset `where`
     /// predicate that failed by *throwing* (a `fail "msg"` inside the `where`,
     /// e.g. `subset Even of Int where { $_ %% 2 or fail "..." }`). `type_matches_value`
