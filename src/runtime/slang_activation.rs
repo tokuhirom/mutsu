@@ -33,6 +33,25 @@ const ACTIONS_HANDLE_CLASS: &str = "Mutsu::Slang::Actions";
 /// names another slang-activating module).
 pub(crate) const ACTIVATION_THREAD_NAME: &str = "mutsu-slang-activation";
 
+/// One grammar-rule override a slang role declares: the overridden rule/token
+/// name, plus the token's raw regex source when it has one.
+///
+/// Slang::Tuxic-style slangs override *productions* and the body is Rakudo
+/// internals mutsu never executes (ADR-0026 §4), so `body` goes unread. An
+/// `L10N::XX` vocabulary role overrides *spellings*, and the body is the
+/// localized spelling itself — data, which `parser::stmt::simple::l10n`
+/// interprets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SlangRuleOverride {
+    pub(crate) name: String,
+    pub(crate) body: Option<String>,
+    /// `localized => canonical` pairs read out of an L10N role's
+    /// `<category>2ast` method (`method core2ast { my constant %mapping = ... }`),
+    /// which is where the generated roles keep the identifier-position half of
+    /// a vocabulary. Empty for every other kind of override.
+    pub(crate) aliases: Vec<(String, String)>,
+}
+
 pub(crate) fn comp_lang_instance() -> Value {
     Value::make_instance(
         crate::symbol::Symbol::intern(COMP_LANG_CLASS),
@@ -63,10 +82,10 @@ fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
 pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<SlangRuleOverride>, String> {
     let handle = crate::runtime::builtins_system::spawn_user_thread(
         ACTIVATION_THREAD_NAME,
-        move || -> Result<Vec<String>, String> {
+        move || -> Result<Vec<SlangRuleOverride>, String> {
             let mut interp = Interpreter::new();
             for path in lib_paths {
                 interp.add_lib_path(path);
@@ -83,6 +102,27 @@ pub(crate) fn run_slang_activation(
 }
 
 impl Interpreter {
+    /// `Str.AST($slang)`: parse `source` under the localized surface syntax of
+    /// the `L10N::<$slang>` distribution.
+    ///
+    /// Lives on the interpreter, like `EVAL`, because the sub-parse resolves a
+    /// module: the parser's search-path list is only populated around a parse,
+    /// so this installs this interpreter's paths for the duration exactly as
+    /// `run_program` / `require` do. An undefined `$slang` (rakudo's `Mu
+    /// $slang?` default) is the plain, unlocalized parse.
+    pub(crate) fn str_ast_with_slang(
+        &mut self,
+        source: &str,
+        slang: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_program_path(self.program_path.clone());
+        let result = crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref());
+        crate::parser::clear_parser_lib_paths();
+        result
+    }
+
     /// Native methods of the `$*LANG` object graph. Returns `None` for
     /// methods this dispatcher does not know, letting the normal instance
     /// dispatch produce its usual error.
@@ -121,20 +161,11 @@ impl Interpreter {
         let Some(grammar) = args.get(1) else {
             return Err(RuntimeError::new("define_slang requires a grammar handle"));
         };
-        let mut rules: Vec<String> = Vec::new();
+        let mut rules: Vec<SlangRuleOverride> = Vec::new();
         for role in Self::slang_handle_roles(grammar) {
             rules.extend(self.slang_role_rule_names(&role)?);
         }
-        let mut modes = crate::parser::slang_modes();
-        for rule in &rules {
-            if crate::parser::apply_slang_rule_override(&mut modes, rule).is_none() {
-                return Err(RuntimeError::new(format!(
-                    "Slang activation NYI: grammar rule override '{rule}' is not supported \
-                     by this implementation (recognized: term:sym<identifier>, methodop, \
-                     routine-declarator:sym<sub>)"
-                )));
-            }
-        }
+        crate::parser::apply_slang_overrides(&rules).map_err(RuntimeError::new)?;
         self.defined_slang_rules.extend(rules);
         Ok(Value::NIL)
     }
@@ -153,10 +184,11 @@ impl Interpreter {
         Vec::new()
     }
 
-    /// The grammar-rule names a slang role overrides: its declared
-    /// `token`/`rule` members. Role tokens live in the role's deferred body
-    /// (`DeferredBodyOpKind::TokenRule`), not its `methods` map.
-    fn slang_role_rule_names(&self, role: &Value) -> Result<Vec<String>, RuntimeError> {
+    /// The grammar-rule overrides a slang role declares: its `token`/`rule`
+    /// members, each with the raw regex source of its body. Role tokens live in
+    /// the role's deferred body (`DeferredBodyOpKind::TokenRule`), not its
+    /// `methods` map.
+    fn slang_role_rule_names(&self, role: &Value) -> Result<Vec<SlangRuleOverride>, RuntimeError> {
         let role_name = match role.view() {
             ValueView::Package(name) => name.resolve(),
             _ => role.to_string_value(),
@@ -173,14 +205,100 @@ impl Interpreter {
                 continue;
             }
             match &op.raw {
-                crate::ast::Stmt::TokenDecl { name, .. }
-                | crate::ast::Stmt::RuleDecl { name, .. } => names.push(name.resolve()),
+                crate::ast::Stmt::TokenDecl { name, body, .. }
+                | crate::ast::Stmt::RuleDecl { name, body, .. } => names.push(SlangRuleOverride {
+                    name: name.resolve(),
+                    body: regex_literal_source(body),
+                    aliases: Vec::new(),
+                }),
                 _ => {}
             }
         }
+        // An L10N role translates identifier-position names (core routine
+        // names, `is` trait arguments) through a `<category>2ast` method rather
+        // than through a token, so read those maps too.
+        for (method_name, defs) in &def.methods {
+            let Some(category) = method_name.strip_suffix("2ast") else {
+                continue;
+            };
+            if category.is_empty() {
+                continue;
+            }
+            let Some(aliases) = defs.first().and_then(|d| constant_mapping_pairs(&d.body)) else {
+                continue;
+            };
+            names.push(SlangRuleOverride {
+                name: method_name.clone(),
+                body: None,
+                aliases,
+            });
+        }
         Ok(names)
     }
+}
 
+/// The `localized => canonical` pairs of a `my constant %mapping = "a", "b",
+/// ...;` declaration in `body`.
+///
+/// The L10N roles are machine-generated and always spell the map this way: a
+/// flat list of string literals, alternating localized spelling and canonical
+/// Raku name. A declaration that is not exactly that yields `None` rather than
+/// a half-read map.
+fn constant_mapping_pairs(body: &[crate::ast::Stmt]) -> Option<Vec<(String, String)>> {
+    for stmt in body {
+        let crate::ast::Stmt::VarDecl {
+            name,
+            expr: crate::ast::Expr::ArrayLiteral(items),
+            custom_traits,
+            ..
+        } = stmt
+        else {
+            continue;
+        };
+        if name != "%mapping" || !custom_traits.iter().any(|(t, _)| t == "__constant") {
+            continue;
+        }
+        if items.len() % 2 != 0 {
+            return None;
+        }
+        let mut pairs = Vec::with_capacity(items.len() / 2);
+        for pair in items.chunks_exact(2) {
+            let (Some(localized), Some(canonical)) =
+                (string_literal(&pair[0]), string_literal(&pair[1]))
+            else {
+                return None;
+            };
+            pairs.push((localized, canonical));
+        }
+        return Some(pairs);
+    }
+    None
+}
+
+fn string_literal(expr: &crate::ast::Expr) -> Option<String> {
+    let crate::ast::Expr::Literal(value) = expr else {
+        return None;
+    };
+    match value.view() {
+        ValueView::Str(s) => Some(s.to_string()),
+        _ => None,
+    }
+}
+
+/// The raw regex source of a `token`/`rule` body, when the body is the single
+/// regex literal the declarator compiles to. Anything else (a token with
+/// embedded code, an empty body) yields `None`.
+fn regex_literal_source(body: &[crate::ast::Stmt]) -> Option<String> {
+    match body {
+        [crate::ast::Stmt::Expr(crate::ast::Expr::Literal(value))] => match value.view() {
+            ValueView::Regex(source, ..) => Some(source.to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+impl Interpreter {
     /// `.^mixin(Role)` on a `Mutsu::Slang::*` handle: record the composition,
     /// returning a new handle carrying the accumulated role set (ADR-0026
     /// §2.2). Purely a recording — the role is never actually composed.

@@ -76,7 +76,28 @@ pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
 /// `$*LANG.define_slang` maps overridden grammar-rule names onto these
 /// parser modes.
-pub(crate) use stmt::simple::{apply_slang_rule_override, slang_modes};
+pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
+
+/// The module search paths a parse-time slang activation must run under — the
+/// paths this parse itself resolves `use` against.
+pub(crate) fn parser_lib_paths_for_slang() -> Vec<String> {
+    stmt::simple::parser_lib_paths()
+}
+
+/// The unit's current L10N vocabulary, for save/restore around a sub-parse that
+/// installs one of its own.
+pub(crate) fn l10n_vocabulary_for_restore() -> Option<std::rc::Rc<stmt::simple::L10nVocabulary>> {
+    stmt::simple::l10n_vocabulary_snapshot()
+}
+
+/// Restore both halves of the slang state saved before a sub-parse.
+pub(crate) fn restore_slang_state(
+    modes: stmt::simple::SlangModes,
+    vocabulary: Option<std::rc::Rc<stmt::simple::L10nVocabulary>>,
+) {
+    stmt::simple::set_slang_modes(modes);
+    stmt::simple::set_l10n_vocabulary(vocabulary);
+}
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };

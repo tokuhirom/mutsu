@@ -311,6 +311,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
     let (rest, name) = crate::parser::stmt::parse_raku_ident(input)?;
     let mut name = normalize_raku_identifier(name);
+    // L10N slang vocabulary: a localized spelling of a core routine / term /
+    // enum value (`言う` for `say` under `L10N::JA`) is an additional name for
+    // it, so translate it back to the canonical name here — the bareword term
+    // production — and let everything downstream see the ordinary Raku name.
+    if let Some(canonical) = crate::parser::stmt::simple::l10n_alias(&name) {
+        name = canonical;
+    }
     // Slang `identifier`/`name` override (ADR-0026 §2.3, Slangify's Piersing
     // fixture): a bareword call/term identifier may end in a trailing `?`/`!`
     // (`pass? "..."`).

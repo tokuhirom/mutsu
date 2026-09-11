@@ -625,6 +625,44 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     Ok(Value::rakuast(Box::new(node)))
 }
 
+/// Entry point for `Str.AST($slang)`: parse the source under the localized
+/// surface syntax of the `L10N::<$slang>` distribution.
+///
+/// Rakudo implements the argument by `use`ing `L10N::<$slang>` for the duration
+/// of the sub-parse, which mixes that distribution's role into the MAIN slang
+/// grammar. mutsu reuses the ADR-0026 activation machinery for the same effect:
+/// the module is loaded in the activation sub-interpreter, its
+/// `$*LANG.define_slang` registration hands back the role's token/mapping
+/// overrides, and those become this parse's [`L10nVocabulary`]. The vocabulary
+/// is preseeded rather than merely set, because `parse_source` resets the
+/// unit's parser state on the way in.
+///
+/// An absent or undefined `$slang` (rakudo's `Mu $slang?` default) is the
+/// plain parse. Any other value names the module verbatim — rakudo has no
+/// special case for `"Raku"` either, and `.AST("Raku")` looks for `L10N::Raku`.
+pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value, RuntimeError> {
+    let Some(slang) = slang.filter(|s| !s.is_empty()) else {
+        return str_dot_ast(source);
+    };
+    let module = format!("L10N::{slang}");
+    let overrides = crate::runtime::slang_activation::run_slang_activation(
+        module.clone(),
+        crate::parser::parser_lib_paths_for_slang(),
+    )
+    .map_err(|e| RuntimeError::new(format!("Could not find {module}: {e}")))?;
+
+    let saved_modes = crate::parser::slang_modes();
+    let saved_vocabulary = crate::parser::l10n_vocabulary_for_restore();
+    let result = (|| {
+        crate::parser::apply_slang_overrides(&overrides).map_err(RuntimeError::new)?;
+        crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
+        str_dot_ast(source)
+    })();
+    crate::parser::set_l10n_preseed(None);
+    crate::parser::restore_slang_state(saved_modes, saved_vocabulary);
+    result
+}
+
 /// `.gist` / `.raku` / `.Str` of a RakuAST node.
 pub fn node_gist(node: &RakuAstNode) -> String {
     render::render_node(node, 0)

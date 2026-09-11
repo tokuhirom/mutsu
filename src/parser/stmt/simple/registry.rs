@@ -230,6 +230,10 @@ pub(crate) fn reset_user_subs() {
     });
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
+    // ... and, like the language revision above, a nested parse that was asked
+    // for a localized slang (`Str.AST("JA")`) re-establishes its vocabulary
+    // after the reset rather than losing it to one.
+    super::l10n::apply_l10n_preseed();
 }
 
 /// Seed the language version an EVAL's nested parse starts at. `None` restores
