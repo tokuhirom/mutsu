@@ -52,6 +52,9 @@ target-local/
 # e2e suite) from the bench-data branch's history.
 /site/bench-trend.html
 /site/.bench-history.e2e.tsv
+# Copied out of ecosystem/ at deploy time by pages.yml (and transiently by the
+# e2e suite) for the ecosystem page's parity chart.
+/site/history.svg
 # Compatibility numbers counted at deploy time by pages.yml (the landing page
 # falls back to a baked-in figure when it is absent).
 /site/content/stats.json
