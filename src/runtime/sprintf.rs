@@ -5,6 +5,7 @@ use super::sprintf_helpers::{
     apply_float_minus_zero, apply_width, format_float_fixed, format_g, format_inf_nan,
     format_rat_fixed, format_rat_sci, normalize_sci_exponent, sign_prefix,
 };
+use super::sprintf_hexfloat::format_hexfloat;
 pub(crate) use super::sprintf_validate::{
     directives_count_message, sprintf_arg_specs, sprintf_directive_count,
     validate_sprintf_arg_types, validate_sprintf_directives,
@@ -545,6 +546,19 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                     let formatted = format_g(abs, p, spec == 'G', hash_flag);
                     format!("{}{}", prefix, formatted)
                 }
+            }
+            'a' | 'A' => {
+                // C99 hexadecimal float. The rendering is of the f64 itself, so
+                // a Rat argument is first converted to the double it denotes
+                // (`sprintf("%a", 27.1)` is the hexfloat of 27.1e0).
+                format_hexfloat(
+                    float_val(),
+                    prec_num,
+                    plus_sign,
+                    space_flag,
+                    hash_flag,
+                    spec == 'A',
+                )
             }
             'c' => {
                 let i = int_val();

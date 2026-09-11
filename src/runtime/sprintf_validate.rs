@@ -228,6 +228,8 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
                     | 'E'
                     | 'g'
                     | 'G'
+                    | 'a'
+                    | 'A'
                     | 'c'
             )
         {
