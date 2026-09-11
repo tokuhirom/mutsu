@@ -117,6 +117,34 @@ fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Ex
     Some((r, full_name, dynamic))
 }
 
+/// Parse `@{...}` as Raku's list contextualizer, given the source at the `{`.
+///
+/// The mirror of [`crate::parser::primary::container::itemized_brace_expr`] for
+/// the `@` sigil: rakudo's `contextualizer` token is
+/// `<sigil> <?[ \[ \{ ]> <coercee=circumfix>`, so `@{:a, :b}` is the `{...}`
+/// circumfix in list context, not a dereference. Fails (so the caller can fall
+/// back to diagnosing the Perl 5 deref) whenever
+/// [`super::is_brace_contextualizer`] says the braces do not hold a composer.
+fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
+    if !input.starts_with('{') {
+        return Err(PError::expected("brace list contextualizer"));
+    }
+    if !super::is_brace_contextualizer(super::brace_deref_text(input)) {
+        return Err(PError::expected("brace list contextualizer"));
+    }
+    let (rest, inner) = crate::parser::primary::misc::block_or_hash_expr(input)?;
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(inner),
+            name: crate::symbol::Symbol::intern("list"),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
+
 /// Parse an @array variable reference.
 pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '@')?;
@@ -246,20 +274,25 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
-    // @{expr} is Perl 5 array dereference syntax — throw X::Obsolete
-    if twigil.is_empty()
-        && rest.starts_with('{')
-        && let Ok((r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
-        && !matches!(inner, crate::ast::Expr::Hash(_))
-    {
-        let block_src = &rest[..rest.len() - r2.len()];
-        let deref_inner = block_src
-            .strip_prefix('{')
-            .and_then(|s| s.strip_suffix('}'))
-            .unwrap_or("expr");
-        return Err(PError::from_typed(
-            crate::value::RuntimeError::obsolete_p5_deref('@', deref_inner),
-        ));
+    // `@{...}` is either Raku's list contextualizer over the `{...}` circumfix
+    // (`@{:a, :b}` is the two-pair list) or the Perl 5 array dereference. The
+    // guard that tells them apart is rakudo's own — see `is_brace_contextualizer`.
+    if twigil.is_empty() && rest.starts_with('{') {
+        if let Ok(parsed) = brace_list_contextualizer(rest) {
+            return Ok(parsed);
+        }
+        if let Ok((r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
+            && !matches!(inner, crate::ast::Expr::Hash(_))
+        {
+            let block_src = &rest[..rest.len() - r2.len()];
+            let deref_inner = block_src
+                .strip_prefix('{')
+                .and_then(|s| s.strip_suffix('}'))
+                .unwrap_or("expr");
+            return Err(PError::from_typed(
+                crate::value::RuntimeError::obsolete_p5_deref('@', deref_inner),
+            ));
+        }
     }
     // Handle @<name> — list coercion of a named capture variable from $/
     // (e.g., after a regex match, @<fie> gives the positional elements of $<fie>)

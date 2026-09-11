@@ -138,10 +138,16 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("itemized brace expression"));
     }
     let block_start = rest;
+    // rakudo's `special_variable:sym<${ }>` guard decides this before the block
+    // is parsed: a `{...}` holding a pair, a `=>` or a `|%` slip is the Raku
+    // contextualizer, not the Perl 5 deref (see `is_brace_contextualizer`).
+    let is_contextualizer = crate::parser::primary::var::is_brace_contextualizer(
+        crate::parser::primary::var::brace_deref_text(block_start),
+    );
     let (rest, inner) = crate::parser::primary::misc::block_or_hash_expr(rest)?;
     // When the inner expression is a Hash literal, ${ } creates an itemized hash
     // (wrapped in a Scalar container), not a Capture.
-    if matches!(inner, Expr::Hash(_)) {
+    if is_contextualizer || matches!(inner, Expr::Hash(_)) {
         Ok((
             rest,
             Expr::MethodCall {
