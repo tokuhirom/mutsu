@@ -368,7 +368,19 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 let (r, _) = ws(rest)?;
                 rest = r;
             }
-            let (rest, expr) = if op.parses_postfix_target() {
+            let (rest, expr) = if crate::parser::expr::precedence::is_loose_not_or_so_prefix(rest) {
+                // `so` and `not` are prefix operators in raku, and prefixes
+                // stack: `!so *` is one prefix chain over the term `*`, whose
+                // precedence is that of the LOOSEST prefix in it. Parsing the
+                // operand as an ordinary tight prefix expression left `so` to
+                // be read as a bare term, after which the `*` of `!so *` was
+                // an infix multiply with nothing on its right — a hard parse
+                // error on `sub f($a where !so *)` (Linux::NFTables).
+                crate::parser::expr::precedence::not_expr_mode(
+                    rest,
+                    crate::parser::expr::operators::ExprMode::Full,
+                )?
+            } else if op.parses_postfix_target() {
                 postfix_expr(rest)?
             } else {
                 prefix_expr(rest)?

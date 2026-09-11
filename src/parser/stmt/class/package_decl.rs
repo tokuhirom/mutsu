@@ -32,6 +32,16 @@ pub(crate) fn extract_exported_subs(
                     associativity.clone(),
                 ));
             }
+            // `token foo is export` / `rule foo is export` export a Regex under
+            // `&foo`, so they are importable names just like an exported sub.
+            Stmt::TokenDecl {
+                name, is_export, ..
+            }
+            | Stmt::RuleDecl {
+                name, is_export, ..
+            } if *is_export => {
+                names.push((name.to_string(), None, None));
+            }
             Stmt::SyntheticBlock(inner) => {
                 names.extend(extract_exported_subs(inner));
             }
