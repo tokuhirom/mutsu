@@ -73,14 +73,14 @@ Two consequences worth spelling out:
   `pull_request_read`/`get_check_runs` again after doing other work, or use
   `subscribe_pr_activity` so CI results and review comments wake the session.
 
-## Provisioning: rust, raku and the native C libraries
+## Provisioning: rust, raku, the native C libraries and the sandbox
 
 `.claude/hooks/session-start.sh` (registered as a `SessionStart` hook in `.claude/settings.json`)
 installs the highest Rust version the repo declares, runs `.agents/skills/install-raku/install-raku.sh`
-when `raku` is missing, installs the C shared libraries the bundled batteries `dlopen`, and warms
-the crate cache with `cargo fetch`. It is idempotent (~0.3s when everything is in place) and does
-nothing on a local checkout unless `MUTSU_SETUP_FORCE=1` is set — a developer machine is pinned by
-`.mise.toml` and owns its own toolchain.
+when `raku` is missing, installs the C shared libraries the bundled batteries `dlopen`, installs and
+verifies `bubblewrap`, and warms the crate cache with `cargo fetch`. It is idempotent (~0.3s when
+everything is in place) and does nothing on a local checkout unless `MUTSU_SETUP_FORCE=1` is set —
+a developer machine is pinned by `.mise.toml` and owns its own toolchain.
 
 The native-library list is the `NATIVE_LIBS` array at the top of `setup_native_libs()`, one
 `"<soname> <apt package>"` row each. It currently holds a single entry, `libmysqlclient.so.21` /
@@ -89,9 +89,18 @@ The native-library list is the `NATIVE_LIBS` array at the top of `setup_native_l
 which DBIish's `NativeLibs::Searcher.try-versions('mysqlclient', 16..21)` does not match. Installing
 it costs about 2s on a cold container; the whole hook then takes ~0.14s on every later run.
 
-So **do not hand-install rustc or rakudo at the start of a remote session** — it has already
-happened, and `raku` is available as the oracle. If a build still fails with `E0658`, the hook did
-not run (look for its `session-start: environment ready` line) and
+`bubblewrap` is there for `scripts/ecosystem-sweep.py`, which confines every measured interpreter
+run (unaudited third-party test suites) and refuses a corpus sweep without it. The hook does not
+just install the package: it runs the same `bwrap --unshare-all --ro-bind / /` probe the CI workflow
+does, because a container can ship `bwrap` and still deny the unprivileged user namespace it needs.
+Verified working in the remote containers as of 2026-09-11, so an `--only` re-measure there keeps
+the default sandbox; `--sandbox none` is for the case where the hook warned that the probe failed.
+A *corpus* sweep still does not belong in a remote container — 4 cores and the disk allowance, not
+the sandbox, are what rule it out (`docs/ecosystem-parity.md` §8.1 dispatches it to CI instead).
+
+So **do not hand-install rustc, rakudo or bubblewrap at the start of a remote session** — it has
+already happened, and `raku` is available as the oracle. If a build still fails with `E0658`, the
+hook did not run (look for its `session-start: environment ready` line) and
 `.claude/skills/rustc-too-old/SKILL.md` applies. When a version pin moves the hook follows it with
 no edit; only the *sources* of the pins are hardcoded, so add a new one there if the repo ever
 grows a `rust-toolchain.toml`.

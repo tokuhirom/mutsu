@@ -274,6 +274,7 @@ scripts/ecosystem-sweep.py --rollup
 
 Other flags: `--timeout` (default 120s/file, both sides), `--max-files` (per
 dist, to bound a pathological suite), `--include-xt`, `--sandbox {bwrap,none}`,
+`--no-index-snapshot` (see below),
 `--mutsu-only` (see *Baseline caching* below), `--refresh-baseline`, `--dry-run` (resolve and print the
 plan without executing), `--json -` (emit records to stdout instead of the tree).
 
@@ -281,6 +282,17 @@ Environment: `MUTSU_BIN` (default `target/release/mutsu`), `RAKU_BIN` (default
 `raku`), `MUTSU_ECO_HOST` (what `measured.host` records; default
 `<uname>-<machine>`, which cannot tell a hosted runner from the maintainer's box
 — §8.1 sets it to `gha-*`).
+
+**`index-snapshot.json` is corpus-level provenance and a targeted run leaves it
+alone.** The file says "the records beside me were resolved against this
+fez/REA snapshot"; rewriting it after re-measuring one distribution would date
+the entire ledger to today's index on the strength of a single record, and puts
+an unrelated file in a bug-fix PR's diff where it reads as a corpus refresh.
+So `--only` never writes it (the run logs `index-snapshot.json: left
+unchanged`), and `--no-index-snapshot` extends that to a `--status` / `--stale`
+re-measure, which has the same problem. A corpus or shard run does write it —
+that is what it is for, and §8.1's workflow pins one index across all its shards
+so they agree on its content.
 
 `scripts/ecosystem-ci.py` is the CI-side companion: `plan` turns
 `.github/workflows/ecosystem-sweep.yml`'s dispatch inputs into a validated job
@@ -398,7 +410,10 @@ on overlapping selections, or the second to finish overwrites the first.
 ### 8.0 Locally
 
 A machine with the cores to spare — the maintainer's 12-core box, not an
-ephemeral remote container (4 cores, a fixed disk allowance, and no `bwrap`).
+ephemeral remote container (4 cores and a fixed disk allowance; `bwrap` is no
+longer the obstacle there, since `.claude/hooks/session-start.sh` installs and
+verifies it, but a corpus sweep still does not fit). A single `--only`
+re-measure after a fix is fine in either.
 
 ```sh
 apt-get install bubblewrap          # required; the sweep refuses to run a corpus without it
