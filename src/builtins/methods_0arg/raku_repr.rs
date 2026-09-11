@@ -892,15 +892,31 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         ValueView::ValuePair(key, value) => {
-            if let ValueView::Str(key_str) = key.view() {
-                let ident_like = is_adverbial_pair_key(&key_str);
+            // A Str enum is a Str value in Pair.raku's key position. Its own
+            // `.raku` remains qualified (`Sel::Alpha`), but the Pair uses its
+            // string value (`a-val`) for the colonpair/arrow decision.
+            let str_key = match key.view() {
+                ValueView::Str(key_str) => Some(key_str.to_string()),
+                ValueView::Enum {
+                    value: crate::value::EnumValue::Str(key_str),
+                    ..
+                } => Some(key_str.clone()),
+                _ => None,
+            };
+            if let Some(key_str) = str_key.as_deref() {
+                let ident_like = is_adverbial_pair_key(key_str);
                 if ident_like {
                     return match value.view() {
-                        ValueView::Bool(true) => format!(":{}", *key_str),
-                        ValueView::Bool(false) => format!(":!{}", *key_str),
-                        _ => format!(":{}({})", *key_str, raku_value(value)),
+                        ValueView::Bool(true) => format!(":{}", key_str),
+                        ValueView::Bool(false) => format!(":!{}", key_str),
+                        _ => format!(":{}({})", key_str, raku_value(value)),
                     };
                 }
+                return format!(
+                    "{} => {}",
+                    raku_value(&Value::str(key_str.to_string())),
+                    raku_value(value)
+                );
             }
             let key_repr = if raku_raw_repr(key).is_some() {
                 // A pre-rendered leaf (an instance key) is already a complete
