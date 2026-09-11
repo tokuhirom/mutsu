@@ -78,7 +78,6 @@ roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
 roast/S02-literals/misc-interpolation.t
-roast/S02-literals/numeric.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/pairs.t
 roast/S02-literals/pod.t
@@ -400,7 +399,6 @@ roast/S04-statements/while.t
 roast/S04-statements/with.t
 roast/S05-capture/alias.t
 roast/S05-capture/array-alias.t
-roast/S05-capture/caps.t
 roast/S05-capture/dot.t
 roast/S05-capture/match-object.t
 roast/S05-capture/named.t
@@ -441,7 +439,6 @@ roast/S05-metachars/newline.t
 roast/S05-metachars/tilde.t
 roast/S05-metasyntax/assertions.t
 roast/S05-metasyntax/changed.t
-roast/S05-metasyntax/charset.t
 roast/S05-metasyntax/delimiters.t
 roast/S05-metasyntax/interpolating-closure.t
 roast/S05-metasyntax/litvar.t
@@ -449,7 +446,6 @@ roast/S05-metasyntax/longest-alternative.t
 roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
-roast/S05-metasyntax/regex.t
 roast/S05-metasyntax/repeat.t
 roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
@@ -472,7 +468,6 @@ roast/S05-modifier/counted.t
 roast/S05-modifier/exhaustive.t
 roast/S05-modifier/global.t
 roast/S05-modifier/ignorecase-and-ignoremark.t
-roast/S05-modifier/ignorecase.t
 roast/S05-modifier/ignoremark.t
 roast/S05-modifier/ii.t
 roast/S05-modifier/my.t

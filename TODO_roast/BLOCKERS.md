@@ -74,7 +74,10 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1435 / 1463** (2026-07-28, `wc -l roast-whitelist.txt`) = **28** files not whitelisted.
+- The whitelist stands at **1431 / 1465** (2026-09-11, `wc -l roast-whitelist.txt` against
+  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **34** files not whitelisted. The count
+  moved from 1435/1463 because the 2026-09-11 roast re-vendor (`b2cbe8a4` → `85a87909`) added
+  subtests to six files — see "Files dewhitelisted by the 2026-09-11 roast re-vendor" below.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -85,7 +88,7 @@ Concretely:
   ([ADR-0009](../docs/adr/0009-regex-code-assertion-execution-model.md)). The former
   ①(stack overflow)/②(unparseable)/③(hang)/④(error-message) clusters are all cleared
   (history: [news/2026-07.md](../news/2026-07.md)).
-- **No cluster remains.** The 32 non-whitelisted files are nearly all non-goal / no-oracle /
+- **No cluster remains.** The 34 non-whitelisted files are nearly all non-goal / no-oracle /
   awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
   unrelated feature. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
   §5 (perf) or §6, and pick up a roast file only when such work happens to unblock it.
@@ -134,6 +137,36 @@ noted.
 | Non-goal | `S12-traits/basic.t` | 0 at parse | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
 | Unpassable | `S32-temporal/time.t` | 8/10, notok 2 | SORRY | The test contains 2 deliberate `flunk("FIXME ...")` failures, plus raku also has `gmtime`/`localtime`/`times` undefined |
+
+## Files dewhitelisted by the 2026-09-11 roast re-vendor
+
+The re-vendor moved roast from `b2cbe8a4` (2026-06-12) to `85a87909` (2026-09-07). Seventeen
+upstream commits touched 20 test files; 19 of those were whitelisted. Thirteen still pass
+unchanged. The six rows below are the ones that do not, plus the one brand-new file.
+
+**Read the raku column before assuming these are mutsu defects.** Every one of these new subtests
+is a *spec test written against an unfixed rakudo bug* (rakudo#4105, #5588, #2962, #4512, #6524),
+so the local oracle — Rakudo v2026.07 — fails them too, and by a wider margin than mutsu does in
+all four regex files. These are therefore **No oracle (spec ahead of the local rakudo)**, not
+regressions: mutsu did not get worse, the target moved. Verify against a newer rakudo before
+treating any single subtest here as settled.
+
+Measured 2026-09-11 on `target/release/mutsu` (`MUTSU_FUDGE=1 prove`); raku measured by running
+the unfudged files under `raku -I roast/packages/Test-Helpers`.
+
+| Classification | File | mutsu | raku (v2026.07) | Blocker (one line) |
+|---|---|---|---|---|
+| No oracle | `S02-literals/numeric.t` | **parse error at line 163** (0/89) | **SORRY** | C99 hexadecimal float literals (`0x1.8p+1`, `0x.8p+1`, `0x1.8P4`, underscores in mantissa/exponent, subnormal/overflow edges) — rakudo#6524, unimplemented in v2026.07 as well. One parse error kills the whole file, so this is the only one of the six that loses *every* subtest; implementing the literal in the lexer would both re-whitelist the file and put mutsu ahead of the local rakudo |
+| No oracle | `S05-capture/caps.t` | **55/56**, notok 47 | 43/56 | Test 47 `^ [(\d) \s]+ <?{ $0.sum == 28 }>` — a code assertion must see only the captures left *after* backtracking into a quantified group (rakudo#4105). mutsu already passes the other 12 new backtracking-capture subtests that rakudo v2026.07 fails |
+| No oracle | `S05-metasyntax/charset.t` | **89/90**, notok 54 | 57/90 | Test 54 `'bb' ~~ /<![a] - [b]> ./` — a negated lookahead of a *class subtraction* must match a subtracted character (rakudo#4512). mutsu returns Nil; so does raku v2026.07. The other 34 new mixed-class/subtraction lookahead subtests pass in mutsu and 32 of them fail in rakudo |
+| No oracle | `S05-metasyntax/regex.t` | **66/68**, notok 59/67 | 58/68 | Block-quantifier limits under backtracking (rakudo#5588). 59: `("abcdn" ~~ /(. ** {2..3})+ n/)` must keep the `{2..3}` minimum across a restart (mutsu matches `bcdn`, raku `abcdn` with the wrong capture split — both wrong, differently). 67: `("a,a" ~~ /^ (a **? {2} % ",") $/)` — a frugal block quantifier with a separator must count its first repetition once; Nil in both |
+| No oracle | `S05-modifier/ignorecase.t` | **110/115**, notok 29/31/35/39/40 | 103/115 | Character-class fold semantics (rakudo#2962): a class entry that case-folds to *two* characters (`ß`, the `ﬀ` ligature) must still match itself but must not match part of its fold, and an entry written as base character + combining escape (`<[ a \x[308] ]>`) must match the composed grapheme and not the bare base. mutsu already passes the hex/named-escape and titlecase subtests that rakudo v2026.07 fails |
+| No oracle | `S32-str/sprintf-a.t` | **0/586** (new file, never whitelisted) | 0/586 | New upstream file: the `%a`/`%A` hexadecimal-float `sprintf` directives. Unimplemented in mutsu and in rakudo v2026.07 alike. Pairs naturally with the `numeric.t` hexfloat-literal work (same formatting/parsing tables) |
+
+`S32-io/IO-Socket-Async.t` also changed upstream (the EADDRINUSE probe now holds a real port
+instead of guessing one) and stays whitelisted: it still times out in the remote agent container at
+"planned 40 ran 17", which is the container's network sandbox, not this change — see
+[docs/agent-environments.md](../docs/agent-environments.md).
 
 ### Investigation notes (carried over from the retired S*.md files)
 
