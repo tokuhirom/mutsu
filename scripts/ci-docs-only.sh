@@ -233,10 +233,8 @@ changed_files() {
     pull_request)
       # The API list is authoritative for a PR (the checkout is a merge commit,
       # so a local `git diff` against the base is not). --paginate covers PRs
-      # larger than one page; the 3000-file API cap only matters for diffs far
-      # bigger than any docs-only change, and truncation can only add unseen
-      # files, which the caller treats as... nothing. So cap it explicitly:
-      # a PR over 300 files is classified `false` by the count guard below.
+      # larger than one page; the endpoint stops at 3000 files, which
+      # `list_is_complete` below detects rather than guesses at.
       gh api --paginate \
         "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
         --jq '.[].filename'
@@ -252,6 +250,49 @@ changed_files() {
         "repos/${GITHUB_REPOSITORY}/compare/${GITHUB_EVENT_BEFORE}...${GITHUB_SHA}" \
         --jq '.files[]?.filename'
       ;;
+  esac
+}
+
+# How many files the diff has according to the API, for the one event where that
+# is knowable exactly. Empty when it is not.
+api_file_count() {
+  case "${GITHUB_EVENT_NAME:-}" in
+    pull_request)
+      gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.changed_files'
+      ;;
+  esac
+}
+
+# Did we read the WHOLE diff? Only a complete list may be classified, because
+# truncation hides files and the hidden one could be `src/vm/vm.rs`.
+#
+# This replaces a count threshold (`over 300 files => refuse to classify`) that
+# was a guess standing in for the question, and a bad one: the pull-request
+# endpoint serves 3000 files, so the threshold refused ten times more diffs than
+# could possibly be short, and every full-corpus `ecosystem/` sweep -- ~1300
+# records, all of them on the allowlist, produced by a workflow that measures
+# mutsu and cannot change it -- paid for five build jobs to confirm that
+# recording what mutsu did does not change what mutsu does.
+#
+# So ask instead of guessing. A pull request states its own `changed_files`, so
+# completeness is an equality, exact at any size: 1269 read of 1269 is complete
+# and 3000 read of 4200 is not. A push has no such number to compare against --
+# the compare endpoint answers with at most 300 files and does not say how many
+# it left out -- so there, and only there, a count is still the whole signal:
+# under 300 nothing was dropped, at 300 something may have been.
+list_is_complete() { # list_is_complete <event> <api count> <count we read>
+  local event="$1" api="$2" seen="$3"
+  case "$seen" in ''|*[!0-9]*) echo false; return ;; esac
+  case "$event" in
+    pull_request)
+      case "$api" in ''|*[!0-9]*) echo false; return ;; esac
+      if [ "$api" -eq "$seen" ]; then echo true; else echo false; fi
+      ;;
+    push)
+      if [ "$seen" -lt 300 ]; then echo true; else echo false; fi
+      ;;
+    # An event we do not know how to read a diff from is not a complete diff.
+    *) echo false ;;
   esac
 }
 
@@ -308,6 +349,36 @@ self_test() {
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv
 
+  check_complete() { # check_complete <expected> <label> <event> <api count> <read count>
+    local expected="$1" label="$2"; shift 2
+    local got
+    got=$(list_is_complete "$@")
+    if [ "$got" != "$expected" ]; then
+      echo "not ok - complete/$label (expected $expected, got $got)" >&2
+      failures=$((failures + 1))
+    else
+      echo "ok - complete/$label"
+    fi
+  }
+
+  # A pull request states its own file count, so completeness is exact at any
+  # size -- including the corpus-sweep data PR, which the retired 300-file
+  # threshold refused for no reason.
+  check_complete true  'pr: counts agree'        pull_request 1269 1269
+  check_complete true  'pr: small diff'          pull_request 3 3
+  check_complete true  'pr: empty diff'          pull_request 0 0
+  check_complete false 'pr: list stops at 3000'  pull_request 4200 3000
+  check_complete false 'pr: we read too many'    pull_request 1268 1269
+  check_complete false 'pr: no count from api'   pull_request '' 5
+  check_complete false 'pr: api count garbage'   pull_request 'null' 5
+  # A push has no such number, so the compare endpoint's own 300-file ceiling is
+  # the only thing that can be asked.
+  check_complete true  'push: under the ceiling' push '' 299
+  check_complete false 'push: at the ceiling'    push '' 300
+  check_complete false 'push: over the ceiling'  push '' 301
+  check_complete false 'unknown event'           schedule '' 4
+  check_complete false 'unreadable count'        pull_request 5 ''
+
   check_gc() { # check_gc <expected> <label> <files...>
     local expected="$1" label="$2"; shift 2
     local got
@@ -361,11 +432,12 @@ esac
 
 files=$(changed_files 2>/dev/null)
 count=$(printf '%s\n' "$files" | grep -c .)
+complete=$(list_is_complete "${GITHUB_EVENT_NAME:-}" "$(api_file_count 2>/dev/null)" "$count")
 
 if [ "${1:-}" = "--gc-value" ]; then
-  # A truncated diff must read as "run it" here, the opposite of the docs-only
-  # guard below.
-  if [ "$count" -gt 300 ]; then
+  # A diff we could not read in full must read as "run it" here, the opposite of
+  # the docs-only default below.
+  if [ "$complete" != true ]; then
     echo true
     exit 0
   fi
@@ -373,9 +445,8 @@ if [ "${1:-}" = "--gc-value" ]; then
   exit 0
 fi
 
-# Guard against a huge diff: pagination or the API cap could truncate it, and a
-# truncated list must never read as "docs only".
-if [ "$count" -gt 300 ]; then
+# A diff we could not read in full must never read as "docs only".
+if [ "$complete" != true ]; then
   echo false
   exit 0
 fi
