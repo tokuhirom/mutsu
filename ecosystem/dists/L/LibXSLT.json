@@ -1,0 +1,315 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "JSON::Fast",
+      "LibXML",
+      "Method::Also",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "W3C::DOM",
+      "XML",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "LibXSLT",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01basic.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02dromeds.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03input.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04params.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05quick.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06entities.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06output.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07blankdoc.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08literal.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09exslt.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10functions.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11utf8.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12import.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13error.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14security.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15misc.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16process.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20doc.t",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "LibXSLT": "raku_also_fails",
+    "LibXSLT::Config": "raku_also_fails",
+    "LibXSLT::Document": "raku_also_fails",
+    "LibXSLT::Enums": "ok",
+    "LibXSLT::ExtensionContext": "raku_also_fails",
+    "LibXSLT::Raw": "raku_also_fails",
+    "LibXSLT::Raw::Defs": "ok",
+    "LibXSLT::Security": "raku_also_fails",
+    "LibXSLT::Stylesheet": "raku_also_fails",
+    "LibXSLT::TransformContext": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IB/LIBXSLT/a53e786e1bca7f2b61204c349e406b73fe02df6e.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.8"
+}

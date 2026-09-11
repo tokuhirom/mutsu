@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "Geo::Location",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/1-construction.t",
+      "raku": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 5.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Geo::Location": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEO_LOCATION/9b9658f55af7546f4f16661989fca2a4b9a1ecdb.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 48,
+    "baseline_files": 1,
+    "mutsu_assertions": 48,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Pinterest::URL::Normalizer",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The host is not an exact Pinterest domain",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-normalizer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 2.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Pinterest::URL::Normalizer": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/IN/PINTEREST_URL_NORMALIZER/9edbc5170197793a47c68903e3eec676342cb3e2.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 18,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.0"
+}

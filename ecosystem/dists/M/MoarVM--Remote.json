@@ -1,0 +1,149 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::MessagePack",
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "MoarVM::Remote",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-handshake.rakutest",
+      "raku": {
+        "first_failure": "got the right version",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 14.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-suspend-resume-check.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 5.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-thread-lifecycle.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 15.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-backtrace.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'share' for invocant of type 'Supply'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-suspend-resume.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MoarVM::Remote": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/OA/MOARVM_REMOTE/b716d42bd250cd078fdf241840b3b02dfaf1665f.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 4,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 4
+  },
+  "version": "0.0.4"
+}

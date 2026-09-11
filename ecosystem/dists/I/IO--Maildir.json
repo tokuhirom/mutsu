@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "IO::Maildir",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'truncate' for invocant of type 'Instant'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 15,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/maildir.t",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "IO::Maildir": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/O_/IO_MAILDIR/61a6a261c13bc824df18ef9a9d78498f8d7815bf.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 15,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

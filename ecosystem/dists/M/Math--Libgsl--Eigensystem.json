@@ -1,0 +1,47 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "JSON::Fast",
+      "Math::Libgsl::Complex",
+      "Math::Libgsl::Constants",
+      "Math::Libgsl::Matrix",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::Libgsl::Eigensystem",
+  "files": [],
+  "load": {
+    "Math::Libgsl::Eigensystem": "raku_also_fails",
+    "Math::Libgsl::Raw::Eigensystem": "Variable $.vector used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_EIGENSYSTEM/3e6fd370d7a63f3a7a2a26fed85206a99405ad85.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

@@ -1,0 +1,150 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "TinyFloats",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-binary16.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 50,
+        "plan": 50,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-bfloat16.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 50,
+        "plan": 50,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-tensorfloat32.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-fp8-e5m2.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "TinyFloats": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/IN/TINYFLOATS/5a72aad3752c2deec6486f14cf9e7ef9dcb649ea.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 189,
+    "baseline_files": 5,
+    "mutsu_assertions": 189,
+    "parity_files": 5,
+    "regressed_files": 0
+  },
+  "version": "0.0.5"
+}

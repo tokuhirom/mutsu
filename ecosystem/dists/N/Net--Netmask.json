@@ -1,0 +1,178 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Net::Netmask",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 184,
+        "plan": 184,
+        "secs": 5.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-doctest.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-compare.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-construction.t",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-construction6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 197,
+        "plan": 197,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-basic6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Net::Netmask": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/ET/NET_NETMASK/c7c1c3bcfc1f137f7efff71294e44fcb52dadbc6.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 461,
+    "baseline_files": 6,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 6
+  },
+  "version": "0.2.1"
+}

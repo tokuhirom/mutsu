@@ -1,0 +1,62 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "FatRatStr",
+      "Grammar::Debugger",
+      "HTTP::Tiny",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Terminal::ANSIColor",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "Physics::Unit",
+  "files": [],
+  "load": {
+    "Physics::Unit": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Base": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Config": "ok",
+    "Physics::Unit::Currency": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Derived": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Dims": "Runtime error: Failed to parse module 'Physics::Unit::Directory': Confused. Two terms in a row",
+    "Physics::Unit::Directory": "Runtime error: Failed to parse module 'Physics::Unit::Directory': Confused. Two terms in a row",
+    "Physics::Unit::General": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Maths": "ok",
+    "Physics::Unit::Parser": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Postfix": "Runtime error: Failed to parse module 'Physics::Unit::Directory': Confused. Two terms in a row",
+    "Physics::Unit::Prefix": "You tried to augment class NumStr, but it does not exist",
+    "Physics::Unit::Types": "Runtime error: Failed to parse module 'Physics::Unit::Directory': Confused. Two terms in a row",
+    "Physics::Unit::en_SI": "You tried to augment class NumStr, but it does not exist"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/HY/PHYSICS_UNIT/2e0019ff3095ec3595badba117a82036cbae7cab.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.0.31"
+}

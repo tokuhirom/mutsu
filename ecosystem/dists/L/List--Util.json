@@ -1,0 +1,361 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "List::Util",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 2.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/any-all.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: first",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/first.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: max",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/max.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: maxstr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/maxstr.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: min",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/min.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: minstr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/minstr.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Useless use of @kvlist in sink context",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/pair.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: product",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/product.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: reduce, min",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/reduce.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: shuffle",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/shuffle.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: sum",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/sum.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: sum0",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/sum0.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "List::Util doesn't know how to export: uniqnum, uniqstr, uniq",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/uniq.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "List::Util": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IS/LIST_UTIL/b4216f1ef09b06eaed4b570072236b031e3c78e7.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 198,
+    "baseline_files": 14,
+    "mutsu_assertions": 48,
+    "parity_files": 1,
+    "regressed_files": 13
+  },
+  "version": "0.0.10"
+}

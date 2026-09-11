@@ -1,0 +1,62 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Geo::Geometry",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 5.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Geo::Geometry": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEO_GEOMETRY/40e907ed8aa637d2c1e171f382a1bf6a978755a6.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 22,
+    "baseline_files": 1,
+    "mutsu_assertions": 22,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.1.3"
+}

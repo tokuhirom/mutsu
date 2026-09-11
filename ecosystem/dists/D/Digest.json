@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.39,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.93,
+        "secs": 7.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,30 +46,30 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.69,
+        "secs": 5.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 116.73,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "timeout"
       },
       "path": "t/ripemd.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 56.8,
+        "secs": 85.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.13,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.29,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +111,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "134a1da",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -122,13 +122,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/IG/DIGEST/8f2092538c1c35ea49c3e9d613a82fe2a3ba4708.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 12,
-    "baseline_files": 3,
+    "baseline_assertions": 21,
+    "baseline_files": 4,
     "mutsu_assertions": 12,
     "parity_files": 3,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "1.1.0"
 }

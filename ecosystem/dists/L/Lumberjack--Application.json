@@ -1,0 +1,81 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Apache::LogFormat",
+      "Backtrace::AsHTML",
+      "Base64",
+      "Cookie::Baker",
+      "Crust",
+      "DateTime::Format",
+      "DateTime::Parse",
+      "Digest",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Tiny",
+      "HTTP::Easy",
+      "HTTP::MultiPartParser",
+      "HTTP::Parser",
+      "HTTP::Server::Tiny",
+      "HTTP::Status",
+      "HTTP::Tinyish",
+      "HTTP::UserAgent",
+      "Hash::MultiValue",
+      "IO::Blob",
+      "IO::Capture::Simple",
+      "IO::MiddleMan",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lumberjack",
+      "Lumberjack::Message::JSON",
+      "META6",
+      "MIME::Base64",
+      "OpenSSL",
+      "PSGI",
+      "Template6",
+      "Test::META",
+      "Test::Util::ServerPort",
+      "URI",
+      "URI::Encode",
+      "WebSocket"
+    ],
+    "unresolved": [
+      "Digest::SHA"
+    ]
+  },
+  "dist": "Lumberjack::Application",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/UM/LUMBERJACK_APPLICATION/321feee7e5f458f6712313ea57cbbcb55dc2f379.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

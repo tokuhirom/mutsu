@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Japanese",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 18.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Japanese": "ok",
+    "日本語": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/J/AP/JAPANESE/be664f92e36654f2b76c8b56678a25ff5a697ac3.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 57,
+    "baseline_files": 1,
+    "mutsu_assertions": 57,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

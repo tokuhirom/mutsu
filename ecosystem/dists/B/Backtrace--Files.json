@@ -7,16 +7,84 @@
     "unresolved": []
   },
   "dist": "Backtrace::Files",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Did 'add-source-lines' get exported?",
+        "nok": 3,
+        "ok": 2,
+        "plan": 5,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-selective-importing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-add-source-lines.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Backtrace::Files": "No such method 'key' for invocant of type 'PseudoStash'"
+    "Backtrace::Files": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "671a11d",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +95,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/AC/BACKTRACE_FILES/7ee7e9dc62eba1505b80cf5a602d7d2a28dec12b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 15,
+    "baseline_files": 3,
+    "mutsu_assertions": 12,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.0.4"
 }

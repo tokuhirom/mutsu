@@ -1,0 +1,85 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Parameterizable",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.72,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Ultimate cannot be parameterized",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/parameterize.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Parameterizable": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/AR/PARAMETERIZABLE/fcb989e39937529626a333cf8e324b6631f54933.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

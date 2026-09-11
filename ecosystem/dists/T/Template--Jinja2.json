@@ -1,0 +1,596 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "Template::Jinja2",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-lexer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 3.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-parser.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 14.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 19,
+        "plan": 39,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-core-tags.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-filters.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-tests.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Block",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-inheritance.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-whitespace.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 1,
+        "plan": 23,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-regression.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 5,
+        "plan": 7,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-huggingface.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 17,
+        "plan": 49,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-ported-syntax.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "float conversion",
+        "nok": 3,
+        "ok": 10,
+        "plan": 58,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/11-ported-filters.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 58,
+        "plan": 58,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 24,
+        "plan": 29,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-advanced-tags.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "sort by attribute",
+        "nok": 1,
+        "ok": 18,
+        "plan": 49,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/13-ported-remaining.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "sort by hash attribute",
+        "nok": 1,
+        "ok": 8,
+        "plan": 25,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/14-filter-coverage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: resolve-attr",
+        "nok": 0,
+        "ok": 1,
+        "plan": 34,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-reference-remaining.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 8,
+        "plan": 34,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-whitespace-detailed.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Block",
+        "nok": 0,
+        "ok": 2,
+        "plan": 46,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-final-coverage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 1.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Block",
+        "nok": 0,
+        "ok": 18,
+        "plan": 54,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/18-reference-final.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 54,
+        "plan": 54,
+        "secs": 1.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 12,
+        "plan": 14,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/19-custom-delimiters.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-small-features.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/21-remaining-features.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-real-world.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/23-raise-exception.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Node but got Set ()",
+        "nok": 0,
+        "ok": 9,
+        "plan": 21,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/24-python-methods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Template::Jinja2": "ok",
+    "Template::Jinja2::AST": "ok",
+    "Template::Jinja2::Context": "ok",
+    "Template::Jinja2::Exceptions": "ok",
+    "Template::Jinja2::Filters": "ok",
+    "Template::Jinja2::Lexer": "ok",
+    "Template::Jinja2::Loader": "ok",
+    "Template::Jinja2::Methods": "ok",
+    "Template::Jinja2::Parser": "ok",
+    "Template::Jinja2::Renderer": "ok",
+    "Template::Jinja2::Tests": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/EM/TEMPLATE_JINJA2/f17a0cc8075b9f23097a26374ad8af5e998f358b.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 644,
+    "baseline_files": 24,
+    "mutsu_assertions": 298,
+    "parity_files": 8,
+    "regressed_files": 16
+  },
+  "version": "0.3.0"
+}

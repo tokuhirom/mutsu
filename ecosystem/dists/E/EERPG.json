@@ -1,0 +1,327 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AccountableBagHash",
+      "WriteOnceHash"
+    ],
+    "unresolved": []
+  },
+  "dist": "EERPG",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 24.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Action.t",
+      "raku": {
+        "first_failure": "Not allowed to set 'Commodity: food' to 0",
+        "nok": 0,
+        "ok": 10,
+        "plan": 17,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Amount.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Availability.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 5.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Belief.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Commodity.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Currency.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "do we have the right amount of food",
+        "nok": 6,
+        "ok": 1,
+        "plan": 7,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Inventory.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 4.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/Price.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did the actions fire only once",
+        "nok": 2,
+        "ok": 3,
+        "plan": 5,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Producer.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did the actions fire twice",
+        "nok": 2,
+        "ok": 9,
+        "plan": 11,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Rule.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did the actions fire only once",
+        "nok": 2,
+        "ok": 6,
+        "plan": 8,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Ruleset.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "EERPG": "ok",
+    "EERPG::Action": "ok",
+    "EERPG::Agent": "ok",
+    "EERPG::All": "ok",
+    "EERPG::Amount": "ok",
+    "EERPG::Ask": "ok",
+    "EERPG::Availability": "ok",
+    "EERPG::Belief": "ok",
+    "EERPG::Bid": "ok",
+    "EERPG::Commodity": "ok",
+    "EERPG::Condition": "ok",
+    "EERPG::Currency": "ok",
+    "EERPG::Economy": "ok",
+    "EERPG::Inventory": "ok",
+    "EERPG::Market": "ok",
+    "EERPG::Name": "ok",
+    "EERPG::Price": "ok",
+    "EERPG::Producer": "ok",
+    "EERPG::Resource": "ok",
+    "EERPG::Rule": "ok",
+    "EERPG::Ruleset": "ok",
+    "EERPG::Trader": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/ER/EERPG/7afd13b7ba223b71dc037e2ba6e793c3a9791fa1.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 63,
+    "baseline_files": 11,
+    "mutsu_assertions": 39,
+    "parity_files": 4,
+    "regressed_files": 7
+  },
+  "version": "0.0.2"
+}

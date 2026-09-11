@@ -1,0 +1,578 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Lingua::NumericWordForms",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/Automatic-language-determination.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Corner-cases.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Generation-Bulgarian.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Generation-Japanese.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Generation-Russian.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Translation.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Armenian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 5.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 1.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Azerbaijani.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Bulgarian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Czech.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-English.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-French.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-German.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 3.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "εννιακόσια ογδόντα δισεκατομμύρια επτακόσια τριάντα έξι εκατομμύρια εκατόν τριάντα οκτώ χιλιάδες οκτακόσια τριάντα εννέα",
+        "nok": 1,
+        "ok": 41,
+        "plan": 42,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Worded-number-specs-parsing-Greek.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Japanese.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 4.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Kazakh.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Koremutake.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Persian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Polish.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Portuguese.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 7.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Romanian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Russian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Spanish.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 3.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Worded-number-specs-parsing-Ukrainian.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 2.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Worded-number-specs-parsing.rakutest",
+      "raku": {
+        "first_failure": "Could not find Lingua::NumericWordForms in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Lingua::NumericWordForms": "raku_also_fails",
+    "Lingua::NumericWordForms::Actions::Armenian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Azerbaijani::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Bulgarian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Czech::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::English::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::French::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::German::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Greek::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Japanese::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Kazakh::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Korean::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Koremutake::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Persian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Polish::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Portuguese::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Romanian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Russian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Spanish::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::Ukrainian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Actions::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Generators::Bulgarian": "ok",
+    "Lingua::NumericWordForms::Generators::Japanese": "ok",
+    "Lingua::NumericWordForms::Generators::Russian": "ok",
+    "Lingua::NumericWordForms::Roles::Armenian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Azerbaijani::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Bulgarian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Czech::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::English::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::French::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::German::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Greek::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Japanese::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Kazakh::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Korean::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Koremutake::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Persian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Polish::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Portuguese::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Romanian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Russian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Spanish::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::Ukrainian::WordedNumberSpec": "ok",
+    "Lingua::NumericWordForms::Roles::WordedNumberSpec": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IN/LINGUA_NUMERICWORDFORMS/443a70b82a2c5189518ee9c1d4c1a2ee8d8d9e8e.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 733,
+    "baseline_files": 18,
+    "mutsu_assertions": 732,
+    "parity_files": 17,
+    "regressed_files": 1
+  },
+  "version": "0.6.2"
+}

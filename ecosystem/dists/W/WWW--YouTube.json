@@ -1,0 +1,53 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::Util::ServerPort",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "WWW::YouTube",
+  "files": [],
+  "load": {
+    "WWW::YouTube": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/WW/WWW_YOUTUBE/a220d6c0d5498143620af42e5012b79dabf872de.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.9"
+}

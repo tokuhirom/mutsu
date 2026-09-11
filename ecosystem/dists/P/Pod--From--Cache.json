@@ -1,0 +1,75 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pod::From::Cache",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.27,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.0,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Pod::From::Cache": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OD/POD_FROM_CACHE/b73f4f2eb6c3c95d65ad41a5c1635545a310107e.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.6.1"
+}

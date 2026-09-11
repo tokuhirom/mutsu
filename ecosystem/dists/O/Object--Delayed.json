@@ -1,0 +1,135 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "InterceptAllMethods",
+      "Object::Trampoline"
+    ],
+    "unresolved": []
+  },
+  "dist": "Object::Delayed",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Too few positionals passed; expected 1 argument but got 0",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 3.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Too few positionals passed; expected 1 argument but got 0",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Too few positionals passed; expected 1 argument but got 0",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Too few positionals passed; expected 1 argument but got 0",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Object::Delayed": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/BJ/OBJECT_DELAYED/1c7bab159c8ae96dbd720f82996ded9b09ccf6d1.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 51,
+    "baseline_files": 4,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 4
+  },
+  "version": "0.0.13"
+}

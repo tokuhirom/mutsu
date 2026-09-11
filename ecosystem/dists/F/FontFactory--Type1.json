@@ -1,0 +1,275 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AlgorithmsIT",
+      "App::Prove6",
+      "Base64::Native",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "Data::Dump",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "Font::AFM",
+      "Font::FreeType",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "MacOS::NativeLib",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::Content",
+      "PDF::Font::Loader",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "Path::Finder",
+      "Pod::Usage",
+      "Proc::Easier",
+      "TAP",
+      "Test::Output",
+      "Text::Utils",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "FontFactory::Type1",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/0-bare-font-no-size.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-wx-bbox.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-fonts.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 54.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-text.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-check-font-factory.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-font-afm.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 4.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-compare-ff-vs-afm.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-compare-Times-Roman.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-compare-Courier.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-added-methods.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-stringwidth-bbox-etc.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/9-unicode.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-afm-METRICS.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "FontFactory::Type1": "raku_also_fails",
+    "FontFactory::Type1::BaseFont": "raku_also_fails",
+    "FontFactory::Type1::DocFont": "raku_also_fails",
+    "FontFactory::Type1::DocFont::StringSub": "ok",
+    "FontFactory::Type1::FontList": "ok",
+    "FontFactory::Type1::Subs": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/ON/FONTFACTORY_TYPE1/6fde9301ec4ac3c8eb97459e98c2ff051627d561.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 11,
+    "baseline_files": 2,
+    "mutsu_assertions": 11,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "1.1.1"
+}

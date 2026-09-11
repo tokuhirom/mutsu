@@ -1,0 +1,68 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Combinatorics",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller multicombinations(List:D, Int:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/combinatorics.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Combinatorics": "ok",
+    "Math::Combinatorics::Derangements": "ok",
+    "Math::Combinatorics::Multicombinations": "ok",
+    "Math::Combinatorics::Partitions": "ok",
+    "Math::Combinatorics::Utils": "ok",
+    "Math::Combinatorics::Variations": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_COMBINATORICS/fde5e9ff8f917e91fa475a56d7584ae47c068e16.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 6,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.8"
+}

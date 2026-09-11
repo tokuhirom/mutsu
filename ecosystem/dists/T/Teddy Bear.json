@@ -1,0 +1,80 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Dump",
+      "File::Directory::Tree",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Sparrow6",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "URI",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "Teddy Bear",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Teddy::Bear": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ED/TEDDYBEAR/e88b336200e71dfab94ece8ecc323c5088bb6d04.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

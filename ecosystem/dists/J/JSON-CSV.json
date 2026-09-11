@@ -1,0 +1,61 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Stream",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Module::Pod",
+      "Pod::Test::Code",
+      "Slang::Tuxic",
+      "Slangify",
+      "Test::META",
+      "Test::Output",
+      "Text::CSV",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "JSON-CSV",
+  "files": [],
+  "load": {
+    "csv2json": "raku_also_fails",
+    "json2csv": "raku_also_fails",
+    "jsonStream2csv": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/J/SO/JSONCSV/bf87c09ce90556cd2441dd95881ddf9e803982a1.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

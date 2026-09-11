@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "META::constants",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "is NAME ok",
+        "nok": 9,
+        "ok": 8,
+        "plan": 17,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "META::constants": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/ET/META_CONSTANTS/403b2da61cfa321db184680b839082323d18635f.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 17,
+    "baseline_files": 1,
+    "mutsu_assertions": 8,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.6"
+}

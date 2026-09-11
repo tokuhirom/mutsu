@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Text::MathematicalCase",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$needle'; expected int but got NFD",
+        "nok": 0,
+        "ok": 1,
+        "plan": 70,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 70,
+        "plan": 70,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Text::MathematicalCase": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/EX/TEXT_MATHEMATICALCASE/c3573cdf359b52dcfeee429e84da16684f9481ab.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 70,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.10"
+}

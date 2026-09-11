@@ -1,0 +1,89 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Test::Builder",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Created object isn't existing global singleton",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to open '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-7rh1m_lv/dist/Test-Builder-0.0.4/': Is a directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-is-isnt.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Test::Builder": "ok",
+    "Test::Builder::Output": "ok",
+    "Test::Builder::Plan": "ok",
+    "Test::Builder::Test": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TEST_BUILDER/e941edc213cee98eae9c8d7dc3ef2595b0fa5ec2.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 4,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.0.4"
+}

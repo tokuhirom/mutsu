@@ -1,0 +1,43 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "LibraryCheck",
+      "NativeHelpers::Array",
+      "NativeHelpers::Blob"
+    ],
+    "unresolved": []
+  },
+  "dist": "GD",
+  "files": [],
+  "load": {
+    "GD": "Error while importing from 'NativeCall': no such tag 'TEST' declared"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/GD/8cd4621b7f0576b268e5e7556c79565832b9e8c1.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.5"
+}

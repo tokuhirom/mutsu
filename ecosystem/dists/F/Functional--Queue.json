@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Functional::LinkedList",
+      "Functional::Stack",
+      "Tuple",
+      "ValueClass",
+      "ValueList",
+      "ValueMap"
+    ],
+    "unresolved": []
+  },
+  "dist": "Functional::Queue",
+  "files": [],
+  "load": {
+    "Functional::Queue": "'ValueClass::Attribute' cannot inherit from 'Attribute' because it is unknown."
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/UN/FUNCTIONAL_QUEUE/52d2766bf8dba7800d5c8ed991df45e90c6f6781.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

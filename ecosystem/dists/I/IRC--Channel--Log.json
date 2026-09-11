@@ -1,0 +1,43 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Sorted::Util",
+      "JSON::Fast",
+      "String::Color"
+    ],
+    "unresolved": []
+  },
+  "dist": "IRC::Channel::Log",
+  "files": [],
+  "load": {
+    "IRC::Channel::Log": "Unsupported nqp:: op: nqp::list"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/RC/IRC_CHANNEL_LOG/6a907ec63d3ec0d735906d8a33857b35bc3b8be0.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.43"
+}

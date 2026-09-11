@@ -1,0 +1,96 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Test::Notice",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 15.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Test::Notice": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TEST_NOTICE/e400b58c697be849b78e090d348f81d8ee6de41e.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "1.001005"
+}

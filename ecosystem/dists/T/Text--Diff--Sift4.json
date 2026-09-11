@@ -1,0 +1,62 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Text::Diff::Sift4",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-sift4.t",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Text::Diff::Sift4": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/EX/TEXT_DIFF_SIFT4/f75fb6103e63e7e2ca0c9210553dea57f6ffb689.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 32,
+    "baseline_files": 1,
+    "mutsu_assertions": 32,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "2.0.1"
+}

@@ -1,0 +1,49 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Email::MIME",
+      "Email::Simple",
+      "IO::Socket::SSL",
+      "MIME::Base64",
+      "MIME::QuotedPrint",
+      "OpenSSL"
+    ],
+    "unresolved": []
+  },
+  "dist": "Net::IMAP",
+  "files": [],
+  "load": {
+    "Net::IMAP": "raku_also_fails",
+    "Net::IMAP::Message": "X::Comp::Trait::Duplicate: attribute 'headers' already exists in class 'Email::Simple::Header' (possibly from role composition)",
+    "Net::IMAP::Raw": "raku_also_fails",
+    "Net::IMAP::Simple": "X::Comp::Trait::Duplicate: attribute 'headers' already exists in class 'Email::Simple::Header' (possibly from role composition)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/ET/NET_IMAP/b69598cfb5be057624950bd1d67bd84e489f30c1.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.0.3"
+}

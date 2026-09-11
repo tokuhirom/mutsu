@@ -14,7 +14,7 @@
   "files": [],
   "load": {
     "CRDT": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
-    "CRDT::Storage": "An exception occurred while evaluating a CHECK",
+    "CRDT::Storage": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
     "CRDT::Timestamp": "ok",
     "G-Counter": "Runtime error: Failed to parse module 'G-Counter': X::Syntax::Signature::InvocantNotAllowed: Can only use the : invocant marker in the signature for a method",
     "G-Set": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
@@ -26,11 +26,11 @@
     "PN-Counter": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ..."
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "a7fe6d9",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

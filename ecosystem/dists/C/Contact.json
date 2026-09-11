@@ -1,0 +1,49 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Actionable",
+      "FStrings",
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "Contact",
+  "files": [],
+  "load": {
+    "Contact": "Variable $.name used where no 'self' is available",
+    "Contact::Address": "ok",
+    "Contact::Address::en_UK": "ok",
+    "Contact::Address::en_US": "ok",
+    "Contact::Name": "ok",
+    "Contact::jCard": "Variable $.name used where no 'self' is available",
+    "Contact::vCard": "Variable $.name used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONTACT/86b0babd7fb623d06e2ffee3b1dd8bc94c67208b.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.5"
+}

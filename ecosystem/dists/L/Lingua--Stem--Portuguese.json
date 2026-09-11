@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Lingua::Stem::Portuguese",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Could not find Lingua::Stem::Portuguese in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-stem-word.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Lingua::Stem::Portuguese": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/IN/LINGUA_STEM_PORTUGUESE/54b7a1ee19fa61977cdfe44ddc1b0183a70e2a69.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.2"
+}

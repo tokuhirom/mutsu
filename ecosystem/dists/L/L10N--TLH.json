@@ -1,0 +1,64 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "L10N::TLH",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "L10N::TLH": "ok",
+    "RakuAST::Deparse::L10N::TLH": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/10/L10N_TLH/7bdc0f6d9a840a3f2ebeb07f8c2e7814c6f8b4e7.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

@@ -1,0 +1,285 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Geo::Ellipsoid",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 47,
+        "plan": 47,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.t",
+      "raku": {
+        "nok": 0,
+        "ok": 47,
+        "plan": 47,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 154,
+        "plan": 154,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-create.t",
+      "raku": {
+        "nok": 0,
+        "ok": 154,
+        "plan": 154,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 192,
+        "plan": 192,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-defaults.t",
+      "raku": {
+        "nok": 0,
+        "ok": 192,
+        "plan": 192,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 176,
+        "plan": 176,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-set.t",
+      "raku": {
+        "nok": 0,
+        "ok": 176,
+        "plan": 176,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 180,
+        "plan": 180,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-scale.t",
+      "raku": {
+        "nok": 0,
+        "ok": 180,
+        "plan": 180,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 476,
+        "plan": 476,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-to.t",
+      "raku": {
+        "nok": 0,
+        "ok": 476,
+        "plan": 476,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 400,
+        "plan": 400,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-at.t",
+      "raku": {
+        "nok": 0,
+        "ok": 400,
+        "plan": 400,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 5 -",
+        "nok": 180,
+        "ok": 220,
+        "plan": 400,
+        "secs": 2.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/07-location.t",
+      "raku": {
+        "nok": 0,
+        "ok": 400,
+        "plan": 400,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1220,
+        "plan": 1220,
+        "secs": 4.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-range.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1220,
+        "plan": 1220,
+        "secs": 6.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 432,
+        "plan": 432,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-bearing.t",
+      "raku": {
+        "nok": 0,
+        "ok": 432,
+        "plan": 432,
+        "secs": 3.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 200,
+        "plan": 200,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-displacement.t",
+      "raku": {
+        "nok": 0,
+        "ok": 200,
+        "plan": 200,
+        "secs": 2.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Geo::Ellipsoid": "ok",
+    "Geo::Ellipsoid::GenFuncs": "ok",
+    "Geo::Ellipsoid::Utils": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEO_ELLIPSOID/1e8fd124a17c7336c5d0efc62d3c33d93471a259.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 3877,
+    "baseline_files": 11,
+    "mutsu_assertions": 3697,
+    "parity_files": 10,
+    "regressed_files": 1
+  },
+  "version": "1.0.1"
+}

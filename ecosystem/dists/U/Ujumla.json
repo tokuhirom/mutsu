@@ -1,0 +1,222 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Ujumla",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/010-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.65,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/020-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "simple config",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/030-synopsis.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "canary test of parsing",
+        "nok": 2,
+        "ok": 5,
+        "plan": 8,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "fail"
+      },
+      "path": "t/040-grammar-simple-config.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 8,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 4 -",
+        "nok": 13,
+        "ok": 15,
+        "plan": 30,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 2,
+        "verdict": "fail"
+      },
+      "path": "t/050-individual.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 27,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 2,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type Array does not support associative indexing.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/060-interpolation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type Array does not support associative indexing.",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/070-comment-here-doc.t",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "File 'include.cfg' cannot be found",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/080-include.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Ujumla": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/U/JU/UJUMLA/0d7e8badc162230766c120dd398368f973b33057.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 58,
+    "baseline_files": 8,
+    "mutsu_assertions": 24,
+    "parity_files": 2,
+    "regressed_files": 6
+  },
+  "version": "0.0.5"
+}

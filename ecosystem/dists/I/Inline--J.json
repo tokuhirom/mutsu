@@ -1,0 +1,46 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Exportable"
+    ],
+    "unresolved": []
+  },
+  "dist": "Inline::J",
+  "files": [],
+  "load": {
+    "Inline::J": "raku_also_fails",
+    "Inline::J::Conversion": "Cannot resolve caller trait_mod:<is>(Sub:D); none of these signatures matches:",
+    "Inline::J::Datatype": "ok",
+    "Inline::J::Helper": "ok",
+    "Inline::J::NativeHelpers": "ok",
+    "Inline::J::Utils": "Cannot resolve caller trait_mod:<is>(Sub:D); none of these signatures matches:"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/NL/INLINE_J/c09496078eb0d92f15e54a46825e4a4bf56c1860.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.5.1"
+}

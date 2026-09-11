@@ -1,0 +1,210 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Gnome::GObject",
+      "Gnome::Glib",
+      "Gnome::N"
+    ],
+    "unresolved": []
+  },
+  "dist": "Gnome::Pango",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/Context.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Layout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::N-Bytes:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-LayoutIter.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-LayoutLine.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Rectangle.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-TabArray.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-direction.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-gravity.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-layout.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-matrix.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-tabarray.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Gnome::Pango::Context": "raku_also_fails",
+    "Gnome::Pango::Layout": "raku_also_fails",
+    "Gnome::Pango::N-Language": "raku_also_fails",
+    "Gnome::Pango::N-LayoutIter": "raku_also_fails",
+    "Gnome::Pango::N-LayoutLine": "raku_also_fails",
+    "Gnome::Pango::N-Matrix": "raku_also_fails",
+    "Gnome::Pango::N-TabArray": "raku_also_fails",
+    "Gnome::Pango::T-direction": "ok",
+    "Gnome::Pango::T-gravity": "raku_also_fails",
+    "Gnome::Pango::T-layout": "raku_also_fails",
+    "Gnome::Pango::T-matrix": "raku_also_fails",
+    "Gnome::Pango::T-tabarray": "raku_also_fails",
+    "Gnome::Pango::T-types": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/NO/GNOME_PANGO/4c3ec8cff574041c01e5c504655baf46e6fefe98.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.14"
+}

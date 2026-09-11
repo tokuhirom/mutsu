@@ -1,0 +1,82 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Rak",
+      "App::Rak::Markdown",
+      "Backtrace::Files",
+      "CLI::Version",
+      "Commands",
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Git::Files",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Path::AutoDecompress",
+      "IO::Socket::Async::SSL",
+      "IO::Socket::SSL",
+      "IRC::Client",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Fast::Hyper",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "META::constants",
+      "MIME::Base64",
+      "Needle::Compile",
+      "OpenSSL",
+      "Pastebin::Gist",
+      "String::Utils",
+      "Test::META",
+      "Test::Util::ServerPort",
+      "Test::When",
+      "Trap",
+      "URI",
+      "WWW",
+      "highlighter",
+      "hyperize",
+      "paths",
+      "rak"
+    ],
+    "unresolved": [
+      "as",
+      "has",
+      "path"
+    ]
+  },
+  "dist": "IRC::Client::Plugin::Rakkable",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/RC/IRC_CLIENT_PLUGIN_RAKKABLE/c54af94c1de4921cc6072f876f38f750418e6fd6.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

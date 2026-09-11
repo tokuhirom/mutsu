@@ -1,0 +1,265 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "Log::Timeline",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "TinyFloats",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "OpenRouter::API",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-client-construction.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-result-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-result-endpoint.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-result-credits.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-result-activity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-result-generation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-result-provider.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-filter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-cache.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-multi-dispatch.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "OpenRouter::API": "raku_also_fails",
+    "OpenRouter::API::Client": "raku_also_fails",
+    "OpenRouter::API::Filter": "ok",
+    "OpenRouter::API::Result::ActivityRow": "ok",
+    "OpenRouter::API::Result::Credits": "ok",
+    "OpenRouter::API::Result::Endpoint": "ok",
+    "OpenRouter::API::Result::Generation": "ok",
+    "OpenRouter::API::Result::Model": "ok",
+    "OpenRouter::API::Result::Provider": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/PE/OPENROUTER_API/8b9e2a878a16a3748272845a5f848c8602ffb921.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 33,
+    "baseline_files": 7,
+    "mutsu_assertions": 33,
+    "parity_files": 7,
+    "regressed_files": 0
+  },
+  "version": "0.1.1"
+}

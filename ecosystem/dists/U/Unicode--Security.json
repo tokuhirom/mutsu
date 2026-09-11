@@ -1,0 +1,112 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "Unicode::Security",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-load.t",
+      "raku": {
+        "first_failure": "Can use it",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 4.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "this kind of whitespace is not allowed in a string: '\"\\n\"' near 5511",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-mixed-script.t",
+      "raku": {
+        "first_failure": "this kind of whitespace is not allowed in a string: '\"\\n\"' near 5511",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-whole-script-confusable.t",
+      "raku": {
+        "first_failure": "this kind of whitespace is not allowed in a string: '\"\\n\"' near 5511",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-mixed-script-confusable.t",
+      "raku": {
+        "first_failure": "this kind of whitespace is not allowed in a string: '\"\\n\"' near 5511",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Unicode::Security": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/U/NI/UNICODE_SECURITY/14b00ec8f8a9cda3b555f43bb2e22bba25bb851f.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

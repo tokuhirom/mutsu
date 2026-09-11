@@ -1,0 +1,146 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::Util::ServerPort",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Geo::Coder::OpenCage",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-compile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 38.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-new.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 0.62,
+        "skip": 24,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-geocode.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.15,
+        "skip": 24,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.67,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-reverse-geocode.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.16,
+        "skip": 12,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Geo::Coder::OpenCage": "ok",
+    "Geo::Coder::OpenCage::Response": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEO_CODER_OPENCAGE/d38e0584c730c7e5a3a557cba28d6598f21f1834.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 40,
+    "baseline_files": 4,
+    "mutsu_assertions": 40,
+    "parity_files": 4,
+    "regressed_files": 0
+  },
+  "version": "1.1"
+}

@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "XML::Entity::HTML",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "decode-html-entities works",
+        "nok": 3,
+        "ok": 1,
+        "plan": 4,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/html-entities.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 12.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "XML::Entity::HTML": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/X/ML/XML_ENTITY_HTML/f0f755663e95caa38cd2cf60c6667b0ed16ef373.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 4,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.2"
+}

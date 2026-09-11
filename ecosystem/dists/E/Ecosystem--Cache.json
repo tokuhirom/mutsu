@@ -1,0 +1,51 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Ecosystem",
+      "Hash::Agnostic",
+      "Identity::Utils",
+      "JSON::Fast",
+      "JSON::Fast::Hyper",
+      "Map::Agnostic",
+      "Map::Match",
+      "Rakudo::CORE::META",
+      "String::Utils",
+      "hyperize",
+      "paths"
+    ],
+    "unresolved": []
+  },
+  "dist": "Ecosystem::Cache",
+  "files": [],
+  "load": {
+    "Ecosystem::Cache": "Runtime error: Failed to parse module 'Ecosystem': Precedence of , is too loose to use inside ?? !!; please parenthesize"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/E/CO/ECOSYSTEM_CACHE/614daf3969c1782f164655ef30236ec85d692723.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

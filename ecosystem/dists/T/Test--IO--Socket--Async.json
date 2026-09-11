@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Method::Protected"
+    ],
+    "unresolved": []
+  },
+  "dist": "Test::IO::Socket::Async",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Test::IO::Socket::Async": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TEST_IO_SOCKET_ASYNC/fe0ca099bac25da7735759bb43a98236cb512b8a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.3"
+}

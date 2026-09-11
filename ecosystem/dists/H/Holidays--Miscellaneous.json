@@ -1,0 +1,67 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Abbreviations",
+      "AlgorithmsIT",
+      "Crypt::Random",
+      "Date::Calendar::Hebrew",
+      "Date::Calendar::Strftime",
+      "Date::Event",
+      "Date::Names",
+      "Date::Utils",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "Holidays::US::Federal",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "List::MoreUtils",
+      "META6",
+      "Test::META",
+      "Text::Utils",
+      "URI",
+      "UUID::V4",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Holidays::Miscellaneous",
+  "files": [],
+  "load": {
+    "Holidays::Data": "ok",
+    "Holidays::Miscellaneous": "Runtime error: No return arguments allowed when return value UInt # range 0..6 is already specified in the signature"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/OL/HOLIDAYS_MISCELLANEOUS/26da094ca23647814ea90ba014aa9b8e4b7bfb75.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

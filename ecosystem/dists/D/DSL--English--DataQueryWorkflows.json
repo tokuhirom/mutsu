@@ -32,14 +32,14 @@
       "cmp": "no_baseline",
       "path": "t/Basic-commands-R-tidyverse.rakutest",
       "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 11,
-        "secs": 117.97,
+        "plan": null,
+        "secs": 120.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       }
     },
     {
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 23,
-        "secs": 1.48,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.42,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.74,
+        "secs": 3.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.47,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 1.55,
+        "secs": 2.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 1.56,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 1.65,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.53,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.62,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.64,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -216,7 +216,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "134a1da",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

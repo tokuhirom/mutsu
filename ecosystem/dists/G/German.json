@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "German",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: und",
+        "nok": 0,
+        "ok": 12,
+        "plan": 30,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-operators.t",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 22.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Deutsch": "raku_also_fails",
+    "German": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/ER/GERMAN/7c8e9f07f1ccab88d2566ceca8a9b1b2dcd0cea1.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 30,
+    "baseline_files": 1,
+    "mutsu_assertions": 12,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

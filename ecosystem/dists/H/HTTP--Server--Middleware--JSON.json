@@ -1,0 +1,68 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTTP::Roles",
+      "HTTP::Server::Async",
+      "HTTP::Status",
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "HTTP::Server::Middleware::JSON",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Not parsed",
+        "nok": 3,
+        "ok": 2,
+        "plan": 5,
+        "secs": 43.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 16.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "HTTP::Server::Middleware::JSON": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/TT/HTTP_SERVER_MIDDLEWARE_JSON/2b57f8aa498a2394fe96bfc518bcd86a2c96492d.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 5,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

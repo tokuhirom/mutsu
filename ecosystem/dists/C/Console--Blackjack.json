@@ -1,0 +1,58 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "BDD::Behave",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "Test::Output",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Console::Blackjack",
+  "files": [],
+  "load": {
+    "Console::Blackjack": "ok",
+    "Console::Blackjack::Card": "ok",
+    "Console::Blackjack::DealerHand": "ok",
+    "Console::Blackjack::Hand": "ok",
+    "Console::Blackjack::PlayerHand": "ok",
+    "Console::Blackjack::Shoe": "ok",
+    "Console::Blackjack::Terminal": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONSOLE_BLACKJACK/48c11557efcbd45e8d7ae9434e99da9ef0d44788.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.0.10"
+}

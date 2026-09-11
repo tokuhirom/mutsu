@@ -1,0 +1,148 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Image::QRCode",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.17,
+        "skip": 4,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-version.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.78,
+        "skip": 4,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-create.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libqrencode.so.4': libqrencode.so.4: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-data.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libqrencode.so.4': libqrencode.so.4: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-interface.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libqrencode.so.4': libqrencode.so.4: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 5,
+        "plan": null,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.11,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.6,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Image::QRCode": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/I/Image%3A%3AQRCode/Image%3A%3AQRCode%3Aver%3C0.0.5%3E%3Aauth%3Ccpan%3AFRITH%3E%3Aapi%3C1%3E.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 6,
+    "baseline_files": 3,
+    "mutsu_assertions": 6,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

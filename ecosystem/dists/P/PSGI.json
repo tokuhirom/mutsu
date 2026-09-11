@@ -1,0 +1,86 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "HTTP::Status"
+    ],
+    "unresolved": []
+  },
+  "dist": "PSGI",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/encode-psgi-response.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 3.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/populate-psgi-env.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "PSGI": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/SG/PSGI/2ffc98a87f3de9ec6bfb1e8d8918a39c03e1aa45.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 57,
+    "baseline_files": 2,
+    "mutsu_assertions": 57,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "1.2.3"
+}

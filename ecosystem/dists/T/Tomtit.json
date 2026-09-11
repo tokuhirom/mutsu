@@ -1,0 +1,58 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Dump",
+      "File::Directory::Tree",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "Sparrow6",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "URI",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "Tomtit",
+  "files": [],
+  "load": {
+    "Tomtit": "ok",
+    "Tomtit::Completion": "Redeclaration of routine 'scenario-list'. Did you mean to declare a multi-sub?"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/OM/TOMTIT/7af71d69a649c63481f2d540a735110ced868547.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.37"
+}

@@ -1,0 +1,67 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Compress::Bzip2",
+      "Compress::Bzip2::Raw",
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "HTTP::Status",
+      "HTTP::Tiny",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "LibraryMake",
+      "MIME::Base64",
+      "Method::Protected",
+      "Node::Ethereum::Keccak256::Native",
+      "OpenSSL",
+      "Shell::Command",
+      "Test::Mock",
+      "Test::Util::ServerPort",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Net::Ethereum",
+  "files": [],
+  "load": {
+    "Net::Ethereum": "Unknown function: HAS",
+    "Net::Ethereum::HTTP::Client": "ok",
+    "Net::Ethereum::HTTP::Client::Tiny": "ok",
+    "Net::Ethereum::HTTP::Client::UserAgent": "ok",
+    "Net::Ethereum::Utils": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/ET/NET_ETHEREUM/0f9a75e40b13cc9d9f563f382086e9bbda207fa2.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.185"
+}

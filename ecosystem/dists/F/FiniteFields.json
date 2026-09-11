@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "FiniteFields",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 38 -",
+        "nok": 1,
+        "ok": 37,
+        "plan": 38,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "FiniteField": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/IN/FINITEFIELDS/1dd32820eea9cc7af7350e89ddaa27bfa136fc0f.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 38,
+    "baseline_files": 1,
+    "mutsu_assertions": 37,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.3.2"
+}

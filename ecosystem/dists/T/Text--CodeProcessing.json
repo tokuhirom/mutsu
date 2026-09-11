@@ -1,0 +1,207 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Text::CodeProcessing",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::getcomp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-string-code-chunks-processing-markdown.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::getcomp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-string-code-chunks-processing-org-mode.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::getcomp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-string-code-chunks-processing-pod6.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "org-mode",
+        "nok": 2,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-string-code-extraction.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-file-code-chunks-evaluation.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/temp_doc.md: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-file-code-extraction.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/temp_doc.md: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::getcomp",
+        "nok": 0,
+        "ok": 2,
+        "plan": 4,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-header-parameters.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Text::CodeProcessing": "ok",
+    "Text::CodeProcessing::HeaderParser": "ok",
+    "Text::CodeProcessing::REPLSandbox": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/EX/TEXT_CODEPROCESSING/59651e580a78f00c75336cad8cebf6e182f584cf.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 37,
+    "baseline_files": 6,
+    "mutsu_assertions": 5,
+    "parity_files": 1,
+    "regressed_files": 5
+  },
+  "version": "0.6.0"
+}

@@ -1,0 +1,45 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "NativeHelpers::Blob",
+      "StrictClass",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "TCP::LowLevel",
+  "files": [],
+  "load": {
+    "TCP::LowLevel": "Variable $.in used where no 'self' is available",
+    "TCP::LowLevel::Socket-Connection-Linux": "ok",
+    "TCP::LowLevel::Socket-Linux": "Variable $.in used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/CP/TCP_LOWLEVEL/d39c1ed6bab9f622efa37aa23cd7deda0e674555.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.2"
+}

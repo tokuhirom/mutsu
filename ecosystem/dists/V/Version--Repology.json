@@ -1,0 +1,201 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Version::Repology",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller raku(Version::Repology:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 36,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 2.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "True: 99999999999999999999999999999999999998  99999999999999999999999999999999999999",
+        "nok": 2,
+        "ok": 546,
+        "plan": 548,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-equal-less.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 548,
+        "plan": 548,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "More: 1.0p1 True cmp 1.0p1 False",
+        "nok": 8,
+        "ok": 16,
+        "plan": 24,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-p-is-patch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "More: 1.0a1 True cmp 1.0a1 False",
+        "nok": 5,
+        "ok": 11,
+        "plan": 16,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-any-is-patch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Less: 1.0alpha Any cmp 1.0 upper",
+        "nok": 1,
+        "ok": 17,
+        "plan": 30,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-bound.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Too few positionals passed; expected 2 arguments but got 1",
+        "nok": 0,
+        "ok": 8,
+        "plan": 17,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-special.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller raku(Version::Repology:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 30,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-raku.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Version::Repology": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/V/ER/VERSION_REPOLOGY/f248aa91c959df4c0334783468ecc772f06951d6.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 701,
+    "baseline_files": 7,
+    "mutsu_assertions": 598,
+    "parity_files": 0,
+    "regressed_files": 7
+  },
+  "version": "0.0.5"
+}

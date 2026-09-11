@@ -1,0 +1,52 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "RPi::Wiring::Pi",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "RPi::Device::ST7036",
+  "files": [],
+  "load": {
+    "RPi::Device::ST7036": "Default constructor for 'Any' only takes named arguments",
+    "RPi::Device::ST7036::Setup": "Default constructor for 'Any' only takes named arguments"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/PI/RPI_DEVICE_ST7036/000f5b2cc1f62789e84e7074b208c897d10afc5c.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.0.0"
+}

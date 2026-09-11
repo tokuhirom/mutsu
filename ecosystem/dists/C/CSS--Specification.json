@@ -14,20 +14,20 @@
   "dist": "CSS::Specification",
   "files": [],
   "load": {
-    "CSS::Specification": "Inconsistent class hierarchy for CSS::Grammar::CSS21",
+    "CSS::Specification": "ok",
     "CSS::Specification::AST": "'CSS::Specification::AST' cannot inherit from 'CSS::Grammar::AST' because it is unknown.",
     "CSS::Specification::Actions": "ok",
     "CSS::Specification::Base::Actions": "ok",
     "CSS::Specification::Base::Grammar": "ok",
     "CSS::Specification::Defs": "ok",
-    "CSS::Specification::Defs::Actions": "Could not instantiate role 'CSS::Specification::Base::Actions' because it died with X::Import::NoSuchTag; exception details:"
+    "CSS::Specification::Defs::Actions": "Could not instantiate role 'CSS::Specification::Base::Actions' because it died with X::Comp::BeginTime; exception details:"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "a7fe6d9",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

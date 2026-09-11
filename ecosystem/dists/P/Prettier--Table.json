@@ -1,0 +1,43 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Listicles",
+      "Text::Wrap"
+    ],
+    "unresolved": []
+  },
+  "dist": "Prettier::Table",
+  "files": [],
+  "load": {
+    "Prettier::Table": "Failed to parse module 'Prettier::Table': X::Comp::Group: Function 'MSWORD-FRIENDLY' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "Prettier::Table::Constrains": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/RE/PRETTIER_TABLE/92801685d8df096c54d68c81af639a2abd557860.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.1.3"
+}

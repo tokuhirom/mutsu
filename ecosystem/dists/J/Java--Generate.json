@@ -1,0 +1,255 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Java::Generate",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-hello-world.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-literal.t",
+      "raku": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!op; expected Op but got Str (\"+\")",
+        "nok": 0,
+        "ok": 1,
+        "plan": 12,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-operators.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-interface.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!op; expected Op but got Str (\">\")",
+        "nok": 0,
+        "ok": 3,
+        "plan": 5,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-class.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!op; expected Op but got Str (\"++\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-variables.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!op; expected Op but got Str (\">\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-statement.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $!op; expected Op but got Str (\"<\")",
+        "nok": 0,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-generics.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-comp-unit.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Java::Generate::ASTNode": "ok",
+    "Java::Generate::Argument": "ok",
+    "Java::Generate::Class": "ok",
+    "Java::Generate::CompUnit": "ok",
+    "Java::Generate::Expression": "ok",
+    "Java::Generate::Interface": "ok",
+    "Java::Generate::JavaMethod": "ok",
+    "Java::Generate::JavaParameter": "ok",
+    "Java::Generate::JavaSignature": "ok",
+    "Java::Generate::Literal": "ok",
+    "Java::Generate::Statement": "ok",
+    "Java::Generate::Utils": "ok",
+    "Java::Generate::Variable": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/J/AV/JAVA_GENERATE/6f5ed549a536fa547c894f64fb3bfb5cce18b2ae.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 81,
+    "baseline_files": 9,
+    "mutsu_assertions": 47,
+    "parity_files": 4,
+    "regressed_files": 5
+  },
+  "version": "1.0.0"
+}

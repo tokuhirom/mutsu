@@ -1,0 +1,72 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AlgorithmsIT",
+      "App::Mi6",
+      "Bin::Utils",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "Font::AFM",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MacOS::NativeLib",
+      "OO::Monitors",
+      "Pod::Load",
+      "Pod::To::HTML",
+      "Pod::To::Markdown",
+      "Proc::Easier",
+      "QueryOS",
+      "Shell::Command",
+      "TAP",
+      "Template::Mustache",
+      "Test::META",
+      "Test::Output",
+      "Text::Utils",
+      "URI",
+      "fez"
+    ],
+    "unresolved": []
+  },
+  "dist": "Mi6::Helper",
+  "files": [],
+  "load": {
+    "Mi6::Helper": "X::InvalidType: Invalid typename 'TAP::Entry::Handler'",
+    "Mi6::Helper::Utils": "X::InvalidType: Invalid typename 'TAP::Entry::Handler'"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/I6/MI6_HELPER/5dc26ffdc1f7adeac056cd4efd64f9fe4d04f49f.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "1.2.1"
+}

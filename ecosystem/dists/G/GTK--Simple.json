@@ -1,0 +1,152 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "GTK::Simple",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 54.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-export-subs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-author-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.67,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "GTK::Simple": "ok",
+    "GTK::Simple::ActionBar": "ok",
+    "GTK::Simple::App": "ok",
+    "GTK::Simple::Box": "ok",
+    "GTK::Simple::Button": "ok",
+    "GTK::Simple::Calendar": "ok",
+    "GTK::Simple::CheckButton": "ok",
+    "GTK::Simple::CheckMenuItem": "ok",
+    "GTK::Simple::ComboBoxText": "ok",
+    "GTK::Simple::Common": "ok",
+    "GTK::Simple::ConnectionHandler": "ok",
+    "GTK::Simple::Container": "ok",
+    "GTK::Simple::DrawingArea": "ok",
+    "GTK::Simple::Entry": "ok",
+    "GTK::Simple::FileChooserButton": "ok",
+    "GTK::Simple::Frame": "ok",
+    "GTK::Simple::GDK": "ok",
+    "GTK::Simple::Grid": "ok",
+    "GTK::Simple::HBox": "ok",
+    "GTK::Simple::Label": "ok",
+    "GTK::Simple::LevelBar": "ok",
+    "GTK::Simple::LinkButton": "ok",
+    "GTK::Simple::ListBox": "ok",
+    "GTK::Simple::MarkUpLabel": "ok",
+    "GTK::Simple::Menu": "ok",
+    "GTK::Simple::MenuBar": "ok",
+    "GTK::Simple::MenuItem": "ok",
+    "GTK::Simple::MenuToolButton": "ok",
+    "GTK::Simple::NativeLib": "ok",
+    "GTK::Simple::PlacesSidebar": "ok",
+    "GTK::Simple::ProgressBar": "ok",
+    "GTK::Simple::PropertyFacade": "ok",
+    "GTK::Simple::RadioButton": "ok",
+    "GTK::Simple::Raw": "ok",
+    "GTK::Simple::Scale": "ok",
+    "GTK::Simple::Scheduler": "ok",
+    "GTK::Simple::ScrolledWindow": "ok",
+    "GTK::Simple::Separator": "ok",
+    "GTK::Simple::Spinner": "ok",
+    "GTK::Simple::StatusBar": "ok",
+    "GTK::Simple::Switch": "ok",
+    "GTK::Simple::TextView": "ok",
+    "GTK::Simple::ToggleButton": "ok",
+    "GTK::Simple::Toolbar": "ok",
+    "GTK::Simple::VBox": "ok",
+    "GTK::Simple::Widget": "ok",
+    "GTK::Simple::Window": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/TK/GTK_SIMPLE/cae4516d6337206ec1f159d51c4dacb9e1c15969.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 3,
+    "mutsu_assertions": 1,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.3.0"
+}

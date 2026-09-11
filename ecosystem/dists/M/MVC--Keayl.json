@@ -1,0 +1,1937 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "BDD::Behave",
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DBIish",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Find",
+      "File::Which",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "License::SPDX",
+      "Log::Async",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "ORM::ActiveRecord",
+      "ORM::Factory",
+      "OpenSSL",
+      "Shell::Command",
+      "Template::HAML",
+      "Terminal::ANSI",
+      "Test::META",
+      "Test::Output",
+      "TinyFloats",
+      "URI",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "MVC::Keayl",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/action-text/action-text.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/adapter/cro-adapter.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/adapter/test-adapter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 10.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/application/application.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/application/config.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method '' for invocant of type 'HeartbeatChannel'",
+        "nok": 2,
+        "ok": 7,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/cable/cable-features.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 12.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/cable/cable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/caching/cache-store.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/keayl-cache-2-0' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 33,
+        "plan": null,
+        "secs": 2.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/caching/conditional.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/caching/headers-fragment-stream.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/caching/rate-limit.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/cli.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/generators-and-defaults.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cli/generators.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/callback-traits.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/callbacks.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/controller.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/dsl-traits.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/expect.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/helpers.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/implicit-format.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/inline-callbacks.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/inline-class-dsl.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/live.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/new-action.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "a multipart text field parses its value",
+        "nok": 4,
+        "ok": 21,
+        "plan": 25,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/controller/params.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/precompiled-traits.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/redirect-head.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/render.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/renderers.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/rescue.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/send.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/strong-params.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/variants.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/controller/wrap-parameters.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/cookies/cookies.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/csrf/csrf.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/flash/flash.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/helpers/assets.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/content.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/form.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/formatting.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/html5-fields.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/misc.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/select.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 2.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/helpers/tag.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "DirectCodegen: unknown Statement kind: expression",
+        "nok": 0,
+        "ok": 21,
+        "plan": null,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/helpers/url-asset.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 8.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/i18n/backend.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/i18n/controller.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/i18n/form.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/i18n/locale-resolution.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/i18n/localization.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/i18n/model-translation.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/integration/live-server.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 214,
+        "plan": 214,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta-provides.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 214,
+        "plan": 214,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.23,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.57,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/integration/multipart-upload.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/integration/test-support.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot modify an immutable value",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/job/job-features.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 6.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/job/job.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 4.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/live/live.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mailbox/mailbox.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mailer/mailer-features.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mailer/mailer.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 17,
+        "plan": null,
+        "secs": 13.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/middleware/database.rakutest",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/middleware/middleware-stack.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/middleware/static.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 4.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/mime/mime.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/negotiation/negotiation.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/observability/error-reporting.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/observability/instrumentation.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 19.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/observability/logging.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/params/parameter-filter.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/request/request.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/response/response.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/concerns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/routing/engines.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/introspection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/nested-resources.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 7.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/path-pattern.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 2.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/redirect-mount.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/resource-singular.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 4.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/resources.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 6.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/route-constraints.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/routing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 3.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/routing/scopes.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      },
+      "path": "t/routing/url-helpers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 7.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/security/credentials.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/security/http-authentication-controller.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/security/http-authentication.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/security/secrets.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA1__Native/Digest-SHA1-Native-1.0.1/resources/libraries/sha1.dll': /home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 2.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/security/transport.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 3.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/session/session.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/storage/serving.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/storage/storage.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/storage/variants.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/helper-context.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/keayl-cli-helper-context-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/helper-hot-reload.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/helper-modules.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/layouts.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/partials.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "DirectCodegen: unknown Statement kind: expression",
+        "nok": 0,
+        "ok": 13,
+        "plan": null,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/view/safe-string.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 3.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/view/view.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "MVC::Keayl": "ok",
+    "MVC::Keayl::APIController": "raku_also_fails",
+    "MVC::Keayl::ActionText": "raku_also_fails",
+    "MVC::Keayl::ActionText::Repository": "raku_also_fails",
+    "MVC::Keayl::ActionText::RichTextable": "raku_also_fails",
+    "MVC::Keayl::Adapter": "ok",
+    "MVC::Keayl::Adapter::Cro": "raku_also_fails",
+    "MVC::Keayl::Adapter::Test": "ok",
+    "MVC::Keayl::Application": "raku_also_fails",
+    "MVC::Keayl::Assets": "ok",
+    "MVC::Keayl::Assets::Serving": "raku_also_fails",
+    "MVC::Keayl::CLI": "raku_also_fails",
+    "MVC::Keayl::CSRF": "ok",
+    "MVC::Keayl::Cable::Broadcasting": "ok",
+    "MVC::Keayl::Cable::Channel": "ok",
+    "MVC::Keayl::Cable::Connection": "ok",
+    "MVC::Keayl::Cable::PubSub": "ok",
+    "MVC::Keayl::Cable::PubSub::External": "ok",
+    "MVC::Keayl::Cable::PubSub::InMemory": "ok",
+    "MVC::Keayl::Cache": "ok",
+    "MVC::Keayl::Caching": "ok",
+    "MVC::Keayl::Config": "ok",
+    "MVC::Keayl::Controller": "raku_also_fails",
+    "MVC::Keayl::Cookies": "raku_also_fails",
+    "MVC::Keayl::Credentials": "raku_also_fails",
+    "MVC::Keayl::Dispatcher": "ok",
+    "MVC::Keayl::Endpoint": "ok",
+    "MVC::Keayl::Engine": "ok",
+    "MVC::Keayl::ErrorReporter": "ok",
+    "MVC::Keayl::ErrorReporting": "ok",
+    "MVC::Keayl::Errors": "ok",
+    "MVC::Keayl::ExceptionPage": "ok",
+    "MVC::Keayl::Flash": "ok",
+    "MVC::Keayl::HealthController": "raku_also_fails",
+    "MVC::Keayl::Helpers::Asset": "ok",
+    "MVC::Keayl::Helpers::DateTime": "ok",
+    "MVC::Keayl::Helpers::Form": "ok",
+    "MVC::Keayl::Helpers::Number": "ok",
+    "MVC::Keayl::Helpers::Options": "ok",
+    "MVC::Keayl::Helpers::Tag": "ok",
+    "MVC::Keayl::Helpers::Text": "ok",
+    "MVC::Keayl::Helpers::Url": "ok",
+    "MVC::Keayl::HttpAuthentication": "raku_also_fails",
+    "MVC::Keayl::I18n": "ok",
+    "MVC::Keayl::I18n::Locale": "ok",
+    "MVC::Keayl::I18n::Pluralization": "ok",
+    "MVC::Keayl::Job": "ok",
+    "MVC::Keayl::Job::GlobalID": "ok",
+    "MVC::Keayl::Job::QueueAdapter": "ok",
+    "MVC::Keayl::Job::QueueAdapter::Async": "ok",
+    "MVC::Keayl::Job::QueueAdapter::Database": "ok",
+    "MVC::Keayl::Job::QueueAdapter::Inline": "ok",
+    "MVC::Keayl::Job::QueueAdapter::Test": "ok",
+    "MVC::Keayl::Live": "ok",
+    "MVC::Keayl::LogEvent": "ok",
+    "MVC::Keayl::Logger": "ok",
+    "MVC::Keayl::Mail": "ok",
+    "MVC::Keayl::Mailbox": "ok",
+    "MVC::Keayl::Mailbox::Ingress": "raku_also_fails",
+    "MVC::Keayl::Mailbox::Router": "ok",
+    "MVC::Keayl::Mailer": "ok",
+    "MVC::Keayl::Mailer::Delivery": "ok",
+    "MVC::Keayl::Mailer::Delivery::File": "ok",
+    "MVC::Keayl::Mailer::Delivery::SMTP": "ok",
+    "MVC::Keayl::Mailer::Delivery::Test": "ok",
+    "MVC::Keayl::Mailer::DeliveryJob": "ok",
+    "MVC::Keayl::Mailer::Preview": "raku_also_fails",
+    "MVC::Keayl::Middleware": "ok",
+    "MVC::Keayl::Middleware::Database": "ok",
+    "MVC::Keayl::Middleware::HostAuthorization": "ok",
+    "MVC::Keayl::Middleware::Logger": "ok",
+    "MVC::Keayl::Middleware::RequestId": "ok",
+    "MVC::Keayl::Middleware::SSL": "ok",
+    "MVC::Keayl::Middleware::SecureHeaders": "ok",
+    "MVC::Keayl::Middleware::Static": "ok",
+    "MVC::Keayl::MiddlewareStack": "ok",
+    "MVC::Keayl::Mime": "ok",
+    "MVC::Keayl::Notifications": "ok",
+    "MVC::Keayl::PWAController": "raku_also_fails",
+    "MVC::Keayl::ParameterFilter": "ok",
+    "MVC::Keayl::Parameters": "ok",
+    "MVC::Keayl::Params": "ok",
+    "MVC::Keayl::Request": "ok",
+    "MVC::Keayl::Response": "ok",
+    "MVC::Keayl::Router": "ok",
+    "MVC::Keayl::Routing": "ok",
+    "MVC::Keayl::Routing::Mount": "ok",
+    "MVC::Keayl::Routing::PathPattern": "ok",
+    "MVC::Keayl::Routing::Redirect": "ok",
+    "MVC::Keayl::Routing::Resources": "ok",
+    "MVC::Keayl::Routing::Route": "ok",
+    "MVC::Keayl::Routing::RouteMatch": "ok",
+    "MVC::Keayl::Routing::UrlHelpers": "ok",
+    "MVC::Keayl::SafeString": "ok",
+    "MVC::Keayl::Secrets": "ok",
+    "MVC::Keayl::Session": "ok",
+    "MVC::Keayl::Storage": "raku_also_fails",
+    "MVC::Keayl::Storage::Attached": "raku_also_fails",
+    "MVC::Keayl::Storage::Repository": "raku_also_fails",
+    "MVC::Keayl::Storage::Service": "ok",
+    "MVC::Keayl::Storage::Serving": "raku_also_fails",
+    "MVC::Keayl::Storage::Variant": "raku_also_fails",
+    "MVC::Keayl::TestSupport": "raku_also_fails",
+    "MVC::Keayl::View": "ok",
+    "MVC::Keayl::View::Context": "ok",
+    "MVC::Keayl::View::Handler": "ok",
+    "MVC::Keayl::View::Handler::HAML": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/VC/MVC_KEAYL/3646bfdef03ee2a5277002c4afcc939ad74b2038.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 886,
+    "baseline_files": 37,
+    "mutsu_assertions": 829,
+    "parity_files": 31,
+    "regressed_files": 6
+  },
+  "version": "0.9.1"
+}

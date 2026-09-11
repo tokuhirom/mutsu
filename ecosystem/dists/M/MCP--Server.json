@@ -1,0 +1,672 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "Log::Timeline",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "TinyFloats",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "MCP::Server",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-protocol.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 4.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\thello world",
+        "nok": 0,
+        "ok": 2,
+        "plan": 7,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-tools.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 13.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-resources.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, World!",
+        "nok": 0,
+        "ok": 3,
+        "plan": 7,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "tools-for-llm is sorted by name, exactly as tools/list is",
+        "nok": 1,
+        "ok": 11,
+        "plan": 12,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-llm-bridge.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected ')'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-dsl-trait.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 6.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expected statement: expected ')'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-dsl-type-map.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'server' for invocant of type 'MyServer'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 30,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-dsl-compose.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 2.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 25,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-dsl-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 3.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, Ada",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-toolkit.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, Ada",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-one-shot.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-from-config.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/mcp-server-config-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-cli.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/mcp-cli-http-2.json: Read-only file system",
+        "nok": 0,
+        "ok": 5,
+        "plan": 10,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "MCP::Server::DSL does not accept positional parameters (label -> Parameter.new).",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-dsl-toolkit.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (supportedVersions\t2026-07-28 capabilities\tprompts",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-modern-era.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tdone",
+        "nok": 0,
+        "ok": 1,
+        "plan": 7,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-logging.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (supportedVersions\t2026-07-28 capabilities\tresources",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-modern-interface.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "header-checks: Mcp-Name required for tools/call, resources/read, prompts/get",
+        "nok": 1,
+        "ok": 11,
+        "plan": 12,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/18-http-validation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-http-server.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "The table hands out tokens and takes them back exactly once",
+        "nok": 1,
+        "ok": 6,
+        "plan": 7,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/20-elicitation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "The retry finishes the call",
+        "nok": 3,
+        "ok": 1,
+        "plan": 12,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/21-elicitation-dispatch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\thello Ada",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-elicitation-local.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/23-http-elicitation.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Outside a request, legacy notifications go to the transport",
+        "nok": 1,
+        "ok": 6,
+        "plan": 8,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/24-notify.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-transport-concurrency.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller print(Failure:U: Str:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tsent 3 of 3",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/26-progress.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Out of a request the host and a connected client both hear it",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/27-in-process-sink.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 3.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/28-batch-concurrency.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 5.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MCP::Server": "ok",
+    "MCP::Server::Batch": "ok",
+    "MCP::Server::CLI": "ok",
+    "MCP::Server::Context": "ok",
+    "MCP::Server::DSL": "ok",
+    "MCP::Server::Elicitation": "ok",
+    "MCP::Server::HTTP": "raku_also_fails",
+    "MCP::Server::HTTP::Validation": "ok",
+    "MCP::Server::Prompt": "ok",
+    "MCP::Server::Protocol": "ok",
+    "MCP::Server::Resource": "ok",
+    "MCP::Server::Tool": "ok",
+    "MCP::Server::Toolkit": "ok",
+    "MCP::Server::Transport": "ok",
+    "MCP::Server::Transport::Stdio": "ok",
+    "Metamodel::McpHOW": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/CP/MCP_SERVER/1159b3f825a2f0d8ff51c361cd89b14fbd1f16e3.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 249,
+    "baseline_files": 23,
+    "mutsu_assertions": 79,
+    "parity_files": 3,
+    "regressed_files": 20
+  },
+  "version": "0.6.0"
+}

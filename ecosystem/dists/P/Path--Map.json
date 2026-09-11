@@ -1,0 +1,155 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Path::Map",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "lookup('date/2012/12/25')",
+        "nok": 24,
+        "ok": 5,
+        "plan": 29,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/path_map.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 3.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "deterministic resolution order",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/threading.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expression statement or anonymous sub parameter list/body or '{'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/trait.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "lookup('foo/42') mapped to Constrained.",
+        "nok": 7,
+        "ok": 1,
+        "plan": 9,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/validation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'handler' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/wildcard.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Path::Map": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/AT/PATH_MAP/012eb81a6b2efe8289717240d7570fb7667ddbf4.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 56,
+    "baseline_files": 5,
+    "mutsu_assertions": 6,
+    "parity_files": 0,
+    "regressed_files": 5
+  },
+  "version": "0.4"
+}

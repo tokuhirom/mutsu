@@ -1,0 +1,87 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Iec104Parser",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 18.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Iec104::Asdu": "ok",
+    "Iec104::Asdu::CommonAddr": "ok",
+    "Iec104::Asdu::InfoObj": "ok",
+    "Iec104::Asdu::InfoObj::ActivateMultiParameter": "ok",
+    "Iec104::Asdu::InfoObj::ActivateSingleParameter": "ok",
+    "Iec104::Asdu::InfoObj::Address": "ok",
+    "Iec104::Asdu::InfoObj::DoubleCommand": "ok",
+    "Iec104::Asdu::InfoObj::MultiParameter": "ok",
+    "Iec104::Asdu::InfoObj::Normalization": "ok",
+    "Iec104::Asdu::InfoObj::PointDesc": "ok",
+    "Iec104::Asdu::InfoObj::PointWithTime": "ok",
+    "Iec104::Asdu::InfoObj::PointWithoutTime": "ok",
+    "Iec104::Asdu::InfoObj::ShortFloat": "ok",
+    "Iec104::Asdu::InfoObj::SingleCommand": "ok",
+    "Iec104::Asdu::InfoObj::SingleParameter": "ok",
+    "Iec104::Asdu::InfoObj::Standardization": "ok",
+    "Iec104::Asdu::InfoObj::TimeScale": "ok",
+    "Iec104::Asdu::TransReason": "ok",
+    "Iec104::Asdu::TypeIdentifier": "ok",
+    "Iec104::Asdu::VarStructQualifier": "ok",
+    "Iec104::ControlDomain": "ok",
+    "Iec104::ControlDomain::IFrame": "ok",
+    "Iec104::ControlDomain::SFrame": "ok",
+    "Iec104::ControlDomain::UFrame": "ok",
+    "Iec104::Utilities": "ok",
+    "Iec104Parser": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/EC/IEC104PARSER/d9137ee63fd63249ca65c97ab08b64c11b83d347.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.1"
+}

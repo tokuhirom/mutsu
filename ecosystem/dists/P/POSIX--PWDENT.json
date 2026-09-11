@@ -1,0 +1,87 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "POSIX::PWDENT",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "User 'root' exists",
+        "nok": 2,
+        "ok": 4,
+        "plan": 31,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00-pwdent.t",
+      "raku": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 2.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": 27,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-grpent.t",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "GRPENT": "raku_also_fails",
+    "PWDENT": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OS/POSIX_PWDENT/605563df1286c3b7d8d6154f4574a89354acdb0e.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 58,
+    "baseline_files": 2,
+    "mutsu_assertions": 4,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.0.2"
+}

@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Time::Duration",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Calling _render(Array, Array) will never work with declared signature (Str $direction, @approximate, @separate)",
+        "nok": 0,
+        "ok": 51,
+        "plan": 135,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01_tdur.t",
+      "raku": {
+        "nok": 0,
+        "ok": 135,
+        "plan": 135,
+        "secs": 2.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Time::Duration": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/IM/TIME_DURATION/6b215ae9b0d1b85caaf5853eaae8e85f0d2fca1b.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 135,
+    "baseline_files": 1,
+    "mutsu_assertions": 51,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "2.0.2"
+}

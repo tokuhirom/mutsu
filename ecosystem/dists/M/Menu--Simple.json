@@ -1,0 +1,148 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Test::Output"
+    ],
+    "unresolved": []
+  },
+  "dist": "Menu::Simple",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "first_failure": "validates or invalidates selection",
+        "nok": 1,
+        "ok": 34,
+        "plan": 35,
+        "secs": 4.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Undeclared name:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-option-ids.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Undeclared name:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-sorting.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Undeclared name:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/xt/00-AuthorTests.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.45,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.2,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/xt/01-strip-leading-numbers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.79,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Menu::HashToMenu": "ok",
+    "Menu::Simple": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/EN/MENU_SIMPLE/910dbb9afb75384498c70dd8580d119fbaa1dbd2.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 11,
+    "baseline_files": 4,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 3
+  },
+  "version": "0.17"
+}

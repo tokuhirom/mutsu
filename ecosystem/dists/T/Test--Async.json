@@ -1,0 +1,57 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Test::Async",
+  "files": [],
+  "load": {
+    "Test::Async": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?",
+    "Test::Async::Aggregator": "Invalid typename 'Event:D' in parameter declaration.",
+    "Test::Async::Base": "expected statement: expected expected statement: expected right-hand expression after '=' or listop argument expression after ',' or expected statement: expected expression statement or expected state",
+    "Test::Async::Decl": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::Event": "ok",
+    "Test::Async::Hub": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::Job": "ok",
+    "Test::Async::JobMgr": "ok",
+    "Test::Async::Metamodel::BundleClassHOW": "ok",
+    "Test::Async::Metamodel::BundleHOW": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::Metamodel::HubHOW": "ok",
+    "Test::Async::Metamodel::ReporterHOW": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::Reporter": "Invalid typename 'Event:D' in parameter declaration.",
+    "Test::Async::Reporter::TAP": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::Result": "ok",
+    "Test::Async::TestTool": "ok",
+    "Test::Async::Utils": "ok",
+    "Test::Async::When": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
+    "Test::Async::X": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ES/TEST_ASYNC/46fb5e650e1f1103b7c409a707d033ff14a04c95.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.17"
+}

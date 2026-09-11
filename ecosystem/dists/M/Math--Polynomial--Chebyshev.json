@@ -1,0 +1,86 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Polynomial::Chebyshev",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Same result with function over data and data argument",
+        "nok": 1,
+        "ok": 15,
+        "plan": 16,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-chebyshev-t.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Same result with function over data and data argument",
+        "nok": 1,
+        "ok": 15,
+        "plan": 16,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-chebyshev-u.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Polynomial::Chebyshev": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_POLYNOMIAL_CHEBYSHEV/3c36db36b58c6c56fa7c8c77036927eb303571f4.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 32,
+    "baseline_files": 2,
+    "mutsu_assertions": 30,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.0.2"
+}

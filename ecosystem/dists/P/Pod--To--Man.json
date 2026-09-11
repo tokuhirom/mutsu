@@ -1,0 +1,77 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Pod::Load",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pod::To::Man",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "first pod renders ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 35,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 4.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Pod::To::Man": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OD/POD_TO_MAN/34fbb0c6948c961bbaa39b831a4c785c845dedef.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 35,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "1.2.1"
+}

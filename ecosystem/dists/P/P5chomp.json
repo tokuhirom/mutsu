@@ -1,0 +1,109 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "P5chomp",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "chomp without args dies",
+        "nok": 2,
+        "ok": 2,
+        "plan": 4,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot modify an immutable Str (b",
+        "nok": 0,
+        "ok": 4,
+        "plan": 23,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-chomp.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot modify an immutable Str (bc)",
+        "nok": 0,
+        "ok": 2,
+        "plan": 13,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-chop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "P5chomp": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/5C/P5CHOMP/dd100def79042842f24200785d937c1b94ca7b93.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 40,
+    "baseline_files": 3,
+    "mutsu_assertions": 8,
+    "parity_files": 0,
+    "regressed_files": 3
+  },
+  "version": "0.0.11"
+}

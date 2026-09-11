@@ -1,0 +1,70 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "ONNX::Runtime",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-tensor-types.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "ONNX::Runtime": "ok",
+    "ONNX::Runtime::API": "ok",
+    "ONNX::Runtime::Types": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/NN/ONNX_RUNTIME/3188a582c8056bfa21ca03c10b734e8b3444f8ab.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

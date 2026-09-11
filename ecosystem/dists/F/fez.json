@@ -1,0 +1,60 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "fez",
+  "files": [],
+  "load": {
+    "Fez": "ok",
+    "Fez::API": "Runtime error: No return arguments allowed when return value Fez::Types::api-response is already specified in the signature",
+    "Fez::Bundle": "ok",
+    "Fez::CLI": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or ')'",
+    "Fez::Logr": "ok",
+    "Fez::Types": "ok",
+    "Fez::Util::Config": "ok",
+    "Fez::Util::Curl": "ok",
+    "Fez::Util::FS": "ok",
+    "Fez::Util::Glob": "ok",
+    "Fez::Util::Json": "ok",
+    "Fez::Util::META6": "ok",
+    "Fez::Util::Pass": "ok",
+    "Fez::Util::Pax": "ok",
+    "Fez::Util::Pkg": "ok",
+    "Fez::Util::Proc": "ok",
+    "Fez::Util::RTar": "ok",
+    "Fez::Util::Tar": "ok",
+    "Fez::Util::Uri": "ok",
+    "Fez::Util::Wget": "ok",
+    "Fez::Util::Zlib": "ok",
+    "Fez::Web": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/EZ/FEZ/8718f3d6fd2ed206c4e6b465034d447e687880db.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "100.0.2"
+}

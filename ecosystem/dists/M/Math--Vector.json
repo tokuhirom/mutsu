@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Vector",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unsupported use of -> as postfix. In Raku please use: either . to call a method, or whitespace to delimit a pointy block.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basics.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 201,
+        "plan": 201,
+        "secs": 5.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Vector": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_VECTOR/65d90fab013d6a4c85d29700f20acce357108d23.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 201,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.6.0"
+}

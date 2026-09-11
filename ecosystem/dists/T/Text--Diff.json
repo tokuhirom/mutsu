@@ -1,0 +1,113 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Algorithm::Diff",
+      "Text::Tabs"
+    ],
+    "unresolved": []
+  },
+  "dist": "Text::Diff",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Argument: Calling _longestCommonSubsequence(Array, Array, Int, Nil) will never work with proto signature (@a, __ANON_STATE__, counting, &fcn, %args, %__ANON_HASH__)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/general.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 4.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.07,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.36,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Argument: Calling _longestCommonSubsequence(Array, Array, Int, Nil) will never work with proto signature (@a, __ANON_STATE__, counting, &fcn, %args, %__ANON_HASH__)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/table.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Text::Diff": "ok",
+    "Text::Diff::Output": "ok",
+    "Text::Diff::Table": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/EX/TEXT_DIFF/91590c7743953fbe3e6f306f7e06300a9c9997bc.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 3,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 2
+  },
+  "version": "1.0.5"
+}

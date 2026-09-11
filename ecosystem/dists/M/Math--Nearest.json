@@ -1,0 +1,47 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Algorithm::KDimensionalTree",
+      "Math::DistanceFunctions",
+      "Math::DistanceFunctions::Edit",
+      "Math::DistanceFunctions::Native",
+      "NativeHelpers::Array"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::Nearest",
+  "files": [],
+  "load": {
+    "Math::Nearest": "circular module dependency detected: Math::Nearest -> Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::Array -> ",
+    "Math::Nearest::Finder": "circular module dependency detected: Math::Nearest::Finder -> Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::A",
+    "Math::Nearest::Scan": "circular module dependency detected: Math::Nearest::Scan -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::Array -> Math::DistanceFunctions::Edit -> NativeHelpers::Arra"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_NEAREST/61e9ecd04ebf7bc5341758c13c2e81aa208fd19c.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.7"
+}

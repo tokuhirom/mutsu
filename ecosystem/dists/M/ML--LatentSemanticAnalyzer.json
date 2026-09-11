@@ -1,0 +1,60 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::EN::Stem::Porter",
+      "Lingua::StopwordsISO",
+      "META6",
+      "ML::SparseMatrixRecommender",
+      "Math::SparseMatrix",
+      "Math::SparseMatrix::Native",
+      "Math::SpecialFunctions",
+      "NativeHelpers::Array",
+      "Statistics::Distributions",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "ML::LatentSemanticAnalyzer",
+  "files": [],
+  "load": {
+    "ML::LatentSemanticAnalyzer": "Variable $.csr-struct used where no 'self' is available",
+    "ML::LatentSemanticAnalyzer::Utilities": "Variable $.csr-struct used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/L_/ML_LATENTSEMANTICANALYZER/e4bcd0371950d9310f0043f86cb7d604e31a9648.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

@@ -1,0 +1,43 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "FatRatStr",
+      "Grammar::Debugger",
+      "Terminal::ANSIColor"
+    ],
+    "unresolved": []
+  },
+  "dist": "Physics::Error",
+  "files": [],
+  "load": {
+    "Physics::Error": "Failed to parse module 'Physics::Error': X::Syntax::Missing: Missing block"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/HY/PHYSICS_ERROR/44d86b579951a181fc5e0f7838f003742555566c.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.9"
+}

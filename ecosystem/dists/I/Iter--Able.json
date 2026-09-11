@@ -1,0 +1,829 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Iter::Able",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-usability.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 22.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller group-conseq(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-group-conseq.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller take-while(Array:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-take-while.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller skip-while(Array:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-skip-while.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller map-when(Array:D, WhateverCode:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-map-when.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller enumerate(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-enumerate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller annotate(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-annotate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller cycle(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-cycle.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller map-indexed(Array:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-map-indexed.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller map-first(Array:D, WhateverCode:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-map-first.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller map-last(Array:D, WhateverCode:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-map-last.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller map-when(Array:D, WhateverCode:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 21,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-chain.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller flatten(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-flatten.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/13-replace.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::hash",
+        "nok": 0,
+        "ok": 0,
+        "plan": 30,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-assign-at.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Use of uninitialized value element of type Numeric in string context.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-clip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 20,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-insert-at.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 19,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-n'th.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller is-all-same(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 27,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/18-is-all-same.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller is-all-different(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 31,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/19-is-all-different.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/20-remove-first.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/21-remove-last.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::hash",
+        "nok": 0,
+        "ok": 0,
+        "plan": 25,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-remove-at.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: g",
+        "nok": 0,
+        "ok": 0,
+        "plan": 26,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/23-select-at.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::isconcrete",
+        "nok": 0,
+        "ok": 0,
+        "plan": 54,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/24-min-max.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 54,
+        "plan": 54,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller fill-undef(Array:D, Int:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/25-fill-undef.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller remove-prefix(Str:D, Str:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/26-remove-prefix.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller remove-suffix(Str:D, Str:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/27-remove-suffix.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller some(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 18,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/28-some.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller for-each(Array:D, Block:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/29-for-each.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller split-at(Array:D, WhateverCode:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/30-split-at.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller every(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 19,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/31-every.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller noone(Array:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": 19,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/32-noone.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Iter::Able::Annotate": "ok",
+    "Iter::Able::Assign-At": "ok",
+    "Iter::Able::Chain": "ok",
+    "Iter::Able::Clip": "ok",
+    "Iter::Able::Cycle": "ok",
+    "Iter::Able::Enumerate": "ok",
+    "Iter::Able::Every": "ok",
+    "Iter::Able::Fill-Undef": "ok",
+    "Iter::Able::Flatten": "ok",
+    "Iter::Able::For-Each": "ok",
+    "Iter::Able::Group-Conseq": "ok",
+    "Iter::Able::Insert-At": "ok",
+    "Iter::Able::Is-All-Different": "ok",
+    "Iter::Able::Is-All-Same": "ok",
+    "Iter::Able::Map-First": "ok",
+    "Iter::Able::Map-Indexed": "ok",
+    "Iter::Able::Map-Last": "ok",
+    "Iter::Able::Map-When": "ok",
+    "Iter::Able::Min-Max": "ok",
+    "Iter::Able::N'th": "ok",
+    "Iter::Able::Noone": "ok",
+    "Iter::Able::Remove-At": "ok",
+    "Iter::Able::Remove-First": "ok",
+    "Iter::Able::Remove-Last": "ok",
+    "Iter::Able::Remove-Prefix": "ok",
+    "Iter::Able::Remove-Suffix": "ok",
+    "Iter::Able::Replace": "ok",
+    "Iter::Able::Select-At": "ok",
+    "Iter::Able::Skip-While": "ok",
+    "Iter::Able::Some": "ok",
+    "Iter::Able::Split-At": "ok",
+    "Iter::Able::Take-While": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/TE/ITER_ABLE/006dc2c0563fd77700e980e60eb9eb6df10fb8fb.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 561,
+    "baseline_files": 33,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 32
+  },
+  "version": "0.2.0"
+}

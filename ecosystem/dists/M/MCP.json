@@ -1,0 +1,422 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Agnostic",
+      "Base64",
+      "CBOR::Simple",
+      "Code::Coverable",
+      "Code::Coverage",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "ForwardIterables",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "Identity::Utils",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "List::Agnostic",
+      "Log::Timeline",
+      "META6",
+      "META::constants",
+      "META::verauthapi",
+      "MIME::Base64",
+      "MoarVM::Bytecode",
+      "OO::Monitors",
+      "OpenSSL",
+      "String::Utils",
+      "Test::Coverage",
+      "Test::META",
+      "TinyFloats",
+      "URI",
+      "if",
+      "paths"
+    ],
+    "unresolved": []
+  },
+  "dist": "MCP",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: LATEST_PROTOCOL_VERSION",
+        "nok": 1,
+        "ok": 17,
+        "plan": null,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-types.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 89,
+        "plan": 89,
+        "secs": 12.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-jsonrpc.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 4.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-builders.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 9.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-transport.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type Array does not support associative indexing.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-server.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 12.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'keep' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-client.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 18.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-mcp.rakutest",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 19.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Tried to get the result of a broken Promise",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 30.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-sampling.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 4.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-http-transport.rakutest",
+      "raku": {
+        "first_failure": "Cro::HTTP available",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 55.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-oauth.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 41.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "tasks/result blocks until completion",
+        "nok": 2,
+        "ok": 13,
+        "plan": 15,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/11-tasks.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 3.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-extensions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'keep' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 5,
+        "plan": null,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/13-resource-templates.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-sse-transport.rakutest",
+      "raku": {
+        "first_failure": "Cro::HTTP available",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 17.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'id' for invocant of type 'MCP::JSONRPC::Notification'",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-expanded-coverage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Valid messages parse correctly after fuzz barrage",
+        "nok": 1,
+        "ok": 7,
+        "plan": 8,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/16-fuzz-jsonrpc.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-integration-stdio.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/mcp-integration-server.raku: Read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "MCP": "ok",
+    "MCP::Client": "ok",
+    "MCP::JSONRPC": "ok",
+    "MCP::OAuth": "ok",
+    "MCP::OAuth::Client": "ok",
+    "MCP::OAuth::Server": "ok",
+    "MCP::Server": "ok",
+    "MCP::Server::Prompt": "ok",
+    "MCP::Server::Resource": "ok",
+    "MCP::Server::Tool": "ok",
+    "MCP::Transport::Base": "ok",
+    "MCP::Transport::SSE": "ok",
+    "MCP::Transport::Stdio": "ok",
+    "MCP::Transport::StreamableHTTP": "ok",
+    "MCP::Types": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/CP/MCP/bd41f6ac82c5e8a0e230cb85d6378b0498e9ac81.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 225,
+    "baseline_files": 10,
+    "mutsu_assertions": 74,
+    "parity_files": 2,
+    "regressed_files": 8
+  },
+  "version": "0.33.6"
+}

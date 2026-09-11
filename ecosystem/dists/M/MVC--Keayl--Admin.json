@@ -1,0 +1,739 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "BDD::Behave",
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DBIish",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Find",
+      "File::Which",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "License::SPDX",
+      "Log::Async",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "MVC::Keayl",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "ORM::ActiveRecord",
+      "ORM::Factory",
+      "OpenSSL",
+      "Shell::Command",
+      "Template::HAML",
+      "Terminal::ANSI",
+      "Test::META",
+      "Test::Output",
+      "TinyFloats",
+      "URI",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "MVC::Keayl::Admin",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/action-availability.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 82.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/assets.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/authentication.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/authorization.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 21.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/batch.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/components.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/custom-actions.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/dashboard.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/destroy.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/engine.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/export.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/file-upload.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/filter-declarations.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/filters.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/form-fields.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/forms.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/generators.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 86.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/index-presentations.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/index.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/admin/inflection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/layout.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/localization.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/menu.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 21.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/nested-resources.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 20.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/nested.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/pages.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/panels.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/paths.rakutest",
+      "raku": {
+        "first_failure": "Failed to get the directory contents of '/tmp/mvc-keayl-admin-paths-test-2': Failed to open dir: no such file or directory",
+        "nok": 0,
+        "ok": 8,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/registration.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 18.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/registry.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/resource-icon.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/routing.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 16.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/scopes.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/show.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/sorting-pagination.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/status-and-export.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/theming.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/admin/vendored-assets.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA1__Native/Digest-SHA1-Native-1.0.1/resources/libraries/sha1.dll': /home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 108,
+        "plan": 108,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta-provides.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 108,
+        "plan": 108,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.12,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/integration/meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.9,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/load.rakutest",
+      "raku": {
+        "first_failure": "MVC::Keayl::Admin module can be use-d ok",
+        "nok": 9,
+        "ok": 45,
+        "plan": 54,
+        "secs": 66.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "MVC::Keayl::Admin": "raku_also_fails",
+    "MVC::Keayl::Admin::ActionItem": "ok",
+    "MVC::Keayl::Admin::Assets": "ok",
+    "MVC::Keayl::Admin::AssetsController": "raku_also_fails",
+    "MVC::Keayl::Admin::Attachments": "raku_also_fails",
+    "MVC::Keayl::Admin::Attribute": "ok",
+    "MVC::Keayl::Admin::Authentication": "ok",
+    "MVC::Keayl::Admin::Authentication::Basic": "raku_also_fails",
+    "MVC::Keayl::Admin::Authentication::Session": "ok",
+    "MVC::Keayl::Admin::Authorization": "ok",
+    "MVC::Keayl::Admin::Authorization::Abilities": "ok",
+    "MVC::Keayl::Admin::Authorization::Policy": "ok",
+    "MVC::Keayl::Admin::Authorization::Role": "ok",
+    "MVC::Keayl::Admin::BatchAction": "ok",
+    "MVC::Keayl::Admin::Chrome": "ok",
+    "MVC::Keayl::Admin::Column": "ok",
+    "MVC::Keayl::Admin::Config": "ok",
+    "MVC::Keayl::Admin::Controller": "raku_also_fails",
+    "MVC::Keayl::Admin::CustomAction": "ok",
+    "MVC::Keayl::Admin::DSL": "ok",
+    "MVC::Keayl::Admin::Dashboard": "ok",
+    "MVC::Keayl::Admin::DashboardController": "raku_also_fails",
+    "MVC::Keayl::Admin::Engine": "ok",
+    "MVC::Keayl::Admin::ExportSpec": "ok",
+    "MVC::Keayl::Admin::Field": "ok",
+    "MVC::Keayl::Admin::Filter": "ok",
+    "MVC::Keayl::Admin::FilterPanel": "ok",
+    "MVC::Keayl::Admin::Form": "ok",
+    "MVC::Keayl::Admin::Formatter": "ok",
+    "MVC::Keayl::Admin::Generators": "ok",
+    "MVC::Keayl::Admin::I18n": "ok",
+    "MVC::Keayl::Admin::IndexView": "ok",
+    "MVC::Keayl::Admin::Inflection": "ok",
+    "MVC::Keayl::Admin::Menu": "ok",
+    "MVC::Keayl::Admin::MenuEntry": "ok",
+    "MVC::Keayl::Admin::Nested": "ok",
+    "MVC::Keayl::Admin::Page": "ok",
+    "MVC::Keayl::Admin::PageController": "raku_also_fails",
+    "MVC::Keayl::Admin::Pages": "ok",
+    "MVC::Keayl::Admin::Pagination": "ok",
+    "MVC::Keayl::Admin::Panel": "ok",
+    "MVC::Keayl::Admin::Panels": "ok",
+    "MVC::Keayl::Admin::Paths": "ok",
+    "MVC::Keayl::Admin::Predicate": "ok",
+    "MVC::Keayl::Admin::Registry": "ok",
+    "MVC::Keayl::Admin::Resource": "ok",
+    "MVC::Keayl::Admin::ResourceController": "raku_also_fails",
+    "MVC::Keayl::Admin::Scope": "ok",
+    "MVC::Keayl::Admin::Scopes": "ok",
+    "MVC::Keayl::Admin::Show": "ok",
+    "MVC::Keayl::Admin::Table": "ok",
+    "MVC::Keayl::Admin::TestSupport": "raku_also_fails",
+    "MVC::Keayl::Admin::Url": "ok",
+    "MVC::Keayl::Admin::View": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/VC/MVC_KEAYL_ADMIN/92235846cd59a49738570f71c193f7ce3eb09d06.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 119,
+    "baseline_files": 3,
+    "mutsu_assertions": 119,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.9.0"
+}

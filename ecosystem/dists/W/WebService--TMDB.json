@@ -1,0 +1,184 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "MIME::Base64",
+      "Method::Protected",
+      "OpenSSL",
+      "Test::Mock",
+      "Test::Util::ServerPort",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "WebService::TMDB",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 73.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Submit get request",
+        "nok": 2,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.68,
+        "skip": 8,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-useragent.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.29,
+        "skip": 8,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Use of Nil in string context",
+        "nok": 0,
+        "ok": 6,
+        "plan": null,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-request.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 4.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for an element of @!genre_ids; expected Int but got Array",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/99-TMDB.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 6.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "WebService::TMDB": "ok",
+    "WebService::TMDB::Cast": "ok",
+    "WebService::TMDB::CertificationList": "ok",
+    "WebService::TMDB::Company": "ok",
+    "WebService::TMDB::Configuration": "ok",
+    "WebService::TMDB::Country": "ok",
+    "WebService::TMDB::Credits": "ok",
+    "WebService::TMDB::Crew": "ok",
+    "WebService::TMDB::ExternalID": "ok",
+    "WebService::TMDB::Facade::UserAgent": "ok",
+    "WebService::TMDB::Find": "ok",
+    "WebService::TMDB::Genre": "ok",
+    "WebService::TMDB::Genre::List": "ok",
+    "WebService::TMDB::Movie": "ok",
+    "WebService::TMDB::Movie::Search": "ok",
+    "WebService::TMDB::Movie::Upcoming": "ok",
+    "WebService::TMDB::Person": "ok",
+    "WebService::TMDB::Person::MovieCast": "ok",
+    "WebService::TMDB::Person::MovieCredits": "ok",
+    "WebService::TMDB::Person::MovieCrew": "ok",
+    "WebService::TMDB::Person::Search": "ok",
+    "WebService::TMDB::Person::TVCast": "ok",
+    "WebService::TMDB::Person::TVCredits": "ok",
+    "WebService::TMDB::Person::TVCrew": "ok",
+    "WebService::TMDB::Request": "ok",
+    "WebService::TMDB::Role::HasRequest": "ok",
+    "WebService::TMDB::Role::Request": "ok",
+    "WebService::TMDB::Role::Search": "ok",
+    "WebService::TMDB::Role::UserAgent": "ok",
+    "WebService::TMDB::SpokenLanguage": "ok",
+    "WebService::TMDB::TV": "ok",
+    "WebService::TMDB::TV::Episode": "ok",
+    "WebService::TMDB::TV::Search": "ok",
+    "WebService::TMDB::TV::Season": "ok",
+    "WebService::TMDB::Utility": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/EB/WEBSERVICE_TMDB/809cb83f10c2c5a97bbb4b5678a25506aee63a74.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 53,
+    "baseline_files": 4,
+    "mutsu_assertions": 18,
+    "parity_files": 1,
+    "regressed_files": 3
+  },
+  "version": "0.1.2"
+}

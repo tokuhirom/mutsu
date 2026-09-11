@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "MIME::Base64",
+      "OpenSSL",
+      "Test::Util::ServerPort",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "HTTP::UserAgent::Strict",
+  "files": [],
+  "load": {
+    "HTTP::Cookies::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::Header::Field::ETag::Strict": "ok",
+    "HTTP::Header::Field::Strict": "ok",
+    "HTTP::Header::Strict": "ok",
+    "HTTP::Message::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::Request::Common::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::Request::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::Response::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::Strict": "ok",
+    "HTTP::UserAgent::Exception::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead.",
+    "HTTP::UserAgent::Strict": "Failed to parse module 'HTTP::Message::Strict': X::Syntax::InfixInTermPosition: Preceding context expects a term, but found infix , instead."
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/TT/HTTP_USERAGENT_STRICT/131c090998a2c1864d77e763b231c1c2667565c3.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.9.2"
+}

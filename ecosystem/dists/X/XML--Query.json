@@ -1,0 +1,66 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "XML::Query",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 28,
+        "plan": 28,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 28,
+        "plan": 28,
+        "secs": 11.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "XML::Query": "ok",
+    "XML::Query::Results": "ok",
+    "XML::Query::Statement": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/X/ML/XML_QUERY/780fc66df04c2f682070d0032196aecfa64915d5.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 28,
+    "baseline_files": 1,
+    "mutsu_assertions": 28,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "1.1"
+}

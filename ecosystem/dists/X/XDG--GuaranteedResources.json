@@ -1,0 +1,71 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Which",
+      "Shell::Command",
+      "XDG::BaseDirectory"
+    ],
+    "unresolved": []
+  },
+  "dist": "XDG::GuaranteedResources",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
+        "nok": 3,
+        "ok": 3,
+        "plan": null,
+        "secs": 8.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 9.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "XDG::GuaranteedResources": "ok",
+    "XDG::GuaranteedResources::AbstractResourcer": "ok",
+    "XDG::GuaranteedResources::InternalTestResourcer": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/X/DG/XDG_GUARANTEEDRESOURCES/3aae42602421c348e31447a0aa9dd6f488cb7137.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 10,
+    "baseline_files": 1,
+    "mutsu_assertions": 3,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "2.0.0"
+}

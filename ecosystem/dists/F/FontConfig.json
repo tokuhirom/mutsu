@@ -1,0 +1,50 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Find",
+      "File::Which",
+      "LibraryMake",
+      "MacOS::NativeLib",
+      "Shell::Command"
+    ],
+    "unresolved": []
+  },
+  "dist": "FontConfig",
+  "files": [],
+  "load": {
+    "FontConfig": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "FontConfig::Defs": "ok",
+    "FontConfig::Match": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "FontConfig::Match::Series": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "FontConfig::Pattern": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "FontConfig::Raw": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/ON/FONTCONFIG/aafc4c897f43dabffd93b2eaeee1d9bcdfb24803.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.9"
+}

@@ -1,0 +1,135 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Termbox2",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-version.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 0.11,
+        "skip": 41,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-lifecycle.t",
+      "raku": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 5.37,
+        "skip": 41,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-constants-and-structs.t",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 139,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Bare use imports every symbol, and nothing else",
+        "nok": 9,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-exports.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-examples.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Termbox2": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/ER/TERMBOX2/0f55b3e08f54b33e879d2916ee588f5cf52ea782.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 53,
+    "baseline_files": 3,
+    "mutsu_assertions": 44,
+    "parity_files": 2,
+    "regressed_files": 1
+  },
+  "version": "0.0.5"
+}

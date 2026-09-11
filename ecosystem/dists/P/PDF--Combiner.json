@@ -1,0 +1,98 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AlgorithmsIT",
+      "App::Prove6",
+      "Base64::Native",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "Font::AFM",
+      "Font::FreeType",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "MacOS::NativeLib",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::Content",
+      "PDF::Font::Loader",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Text::Utils",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "PDF::Combiner",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/0-basic.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/1-config-class.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "PDF::Combiner": "raku_also_fails",
+    "PDF::Combiner::Subs": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/DF/PDF_COMBINER/634e627329dd8420f20c73ef9e47a508cf2f5e62.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

@@ -1,0 +1,62 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Lang::ZH::Palladius",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic-conformance.t",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Lang::ZH::Palladius": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/AN/LANG_ZH_PALLADIUS/2093761785de1c0b00c7536bad664df7a90fec82.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 27,
+    "baseline_files": 1,
+    "mutsu_assertions": 27,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

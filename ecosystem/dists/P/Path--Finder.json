@@ -1,0 +1,239 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp"
+    ],
+    "unresolved": []
+  },
+  "dist": "Path::Finder",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/basic.t",
+      "raku": {
+        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/breadth-depth-files.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/breadth-depth.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/content.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/glob.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/logic.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/min-max-depth.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/names.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/relative.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/stat_tests.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/symlink.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/unsorted.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/vcs.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/x_tests.t",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Path::Finder": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/AT/PATH_FINDER/08ad99db212f1de463940e547a225c6f7aa86fab.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.4.7"
+}

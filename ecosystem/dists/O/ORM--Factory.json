@@ -1,0 +1,69 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "BDD::Behave",
+      "Base64",
+      "DBIish",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Tiny",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Log::Async",
+      "META6",
+      "MIME::Base64",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "ORM::ActiveRecord",
+      "OpenSSL",
+      "Terminal::ANSI",
+      "Test::META",
+      "Test::Output",
+      "URI",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "ORM::Factory",
+  "files": [],
+  "load": {
+    "ORM::Factory": "ok",
+    "ORM::Factory::Cleanup": "ok",
+    "ORM::Factory::DSL": "Redeclaration of routine 'define'. Did you mean to declare a multi-sub?",
+    "ORM::Factory::Persistence": "ok",
+    "ORM::Factory::Persistence::ActiveRecord": "ok",
+    "ORM::Factory::Persistence::Generic": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/O/RM/ORM_FACTORY/aab79c4b81592c5444c7103edcfb0d45e764705f.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.9.1"
+}

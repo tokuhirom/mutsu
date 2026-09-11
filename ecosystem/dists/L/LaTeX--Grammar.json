@@ -1,0 +1,187 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "LaTeX::Grammar",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "parses simple formula: x+1",
+        "nok": 11,
+        "ok": 2,
+        "plan": 13,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-parse-formulas.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 14.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "interprets simple formula: x+1",
+        "nok": 38,
+        "ok": 1,
+        "plan": 39,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-MathJSON-actions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "interprets simple formula: x",
+        "nok": 32,
+        "ok": 0,
+        "plan": 32,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-MathML-actions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "interprets simple formula: x+1",
+        "nok": 26,
+        "ok": 0,
+        "plan": 26,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-AsciiMath-actions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "interprets simple formula: x+1",
+        "nok": 26,
+        "ok": 0,
+        "plan": 26,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-WL-actions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "interprets formula: x+1",
+        "nok": 22,
+        "ok": 0,
+        "plan": 22,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-RakuAST-actions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "LaTeX::Actions::AsciiMath": "ok",
+    "LaTeX::Actions::MathJSON": "ok",
+    "LaTeX::Actions::MathJSON-ad-hoc": "ok",
+    "LaTeX::Actions::MathML": "ok",
+    "LaTeX::Actions::RakuAST": "ok",
+    "LaTeX::Actions::WL": "ok",
+    "LaTeX::Grammar": "ok",
+    "LaTeX::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/AT/LATEX_GRAMMAR/8ef2464d7c19f20123aaa1c6a6c43727bbdfb9c0.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 158,
+    "baseline_files": 6,
+    "mutsu_assertions": 3,
+    "parity_files": 0,
+    "regressed_files": 6
+  },
+  "version": "0.0.5"
+}

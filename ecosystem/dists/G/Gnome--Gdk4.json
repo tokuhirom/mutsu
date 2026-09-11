@@ -1,0 +1,332 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Gnome::GObject",
+      "Gnome::Gio",
+      "Gnome::Glib",
+      "Gnome::N"
+    ],
+    "unresolved": []
+  },
+  "dist": "Gnome::Gdk4",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/ContentProvider.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Display.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Drag.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Drop.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::GObject::N-Value:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MemoryTexture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-ContentFormatsBuilder.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-RGBA.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/N-Rectangle.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/R-Paintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::Glib::T-error:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Snapshot.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Surface.rakutest",
+      "raku": {
+        "first_failure": "Could not find Cairo in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-Texture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-contentformats.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-drag.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-enums.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-keysyms.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-paintable.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/T-texture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::N-Object:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Texture.rakutest",
+      "raku": {
+        "first_failure": "Could not find Gnome::N::GnomeRoutineCaller:api<2> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Gnome::Gdk4::ContentProvider": "raku_also_fails",
+    "Gnome::Gdk4::Display": "raku_also_fails",
+    "Gnome::Gdk4::Drag": "raku_also_fails",
+    "Gnome::Gdk4::Drop": "raku_also_fails",
+    "Gnome::Gdk4::MemoryTexture": "raku_also_fails",
+    "Gnome::Gdk4::N-ContentFormats": "raku_also_fails",
+    "Gnome::Gdk4::N-ContentFormatsBuilder": "raku_also_fails",
+    "Gnome::Gdk4::N-FileList": "raku_also_fails",
+    "Gnome::Gdk4::N-RGBA": "raku_also_fails",
+    "Gnome::Gdk4::N-Rectangle": "raku_also_fails",
+    "Gnome::Gdk4::R-Paintable": "raku_also_fails",
+    "Gnome::Gdk4::Snapshot": "raku_also_fails",
+    "Gnome::Gdk4::Surface": "raku_also_fails",
+    "Gnome::Gdk4::T-contentformats": "raku_also_fails",
+    "Gnome::Gdk4::T-drag": "raku_also_fails",
+    "Gnome::Gdk4::T-enums": "ok",
+    "Gnome::Gdk4::T-keysyms": "ok",
+    "Gnome::Gdk4::T-paintable": "raku_also_fails",
+    "Gnome::Gdk4::T-rgba": "raku_also_fails",
+    "Gnome::Gdk4::T-texture": "ok",
+    "Gnome::Gdk4::T-types": "raku_also_fails",
+    "Gnome::Gdk4::Texture": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/NO/GNOME_GDK4/f0e440917c42e11a188eece7f0f7590ea0ee3944.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.23"
+}

@@ -43,7 +43,7 @@
         "nok": 1,
         "ok": 10,
         "plan": 11,
-        "secs": 0.18,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.43,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,11 +63,11 @@
       "cmp": "no_baseline",
       "path": "t/02-client.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/02-client.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.65,
+        "secs": 12.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.1,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.23,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,11 +99,11 @@
       "cmp": "no_baseline",
       "path": "t/04-introspection.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/04-introspection.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.84,
+        "secs": 11.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,11 +113,11 @@
       "cmp": "no_baseline",
       "path": "t/05-progress.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/05-progress.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.41,
+        "secs": 17.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,11 +127,11 @@
       "cmp": "no_baseline",
       "path": "t/06-cancel.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/06-cancel.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 20.45,
+        "secs": 31.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,11 +141,11 @@
       "cmp": "no_baseline",
       "path": "t/07-download-timeout.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/07-download-timeout.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.59,
+        "secs": 8.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -155,11 +155,11 @@
       "cmp": "no_baseline",
       "path": "t/08-poll-timeout.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/08-poll-timeout.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.09,
+        "secs": 11.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -169,11 +169,11 @@
       "cmp": "no_baseline",
       "path": "t/09-body-encoding.rakutest",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-k0d23mtv/dist/ComfyUI-API-0.2.2/t/09-body-encoding.rakutest",
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.09,
+        "secs": 9.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -188,11 +188,11 @@
     "ComfyUI::API::Workflow": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "671a11d",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

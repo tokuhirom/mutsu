@@ -1,0 +1,457 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Format",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "File::Find",
+      "HTTP::HPACK",
+      "HTTP::Status",
+      "HTTP::Tiny",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "MIME::Types",
+      "OO::Monitors",
+      "OpenSSL",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "Test::Notice",
+      "Test::Util::ServerPort",
+      "Test::When",
+      "TinyFloats",
+      "ULID",
+      "URI",
+      "URI::Encode",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Humming-Bird",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'path' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Index out of range. Is: 33, should be in 0..31",
+        "nok": 0,
+        "ok": 0,
+        "plan": 22,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-request_encoding.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-response_decoding.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'middlewares' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 6,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-middleware.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Index out of range. Is: 127, should be in 0..125",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-cookie.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Is redirect location OK?",
+        "nok": 1,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/06-redirect.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'write' for invocant of type 'Humming-Bird::Glue::Request'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-advice.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Is route OK?",
+        "nok": 2,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/08-static.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Is root response body OK?",
+        "nok": 1,
+        "ok": 4,
+        "plan": 9,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/09-routers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 7 -",
+        "nok": 1,
+        "ok": 6,
+        "plan": 7,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/10-content-guessing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Index out of range. Is: 47, should be in 0..45",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-advanced-query.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-headers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Does plugin register ok?",
+        "nok": 1,
+        "ok": 4,
+        "plan": 8,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/13-plugin.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 6.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/14-hotreload.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/opt/plugin-dbiish-sad.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.91,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Does plugin register ok?",
+        "nok": 1,
+        "ok": 4,
+        "plan": 9,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/opt/plugin-dbiish.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.84,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Humming-Bird::Advice": "ok",
+    "Humming-Bird::Backend": "ok",
+    "Humming-Bird::Backend::HTTPServer": "ok",
+    "Humming-Bird::Core": "ok",
+    "Humming-Bird::Glue": "ok",
+    "Humming-Bird::Middleware": "ok",
+    "Humming-Bird::Plugin": "ok",
+    "Humming-Bird::Plugin::Config": "ok",
+    "Humming-Bird::Plugin::DBIish": "ok",
+    "Humming-Bird::Plugin::HotReload": "ok",
+    "Humming-Bird::Plugin::Logger": "ok",
+    "Humming-Bird::Plugin::Session": "ok",
+    "Humming-Bird::Plugin::SlapbirdAPM": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/H/UM/HUMMINGBIRD/598b0a1935a5fbeff0cb6de56431ed696fbc7801.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 114,
+    "baseline_files": 16,
+    "mutsu_assertions": 33,
+    "parity_files": 4,
+    "regressed_files": 12
+  },
+  "version": "4.1.0"
+}

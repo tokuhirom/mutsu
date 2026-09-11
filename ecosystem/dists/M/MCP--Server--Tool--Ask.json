@@ -1,0 +1,153 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "Log::Timeline",
+      "MCP::Server",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "TinyFloats",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "MCP::Server::Tool::Ask",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-config.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 26.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"answer\":\"because I said so\"}",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-tool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "The retry finishes the call with the user's answer in it",
+        "nok": 2,
+        "ok": 1,
+        "plan": 4,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-mrtr.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"answer\":\"loaded\"}",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-selfload.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "MCP::Server::Tool::Ask": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/CP/MCP_SERVER_TOOL_ASK/bd1532c27d87fc6c088326b665a28e51cd94d5a8.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 22,
+    "baseline_files": 4,
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 3
+  },
+  "version": "0.1.2"
+}

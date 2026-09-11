@@ -1,0 +1,89 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Lang::JA::Kana",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Basic Hiragana to Katakana conversion",
+        "nok": 146,
+        "ok": 7,
+        "plan": 153,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 153,
+        "plan": 153,
+        "secs": 8.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "README Basic Examples",
+        "nok": 10,
+        "ok": 2,
+        "plan": 12,
+        "secs": 1.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-documentation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Lang::JA::Kana": "ok",
+    "Lang::JA::Kana::Hangul": "ok",
+    "Lang::JA::Kana::Kuriru-moji": "ok",
+    "Lang::JA::Kana::Romaji": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/AN/LANG_JA_KANA/57e1fb59f0262dfd1d44c4560196ed1991223563.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 165,
+    "baseline_files": 2,
+    "mutsu_assertions": 9,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "1.2.1"
+}

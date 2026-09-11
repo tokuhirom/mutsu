@@ -1,0 +1,102 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::Dump::Tree",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "OO::Monitors",
+      "Terminal-API",
+      "Terminal::ANSIColor",
+      "Terminal::Print",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::Interval",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "R+R",
+        "nok": 3,
+        "ok": 0,
+        "plan": 16,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-rop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "+I dies-ok",
+        "nok": 4,
+        "ok": 2,
+        "plan": 33,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-iop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Interval": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_INTERVAL/ebc122344650d3b2ccb7f425923d5ebed21f3249.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 49,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.0.3"
+}

@@ -1,0 +1,40 @@
+{
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Array::Sorted::Util",
+      "IRC::Log"
+    ],
+    "unresolved": [
+      "has"
+    ]
+  },
+  "dist": "IRC::Log::Colabti",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/I/RC/IRC_LOG_COLABTI/1a69532335e2a7d39768942d7df3cbc810b142c5.tar.gz"
+  },
+  "status": "blocked_dep",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.53"
+}

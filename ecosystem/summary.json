@@ -1,0 +1,23 @@
+{
+  "assertion_parity": 62.4,
+  "baseline_assertions": 140533,
+  "baseline_files": 2780,
+  "dist_parity": 40.0,
+  "distributions": 1423,
+  "file_parity": 53.1,
+  "generated": "2026-09-11",
+  "graded_distributions": 841,
+  "green_distributions": 336,
+  "mutsu_assertions": 87638,
+  "parity_files": 1477,
+  "schema": 1,
+  "status": {
+    "blocked_dep": 39,
+    "blocked_load": 351,
+    "green": 336,
+    "no_baseline": 190,
+    "partial": 232,
+    "red": 273,
+    "skipped": 2
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Geo::Geometry"
+    ],
+    "unresolved": []
+  },
+  "dist": "Geo::WellKnownBinary",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "from GA buildingpoints table",
+        "nok": 1,
+        "ok": 11,
+        "plan": 12,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 7.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Geo::WellKnownBinary": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEO_WELLKNOWNBINARY/2750118a7d2d45880b820697a945874055e42b1b.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 12,
+    "baseline_files": 1,
+    "mutsu_assertions": 11,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.6"
+}

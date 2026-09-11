@@ -1,0 +1,118 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Parse",
+      "Digest",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Temp",
+      "HTTP::Request::FormData",
+      "HTTP::Status",
+      "HTTP::UserAgent",
+      "IO::Capture::Simple",
+      "IO::Socket::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "MIME::Base64",
+      "OpenSSL",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "Test::Util::ServerPort",
+      "URI",
+      "YAMLish"
+    ],
+    "unresolved": []
+  },
+  "dist": "Trove",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01.t",
+      "raku": {
+        "first_failure": "colored messages",
+        "nok": 1,
+        "ok": 3,
+        "plan": 4,
+        "secs": 25.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.88,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.6,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03.t",
+      "raku": {
+        "first_failure": "Could not find Test::Mock in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Trove": "ok",
+    "Trove::Config::Parser": "ok",
+    "Trove::Coveralls": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/T/RO/TROVE/8760fa2bab90b6a08ae677720ee1955fef5d32f7.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 1,
+    "mutsu_assertions": 3,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.41"
+}

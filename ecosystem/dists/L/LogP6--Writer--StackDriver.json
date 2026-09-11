@@ -1,0 +1,90 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "LogP6",
+      "UUID"
+    ],
+    "unresolved": []
+  },
+  "dist": "LogP6::Writer::StackDriver",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Could not find symbol '&trace' in 'Level'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-functionality.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 18.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.06,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.34,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "LogP6::Writer::StackDriver": "ok",
+    "LogP6::WriterConf::StackDriver": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/OG/LOGP6_WRITER_STACKDRIVER/e90bf9ab382a888d0482a6e3eb34482e828012b0.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "1.0.1"
+}

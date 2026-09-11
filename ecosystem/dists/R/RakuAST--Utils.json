@@ -1,0 +1,63 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "RakuAST::Utils",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'from-identifier-parts' for invocant of type 'RakuAST::Name'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 7,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "RakuAST::Utils": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AK/RAKUAST_UTILS/21e3efd57c61448c694bdaf06077b15576098add.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 7,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

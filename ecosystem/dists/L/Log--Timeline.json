@@ -1,0 +1,146 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CBOR::Simple",
+      "JSON::Fast",
+      "TinyFloats"
+    ],
+    "unresolved": []
+  },
+  "dist": "Log::Timeline",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/has-output.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 10.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/logging.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/output-cbor-sequence.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/output-json-lines.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unexpected character in JSON: (",
+        "nok": 1,
+        "ok": 6,
+        "plan": null,
+        "secs": 11.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/output-socket.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Log::Timeline": "ok",
+    "Log::Timeline::Model": "ok",
+    "Log::Timeline::Output": "ok",
+    "Log::Timeline::Output::CBORSequence": "ok",
+    "Log::Timeline::Output::JSONLines": "ok",
+    "Log::Timeline::Output::Socket": "ok",
+    "Log::Timeline::Raku::LogTimelineSchema": "ok",
+    "Log::Timeline::Raku::Setup": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/OG/LOG_TIMELINE/91b1b2fe9edb2226fb12b99ced6202f4ed389976.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 68,
+    "baseline_files": 3,
+    "mutsu_assertions": 37,
+    "parity_files": 2,
+    "regressed_files": 1
+  },
+  "version": "0.5.2"
+}

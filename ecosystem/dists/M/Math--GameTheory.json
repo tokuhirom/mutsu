@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "Math::SpecialFunctions",
+      "Statistics::Distributions"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::GameTheory",
+  "files": [],
+  "load": {
+    "Math::GameTheory": "expected statement: expected expected statement: expected expression statement or ')'",
+    "Math::GameTheory::Creators": "expected statement: expected expected statement: expected expression statement or ')'",
+    "Math::GameTheory::MatrixGame": "ok",
+    "Math::GameTheory::MatrixGame::Formatish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_GAMETHEORY/23ed442a69948983a77f85804e888f5afc62b1be.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

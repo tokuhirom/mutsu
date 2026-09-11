@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "Image::PNG::Portable",
+      "JSON::Fast",
+      "String::CRC32"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pray",
+  "files": [],
+  "load": {
+    "Pray": "ok",
+    "Pray::Geometry::Cone": "ok",
+    "Pray::Geometry::Cube": "ok",
+    "Pray::Geometry::Cylinder": "ok",
+    "Pray::Geometry::Matrix3D": "ok",
+    "Pray::Geometry::Object": "ok",
+    "Pray::Geometry::Ray": "ok",
+    "Pray::Geometry::Sphere": "expected statement: expected expected statement: expected return value expression or '.' or digits or generic radix literal or unicode numeric literal or ...",
+    "Pray::Geometry::Vector3D": "ok",
+    "Pray::Input::JSON": "ok",
+    "Pray::Output": "ok",
+    "Pray::Output::PPM": "ok",
+    "Pray::Scene": "ok",
+    "Pray::Scene::Camera": "ok",
+    "Pray::Scene::Color": "ok",
+    "Pray::Scene::Intersection": "ok",
+    "Pray::Scene::Light": "ok",
+    "Pray::Scene::Lighting": "ok",
+    "Pray::Scene::Material": "ok",
+    "Pray::Scene::Object": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/RA/PRAY/a297770e4d98dcb4b0651b72f3a03c1002c6d30b.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2"
+}

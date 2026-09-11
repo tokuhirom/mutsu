@@ -1,0 +1,74 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "xxirakup6-RandomColor",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot assign to an immutable value",
+        "nok": 0,
+        "ok": 37,
+        "plan": 46,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 3.78,
+        "skip": 4,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "RandomColor": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/X/XI/XXIRAKUP6RANDOMCOLOR/1c7bb4daea2cfc8ba078b21d3816952f1417fcd3.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 46,
+    "baseline_files": 1,
+    "mutsu_assertions": 37,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "v0.11"
+}

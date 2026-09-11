@@ -1,0 +1,90 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Keyring",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can never assign default value Array to attribute '$!backend-priority', it expects: Keyring::Backend:U",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-procedural.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can never assign default value Array to attribute '$!backend-priority', it expects: Keyring::Backend:U",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-subscript.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Keyring": "ok",
+    "Keyring::Backend": "ok",
+    "Keyring::Backend::MacOSX": "ok",
+    "Keyring::Backend::Memory": "ok",
+    "Keyring::Backend::Secret-Tool": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/K/EY/KEYRING/e36232bcb60823663915223230470a4aadf6b4ba.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 12,
+    "baseline_files": 2,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.2.0"
+}

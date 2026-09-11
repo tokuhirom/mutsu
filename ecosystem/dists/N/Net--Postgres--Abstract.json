@@ -1,0 +1,63 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Auth::SCRAM::Async",
+      "Crypt::Random",
+      "JSON::Fast",
+      "MIME::Base64",
+      "Net::Postgres",
+      "OpenSSL",
+      "Protocol::Postgres",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Net::Postgres::Abstract",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "Could not find SQL::Abstract in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Net::Postgres::Abstract": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "2ad3301",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/N/ET/NET_POSTGRES_ABSTRACT/1d6a3557ed47cc3ddad5f92156c9e49a573812a8.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}
