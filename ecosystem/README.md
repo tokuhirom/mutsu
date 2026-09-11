@@ -63,12 +63,22 @@ these records stay the authority.
 ```sh
 scripts/ecosystem-sweep.py --only BTree          # one distribution
 scripts/ecosystem-sweep.py --prefix A --jobs 8   # everything starting with A
-scripts/ecosystem-sweep.py --status regression   # everything currently red
+scripts/ecosystem-sweep.py --status partial      # everything currently red
 scripts/ecosystem-sweep.py --rollup              # regenerate summary.* and the chart
 ```
 
 Requires `bubblewrap` (the sweep runs unaudited test suites and refuses to run a
-corpus without a sandbox) and a `raku` on PATH. Full runbook:
+corpus without a sandbox) and a `raku` on PATH.
+
+**Or from GitHub Actions**, when no many-core box with `bwrap` is at hand: run
+the [`Ecosystem sweep`](../.github/workflows/ecosystem-sweep.yml) workflow
+(`gh workflow run ecosystem-sweep.yml -f scope=stale`). It builds mutsu once,
+pins one rakudo and one index snapshot for the whole run, fans `scope: all` out
+across the 27 shards, and opens the pull request itself. Records it measures
+carry a `gha-*` `measured.host`, so a CI number is never silently mixed with a
+locally-measured one.
+
+Full runbook, and what the workflow refuses to do:
 [docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
 
 ## Current state — a partial sweep, not the corpus

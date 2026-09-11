@@ -102,15 +102,16 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 
 - [ ] **★Ecosystem parity KPI** — run every zef distribution's own test suite on **both** rakudo and
       mutsu and publish the difference as the project's headline compatibility number, with
-      per-distribution machine-readable records in `ecosystem/`. **P1 (the harness) has landed**;
-      the next step is **P2, the first corpus sweep** — it needs a many-core box, and it is what
-      produces the first real numbers.
+      per-distribution machine-readable records in `ecosystem/`. **P1 (the harness) and P3 (the site
+      page) have landed, and the sweep can now be dispatched from GitHub Actions** (`Ecosystem
+      sweep`, ADR-0085 D9 amendment); the next step is **P2, the first corpus sweep** — `scope: all`,
+      which is what produces the first real numbers.
       Decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md);
       operations manual and phases (P1-P5, one PR each):
       [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
       tracking issue [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
-      The sweep is operator-run on a many-core box, not CI-scheduled (ADR-0085 D9), so it does
-      **not** close B1's "working-module regression CI" — that stays a separate item.
+      The sweep is *dispatched*, never scheduled (ADR-0085 D9), so it does **not** close B1's
+      "working-module regression CI" — that stays a separate item.
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.
