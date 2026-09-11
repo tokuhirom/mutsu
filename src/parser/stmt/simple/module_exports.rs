@@ -2,6 +2,12 @@ use super::*;
 use std::cell::Cell;
 use std::rc::Rc;
 
+mod export_hook;
+use export_hook::{
+    collect_unit_scope_routines, declares_export_sub, source_declares_export_sub,
+    unit_scope_routine_names_fallback,
+};
+
 /// Everything one module-file scan learns that importers need replayed:
 /// the `is export` subs, the declared type names (own + transitive), and the
 /// declared enum values (own + transitive). Cached per resolved file path so
@@ -565,6 +571,22 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     collect_module_constant_names(&stmts, &mut value_terms);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     collect_exported_subs(&stmts, &mut exports);
+    // A module whose exports are computed by a run-time `sub EXPORT` hook has
+    // no `is export` traits to find, so the scan above returns nothing at all.
+    // Approximate its export set with the routines it declares in its own unit
+    // scope, which is what the dominant `UNIT::`-grep idiom exports verbatim
+    // (ADR-0087).
+    if declares_export_sub(&stmts) || source_declares_export_sub(source) {
+        collect_unit_scope_routines(&stmts, &mut exports);
+        for name in unit_scope_routine_names_fallback(source) {
+            exports.entry(name.clone()).or_insert(InlineModuleExport {
+                name,
+                precedence: None,
+                associativity: None,
+                is_test_assertion: false,
+            });
+        }
+    }
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
     for (name, is_test_assertion) in extract_exported_names_fallback(source) {
