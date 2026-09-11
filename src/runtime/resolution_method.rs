@@ -132,14 +132,29 @@ impl Interpreter {
     /// (`$*name`) writes made since — the observable side effects of user code
     /// (e.g. a `where` clause) run during a speculative dispatch match whose
     /// bindings are otherwise rolled back.
+    ///
+    /// The dynamic-name test reads the symbol's memoized
+    /// [`crate::symbol::flags::DYNAMIC_VAR_ENV_KEY`] bit rather than resolving
+    /// each key to a `&str` and rescanning its sigils. This scan runs over
+    /// every env key TWICE per multi candidate whose signature carries a
+    /// `where` clause (once for the clause, once for the signature match), so
+    /// the per-key thread-local round trip `with_str` costs dominated a
+    /// `where`-heavy dispatch: a callgrind run of `Crane.exists` (17 candidates,
+    /// every one `where`-constrained) put this function at 25.8% of the whole
+    /// program with `LocalKey::with` as its top leaf
+    /// ([#7858](https://github.com/tokuhirom/mutsu/issues/7858)). The memoized
+    /// bit answers it with one relaxed atomic load.
+    ///
+    /// The bit mirrors [`crate::env::is_dynamic_var_env_key`], which trims
+    /// *every* sigil before looking for the `*` twigil — so `@*x` / `%*x` /
+    /// `&*x` writes now survive the rollback alongside `$*x` and the sigil-less
+    /// `*x`. They are dynamic variables in Raku too; the older hand-rolled test
+    /// (`*` or `$*` prefix) simply missed them.
     pub(crate) fn restore_env_preserving_dynamics(&mut self, saved: crate::env::Env) {
         let dyn_writes: Vec<(crate::symbol::Symbol, Value)> = self
             .env
             .iter()
-            .filter(|(k, v)| {
-                k.with_str(|name| name.starts_with('*') || name.starts_with("$*"))
-                    && saved.get_sym(**k) != Some(*v)
-            })
+            .filter(|(k, v)| k.is_dynamic_var_env_key() && saved.get_sym(**k) != Some(*v))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
         self.env = saved;

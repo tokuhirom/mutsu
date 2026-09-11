@@ -150,6 +150,24 @@ impl Interpreter {
                 || pd.outer_sub_signature.is_some()
                 || pd.code_signature.is_some()
         });
+        // When binds DO happen, do them in a *scoped child* overlay rather than
+        // in the flat env. Both costs the flat env charges are proportional to
+        // the whole env: the first `insert` `make_mut`-deep-copies every entry,
+        // and the rollback below (`restore_env_preserving_dynamics`) then walks
+        // every entry again looking for dynamic-variable writes. A child overlay
+        // starts empty and shares the parent by `Arc`, so the bind is O(binds)
+        // and the rollback walks only what this match actually wrote — and the
+        // per-`where`-clause snapshot/restore pairs nested inside inherit the
+        // same small overlay for free.
+        //
+        // This is the shape a `where`-constrained multi pays for on EVERY
+        // candidate: `Crane`'s 17-candidate `in()` / 7-candidate `exists-key()`
+        // protos re-ran both O(env) scans per candidate per call, which is what
+        // made `Config::TOML` 12x slower than rakudo
+        // ([#7858](https://github.com/tokuhirom/mutsu/issues/7858)).
+        if needs_outer_bind {
+            self.env = crate::env::Env::scoped_child(saved_env.clone());
+        }
         let result = (|| {
             // A slurpy hash (`*%o`) collects *named* arguments, so it is neither
             // a positional parameter nor a positional variadic: `sub f(Str $a,

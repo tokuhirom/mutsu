@@ -104,14 +104,77 @@ impl Interpreter {
             .then(a.5.cmp(&b.5))
     }
 
+    /// `key` with its declaration-order component cleared, so two candidates
+    /// that are equally narrow compare `Equal` instead of by declaration
+    /// stamp. This is the comparison that decides *ties* — which candidates
+    /// join the `X::Multi::Ambiguous` set, and where the narrowest-first scan
+    /// in [`Interpreter::choose_best_matching_candidate`] may stop — as
+    /// opposed to `candidate_rank_cmp` on the full key, which is the total
+    /// order the winner is picked by.
+    fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
+        key.5 = 0;
+        key
+    }
+
     pub(super) fn choose_best_matching_candidate(
         &mut self,
         name: &str,
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
     ) -> Option<Arc<FunctionDef>> {
-        let mut matches = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        // Rank every candidate BEFORE trying to bind any of them.
+        //
+        // [`Self::candidate_rank_key`] reads only the declared signature and
+        // the argument *types* — it never runs user code, and in particular
+        // never evaluates a `where` clause (it merely counts how many params
+        // carry one). So the whole candidate list can be put in
+        // narrowest-first order up front, and the bind attempts below can then
+        // stop as soon as the remaining candidates are strictly wider than the
+        // best match found so far: a wider candidate can neither win nor join
+        // the tie set that decides `X::Multi::Ambiguous`, so testing it cannot
+        // change the answer.
+        //
+        // Raku dispatches this way too — narrowest-first, stopping at the
+        // first candidate that binds — and the difference matters because a
+        // bind attempt is not cheap here: every `where` clause is a compiled
+        // block run against a snapshot of the env. `Crane`'s protos are the
+        // pathological case, with 17 (`in`) and 7 (`exists-key`) candidates
+        // whose `where` clauses recurse back into `Crane`; running all of them
+        // on every call is what made `Config::TOML` 12x slower than rakudo
+        // ([#7858](https://github.com/tokuhirom/mutsu/issues/7858)).
+        //
+        // The sort is stable, so candidates the caller already ordered by
+        // `sort_candidates_by_specificity` keep that order within a rank group
+        // — which is what makes the final "first declared wins" tie-break come
+        // out the same as it did when every candidate was tried.
+        let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
+            Vec::with_capacity(candidates.len());
+        for (_, def) in candidates {
+            let key = self.candidate_rank_key(&def, args);
+            ranked.push((key, def));
+        }
+        ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
+        // One `multi` is registered under SEVERAL registry keys — the arity key
+        // `Pkg::f/1`, the typed key `Pkg::f/1:Int`, the `__m<n>` multi suffixes
+        // — and the gathers above collect by key, so the same `Arc<FunctionDef>`
+        // arrives two or three times over. Dropping the repeats here, rather
+        // than after matching (where the `seen` set below used to be the only
+        // filter), is what stops one candidate's `where` clause from being RUN
+        // once per key it happens to be registered under: `multi f(Int:D $x
+        // where {...})` evaluated its constraint 3x per resolution before this.
+        // Identical fingerprints mean identical `params`/`param_defs`/`body`, so
+        // the dropped copies would have matched and ranked exactly the same;
+        // the sort above is stable, so the survivor is the one that already won
+        // the caller's declaration-order tie-break.
+        {
+            let mut seen_keys = std::collections::HashSet::new();
+            ranked.retain(|(_, def)| seen_keys.insert(def.body_fingerprint()));
+        }
+
+        let mut matches: Vec<Arc<FunctionDef>> = Vec::new();
+        // The rank key of `matches[0]`, i.e. of the narrowest candidate that
+        // actually bound. `None` until the first match.
+        let mut best_key: Option<CandidateRankKey> = None;
         // The first candidate whose `where` constraint THREW, together with
         // the exception. Raku walks the candidates narrowest-first and stops at
         // the first that binds, so such an exception escapes only when that
@@ -123,7 +186,17 @@ impl Interpreter {
         // earlier in the same instruction, say) must not be mistaken for one of
         // these candidates': park it and put it back below.
         let outer_where_exception = self.pending_where_exception.take();
-        for (_, def) in candidates {
+        for (key, def) in ranked {
+            // Strictly wider than the narrowest candidate that already bound:
+            // every candidate from here on is too, since the list is sorted.
+            if let Some(best) = best_key
+                && Self::candidate_rank_cmp(
+                    Self::rank_key_ignoring_decl_order(key),
+                    Self::rank_key_ignoring_decl_order(best),
+                ) == std::cmp::Ordering::Greater
+            {
+                break;
+            }
             // For auto-param subs ($^a, $^b) with empty param_defs but
             // non-empty params, check arity against params.len() since
             // args_match_param_types cannot handle this case.
@@ -150,10 +223,10 @@ impl Interpreter {
                 continue;
             }
             if type_ok {
-                let fingerprint = def.body_fingerprint();
-                if !seen.insert(fingerprint) {
-                    continue;
-                }
+                // No fingerprint filter here: `ranked` is already unique by
+                // fingerprint (see the `retain` above), so every match is a
+                // distinct declaration.
+                best_key.get_or_insert(key);
                 matches.push(def);
             }
         }
@@ -200,42 +273,19 @@ impl Interpreter {
             return matches.into_iter().next();
         }
 
-        // Sort matches by specificity rank (primary, DESC), type hierarchy
-        // distance (secondary, ASC), whether the candidate declares any named
-        // parameter at all (DESC), then fewer optional positionals, then
-        // required named count (DESC), then declaration order — so that subset
-        // types win over plain types, more specific types (e.g. Str:D) beat
-        // less specific ones (e.g. Any), and among equally-specific candidates,
-        // those with required named params win.
-        {
-            let mut ranked: Vec<(usize, _)> = matches
-                .iter()
-                .enumerate()
-                .map(|(i, def)| (i, self.candidate_rank_key(def, args)))
-                .collect();
-            ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.1, b.1));
-            let sorted_matches: Vec<Arc<FunctionDef>> =
-                ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
-            matches = sorted_matches;
-        }
-
-        let best_rank = self.candidate_specificity_rank_for_args(&matches[0], args);
+        // `matches` is ALREADY in narrowest-first order — the scan walked the
+        // pre-ranked list and broke at the first candidate strictly wider than
+        // `matches[0]`. So `matches[0]` is the winner, and every entry ties
+        // with it on all five narrowness components (specificity rank, type
+        // distance, declares-a-named, optional-positional count, required-named
+        // count) by construction: the loop's break condition is exactly "that
+        // five-component key compares Greater". The separate re-sort and the
+        // `tied` re-filter this used to do — both of which recomputed
+        // `candidate_specificity_rank_for_args` and `candidate_type_distance`
+        // per match — are therefore redundant.
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
-        let best_distance = self.candidate_type_distance(args, &matches[0]);
         let best_has_named = Self::candidate_declares_named(&matches[0]);
-        let best_opt = Self::candidate_optional_positional_count(&matches[0]);
-        let best_req_named = Self::candidate_required_named_count(&matches[0]);
-        let tied: Vec<Arc<FunctionDef>> = matches
-            .iter()
-            .filter(|def| {
-                self.candidate_specificity_rank_for_args(def, args) == best_rank
-                    && self.candidate_type_distance(args, def) == best_distance
-                    && Self::candidate_declares_named(def) == best_has_named
-                    && Self::candidate_optional_positional_count(def) == best_opt
-                    && Self::candidate_required_named_count(def) == best_req_named
-            })
-            .cloned()
-            .collect();
+        let tied: Vec<Arc<FunctionDef>> = matches.clone();
         // Compare dispatch shapes as sorted multisets so that candidates with
         // the same set of typed parameters in a different order are still
         // detected as tied (e.g. `foo(S $a, T $b)` vs `foo(T $a, S $b)`).
