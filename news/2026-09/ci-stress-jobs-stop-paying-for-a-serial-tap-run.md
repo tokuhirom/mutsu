@@ -48,8 +48,32 @@ selects mold explicitly through `RUSTFLAGS`. The two preinstalled packages keep 
 apt fallback — `command -v prove` / `dpkg -s libssl-dev` — so a future image that drops one
 degrades to the old cost instead of failing every TAP step at once.
 
-Expected: `gc-stress` and `jit-stress` at roughly 16 minutes against the unchanged 30 minute
-budget, instead of 27 and 28.5.
+## Measured outcome
+
+Run 34582469117 — the change's own CI, all green — against run 34562755709, the baseline above:
+
+| job | before | after | budget used |
+|---|---|---|---|
+| `gc-stress` | 27m06s | **11m17s** | 38%, was 90% |
+| `jit-stress` | 28m30s | **15m49s** | 53% |
+| `test` | 18m13s | **15m26s** | |
+| whole run (longest job) | 28m30s | **15m49s** | |
+
+| step | `gc-stress` | `jit-stress` |
+|---|---|---|
+| `prove t/` | 15m53s → **3m41s** | 18m42s → **6m55s** |
+| install packages | 22s → **1s** | 17s → **1s** |
+| `cargo build --release` | 4m19s → 3m04s | 4m32s → 4m20s |
+| roast | 3m30s → 2m15s | 3m27s → 3m07s |
+
+The build and roast deltas are runner-to-runner noise, not this change. `Install mold` plus
+`Ensure prove is available` come to 1-2s together, against 22s on a good day and the 2m54s
+that cancelled the job in the first place; `prove` was indeed already on the image, so the
+guard branch never fired.
+
+The `-j4` prediction from the local runs was 4m25s and 5m12s. `gc-stress` beat it at 3m41s;
+`jit-stress` came in slower at 6m55s, because `MUTSU_JIT_THRESHOLD=2` compiles nearly every
+chunk and that cost does not parallelise as cleanly. It is still 11m47s off that job.
 
 ## The `-j4` switch was verified before pushing, in both configurations
 
