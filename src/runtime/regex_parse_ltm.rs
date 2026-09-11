@@ -155,28 +155,33 @@ impl Interpreter {
                 current.push(ch);
                 continue;
             }
+            // Delimiters inside an assertion belong to its nested regex, not
+            // to the outer pattern being split. This is especially important
+            // for quoted assertion literals: quote tracking is intentionally
+            // disabled while `depth_angle > 0`, so a literal `(` must still
+            // not hide a following top-level `||` from this scanner.
             match ch {
-                '(' => {
+                '(' if depth_angle == 0 => {
                     depth_paren += 1;
                     current.push(ch);
                 }
-                ')' => {
+                ')' if depth_angle == 0 => {
                     depth_paren -= 1;
                     current.push(ch);
                 }
-                '[' => {
+                '[' if depth_angle == 0 => {
                     depth_bracket += 1;
                     current.push(ch);
                 }
-                ']' => {
+                ']' if depth_angle == 0 => {
                     depth_bracket -= 1;
                     current.push(ch);
                 }
-                '{' => {
+                '{' if depth_angle == 0 => {
                     depth_brace += 1;
                     current.push(ch);
                 }
-                '}' => {
+                '}' if depth_angle == 0 => {
                     depth_brace -= 1;
                     current.push(ch);
                 }
