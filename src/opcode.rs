@@ -2826,11 +2826,19 @@ mod const_pool_dedup {
         assert_eq!(code.const_sym(a), Symbol::intern("fib"));
         assert_eq!(code.const_sym(b), Symbol::intern("$n"));
 
-        // A constant appended after finalize is past the table's end and takes
-        // the fallback again.
+        // A constant appended after finalize extends the table rather than
+        // falling off its end, so a runtime-patched chunk keeps the memo.
         let c = code.add_constant(Value::str("late".to_string()));
-        assert!(c as usize >= code.const_syms.len());
+        assert_eq!(code.const_syms.len(), code.constants.len());
+        assert_eq!(code.const_syms[c as usize], Some(Symbol::intern("late")));
         assert_eq!(code.const_sym(c), Symbol::intern("late"));
+
+        // A chunk that never finalized has no table to extend, and still
+        // resolves through the intern fallback.
+        let mut fresh = CompiledCode::new();
+        let f = fresh.add_constant(Value::str("unfinalized".to_string()));
+        assert!(fresh.const_syms.is_empty());
+        assert_eq!(fresh.const_sym(f), Symbol::intern("unfinalized"));
     }
 
     #[test]
@@ -5047,7 +5055,9 @@ pub(crate) struct CompiledCode {
     /// of `bench-fib` once ADR-0037 had removed the interns either side of it
     /// (#7739). A chunk that never finalizes keeps an empty table and falls
     /// back to interning, which is what it did before ADR-0037 Slice 1.
-    pub(crate) const_syms: Box<[Option<Symbol>]>,
+    /// `add_constant` keeps it index-aligned past finalize, so a chunk patched
+    /// at runtime does not lose the memo for its new slots.
+    pub(crate) const_syms: Vec<Option<Symbol>>,
     /// Lazily-built attribute-cell key per local slot (see `local_attr_key`):
     /// `Some((bare attribute Symbol, is_private))` when the slot's name is an
     /// attribute twigil (`!x`, `$.x`, `@!a`, …), `None` otherwise. Resolving it
@@ -5489,7 +5499,7 @@ impl CompiledCode {
             has_calls: false,
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
-            const_syms: Box::default(),
+            const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
@@ -8255,6 +8265,7 @@ impl CompiledCode {
         }
         let Some(key) = ConstKey::of(&value) else {
             let idx = self.constants.len() as u32;
+            self.push_const_sym(&value);
             self.constants.push(value);
             crate::vm::vm_stats::record_const_add(false);
             return idx;
@@ -8264,10 +8275,29 @@ impl CompiledCode {
             return idx;
         }
         let idx = self.constants.len() as u32;
+        self.push_const_sym(&value);
         self.constants.push(value);
         self.const_index.insert(key, idx);
         crate::vm::vm_stats::record_const_add(false);
         idx
+    }
+
+    /// Extend `const_syms` for a constant about to be appended, so the table
+    /// stays index-aligned with `constants`.
+    ///
+    /// Only a chunk that has already finalized has a table to extend; before
+    /// then it is empty and `compute_const_syms` will fill it in one pass. This
+    /// matters for a chunk patched after finalize (a runtime-built body gaining
+    /// a constant): without it that slot would sit past the table's end and
+    /// re-intern on every access, which is the cost the table exists to avoid.
+    fn push_const_sym(&mut self, value: &Value) {
+        if self.const_syms.is_empty() {
+            return;
+        }
+        self.const_syms.push(match value.view() {
+            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+            _ => None,
+        });
     }
 
     /// Register a `CallFuncNamed` site's out-of-band named-arg spec, returning
