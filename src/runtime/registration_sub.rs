@@ -2194,7 +2194,11 @@ impl Interpreter {
             if !is_anonymous {
                 self.register_enum_bare_name(key, enum_type_name);
             }
-            self.env.insert(key.clone(), enum_val);
+            // The bare spelling goes into the enum-key namespace, NOT under the
+            // plain env key: `$s` is stored sigil-stripped as `"s"`, so a plain
+            // insert here would make an enum key and a same-named scalar one
+            // symbol (#7914). See `runtime::enum_bare_names`.
+            self.insert_enum_bare_value(key, enum_val);
         }
         // Register exports if `is export`
         if is_export && !is_anonymous {

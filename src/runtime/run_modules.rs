@@ -884,21 +884,32 @@ impl Interpreter {
             self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
+            // `module_imported_names` records the ENV KEY the import landed under,
+            // because the restore loop below has to undo that exact key. For the
+            // two scope tables it feeds, the key wanted is the name the importing
+            // code SPELLS — which for an enum key is its bare form, not the
+            // enum-key namespace key the value lives at (#7914).
+            let imported_spelling = |name: &String| -> String {
+                match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
+                    Some(bare) => bare.to_string(),
+                    None => name.clone(),
+                }
+            };
             // A re-import of a name an earlier module already installed adds
             // nothing to `env`, so the diff misses it even though it is part of
             // this module's scope (see `module_imported_names`).
             module_scope_names.extend(
                 imported
                     .iter()
-                    .map(|(name, value, _)| (name.clone(), value.clone())),
+                    .map(|(name, value, _)| (imported_spelling(name), value.clone())),
             );
             imported_lexical_names.extend(imported.iter().flat_map(|(name, _, _)| {
-                [
-                    name.clone(),
-                    name.strip_prefix(['$', '@', '%'])
-                        .unwrap_or(name)
-                        .to_string(),
-                ]
+                let spelled = imported_spelling(name);
+                let bare = spelled
+                    .strip_prefix(['$', '@', '%'])
+                    .unwrap_or(&spelled)
+                    .to_string();
+                [spelled, bare]
             }));
             // Module bodies execute in the caller's env for compatibility with
             // existing declaration machinery. Imported variables/constants need
@@ -979,6 +990,11 @@ impl Interpreter {
             if unit_name.is_some() {
                 for name in Self::collect_unit_package_scope_names(&stmts) {
                     self.env.remove(&name);
+                    // An enum value's bare binding lives in the enum-key namespace
+                    // (#7914), so dropping the plain key alone would leave it
+                    // resolvable in the loading scope.
+                    self.env
+                        .remove(&crate::runtime::enum_bare_names::enum_bare_key(&name));
                 }
             }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
@@ -1386,6 +1402,13 @@ impl Interpreter {
                 continue;
             }
             let name = key.resolve();
+            // An enum key is a module-scope declaration under its BARE name; the
+            // enum-key namespace (#7914) is only where the value is *stored*, so
+            // record it the way the module's own routines will look it up.
+            let name = match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
+                Some(bare) => bare.to_string(),
+                None => name.to_string(),
+            };
             // Twigils, qualified names and the `__mutsu_*` / `?FILE`-style
             // metadata keys are never plain module-scope declarations. A scalar
             // `my $x` is stored sigil-less (key `x`); `@`/`%` keep their sigil.

@@ -382,7 +382,7 @@ impl Interpreter {
             && let Some(ValueView::Enum {
                 enum_type: prev_type,
                 ..
-            }) = self.env.get(name).map(Value::view)
+            }) = self.enum_bare_value(name).map(Value::view)
             && prev_type.resolve() != enum_type
         {
             crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases)

@@ -596,6 +596,7 @@ mod nqp_ops_text;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
+pub(crate) mod enum_bare_names;
 pub(crate) mod nativecall_fnptr;
 pub(crate) use self::decl_types::*;
 pub(crate) mod deprecation;

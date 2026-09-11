@@ -202,6 +202,16 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::package(Symbol::intern(name))
+        } else if let Some(enum_val) = self.enum_bare_value(name).cloned() {
+            // An enum key read by its bare spelling. It lives in its own key
+            // namespace (`runtime::enum_bare_names`) because `$s` and the enum key
+            // `s` are DIFFERENT symbols in Raku but share `env`'s sigil-less key
+            // space in mutsu (#7914) — so this probe, and only this probe, can see
+            // it. Ordered where the old `env[name]` Enum hit was reached: ahead of
+            // the type branch below, which the enum entry used to mask by sitting
+            // in the very env slot that branch probes.
+            self.poisoned_enum_alias_check(name)?;
+            enum_val
         } else if match self.env().get(name).map(Value::view) {
             Some(ValueView::Nil) => self.has_type(name) || Self::is_builtin_type(name),
             // A `my $Buf = Buf.new` declaration pre-seeds env["Buf"] with the
@@ -235,31 +245,8 @@ impl Interpreter {
                 || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
             {
                 // Check for poisoned enum aliases
-                if matches!(v.view(), ValueView::Enum { .. })
-                    && !crate::runtime::utils::has_double_colon(name)
-                    && let Some(pkg_name) = self.is_poisoned_enum_alias(name)
-                {
-                    let pkg_name = pkg_name.to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Cannot directly use poisoned alias '{name}' because it \
-                             was declared by several enums. Please access it via \
-                             explicit package name like: '{pkg_name}::{name}'"
-                        )),
-                    );
-                    attrs.insert("alias".to_string(), Value::str(name.to_string()));
-                    attrs.insert("package-name".to_string(), Value::str(pkg_name.clone()));
-                    attrs.insert("package-type".to_string(), Value::str("enum".to_string()));
-                    let ex = Value::make_instance(Symbol::intern("X::PoisonedAlias"), attrs);
-                    let mut err = RuntimeError::new(format!(
-                        "Cannot directly use poisoned alias '{name}' because it was \
-                         declared by several enums. Please access it via explicit \
-                         package name like: '{pkg_name}::{name}'"
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                if matches!(v.view(), ValueView::Enum { .. }) {
+                    self.poisoned_enum_alias_check(name)?;
                 }
                 v.clone()
             } else if self.has_type(name) || Self::is_builtin_type(name) {

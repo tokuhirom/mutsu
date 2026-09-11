@@ -491,6 +491,20 @@ impl Interpreter {
                 (format!("{module}::{name}"), name.clone())
             };
             if let Some(value) = self.env.get(&source).cloned() {
+                // An imported ENUM KEY is a package symbol/term, not a `$`-scalar,
+                // so it goes into the enum-key namespace rather than under its own
+                // plain `env` key — which, being sigil-less, is where a same-named
+                // `my $s` lives (#7914). Importing `:s<time>` from
+                // `CSS::Grammar::Defs` otherwise replaced the importing scope's
+                // `$s` wholesale. See `runtime::enum_bare_names`.
+                let is_enum_key = !target.contains("::")
+                    && !target.starts_with(['$', '@', '%', '&'])
+                    && matches!(value.view(), ValueView::Enum { .. });
+                let env_target = if is_enum_key {
+                    crate::runtime::enum_bare_names::enum_bare_key_for_insert(&target)
+                } else {
+                    target.clone()
+                };
                 if !target.contains("::") {
                     self.unsuppress_name(&target);
                 }
@@ -500,7 +514,12 @@ impl Interpreter {
                 // reverse env->locals pull is disabled. Record the imported
                 // name (sigil stripped to match the local-slot key) so the
                 // ImportModule opcode writes it through to the caller slot.
-                if !target.contains("::") {
+                //
+                // An enum key is skipped: it names no caller local slot, and
+                // recording it made the importing frame pull `env[<key>]` over a
+                // same-named lexical's slot on the next frame reconcile — the
+                // half of #7914 that turned the caller's `my $s` into `Any`.
+                if !target.contains("::") && !is_enum_key {
                     let slot_name = match target.chars().next() {
                         Some('$' | '@' | '%') => target[1..].to_string(),
                         _ => target.clone(),
@@ -510,12 +529,12 @@ impl Interpreter {
                 // Part of the LOADING module's own lexical scope, whether or not
                 // it is new to `env` (see `module_imported_names`).
                 if !self.module_load_stack.is_empty() && !target.contains("::") {
-                    let previous = self.env.get(&target).cloned();
+                    let previous = self.env.get(&env_target).cloned();
                     self.module_imported_names
-                        .push((target.clone(), value.clone(), previous));
+                        .push((env_target.clone(), value.clone(), previous));
                 }
-                self.record_import_env_key(&target);
-                self.env.insert(target, value);
+                self.record_import_env_key(&env_target);
+                self.env.insert(env_target, value);
             }
         }
         Ok(())
