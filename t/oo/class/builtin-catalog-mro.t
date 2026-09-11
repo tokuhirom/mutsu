@@ -10,7 +10,7 @@ use Test;
 #
 # Every expectation below is raku's own `.^mro` (Rakudo 2026.06).
 
-plan 20;
+plan 24;
 
 # --- the catalog rows themselves ---------------------------------------------
 
@@ -41,6 +41,16 @@ is mro-of(ArrayHeir), "ArrayHeir Array List Cool Any Mu",
 class StrHeir is Str { }
 is mro-of(StrHeir), "StrHeir Str Cool Any Mu",
     'a second heir of a different builtin gets its own tail, not the first one';
+
+# --- the MOP uses the same ancestry for values and type objects --------------
+is-deeply "x".^isa(Cool), 1,
+    'concrete Str values use the catalog for .^isa';
+is-deeply True.^isa(Int), 1,
+    'concrete Bool values use the catalog for .^isa';
+is-deeply 1.5.Rat.^isa(Cool), 1,
+    'concrete Rat values use the catalog for .^isa';
+is mro-of(Array[Int]), "Array[Int] Array List Cool Any Mu",
+    'a parametrized builtin type splices its base catalog MRO';
 
 # --- the ancestry is the one dispatch actually uses ---------------------------
 # `.^mro` could be right while the chain the method walk consults is wrong, so

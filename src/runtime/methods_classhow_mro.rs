@@ -23,7 +23,24 @@ impl Interpreter {
             // name the catalog does not model).
             match crate::builtins::builtin_type_catalog::builtin_type_info(class_name.as_str()) {
                 Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),
-                None => vec![class_name.clone()],
+                None => {
+                    // A parametrized builtin type object (for example,
+                    // `Array[Int]`) is not itself a catalog row.  Its MRO is
+                    // the parametrized name followed by the base type's
+                    // catalog chain, just as the registry and receiver
+                    // classifier already model it.
+                    if let Some((base, _)) = class_name.split_once('[')
+                        && class_name.ends_with(']')
+                        && let Some(info) =
+                            crate::builtins::builtin_type_catalog::builtin_type_info(base)
+                    {
+                        let mut mro = vec![class_name.clone()];
+                        mro.extend(info.mro.iter().map(|s| s.to_string()));
+                        mro
+                    } else {
+                        vec![class_name.clone()]
+                    }
+                }
             }
         };
         // A grammar's MRO threads through Grammar -> Match -> Capture -> Cool.
