@@ -1,9 +1,15 @@
 name: Ecosystem sweep
 
 # Re-measure the ecosystem parity KPI (issue #7785) on hosted runners and land
-# the result as a pull request. This is the CI entry point to
-# `scripts/ecosystem-sweep.py`, whose numbers live in `ecosystem/` and are
-# published to `site/ecosystem.html`.
+# the result as a pull request that auto-merges once CI passes. This is the CI
+# entry point to `scripts/ecosystem-sweep.py`, whose numbers live in
+# `ecosystem/` and are published to `site/ecosystem.html`.
+#
+# The records are not reviewed by a human and are not meant to be: a diff of
+# thousands of machine-generated measurements tells a reader nothing a reviewer
+# could act on. Every guard that makes the numbers trustworthy runs before the
+# diff exists (see below), so CI is the gate and the pull request is the audit
+# trail and the revert handle.
 #
 # Method and metric definitions: docs/ecosystem-parity.md
 # Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md (D9 + its
@@ -591,15 +597,32 @@ jobs:
             echo "Records pushed to \`$branch\` (measured on \`$GITHUB_REF\`)." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          if ! gh pr create --base main --head "$branch" \
+          if ! pr_url=$(gh pr create --base main --head "$branch" \
                  --title "chore(ecosystem): refresh parity records (scope=${SCOPE})" \
-                 --body-file /tmp/report.md; then
+                 --body-file /tmp/report.md); then
             echo "::warning title=could not open the pull request::the branch is pushed; open it from the compare view"
             echo "Open it here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          echo "opened $pr_url" >> "$GITHUB_STEP_SUMMARY"
+
+          # Auto-merge, like every other pull request in this repository
+          # (CLAUDE.md's PR workflow step 4). There is nothing in a records diff
+          # for a human to read: it is thousands of machine-generated
+          # measurements, and a reviewer cannot tell a right number from a wrong
+          # one by looking at it. What protects the numbers is upstream of the
+          # diff and already automatic -- the vendored-Test.rakumod probe, the
+          # required sandbox, one binary and one rakudo per run, the provenance
+          # check, and the guards that withhold a summary or a history row from a
+          # partial or mixed sweep. So the gate here is CI, and the pull request
+          # is the audit trail and the revert handle, not a review queue. Merge,
+          # never squash: squash merging is disabled on this repository and
+          # `--squash` silently leaves auto-merge off.
+          if ! gh pr merge --auto --merge "$pr_url"; then
+            echo "::warning title=auto-merge not enabled::$pr_url is open but will not merge on its own; merge it by hand"
+          fi
           if [ "$HAVE_APP_TOKEN" != "true" ]; then
-            echo "::warning title=CI will not start by itself::the pull request was opened with the default GITHUB_TOKEN, which does not trigger workflows. Configure the TAGPR_APP_CLIENT_ID / TAGPR_APP_PRIVATE_KEY App credentials, or push one commit to the branch from a clone."
+            echo "::warning title=CI will not start by itself::the pull request was opened with the default GITHUB_TOKEN, which does not trigger workflows, so auto-merge will never fire. Configure the TAGPR_APP_CLIENT_ID / TAGPR_APP_PRIVATE_KEY App credentials, or push one commit to the branch from a clone."
           fi
 
       - name: Nothing changed

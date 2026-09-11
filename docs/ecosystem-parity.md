@@ -440,6 +440,17 @@ otherwise; `letters` forces it, which is what a large `stale` selection wants);
 the oracle; `rollup` regenerates `summary.*`; `history` asks for a `history.tsv`
 row; `publish` chooses `pull-request` (default), `branch`, or `none`.
 
+**The pull request auto-merges** (merge, never squash) as soon as CI passes — the
+records are not reviewed and are not meant to be. A diff of thousands of
+machine-generated measurements gives a reviewer nothing to act on: they cannot
+tell a right number from a wrong one by reading it. Everything that makes the
+numbers trustworthy runs *before* the diff exists — the vendored-`Test.rakumod`
+probe, the required sandbox, one binary and one rakudo and one index per run, the
+provenance check, and the guards below that withhold a summary or a history row
+from a partial or mixed sweep. So CI is the gate, and the pull request is the
+audit trail and the revert handle rather than a review queue. `publish: branch`
+is the way to get a sweep that waits for a human.
+
 `rollup` is on by default but will not *create* the first `summary.json` from a
 partial sweep — until a `scope: all` run has produced one, a subset run skips the
 rollup and says so, for the same reason `ecosystem/` has carried no summary since
