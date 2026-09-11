@@ -787,6 +787,7 @@ impl Compiler {
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),
                     _ => None,
                 };
+                let is_bareword = matches!(left, Expr::BareWord(_));
                 if let Some(name) = var_name {
                     self.compile_expr(left);
                     // Set does-context flag so role calls with args return Pairs
@@ -796,7 +797,7 @@ impl Compiler {
                     self.code.emit(OpCode::SetDoesContext(false));
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
-                    self.code.emit(OpCode::DoesVar(name_idx, slot));
+                    self.code.emit(OpCode::DoesVar(name_idx, slot, is_bareword));
                     return;
                 }
             }

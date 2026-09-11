@@ -458,8 +458,15 @@ impl Interpreter {
                     } else if pd.name == "__type_only__"
                         && !self.is_resolvable_type(&resolved_constraint)
                     {
-                        // Bare identifier param (e.g., enum value) -- resolve from env and compare
-                        if let Some(expected_val) = self.env.get(&resolved_constraint).cloned() {
+                        // Bare identifier param (e.g., enum value) -- resolve from env and compare.
+                        // An enum key's bare spelling lives in the enum-key namespace
+                        // (#7914), so ask that first: the plain `env` key is a
+                        // same-named `$`-scalar's storage and never the enum value.
+                        if let Some(expected_val) = self
+                            .enum_bare_value(&resolved_constraint)
+                            .or_else(|| self.env.get(&resolved_constraint))
+                            .cloned()
+                        {
                             if dispatch_arg != expected_val {
                                 return false;
                             }

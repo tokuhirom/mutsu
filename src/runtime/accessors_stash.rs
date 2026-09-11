@@ -539,6 +539,14 @@ impl Interpreter {
         {
             return value.clone();
         }
+        // `::('s')` names the TERM `s`, not the scalar `$s`. An enum key is stored
+        // in its own key namespace (#7914), so probe it before the plain `env` key
+        // — which, being sigil-less, belongs to `$s`.
+        if let Some(value) = self.enum_bare_value(name)
+            && !value.is_nil()
+        {
+            return value.clone();
+        }
         if let Some(value) = self.env.get(name)
             && !value.is_nil()
             // Skip `my`-scoped package items for indirect type lookup (::())
@@ -700,6 +708,10 @@ impl Interpreter {
                         .env
                         .get(&fq)
                         .cloned()
+                        // An enum key's bare spelling lives in its own key
+                        // namespace (#7914), so the bare `env` probe cannot see
+                        // it — ask that namespace before giving up.
+                        .or_else(|| self.enum_bare_value(name).cloned())
                         .or_else(|| self.env.get(name).cloned())
                         .unwrap_or(Value::NIL);
                     symbols.insert(name.clone(), val);
@@ -785,6 +797,15 @@ impl Interpreter {
 
         for (key, val) in self.env.iter() {
             let key_s = key.resolve();
+            // An enum key is a genuine package symbol, so it belongs in the stash
+            // under its BARE name -- but it is stored in the enum-key namespace
+            // (#7914), which the internal-key skip below would otherwise drop.
+            // Unwrap it back to the spelling the stash publishes.
+            let key_s = match key_s.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+            {
+                Some(bare) => bare.to_string(),
+                None => key_s,
+            };
             // Internal bookkeeping markers use package-like separators (for
             // example, the inline-package prepass marker contains
             // `::Exporter::exported`). They must not appear as pseudo-package

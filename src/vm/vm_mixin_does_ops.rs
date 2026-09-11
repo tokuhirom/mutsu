@@ -467,6 +467,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         slot: Option<u32>,
+        is_bareword: bool,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -481,6 +482,15 @@ impl Interpreter {
         // Sync back: BUILD submethods may have modified closure variables.
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         let name = Self::const_str(code, name_idx).to_string();
+        // `Apple does R` on an ENUM KEY mutates the key's own binding, which lives
+        // in the enum-key namespace, not under the plain `env` key (#7914 — that
+        // key belongs to `$Apple`). Only a bareword target can name an enum key;
+        // `$Apple does R` is a scalar rebind and takes the ordinary road below.
+        if is_bareword && self.enum_bare_value(&name).is_some() {
+            self.insert_enum_bare_value(&name, updated.clone());
+            self.stack.push(updated);
+            return Ok(());
+        }
         // The same by-name store an assignment uses, NOT a raw `env.insert`:
         // `set_env_with_main_alias` is what redirects a compunit lexical to its
         // own cell, logs the write into the active carrier so the carrier-return

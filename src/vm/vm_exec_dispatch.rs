@@ -1282,23 +1282,22 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_type_object(&name));
                     }
                     // A GENUINE enum-constant reassignment (`Red = 5`) writes to
-                    // the bareword global that IS the constant's own binding, so
-                    // its name equals the currently-stored member's own `key`
-                    // (`env["Red"] == Enum { key: "Red", .. }`). Without the
-                    // `name == key` check this also fired for an ORDINARY
-                    // variable that merely holds an enum value transiently --
-                    // e.g. a for-loop's second `.kv` param (`for %h.kv -> $k, $v
-                    // {...}`) rebinding `$v` via `SetGlobal("v", ...)` when the
-                    // slot's PREVIOUS content (from the prior iteration) happened
-                    // to be an Enum member: `env.get("v")` returned
-                    // `Enum{key:"Red",..}` from iteration 1, and the unguarded
-                    // check misread iteration 2's ordinary rebind as "assigning
-                    // over the `Red` constant", raising a spurious
-                    // X::Assignment::RO (`roast/S12-enums/misc.t`'s
-                    // `X::Enum::NoValue` throws-like case, only reachable once a
-                    // hash's random iteration order put an enum value before a
-                    // later key).
-                    if let Some(ValueView::Enum { enum_type, key, .. }) = current_view
+                    // the bareword that IS the constant's own binding. That
+                    // binding lives in the ENUM-KEY namespace (#7914), not under
+                    // the plain env key — which is a same-named `$Red`'s storage
+                    // — so it is the only store this check may consult. Probing
+                    // `env[name]` instead used to need a `name == key` guard,
+                    // because an ORDINARY variable that merely held an enum value
+                    // transiently landed in the very same key: a for-loop's
+                    // second `.kv` param (`for %h.kv -> $k, $v {...}`) rebinding
+                    // `$v` via `SetGlobal("v", ...)` saw the previous iteration's
+                    // `Enum{key:"Red",..}` and misread the rebind as "assigning
+                    // over the `Red` constant" (a spurious X::Assignment::RO in
+                    // `roast/S12-enums/misc.t`). Keyed by the enum key itself,
+                    // the namespace cannot confuse the two — the guard is kept
+                    // only as a cheap assertion of that invariant.
+                    if let Some(ValueView::Enum { enum_type, key, .. }) =
+                        self.enum_bare_value(&name).map(Value::view)
                         && name == key.resolve()
                     {
                         return Err(RuntimeError::assignment_ro_typename(
@@ -2748,8 +2747,8 @@ impl Interpreter {
                 self.exec_does_op(code)?;
                 *ip += 1;
             }
-            OpCode::DoesVar(name_idx, slot) => {
-                self.exec_does_var_op(code, *name_idx, *slot)?;
+            OpCode::DoesVar(name_idx, slot, is_bareword) => {
+                self.exec_does_var_op(code, *name_idx, *slot, *is_bareword)?;
                 *ip += 1;
             }
             OpCode::SetDoesContext(flag) => {
