@@ -72,7 +72,10 @@ position.
 
 This also removes the raciness the finding was hit through: a child spawned as
 `Proc::Async.new: $*EXECUTABLE, "-e", "sleep"` now blocks, so a parent's `.kill`
-no longer races the child's own 20ms exit.
+no longer races the child's own 20ms exit. That in turn exposed two real
+`Proc::Async` deadlocks in `roast/S17-procasync/kill.t`, which the 20ms exit had
+been hiding; they are fixed alongside and written up in
+`proc-async-ready-kill-cross-thread.md`.
 
 Pinned by `t/lang/parsing/bare-zero-arg-builtin-call.t`, which checks all three
 directions — the zero-arg call really happens, `sleep;` really blocks (measured
