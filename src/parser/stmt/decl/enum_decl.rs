@@ -2,6 +2,7 @@ use super::super::super::expr::expression;
 use super::super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::{ident, keyword, qualified_ident};
+use super::helpers::{has_export_tag_argument, parse_export_trait_tags};
 use super::take_while_opt;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -111,6 +112,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(""),
             variants,
             is_export: false,
+            export_tags: Vec::new(),
             is_my: false,
             base_type: None,
             roles: Vec::new(),
@@ -301,6 +303,7 @@ pub(super) fn parse_enum_decl_body_with_type(
     // ended up with no values at all.
     let mut rest = rest;
     let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
     let mut roles: Vec<String> = Vec::new();
     loop {
         if let Some(r) = keyword("is", rest) {
@@ -308,12 +311,28 @@ pub(super) fn parse_enum_decl_body_with_type(
             let (r, trait_name) = ident(r)?;
             if trait_name == "export" {
                 is_export = true;
+                let (r, tags) = if has_export_tag_argument(r) {
+                    parse_export_trait_tags(r)?
+                } else {
+                    (r, Vec::new())
+                };
+                if tags.is_empty() {
+                    if !export_tags.iter().any(|t| t == "DEFAULT") {
+                        export_tags.push("DEFAULT".to_string());
+                    }
+                } else {
+                    for tag in tags {
+                        if !export_tags.iter().any(|t| t == &tag) {
+                            export_tags.push(tag);
+                        }
+                    }
+                }
+                let (r, _) = ws(r)?;
+                rest = r;
+                continue;
             }
-            // Consume an optional parenthesized trait argument, e.g.
-            // `is export(:traits)` — without this, the variant parser mistakes
-            // the `(:traits)` for the enum's `(...)` body and the real
-            // `<values>` list after it is left dangling.
-            let r = super::super::super::helpers::skip_balanced_parens(r);
+            // Consume an optional parenthesized argument for other traits.
+            let r = skip_balanced_parens(r);
             let (r, _) = ws(r)?;
             rest = r;
             continue;
@@ -384,6 +403,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(body))],
                         is_export,
+                        export_tags,
                         is_my,
                         base_type: base_type.clone(),
                         roles,
@@ -406,6 +426,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             name,
             variants,
             is_export,
+            export_tags,
             is_my,
             base_type,
             roles,

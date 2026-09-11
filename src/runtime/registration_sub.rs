@@ -2014,6 +2014,7 @@ impl Interpreter {
         name: &str,
         variants: &[(String, Option<Expr>)],
         is_export: bool,
+        export_tags: &[String],
         base_type: Option<&str>,
         roles: &[String],
     ) -> Result<Value, RuntimeError> {
@@ -2195,7 +2196,7 @@ impl Interpreter {
         if is_export && !is_anonymous {
             let pkg = self.current_package();
             for (key, _) in &enum_variants {
-                self.register_exported_var(pkg.clone(), key.clone(), vec!["DEFAULT".to_string()]);
+                self.register_exported_var(pkg.clone(), key.clone(), export_tags.to_vec());
             }
         }
 

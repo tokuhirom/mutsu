@@ -97,6 +97,22 @@ pub(super) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
     Ok((rest, tags))
 }
 
+/// Return whether the optional parenthesized argument after `is export` is a
+/// tag list rather than a declaration body. Enum pair-list bodies use the same
+/// parentheses, so `is export (A => 1)` must be left for the enum parser.
+pub(super) fn has_export_tag_argument(input: &str) -> bool {
+    let Ok((rest, _)) = ws(input) else {
+        return false;
+    };
+    let Some(inner) = rest.strip_prefix('(') else {
+        return false;
+    };
+    inner
+        .chars()
+        .find(|c| !c.is_whitespace() && *c != ',')
+        .is_some_and(|c| c == ':')
+}
+
 pub(super) fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
     super::super::parse_sub_name_pub(input)
 }
