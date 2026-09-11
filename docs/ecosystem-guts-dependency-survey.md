@@ -58,23 +58,35 @@ Test::Async is **not planned for bundling** (user decision; PLAN.md's §1 B2b wa
 dropped 2026-08-02). The scouting conclusion is preserved because it is the
 concrete evidence for the `deep_guts` classification above:
 
-- The visible blocker is custom Metamodel HOW inheritance —
+- The visible blocker *was* custom Metamodel HOW inheritance —
   `'Test::Async::Metamodel::BundleHOW' cannot inherit from
-  'Metamodel::ParametricRoleHOW' because it is unknown`. That *is* a real MOP
+  'Metamodel::ParametricRoleHOW' because it is unknown`. That is a real MOP
   feature (user-visible subclasses of the built-in metamodel classes, with
-  mutsu's role/class machinery dispatching through the user's HOW overrides).
-- But it is **necessary and nowhere near sufficient**: Test::Async's `EXPORT`
-  installs a **grammar slang** (`define_slang` plus custom
+  mutsu's role/class machinery dispatching through the user's HOW overrides),
+  and **it landed on 2026-09-11** along with two other gaps the distribution
+  exposed (`news/2026-09/test-async-load-frontier.md`): a `Metamodel::*HOW`
+  subclass now declares, inherits `new_type`, and reaches it through
+  `callsame`/`nextsame`.
+- That confirmed the second half of the 2026-07-19 prediction exactly: the MOP
+  fix was **necessary and nowhere near sufficient**. It moved the load probe
+  from 8 to **14 of the 19 provided modules**, and the five that remain are
+  precisely the five declared with one of Test::Async's own declarators, because
+  its `EXPORT` installs a **grammar slang** (`define_slang` plus custom
   `package_declarator:sym<test-bundle>` tokens that swap the role HOW mid-parse
   via `set_how`), builds `QAST` nodes, and drives the `$*W` World / `NQPHLL` —
-  the MoarVM compiler-guts layer mutsu deliberately lacks.
+  the MoarVM compiler-guts layer mutsu deliberately lacks. That single remaining
+  root cause is tracked as
+  [#8005](https://github.com/tokuhirom/mutsu/issues/8005).
 - So the only viable route is **(b) a narrow per-declarator shim**: parse
   `test-bundle` / `test-hub` / `test-reporter` as built-in role declarations with
   native bundle wiring, ignoring the NQP `EXPORT` grammar. It is still
   multi-session work.
 - **Start trigger**, if a bundle-candidate module ever hard-depends on
   Test::Async: start from the (b) shim; do **not** attempt the general
-  NQP/QAST/slang machinery.
+  NQP/QAST/slang machinery. Note that (b) is a per-distribution dialect inside
+  mutsu, which `BATTERIES.md` §1 and the `ecosystem-dist-fix` skill otherwise
+  forbid — so picking it is a user decision that wants an ADR, not something a
+  session may start on its own. #8005 records both routes.
 - Prerequisite groundwork that already landed: the `::?CLASS` parameter fixes
   (#4669). Error text and history:
   [`mzef-install-pipeline.md`](mzef-install-pipeline.md) "Test-phase frontier".

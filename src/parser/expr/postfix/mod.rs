@@ -16,6 +16,7 @@ mod loop_;
 // Re-exports preserving original visibility
 pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 
+pub(crate) use call_method::parse_bracket_indices;
 pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
 pub(crate) use dot_assign::dot_assign_to_name;
 pub(in crate::parser) use helpers::is_angle_key_char;

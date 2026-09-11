@@ -931,8 +931,15 @@ impl Interpreter {
             name,
             "Metamodel::ClassHOW"
                 | "Metamodel::GrammarHOW"
+                // A role metaclass is subclassed by exactly the same protocol
+                // (`class BundleHOW is Metamodel::ParametricRoleHOW { method
+                // new_type(|) { ... callsame ... } }` — Test::Async), so its
+                // subclasses need the metamodel dispatch frame too or
+                // `callsame` cannot reach the native metamethod.
+                | "Metamodel::ParametricRoleHOW"
                 | "Perl6::Metamodel::ClassHOW"
                 | "Perl6::Metamodel::GrammarHOW"
+                | "Perl6::Metamodel::ParametricRoleHOW"
         )
     }
 

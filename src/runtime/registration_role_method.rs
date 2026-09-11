@@ -130,7 +130,21 @@ impl Interpreter {
                             tc_base == m
                                 || tc_base.starts_with(&format!("{m}::"))
                                 || m.starts_with(&format!("{tc_base}::"))
-                        }));
+                        }))
+                    // The same deferral for an UNQUALIFIED constraint, which
+                    // the name comparison above cannot express: a module
+                    // exports a type under a bare name, so nothing about
+                    // `Event` predicts that `use Test::Async::Event` is what
+                    // supplies it (`unit package Test::Async; class Event is
+                    // export`). Only a body `use` of a module that has NOT
+                    // been loaded yet defers — once every module this body
+                    // names is loaded, an unresolvable name really is a typo
+                    // and still reports X::Parameter::InvalidType.
+                    || (!tc.contains("::")
+                        && cx
+                            .body_used_modules
+                            .iter()
+                            .any(|m| !self.is_module_loaded(m)));
                 if !resolvable {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("type".to_string(), Value::str(tc.to_string()));

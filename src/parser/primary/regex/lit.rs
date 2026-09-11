@@ -1295,7 +1295,12 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     // .[index] — topicalized index access on $_
     if let Some(r) = r.strip_prefix('[') {
         let (r, _) = ws(r)?;
-        let (r, index) = expression(r)?;
+        // A subscript takes a comma-separated *slice* list, not a single
+        // expression: `.[0, 1]` is the topic's two-element slice, exactly like
+        // `$_[0, 1]` and `$x.[0, 1]`. `expression` stops at the comma, so the
+        // `]` check below failed and the whole term fell through to "Confused"
+        // (Test::Async's `Test::Async::Base` writes `|.[0, 1]`).
+        let (r, index) = crate::parser::expr::parse_bracket_indices(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ']')?;
         return Ok((
