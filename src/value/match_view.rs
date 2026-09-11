@@ -31,6 +31,13 @@ use super::*;
 /// `__failed_match__`) and is never exposed through `.hash`/`.list`.
 pub(crate) const CURSOR_MATCH_MARKER: &str = "__grammar_cursor__";
 
+/// Internal attribute holding the callable that produced this cursor —
+/// rakudo's `$!regexsub`, which is what `CURSOR_MORE` re-invokes to find the
+/// next match (#7931). Written only by the cursor-protocol call path
+/// (`regex_cursor`), so an ordinary `~~` Match never carries it; like the
+/// other internal keys it is never exposed through `.hash`/`.list`.
+pub(crate) const CURSOR_REGEXSUB_ATTR: &str = "__cursor_regexsub__";
+
 impl Value {
     /// Is this value a `Match` instance (regex match object)? True for both
     /// the lazy repr (`ValueRepr::Match`, checked WITHOUT materializing) and
@@ -106,6 +113,12 @@ impl Value {
     /// The named-capture hash (`.hash`), a hash `Value`.
     pub(crate) fn match_named(&self) -> Option<Value> {
         self.match_attr("named")
+    }
+
+    /// The callable that produced this cursor (rakudo's `$!regexsub`), or
+    /// `None` for any Match that did not come out of a cursor-protocol call.
+    pub(crate) fn match_cursor_regexsub(&self) -> Option<Value> {
+        self.match_attr(CURSOR_REGEXSUB_ATTR)
     }
 
     /// The `make`-produced value (`.made`/`.ast`).
