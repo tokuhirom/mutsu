@@ -51,6 +51,7 @@
 <script type="module">
 import { renderChrome, currentLang, t } from './assets/i18n.js';
 import { parseCorpus, groupCorpus } from './assets/corpus.js';
+import { fetchData } from './assets/data.js';
 import { createSnippet } from './assets/snippet.js';
 
 import tutorialEn from './content/tutorial.en.js';
@@ -61,7 +62,7 @@ const PROGRESS_KEY = 'mutsu-tutorial-done';
 
 renderChrome('tutorial');
 
-const lessons = parseCorpus(await (await fetch('content/lessons.txt')).text());
+const lessons = parseCorpus(await (await fetchData('content/lessons.txt')).text());
 const chapters = groupCorpus(lessons);
 
 /* ---- progress ---------------------------------------------------- */

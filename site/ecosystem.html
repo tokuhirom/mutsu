@@ -83,6 +83,7 @@
 
 <script type="module">
 import { renderChrome, currentLang } from './assets/i18n.js';
+import { fetchData } from './assets/data.js';
 
 renderChrome('ecosystem');
 
@@ -298,7 +299,7 @@ paintRows();
 const EMPTY = { distributions: [], counts: { green: 0, graded: 0 },
                 dist_parity: 0, file_parity: 0, measured: {}, has_chart: false };
 
-fetch('content/ecosystem.json')
+fetchData('content/ecosystem.json')
   .then(r => (r.ok ? r.json() : null))
   .then(data => { DATA = data ?? EMPTY; })
   .catch(() => { DATA = EMPTY; })
