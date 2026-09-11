@@ -115,10 +115,19 @@ impl Interpreter {
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
             // to install a precomp repository into a CUR::FileSystem instance).
-            "bindattr" => {
+            // The typed variants coerce first: an nqp `int`/`num`/`str`
+            // attribute holds a native value, and code that reads it back with
+            // `getattr_i` expects one.
+            "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
-                let val = args.get(3).cloned().unwrap_or(Value::NIL);
+                let raw = args.get(3).cloned().unwrap_or(Value::NIL);
+                let val = match op {
+                    "bindattr_i" => Value::int(to_int(&raw)),
+                    "bindattr_n" => Value::num(raw.to_f64()),
+                    "bindattr_s" => Value::str(raw.to_string_value()),
+                    _ => raw,
+                };
                 let attr_key = attr
                     .trim_start_matches(['$', '@', '%', '&'])
                     .trim_start_matches(['!', '.']);
@@ -180,6 +189,61 @@ impl Interpreter {
                 }
                 Ok(Value::int(n))
             }
+            // nqp::create($type) — allocate an instance of `$type` with NO
+            // constructor run: attributes stay uninitialized and `BUILD` is
+            // never called, which is exactly Raku's `.CREATE`. nqp code uses
+            // it both for a native array (`nqp::create(array[uint32])`) and to
+            // hand-build an iterator (`nqp::create(self)` followed by
+            // `bindattr`), so it must not go anywhere near `new`.
+            "create" => {
+                let ty = args.first().cloned().unwrap_or(Value::NIL);
+                // A native array / Buf / Blob is allocated with its REPR's
+                // empty storage, which for mutsu means `.new`: `CREATE` hands
+                // back a value with no element storage at all, so the
+                // `nqp::push_i` that invariably follows
+                // (`nqp::strtocodes($s, NFC, nqp::create(array[uint32]))`)
+                // had nothing to push onto. Everything else takes `CREATE`,
+                // whose whole point here is to skip the constructor.
+                let name = match ty.view() {
+                    ValueView::Package(sym) => sym.resolve().to_string(),
+                    _ => crate::runtime::utils::value_type_name(&ty).to_string(),
+                };
+                let method = if name.starts_with("array[")
+                    || name == "array"
+                    || crate::runtime::utils::is_buf_or_blob_class(&name)
+                {
+                    "new"
+                } else {
+                    "CREATE"
+                };
+                Ok(match self.call_method_with_values(ty, method, vec![]) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                })
+            }
+
+            // nqp::getattr($obj, $class, '$!name') and the typed reads —
+            // straight attribute access, with the class operand ignored
+            // because mutsu stores one flat attribute map per instance rather
+            // than a per-class slot table. (A private attribute of the same
+            // name in two classes of one hierarchy would therefore collide;
+            // that is the same limitation `$!name` access already has.)
+            "getattr" | "getattr_i" | "getattr_n" | "getattr_s" => {
+                let obj = args.first().cloned().unwrap_or(Value::NIL);
+                let name = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                let value = Self::nqp_attr_value(&obj, &name);
+                Ok(match op {
+                    "getattr_i" => Value::int(value.as_ref().map(to_int).unwrap_or(0)),
+                    "getattr_n" => Value::num(value.as_ref().map(|v| v.to_f64()).unwrap_or(0.0)),
+                    "getattr_s" => Value::str(
+                        value
+                            .as_ref()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                    ),
+                    _ => value.unwrap_or(Value::NIL),
+                })
+            }
             // nqp::setelems($buf, $n): resize a buffer to `$n` elements, the
             // extra ones zero. `NativeHelpers::Blob`'s `blob-allocate` is
             // `blob.new` followed by this, so a `Buf` out-parameter of a native
@@ -225,5 +289,42 @@ impl Interpreter {
             }
             _ => return None,
         })
+    }
+
+    /// The attribute-map key for an nqp `'$!name'` operand. nqp always spells
+    /// the twigil; mutsu's instance maps are keyed by the bare name, so try
+    /// both rather than assuming one (an attribute declared `@!items` is
+    /// asked for as `'@!items'` and stored as `items`).
+    fn nqp_attr_keys(name: &str) -> Vec<String> {
+        let bare = name
+            .strip_prefix("$!")
+            .or_else(|| name.strip_prefix("@!"))
+            .or_else(|| name.strip_prefix("%!"))
+            .or_else(|| name.strip_prefix("&!"))
+            .unwrap_or(name);
+        if bare == name {
+            vec![name.to_string()]
+        } else {
+            vec![bare.to_string(), name.to_string()]
+        }
+    }
+
+    fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
+        // `nqp::getattr($map, Map, '$!storage')` reaches for the hash a Map
+        // wraps, so that nqp's bindkey/deletekey can build it in place. In
+        // mutsu a Map/Hash IS that storage — there is no wrapper object with a
+        // separate `$!storage` slot — so the hash answers for itself, and the
+        // in-place mutations the caller then performs land on the same `Gc`
+        // the Map value holds.
+        if let ValueView::Hash(_) = obj.view() {
+            return Some(obj.clone());
+        }
+        let ValueView::Instance { attributes, .. } = obj.view() else {
+            return None;
+        };
+        let attrs = attributes.to_map();
+        Self::nqp_attr_keys(name)
+            .into_iter()
+            .find_map(|k| attrs.get(&k).cloned())
     }
 }

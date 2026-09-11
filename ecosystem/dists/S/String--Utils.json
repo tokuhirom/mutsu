@@ -7,32 +7,101 @@
     "unresolved": []
   },
   "dist": "String::Utils",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expression statement or listop argument expression or expression after infix operator or '.' or digits or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 124,
+        "plan": 124,
+        "secs": 3.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-selective-importing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-regexify.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "String::Utils": "An exception occurred while evaluating a CHECK"
+    "String::Utils": "ok"
   },
   "measured": {
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
     "host": "linux-x86_64",
-    "mutsu_commit": "9c41901",
+    "mutsu_commit": "c9d1846",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
-    "sandbox": "bwrap"
+    "sandbox": "none"
   },
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/S/TR/STRING_UTILS/dd311482c0621e9465940cbe1786ad03ecdd8ea6.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 165,
+    "baseline_files": 3,
+    "mutsu_assertions": 41,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.0.40"
 }

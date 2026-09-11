@@ -502,6 +502,19 @@ impl Interpreter {
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
             && package != "LEXICAL"
+            // `UNIT::` is a LEXICAL pseudo-package — the compilation unit's
+            // outermost pad — not a package called "UNIT". Reading it as one
+            // handed back an empty stash, so `UNIT::.grep: { .key.starts-with('&') }`
+            // (the shape a module's `sub EXPORT` uses to export everything it
+            // declared: String::Utils, Array::Sorted::Util, ...) iterated the
+            // stash object itself and died on `.key`.
+            //
+            // TODO: this shares the `MY::` pad below, which inside a routine
+            // over-reports — it adds that routine's own locals, where rakudo's
+            // `UNIT::` shows only the unit's. Answering it exactly needs the
+            // compiler to keep a per-unit symbol table rather than deriving the
+            // pad from the running frame.
+            && package != "UNIT"
             && !package.is_empty()
         {
             // A lexical bound to a *type object* names that package:
@@ -604,19 +617,33 @@ impl Interpreter {
 
     fn add_visible_routines_to_pseudo_stash(&self, entries: &mut HashMap<String, Value>) {
         let packages = self.bare_name_packages();
+        // The pad this stash represents belongs to ONE compunit, and the
+        // registry is shared across all of them. A routine declared in another
+        // file therefore only belongs here if this scope can actually see it by
+        // name — i.e. it was imported (an `&name` env binding) or it is a
+        // builtin/prelude routine with no declaring file of its own.
+        //
+        // Without the check, a module's `sub EXPORT` (which runs with the
+        // module as `current_unit`) saw the IMPORTING script's own file-scope
+        // subs in its `UNIT::`, exported them straight back, and the script's
+        // next `sub` declaration was rejected as a redeclaration of itself.
+        let anchor = self.current_unit;
         let names: std::collections::HashSet<String> = {
             let registry = self.registry();
             registry
                 .functions
-                .keys()
-                .filter_map(|key| {
+                .iter()
+                .filter_map(|(key, def)| {
                     let key = key.resolve();
-                    packages.iter().find_map(|package| {
+                    let name = packages.iter().find_map(|package| {
                         let prefix = format!("{package}::");
                         let rest = key.strip_prefix(&prefix)?;
                         let name = rest.split('/').next().unwrap_or(rest);
                         (!name.contains("::") && !name.is_empty()).then(|| name.to_string())
-                    })
+                    })?;
+                    let declared_here = def.source_file.is_none()
+                        || self.unit_of_declaring_file(def.source_file.as_deref()) == anchor;
+                    (declared_here || self.env().get(&format!("&{name}")).is_some()).then_some(name)
                 })
                 .collect()
         };
@@ -624,6 +651,26 @@ impl Interpreter {
             let value = self.resolve_code_var(&name);
             if !value.is_nil() {
                 entries.entry(format!("&{name}")).or_insert(value);
+            }
+        }
+        // The registry walk above only reaches routines registered under a
+        // bare-name *package*, i.e. `our`/package subs. A `my sub` (or a plain
+        // `sub` at file scope, which is lexical too) is secluded out of the
+        // registry into the per-compunit table instead, so it needs its own
+        // enumeration — see `runtime/unit_private_routines.rs`.
+        //
+        // Without this, `MY::`/`UNIT::` answered a module's own lexical subs at
+        // its file scope (they are locals of that frame) but NOT from inside a
+        // routine of that module — which is precisely where `sub EXPORT` reads
+        // them, so the standard `UNIT::.grep: { .key.starts-with('&') }`
+        // idiom exported nothing at all (String::Utils, Array::Sorted::Util,
+        // and every other module that exports by enumerating its own unit).
+        for (name, def) in self.visible_unit_private_routines() {
+            let value = self.sub_value_from_function_def((*def).clone());
+            if !value.is_nil() {
+                entries
+                    .entry(format!("&{}", name.resolve()))
+                    .or_insert(value);
             }
         }
     }
