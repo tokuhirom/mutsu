@@ -15,22 +15,23 @@
   "dist": "SOAP::Client",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to resolve 'www.w3schools.com:443': failed to lookup address information: Temporary failure in name resolution",
         "nok": 0,
-        "ok": 3,
+        "ok": 0,
         "plan": 3,
-        "secs": 0.67,
-        "skip": 3,
+        "secs": 0.81,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/05-simple-service.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 26.35,
+        "secs": 27.35,
         "skip": 3,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +47,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -57,13 +58,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/OA/SOAP_CLIENT/bf033fdbc80296c1fd2e0eb2a3baa0490c10a9d5.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 3,
     "baseline_files": 1,
-    "mutsu_assertions": 3,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "1.1"
 }

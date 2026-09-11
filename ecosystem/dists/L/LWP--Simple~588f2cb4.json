@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 10.92,
+        "secs": 7.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.55,
+        "secs": 0.29,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.08,
+        "secs": 0.65,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 3.42,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,7 +92,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.89,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.07,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.03,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.84,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -171,51 +171,53 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.05,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to resolve 'www.w3.org:80': failed to lookup address information: Temporary failure in name resolution",
         "nok": 0,
-        "ok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.45,
-        "skip": 2,
+        "secs": 0.49,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/get-w3-latin1-utf8.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.05,
+        "secs": 0.59,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Failed to resolve 'jigsaw.w3.org:443': failed to lookup address information: Temporary failure in name resolution",
         "nok": 0,
-        "ok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.49,
-        "skip": 1,
+        "secs": 0.39,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/get-w3-redirect.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.89,
+        "secs": 0.53,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -229,7 +231,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 1.05,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -243,29 +245,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.03,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "can retrieve http://github.com/",
+        "nok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.5,
-        "skip": 1,
+        "secs": 0.38,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/issue-7.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.92,
+        "secs": 0.61,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -277,7 +280,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 1.37,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -287,7 +290,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.97,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -301,7 +304,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.95,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -313,7 +316,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.33,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -323,7 +326,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.84,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -338,7 +341,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -353,9 +356,9 @@
   "totals": {
     "baseline_assertions": 46,
     "baseline_files": 8,
-    "mutsu_assertions": 45,
-    "parity_files": 7,
-    "regressed_files": 1
+    "mutsu_assertions": 41,
+    "parity_files": 4,
+    "regressed_files": 4
   },
   "version": "0.109"
 }

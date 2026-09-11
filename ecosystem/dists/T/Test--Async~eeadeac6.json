@@ -9,7 +9,7 @@
   "dist": "Test::Async",
   "files": [],
   "load": {
-    "Test::Async": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?",
+    "Test::Async": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
     "Test::Async::Aggregator": "Invalid typename 'Event:D' in parameter declaration.",
     "Test::Async::Base": "expected statement: expected expected statement: expected right-hand expression after '=' or listop argument expression after ',' or expected statement: expected expression statement or expected state",
     "Test::Async::Decl": "'Test::Async::Metamodel::BundleHOW' cannot inherit from 'Metamodel::ParametricRoleHOW' because it is unknown.",
@@ -34,7 +34,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

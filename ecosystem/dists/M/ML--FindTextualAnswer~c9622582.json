@@ -35,15 +35,15 @@
   "dist": "ML::FindTextualAnswer",
   "files": [],
   "load": {
-    "ML::FindTextualAnswer": "circular module dependency detected: ML::FindTextualAnswer -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
-    "ML::FindTextualAnswer::LLM::TextualAnswer": "circular module dependency detected: ML::FindTextualAnswer::LLM::TextualAnswer -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function"
+    "ML::FindTextualAnswer": "Unknown function: openai-base-url",
+    "ML::FindTextualAnswer::LLM::TextualAnswer": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

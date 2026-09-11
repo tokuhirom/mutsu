@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-config.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1789105935: Read-only file system",
+        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1789162093: Read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 11,
-        "secs": 20.43,
+        "secs": 28.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "t/02-run.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1789105941' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1789162102' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 12,
-        "secs": 3.04,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.43,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 21.54,
+        "secs": 35.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.44,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +111,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 8,
-        "secs": 0.42,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.88,
+        "secs": 4.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.51,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.72,
+        "secs": 4.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 0.66,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -167,7 +167,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 10.14,
+        "secs": 12.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +180,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.78,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -190,7 +190,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.6,
+        "secs": 8.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.53,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.86,
+        "secs": 6.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 9,
-        "secs": 0.54,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -236,7 +236,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.48,
+        "secs": 4.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,11 +246,11 @@
       "cmp": "no_baseline",
       "path": "t/11-isolation.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1789106014' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1789162216' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 2.27,
+        "secs": 4.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -263,7 +263,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.6,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -273,7 +273,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.32,
+        "secs": 4.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,7 +286,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.65,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -296,7 +296,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.6,
+        "secs": 4.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -308,7 +308,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -318,7 +318,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.03,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -336,7 +336,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -57,7 +57,7 @@
   "load": {
     "LLM::Resources": "raku_also_fails",
     "LLM::Resources::AgentSkillValidator": "ok",
-    "LLM::Resources::DSLTranslation": "circular module dependency detected: LLM::Resources::DSLTranslation -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+    "LLM::Resources::DSLTranslation": "Unknown function: openai-base-url",
     "LLM::Resources::Graphs": "raku_also_fails"
   },
   "measured": {
@@ -65,7 +65,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

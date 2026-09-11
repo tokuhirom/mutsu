@@ -36,10 +36,10 @@
   "dist": "CSS::Font::Resources",
   "files": [],
   "load": {
-    "CSS::Font::Resources": "raku_also_fails",
-    "CSS::Font::Resources::Source": "No such method 'key' for invocant of type 'Str'",
-    "CSS::Font::Resources::Source::Local": "No such method 'key' for invocant of type 'Str'",
-    "CSS::Font::Resources::Source::Url": "No such method 'key' for invocant of type 'Str'",
+    "CSS::Font::Resources": "Runtime error: Failed to parse module 'CSS::Properties::Calculator': Regex not terminated.",
+    "CSS::Font::Resources::Source": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex",
+    "CSS::Font::Resources::Source::Local": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex",
+    "CSS::Font::Resources::Source::Url": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex",
     "CSS::URI": "ok"
   },
   "measured": {
@@ -47,7 +47,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

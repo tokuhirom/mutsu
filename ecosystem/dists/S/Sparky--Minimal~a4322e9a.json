@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.83,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 28.66,
+        "secs": 28.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.37,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +112,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -121,7 +121,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/S/PA/SPARKY_MINIMAL/3f81805711cf6fd98007996ff69cca62e65bfa33.tar.gz"
+    "url": "https://360.zef.pm/S/PA/SPARKY_MINIMAL/03ccb26965894fbf4366b7ac655d6a2a8e80b587.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -131,5 +131,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.0.1"
+  "version": "0.0.2"
 }

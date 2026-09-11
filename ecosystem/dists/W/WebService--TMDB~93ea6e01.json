@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.96,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,30 +43,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 80.23,
+        "secs": 59.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Submit get request",
-        "nok": 2,
+        "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.79,
+        "secs": 0.42,
         "skip": 8,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-useragent.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.95,
+        "secs": 0.67,
         "skip": 8,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +78,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 0.65,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,7 +88,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 4.79,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +101,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.7,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +111,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 7.17,
+        "secs": 5.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +160,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -177,8 +176,8 @@
     "baseline_assertions": 53,
     "baseline_files": 4,
     "mutsu_assertions": 18,
-    "parity_files": 1,
-    "regressed_files": 3
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "0.1.2"
 }

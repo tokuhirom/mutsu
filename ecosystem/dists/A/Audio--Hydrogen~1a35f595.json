@@ -12,18 +12,18 @@
   "dist": "Audio::Hydrogen",
   "files": [],
   "load": {
-    "Audio::Hydrogen": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "Audio::Hydrogen::Drumkit": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "Audio::Hydrogen::Instrument": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "Audio::Hydrogen::Pattern": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
-    "Audio::Hydrogen::Song": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
+    "Audio::Hydrogen": "Can't use unknown trait 'is' -> 'xml-element' in an attribute declaration.",
+    "Audio::Hydrogen::Drumkit": "Can't use unknown trait 'is' -> 'xml-element' in an attribute declaration.",
+    "Audio::Hydrogen::Instrument": "Can't use unknown trait 'is' -> 'xml-element' in an attribute declaration.",
+    "Audio::Hydrogen::Pattern": "Can't use unknown trait 'is' -> 'xml-element' in an attribute declaration.",
+    "Audio::Hydrogen::Song": "Can't use unknown trait 'is' -> 'xml-element' in an attribute declaration."
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

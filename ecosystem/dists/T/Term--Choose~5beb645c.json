@@ -9,23 +9,134 @@
     "unresolved": []
   },
   "dist": "Term::Choose",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 13.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03.meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.61,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.09,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05.pod-coverage.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.57,
+        "skip": 3,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 253,
+        "plan": 253,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-arguments.t",
+      "raku": {
+        "nok": 0,
+        "ok": 253,
+        "plan": 253,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Term::Choose": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
-    "Term::Choose::Constant": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
-    "Term::Choose::LineFold": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
+    "Term::Choose": "ok",
+    "Term::Choose::Constant": "ok",
+    "Term::Choose::LineFold": "ok",
     "Term::Choose::LineFold::CharWidthAmbiguousWide": "ok",
     "Term::Choose::LineFold::CharWidthDefault": "ok",
     "Term::Choose::ReadKey": "ok",
-    "Term::Choose::Screen": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
-    "Term::Choose::SetTerm": "Runtime error: Failed to parse module 'Term::Choose::Constant': Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)"
+    "Term::Choose::Screen": "ok",
+    "Term::Choose::SetTerm": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -36,12 +147,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERM_CHOOSE/d53b59c0bfaf34710df4b038cb2ee3013a7246eb.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 259,
+    "baseline_files": 5,
+    "mutsu_assertions": 259,
+    "parity_files": 5,
     "regressed_files": 0
   },
   "version": "2.0.6"

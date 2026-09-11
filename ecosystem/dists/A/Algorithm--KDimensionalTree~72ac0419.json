@@ -12,16 +12,63 @@
     "unresolved": []
   },
   "dist": "Algorithm::KDimensionalTree",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic-usage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 9.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller gist(Algorithm::KDimensionalTree:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-gist.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Algorithm::KDimensionalTree": "circular module dependency detected: Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::Array -> Math::DistanceFun"
+    "Algorithm::KDimensionalTree": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -32,13 +79,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/LG/ALGORITHM_KDIMENSIONALTREE/71f402669e660cf6b656f10edb09eeebc6878abe.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 11,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.1.2"
 }

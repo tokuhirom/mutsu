@@ -12,47 +12,46 @@
   "dist": "Text::SubParsers",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 120.03,
+        "first_failure": "not ok 6 -",
+        "nok": 2,
+        "ok": 10,
+        "plan": 12,
+        "secs": 114.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "fail"
       },
       "path": "t/01-basic-usage.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 12.63,
+        "secs": 8.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 120.02,
+        "first_failure": "not ok 6 -",
+        "nok": 4,
+        "ok": 9,
+        "plan": 13,
+        "secs": 92.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "fail"
       },
       "path": "t/02-subparse-method.t",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 5.02,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +63,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 11.55,
+        "secs": 8.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +73,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.48,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +86,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 18.62,
+        "secs": 13.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -97,7 +96,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.33,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +108,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.71,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,7 +118,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.42,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +130,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.14,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -141,7 +140,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.44,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +157,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -171,11 +170,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 30,
-    "baseline_files": 5,
-    "mutsu_assertions": 17,
+    "baseline_assertions": 43,
+    "baseline_files": 6,
+    "mutsu_assertions": 36,
     "parity_files": 3,
-    "regressed_files": 2
+    "regressed_files": 3
   },
   "version": "0.1.4"
 }

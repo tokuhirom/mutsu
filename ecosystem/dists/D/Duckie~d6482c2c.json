@@ -13,23 +13,22 @@
   "dist": "Duckie",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Duckie module can be use-d ok",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.61,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 15.54,
+        "secs": 20.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 0.65,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +56,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.7,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +70,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 31,
-        "secs": 0.81,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,7 +84,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.73,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +98,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.78,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +112,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.97,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,7 +126,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.94,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +140,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.77,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -155,7 +154,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.72,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -169,7 +168,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 0.84,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -183,7 +182,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 26,
-        "secs": 0.9,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -197,7 +196,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 0.87,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -211,7 +210,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 0.82,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -225,7 +224,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.05,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -239,7 +238,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 0.85,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -253,7 +252,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.82,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -267,7 +266,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 1.18,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -281,7 +280,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.84,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -309,7 +308,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -320,13 +319,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/UC/DUCKIE/2820690b6229a0ba8cfcca3d0a297a04626034fe.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 2,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.12"
 }

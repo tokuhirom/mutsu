@@ -13,18 +13,133 @@
     "unresolved": []
   },
   "dist": "Math::Nearest",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-Scan-method.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 16.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown method specification. Known methods are 'KDTree' and 'Scan'.",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-Finder-as-object.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-Finder-as-callable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 5 -",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 2.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-top-level-usage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller gist(Math::Nearest::Scan:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-gist.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::Nearest": "circular module dependency detected: Math::Nearest -> Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::Array -> ",
-    "Math::Nearest::Finder": "circular module dependency detected: Math::Nearest::Finder -> Algorithm::KDimensionalTree -> Math::DistanceFunctions -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::A",
-    "Math::Nearest::Scan": "circular module dependency detected: Math::Nearest::Scan -> Math::DistanceFunctionish -> Math::DistanceFunctions::Native -> NativeHelpers::Array -> Math::DistanceFunctions::Edit -> NativeHelpers::Arra"
+    "Math::Nearest": "ok",
+    "Math::Nearest::Finder": "ok",
+    "Math::Nearest::Scan": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -35,13 +150,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_NEAREST/61e9ecd04ebf7bc5341758c13c2e81aa208fd19c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 27,
+    "baseline_files": 5,
+    "mutsu_assertions": 16,
+    "parity_files": 1,
+    "regressed_files": 4
   },
   "version": "0.0.7"
 }

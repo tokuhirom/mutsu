@@ -15,9 +15,78 @@
     "unresolved": []
   },
   "dist": "PURL",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "is the type correct",
+        "nok": 3,
+        "ok": 7,
+        "plan": 33,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 19.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-at2nczh7/dist/PURL-0.0.15/t/tests/types/deb-test.json",
+        "nok": 1,
+        "ok": 1,
+        "plan": 34,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-test-suite.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 2.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-examples.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "PURL": "Redeclaration of routine 'EXPORT'. Did you mean to declare a multi-sub?",
+    "PURL": "ok",
     "PURL::Type": "ok"
   },
   "measured": {
@@ -25,7 +94,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -36,13 +105,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/UR/PURL/08a3dd50e23f03a6ff9b58ec5d60e43ed5468b40.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 100,
+    "baseline_files": 3,
+    "mutsu_assertions": 41,
+    "parity_files": 1,
+    "regressed_files": 2
   },
   "version": "0.0.15"
 }

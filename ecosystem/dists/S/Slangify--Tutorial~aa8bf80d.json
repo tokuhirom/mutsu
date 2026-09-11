@@ -37,23 +37,24 @@
   "dist": "Slangify::Tutorial",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
-        "first_failure": "Runtime error: slang activation for 'Slangify::Tutorial' failed: circular module dependency detected: Slangify::Tutorial -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.41,
-        "skip": 0,
+        "first_failure": "actions populate Booking from canonical DSL",
+        "nok": 6,
+        "ok": 5,
+        "plan": 11,
+        "secs": 3.5,
+        "skip": 1,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 6.92,
+        "secs": 10.98,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +62,7 @@
     }
   ],
   "load": {
-    "Slangify::Tutorial": "raku_also_fails",
+    "Slangify::Tutorial": "ok",
     "Slangify::Tutorial::Actions": "ok",
     "Slangify::Tutorial::Grammar": "ok"
   },
@@ -70,7 +71,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -81,13 +82,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANGIFY_TUTORIAL/b5e7f20a7b0819d2ceca5d19a1f9e8a68cf25f1a.tar.gz"
   },
-  "status": "red",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 11,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

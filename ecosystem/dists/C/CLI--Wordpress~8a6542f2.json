@@ -16,11 +16,11 @@
       "cmp": "no_baseline",
       "path": "t/01-run.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-8hn9j9pi/sbxhome/.rawp-config/wordpress-launch.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5b1itro_/sbxhome/.rawp-config/wordpress-launch.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 10.5,
+        "secs": 5.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -35,7 +35,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "1557d41",
+    "mutsu_commit": "7807eb5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
