@@ -1258,13 +1258,41 @@ impl Interpreter {
         regex_owner: &str,
     ) -> Result<(), RuntimeError> {
         for ancestor in self.role_ancestor_names(role_name) {
+            // An ancestor can be reached through more than one directly
+            // composed role (for example, a diamond through B and C). Its
+            // deferred body belongs to the consuming type and must run only
+            // once for that (type, role) pair, just like the direct role body
+            // in `compose_role_into_class`. Without this guard a `proto
+            // rule`/`token`/`regex` in the shared ancestor is registered once
+            // per path and the second registration is mistaken for a genuine
+            // redeclaration.
+            let compose_key = format!("class:{regex_owner}:{ancestor}");
+            if !self
+                .registry_mut()
+                .composed_role_bodies
+                .insert(compose_key.clone())
+            {
+                continue;
+            }
             let (ops, decl_file) = self
                 .registry()
                 .roles
                 .get(&ancestor)
                 .map(|r| (r.deferred_body.clone(), r.decl_file.clone()))
                 .unwrap_or_default();
-            self.run_role_body_for_composition(&ancestor, regex_owner, &ops, decl_file.as_deref())?;
+            if let Err(error) = self.run_role_body_for_composition(
+                &ancestor,
+                regex_owner,
+                &ops,
+                decl_file.as_deref(),
+            ) {
+                // A failed role composition must remain retryable. The direct
+                // role path removes its memo key on the same kind of failure.
+                self.registry_mut()
+                    .composed_role_bodies
+                    .remove(&compose_key);
+                return Err(error);
+            }
         }
         Ok(())
     }
