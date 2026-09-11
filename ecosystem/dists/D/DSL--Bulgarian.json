@@ -1,0 +1,75 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Clipboard",
+      "DSL::English::ClassificationWorkflows",
+      "DSL::English::DataQueryWorkflows",
+      "DSL::English::LatentSemanticAnalysisWorkflows",
+      "DSL::English::QuantileRegressionWorkflows",
+      "DSL::English::RecommenderWorkflows",
+      "DSL::Entity::MachineLearning",
+      "DSL::Shared",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::Bulgarian",
+  "files": [],
+  "load": {
+    "DSL::Bulgarian": "circular module dependency detected: DSL::Bulgarian -> DSL::Bulgarian::ClassificationWorkflows::Grammar -> DSL::Bulgarian::ClassificationWorkflows::Grammar::ClassificationPhrases -> DSL::Shared::Utili",
+    "DSL::Bulgarian::ClassificationWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
+    "DSL::Bulgarian::ClassificationWorkflows::Grammar::ClassificationPhrases": "ok",
+    "DSL::Bulgarian::DataQueryWorkflows::Grammar": "ok",
+    "DSL::Bulgarian::DataQueryWorkflows::Grammar::DataQueryPhrases": "ok",
+    "DSL::Bulgarian::LatentSemanticAnalysisWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
+    "DSL::Bulgarian::LatentSemanticAnalysisWorkflows::Grammar::LatentSemanticAnalysisPhrases": "ok",
+    "DSL::Bulgarian::QuantileRegressionWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
+    "DSL::Bulgarian::QuantileRegressionWorkflows::Grammar::TimeSeriesAndRegressionPhrases": "ok",
+    "DSL::Bulgarian::RecommenderWorkflows::Grammar": "ok",
+    "DSL::Bulgarian::RecommenderWorkflows::Grammar::RecommenderPhrases": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_BULGARIAN/ab37c7fbf122d5b13f8b52849bedee3912fd43ed.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.1"
+}

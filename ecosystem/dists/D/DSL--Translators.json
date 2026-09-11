@@ -1,0 +1,264 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AttrX::Lazy",
+      "Base64",
+      "CBOR::Simple",
+      "Chemistry::Stoichiometry",
+      "Clipboard",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DSL::Bulgarian",
+      "DSL::English::ClassificationWorkflows",
+      "DSL::English::DataAcquisitionWorkflows",
+      "DSL::English::DataQueryWorkflows",
+      "DSL::English::EpidemiologyModelingWorkflows",
+      "DSL::English::FoodPreparationWorkflows",
+      "DSL::English::LatentSemanticAnalysisWorkflows",
+      "DSL::English::QuantileRegressionWorkflows",
+      "DSL::English::RecommenderWorkflows",
+      "DSL::English::SearchEngineQueries",
+      "DSL::Entity::Foods",
+      "DSL::Entity::Geographics",
+      "DSL::Entity::MachineLearning",
+      "DSL::Entity::Metadata",
+      "DSL::Shared",
+      "Data::ExampleDatasets",
+      "Data::Generators",
+      "Data::Reshapers",
+      "Data::Summarizers",
+      "Data::TypeSystem",
+      "DateTime::Grammar",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Encode",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Temp",
+      "File::Which",
+      "HTTP::HPACK",
+      "HTTP::Status",
+      "HTTP::Tiny",
+      "HTTP::UserAgent",
+      "Hash::Merge",
+      "IO::Capture::Simple",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IO::Socket::SSL",
+      "Image::Markup::Utilities",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LLM::Functions",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "ML::FindTextualAnswer",
+      "ML::NLPTemplateEngine",
+      "ML::TriesWithFrequencies",
+      "Math::DistanceFunctions::Edit",
+      "Math::Matrix",
+      "Math::SpecialFunctions",
+      "NativeHelpers::Array",
+      "OO::Monitors",
+      "OpenSSL",
+      "Pretty::Table",
+      "Shell::Command",
+      "Slang::Tuxic",
+      "Slangify",
+      "Statistics::Distributions",
+      "Stats",
+      "Test::META",
+      "Test::Output",
+      "Test::Util::ServerPort",
+      "Text::CSV",
+      "Text::Levenshtein::Damerau",
+      "Text::SubParsers",
+      "Text::Wrap",
+      "TinyFloats",
+      "Trap",
+      "URI",
+      "URI::Encode",
+      "URL::Find",
+      "WWW::Gemini",
+      "WWW::LLaMA",
+      "WWW::MistralAI",
+      "WWW::Ollama",
+      "WWW::OpenAI",
+      "WWW::OpenRouter",
+      "XDG::BaseDirectory",
+      "if",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::Translators",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-DataQueryWorkflows-Raku.rakutest",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-RecommenderWorkflows-Python.rakutest",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-RecommenderWorkflows-R-SMRMon.rakutest",
+      "raku": {
+        "first_failure": "simple-Titanic-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 8.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-RecommenderWorkflows-Raku.rakutest",
+      "raku": {
+        "first_failure": "simple-Titanic-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 9.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-LatentSemanticAnalysisWorkflows-R-LSAMon.rakutest",
+      "raku": {
+        "first_failure": "simple-Hamlet-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 9.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-QuantileRegressionWorkflows-R-QRMon.rakutest",
+      "raku": {
+        "first_failure": "simple-Finance-data-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 9.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-ClassificationWorkflows-WL-ClCon.rakutest",
+      "raku": {
+        "first_failure": "simple-Titanic-data-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 9.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-EpidemiologyModelingWorkflows-R-ECMMon.rakutest",
+      "raku": {
+        "first_failure": "SEI2HR-command",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 9.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-FoodPreparationWorkflows-WL-Ecosystem.rakutest",
+      "raku": {
+        "first_failure": "simple-jobs-command",
+        "nok": 3,
+        "ok": 1,
+        "plan": 4,
+        "secs": 9.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "DSL::Translators": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_TRANSLATORS/80522b95512178acd0a4b3a33fb1de9c080dfedf.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.1"
+}

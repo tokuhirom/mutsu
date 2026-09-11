@@ -141,7 +141,13 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             ));
         }
         if let Some(r_after) = keyword("handles", r) {
-            let (r_after, _) = ws1(r_after)?;
+            // No space before the angle-word list is legal — `method build
+            // handles<token node at-rule> { ... }` is how CSS::Grammar::Actions
+            // (and Raku's own documentation) spells it — so only OPTIONAL
+            // whitespace may be required here. `keyword` already guards the word
+            // boundary, so `handlesfoo` still never matches. The attribute form
+            // in `has_decl.rs` has always used `ws` for the same reason.
+            let (r_after, _) = ws(r_after)?;
             let mut rest_out = r_after;
             super::super::decl::parse_handle_specs(r_after, &mut handles, &mut rest_out)?;
             input = rest_out;

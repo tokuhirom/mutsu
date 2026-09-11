@@ -1514,6 +1514,39 @@ impl Interpreter {
         call_me_override: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // `f(...) = v` where `f` is a LEXICAL code variable rather than a
+        // declared sub (`my &nextone := nextcallee; nextone(self,$key) = $v`).
+        // The parser rewrites the assignment into
+        // `__mutsu_assign_named_sub_lvalue("f", [args], value)`, whose runtime
+        // half resolves the name against declared routines and `env` only — it
+        // cannot see a `&`-sigil lexical living in this frame's slots. Resolve
+        // it here, the same way an ordinary call to `f(...)` does a few hundred
+        // lines above, and hand the callable form the value.
+        if name == "__mutsu_assign_named_sub_lvalue"
+            && args.len() >= 3
+            && let Some(callee) = args[0].as_str()
+        {
+            let ampname = format!("&{}", callee);
+            if let Some(callable) = self
+                .locals_get_by_name(code, &ampname)
+                .or_else(|| self.env().get(&ampname).cloned())
+                .filter(|v| {
+                    matches!(
+                        v.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
+                })
+            {
+                let call_args = Self::sub_call_args_from_value(args.get(1));
+                let value = args[2].clone();
+                let result = loan_env!(
+                    self,
+                    assign_callable_lvalue_with_values(callable, call_args, value)
+                )?;
+                self.apply_pending_rw_writeback(code);
+                return Ok(result);
+            }
+        }
         if name == "__PROTO_DISPATCH__" {
             // `{*}` inside a compiled proto body (ledger §D): the proto-dispatch
             // marker rewritten by `rewrite_proto_dispatch_stmts`. Resolve and run

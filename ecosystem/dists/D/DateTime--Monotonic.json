@@ -1,0 +1,63 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "DateTime::Monotonic",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Syscall",
+        "nok": 2,
+        "ok": 2,
+        "plan": 4,
+        "secs": 2.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "DateTime::Monotonic": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATETIME_MONOTONIC/384e0e0f160fa4e038d162646f6df04df8496be4.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 4,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.1.0"
+}

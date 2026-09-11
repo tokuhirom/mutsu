@@ -19,7 +19,7 @@ impl Interpreter {
             _ => target_key,
         };
         let mut registry = self.registry_mut();
-        let funcs = &mut registry.functions;
+        let funcs = registry.functions_mut();
         let mut idx = 0usize;
         loop {
             let key = if idx == 0 {
@@ -70,13 +70,13 @@ impl Interpreter {
                 // Bare EXPORT::TAG::name (accessible from the same package)
                 let bare_export = format!("EXPORT::{}::{}", tag, name);
                 self.registry_mut()
-                    .functions
+                    .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&bare_export))
                     .or_insert_with(|| def.clone());
                 // Fully-qualified Package::EXPORT::TAG::name
                 let pkg_export = format!("{}::EXPORT::{}::{}", package, tag, name);
                 self.registry_mut()
-                    .functions
+                    .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&pkg_export))
                     .or_insert_with(|| def.clone());
             }
@@ -84,12 +84,12 @@ impl Interpreter {
             if !tags.contains(&"ALL".to_string()) {
                 let bare_all = format!("EXPORT::ALL::{}", name);
                 self.registry_mut()
-                    .functions
+                    .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&bare_all))
                     .or_insert_with(|| def.clone());
                 let pkg_all = format!("{}::EXPORT::ALL::{}", package, name);
                 self.registry_mut()
-                    .functions
+                    .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&pkg_all))
                     .or_insert_with(|| def);
             }
@@ -427,7 +427,7 @@ impl Interpreter {
                     // re-import of the same module must stay idempotent).
                     self.import_multi_candidate_merged(&ks, v);
                 } else {
-                    self.registry_mut().functions.insert(k, v);
+                    self.registry_mut().functions_mut().insert(k, v);
                 }
             }
             // Function set changed: invalidate the name-keyed resolution caches
@@ -448,7 +448,7 @@ impl Interpreter {
                 .collect();
             let imported_proto = !proto_entries.is_empty();
             for (k, v) in proto_entries {
-                self.registry_mut().proto_functions.insert(k, v);
+                self.registry_mut().proto_functions_mut().insert(k, v);
             }
             // `has_proto` consults the `proto_subs` name set, not just
             // `proto_functions`, so an imported proto has to be recorded there

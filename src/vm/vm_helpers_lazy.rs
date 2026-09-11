@@ -612,7 +612,19 @@ impl Interpreter {
         // matches anything). Leave it completely untouched here; the
         // specific dispatch handlers (`dispatch_tail`, `.Numeric`) do their
         // own `predictive_seq_iter_for` lookup against the UNCHANGED body.
-        if body.is_empty() && self.predictive_seq_iter_for(body.identity()).is_some() {
+        // ... but only for the two methods that actually TAKE the shortcut.
+        // A predictive-iterator Seq is an ordinary deferred body now (so that
+        // consuming it pulls — `Seq.new($predictive).list` used to answer `()`),
+        // and the out-of-band association is a count-only shortcut on top of
+        // that rather than the body's only contents. Skipping the touch for
+        // every method would make every consumption answer empty; not skipping
+        // it for these two lets the touch rebuild the body under a new
+        // identity and orphan the association, which is what the paragraph
+        // above describes.
+        if body.is_empty()
+            && matches!(method, "tail" | "Numeric")
+            && self.predictive_seq_iter_for(body.identity()).is_some()
+        {
             return Ok(target);
         }
         if method == "sink" {

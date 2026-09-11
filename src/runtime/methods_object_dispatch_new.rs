@@ -2052,6 +2052,10 @@ impl Interpreter {
                     &args,
                     &positional_ctor_args,
                 );
+                // `class C is BagHash { }` and its Set/Mix siblings keep their
+                // entries in `__baggy_data__`, the same way the `is Hash` and
+                // `is Array` blocks above use their own backing attributes.
+                self.seed_quanthash_storage(class_key, &mut attrs, &positional_ctor_args)?;
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
                 // Restore role parameter bindings so that default expressions

@@ -198,10 +198,10 @@ impl Interpreter {
     fn apply_registry_entry(&mut self, key: Symbol, def: Option<Arc<FunctionDef>>) {
         match def {
             Some(def) => {
-                self.registry_mut().functions.insert(key, def);
+                self.registry_mut().functions_mut().insert(key, def);
             }
             None => {
-                self.registry_mut().functions.remove(&key);
+                self.registry_mut().functions_mut().remove(&key);
             }
         }
     }

@@ -1482,9 +1482,19 @@ impl Interpreter {
                 self.stack.push(idx_clone);
                 return self.exec_index_op_with_positional(is_positional);
             }
-            // Instance with __baggy_data__: delegate subscript to the inner Bag/Set
-            (ValueView::Instance { attributes, .. }, _)
-                if attributes.contains_key("__baggy_data__") =>
+            // Instance with __baggy_data__: delegate subscript to the inner
+            // Bag/Set — unless the class (or a role composed into it) declares
+            // its own `AT-KEY`, which owns the subscript and reaches the
+            // backing store itself through `nextsame`/`nextcallee`.
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                _,
+            ) if attributes.contains_key("__baggy_data__")
+                && !self.has_user_method_including_role(&class_name.resolve(), "AT-KEY") =>
             {
                 let inner = attributes.as_map().get("__baggy_data__").unwrap().clone();
                 let idx_clone = index.clone();

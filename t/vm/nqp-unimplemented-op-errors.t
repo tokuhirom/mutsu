@@ -20,18 +20,24 @@ plan 7;
     is nqp::ordat("abc", 1), 98, 'an implemented nqp op still works';
 }
 
-throws-like 'use nqp; nqp::index("hello", "z")', X::AdHoc,
-    message => /'Unsupported nqp:: op' .* 'nqp::index'/,
+# (`nqp::index` was the example here until the String::Utils slice implemented
+# it -- like the two below, the example must stay an op mutsu does NOT provide.
+# `nqp::reverse` keeps the point intact: Raku's `reverse("abc")` is the
+# one-element list `("abc")`, nqp's is the string `"cba"`.)
+throws-like 'use nqp; nqp::reverse("abc")', X::AdHoc,
+    message => /'Unsupported nqp:: op' .* 'nqp::reverse'/,
     'an unimplemented nqp op fails instead of aliasing to the Raku builtin';
 
 # (`nqp::chars` was the example here until the CBOR::Simple slice implemented
-# it — the example must stay an op mutsu does NOT provide.)
+# it -- the example must stay an op mutsu does NOT provide.)
 throws-like 'use nqp; nqp::objectid($_)', X::AdHoc,
     message => /'nqp::objectid'/,
     'and names the op it could not provide';
 
-throws-like 'use nqp; nqp::substr("hello", 1, 3)', X::AdHoc,
-    message => /'nqp::substr'/,
+# (`nqp::substr` was the example here until the String::Utils slice implemented
+# it.)
+throws-like 'use nqp; nqp::chr(65)', X::AdHoc,
+    message => /'nqp::chr'/,
     'including ops whose Raku namesake would have produced a plausible answer';
 
 # Regression guard: this must stay scoped to `nqp::`. An ordinary qualified

@@ -101,7 +101,7 @@ impl Interpreter {
             if self.prelude_sub_names.contains(&name_sym) {
                 continue;
             }
-            let Some(def) = self.registry_mut().functions.remove(&key) else {
+            let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
                 continue;
             };
             secluded.push((name_sym, def));
@@ -194,6 +194,48 @@ impl Interpreter {
         // `push_block_routine_with_location` — so a tap callback declared in a
         // module names that module's unit however it was invoked.
         self.unit_private_routine_from(self.executing_unit_sym(), name_sym)
+    }
+
+    /// Every compunit-private routine visible to the code running right now —
+    /// the enumerating twin of [`Self::unit_private_routine`], answering from
+    /// the same unit that one would resolve a name against (see the precedence
+    /// note in the body).
+    ///
+    /// A lexical pseudo-stash (`MY::`, `UNIT::`) needs the whole set rather
+    /// than one name: `sub EXPORT`'s standard "export everything I declared"
+    /// idiom is `UNIT::.grep: { .key.starts-with('&') }`, which can only see
+    /// what the stash enumerates. Asking the env instead would be
+    /// order-dependent — registration deliberately REMOVES the `&name` binding
+    /// when it seclusion-moves a routine here, and only a call through the
+    /// name puts one back.
+    pub(crate) fn visible_unit_private_routines(&self) -> Vec<(Symbol, Arc<FunctionDef>)> {
+        if self.unit_private_names.is_empty() {
+            return Vec::new();
+        }
+        // The SAME precedence `unit_private_routine` applies to one name:
+        // `current_unit` first and, only when that chain holds nothing,
+        // the frame's own unit. Never the union of the two — they can be
+        // different compunits (a module's `sub EXPORT` runs with the module
+        // as `current_unit` while the importing script is still the executing
+        // frame's unit), and unioning them put the IMPORTER's routines into
+        // the module's `UNIT::`. The module then exported them back, and the
+        // importer's next `sub` declaration was rejected as a redeclaration
+        // of itself.
+        for anchor in [self.current_unit, self.executing_unit_sym()] {
+            let mut out: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
+            let mut unit = Some(anchor);
+            for _ in 0..64 {
+                let Some(sym) = unit else { break };
+                if let Some(table) = self.unit_private_routines.get(&sym) {
+                    out.extend(table.iter().map(|(name, def)| (*name, def.clone())));
+                }
+                unit = crate::runtime::eval_unit_parent(sym);
+            }
+            if !out.is_empty() {
+                return out;
+            }
+        }
+        Vec::new()
     }
 
     /// A private routine named `name_sym` declared by `unit`, or by a unit

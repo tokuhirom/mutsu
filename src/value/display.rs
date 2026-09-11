@@ -786,7 +786,14 @@ impl Value {
             ValueView::ValuePair(k, v) => {
                 format!("{}\t{}", k.to_str_context(), v.to_str_context())
             }
-            ValueView::Enum { key, .. } => key.resolve(),
+            // String context is the enum's `.Str`, which for a base-typed
+            // `Str enum` is the VALUE, not the key (`our Str enum S «:A<a>»;
+            // ~S::A` is "a"). `.gist` keeps answering the key and has its own
+            // path, so only string context changes here.
+            ValueView::Enum { key, value, .. } => match value {
+                crate::value::EnumValue::Str(s) => s.to_string(),
+                _ => key.resolve(),
+            },
             ValueView::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }

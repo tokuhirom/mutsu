@@ -185,13 +185,13 @@ impl Interpreter {
                 type_sig.join(",")
             );
             self.registry_mut()
-                .functions
+                .functions_mut()
                 .entry(Symbol::intern(&typed_fq))
                 .or_insert_with(|| arc.clone());
         }
         let fq = format!("{}::{}/{}", class_name, op_name, arity);
         self.registry_mut()
-            .functions
+            .functions_mut()
             .entry(Symbol::intern(&fq))
             .or_insert(arc);
         self.register_exported_sub(class_name.to_string(), op_name.to_string(), tags);

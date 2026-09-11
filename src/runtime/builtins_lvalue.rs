@@ -2,7 +2,7 @@ use super::*;
 use crate::value::ArrayKind;
 
 impl Interpreter {
-    pub(super) fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
+    pub(crate) fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
         match arg {
             Some(v) => match v.view() {
                 ValueView::Array(items, _) => items.to_vec(),
@@ -43,7 +43,17 @@ impl Interpreter {
         if !value.is_proxy_value() {
             return Ok(value.clone());
         }
-        if let ValueView::Proxy { fetcher, .. } = value.view() {
+        // A FETCH may itself answer a container: the documented `AT-KEY`
+        // override idiom is a `Proxy` whose FETCH defers to the next candidate,
+        // which is another `Proxy` over the same element. Reading such an
+        // element in value context has to come all the way down to the value,
+        // as raku's decontainerization does. Bounded so a pathological
+        // self-returning FETCH cannot spin forever.
+        let mut current = value.clone();
+        for _ in 0..16 {
+            let ValueView::Proxy { fetcher, .. } = current.view() else {
+                return Ok(current);
+            };
             if fetcher.is_nil() {
                 return Ok(Value::NIL);
             }
@@ -55,11 +65,15 @@ impl Interpreter {
             // first FETCHed value. FETCH is a READ, so run with caller-priority
             // inputs and DISCARD every env effect afterwards.
             let saved_env = self.env.clone();
-            let result = self.call_sub_value(fetcher.clone(), vec![value.clone()], true);
+            let result = self.call_sub_value(fetcher.clone(), vec![current.clone()], true);
             self.env = saved_env;
-            return result;
+            let fetched = result?;
+            if !fetched.is_proxy_value() {
+                return Ok(fetched);
+            }
+            current = fetched;
         }
-        Ok(value.clone())
+        Ok(current)
     }
 
     /// Whether a value is (or contains, one container level deep per recursion
@@ -598,7 +612,7 @@ impl Interpreter {
         Err(RuntimeError::new(format!("Unknown call: {}", name)))
     }
 
-    pub(super) fn assign_callable_lvalue_with_values(
+    pub(crate) fn assign_callable_lvalue_with_values(
         &mut self,
         callable: Value,
         call_args: Vec<Value>,

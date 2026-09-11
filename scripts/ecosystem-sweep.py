@@ -300,7 +300,10 @@ def shard_of(name):
 
 
 def record_path(name):
-    return os.path.join(DISTS_DIR, shard_of(name), name.replace("::", "--") + ".json")
+    # The filename mapping lives in ecosystem_common (with its own self-test):
+    # a name that reaches the filesystem unescaped can fail an artifact upload
+    # and take a whole shard's measurements with it.
+    return os.path.join(DISTS_DIR, shard_of(name), eco.record_filename(name))
 
 
 def write_record(record):
@@ -326,6 +329,33 @@ def load_records():
                 with open(os.path.join(dirpath, n), encoding="utf-8") as fh:
                     out.append(json.load(fh))
     return out
+
+
+def write_index_snapshot(index, args):
+    """Record which ecosystem index this run drew from -- corpus runs only.
+
+    `index-snapshot.json` is provenance for the ledger as a WHOLE: "the records
+    beside me were resolved against this fez/REA snapshot". A targeted run
+    re-measures one or a handful of distributions, so rewriting it would date
+    the entire corpus to today's index on the strength of a single record --
+    the same failure mode `.github/workflows/ecosystem-sweep.yml` avoids by
+    pinning one index across its shards. It also puts an unrelated file in a
+    bug-fix PR's diff, where a reviewer reads it as a corpus refresh.
+
+    So an `--only` run never touches it, and `--no-index-snapshot` extends that
+    to any other selection (a `--status` / `--stale` re-measure after a fix has
+    exactly the same problem). `--dry-run` writes nothing at all, this file
+    included -- "resolve and print the plan" is not a measurement.
+    """
+    if args.no_index_snapshot or args.only or args.dry_run:
+        why = ("--no-index-snapshot" if args.no_index_snapshot
+               else "targeted --only run" if args.only else "--dry-run")
+        log(f"index-snapshot.json: left unchanged ({why})")
+        return
+    with open(os.path.join(DATA_DIR, "index-snapshot.json"), "w", encoding="utf-8") as fh:
+        json.dump({"fetched": dt.date.today().isoformat(), **index.snapshot}, fh,
+                  indent=2, sort_keys=True)
+        fh.write("\n")
 
 
 # --- rollup ------------------------------------------------------------------
@@ -544,6 +574,10 @@ def main():
     ap.add_argument("--include-xt", action="store_true")
     ap.add_argument("--sandbox", choices=["bwrap", "none"], default="bwrap")
     ap.add_argument("--refresh-index", action="store_true")
+    ap.add_argument("--no-index-snapshot", action="store_true",
+                    help="do not rewrite ecosystem/index-snapshot.json "
+                         "(already implied by --only: corpus-level provenance "
+                         "must not be dated by a targeted re-measure)")
     ap.add_argument("--dry-run", action="store_true", help="resolve and print the plan only")
     args = ap.parse_args()
 
@@ -557,10 +591,7 @@ def main():
     args = preflight(args)
     index = eco.load_index(refresh=args.refresh_index)
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(os.path.join(DATA_DIR, "index-snapshot.json"), "w", encoding="utf-8") as fh:
-        json.dump({"fetched": dt.date.today().isoformat(), **index.snapshot}, fh,
-                  indent=2, sort_keys=True)
-        fh.write("\n")
+    write_index_snapshot(index, args)
 
     bundled = bundled_modules()
     names = select(index, args)

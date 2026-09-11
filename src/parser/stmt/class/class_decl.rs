@@ -382,6 +382,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits: Vec::new(),
         is_unit: false,
+        implicit_grammar_parent: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
     };
@@ -600,12 +601,15 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
+    // `class`/`role` bodies never carry an implicit `Grammar` parent; the flag
+    // exists so the shared helper can serve the grammar path too.
+    let mut implicit_grammar_parent = false;
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
             false
         } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
-            parents.push(parent_name);
+            push_also_is_parent(&mut parents, &mut implicit_grammar_parent, parent_name);
             false
         } else {
             true
@@ -660,6 +664,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         language_version: super::super::simple::current_language_version(),
         custom_traits,
         is_unit: false,
+        implicit_grammar_parent: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
     };

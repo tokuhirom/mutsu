@@ -20,7 +20,12 @@ on:
     # the history already requires normalizing that noise away. Unlike ci.yml,
     # `paths-ignore` is safe here: no bench check is required by the `main`
     # ruleset, so a run that never happens blocks nothing. Keep this list in
-    # sync with the allowlist in scripts/ci-docs-only.sh.
+    # sync with the allowlist in scripts/ci-docs-only.sh — with two deliberate
+    # differences, both in the direction of ignoring more. `.github/**` is
+    # listed whole, ci.yml included: that file gates which CI jobs run, which
+    # is a real reason to run the test suite but no reason at all to re-measure
+    # a benchmark. And `scripts/*.py` is listed whole, migrate-t-layout.py
+    # included, for the same reason: `make check-t-layout` is not a benchmark.
     paths-ignore:
       - 'docs/**'
       - 'news/**'
@@ -29,7 +34,12 @@ on:
       - 'raku-doc/**'
       - '.claude/**'
       - '.agents/**'
+      - 'ecosystem/**'
+      - 'scripts/*.py'
+      - '.github/**'
       - '*.md'
+      - '*.tsv'
+      - '*.svg'
       - 'LICENSE'
   workflow_dispatch:
 

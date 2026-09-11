@@ -1,0 +1,124 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI",
+      "ake"
+    ],
+    "unresolved": []
+  },
+  "dist": "Data::UkraineWar::MoD",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 18.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Sequence but got Seq (APV Anti-aircraft warfare systems MLRS UAV operational-tactical level aircraft artillery systems cruise missiles helicopters personne",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-day-parse.t",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to slurp 'raw-pages/.': Is a directory (os error 21)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-whole-dir.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Data::UkraineWar::MoD::Daily": "ok",
+    "Data::UkraineWar::MoD::Scrape": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATA_UKRAINEWAR_MOD/f254be85fd76af1df3f1273b3760d83079a09a73.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 60,
+    "baseline_files": 3,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 3
+  },
+  "version": "0.0.5"
+}

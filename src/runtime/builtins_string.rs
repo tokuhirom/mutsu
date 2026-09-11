@@ -64,7 +64,7 @@ impl Interpreter {
             let method = match spec.to_ascii_lowercase() {
                 's' => "Str",
                 'd' | 'i' | 'u' | 'b' | 'o' | 'x' | 'c' => "Int",
-                'e' | 'f' | 'g' => "Numeric",
+                'a' | 'e' | 'f' | 'g' => "Numeric",
                 _ => continue,
             };
             // A role-mixed value is neither an `Instance` nor a `Package` view,

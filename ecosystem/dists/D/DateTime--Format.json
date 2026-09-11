@@ -1,0 +1,114 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "DateTime::Format",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/010-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.51,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/020-strftime.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "RFC 2822 format with UTC",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/030-rfc2822.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "DateTime::Format": "ok",
+    "DateTime::Format::Factory": "ok",
+    "DateTime::Format::Lang::BG": "ok",
+    "DateTime::Format::Lang::DE": "ok",
+    "DateTime::Format::Lang::FR": "ok",
+    "DateTime::Format::Lang::NL": "ok",
+    "DateTime::Format::Lang::PT": "ok",
+    "DateTime::Format::RFC2822": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "134a1da",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/AT/DATETIME_FORMAT/c3725fbc2d0ccc1910efc66be0063c34e6bd95eb.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 8,
+    "baseline_files": 3,
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 1
+  },
+  "version": "0.1.5"
+}

@@ -1041,7 +1041,7 @@ impl Interpreter {
                 self.promote_exported_main_to_global();
                 let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
                 Self::remove_leaked_main_routines(
-                    &mut self.registry_mut().functions,
+                    self.registry_mut().functions_mut(),
                     &before_function_keys,
                     main_exported,
                 );

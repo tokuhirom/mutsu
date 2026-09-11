@@ -289,6 +289,17 @@ impl Interpreter {
         if self.is_builtin_type_method(&class_name_str, method_name) {
             return Some(self.make_native_method_object(method_name, &class_name_str));
         }
+        // The NQP cursor protocol (#7883): `Match.^lookup("!cursor_init")`.
+        // A leading `!` is an ordinary identifier character in NQP, not Raku's
+        // private-method marker, and rakudo answers these from `.^lookup` /
+        // `.^find_method` / `.^methods` like any other method -- so they are
+        // their own named source here rather than a `Match` entry in the
+        // builtin catalog (`Match`'s catalog row carries no methods at all).
+        if crate::runtime::regex::regex_cursor::is_cursor_protocol_method(method_name)
+            && (class_name_str == "Match" || mro.iter().any(|c| c.as_str() == "Match"))
+        {
+            return Some(self.make_native_method_object(method_name, &class_name_str));
+        }
         None
     }
 

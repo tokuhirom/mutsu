@@ -174,7 +174,14 @@ impl Interpreter {
             if matches!(iterator.view(), ValueView::Instance { .. })
                 && self.type_matches_value("PredictiveIterator", iterator)
             {
-                let seq = Value::seq(Vec::new());
+                // Deferred like any other iterator — the stash below only
+                // adds the `count-only` shortcut. It used to be an EMPTY
+                // eager Seq, which made a `does PredictiveIterator` class
+                // unusable as a Seq's source: `Seq.new(It.new(3)).list` was
+                // `()` where `does Iterator` gave the three elements, and
+                // `String::Utils`'s `ngram` (whose NGrams iterator does the
+                // predictive role) returned nothing at all.
+                let seq = Value::seq_deferred(crate::value::SeqSource::Iterator(iterator.clone()));
                 if let ValueView::Seq(items) = seq.view() {
                     let seq_id = items.identity();
                     // Store off the scoped env so the association

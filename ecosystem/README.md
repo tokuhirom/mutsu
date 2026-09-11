@@ -18,7 +18,12 @@ with rakudo as the denominator.
 | `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
-not an ASCII letter), and `::` is written `--` in the filename:
+not an ASCII letter), `::` is written `--`, and any character a filesystem or a
+GitHub artifact upload would reject (`: " < > | * ? % / \`) is percent-escaped —
+`App:Racl` is `App%3ARacl.json`. The escaping is not cosmetic: one rejected path
+fails an **entire** artifact upload, which once cost two shards every record they
+had measured. `ecosystem_common.record_filename()` owns the rule and its
+self-test pins it. Otherwise:
 `String::Utils` → `dists/S/String--Utils.json`.
 
 One file per distribution is not an accident. It is what keeps parallel PRs from
@@ -68,7 +73,13 @@ scripts/ecosystem-sweep.py --rollup              # regenerate summary.* and the 
 ```
 
 Requires `bubblewrap` (the sweep runs unaudited test suites and refuses to run a
-corpus without a sandbox) and a `raku` on PATH.
+corpus without a sandbox) and a `raku` on PATH. Agent containers get both from
+`.claude/hooks/session-start.sh`.
+
+`index-snapshot.json` is corpus-level provenance, so a `--only` run deliberately
+leaves it untouched — a single re-measured record must not date the whole ledger
+to today's index. `--no-index-snapshot` does the same for a `--status` / `--stale`
+re-measure.
 
 **Or from GitHub Actions**, when no many-core box with `bwrap` is at hand: run
 the [`Ecosystem sweep`](../.github/workflows/ecosystem-sweep.yml) workflow

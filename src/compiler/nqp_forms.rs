@@ -15,6 +15,29 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
         "BINARY_SIZE_16_BIT" => 4,
         "BINARY_SIZE_32_BIT" => 8,
         "BINARY_SIZE_64_BIT" => 12,
+        // MoarVM's character-class bits, as `nqp::iscclass` / `findcclass` /
+        // `findnotcclass` take them (runtime/nqp_ops_text.rs implements the
+        // membership rules). These are a bit SET: `CCLASS_ANY` is every bit.
+        "CCLASS_UPPERCASE" => 1,
+        "CCLASS_LOWERCASE" => 2,
+        "CCLASS_ALPHABETIC" => 4,
+        "CCLASS_NUMERIC" => 8,
+        "CCLASS_HEXADECIMAL" => 16,
+        "CCLASS_WHITESPACE" => 32,
+        "CCLASS_PRINTING" => 64,
+        "CCLASS_BLANK" => 256,
+        "CCLASS_CONTROL" => 512,
+        "CCLASS_PUNCTUATION" => 1024,
+        "CCLASS_ALPHANUMERIC" => 2048,
+        "CCLASS_NEWLINE" => 4096,
+        "CCLASS_WORD" => 8192,
+        "CCLASS_ANY" => 65535,
+        // Normalization forms for `nqp::strtocodes`.
+        "NORMALIZE_NONE" => 0,
+        "NORMALIZE_NFC" => 1,
+        "NORMALIZE_NFD" => 2,
+        "NORMALIZE_NFKC" => 3,
+        "NORMALIZE_NFKD" => 4,
         _ => return None,
     })
 }

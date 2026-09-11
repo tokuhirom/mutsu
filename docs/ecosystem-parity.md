@@ -183,7 +183,12 @@ ecosystem/
 ```
 
 `<S>` is the uppercased first character of the dist name (`_` when it is not an
-ASCII letter); `::` becomes `--` in the filename. `String::Utils` →
+ASCII letter); `::` becomes `--` in the filename, and any character a filesystem
+or a GitHub artifact upload would reject (`: " < > | * ? % / \`) is
+percent-escaped, so `App:Racl` is `App%3ARacl.json` —
+`ecosystem_common.record_filename()` owns that rule and its self-test pins it,
+because one rejected path fails an entire artifact upload and once cost two
+shards every record they had measured. `String::Utils` →
 `ecosystem/dists/S/String--Utils.json`.
 
 One file per dist is the merge-conflict answer (the same reasoning as
@@ -274,6 +279,7 @@ scripts/ecosystem-sweep.py --rollup
 
 Other flags: `--timeout` (default 120s/file, both sides), `--max-files` (per
 dist, to bound a pathological suite), `--include-xt`, `--sandbox {bwrap,none}`,
+`--no-index-snapshot` (see below),
 `--mutsu-only` (see *Baseline caching* below), `--refresh-baseline`, `--dry-run` (resolve and print the
 plan without executing), `--json -` (emit records to stdout instead of the tree).
 
@@ -282,9 +288,21 @@ Environment: `MUTSU_BIN` (default `target/release/mutsu`), `RAKU_BIN` (default
 `<uname>-<machine>`, which cannot tell a hosted runner from the maintainer's box
 — §8.1 sets it to `gha-*`).
 
+**`index-snapshot.json` is corpus-level provenance and a targeted run leaves it
+alone.** The file says "the records beside me were resolved against this
+fez/REA snapshot"; rewriting it after re-measuring one distribution would date
+the entire ledger to today's index on the strength of a single record, and puts
+an unrelated file in a bug-fix PR's diff where it reads as a corpus refresh.
+So `--only` never writes it (the run logs `index-snapshot.json: left
+unchanged`), and `--no-index-snapshot` extends that to a `--status` / `--stale`
+re-measure, which has the same problem. A corpus or shard run does write it —
+that is what it is for, and §8.1's workflow pins one index across all its shards
+so they agree on its content.
+
 `scripts/ecosystem-ci.py` is the CI-side companion: `plan` turns
 `.github/workflows/ecosystem-sweep.yml`'s dispatch inputs into a validated job
-matrix, and `provenance` groups a set of records by the
+matrix, `apply` lands a finished sweep's records on top of whatever main has
+become meanwhile (§8.2), and `provenance` groups a set of records by the
 `(mutsu commit, rakudo, host)` triple that measured them. Both are useful
 locally too — `--self-test` covers them, so a change to either is checked without
 dispatching a run.
@@ -398,7 +416,10 @@ on overlapping selections, or the second to finish overwrites the first.
 ### 8.0 Locally
 
 A machine with the cores to spare — the maintainer's 12-core box, not an
-ephemeral remote container (4 cores, a fixed disk allowance, and no `bwrap`).
+ephemeral remote container (4 cores and a fixed disk allowance; `bwrap` is no
+longer the obstacle there, since `.claude/hooks/session-start.sh` installs and
+verifies it, but a corpus sweep still does not fit). A single `--only`
+re-measure after a fix is fine in either.
 
 ```sh
 apt-get install bubblewrap          # required; the sweep refuses to run a corpus without it
@@ -472,6 +493,40 @@ what you want (it measures that ref's mutsu), but the records are then only
 pushed to a branch: a pull request from a feature ref into `main` would carry
 that ref's other commits alongside the records, so the workflow declines to open
 one and says so.
+
+### 8.2 What happens when the ledger moves during a sweep
+
+A corpus sweep measures for over an hour, and the interesting case is that a
+*fix* lands while it runs: a `todo:ticket` PR repairs an interpreter bug and
+re-measures the one distribution it fixed, at a **newer** mutsu commit. The
+sweep's own record for that distribution is then stale before it is even
+committed.
+
+So the `collect` job does not copy its records over the tree. It checks out
+**main as it is now** (not the commit the sweep was dispatched from) and applies
+each record through `scripts/ecosystem-ci.py apply`, whose rule is:
+
+> **The newer mutsu commit wins.** A record says what mutsu did at one commit, so
+> a record measured at a later commit is the more current answer, whoever
+> measured it.
+
+Ordering is decided by `git merge-base --is-ancestor`, so it is the real commit
+graph and not a date heuristic; when git cannot order two commits (an unknown
+sha) the recorded date breaks the tie, and when even that ties the record already
+on the branch is kept. A record is never overwritten by one that cannot be shown
+to supersede it, and the run summary reports how many were left alone.
+
+Two consequences worth knowing:
+
+- **This is also the merge-conflict answer.** Records are one file per
+  distribution, so the only way a sweep can conflict with a sibling PR is by
+  touching the same record — which is exactly the case the rule resolves, before
+  the branch is created. A 1600-file data PR does not need hand resolution.
+- **A locally-measured record can shadow a sweep's for a while.** A dist-fix PR
+  measured on a dev box (often `"sandbox": "none"`, a different `host`) wins over
+  the sandboxed `gha-*` measurement while its commit is the newer one. The record
+  says so in its own provenance, and the next sweep at a newer commit replaces
+  it — or `--stale` does, sooner.
 
 Two things it will refuse to do:
 

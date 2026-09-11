@@ -2809,6 +2809,52 @@ mod const_pool_dedup {
     }
 
     #[test]
+    fn const_sym_agrees_with_intern_whether_or_not_the_chunk_finalized() {
+        let mut code = CompiledCode::new();
+        let a = code.add_constant(Value::str("fib".to_string()));
+        let b = code.add_constant(Value::str("$n".to_string()));
+
+        // Before finalize the table is empty, so `const_sym` falls back to
+        // interning directly -- a hand-built chunk must still resolve.
+        assert!(code.const_syms.is_empty());
+        assert_eq!(code.const_sym(a), Symbol::intern("fib"));
+        assert_eq!(code.const_sym(b), Symbol::intern("$n"));
+
+        // After finalize the same answers come out of the eager table.
+        code.compute_needs_env_sync();
+        assert_eq!(code.const_syms.len(), code.constants.len());
+        assert_eq!(code.const_sym(a), Symbol::intern("fib"));
+        assert_eq!(code.const_sym(b), Symbol::intern("$n"));
+
+        // A constant appended after finalize extends the table rather than
+        // falling off its end, so a runtime-patched chunk keeps the memo.
+        let c = code.add_constant(Value::str("late".to_string()));
+        assert_eq!(code.const_syms.len(), code.constants.len());
+        assert_eq!(code.const_syms[c as usize], Some(Symbol::intern("late")));
+        assert_eq!(code.const_sym(c), Symbol::intern("late"));
+
+        // A chunk that never finalized has no table to extend, and still
+        // resolves through the intern fallback.
+        let mut fresh = CompiledCode::new();
+        let f = fresh.add_constant(Value::str("unfinalized".to_string()));
+        assert!(fresh.const_syms.is_empty());
+        assert_eq!(fresh.const_sym(f), Symbol::intern("unfinalized"));
+    }
+
+    #[test]
+    fn finalize_leaves_non_string_constant_slots_unresolved() {
+        let mut code = CompiledCode::new();
+        let n = code.add_constant(Value::int(7));
+        let s = code.add_constant(Value::str("name".to_string()));
+        code.compute_needs_env_sync();
+        // `const_sym` is only ever called on a name slot; a non-string slot
+        // stays `None` so it keeps falling through to the assertion rather than
+        // handing out a bogus symbol.
+        assert_eq!(code.const_syms[n as usize], None);
+        assert_eq!(code.const_syms[s as usize], Some(Symbol::intern("name")));
+    }
+
+    #[test]
     fn env_consumers_publish_only_their_selected_slots() {
         let mut code = CompiledCode::new();
         code.locals.push("x".to_string());
@@ -5001,10 +5047,17 @@ pub(crate) struct CompiledCode {
     /// avoid leaking a callee's env-only `my` back into a same-named caller
     /// lexical across (self-)recursion. Populated by `compute_needs_env_sync`.
     pub(crate) env_only_decls: Vec<String>,
-    /// Lazily-built `Symbol` per constant-pool slot (see `const_sym`). Sized on
-    /// first use; each slot interns on first access. Cloning a chunk clones the
-    /// already-resolved entries (cheap: `Symbol` is a `u32`).
-    pub(crate) const_syms: std::sync::OnceLock<Box<[std::sync::OnceLock<Symbol>]>>,
+    /// `Symbol` per constant-pool slot (see `const_sym`), interned eagerly when
+    /// the chunk is finalized (`compute_needs_env_sync`); `None` for a constant
+    /// that is not a string. Reading it is a single indexed load, which is the
+    /// point: the lazy predecessor (`OnceLock<Box<[OnceLock<Symbol>]>>`) cost
+    /// two `OnceLock` acquires plus a pointer chase on every call, and was 3.5%
+    /// of `bench-fib` once ADR-0037 had removed the interns either side of it
+    /// (#7739). A chunk that never finalizes keeps an empty table and falls
+    /// back to interning, which is what it did before ADR-0037 Slice 1.
+    /// `add_constant` keeps it index-aligned past finalize, so a chunk patched
+    /// at runtime does not lose the memo for its new slots.
+    pub(crate) const_syms: Vec<Option<Symbol>>,
     /// Lazily-built attribute-cell key per local slot (see `local_attr_key`):
     /// `Some((bare attribute Symbol, is_private))` when the slot's name is an
     /// attribute twigil (`!x`, `$.x`, `@!a`, …), `None` otherwise. Resolving it
@@ -5446,7 +5499,7 @@ impl CompiledCode {
             has_calls: false,
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
-            const_syms: std::sync::OnceLock::new(),
+            const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
@@ -5582,27 +5635,46 @@ impl CompiledCode {
         })
     }
 
-    /// The `Symbol` for the string constant at `idx`, interned once per slot
-    /// via a lazily-built side table. Keeps `Symbol::intern` (a thread-local
-    /// hash lookup) off the per-call dispatch path: method names are string
-    /// constants that would otherwise be re-interned on every `CallMethod`.
+    /// The `Symbol` for the string constant at `idx`, read out of the
+    /// `const_syms` table built at finalize time. Keeps `Symbol::intern` (a
+    /// thread-local hash lookup) off the per-call dispatch path: method names
+    /// are string constants that would otherwise be re-interned on every
+    /// `CallMethod`.
+    #[inline]
     pub(crate) fn const_sym(&self, idx: u32) -> Symbol {
-        let resolve = |i: usize| match self.constants[i].view() {
+        if let Some(Some(sym)) = self.const_syms.get(idx as usize) {
+            return *sym;
+        }
+        // The table is empty (a hand-built chunk that never finalized), or the
+        // constant was appended after finalize. Intern directly; this also
+        // carries the "not a string constant" assertion.
+        self.intern_const_sym(idx as usize)
+    }
+
+    /// Intern the string constant at `i` without consulting `const_syms`. Kept
+    /// out of line so that inlining `const_sym` into a dispatch site copies only
+    /// the indexed load, not `Symbol::intern`'s hash probe.
+    #[cold]
+    #[inline(never)]
+    fn intern_const_sym(&self, i: usize) -> Symbol {
+        match self.constants[i].view() {
             ValueView::Str(s) => Symbol::intern(s.as_str()),
             _ => unreachable!("expected string constant"),
-        };
-        let slots = self.const_syms.get_or_init(|| {
-            (0..self.constants.len())
-                .map(|_| std::sync::OnceLock::new())
-                .collect()
-        });
-        match slots.get(idx as usize) {
-            Some(slot) => *slot.get_or_init(|| resolve(idx as usize)),
-            // A constant appended after the table was sized (compile-time
-            // chunks are finalized before execution, so this is defensive):
-            // fall back to a plain intern.
-            None => resolve(idx as usize),
         }
+    }
+
+    /// Build [`CompiledCode::const_syms`]. Called from `compute_needs_env_sync`,
+    /// which is where a chunk is finalized, so the per-call read below never has
+    /// to check whether the table exists.
+    fn compute_const_syms(&mut self) {
+        self.const_syms = self
+            .constants
+            .iter()
+            .map(|c| match c.view() {
+                ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+                _ => None,
+            })
+            .collect();
     }
 
     /// Scan opcodes to detect if this code references outer-scope variables
@@ -5774,6 +5846,7 @@ impl CompiledCode {
             .constants
             .iter()
             .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
+        self.compute_const_syms();
         self.compute_locals_sym();
         self.compute_free_vars();
         // Collect env-only `my` declarations so the method-dispatch return merge
@@ -8192,6 +8265,7 @@ impl CompiledCode {
         }
         let Some(key) = ConstKey::of(&value) else {
             let idx = self.constants.len() as u32;
+            self.push_const_sym(&value);
             self.constants.push(value);
             crate::vm::vm_stats::record_const_add(false);
             return idx;
@@ -8201,10 +8275,29 @@ impl CompiledCode {
             return idx;
         }
         let idx = self.constants.len() as u32;
+        self.push_const_sym(&value);
         self.constants.push(value);
         self.const_index.insert(key, idx);
         crate::vm::vm_stats::record_const_add(false);
         idx
+    }
+
+    /// Extend `const_syms` for a constant about to be appended, so the table
+    /// stays index-aligned with `constants`.
+    ///
+    /// Only a chunk that has already finalized has a table to extend; before
+    /// then it is empty and `compute_const_syms` will fill it in one pass. This
+    /// matters for a chunk patched after finalize (a runtime-built body gaining
+    /// a constant): without it that slot would sit past the table's end and
+    /// re-intern on every access, which is the cost the table exists to avoid.
+    fn push_const_sym(&mut self, value: &Value) {
+        if self.const_syms.is_empty() {
+            return;
+        }
+        self.const_syms.push(match value.view() {
+            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+            _ => None,
+        });
     }
 
     /// Register a `CallFuncNamed` site's out-of-band named-arg spec, returning

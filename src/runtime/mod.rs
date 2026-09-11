@@ -586,10 +586,13 @@ mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod compunit_scope;
+mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
 mod nqp_ops_process;
+mod nqp_ops_str;
+mod nqp_ops_text;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
@@ -754,6 +757,8 @@ mod output_sink;
 pub(crate) mod phasers;
 mod promise_broken_gist;
 mod promise_errors;
+pub(crate) mod quanthash_store;
+mod quanthash_subclass;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
@@ -823,6 +828,7 @@ pub(crate) mod slang_activation;
 mod source_code_text;
 pub(super) mod sprintf;
 mod sprintf_helpers;
+mod sprintf_hexfloat;
 mod sprintf_validate;
 pub(crate) mod str_numeric;
 mod supply_classify;
@@ -1841,6 +1847,16 @@ pub(crate) fn cow_table_mut<T: Clone>(table: &mut std::sync::Arc<T>) -> &mut T {
 /// its declarations do not leak back to the parent. Only the *timing* of the
 /// copy moved -- from every spawn, to the first write after a spawn.
 ///
+/// The same share has a second holder, for the same reason: a **scope snapshot**
+/// taken to make a declaration lexical. `snapshot_routine_registry` (every
+/// routine declaring inner `my sub`s) and `eval_block_value_inner` (every
+/// carrier block) save the registry's routine tables on entry and restore them
+/// on exit, and those three tables -- `Registry::functions`,
+/// `Registry::proto_functions`, `Registry::proto_subs` -- are in this group
+/// too. The reasoning carries over unchanged: the snapshot is refcount bumps,
+/// the copy happens on the scope's first declaration, and the overwhelmingly
+/// common scope that declares nothing never copies at all (#7887).
+///
 /// When adding a field here, put it in this group if it is a program-global
 /// table that is written during declaration/module loading and read everywhere
 /// else. Do NOT if it is per-call or per-frame state that a hot path mutates:
@@ -2564,6 +2580,10 @@ pub struct Interpreter {
     /// Cleared per-name on subset redeclaration; starts empty per thread (the
     /// cache is a pure recomputable optimization). See `type_matches_value`.
     subset_predicate_cache: HashMap<String, SubsetPredicateCompiled>,
+    /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
+    /// container subclass's NATIVE `AT-KEY` when a user override asks for it
+    /// with `nextcallee`. Built on first use; see `container_element_proxy`.
+    container_element_proxy: Option<Value>,
     /// Side-channel: the exception raised by the most recent subset `where`
     /// predicate that failed by *throwing* (a `fail "msg"` inside the `where`,
     /// e.g. `subset Even of Int where { $_ %% 2 or fail "..." }`). `type_matches_value`
@@ -4189,10 +4209,12 @@ pub(crate) fn eval_unit_parent(unit: Symbol) -> Option<Symbol> {
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
-    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
-    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
+    // The three copy-on-write registry tables: an `Arc` bump each, not a copy
+    // (see `Registry::functions`).
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
+    Arc<rustc_hash::FxHashSet<String>>,
     rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
-    rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot

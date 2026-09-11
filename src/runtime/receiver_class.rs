@@ -189,11 +189,21 @@ impl Interpreter {
             // code path in `Value::isa_check`) was already True.
             ValueView::Promise(p) => self.class_chain(&p.class_name().resolve()),
 
-            // Enum (V3): raku puts the enum type itself ahead of Int, unlike
-            // `value_type_name`'s "Int" answer for every enum value.
-            ValueView::Enum { enum_type, .. } => {
+            // Enum (V3): raku puts the enum type itself ahead of its base type,
+            // unlike `value_type_name`'s "Int" answer for every enum value. The
+            // base type is the one the enum's VALUES carry, not always `Int`:
+            // `our Str enum S «:A<a>»` (how CSS::Grammar::Defs declares every
+            // CSS selector/property type) makes `S::A` a `Str`/`Cool`, so a
+            // `Str $x` parameter accepts it and `S::A ~~ Int` is False.
+            ValueView::Enum {
+                enum_type, value, ..
+            } => {
                 let mut chain = vec![TypeId::from_symbol(enum_type)];
-                chain.extend(self.catalog_chain_for_name("Int"));
+                chain.extend(self.catalog_chain_for_name(match value {
+                    crate::value::EnumValue::Str(_) => "Str",
+                    crate::value::EnumValue::Int(_) => "Int",
+                    crate::value::EnumValue::Generic(_) => "Any",
+                }));
                 chain
             }
 

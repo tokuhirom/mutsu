@@ -131,12 +131,11 @@ impl Interpreter {
     /// line, so the line is threaded in instead.
     ///
     /// `pre_resolved` short-circuits the `resolve_function_with_alias` below
-    /// with a winner the caller already resolved for these same arguments. Only
-    /// a *type-keyed* resolution may be handed over (`find_compiled_function_memo`
-    /// fills its memo only in that case): such an answer is a pure function of
-    /// `(package, name, argument type keys)` and so is exactly what resolving a
-    /// second time here would produce. See
-    /// [`Interpreter::resolve_function_multi_cached_keyed`] (#7573).
+    /// with a winner the caller already resolved for these same arguments
+    /// (`find_compiled_function_memo`). Resolving a second time here would
+    /// re-run the whole candidate walk on an identical call — and for a
+    /// value-dependent `multi` that walk runs user code (a `where` clause), so
+    /// the second resolution is not merely wasted but observable (#7886).
     pub(crate) fn exec_call_sanitized(
         &mut self,
         name: &str,

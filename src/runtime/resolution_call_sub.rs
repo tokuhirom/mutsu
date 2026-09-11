@@ -313,6 +313,19 @@ impl Interpreter {
             {
                 return res;
             }
+            // A cursor-protocol method value (`Match.^lookup("!cursor_init")`,
+            // #7883) is a METHOD, and `Match` is a builtin type with no
+            // `registry().classes` entry -- so the `has_class` method-dispatch
+            // fallback further down never fires for it and the name fell
+            // through to "Unknown function". Re-dispatch it on its first
+            // argument, which is the type object the cursor belongs to.
+            if super::regex::regex_cursor::is_cursor_protocol_method(&name.resolve())
+                && !args.is_empty()
+            {
+                let mut args = args;
+                let invocant = args.remove(0);
+                return self.call_method_with_values(invocant, &name.resolve(), args);
+            }
             if !package.is_empty() && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
@@ -868,6 +881,20 @@ impl Interpreter {
                     .cloned()
                     .collect(),
             );
+            // Tell the fresh-compiler body path which parameters are sigilless
+            // (`\\attr`) so a nested closure captures them by name instead of
+            // compiling a bare reference as a bareword. The compiled closure
+            // path already carries this context in its nested code; this is
+            // needed only by the interpreter-path carrier, which recompiles
+            // the body from its AST.
+            let saved_eval_sigilless = std::mem::replace(
+                &mut self.pending_eval_sigilless,
+                data.param_defs
+                    .iter()
+                    .filter(|pd| pd.sigilless && !pd.name.is_empty())
+                    .map(|pd| pd.name.clone())
+                    .collect(),
+            );
             // Package-scoped name resolution: run the body under the closure's
             // declaring package so nested-class short names and `our`-vars
             // resolve when the Sub value is invoked from a foreign frame —
@@ -961,6 +988,7 @@ impl Interpreter {
                 self.set_current_package(p);
             }
             self.pending_eval_placeholder_params = saved_eval_placeholders;
+            self.pending_eval_sigilless = saved_eval_sigilless;
             self.frame_authoritative = saved_frame_auth;
             self.frame_owned = saved_frame_owned;
             let result = match body_result {

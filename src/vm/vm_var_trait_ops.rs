@@ -738,6 +738,11 @@ impl Interpreter {
                 .class_mro(&trait_name)
                 .iter()
                 .any(|n| n == "Hash" || n == "Map")
+                // A QuantHash subclass (`my %b is AccountableBagHash = ...`)
+                // is populated through the same `STORE(list, :INITIALIZE)`
+                // protocol, delegated to its `__baggy_data__` backing store —
+                // see `vm_baggy_subclass_delegate.rs`.
+                || self.quanthash_base_kind(&trait_name).is_some()
                 || self.has_user_method_including_role(&trait_name, "STORE");
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;

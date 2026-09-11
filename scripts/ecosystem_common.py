@@ -445,6 +445,32 @@ def rmtree(path: str) -> None:
     subprocess.run(["rm", "-rf", path], check=False)
 
 
+# --- record filenames --------------------------------------------------------
+
+# Characters `actions/upload-artifact` refuses in a path, because NTFS cannot
+# hold them, plus the path separators and `%` (which the escape below uses, so
+# escaping it keeps the mapping injective).
+#
+# This list is load-bearing, not defensive tidiness: ONE rejected path fails the
+# WHOLE artifact upload. `App:Racl` and `Slang:Date` -- two fez distributions
+# whose names carry a single colon, which the `::` -> `--` rule does not touch --
+# cost shards A and S every record they had measured, twenty minutes each, on the
+# first corpus sweep.
+_UNSAFE_IN_FILENAME = re.compile(r'[:"<>|*?%/\\\r\n]')
+
+
+def record_filename(dist: str) -> str:
+    """The `ecosystem/dists/<S>/` filename for a distribution.
+
+    `::` becomes `--` (readable, and no fez name contains a literal `--`), and
+    anything left that a filesystem or an artifact upload would reject becomes
+    `%XX`. So `String::Utils` is `String--Utils.json` and `App:Racl` is
+    `App%3ARacl.json`.
+    """
+    stem = dist.replace("::", "--")
+    return _UNSAFE_IN_FILENAME.sub(lambda m: "%%%02X" % ord(m.group()), stem) + ".json"
+
+
 # --- self-test ---------------------------------------------------------------
 
 def _self_test() -> int:
@@ -489,6 +515,25 @@ def _self_test() -> int:
         got = tap_verdict(out, rc)
         if got != want:
             print(f"tap_verdict: want {want}, got {got} for {out!r}", file=sys.stderr)
+            failures += 1
+
+    for dist, want in [
+        ("String::Utils", "String--Utils.json"),
+        ("BTree", "BTree.json"),
+        # The two real fez names that broke the first corpus sweep.
+        ("App:Racl", "App%3ARacl.json"),
+        ("Slang:Date", "Slang%3ADate.json"),
+        # Every other character an artifact upload rejects, and the escape's own.
+        ('A"B', "A%22B.json"), ("A<B>C", "A%3CB%3EC.json"), ("A|B", "A%7CB.json"),
+        ("A*B", "A%2AB.json"), ("A?B", "A%3FB.json"), ("A%B", "A%25B.json"),
+        ("A/B", "A%2FB.json"), ("A\\B", "A%5CB.json"),
+    ]:
+        got = record_filename(dist)
+        if got != want:
+            print(f"record_filename({dist!r}): want {want!r}, got {got!r}", file=sys.stderr)
+            failures += 1
+        if re.search(r'[:"<>|*?\r\n]', got):
+            print(f"record_filename({dist!r}) still artifact-hostile: {got!r}", file=sys.stderr)
             failures += 1
 
     print(f"ecosystem_common self-test: "

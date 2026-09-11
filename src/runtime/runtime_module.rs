@@ -41,7 +41,7 @@ impl Interpreter {
             crate::runtime::ImportScopeSnapshot {
                 functions: reg.functions.keys().copied().collect(),
                 classes: reg.classes.keys().cloned().collect(),
-                proto_subs: reg.proto_subs_snapshot().into_iter().collect(),
+                proto_subs: reg.proto_subs_snapshot().iter().cloned().collect(),
                 proto_functions: reg.proto_functions.keys().copied().collect(),
                 imported_env_keys: HashSet::new(),
                 newline_mode: self.newline_mode,
@@ -102,7 +102,7 @@ impl Interpreter {
             // (`roast/S11-modules/lexical.t`). This is the block twin of the
             // carve-out `reinstate_module_functions` gives the EVAL rollback.
             let module_keys = std::mem::take(&mut self.module_registered_functions);
-            self.registry_mut().functions.retain(|key, _| {
+            self.registry_mut().functions_mut().retain(|key, _| {
                 if func_snapshot.contains(key) || module_keys.contains(key) {
                     return true;
                 }
@@ -134,7 +134,7 @@ impl Interpreter {
                 proto_sub_snapshot.contains(key)
                     || (key.contains("::") && !key.starts_with("GLOBAL::"))
             });
-            self.registry_mut().proto_functions.retain(|key, _| {
+            self.registry_mut().proto_functions_mut().retain(|key, _| {
                 if proto_fn_snapshot.contains(key) {
                     return true;
                 }
@@ -623,11 +623,11 @@ impl Interpreter {
                     // (Math::Arrow `use ... :constants` after a plain `use`).
                     let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
                     if !func_keys_before.contains(&global_key) {
-                        let removed = self.registry_mut().functions.remove(&global_key);
+                        let removed = self.registry_mut().functions_mut().remove(&global_key);
                         if let Some(def) = removed {
                             let qualified = Symbol::intern(&format!("{}::{}", module, name));
                             self.registry_mut()
-                                .functions
+                                .functions_mut()
                                 .entry(qualified)
                                 .or_insert(def);
                         }
@@ -647,12 +647,12 @@ impl Interpreter {
                     // Invalidate name-keyed resolution caches (keys renamed).
                     self.fn_resolve_gen += 1;
                     for mk in multi_keys {
-                        let removed = self.registry_mut().functions.remove(&mk);
+                        let removed = self.registry_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
                             let suffix = mk.resolve().strip_prefix("GLOBAL::").unwrap().to_string();
                             let qualified = Symbol::intern(&format!("{}::{}", module, suffix));
                             self.registry_mut()
-                                .functions
+                                .functions_mut()
                                 .entry(qualified)
                                 .or_insert(def);
                         }
@@ -701,7 +701,7 @@ impl Interpreter {
                 .copied()
                 .collect();
             for k in non_exported_op_globals {
-                self.registry_mut().functions.remove(&k);
+                self.registry_mut().functions_mut().remove(&k);
             }
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
@@ -751,7 +751,7 @@ impl Interpreter {
                     .copied()
                     .collect();
                 for k in leaked_globals {
-                    self.registry_mut().functions.remove(&k);
+                    self.registry_mut().functions_mut().remove(&k);
                 }
                 // Invalidate name-keyed resolution caches.
                 self.fn_resolve_gen += 1;

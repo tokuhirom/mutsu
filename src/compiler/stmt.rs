@@ -95,6 +95,7 @@ impl Compiler {
                 language_version,
                 custom_traits,
                 is_unit,
+                implicit_grammar_parent,
                 decl_id,
                 parent_args,
                 ..
@@ -123,6 +124,7 @@ impl Compiler {
                     language_version: language_version.clone(),
                     custom_traits: custom_traits.clone(),
                     is_unit: *is_unit,
+                    implicit_grammar_parent: *implicit_grammar_parent,
                     decl_id: *decl_id,
                     parent_args: new_parent_args,
                 }

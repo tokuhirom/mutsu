@@ -227,11 +227,19 @@ pub(crate) fn record_registry_cow_clone() {
     }
 }
 
-/// Program-global symbol tables (the `Arc<...>` group on `Interpreter`, see its
-/// doc comment) deep-copied by a write taken while a thread clone still shared
-/// them. Reported as `program-table-cow: clones=`. It should stay a small
-/// constant: a spawn-heavy loop that keeps re-copying a table has put per-frame
-/// state into that group, or is registering declarations inside the loop.
+/// Program-global symbol tables (the `Arc<...>` group on `Interpreter`, plus the
+/// copy-on-write registry tables `functions` / `proto_functions` / `proto_subs`
+/// -- see `Interpreter`'s doc comment) deep-copied by a write taken while
+/// someone else still shared them. Reported as `program-table-cow: clones=`.
+///
+/// Two things share these tables: a thread clone, and a *scope snapshot* taken
+/// to make a declaration lexical (`snapshot_routine_registry`,
+/// `eval_block_value_inner`). So one clone per declaring scope is the expected
+/// shape -- that copy is the one the eager snapshot used to pay unconditionally
+/// (#7887). It should still stay proportional to the program's *declarations*,
+/// not to how often a loop runs: a spawn-heavy or block-heavy loop that keeps
+/// re-copying a table has put per-frame state into that group, or is
+/// registering declarations inside the loop.
 static PROGRAM_TABLE_COW_CLONES: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn record_program_table_cow_clone() {
