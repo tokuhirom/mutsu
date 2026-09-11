@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 30
     # Link with mold across every cargo invocation in this job — linking a
     # binary this size dominates edit->rebuild latency, and mold is far faster
-    # than GNU ld. mold is installed in the "Install prove" step below.
+    # than GNU ld. mold is installed in the "Install mold" step below.
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
       # Absolute, so every mutsu in the process tree reports to the one place
@@ -132,21 +132,48 @@ jobs:
           # from main without every PR writing its own entry and evicting others.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The default GitHub-hosted runner apt mirror config (mirror+file
-      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
-      # been observed hanging indefinitely on noble-updates/backports/security
-      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
-      # with zero relation to the PR's diff. Pin the canonical archive instead
-      # of trusting the mirror list.
-      - name: Use canonical apt mirror
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          fi
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+      # mold comes from its own release tarball, NOT from apt. `apt-get
+      # update` was the only reason this job touched apt at all, and it is the
+      # most variable step in the workflow: 22s on a good day, 2m54s on a bad
+      # one -- enough on its own to push gc-stress past `timeout-minutes` with
+      # every test green (#7956) -- and it has a documented history of hanging
+      # indefinitely on the runner's default mirror list until the job timeout
+      # cancels it (2026-08-19, PRs #6684 #6691), with zero relation to the
+      # PR's diff.
+      #
+      # Nothing else in this job needs a package. The runner image already
+      # ships `perl` (a `dpkg-dev` dependency; `prove` comes with
+      # `perl-modules`) and `libssl-dev` (both in toolset-2404's
+      # `apt.common_packages`), so `mold` was the single genuinely missing
+      # package -- and it is a 6 MB tarball from its own GitHub release, which
+      # the action below is a three-line `wget` around. rui314 is mold's
+      # author; the action is pinned by SHA like every other action here.
+      #
+      # `make-default: false`: do not symlink /usr/bin/ld to mold. Every cargo
+      # invocation in this job already selects mold explicitly through
+      # RUSTFLAGS, so swapping the system linker for every `cc` in the job
+      # would widen the blast radius for nothing. `-fuse-ld=mold` finds
+      # `/usr/local/bin/ld.mold` on PATH.
+      - name: Install mold
+        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        with:
+          mold-version: '2.42.0'
+          make-default: false
 
-      - name: Install prove + mold
-        run: sudo apt-get update && sudo apt-get install -y perl mold
+      # A guard, not an install: this is expected to be a no-op, and exists so
+      # that a future runner image dropping perl degrades to the old apt cost
+      # rather than failing every TAP step in the workflow at once. The mirror
+      # pin moves in here with the apt call it protects.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -399,10 +426,14 @@ jobs:
       # job anyway (see the `changes` job).
       - name: Bundled-library test suites
         # libssl for the OpenSSL / IO::Socket::SSL batteries' NativeCall at
-        # runtime; installed here rather than in the job's apt step so the
-        # cost lands next to the step that needs it.
+        # runtime. The runner image already has it (toolset-2404's
+        # `apt.common_packages`), so this is a guard that normally does
+        # nothing, not an install -- and it carries its own `apt-get update`
+        # because the job no longer runs one (see the "Install mold" step).
         run: |
-          sudo apt-get install -y libssl-dev
+          if ! dpkg -s libssl-dev >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y libssl-dev
+          fi
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
@@ -630,9 +661,11 @@ jobs:
         run: node site/concurrency.test.mjs
 
       # `playwright install --with-deps` shells out to apt-get internally, so
-      # it hits the same azure.archive.ubuntu.com mirror hang as the native
-      # jobs' explicit apt-get steps (see the "Use canonical apt mirror" step
-      # there) even though this job has no apt-get line of its own.
+      # it hits the azure.archive.ubuntu.com mirror hang observed on
+      # 2026-08-19 (PRs #6684 #6691) even though this job has no apt-get line
+      # of its own. The native jobs stopped running apt unconditionally
+      # (#7956) and keep this pin only inside their fallback branches; this
+      # job genuinely cannot avoid apt, so it keeps the pin up front.
       - name: Use canonical apt mirror
         run: |
           if [ -f /etc/apt/apt-mirrors.txt ]; then
@@ -709,21 +742,48 @@ jobs:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The default GitHub-hosted runner apt mirror config (mirror+file
-      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
-      # been observed hanging indefinitely on noble-updates/backports/security
-      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
-      # with zero relation to the PR's diff. Pin the canonical archive instead
-      # of trusting the mirror list.
-      - name: Use canonical apt mirror
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          fi
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+      # mold comes from its own release tarball, NOT from apt. `apt-get
+      # update` was the only reason this job touched apt at all, and it is the
+      # most variable step in the workflow: 22s on a good day, 2m54s on a bad
+      # one -- enough on its own to push gc-stress past `timeout-minutes` with
+      # every test green (#7956) -- and it has a documented history of hanging
+      # indefinitely on the runner's default mirror list until the job timeout
+      # cancels it (2026-08-19, PRs #6684 #6691), with zero relation to the
+      # PR's diff.
+      #
+      # Nothing else in this job needs a package. The runner image already
+      # ships `perl` (a `dpkg-dev` dependency; `prove` comes with
+      # `perl-modules`) and `libssl-dev` (both in toolset-2404's
+      # `apt.common_packages`), so `mold` was the single genuinely missing
+      # package -- and it is a 6 MB tarball from its own GitHub release, which
+      # the action below is a three-line `wget` around. rui314 is mold's
+      # author; the action is pinned by SHA like every other action here.
+      #
+      # `make-default: false`: do not symlink /usr/bin/ld to mold. Every cargo
+      # invocation in this job already selects mold explicitly through
+      # RUSTFLAGS, so swapping the system linker for every `cc` in the job
+      # would widen the blast radius for nothing. `-fuse-ld=mold` finds
+      # `/usr/local/bin/ld.mold` on PATH.
+      - name: Install mold
+        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        with:
+          mold-version: '2.42.0'
+          make-default: false
 
-      - name: Install prove + mold
-        run: sudo apt-get update && sudo apt-get install -y perl mold
+      # A guard, not an install: this is expected to be a no-op, and exists so
+      # that a future runner image dropping perl degrades to the old apt cost
+      # rather than failing every TAP step in the workflow at once. The mirror
+      # pin moves in here with the apt call it protects.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: Unit + integration tests (GC on)
         # Single-threaded: with MUTSU_GC=on, parallel in-process test threads
@@ -748,13 +808,37 @@ jobs:
         # BLOCKING since the DESTROY-on-reclaim / dead-sweep slice: the whole
         # t/ suite passes under GC=on, so a failure here is a real GC
         # regression (semantics or soundness), not a known gap.
+        #
+        # `-j4`, matching the roast step below, the `test` job's TAP step and
+        # the ubuntu-latest core count. This suite ran fully SERIAL here until
+        # 2026-09-11 and that, not the debug binary, was the dominant cost of
+        # the job: the `test` job runs the same 3997 files at `-j4` in 1m28s
+        # against 15m53s (gc-stress) / 18m42s (jit-stress) serial, a 10.8x /
+        # 12.7x gap of which a debug build explains only ~3x. Both jobs were
+        # habitually spending ~90% of `timeout-minutes: 30` as a result, so a
+        # single slow `apt` step cancelled them with every test green (#7956).
+        #
+        # Nothing is lost by parallelising. `MUTSU_GC` / `MUTSU_JIT` and their
+        # knobs are per-process runtime settings read by each `mutsu` prove
+        # spawns, so each file is exercised under exactly the configuration
+        # this job exists to test, whether four of them run at once or one
+        # does. `--merge` keeps each file's stderr attached to its own test
+        # under interleaved `-j` output, same reasoning as the roast step.
+        #
+        # `MUTSU_T_TIMEOUT` 60 -> 90: the per-file budget now has to cover CPU
+        # contention from three sibling test processes on top of the debug
+        # binary, where before it covered the debug binary alone. Headroom on
+        # a budget that only ever fires for the heaviest file is free; a
+        # timeout that fires because the runner was busy is not (see
+        # docs/flaky-test-policy.md 3, which prefers widening the budget to
+        # quarantining a slow-but-correct test).
         run: |
           set -o pipefail
           mkdir -p tmp
-          prove -r --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/gc-stress-t.log
+          prove -r -j4 --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/gc-stress-t.log
         env:
           MUTSU_BIN: target/debug/mutsu
-          MUTSU_T_TIMEOUT: "60"
+          MUTSU_T_TIMEOUT: "90"
 
       - name: Build (release, for roast)
         run: cargo build --release
@@ -863,33 +947,83 @@ jobs:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The default GitHub-hosted runner apt mirror config (mirror+file
-      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
-      # been observed hanging indefinitely on noble-updates/backports/security
-      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
-      # with zero relation to the PR's diff. Pin the canonical archive instead
-      # of trusting the mirror list.
-      - name: Use canonical apt mirror
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
-          fi
-          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+      # mold comes from its own release tarball, NOT from apt. `apt-get
+      # update` was the only reason this job touched apt at all, and it is the
+      # most variable step in the workflow: 22s on a good day, 2m54s on a bad
+      # one -- enough on its own to push gc-stress past `timeout-minutes` with
+      # every test green (#7956) -- and it has a documented history of hanging
+      # indefinitely on the runner's default mirror list until the job timeout
+      # cancels it (2026-08-19, PRs #6684 #6691), with zero relation to the
+      # PR's diff.
+      #
+      # Nothing else in this job needs a package. The runner image already
+      # ships `perl` (a `dpkg-dev` dependency; `prove` comes with
+      # `perl-modules`) and `libssl-dev` (both in toolset-2404's
+      # `apt.common_packages`), so `mold` was the single genuinely missing
+      # package -- and it is a 6 MB tarball from its own GitHub release, which
+      # the action below is a three-line `wget` around. rui314 is mold's
+      # author; the action is pinned by SHA like every other action here.
+      #
+      # `make-default: false`: do not symlink /usr/bin/ld to mold. Every cargo
+      # invocation in this job already selects mold explicitly through
+      # RUSTFLAGS, so swapping the system linker for every `cc` in the job
+      # would widen the blast radius for nothing. `-fuse-ld=mold` finds
+      # `/usr/local/bin/ld.mold` on PATH.
+      - name: Install mold
+        uses: rui314/setup-mold@7e4f20ad28a2e8ca6fd0892ccf72e2abb706b9c3 # v1
+        with:
+          mold-version: '2.42.0'
+          make-default: false
 
-      - name: Install prove + mold
-        run: sudo apt-get update && sudo apt-get install -y perl mold
+      # A guard, not an install: this is expected to be a no-op, and exists so
+      # that a future runner image dropping perl degrades to the old apt cost
+      # rather than failing every TAP step in the workflow at once. The mirror
+      # pin moves in here with the apt call it protects.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
 
       - name: Build (debug, for TAP tests)
         run: cargo build
 
       - name: TAP tests (prove t/, JIT on)
+        # `-j4`, matching the roast step below, the `test` job's TAP step and
+        # the ubuntu-latest core count. This suite ran fully SERIAL here until
+        # 2026-09-11 and that, not the debug binary, was the dominant cost of
+        # the job: the `test` job runs the same 3997 files at `-j4` in 1m28s
+        # against 15m53s (gc-stress) / 18m42s (jit-stress) serial, a 10.8x /
+        # 12.7x gap of which a debug build explains only ~3x. Both jobs were
+        # habitually spending ~90% of `timeout-minutes: 30` as a result, so a
+        # single slow `apt` step cancelled them with every test green (#7956).
+        #
+        # Nothing is lost by parallelising. `MUTSU_GC` / `MUTSU_JIT` and their
+        # knobs are per-process runtime settings read by each `mutsu` prove
+        # spawns, so each file is exercised under exactly the configuration
+        # this job exists to test, whether four of them run at once or one
+        # does. `--merge` keeps each file's stderr attached to its own test
+        # under interleaved `-j` output, same reasoning as the roast step.
+        #
+        # `MUTSU_T_TIMEOUT` 60 -> 90: the per-file budget now has to cover CPU
+        # contention from three sibling test processes on top of the debug
+        # binary, where before it covered the debug binary alone. Headroom on
+        # a budget that only ever fires for the heaviest file is free; a
+        # timeout that fires because the runner was busy is not (see
+        # docs/flaky-test-policy.md 3, which prefers widening the budget to
+        # quarantining a slow-but-correct test).
         run: |
           set -o pipefail
           mkdir -p tmp
-          prove -r --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/jit-stress-t.log
+          prove -r -j4 --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/jit-stress-t.log
         env:
           MUTSU_BIN: target/debug/mutsu
-          MUTSU_T_TIMEOUT: "60"
+          MUTSU_T_TIMEOUT: "90"
 
       - name: Build (release, for roast)
         run: cargo build --release
