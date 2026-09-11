@@ -93,4 +93,58 @@ is $smiley, "matched", 'type smiley matcher still matches';
 lives-ok { EVAL 'given DeclaredHere { when DeclaredHere { 1 }; default { 0 } }' },
     'EVAL sees the calling unit\'s declared types as declared';
 
+# `self` is a complete term in a method and must not be mistaken for a
+# listop head that consumes the `when` body.
+class WhenSelfMatcher {
+    method describe($thing) {
+        given $thing {
+            when self { 'same object' }
+            default   { 'other' }
+        }
+    }
+}
+my $self-matcher = WhenSelfMatcher.new;
+is $self-matcher.describe($self-matcher), 'same object',
+    '`when self` keeps the matcher block in a method';
+is $self-matcher.describe(WhenSelfMatcher.new), 'other',
+    '`when self` still distinguishes a different object';
+
+# A class/role name is visible while its own body is being parsed, including
+# the fully-qualified spelling of a `unit class` whose remaining compilation
+# unit is gathered as its body.
+my role WhenOwnRole {
+    method describe($thing) {
+        given $thing {
+            when WhenOwnRole { 'wrapped' }
+            default          { 'plain' }
+        }
+    }
+}
+my class WhenOwnNode does WhenOwnRole { }
+is WhenOwnNode.new.describe(WhenOwnNode.new), 'wrapped',
+    'a role can match its own name inside its body';
+
+class WhenOwnClass {
+    method describe($thing) {
+        given $thing {
+            when WhenOwnClass { 'same type' }
+            default            { 'other type' }
+        }
+    }
+}
+is WhenOwnClass.new.describe(WhenOwnClass.new), 'same type',
+    'a class can match its own name inside its body';
+
+my $qualified-type = EVAL q:to/UNIT/;
+unit class WhenMatcher::QualifiedThing;
+method describe($thing) {
+    given $thing {
+        when WhenMatcher::QualifiedThing { 'qualified' }
+        default                          { 'plain' }
+    }
+}
+UNIT
+is $qualified-type.new.describe($qualified-type.new), 'qualified',
+    'a unit class can match its fully-qualified name in its body';
+
 done-testing;

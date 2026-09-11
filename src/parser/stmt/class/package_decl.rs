@@ -307,6 +307,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 Some(crate::ast::Expr::Literal(Value::str(kw))),
             ));
         }
+        // `stmt_list` parses the rest of a `unit class` as this declaration's
+        // body. Register the type before returning so body methods can use the
+        // fully-qualified name in a `when` matcher.
+        super::super::simple::register_user_type(&name);
         return Ok((
             r,
             with_meta_stmts(
@@ -418,6 +422,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             break;
         }
         let (r, _) = opt_char(r, ';');
+        // `stmt_list` parses the rest of a `unit role` as this declaration's
+        // body, so make the declaration visible before that parsing starts.
+        super::super::simple::register_user_type(&name);
         let mut body: Vec<Stmt> = Vec::new();
         for (role_name, args) in parent_roles.into_iter().rev() {
             body.insert(
@@ -501,6 +508,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             parents.push("Grammar".to_string());
         }
         let (r, _) = opt_char(r, ';');
+        // A `unit grammar` also captures the remainder of the compilation unit
+        // as its body; register its name before that body is parsed.
         super::super::simple::register_user_type(&name);
         return Ok((
             r,

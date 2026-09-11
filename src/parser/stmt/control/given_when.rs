@@ -77,6 +77,11 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
 fn bareword_names_known_term(name: &str) -> bool {
     use crate::parser::stmt::simple;
     use crate::runtime::utils;
+    // `self` is the current method invocant, never a routine call. Keep it in
+    // the known-term set so `when self { ... }` leaves the block to `when`.
+    if name == "self" {
+        return true;
+    }
     // A type smiley (`when Map:D { }`, `when Channel:U { }`) can only attach to
     // a type name, so the name is never a routine call whatever the base is —
     // an undeclared base is a different diagnostic ("Type ... is not declared").

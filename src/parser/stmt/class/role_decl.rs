@@ -417,6 +417,10 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         break;
     }
 
+    // A role can refer to itself from its own methods. Register its name before
+    // parsing the body so `when RoleName { ... }` is recognized as a type
+    // matcher instead of a bareword call that gobbles the block.
+    super::super::simple::register_user_type(&name);
     // No package path is pushed for a role body: the scope inside a role is
     // generic, so Raku refuses to install an `our`-scoped declaration there and
     // there is no composed name to register.
@@ -452,7 +456,6 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             },
         );
     }
-    super::super::simple::register_user_type(&name);
     // `role R { ... }.^name` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
 
