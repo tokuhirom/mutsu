@@ -218,8 +218,19 @@ impl Interpreter {
         var_name: &str,
         value: Value,
     ) -> Value {
+        self.normalize_incdec_source_with_type_for(var_name, None, value)
+    }
+
+    /// [`Self::normalize_incdec_source_with_type`] for a caller that already
+    /// holds `var_name`'s interned form. See [`Self::maybe_wrap_native_int`].
+    pub(crate) fn normalize_incdec_source_with_type_for(
+        &mut self,
+        var_name: &str,
+        name_sym: Option<Symbol>,
+        value: Value,
+    ) -> Value {
         if value.is_nil() {
-            if let Some(tc) = loan_env!(self, var_type_constraint(var_name)) {
+            if let Some(tc) = loan_env!(self, var_type_constraint_for(var_name, name_sym)) {
                 Self::incdec_seed_for_constraint(&tc)
             } else {
                 Value::int(0)
@@ -573,11 +584,20 @@ impl Interpreter {
 
     /// If the variable has a native int type constraint, wrap the value.
     /// Used by increment/decrement to implement overflow/underflow wrapping.
-    pub(super) fn maybe_wrap_native_int(&mut self, var_name: &str, value: Value) -> Value {
+    /// `name_sym` is `var_name`'s interned form when the caller holds one — the
+    /// read-modify-write ops, whose name operand is a constant-pool index with a
+    /// symbol memoized per chunk. The constraint lane is `Symbol`-keyed, so a
+    /// `None` costs one re-hash of the name.
+    pub(super) fn maybe_wrap_native_int(
+        &mut self,
+        var_name: &str,
+        name_sym: Option<Symbol>,
+        value: Value,
+    ) -> Value {
         use crate::runtime::native_types;
         use num_traits::ToPrimitive;
 
-        let constraint = match loan_env!(self, var_type_constraint(var_name)) {
+        let constraint = match loan_env!(self, var_type_constraint_for(var_name, name_sym)) {
             Some(c) => c,
             None => return value,
         };
@@ -610,7 +630,18 @@ impl Interpreter {
         var_name: &str,
         value: Value,
     ) -> Value {
-        let Some(constraint) = loan_env!(self, var_type_constraint(var_name)) else {
+        self.wrap_native_int_arithmetic_result_for(var_name, None, value)
+    }
+
+    /// [`Self::wrap_native_int_arithmetic_result`] for a caller that already
+    /// holds `var_name`'s interned form. See [`Self::maybe_wrap_native_int`].
+    pub(crate) fn wrap_native_int_arithmetic_result_for(
+        &mut self,
+        var_name: &str,
+        name_sym: Option<Symbol>,
+        value: Value,
+    ) -> Value {
+        let Some(constraint) = loan_env!(self, var_type_constraint_for(var_name, name_sym)) else {
             return value;
         };
         Self::wrap_native_int_arithmetic_for_constraint(&constraint, value)

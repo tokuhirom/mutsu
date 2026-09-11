@@ -444,7 +444,17 @@ impl Interpreter {
     /// Check if a variable is readonly for increment/decrement operations.
     /// Returns Err with X::Multi::NoMatch (like Raku's postfix:<++> dispatch failure).
     pub(crate) fn check_readonly_for_increment(&self, name: &str) -> Result<(), RuntimeError> {
-        self.check_readonly_for_incdec(name, "postfix:<++>")
+        self.check_readonly_for_incdec_for(name, None, "postfix:<++>")
+    }
+
+    /// [`Self::check_readonly_for_increment`] for a caller holding `name`'s
+    /// interned form. See [`Self::name_is_readonly_binding_for`].
+    pub(crate) fn check_readonly_for_increment_for(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Result<(), RuntimeError> {
+        self.check_readonly_for_incdec_for(name, name_sym, "postfix:<++>")
     }
 
     /// Whether `name` denotes a readonly binding, asking BOTH mechanisms that
@@ -457,7 +467,28 @@ impl Interpreter {
     /// both — `++`/`--` (below) and the rw-return container capture
     /// (`exec_capture_var_cell_op`) each regressed by consulting only one.
     pub(crate) fn name_is_readonly_binding(&self, name: &str) -> bool {
-        if self.is_readonly(name) {
+        self.name_is_readonly_binding_for(name, None)
+    }
+
+    /// [`Self::name_is_readonly_binding`] for a caller that already holds
+    /// `name`'s interned form — every in-place `++`/`--`/`OP=` op reaches this
+    /// through a constant-pool name operand, and [`CompiledCode::const_sym`]
+    /// memoizes that symbol per chunk. The `readonly_vars` registry is
+    /// `Symbol`-keyed, so the `&str` form re-hashed the name once per
+    /// read-modify-write.
+    pub(crate) fn name_is_readonly_binding_for(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> bool {
+        let readonly = match name_sym {
+            Some(sym) => {
+                debug_assert_eq!(sym, Symbol::intern(name));
+                self.is_readonly_sym(sym)
+            }
+            None => self.is_readonly(name),
+        };
+        if readonly {
             return true;
         }
         crate::env::sigilless_readonly_keys_possible()
@@ -479,6 +510,17 @@ impl Interpreter {
         name: &str,
         op: &str,
     ) -> Result<(), RuntimeError> {
+        self.check_readonly_for_incdec_for(name, None, op)
+    }
+
+    /// [`Self::check_readonly_for_incdec`] for a caller holding `name`'s
+    /// interned form. See [`Self::name_is_readonly_binding_for`].
+    pub(crate) fn check_readonly_for_incdec_for(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        op: &str,
+    ) -> Result<(), RuntimeError> {
         // A sigilless bind (`my \G = 5`) is marked via a SEPARATE mechanism
         // from `readonly_vars`/`ReadonlyKind` -- the `__mutsu_sigilless_readonly::
         // NAME` env key `Stmt::MarkSigillessReadonly` sets (see
@@ -488,7 +530,7 @@ impl Interpreter {
         // where Raku's postfix:<++> dispatch rejects it (X::Multi::NoMatch,
         // "requires mutable arguments") the same way it rejects a readonly
         // sub parameter's `++$n`.
-        if self.name_is_readonly_binding(name) {
+        if self.name_is_readonly_binding_for(name, name_sym) {
             let msg = format!(
                 "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
                 name

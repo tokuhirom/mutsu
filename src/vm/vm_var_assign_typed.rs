@@ -829,10 +829,23 @@ impl Interpreter {
         name: &str,
         new_val: &Value,
     ) -> Result<(), RuntimeError> {
+        self.check_incdec_type_constraint_for(name, None, new_val)
+    }
+
+    /// [`Self::check_incdec_type_constraint`] for a caller that already holds
+    /// `name`'s interned form. The constraint lane is `Symbol`-keyed
+    /// (`var_type_constraint_sym`), so the `&str` form re-hashed the name on
+    /// every read-modify-write of any program that declares one typed lexical.
+    pub(crate) fn check_incdec_type_constraint_for(
+        &mut self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        new_val: &Value,
+    ) -> Result<(), RuntimeError> {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return Ok(());
         }
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name)) {
+        if let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym)) {
             if crate::runtime::native_types::is_native_int_type(&constraint)
                 || matches!(constraint.as_str(), "num" | "num32" | "num64" | "str")
             {
@@ -980,6 +993,13 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name: &str,
+        // The interned form of `name`, when the caller has one: all three
+        // read-modify-write ops reach this with a constant-pool name operand,
+        // whose symbol `CompiledCode::const_sym` memoizes per chunk. The three
+        // probes below (native-int wrap, type constraint, env store) are all
+        // Symbol-keyed underneath, so a `None` here costs three re-hashes of the
+        // same name per store.
+        name_sym: Option<Symbol>,
         // §1.5: compile-time-resolved local slot for `name`, when it is a
         // current-scope local. Drives the slot mirror + `local_bind_pairs` source
         // resolution below instead of a by-name `code.locals` search (ambiguous
@@ -987,9 +1007,9 @@ impl Interpreter {
         slot: Option<u32>,
         new_val: Value,
     ) -> Result<Value, RuntimeError> {
-        let new_val = self.maybe_wrap_native_int(name, new_val);
-        self.check_incdec_type_constraint(name, &new_val)?;
-        self.store_scalar_by_name(name, &new_val);
+        let new_val = self.maybe_wrap_native_int(name, name_sym, new_val);
+        self.check_incdec_type_constraint_for(name, name_sym, &new_val)?;
+        self.store_scalar_by_name_for(name, name_sym, &new_val);
         // Track topic mutations for the rw-map writeback (`@a.map({ $_ += 1 })`).
         // A compound assign / inc-dec to `$_` lands here via the fused
         // `AtomicCompoundVar` path; the plain-assign path (`AssignExpr`) records
