@@ -375,8 +375,9 @@ which is why this is a separate script rather than a flag on that one:
 
 - **The x axis is time, not sample index.** `HISTORY.tsv` gets a row on every
   main push, so evenly-spaced samples are honest there. Ecosystem sweeps are
-  operator-run and irregular (ADR-0085 D9), so index spacing would draw a
-  six-week gap and a same-day re-run the same width.
+  nightly *plus* whatever is dispatched in between (ADR-0085 D9's second
+  amendment), so index spacing would still draw a skipped night and a same-day
+  re-run the same width.
 - **A rakudo change is drawn as a labelled vertical rule.** It re-bases every
   baseline, so the series is not comparable across it — the step at that point
   is the denominator moving, not news, and the chart has to say so or it lies.
@@ -457,9 +458,29 @@ and the KPI is not comparable across that boundary.
 
 ### 8.1 From GitHub Actions
 
-`.github/workflows/ecosystem-sweep.yml`, **Run workflow** (or
+**The corpus is measured for you every night**: `ecosystem-sweep.yml` carries
+`schedule: - cron: '20 18 * * *'` — 03:20 JST — and a scheduled run is a full
+`scope: all` sweep that rolls up and appends a `history.tsv` row (ADR-0085 D9's
+second amendment; the cost that justifies it is 78 minutes of wall time and ~5.5
+hours of job time). So nobody has to remember to refresh the numbers, and the
+question worth asking about a stale-looking figure is "did last night's run go
+red", not "when did someone last run it".
+
+Dispatch it by hand for anything *other* than the whole corpus — one shard, one
+distribution, one status — or to re-measure immediately rather than waiting for
+the night: `.github/workflows/ecosystem-sweep.yml`, **Run workflow** (or
 `gh workflow run ecosystem-sweep.yml -f scope=…`). One dispatch does the whole
 runbook: plan, build, measure, roll up, open the pull request.
+
+A dispatched run and the nightly one never overlap (`concurrency:
+ecosystem-sweep`, queued rather than cancelled — a cancelled sweep throws away
+hours of measurement), and a night that changes nothing opens no pull request.
+
+> **Editing the workflow's inputs:** on a `schedule` event `inputs.*` are **all
+> empty** — a `workflow_dispatch` default does not apply to it. Every input is
+> read as `inputs.x || <default>`, and `rollup`/`history` as
+> `inputs.x || github.event_name == 'schedule'`. Add a new input without its
+> fallback and the nightly run silently gets the empty value.
 
 | input | what it selects | maps to |
 |---|---|---|

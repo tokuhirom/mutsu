@@ -113,8 +113,10 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       operations manual and phases (P1-P5, one PR each):
       [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
       tracking issue [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
-      The sweep is *dispatched*, never scheduled (ADR-0085 D9), so it does **not** close B1's
-      "working-module regression CI" — that stays a separate item.
+      The sweep runs **nightly at 03:20 JST** (`schedule:` in `ecosystem-sweep.yml`, ADR-0085 D9's
+      second amendment) and can also be dispatched for one shard or one distribution. It is a
+      measurement, not a gate, so it still does **not** close B1's "working-module regression CI" —
+      that stays a separate item.
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.

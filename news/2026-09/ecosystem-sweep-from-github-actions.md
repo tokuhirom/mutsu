@@ -65,6 +65,12 @@ regression CI" remains a separate, unstarted item. The ADR records this as a
 dated amendment to D9 rather than a rewrite, because the decision was extended
 (who needs the hardware), not reversed (when it runs).
 
+> **Reversed the next day.** The sweep is scheduled nightly as of 2026-09-11 —
+> the "~20 CPU-hours" above was an estimate, and the first real corpus run cost
+> 78 minutes of wall time and ~5.5 hours of job time, a quarter of it. See
+> `news/2026-09/ecosystem-sweep-runs-nightly.md` and ADR-0085 D9's second
+> amendment. The paragraph stands as what was believed when this was written.
+
 ## Also in this change
 
 `scripts/ecosystem-ci.py` holds the two decisions the workflow has to make —

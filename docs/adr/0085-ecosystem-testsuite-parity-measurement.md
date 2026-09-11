@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Accepted (design confirmed 2026-09-10; P1 implemented — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep)
+- Status: Accepted (design confirmed 2026-09-10; P1-P3 implemented — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep, and again 2026-09-11 to schedule it nightly on measured cost)
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -235,7 +235,7 @@ the harness at startup, not left to the operator:
   sweep that cannot confirm it aborts rather than publishing a flattered
   number.
 
-### D9. The sweep is operator-run, not CI-scheduled
+### D9. The sweep is operator-run, not CI-scheduled  *(superseded by the two amendments below: it is CI-dispatched and nightly-scheduled)*
 
 A full sweep is ~20 CPU-hours. It runs **on the maintainer's box, started by
 hand**, and its results reach `main` as an ordinary pull request. There is no
@@ -314,6 +314,62 @@ timing difference lands in `no_baseline` rather than being charged to mutsu); an
 a pull request opened with the default `GITHUB_TOKEN` does not start CI, so the
 workflow uses the repository's GitHub App token when it is configured and says
 so in the run summary when it is not.
+
+#### Second amendment, 2026-09-11: the sweep IS scheduled now, nightly
+
+The first amendment said adding a `schedule:` "needs a new decision, not an edit
+here". This is that decision, and it reverses D9's original answer: the workflow
+now carries `schedule: - cron: '20 18 * * *'` — 03:20 JST every day — measuring
+the whole corpus.
+
+What changed is the **cost**, which D9 had estimated rather than measured. Its
+rejection rested on "20 CPU-hours of Actions time every week". The first real
+corpus run on hosted runners ([run
+34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231)) took
+**78 minutes of wall time and about 5.5 hours of job time** across 27 shards at
+`max-parallel: 8`, with the heaviest single shard at 43 minutes. That is a
+quarter of the assumed figure, it is free on a public repository, and it fits
+inside a night. An estimate that is wrong by 4x is the whole reason the original
+trade-off came out the way it did.
+
+The second half of D9's argument — "a number that moves on the timescale of
+interpreter fixes rather than of pushes" — argued for *less* frequency than
+pushes, and nightly is exactly that: mutsu takes several merges a day, so a
+daily sweep is already coarser than the thing it measures, while being fine
+enough that a regression is attributable to one day's merges instead of to
+however long it had been since someone remembered to run it. It also turns
+`history.tsv` into a real series rather than a handful of irregular points, which
+is what makes the KPI chart worth drawing (and retires this document's own note
+about index-vs-time spacing being needed for "operator-run and irregular"
+sweeps — the reason still holds for a dispatched run in between).
+
+D9's first consequence is therefore **retired**: the KPI no longer updates "only
+when someone runs it". Its second stands unchanged — this is still a
+*measurement*, not a gate, so PLAN.md §1 B1's "working-module regression CI"
+remains a separate, unstarted item. Nothing about a nightly sweep fails a build
+or blocks a merge; a red shard produces a warning, fewer records, and a refused
+history row.
+
+Three mechanics this required, each a place a scheduled run differs from a
+dispatched one:
+
+- **`inputs.*` are empty on a `schedule` event** — a `workflow_dispatch` default
+  does not apply — so every input is read as `inputs.x || <default>` and the two
+  booleans as `inputs.x || github.event_name == 'schedule'`. Without that the
+  nightly run would plan an empty scope. This is the trap for whoever adds the
+  next input.
+- **`concurrency: ecosystem-sweep` with `cancel-in-progress: false`** already
+  existed and now earns its keep: a dispatched sweep and the nightly one queue
+  instead of racing the same records, and a cancelled sweep would throw away
+  hours of measurement.
+- **A no-change night is silent.** `changed == 0` skips the rollup and opens no
+  pull request, so an unchanged corpus costs runner time and nothing else — no
+  empty PR, no history row.
+
+The cadence is a knob, not a principle: if the daily data PR or the runner time
+turns out not to pay for itself, the cron moves to weekly with no other change.
+What must not change quietly is the `scope: all` + all-shards-green condition on
+the history row, which is what keeps the series comparable.
 
 ## Consequences
 
