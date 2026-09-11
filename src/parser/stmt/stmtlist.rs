@@ -352,11 +352,21 @@ pub(crate) fn stmt_list_with_mode(
                     // statements here, so apply the same extraction — otherwise an
                     // `also is Parent` (a bare `is(also, Parent)` infix expression)
                     // would execute as a runtime "two terms in a row".
+                    // A grammar has an implicit `Grammar` parent when it has no
+                    // explicit `is` clause. `also is Parent` supplies that direct
+                    // parent in Raku; retaining both `Grammar` and a grammar that
+                    // already inherits it makes the C3 merge inconsistent.
+                    let has_implicit_grammar_parent = parents.len() == 1 && parents[0] == "Grammar";
+                    let mut replaced_implicit_grammar_parent = false;
                     tail_stmts.retain(|stmt| {
                         if class::stmt_is_also_is_rw(stmt) {
                             *class_is_rw = true;
                             false
                         } else if let Some(parent_name) = class::stmt_also_is_parent(stmt) {
+                            if has_implicit_grammar_parent && !replaced_implicit_grammar_parent {
+                                parents.clear();
+                                replaced_implicit_grammar_parent = true;
+                            }
                             parents.push(parent_name);
                             false
                         } else {
