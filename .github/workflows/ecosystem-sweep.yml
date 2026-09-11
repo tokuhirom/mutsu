@@ -343,21 +343,50 @@ jobs:
       # distribution name, so the collect job can merge every artifact into one
       # tree with no conflicts -- and an untouched record is never re-uploaded
       # from a stale checkout on top of a fresher measurement.
+      # `always()` on this step and the upload below: records are written per
+      # distribution as the sweep goes, so a Measure that dies half way through
+      # still produced real measurements. Discarding them is never the right
+      # call -- a partial set is exactly what `scope: stale` picks up next time,
+      # and the collect job already refuses a history row for an incomplete run.
       - name: Stage the changed records
         id: stage
+        if: always()
         run: |
           set -euo pipefail
           mkdir -p /tmp/eco-staging
-          git status --porcelain -- ecosystem | awk '{print $NF}' | sort -u > /tmp/eco-changed.txt
+          # `-uall` is load-bearing, not tidiness: plain `git status --porcelain`
+          # COLLAPSES a wholly-new directory into one entry (`?? ecosystem/dists/D/`),
+          # and a shard whose letter has never been measured creates exactly that.
+          # `cp --parents` then refuses the directory and the whole shard's
+          # measurement is lost -- which is precisely what happened to the first
+          # real run (`cp: -r not specified; omitting directory
+          # 'ecosystem/dists/D/'`, 128 distributions thrown away after 26 minutes).
+          # `-z` plus the 3-character status prefix keeps a path with a space or a
+          # non-ASCII character intact, which `awk '{print $NF}'` and git's default
+          # path quoting would each mangle.
+          git -c core.quotePath=false status --porcelain -uall -z -- ecosystem \
+            | tr '\0' '\n' | sed -n 's/^.\{3\}//p' | sort -u > /tmp/eco-changed.txt
           count=$(grep -c . /tmp/eco-changed.txt || true)
+          staged=0
           while IFS= read -r path; do
             [ -n "$path" ] || continue
-            cp --parents "$path" /tmp/eco-staging/
+            # Tolerant on purpose: one unexpected path must cost one record, not
+            # the whole shard. `set -e` here is what turned a single bad `cp`
+            # into 128 discarded measurements.
+            if cp --parents "$path" /tmp/eco-staging/ 2>/dev/null; then
+              staged=$((staged + 1))
+            else
+              echo "::warning title=could not stage a record::$path"
+            fi
           done < /tmp/eco-changed.txt
-          echo "changed=$count" >> "$GITHUB_OUTPUT"
-          echo "shard ${{ matrix.chunk.id }}: $count record file(s) changed"
+          echo "changed=$staged" >> "$GITHUB_OUTPUT"
+          if [ "$staged" != "$count" ]; then
+            echo "::warning title=staged fewer than changed::$staged of $count"
+          fi
+          echo "shard ${{ matrix.chunk.id }}: staged $staged of $count changed record file(s)"
 
       - name: Upload the records
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: eco-records-${{ matrix.chunk.id }}
@@ -417,7 +446,12 @@ jobs:
           if [ -d /tmp/incoming ] && [ -n "$(find /tmp/incoming -type f -print -quit)" ]; then
             cp -a /tmp/incoming/. .
           fi
-          git status --porcelain -- ecosystem | awk '{print $NF}' | sort -u > /tmp/changed.txt
+          # Same `-uall` requirement as the staging step above: a new shard
+          # directory would otherwise arrive as a single directory entry, which
+          # the `.json` filter in the provenance step drops -- leaving the
+          # records unattributed and silently vetoing the history row.
+          git -c core.quotePath=false status --porcelain -uall -z -- ecosystem \
+            | tr '\0' '\n' | sed -n 's/^.\{3\}//p' | sort -u > /tmp/changed.txt
           count=$(grep -c . /tmp/changed.txt || true)
           echo "changed=$count" >> "$GITHUB_OUTPUT"
           echo "$count record file(s) differ from main"
