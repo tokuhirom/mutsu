@@ -1,0 +1,15 @@
+{
+  "name": "ResDeep",
+  "description": "Fixture distribution whose four-segment module reads a resource",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "A::B::C::D": "lib/A/B/C/D.rakumod"
+  },
+  "resources": [
+    "hello.txt"
+  ],
+  "depends": [],
+  "license": "Artistic-2.0"
+}
