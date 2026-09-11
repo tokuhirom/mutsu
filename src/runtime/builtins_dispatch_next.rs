@@ -873,6 +873,10 @@ impl Interpreter {
                     {
                         res?
                     } else if let Some(res) =
+                        self.native_baggy_storage_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
                         self.native_any_base_next_candidate(override_args.as_deref())
                     {
                         res?
@@ -1241,6 +1245,9 @@ impl Interpreter {
                 self.multi_dispatch_stack.last().cloned()
         {
             let is_override = override_args.is_some();
+            // Kept for the native-base fallback at the exhaustion point below,
+            // which needs the override args after `call_args` consumes them.
+            let override_for_native = override_args.clone();
             let mut call_args = override_args.unwrap_or(orig_args);
             // nextsame/callsame+rw chaining (§D capstone): forward each scalar rw
             // param's CURRENT value (it was mutated by the first candidate's body
@@ -1293,6 +1300,28 @@ impl Interpreter {
                 // not occur in `candidates`, but `callsame` from a user
                 // `infix:<op>` must still reach them.
                 if let Some(result) = Self::native_infix_next_candidate(&_name, &call_args) {
+                    let result = result?;
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
+                // A `multi method` that overrides a native container
+                // protocol (`multi method ASSIGN-KEY` on an `is BagHash` /
+                // `is Hash` / `is Array` subclass, typically contributed by a
+                // role) has the native behavior on the instance's backing
+                // storage as its final candidate, exactly as the single-method
+                // path above does — without it the deferral answered Nil and
+                // the write was silently dropped.
+                let native_base = self
+                    .native_baggy_storage_next_candidate(override_for_native.as_deref())
+                    .or_else(|| {
+                        self.native_hash_storage_next_candidate(override_for_native.as_deref())
+                    })
+                    .or_else(|| {
+                        self.native_array_storage_next_candidate(override_for_native.as_deref())
+                    });
+                if let Some(result) = native_base {
                     let result = result?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
@@ -1526,8 +1555,42 @@ impl Interpreter {
             }
             return Ok(Value::NIL);
         }
-        // Method dispatch is not yet implemented for nextcallee — Nil, same as
-        // when there is no live dispatch context at all.
+        // Method dispatch: hand back the next candidate in the MRO deferral
+        // frame as a callable, the same way the multi branch below does for a
+        // multi's candidate list. `nextcallee` differs from `nextsame` in that
+        // the caller supplies the invocant explicitly (`nextone(self, $key)`),
+        // so the candidate is returned as a plain routine value.
+        if innermost == Some(DispatchFrameKind::Method) {
+            let method_name = self
+                .samewith_context_stack
+                .last()
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            if let Some(frame) = self.method_dispatch_stack.last_mut()
+                && let Some(DeferralEntry::Candidate { owner, def, .. }) =
+                    frame.remaining.first().cloned()
+            {
+                frame.remaining.remove(0);
+                return Ok(Value::make_sub_for_routine(
+                    owner,
+                    Symbol::intern(&method_name),
+                    def.params.to_vec(),
+                    def.param_defs.to_vec(),
+                    def.body.clone(),
+                    def.is_rw,
+                    self.env.clone(),
+                    None,
+                ));
+            }
+            // MRO exhausted: the native base candidate. For the subscript
+            // protocol on a container subclass that is an element `Proxy` —
+            // see `runtime::container_element_proxy` for why it must be one.
+            if let Some(base) = self.container_element_base_callee() {
+                return Ok(base);
+            }
+            return Ok(Value::NIL);
+        }
+        // No live dispatch context at all — Nil.
         if innermost != Some(DispatchFrameKind::Multi) {
             return Ok(Value::NIL);
         }
@@ -1549,6 +1612,12 @@ impl Interpreter {
             }
         }
         let Some(idx) = matched_idx else {
+            // A `multi method` whose candidate list is exhausted falls back to
+            // the same native base candidate the single-method branch above
+            // uses (`AccountableBagHash`'s `multi method AT-KEY`).
+            if let Some(base) = self.container_element_base_callee() {
+                return Ok(base);
+            }
             return Ok(Value::NIL);
         };
         let next_def = candidates[idx].clone();

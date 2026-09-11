@@ -1992,6 +1992,15 @@ impl Interpreter {
                     self.stack.push(result?);
                     return Ok(());
                 }
+                // The QuantHash twin — see `vm_baggy_subclass_delegate.rs`.
+                if !skip_native
+                    && let Some(result) =
+                        self.try_baggy_storage_delegate(&target, method_sym, &args)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
+                    self.stack.push(result?);
+                    return Ok(());
+                }
                 // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
                 // Certain mutating methods throw exceptions.
                 // This must be in the Interpreter path (not the interpreter's call_method_with_values)

@@ -643,6 +643,14 @@ impl Interpreter {
                     _ => val.clone(),
                 };
                 self.call_method_with_values(target, method, vec![idx_arg, val_arg])?;
+                // Drain the writes the callee made into the CALLER's lexicals —
+                // an `is rw` parameter, a `$CALLER::x` write, or (the case that
+                // exposed the gap) a resumed `CATCH` handler that ran inline at
+                // a `.throw` inside the ASSIGN-KEY body and set a flag in the
+                // installing frame. Every VM *call* opcode drains here; this
+                // subscript-assign site dispatches a method without one, so it
+                // owes the same drain.
+                self.apply_pending_rw_writeback(code);
                 // A `:=` bind of an immutable literal into a tied container
                 // (`%h<i> := 137` where %h does Associative) makes that element
                 // read-only, just like a plain hash element bind. The literal-ness
@@ -1069,6 +1077,14 @@ impl Interpreter {
             let delegate_args = [key_val, val.clone()];
             if let Some(result) =
                 self.try_hash_storage_delegate_mut(&var_name, &inst, method, &delegate_args)
+            {
+                self.stack.push(result?);
+                return Ok(());
+            }
+            // The QuantHash twin — `%b<a> = 5` on an `is BagHash` subclass
+            // instance writes the weight into the backing `__baggy_data__`.
+            if let Some(result) =
+                self.try_baggy_storage_delegate_mut(&var_name, &inst, method, &delegate_args)
             {
                 self.stack.push(result?);
                 return Ok(());

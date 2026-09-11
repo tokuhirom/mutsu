@@ -676,6 +676,33 @@ impl Interpreter {
                 .push(if return_new { new_val } else { effective });
             return Ok(());
         }
+        // `%h<a>++` where the class declares its own `AT-KEY`: Raku's postfix
+        // `++` operates on the CONTAINER that `AT-KEY` hands back, so an
+        // override that returns a `Proxy` (the documented QuantHash-subclass
+        // idiom — see `runtime::container_element_proxy`) must have its FETCH
+        // and STORE run, not be treated as an opaque value. Without this the
+        // Proxy object itself was stored as the element's new weight.
+        if let Some(cont) = container.clone()
+            && let ValueView::Instance { class_name, .. } = cont.view()
+            && self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
+        {
+            let key_arg = Value::str(key.clone());
+            let element = self.try_compiled_method_or_interpret(cont, "AT-KEY", vec![key_arg])?;
+            if element.is_proxy_value() {
+                let old = self.auto_fetch_proxy(&element)?;
+                let effective = Self::normalize_incdec_source(old);
+                let new_val = if increment {
+                    self.increment_value_smart(&effective)?
+                } else {
+                    self.decrement_value_smart(&effective)?
+                };
+                self.assign_proxy_lvalue(element, new_val.clone())?;
+                self.apply_pending_rw_writeback(code);
+                self.stack
+                    .push(if return_new { new_val } else { effective });
+                return Ok(());
+            }
+        }
         // `$h<a>++` / `$h<a>--` on an `is Hash`/`is Map` subclass instance held
         // in a scalar: inc/dec the value at the backing `__mutsu_hash_storage`
         // key in place, mirroring the Array-storage block above.

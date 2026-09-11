@@ -525,6 +525,18 @@ impl Interpreter {
         class_name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A concrete QuantHash base in the MRO decides both the element
+        // semantics and the mutability of the backing store: `class C is
+        // BagHash` must be backed by a MUTABLE bag so `%c<a> = 5` works, while
+        // `class C is Bag` keeps the immutable one and still raises. Only a
+        // class that composes the bare `Baggy`/`Setty` role (no concrete base)
+        // falls back to the immutable default.
+        if let Some(base) = self.quanthash_base_kind(class_name) {
+            let storage = self.quanthash_base_storage(base, args.to_vec())?;
+            let mut attrs = HashMap::new();
+            attrs.insert("__baggy_data__".to_string(), storage);
+            return Ok(Value::make_instance(Symbol::intern(class_name), attrs));
+        }
         let is_setty = self.class_is_setty(class_name);
 
         if is_setty {

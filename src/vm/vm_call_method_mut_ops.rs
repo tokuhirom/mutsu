@@ -2867,6 +2867,15 @@ impl Interpreter {
                 // `vm_hash_subclass_delegate.rs` for why this reuses the
                 // existing native Hash dispatch (via a synthetic env binding)
                 // instead of hand-written Rust mutators.
+                // QuantHash-subclass instance delegation (mut path): the
+                // `Set`/`Bag`/`Mix` twin, see `vm_baggy_subclass_delegate.rs`.
+                if let Some(result) =
+                    self.try_baggy_storage_delegate_mut(target_name, &target, method, &args)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+                    self.stack.push(result?);
+                    return Ok(());
+                }
                 if let Some(result) =
                     self.try_hash_storage_delegate_mut(target_name, &target, method, &args)
                 {

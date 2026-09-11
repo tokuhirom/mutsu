@@ -192,6 +192,29 @@ impl Interpreter {
         if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
+        // A QuantHash (`is BagHash`/`is Set`/...) subclass renders under its own
+        // type name: `ABH(a(2) b)` for `.gist`, `("a"=>2).ABH` for `.raku` —
+        // see `runtime/quanthash_subclass.rs`.
+        if let Some(storage) = attributes.as_map().get("__baggy_data__").cloned() {
+            let class_key = class_name.resolve();
+            let name = crate::value::user_facing_type_name(&class_key).to_string();
+            if method == "gist" {
+                return Some(Ok(Value::str(
+                    crate::runtime::utils::setbagmix_gist_named(&storage, Some(&name))
+                        .unwrap_or_else(|| crate::runtime::utils::gist_value(&storage)),
+                )));
+            }
+            let inner = self.call_method_with_values(storage, "raku", vec![]);
+            return Some(inner.map(|v| {
+                let text = v.to_string_value();
+                // The storage's own `.raku` ends in the builtin coercer
+                // (`("a"=>2).BagHash`); swap in the subclass's name.
+                match text.rfind('.') {
+                    Some(dot) => Value::str(format!("{}.{}", &text[..dot], name)),
+                    None => Value::str(text),
+                }
+            }));
+        }
         if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
             let which = attributes
                 .as_map()
