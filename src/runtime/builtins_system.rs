@@ -105,6 +105,33 @@ where
     })
 }
 
+/// Split a finished child's `ExitStatus` into rakudo's `(exitcode, signal)`
+/// pair.
+///
+/// A process killed by a signal has no exit status at all — `waitpid` reports
+/// it as signalled, not exited, and Rust's `ExitStatus::code()` is `None`
+/// there. Rakudo derives both numbers from the raw wait status (`exitcode` is
+/// the high byte, `signal` the low one), so a signal death reports
+/// `exitcode = 0` and carries the information in `.signal`; only a genuine
+/// non-zero exit reports a non-zero `exitcode`. Reporting `-1` for a signal
+/// death instead (what `code().unwrap_or(-1)` gives) made `.exitcode` wrong
+/// for every killed process (#7924).
+pub(crate) fn exit_status_parts(status: &std::process::ExitStatus) -> (i64, i64) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        let signal = status.signal().unwrap_or(0) as i64;
+        // `code()` is `None` exactly when the child was signalled; rakudo
+        // reports 0 there rather than a synthetic failure code.
+        let exitcode = status.code().unwrap_or(if signal != 0 { 0 } else { -1 }) as i64;
+        (exitcode, signal)
+    }
+    #[cfg(not(unix))]
+    {
+        (status.code().unwrap_or(-1) as i64, 0i64)
+    }
+}
+
 /// State for a live child process (when `:in` is used with `run`).
 pub(super) struct LiveProcState {
     pub(super) child: std::process::Child,

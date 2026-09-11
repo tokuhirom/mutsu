@@ -252,14 +252,7 @@ impl Interpreter {
                 };
                 match child.wait() {
                     Ok(status) => {
-                        let exitcode = status.code().unwrap_or(-1) as i64;
-                        #[cfg(unix)]
-                        let signal = {
-                            use std::os::unix::process::ExitStatusExt;
-                            status.signal().unwrap_or(0) as i64
-                        };
-                        #[cfg(not(unix))]
-                        let signal = 0i64;
+                        let (exitcode, signal) = super::builtins_system::exit_status_parts(&status);
                         Ok(Self::make_proc_instance_bin(
                             exitcode,
                             signal,
@@ -338,14 +331,8 @@ impl Interpreter {
                             };
                             return match child.wait() {
                                 Ok(status) => {
-                                    let exitcode = status.code().unwrap_or(-1) as i64;
-                                    #[cfg(unix)]
-                                    let signal = {
-                                        use std::os::unix::process::ExitStatusExt;
-                                        status.signal().unwrap_or(0) as i64
-                                    };
-                                    #[cfg(not(unix))]
-                                    let signal = 0i64;
+                                    let (exitcode, signal) =
+                                        super::builtins_system::exit_status_parts(&status);
                                     Ok(Self::make_proc_instance(
                                         exitcode,
                                         signal,
@@ -482,14 +469,7 @@ impl Interpreter {
                 };
                 match child.wait() {
                     Ok(status) => {
-                        let exitcode = status.code().unwrap_or(-1) as i64;
-                        #[cfg(unix)]
-                        let signal = {
-                            use std::os::unix::process::ExitStatusExt;
-                            status.signal().unwrap_or(0) as i64
-                        };
-                        #[cfg(not(unix))]
-                        let signal = 0i64;
+                        let (exitcode, signal) = super::builtins_system::exit_status_parts(&status);
                         Ok(Self::make_proc_instance(
                             exitcode,
                             signal,

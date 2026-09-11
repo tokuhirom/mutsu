@@ -54,10 +54,16 @@ impl Interpreter {
         if let Some(v) = new_attrs.as_map().get("exitcode") {
             updated.insert("exitcode".to_string(), v.clone());
         }
+        let signal = match new_attrs.as_map().get("signal").map(Value::view) {
+            Some(ValueView::Int(s)) => s,
+            _ => 0,
+        };
         if let Some(v) = new_attrs.as_map().get("signal") {
             updated.insert("signal".to_string(), v.clone());
         }
-        Ok((Value::truth(exitcode == 0), updated))
+        // `.spawn`/`.run` return whether the child succeeded; a signal-killed
+        // child reports `exitcode = 0`, so the signal decides there.
+        Ok((Value::truth(exitcode == 0 && signal == 0), updated))
     }
 
     // --- Proc::Async immutable ---
@@ -227,17 +233,7 @@ impl Interpreter {
                     None
                 };
                 let (exitcode, signal): (i64, i64) = match state.child.wait() {
-                    Ok(status) => {
-                        let exitcode = status.code().unwrap_or(-1) as i64;
-                        #[cfg(unix)]
-                        let signal = {
-                            use std::os::unix::process::ExitStatusExt;
-                            status.signal().unwrap_or(0) as i64
-                        };
-                        #[cfg(not(unix))]
-                        let signal = 0i64;
-                        (exitcode, signal)
-                    }
+                    Ok(status) => super::super::builtins_system::exit_status_parts(&status),
                     Err(_) => (-1i64, 0i64),
                 };
                 // Cache the finalized results
@@ -320,7 +316,13 @@ impl Interpreter {
                     Some(ValueView::Int(c)) => c,
                     _ => -1,
                 };
-                Value::truth(exitcode == 0)
+                // A signal-killed child reports `exitcode = 0`, so the signal
+                // has to be consulted too (rakudo: `$!exitcode == 0 && $!signal == 0`).
+                let signal = match attributes.get("signal").map(Value::view) {
+                    Some(ValueView::Int(s)) => s,
+                    _ => 0,
+                };
+                Value::truth(exitcode == 0 && signal == 0)
             }
             _ => Value::NIL,
         }

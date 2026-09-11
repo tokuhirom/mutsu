@@ -868,24 +868,10 @@ impl Interpreter {
 
                     // Wait for child to exit (quiescent for the GC's STW)
                     let status = crate::gc::block_quiescent(|| child.wait());
-                    let exit_code = status
+                    let (exit_code, signal) = status
                         .as_ref()
-                        .map(|s| s.code().unwrap_or(-1))
-                        .unwrap_or(-1) as i64;
-                    let signal = {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::process::ExitStatusExt;
-                            status
-                                .as_ref()
-                                .map(|s| s.signal().unwrap_or(0))
-                                .unwrap_or(0) as i64
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            0i64
-                        }
-                    };
+                        .map(super::builtins_system::exit_status_parts)
+                        .unwrap_or((-1, 0));
 
                     // Join reader threads and collect output
                     let collected_stdout = stdout_handle
