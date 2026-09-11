@@ -6,7 +6,7 @@ use Test;
 # into the Lookaround), inverting `<![...]>` into a positive lookahead.
 # (raku-doc Language/regexes.rakudoc)
 
-plan 10;
+plan 12;
 
 # <?[...]>  positive lookahead of the class
 is ("3x" ~~ /<?[0..9]>\w/).Str, "3",   '<?[0..9]> matches before a digit';
@@ -28,3 +28,9 @@ nok ("ax" ~~ /<!-[0..9]>\w/),          '<!-[0..9]> fails before a non-digit';
 my regex key {^^ <![#-]> \d+ }
 is ("333" ~~ &key).Str, "333",         '<![#-]> after ^^ inside a named regex';
 nok ("#333" ~~ &key),                  '<![#-]> rejects a leading # at line start';
+
+# A negated lookahead must preserve a compound class as one inner assertion.
+is ("bb" ~~ /<![a] - [b]> ./).Str, "b",
+    '<![a] - [b]> matches a subtracted character';
+nok ("aa" ~~ /<![a] - [b]> ./),
+    '<![a] - [b]> rejects a character remaining in the class';

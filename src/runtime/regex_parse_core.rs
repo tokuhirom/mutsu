@@ -2244,27 +2244,43 @@ impl Interpreter {
                                     cc_content.push(ch);
                                 }
                             }
-                            // Parse the character class content (e.g., [a], -[a], [\n])
+                            // Parse the character class content (e.g., [a], -[a], [\n]).
+                            // Compound bracket classes must stay as CompositeClass atoms:
+                            // stripping only the outer brackets would turn `[a] - [b]` into
+                            // ordinary class text and lose the set subtraction before the
+                            // Lookaround matcher can apply its outer negation.
                             let cc_trimmed = cc_content.trim();
-                            let (cc_negated, cc_inner) =
-                                if let Some(rest) = cc_trimmed.strip_prefix("-[") {
-                                    (true, rest.strip_suffix(']').unwrap_or(rest))
-                                } else if let Some(rest) = cc_trimmed.strip_prefix('[') {
-                                    (false, rest.strip_suffix(']').unwrap_or(rest))
-                                } else {
-                                    (false, cc_trimmed)
-                                };
+                            let inner_atom = if (cc_trimmed.starts_with('[')
+                                || cc_trimmed.starts_with("-[")
+                                || cc_trimmed.starts_with("+["))
+                                && cc_trimmed.ends_with(']')
+                            {
+                                self.parse_bracket_char_class(cc_trimmed)
+                            } else if cc_trimmed.starts_with('[')
+                                || cc_trimmed.starts_with("-[")
+                                || cc_trimmed.starts_with("+[")
+                            {
+                                self.parse_combined_class(cc_trimmed, mode)
+                            } else {
+                                let (cc_negated, cc_inner) =
+                                    if let Some(rest) = cc_trimmed.strip_prefix("-[") {
+                                        (true, rest.strip_suffix(']').unwrap_or(rest))
+                                    } else if let Some(rest) = cc_trimmed.strip_prefix('[') {
+                                        (false, rest.strip_suffix(']').unwrap_or(rest))
+                                    } else {
+                                        (false, cc_trimmed)
+                                    };
+                                self.parse_raku_char_class(cc_inner, cc_negated)
+                                    .map(RegexAtom::CharClass)
+                            };
                             // The outer `?`/`!` negation is carried by the
-                            // Lookaround's `negated` flag below; the char class
-                            // itself only reflects an inner `-[...]`. Folding
-                            // `negated` into the class here too (`!cc_negated`)
-                            // double-negated `<![...]>`, inverting it into a
-                            // positive lookahead.
-                            if let Some(class) = self.parse_raku_char_class(cc_inner, cc_negated) {
+                            // Lookaround's `negated` flag below; the inner atom
+                            // only reflects an explicitly negated class form.
+                            if let Some(inner_atom) = inner_atom {
                                 // Build a lookahead with the char class as the inner pattern
                                 let inner_pattern = RegexPattern {
                                     tokens: vec![RegexToken {
-                                        atom: RegexAtom::CharClass(class),
+                                        atom: inner_atom,
                                         quant: RegexQuant::One,
                                         named_capture: None,
                                         hash_capture: None,

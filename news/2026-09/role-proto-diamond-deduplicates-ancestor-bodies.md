@@ -9,7 +9,7 @@ Ancestor role bodies now use the same `(composing type, role)` composition memo
 as direct role bodies. This keeps candidates contributed by the ancestor and
 child roles available while preserving genuine redeclaration errors within one
 body. The regression coverage is in
-`t/grammar/role-proto-diamond.t` and
-`t/oo/role-proto-diamond-class.t`.
+`t/oo/role/role-proto-diamond.t` and
+`t/oo/role/role-proto-diamond-class.t`.
 
 Fixes [#7901](https://github.com/tokuhirom/mutsu/issues/7901).
