@@ -633,7 +633,7 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
 /// grammar. mutsu reuses the ADR-0026 activation machinery for the same effect:
 /// the module is loaded in the activation sub-interpreter, its
 /// `$*LANG.define_slang` registration hands back the role's token/mapping
-/// overrides, and those become this parse's [`L10nVocabulary`]. The vocabulary
+/// overrides, and those become this parse's L10N vocabulary. The vocabulary
 /// is preseeded rather than merely set, because `parse_source` resets the
 /// unit's parser state on the way in.
 ///

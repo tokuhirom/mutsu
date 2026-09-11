@@ -244,18 +244,22 @@ impl Interpreter {
 /// flat list of string literals, alternating localized spelling and canonical
 /// Raku name. A declaration that is not exactly that yields `None` rather than
 /// a half-read map.
+///
+/// `constant` is not required: the generators have shipped both `my constant
+/// %mapping = ...` (`L10N::JA` 0.0.3) and a plain `my %mapping = ...`
+/// (`L10N::TLH` 0.0.3). The name inside a `<category>2ast` method is what
+/// identifies the map.
 fn constant_mapping_pairs(body: &[crate::ast::Stmt]) -> Option<Vec<(String, String)>> {
     for stmt in body {
         let crate::ast::Stmt::VarDecl {
             name,
             expr: crate::ast::Expr::ArrayLiteral(items),
-            custom_traits,
             ..
         } = stmt
         else {
             continue;
         };
-        if name != "%mapping" || !custom_traits.iter().any(|(t, _)| t == "__constant") {
+        if name != "%mapping" {
             continue;
         }
         if items.len() % 2 != 0 {
@@ -347,5 +351,40 @@ mod tests {
         let name =
             crate::gc::block_quiescent(|| handle.join()).expect("activation thread panicked");
         assert_eq!(name.as_deref(), Some(ACTIVATION_THREAD_NAME));
+    }
+
+    fn mapping_of(source: &str) -> Option<Vec<(String, String)>> {
+        let (stmts, _) = crate::parser::parse_program(source).expect("fixture must parse");
+        constant_mapping_pairs(&stmts)
+    }
+
+    /// The L10N generators have shipped the `<category>2ast` translation map in
+    /// two spellings: `my constant %mapping = ...` (`L10N::JA` 0.0.3) and a
+    /// plain `my %mapping = ...` (`L10N::TLH` 0.0.3). Reading only the first
+    /// left `jatlh` (Klingon for `say`) untranslated and `L10N::TLH` red while
+    /// its eleven sibling languages were green.
+    #[test]
+    fn both_spellings_of_the_generated_mapping_are_read() {
+        let expected = Some(vec![
+            ("jatlh".to_string(), "say".to_string()),
+            ("Hoch".to_string(), "elems".to_string()),
+        ]);
+        assert_eq!(
+            mapping_of(r#"my constant %mapping = "jatlh", "say", "Hoch", "elems";"#),
+            expected
+        );
+        assert_eq!(
+            mapping_of(r#"my %mapping = "jatlh", "say", "Hoch", "elems";"#),
+            expected
+        );
+    }
+
+    /// A map mutsu cannot read exactly yields nothing, rather than a
+    /// half-translated vocabulary that would mis-resolve names.
+    #[test]
+    fn a_mapping_that_is_not_a_flat_string_list_is_refused() {
+        assert_eq!(mapping_of(r#"my %mapping = "jatlh", "say", "odd";"#), None);
+        assert_eq!(mapping_of(r#"my %mapping = "jatlh", 42;"#), None);
+        assert_eq!(mapping_of(r#"my %other = "jatlh", "say";"#), None);
     }
 }
