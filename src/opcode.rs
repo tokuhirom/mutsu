@@ -2809,6 +2809,44 @@ mod const_pool_dedup {
     }
 
     #[test]
+    fn const_sym_agrees_with_intern_whether_or_not_the_chunk_finalized() {
+        let mut code = CompiledCode::new();
+        let a = code.add_constant(Value::str("fib".to_string()));
+        let b = code.add_constant(Value::str("$n".to_string()));
+
+        // Before finalize the table is empty, so `const_sym` falls back to
+        // interning directly -- a hand-built chunk must still resolve.
+        assert!(code.const_syms.is_empty());
+        assert_eq!(code.const_sym(a), Symbol::intern("fib"));
+        assert_eq!(code.const_sym(b), Symbol::intern("$n"));
+
+        // After finalize the same answers come out of the eager table.
+        code.compute_needs_env_sync();
+        assert_eq!(code.const_syms.len(), code.constants.len());
+        assert_eq!(code.const_sym(a), Symbol::intern("fib"));
+        assert_eq!(code.const_sym(b), Symbol::intern("$n"));
+
+        // A constant appended after finalize is past the table's end and takes
+        // the fallback again.
+        let c = code.add_constant(Value::str("late".to_string()));
+        assert!(c as usize >= code.const_syms.len());
+        assert_eq!(code.const_sym(c), Symbol::intern("late"));
+    }
+
+    #[test]
+    fn finalize_leaves_non_string_constant_slots_unresolved() {
+        let mut code = CompiledCode::new();
+        let n = code.add_constant(Value::int(7));
+        let s = code.add_constant(Value::str("name".to_string()));
+        code.compute_needs_env_sync();
+        // `const_sym` is only ever called on a name slot; a non-string slot
+        // stays `None` so it keeps falling through to the assertion rather than
+        // handing out a bogus symbol.
+        assert_eq!(code.const_syms[n as usize], None);
+        assert_eq!(code.const_syms[s as usize], Some(Symbol::intern("name")));
+    }
+
+    #[test]
     fn env_consumers_publish_only_their_selected_slots() {
         let mut code = CompiledCode::new();
         code.locals.push("x".to_string());
