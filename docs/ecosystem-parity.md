@@ -9,6 +9,11 @@ sides, and publish the difference.
   one file per distribution, the sandbox and environment contract). Read it
   before changing the method; this file is the *how*.
 - **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
+- **Acting on a record**: this file measures; taking one distribution from red
+  to green is
+  [`.agents/skills/ecosystem-dist-fix/SKILL.md`](../.agents/skills/ecosystem-dist-fix/SKILL.md),
+  which consumes §1-§3 below and adds the per-distribution debugging loop and the
+  fix-versus-file-an-issue rule.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
   [BATTERIES.md](../BATTERIES.md) / `scripts/battery-testsuite.sh` is the

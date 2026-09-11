@@ -81,6 +81,13 @@ locally-measured one.
 Full runbook, and what the workflow refuses to do:
 [docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
 
+## Fixing one
+
+Turning a red record green — check the distribution out, run both sides file by
+file, fix the interpreter where the gap is bounded and file an issue where it
+needs a complex feature — is the
+[`ecosystem-dist-fix`](../.agents/skills/ecosystem-dist-fix/SKILL.md) skill.
+
 ## Current state — a partial sweep, not the corpus
 
 **The corpus sweep (P2) is in progress and these records cover only part of it.**
