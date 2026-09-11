@@ -389,7 +389,7 @@ impl Interpreter {
         let global_prefix = format!("GLOBAL::{}/", name);
         let bare_prefix = format!("{}/", name);
         let mut seen_sigs = std::collections::HashSet::new();
-        for (key, def) in &self.registry().functions {
+        for (key, def) in self.registry().functions.iter() {
             let ks = key.resolve();
             if !ks.starts_with(&local_prefix)
                 && !ks.starts_with(&global_prefix)

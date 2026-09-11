@@ -172,7 +172,7 @@ impl Interpreter {
         let prefix_global = format!("GLOBAL::{name}/");
         let mut candidates = Vec::new();
         let registry = self.registry();
-        for (key, def) in &registry.functions {
+        for (key, def) in registry.functions.iter() {
             let key_s = key.resolve();
             if key_s == exact_local
                 || key_s == exact_global

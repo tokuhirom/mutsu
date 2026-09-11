@@ -101,7 +101,7 @@ impl Interpreter {
             if self.prelude_sub_names.contains(&name_sym) {
                 continue;
             }
-            let Some(def) = self.registry_mut().functions.remove(&key) else {
+            let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
                 continue;
             };
             secluded.push((name_sym, def));

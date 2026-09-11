@@ -883,7 +883,7 @@ impl Interpreter {
             }
         }
 
-        for (key, def) in &self.registry().functions {
+        for (key, def) in self.registry().functions.iter() {
             let key_s = key.resolve();
             // A top-level sub's registry key is always package-qualified
             // (`GLOBAL::name`), including at the root -- unlike a named
@@ -934,7 +934,7 @@ impl Interpreter {
         // empty stash and `::('M::&f')` was a Failure. Its candidates are not
         // stash members in Rakudo either (a bare `multi` is lexical); the proto
         // is the one visible name, and it is visible exactly when it is `our`.
-        for (key, def) in &self.registry().proto_functions {
+        for (key, def) in self.registry().proto_functions.iter() {
             let key_s = key.resolve();
             // Same GLOBAL self-qualification stripping as the `functions` loop
             // above -- a proto's registry key is `GLOBAL::name` at the root

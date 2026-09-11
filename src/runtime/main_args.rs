@@ -235,7 +235,7 @@ impl Interpreter {
             }
             p
         };
-        for (key, def) in &self.registry().functions {
+        for (key, def) in self.registry().functions.iter() {
             let ks = key.resolve();
             if prefixes.iter().any(|prefix| ks.starts_with(prefix)) {
                 let fp = def.body_fingerprint();

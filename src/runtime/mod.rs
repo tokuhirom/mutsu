@@ -1843,6 +1843,16 @@ pub(crate) fn cow_table_mut<T: Clone>(table: &mut std::sync::Arc<T>) -> &mut T {
 /// its declarations do not leak back to the parent. Only the *timing* of the
 /// copy moved -- from every spawn, to the first write after a spawn.
 ///
+/// The same share has a second holder, for the same reason: a **scope snapshot**
+/// taken to make a declaration lexical. `snapshot_routine_registry` (every
+/// routine declaring inner `my sub`s) and `eval_block_value_inner` (every
+/// carrier block) save the registry's routine tables on entry and restore them
+/// on exit, and those three tables -- `Registry::functions`,
+/// `Registry::proto_functions`, `Registry::proto_subs` -- are in this group
+/// too. The reasoning carries over unchanged: the snapshot is refcount bumps,
+/// the copy happens on the scope's first declaration, and the overwhelmingly
+/// common scope that declares nothing never copies at all (#7887).
+///
 /// When adding a field here, put it in this group if it is a program-global
 /// table that is written during declaration/module loading and read everywhere
 /// else. Do NOT if it is per-call or per-frame state that a hot path mutates:
@@ -4191,10 +4201,12 @@ pub(crate) fn eval_unit_parent(unit: Symbol) -> Option<Symbol> {
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
-    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
-    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
+    // The three copy-on-write registry tables: an `Arc` bump each, not a copy
+    // (see `Registry::functions`).
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
+    Arc<rustc_hash::FxHashSet<String>>,
     rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
-    rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot

@@ -204,7 +204,7 @@ impl Interpreter {
     fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
         let def = std::sync::Arc::new(def);
         let mut registry = self.registry_mut();
-        let funcs = &mut registry.functions;
+        let funcs = registry.functions_mut();
         if let std::collections::hash_map::Entry::Vacant(entry) =
             funcs.entry(Symbol::intern(base_key))
         {
@@ -889,7 +889,9 @@ impl Interpreter {
                     .filter(|(fp, _)| *fp == site_fp)
                     .map(|(_, arc)| arc.clone())
             {
-                self.registry_mut().functions.insert(fq_sym, cached.clone());
+                self.registry_mut()
+                    .functions_mut()
+                    .insert(fq_sym, cached.clone());
                 // Invalidate name-keyed resolution caches.
                 self.fn_resolve_gen += 1;
                 self.registered_fn_fingerprints
@@ -1158,7 +1160,7 @@ impl Interpreter {
             if same
                 && new_def.compiled.is_some()
                 && existing.compiled.is_none()
-                && let Some(slot) = self.registry_mut().functions.get_mut(&single_key_sym)
+                && let Some(slot) = self.registry_mut().functions_mut().get_mut(&single_key_sym)
             {
                 std::sync::Arc::make_mut(slot)
                     .compiled
@@ -1287,7 +1289,7 @@ impl Interpreter {
         if !multi && allow_lexical_shadow && !is_our_scoped {
             let lexical_single = format!("{}::{}", self.current_package(), name);
             let lexical_multi_prefix = format!("{}::{}/", self.current_package(), name);
-            self.registry_mut().functions.retain(|key, _| {
+            self.registry_mut().functions_mut().retain(|key, _| {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
@@ -1303,7 +1305,7 @@ impl Interpreter {
         // alone.
         if multi && allow_lexical_shadow && !is_our_scoped && has_single && !has_proto {
             let lexical_single = Symbol::intern(&format!("{}::{}", self.current_package(), name));
-            self.registry_mut().functions.remove(&lexical_single);
+            self.registry_mut().functions_mut().remove(&lexical_single);
             self.fn_resolve_gen += 1;
         }
         if let Some(assoc) = associativity {
@@ -1361,7 +1363,7 @@ impl Interpreter {
                     self.insert_multi_overload(&fq, def.clone());
                 } else {
                     self.registry_mut()
-                        .functions
+                        .functions_mut()
                         .entry(Symbol::intern(&fq))
                         .or_insert(std::sync::Arc::new(def.clone()));
                 }
@@ -1403,7 +1405,7 @@ impl Interpreter {
             } else {
                 self.registered_fn_fingerprints.remove(&fq_sym);
             }
-            self.registry_mut().functions.insert(fq_sym, arc);
+            self.registry_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
         }
@@ -1891,10 +1893,12 @@ impl Interpreter {
             .env
             .keys()
             .any(|marker| marker.resolve().starts_with(&inline_marker_prefix));
-        self.registry_mut().functions.retain(|existing, _def| {
-            let resolved = existing.resolve();
-            resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers)
-        });
+        self.registry_mut()
+            .functions_mut()
+            .retain(|existing, _def| {
+                let resolved = existing.resolve();
+                resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers)
+            });
         // Invalidate name-keyed resolution caches.
         self.fn_resolve_gen += 1;
         self.registry_mut().proto_subs_insert(key);
@@ -1910,7 +1914,7 @@ impl Interpreter {
         if proto_empty_sig {
             self.empty_sig_proto_names.insert(Symbol::intern(name));
         }
-        self.registry_mut().proto_functions.insert(
+        self.registry_mut().proto_functions_mut().insert(
             Symbol::intern(&fq),
             std::sync::Arc::new(FunctionDef {
                 is_cached: false,
@@ -1975,7 +1979,7 @@ impl Interpreter {
         if proto_empty_sig {
             self.empty_sig_proto_names.insert(Symbol::intern(name));
         }
-        self.registry_mut().proto_functions.insert(
+        self.registry_mut().proto_functions_mut().insert(
             Symbol::intern(&key),
             std::sync::Arc::new(FunctionDef {
                 is_cached: false,

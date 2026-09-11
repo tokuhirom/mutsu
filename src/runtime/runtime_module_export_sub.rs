@@ -155,7 +155,7 @@ impl Interpreter {
     /// GLOBAL, so the key is `GLOBAL::EXPORT`; be liberal in case a package
     /// prefix was used) so it does not leak into the caller as `EXPORT()`.
     fn remove_export_routine(&mut self) {
-        self.registry_mut().functions.retain(|key, _| {
+        self.registry_mut().functions_mut().retain(|key, _| {
             let ks = key.resolve();
             ks != "EXPORT" && !ks.ends_with("::EXPORT")
         });
