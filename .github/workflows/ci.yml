@@ -676,7 +676,10 @@ jobs:
       - name: Install Playwright
         run: |
           npm install playwright
-          npx playwright install --with-deps chromium
+          # `--with-deps` is the only apt consumer in this job and can hang
+          # when the Ubuntu mirror stalls; ubuntu-latest already ships the
+          # shared libraries Chromium needs.
+          npx playwright install chromium
 
       - name: Run E2E tests
         run: node site/e2e.test.mjs
