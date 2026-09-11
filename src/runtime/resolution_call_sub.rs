@@ -868,6 +868,20 @@ impl Interpreter {
                     .cloned()
                     .collect(),
             );
+            // Tell the fresh-compiler body path which parameters are sigilless
+            // (`\\attr`) so a nested closure captures them by name instead of
+            // compiling a bare reference as a bareword. The compiled closure
+            // path already carries this context in its nested code; this is
+            // needed only by the interpreter-path carrier, which recompiles
+            // the body from its AST.
+            let saved_eval_sigilless = std::mem::replace(
+                &mut self.pending_eval_sigilless,
+                data.param_defs
+                    .iter()
+                    .filter(|pd| pd.sigilless && !pd.name.is_empty())
+                    .map(|pd| pd.name.clone())
+                    .collect(),
+            );
             // Package-scoped name resolution: run the body under the closure's
             // declaring package so nested-class short names and `our`-vars
             // resolve when the Sub value is invoked from a foreign frame —
@@ -961,6 +975,7 @@ impl Interpreter {
                 self.set_current_package(p);
             }
             self.pending_eval_placeholder_params = saved_eval_placeholders;
+            self.pending_eval_sigilless = saved_eval_sigilless;
             self.frame_authoritative = saved_frame_auth;
             self.frame_owned = saved_frame_owned;
             let result = match body_result {
