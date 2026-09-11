@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 4,
-        "secs": 13.33,
+        "secs": 9.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.27,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.94,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.28,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.82,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.43,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.3,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.13,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 1.65,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.33,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 12,
-        "secs": 0.92,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -161,7 +161,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.07,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +183,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

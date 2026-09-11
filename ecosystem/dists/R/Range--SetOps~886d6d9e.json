@@ -1,0 +1,154 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Range::SetOps",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-elem.t",
+      "raku": {
+        "nok": 0,
+        "ok": 360,
+        "plan": 360,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "ok 2018-01-01..2018-12-31 (<=) 2018-01-01..2018-12-31",
+        "nok": 16,
+        "ok": 212,
+        "plan": 228,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-subset.t",
+      "raku": {
+        "nok": 0,
+        "ok": 228,
+        "plan": 228,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "1..4 (|) 3..6 => Set.new(1..6) but got Set.new(1..4,3..6)",
+        "nok": 63,
+        "ok": 16,
+        "plan": 79,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-union.t",
+      "raku": {
+        "nok": 0,
+        "ok": 79,
+        "plan": 79,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "[(&)] [[1..5, 3..10],] == Set.new(3..5)",
+        "nok": 26,
+        "ok": 0,
+        "plan": 26,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-intersection.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Range::SetOps": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AN/RANGE_SETOPS/3d7eb71b39285e4ce6c3a33349cdb40e04b62c5b.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 694,
+    "baseline_files": 5,
+    "mutsu_assertions": 229,
+    "parity_files": 1,
+    "regressed_files": 4
+  },
+  "version": "0.0.4"
+}

@@ -13,11 +13,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller json-eqv(Nil, Hash:D); none of these signatures matches",
+        "first_failure": "Cannot resolve caller json-eqv(Hash:D); none of these signatures matches",
         "nok": 0,
         "ok": 32,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 733,
         "plan": 733,
-        "secs": 16.86,
+        "secs": 17.1,
         "skip": 5,
         "todo": 0,
         "verdict": "pass"
@@ -36,11 +36,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%a'; expected Associative but got Nil (Nil)",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@a'; expected Positional but got Nil (Nil)",
         "nok": 1,
-        "ok": 1,
+        "ok": 19,
         "plan": null,
-        "secs": 0.35,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -63,7 +63,7 @@
         "nok": 1,
         "ok": 1,
         "plan": null,
-        "secs": 0.32,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 1.34,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 2,
         "ok": 2,
         "plan": null,
-        "secs": 0.4,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 1.06,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +109,7 @@
         "nok": 4,
         "ok": 0,
         "plan": null,
-        "secs": 1.84,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +119,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.85,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,10 +129,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "css3 term: 70deg",
-        "nok": 19,
-        "ok": 90,
+        "nok": 12,
+        "ok": 97,
         "plan": 109,
-        "secs": 0.37,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -142,7 +142,7 @@
         "nok": 0,
         "ok": 109,
         "plan": 109,
-        "secs": 1.53,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -164,7 +164,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -179,7 +179,7 @@
   "totals": {
     "baseline_assertions": 1056,
     "baseline_files": 6,
-    "mutsu_assertions": 126,
+    "mutsu_assertions": 151,
     "parity_files": 0,
     "regressed_files": 6
   },

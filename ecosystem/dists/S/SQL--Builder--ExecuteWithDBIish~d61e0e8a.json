@@ -1,0 +1,59 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DBIish",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "SQL::Builder"
+    ],
+    "unresolved": []
+  },
+  "dist": "SQL::Builder::ExecuteWithDBIish",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "all",
+        "nok": 1,
+        "ok": 3,
+        "plan": 4,
+        "secs": 26.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "SQL::Builder::ExecuteWithDBIish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/QL/SQL_BUILDER_EXECUTEWITHDBIISH/90dc9d0f66c0a74e97aace3894e81123cf9164e2.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

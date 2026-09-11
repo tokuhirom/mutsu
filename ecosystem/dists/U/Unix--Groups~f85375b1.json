@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.73,
+        "secs": 0.4,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.59,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.17,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,9 +66,9 @@
       "path": "t/020-groups.t",
       "raku": {
         "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 0.84,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -96,9 +96,9 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 20,
+    "baseline_assertions": 21,
     "baseline_files": 3,
-    "mutsu_assertions": 20,
+    "mutsu_assertions": 21,
     "parity_files": 3,
     "regressed_files": 0
   },

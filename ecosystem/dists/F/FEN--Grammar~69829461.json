@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.12,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.82,
+        "secs": 2.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.38,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.1,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.37,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.14,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.72,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

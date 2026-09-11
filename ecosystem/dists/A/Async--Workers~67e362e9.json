@@ -23,7 +23,7 @@
   "dist": "Async::Workers",
   "files": [],
   "load": {
-    "Async::Workers": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-m8t4iyyr/dist/Async-Workers-v0.3.1/lib/Async/Workers.rakumod",
+    "Async::Workers": "expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ...",
     "Async::Workers::CX": "ok",
     "Async::Workers::Job": "ok",
     "Async::Workers::Msg": "ok",
@@ -31,11 +31,11 @@
     "Async::Workers::X": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

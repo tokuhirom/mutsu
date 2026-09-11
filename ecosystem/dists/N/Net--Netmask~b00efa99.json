@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.21,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,76 +25,7 @@
         "nok": 0,
         "ok": 184,
         "plan": 184,
-        "secs": 5.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-doctest.t",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 2.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-compare.t",
-      "raku": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 0.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/04-construction.t",
-      "raku": {
-        "nok": 0,
-        "ok": 23,
-        "plan": 23,
-        "secs": 0.84,
+        "secs": 4.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,12 +43,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/05-construction6.t",
+      "path": "t/02-doctest.t",
       "raku": {
         "nok": 0,
-        "ok": 197,
-        "plan": 197,
-        "secs": 1.0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +61,76 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.17,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-compare.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-construction.t",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-construction6.t",
+      "raku": {
+        "nok": 0,
+        "ok": 197,
+        "plan": 197,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.65,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -155,7 +155,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

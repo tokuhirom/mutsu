@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "GTK::Simple",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibCurl",
+      "License::SPDX",
+      "META6",
+      "NativeLibs",
+      "Pod::Load",
+      "PrettyDump",
+      "Raku::Pod::Render",
+      "RakuConfig",
+      "Template::Mustache",
+      "Test::Deeply::Relaxed",
+      "Test::META",
+      "Test::Output",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "raku-pod-extraction",
+  "files": [],
+  "load": {
+    "PodExtraction": "Unknown function: returns",
+    "RakuDocRender": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AK/RAKUPODEXTRACTION/57ebffdda5e9217ed11223f1a604b9eeb9bc2135.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.3.0"
+}

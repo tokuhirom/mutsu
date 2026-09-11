@@ -9,12 +9,13 @@
   "dist": "Test::Scheduler",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.1,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,19 +25,20 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.62,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.13,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +48,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.59,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,11 +57,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Promise in 0 seconds is not scheduled immediately",
-        "nok": 6,
-        "ok": 77,
+        "first_failure": "Certainly scheduling using virtual time",
+        "nok": 5,
+        "ok": 78,
         "plan": 83,
-        "secs": 30.89,
+        "secs": 31.05,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -69,7 +71,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 1.71,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +86,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -95,12 +97,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_SCHEDULER/60aaafd8809180680852a9e2f395ba7fe6c91635.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 95,
-    "baseline_files": 3,
-    "mutsu_assertions": 89,
-    "parity_files": 2,
+    "baseline_assertions": 83,
+    "baseline_files": 1,
+    "mutsu_assertions": 78,
+    "parity_files": 0,
     "regressed_files": 1
   },
   "version": "1.2"

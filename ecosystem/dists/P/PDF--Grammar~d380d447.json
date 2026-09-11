@@ -11,23 +11,22 @@
   "dist": "PDF::Grammar",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "object: object parse: -042",
-        "nok": 6,
-        "ok": 44,
+        "nok": 0,
+        "ok": 50,
         "plan": 50,
-        "secs": 1.23,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00objects.t",
       "raku": {
         "nok": 0,
         "ok": 86,
         "plan": 86,
-        "secs": 4.79,
+        "secs": 4.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,11 +35,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "fast op CurveTo",
-        "nok": 34,
-        "ok": 145,
+        "first_failure": "normal block tricky terminators image-block",
+        "nok": 1,
+        "ok": 178,
         "plan": 180,
-        "secs": 4.94,
+        "secs": 2.45,
         "skip": 0,
         "todo": 1,
         "verdict": "fail"
@@ -50,7 +49,7 @@
         "nok": 0,
         "ok": 179,
         "plan": 180,
-        "secs": 4.71,
+        "secs": 4.56,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -60,10 +59,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "basic normal - result as expected",
-        "nok": 16,
-        "ok": 34,
-        "plan": 50,
-        "secs": 10.64,
+        "nok": 10,
+        "ok": 46,
+        "plan": 56,
+        "secs": 6.21,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -73,7 +72,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 2.98,
+        "secs": 3.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +85,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.24,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +95,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.9,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +107,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.91,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +117,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 3.48,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +130,7 @@
         "nok": 0,
         "ok": 11,
         "plan": null,
-        "secs": 0.49,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +140,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 3.26,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,10 +150,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "No such method 'ast' for invocant of type 'Any'",
-        "nok": 4,
-        "ok": 5,
+        "nok": 3,
+        "ok": 6,
         "plan": null,
-        "secs": 0.37,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -164,7 +163,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.56,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,7 +176,7 @@
         "nok": 0,
         "ok": 11,
         "plan": null,
-        "secs": 0.57,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,30 +186,29 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.72,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "parsed pdf content (t/helloworld.pdf)",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.35,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/pdf-parsefile.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.7,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -233,7 +231,7 @@
         "nok": 0,
         "ok": 198,
         "plan": 198,
-        "secs": 1.79,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -261,7 +259,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -276,9 +274,9 @@
   "totals": {
     "baseline_assertions": 657,
     "baseline_files": 10,
-    "mutsu_assertions": 274,
-    "parity_files": 1,
-    "regressed_files": 9
+    "mutsu_assertions": 327,
+    "parity_files": 3,
+    "regressed_files": 7
   },
   "version": "0.3.6"
 }

@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.53,
+        "secs": 11.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,51 +59,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-result-endpoint.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/04-result-credits.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.45,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -120,12 +76,34 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/05-result-activity.rakutest",
+      "path": "t/03-result-endpoint.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.35,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-result-credits.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -137,7 +115,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.14,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-result-activity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +147,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.45,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -159,7 +159,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.14,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -169,7 +169,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.25,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -181,7 +181,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.17,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,7 +191,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.07,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -205,7 +205,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.48,
+        "secs": 8.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -219,7 +219,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.73,
+        "secs": 5.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -242,7 +242,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

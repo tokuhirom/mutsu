@@ -19,7 +19,7 @@
   "load": {
     "PDF::Native": "ok",
     "PDF::Native::Buf": "ok",
-    "PDF::Native::COS": "expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "PDF::Native::COS": "Could not instantiate role 'PDF::Native::COS::COSType' because it died with X::AdHoc; exception details:",
     "PDF::Native::Defs": "ok",
     "PDF::Native::Filter::Predictors": "ok",
     "PDF::Native::Reader": "ok",
@@ -30,7 +30,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -17,7 +17,7 @@
         "nok": 3,
         "ok": 11,
         "plan": 14,
-        "secs": 1.51,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 43.29,
+        "secs": 37.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 0.83,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.52,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 9,
         "ok": 0,
         "plan": 9,
-        "secs": 0.93,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.01,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 1,
         "ok": 5,
         "plan": null,
-        "secs": 0.8,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 2.86,
+        "secs": 2.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.77,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +119,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.61,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -142,7 +142,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

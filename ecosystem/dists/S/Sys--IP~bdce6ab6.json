@@ -1,0 +1,65 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Sys::IP",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-load.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Sys::IP": "ok",
+    "Sys::IP::DNS": "ok",
+    "Sys::IP::RAW": "ok",
+    "Sys::IP::Routes": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/YS/SYS_IP/a8a91a2a25c4d00cee99956fdfdf27c309d6b95f.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.1.0"
+}

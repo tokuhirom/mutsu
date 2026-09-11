@@ -1,0 +1,83 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Archive::Libarchive::Raw",
+      "BitEnum",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibXML",
+      "Libarchive",
+      "License::SPDX",
+      "META6",
+      "Method::Also",
+      "NativeHelpers::Callback",
+      "Number::Bytes::Human",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Test::META",
+      "Test::When",
+      "URI",
+      "W3C::DOM",
+      "XML",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "Spreadsheet::ODS",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Spreadsheet::ODS": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/PR/SPREADSHEET_ODS/1609f274a6ac76d5d3cb6f089238e3d0479d1882.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1"
+}

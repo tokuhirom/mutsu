@@ -1,0 +1,73 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem",
+      "LeftistHeap"
+    ],
+    "unresolved": []
+  },
+  "dist": "Graph",
+  "files": [],
+  "load": {
+    "Graph": "ok",
+    "Graph::Bipartitish": "ok",
+    "Graph::Butterfly": "ok",
+    "Graph::Circulant": "ok",
+    "Graph::Classes": "circular module dependency detected: Graph::Classes -> Graph -> LeftistHeap -> Graph",
+    "Graph::Complete": "ok",
+    "Graph::CompleteKaryTree": "ok",
+    "Graph::Componentish": "ok",
+    "Graph::Cycle": "ok",
+    "Graph::DistanceFindish": "ok",
+    "Graph::Distribution": "ok",
+    "Graph::Formatish": "ok",
+    "Graph::Grid": "ok",
+    "Graph::Harary": "ok",
+    "Graph::HexagonalGrid": "ok",
+    "Graph::HighlightProcessing": "ok",
+    "Graph::Hypercube": "ok",
+    "Graph::Indexed": "ok",
+    "Graph::KnightTour": "ok",
+    "Graph::Leaper": "ok",
+    "Graph::MinCuttish": "ok",
+    "Graph::Neighborhoodish": "ok",
+    "Graph::Nested": "ok",
+    "Graph::Path": "ok",
+    "Graph::Petersen": "ok",
+    "Graph::Random": "ok",
+    "Graph::Relation": "ok",
+    "Graph::Star": "ok",
+    "Graph::Tourish": "ok",
+    "Graph::TriangularGrid": "ok",
+    "Graph::Utilities": "ok",
+    "Graph::Wheel": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAPH/6595c11dc5dd07e6fb23da9e6b81dd93abab2cb3.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.3"
+}

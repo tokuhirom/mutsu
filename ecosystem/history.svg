@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="mutsu ecosystem parity against rakudo">
+<style>
+  .bg { fill: #ffffff; }
+  .title { fill: #111827; font: 600 21px sans-serif; }
+  .subtitle { fill: #6b7280; font: 400 13px sans-serif; }
+  .axis { stroke: #374151; stroke-width: 1.4; }
+  .grid { stroke: #e5e7eb; stroke-width: 1; }
+  .tick { fill: #374151; font: 400 12px sans-serif; }
+  .legend { fill: #111827; font: 400 13px sans-serif; }
+  .value { font: 600 13px sans-serif; }
+  .rebase { stroke: #9ca3af; stroke-width: 1.2; stroke-dasharray: 5 4; }
+  .rebase-label { fill: #6b7280; font: 400 11px sans-serif; }
+  .series-a { stroke: #b45309; fill: #b45309; }
+  .series-b { stroke: #1d4ed8; fill: #1d4ed8; }
+  .series-c { stroke: #047857; fill: #047857; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #0d1117; }
+    .title { fill: #e6edf3; }
+    .subtitle { fill: #9198a1; }
+    .axis { stroke: #6e7681; }
+    .grid { stroke: #21262d; }
+    .tick { fill: #9198a1; }
+    .legend { fill: #e6edf3; }
+    .rebase { stroke: #6e7681; }
+    .rebase-label { fill: #9198a1; }
+    .series-a { stroke: #f0b429; fill: #f0b429; }
+    .series-b { stroke: #6ea8fe; fill: #6ea8fe; }
+    .series-c { stroke: #4ade80; fill: #4ade80; }
+  }
+</style>
+<rect class="bg" width="100%" height="100%"/>
+<text class="title" x="78" y="34">mutsu ecosystem parity against rakudo</text>
+<text class="subtitle" x="78" y="55">latest sweep 2026-09-11  ·  1581 of 1624 distributions measured  ·  43 blocked on dependencies  ·  baseline rakudo 2026.07</text>
+<line class="grid" x1="78" y1="548.0" x2="1070" y2="548.0"/>
+<text class="tick" x="68" y="552.0" text-anchor="end">0%</text>
+<line class="grid" x1="78" y1="500.6" x2="1070" y2="500.6"/>
+<text class="tick" x="68" y="504.6" text-anchor="end">10%</text>
+<line class="grid" x1="78" y1="453.2" x2="1070" y2="453.2"/>
+<text class="tick" x="68" y="457.2" text-anchor="end">20%</text>
+<line class="grid" x1="78" y1="405.8" x2="1070" y2="405.8"/>
+<text class="tick" x="68" y="409.8" text-anchor="end">30%</text>
+<line class="grid" x1="78" y1="358.4" x2="1070" y2="358.4"/>
+<text class="tick" x="68" y="362.4" text-anchor="end">40%</text>
+<line class="grid" x1="78" y1="311.0" x2="1070" y2="311.0"/>
+<text class="tick" x="68" y="315.0" text-anchor="end">50%</text>
+<line class="grid" x1="78" y1="263.6" x2="1070" y2="263.6"/>
+<text class="tick" x="68" y="267.6" text-anchor="end">60%</text>
+<line class="grid" x1="78" y1="216.2" x2="1070" y2="216.2"/>
+<text class="tick" x="68" y="220.2" text-anchor="end">70%</text>
+<line class="grid" x1="78" y1="168.8" x2="1070" y2="168.8"/>
+<text class="tick" x="68" y="172.8" text-anchor="end">80%</text>
+<line class="grid" x1="78" y1="121.4" x2="1070" y2="121.4"/>
+<text class="tick" x="68" y="125.4" text-anchor="end">90%</text>
+<line class="grid" x1="78" y1="74.0" x2="1070" y2="74.0"/>
+<text class="tick" x="68" y="78.0" text-anchor="end">100%</text>
+<line class="axis" x1="78" y1="548" x2="1070" y2="548"/>
+<line class="axis" x1="78" y1="74" x2="78" y2="548"/>
+<text class="tick" x="574.0" y="570" text-anchor="middle">2026-09-11</text>
+<polyline class="series-a" points="574.0,352.7" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle class="series-a" cx="574.0" cy="352.7" r="3.4" stroke="none"/>
+<text class="value series-a" x="583.0" y="356.7" stroke="none">41.2%</text>
+<line class="series-a" x1="1094" y1="80.0" x2="1118" y2="80.0" stroke-width="3.2"/>
+<text class="legend" x="1124" y="84.0">dist parity (published)</text>
+<polyline class="series-b" points="574.0,293.9" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle class="series-b" cx="574.0" cy="293.9" r="2.6" stroke="none"/>
+<text class="value series-b" x="583.0" y="297.9" stroke="none">53.6%</text>
+<line class="series-b" x1="1094" y1="101.0" x2="1118" y2="101.0" stroke-width="2.0"/>
+<text class="legend" x="1124" y="105.0">file parity (steers the work)</text>
+<polyline class="series-c" points="574.0,252.2" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle class="series-c" cx="574.0" cy="252.2" r="2.6" stroke="none"/>
+<text class="value series-c" x="583.0" y="256.2" stroke="none">62.4%</text>
+<line class="series-c" x1="1094" y1="122.0" x2="1118" y2="122.0" stroke-width="2.0"/>
+<text class="legend" x="1124" y="126.0">assertion parity</text>
+</svg>

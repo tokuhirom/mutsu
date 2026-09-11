@@ -15,11 +15,11 @@
   "dist": "FontConfig",
   "files": [],
   "load": {
-    "FontConfig": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "FontConfig": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
     "FontConfig::Defs": "ok",
-    "FontConfig::Match": "expected statement: expected expression statement or expression after infix operator or '}'",
-    "FontConfig::Match::Series": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
-    "FontConfig::Pattern": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "FontConfig::Match": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "FontConfig::Match::Series": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "FontConfig::Pattern": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
     "FontConfig::Raw": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
   },
   "measured": {
@@ -27,7 +27,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

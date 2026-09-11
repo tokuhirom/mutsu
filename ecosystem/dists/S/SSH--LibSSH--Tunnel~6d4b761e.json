@@ -1,0 +1,54 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Concurrent::Progress",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "SSH::LibSSH",
+      "Test::META",
+      "Test::Scheduler",
+      "Testo",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "SSH::LibSSH::Tunnel",
+  "files": [],
+  "load": {
+    "SSH::LibSSH::Tunnel": "Error while importing from 'NativeCall': no such tag 'types' declared"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/SH/SSH_LIBSSH_TUNNEL/c5b32928231b13064a1317c482abac07153c2246.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

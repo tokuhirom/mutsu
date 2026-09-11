@@ -1,0 +1,41 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "SQL::Abstract",
+  "files": [],
+  "load": {
+    "SQL::Abstract": "Failed to parse module 'SQL::Abstract': X::Comp::Group: Function 'self' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "SQL::Placeholders": "ok",
+    "SQL::Query": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/QL/SQL_ABSTRACT/4642cdd6780e59b40621e2770655901d9b345ffb.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.9"
+}

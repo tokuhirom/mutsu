@@ -11,23 +11,22 @@
   "dist": "LaTeX::Grammar",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "parses simple formula: x+1",
-        "nok": 11,
-        "ok": 2,
+        "nok": 0,
+        "ok": 13,
         "plan": 13,
-        "secs": 0.57,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-parse-formulas.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 14.94,
+        "secs": 20.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,11 +35,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "interprets simple formula: x+1",
-        "nok": 38,
-        "ok": 1,
+        "first_failure": "MathJSON shape for: \\sqrt{x}",
+        "nok": 11,
+        "ok": 28,
         "plan": 39,
-        "secs": 1.06,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -50,7 +49,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 0.83,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,11 +58,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "interprets simple formula: x",
-        "nok": 32,
-        "ok": 0,
+        "first_failure": "MathML shape for: \\sqrt{x}",
+        "nok": 6,
+        "ok": 26,
         "plan": 32,
-        "secs": 0.79,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -73,7 +72,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 0.92,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,11 +81,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "interprets simple formula: x+1",
-        "nok": 26,
-        "ok": 0,
+        "first_failure": "AsciiMath shape for: \\sqrt{x}",
+        "nok": 6,
+        "ok": 20,
         "plan": 26,
-        "secs": 0.74,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -96,7 +95,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.85,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,11 +104,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "interprets simple formula: x+1",
-        "nok": 26,
-        "ok": 0,
+        "first_failure": "WL shape for: \\sqrt{x}",
+        "nok": 6,
+        "ok": 20,
         "plan": 26,
-        "secs": 0.74,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -119,30 +118,30 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.77,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "interprets formula: x+1",
-        "nok": 22,
+        "first_failure": "RakuAST: `.AST` does not yet support this construct: IndirectTypeLookup(Literal(Str(\"x\")))",
+        "nok": 0,
         "ok": 0,
-        "plan": 22,
-        "secs": 0.76,
+        "plan": null,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/05-RakuAST-actions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.12,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -164,7 +163,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -175,13 +174,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/AT/LATEX_GRAMMAR/8ef2464d7c19f20123aaa1c6a6c43727bbdfb9c0.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 158,
     "baseline_files": 6,
-    "mutsu_assertions": 3,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 107,
+    "parity_files": 1,
+    "regressed_files": 5
   },
   "version": "0.0.5"
 }

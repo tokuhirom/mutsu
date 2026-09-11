@@ -1,0 +1,108 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "rawstr4c",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "test/00-success.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "test/01-distribution.rakutest",
+      "raku": {
+        "first_failure": "Could not find Test::META in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "test/10-parser.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-qr6eufsw/dist/input/hierarchy-with-root.md: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "test/20-regression.rakutest",
+      "raku": {
+        "first_failure": "Default file",
+        "nok": 18,
+        "ok": 0,
+        "plan": 18,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "Rawstr4c::Config": "ok",
+    "Rawstr4c::EffectiveConfig": "ok",
+    "Rawstr4c::Generator": "ok",
+    "Rawstr4c::Parser": "ok",
+    "Rawstr4c::Version": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AW/RAWSTR4C/d8d2d5e8968b46a13b5fd0803335123fb468566a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "1.2.0"
+}

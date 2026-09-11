@@ -1,0 +1,101 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Config",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "EventSource::Client",
+      "EventSource::Server",
+      "HTTP::HPACK",
+      "Hash::Merge",
+      "IO::Glob",
+      "IO::Path::ChildSecure",
+      "IO::Path::XDG",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Listicles",
+      "Log",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "Prettier::Table",
+      "Test::META",
+      "Test::Util::ServerPort",
+      "Text::Wrap",
+      "TinyFloats",
+      "URI",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "content-storage-cli",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {},
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/ON/CONTENTSTORAGECLI/6130c1497b75510fa44408193833ffba5e78a9a9.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

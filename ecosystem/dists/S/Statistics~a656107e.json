@@ -1,0 +1,49 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Statistics",
+  "files": [],
+  "load": {
+    "Correlation::BiweightMid": "raku_also_fails",
+    "Correlation::Kendall": "raku_also_fails",
+    "Correlation::PearsonSpearman": "raku_also_fails",
+    "Descriptive::CentralTendency": "raku_also_fails",
+    "Descriptive::Dispersion": "raku_also_fails",
+    "Descriptive::FiveNum": "raku_also_fails",
+    "Descriptive::Kurtosis": "raku_also_fails",
+    "Descriptive::Skewness": "raku_also_fails",
+    "Misc": "raku_also_fails",
+    "Probability::Distribution": "raku_also_fails",
+    "Statistics": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/TA/STATISTICS/0b1db89f7e634edbc8e8836496743ed02191b1f4.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.6"
+}

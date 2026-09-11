@@ -1,0 +1,56 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "SDL2::Raw"
+    ],
+    "unresolved": []
+  },
+  "dist": "SDL2-ttf",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-basic.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libSDL2_ttf.so': libSDL2_ttf.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 21,
+        "secs": 12.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "SDL2-ttf": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/DL/SDL2TTF/2c5bfb5f1684fbbee4e686e9c88262dc8d251fd8.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

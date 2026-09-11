@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/month.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-uz6z6vyj/dist/App-Cal-0.9.1/t/month.t",
+        "first_failure": "Could not find Test::Differences in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,11 +28,11 @@
       "cmp": "no_baseline",
       "path": "t/year.t",
       "raku": {
-        "first_failure": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-uz6z6vyj/dist/App-Cal-0.9.1/t/year.t",
+        "first_failure": "Could not find Test::Differences in:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.59,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,11 +43,11 @@
     "App::Cal": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

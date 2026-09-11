@@ -1,0 +1,96 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "RakudoPrereq",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.11,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-operation.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.03,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 21.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "RakudoPrereq": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/R/RakudoPrereq/RakudoPrereq%3Aver%3C1.001005%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 10,
+    "baseline_files": 2,
+    "mutsu_assertions": 9,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "1.001005"
+}

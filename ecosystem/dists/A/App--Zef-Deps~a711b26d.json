@@ -19,7 +19,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 55.84,
+        "secs": 52.48,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 1.75,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -47,7 +47,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 1.78,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -61,7 +61,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 1.84,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -75,7 +75,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 1.89,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.66,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,11 +99,11 @@
     "App::Zef-Deps": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

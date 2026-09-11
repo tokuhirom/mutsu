@@ -1,0 +1,66 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Native::FindVersion",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "cmark::Simple",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-basic.t",
+      "raku": {
+        "first_failure": "An exception X::AdHoc occurred while evaluating a constant:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "cmark::Simple": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/MA/CMARK_SIMPLE/592a0fe9ba73a26019bf83f05d394ff0b8109be9.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.3"
+}

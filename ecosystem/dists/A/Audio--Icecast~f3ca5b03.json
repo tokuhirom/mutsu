@@ -27,14 +27,14 @@
   "dist": "Audio::Icecast",
   "files": [],
   "load": {
-    "Audio::Icecast": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/deps/XML__Class/XML-Class-0.0.11/lib/XML/Class.rakumod"
+    "Audio::Icecast": "Failed to parse module 'XML::Class': X::Comp::Group: Function 'ElementWrapper' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

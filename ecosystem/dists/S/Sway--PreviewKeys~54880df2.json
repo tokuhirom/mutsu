@@ -1,0 +1,30 @@
+{
+  "dist": "Sway::PreviewKeys",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "note": "harness error: AbsoluteLinkError: 'CHANGES-old.md' is a link to an absolute path",
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/WA/SWAY_PREVIEWKEYS/5d0449d4c742df12c33c38f1a91cf56f412cb6d8.tar.gz"
+  },
+  "status": "skipped",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.4"
+}
