@@ -43,9 +43,56 @@
     "unresolved": []
   },
   "dist": "LLM::DWIM",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "LLM::DWIM module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 34.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "circular module dependency detected: LLM::DWIM -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-dwim.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "LLM::DWIM": "circular module dependency detected: LLM::DWIM -> LLM::Functions -> Hash::Merge -> LLM::Function -> LLM::Function",
+    "LLM::DWIM": "raku_also_fails",
     "llm-dwim": "raku_also_fails",
     "llm-dwim-chat": "raku_also_fails"
   },
@@ -54,7 +101,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -65,13 +112,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_DWIM/a7068fc4d7028a2da52f766af9ebfcd7166feeb4.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 9,
+    "baseline_files": 2,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.0.6"
 }

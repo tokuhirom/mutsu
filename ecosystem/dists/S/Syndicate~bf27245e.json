@@ -1,0 +1,862 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DateTime::Format",
+      "DateTime::Grammar",
+      "HTTP::Tiny",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "OpenSSL",
+      "URI",
+      "XML"
+    ],
+    "unresolved": []
+  },
+  "dist": "Syndicate",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Use of Nil in string context",
+        "nok": 0,
+        "ok": 1,
+        "plan": 10,
+        "secs": 10.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 71.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "RSS output encodes & in title",
+        "nok": 5,
+        "ok": 0,
+        "plan": 18,
+        "secs": 7.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-roundtrip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "rss091-full.xml detected as RSS091",
+        "nok": 3,
+        "ok": 35,
+        "plan": 38,
+        "secs": 16.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 7.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-rss-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid RSS 0.91 XML: could not parse XML",
+        "nok": 0,
+        "ok": 47,
+        "plan": 59,
+        "secs": 8.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-rss091-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 59,
+        "plan": 59,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid RSS 1.0 XML: could not parse XML",
+        "nok": 0,
+        "ok": 18,
+        "plan": 32,
+        "secs": 7.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-rss1-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid Atom XML: could not parse XML",
+        "nok": 0,
+        "ok": 42,
+        "plan": 55,
+        "secs": 7.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-atom-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 55,
+        "plan": 55,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "JSON Feed 'author' must be a Hash, got Str",
+        "nok": 0,
+        "ok": 48,
+        "plan": 63,
+        "secs": 7.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-jsonfeed-parse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 63,
+        "plan": 63,
+        "secs": 2.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
+        "nok": 0,
+        "ok": 22,
+        "plan": 140,
+        "secs": 7.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-builder.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 140,
+        "plan": 140,
+        "secs": 2.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-discovery.rakutest",
+      "raku": {
+        "first_failure": "Too many positionals passed; expected 1 argument but got 2",
+        "nok": 0,
+        "ok": 1,
+        "plan": 61,
+        "secs": 2.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Invalid RSS XML: could not parse XML",
+        "nok": 0,
+        "ok": 29,
+        "plan": 51,
+        "secs": 7.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-media-rss.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 51,
+        "plan": 51,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Calling matches-ns(Any, Nil, Str) will never work with declared signature (XML::Element $e, Str $ns-uri, Str $canonical-prefix)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 33,
+        "secs": 7.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-itunes-podcast.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 5.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-concurrency.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-errors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 27,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-utils.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-extensions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
+        "nok": 0,
+        "ok": 5,
+        "plan": 19,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-ext-utils.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 5.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-dublin-core.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "direct Atom construction emits link rel=alternate",
+        "nok": 3,
+        "ok": 12,
+        "plan": 30,
+        "secs": 5.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/18-audit-regressions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-followup-audit.rakutest",
+      "raku": {
+        "first_failure": "Too many positionals passed; expected 1 argument but got 2",
+        "nok": 0,
+        "ok": 12,
+        "plan": 43,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
+        "nok": 0,
+        "ok": 1,
+        "plan": 16,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/20-rss-common.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "dc:language-only feed regenerates dc declaration",
+        "nok": 5,
+        "ok": 8,
+        "plan": 39,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/21-entity-roundtrip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "normalized skipDays regenerated",
+        "nok": 1,
+        "ok": 9,
+        "plan": 10,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/22-code-quality.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "EST offset applied",
+        "nok": 3,
+        "ok": 23,
+        "plan": 34,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/23-audit-round-6.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "half-hour abbreviation IST offset applied",
+        "nok": 2,
+        "ok": 40,
+        "plan": 43,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/24-date-offsets.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "B1: output keeps the self link",
+        "nok": 2,
+        "ok": 2,
+        "plan": 47,
+        "secs": 4.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/25-audit-round-8.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 47,
+        "plan": 47,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-audit-round-9.rakutest",
+      "raku": {
+        "first_failure": "Too many positionals passed; expected 1 argument but got 2",
+        "nok": 0,
+        "ok": 6,
+        "plan": 41,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-audit-round-10.rakutest",
+      "raku": {
+        "first_failure": "Too many positionals passed; expected 1 argument but got 2",
+        "nok": 0,
+        "ok": 0,
+        "plan": 41,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "B6: regenerated RSS 2.0 emits pubDate",
+        "nok": 4,
+        "ok": 18,
+        "plan": 60,
+        "secs": 4.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/28-audit-round-11.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 60,
+        "plan": 60,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "B3: builder item declares xmlns:content",
+        "nok": 4,
+        "ok": 5,
+        "plan": 26,
+        "secs": 4.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/29-audit-round-12.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 4.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/30-audit-round-13.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "R1: rendering a timestamp-less feed fails gracefully",
+        "nok": 1,
+        "ok": 21,
+        "plan": 38,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/31-audit-round-14.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "R2: XML emits the computed updated",
+        "nok": 2,
+        "ok": 13,
+        "plan": 28,
+        "secs": 5.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/32-audit-round-15.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 28,
+        "plan": 28,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "2a: valued <base href> still returned",
+        "nok": 3,
+        "ok": 42,
+        "plan": 66,
+        "secs": 5.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/33-audit-round-16.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "1: «15 Jan 2024» parses",
+        "nok": 2,
+        "ok": 7,
+        "plan": 56,
+        "secs": 4.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/34-audit-round-17.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$to'; expected FeedFormat but got Str (\"RSS2\")",
+        "nok": 0,
+        "ok": 78,
+        "plan": 195,
+        "secs": 5.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/35-convert.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 195,
+        "plan": 195,
+        "secs": 2.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Syndicate": "ok",
+    "Syndicate::Atom": "ok",
+    "Syndicate::Atom::Item": "ok",
+    "Syndicate::Builder::Entry": "ok",
+    "Syndicate::Builder::Feed": "ok",
+    "Syndicate::Discovery": "ok",
+    "Syndicate::Extension::DublinCore": "ok",
+    "Syndicate::Extension::ITunes": "ok",
+    "Syndicate::Extension::MediaRSS": "ok",
+    "Syndicate::Extensions": "ok",
+    "Syndicate::Feed": "ok",
+    "Syndicate::FeedResult": "ok",
+    "Syndicate::Format": "ok",
+    "Syndicate::Item": "ok",
+    "Syndicate::JSONFeed": "ok",
+    "Syndicate::JSONFeed::Item": "ok",
+    "Syndicate::Parse": "ok",
+    "Syndicate::RSS": "ok",
+    "Syndicate::RSS::Common": "ok",
+    "Syndicate::RSS::Item": "ok",
+    "Syndicate::RSS::Item::Common": "ok",
+    "Syndicate::RSS::V0_91": "ok",
+    "Syndicate::RSS::V0_91::Item": "ok",
+    "Syndicate::RSS::V1_0": "ok",
+    "Syndicate::RSS::V1_0::Item": "ok",
+    "Syndicate::Stats": "ok",
+    "Syndicate::Utils": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/YN/SYNDICATE/37de0e74a03acd7c7cbc2a6ec5876703c22c7a6c.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 1306,
+    "baseline_files": 32,
+    "mutsu_assertions": 586,
+    "parity_files": 5,
+    "regressed_files": 27
+  },
+  "version": "0.0.6"
+}

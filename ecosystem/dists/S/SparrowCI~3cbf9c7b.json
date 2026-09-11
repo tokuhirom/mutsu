@@ -1,0 +1,103 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Crypt::Random",
+      "DBIish",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Which",
+      "HTML::Escape",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "LibraryMake",
+      "Log::Timeline",
+      "MIME::Base64",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "Text::Markdown",
+      "TinyFloats",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "SparrowCI",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "SparrowCI": "ok",
+    "SparrowCI::Conf": "ok",
+    "SparrowCI::DB": "ok",
+    "SparrowCI::HTML": "ok",
+    "SparrowCI::News": "ok",
+    "SparrowCI::Repo": "ok",
+    "SparrowCI::Security": "ok",
+    "SparrowCI::User": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/PA/SPARROWCI/3fe6d01f4e22f97e6f43d1d8c4b3c2b5bc99e44d.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

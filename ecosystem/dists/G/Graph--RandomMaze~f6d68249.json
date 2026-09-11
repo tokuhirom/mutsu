@@ -1,0 +1,52 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Algorithm::KDimensionalTree",
+      "Data::Generators",
+      "Data::TypeSystem",
+      "Graph",
+      "LeftistHeap",
+      "Math::DistanceFunctions",
+      "Math::DistanceFunctions::Edit",
+      "Math::DistanceFunctions::Native",
+      "Math::Nearest",
+      "Math::SpecialFunctions",
+      "NativeHelpers::Array",
+      "Statistics::Distributions"
+    ],
+    "unresolved": []
+  },
+  "dist": "Graph::RandomMaze",
+  "files": [],
+  "load": {
+    "Graph::RandomMaze": "circular module dependency detected: Graph::RandomMaze -> Graph::Classes -> Graph::Butterfly -> Graph::Butterfly"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAPH_RANDOMMAZE/c61aa671801605e4e09406d95d14715ffe370c0b.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

@@ -10,16 +10,111 @@
     "unresolved": []
   },
   "dist": "Audio::Libshout",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.9,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/005-constructor.t",
+      "raku": {
+        "first_failure": "constructor",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/010-parameters.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libshout.so.3': libshout.so.3: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 123,
+        "plan": 123,
+        "secs": 0.43,
+        "skip": 123,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/020-open.t",
+      "raku": {
+        "nok": 0,
+        "ok": 123,
+        "plan": 123,
+        "secs": 2.13,
+        "skip": 123,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Audio::Libshout": "Runtime error: Failed to parse module 'AccessorFacade': X::Undeclared::Symbols: Undeclared routine:"
+    "Audio::Libshout": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -30,12 +125,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/UD/AUDIO_LIBSHOUT/47e3c61494736c7eb26a236a64c30d4f6959cc74.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 125,
+    "baseline_files": 3,
+    "mutsu_assertions": 125,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "0.0.15"

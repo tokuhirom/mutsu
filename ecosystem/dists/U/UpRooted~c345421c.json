@@ -15,11 +15,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "UpRooted::Table",
-        "nok": 2,
-        "ok": 2,
+        "first_failure": "UpRooted::Column",
+        "nok": 1,
+        "ok": 3,
         "plan": 4,
-        "secs": 0.16,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.55,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.8,
+        "secs": 8.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,7 +55,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.2,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.48,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,7 +77,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.67,
+        "secs": 4.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.2,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.92,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.17,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.89,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -137,7 +137,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.19,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,30 +147,29 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.23,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "File generated",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.83,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/41-writer-mysqlfile.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 30.53,
+        "secs": 23.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +182,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.24,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,7 +195,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.06,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -206,7 +205,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 16.14,
+        "secs": 12.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -219,7 +218,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.95,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -257,7 +256,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -272,9 +271,9 @@
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 6,
-    "mutsu_assertions": 27,
-    "parity_files": 3,
-    "regressed_files": 3
+    "mutsu_assertions": 29,
+    "parity_files": 4,
+    "regressed_files": 2
   },
   "version": "1.8.3"
 }

@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.06,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.84,
+        "secs": 4.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +39,56 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 3.51,
+        "secs": 4.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-use-import.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-scope.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     },
     {
@@ -57,12 +103,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/11-use-import.rakutest",
+      "path": "t/13-package.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.42,
+        "ok": 5,
+        "plan": 5,
+        "secs": 6.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,17 +121,86 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.09,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/12-scope.rakutest",
+      "path": "t/14-routine.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.52,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-modifier.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 8.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-enum-subset.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'AST' for invocant of type 'Str'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-control-flow.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,127 +218,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/13-package.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 4.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'AST' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/14-routine.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'AST' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/15-modifier.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 9.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'AST' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/16-enum-subset.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'AST' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/17-control-flow.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 6.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'AST' for invocant of type 'Str'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/19-logic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.27,
+        "secs": 6.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -239,7 +239,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

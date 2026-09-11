@@ -1,0 +1,43 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "JSON::Fast",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "Raylib::Bindings",
+  "files": [],
+  "load": {
+    "Raylib::Bindings": "Variable $.texture used where no 'self' is available"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AY/RAYLIB_BINDINGS/14e7558b1555c559afc6c0ce955c6dd2b5b9adaa.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.20"
+}

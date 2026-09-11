@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.05,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,30 +42,29 @@
         "nok": 0,
         "ok": 0,
         "plan": 131,
-        "secs": 2.42,
+        "secs": 3.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '$typ'; expected anonymous constraint to be met but got Str (\"r\")",
         "nok": 0,
-        "ok": 0,
+        "ok": 20,
         "plan": 20,
-        "secs": 0.16,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/050-time-format.t",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.0,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +79,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -91,13 +90,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/NU/GNU_TIME/4fda6a81a6b67c92704b03d144f9fa5a4e9cea3a.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 2,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 21,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

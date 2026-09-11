@@ -16,11 +16,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller xpath(CSS::Selector::To::XPath:D: Nil:D); none of these signatures matches:",
+        "first_failure": "Cannot resolve caller xpath(CSS::Selector::To::XPath:D: Array:D); none of these signatures matches:",
         "nok": 0,
         "ok": 14,
         "plan": null,
-        "secs": 0.62,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 118,
         "plan": 119,
-        "secs": 27.57,
+        "secs": 26.06,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -39,11 +39,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Runtime error: X::Undeclared::Symbols: Undeclared routine:",
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.11,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.94,
+        "secs": 0.78,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +66,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.1,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.85,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.1,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.93,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +114,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

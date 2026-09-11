@@ -16,29 +16,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.09,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 107.57,
+        "ok": 0,
+        "plan": null,
+        "secs": 120.05,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "timeout"
       },
       "path": "t/tests.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 33.3,
+        "secs": 35.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +54,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -64,13 +65,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/OR/WORDFINDER/b13292f95114d12ac35ebc8b3ccaa9d54cae0f11.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 6,
     "baseline_files": 1,
-    "mutsu_assertions": 6,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }

@@ -39,19 +39,19 @@
   "dist": "CSS::Stylesheet",
   "files": [],
   "load": {
-    "CSS::AtPageRule": "raku_also_fails",
+    "CSS::AtPageRule": "No such method 'key' for invocant of type 'Str'",
     "CSS::Media": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
     "CSS::MediaQuery": "No such method 'key' for invocant of type 'Str'",
-    "CSS::Ruleset": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
+    "CSS::Ruleset": "No such method 'key' for invocant of type 'Str'",
     "CSS::Selectors": "No such method 'key' for invocant of type 'Str'",
-    "CSS::Stylesheet": "expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ..."
+    "CSS::Stylesheet": "No such method 'key' for invocant of type 'Str'"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

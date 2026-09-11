@@ -28,7 +28,7 @@
   "load": {
     "Pod::To::Cairo": "raku_also_fails",
     "Pod::To::Cairo::Linker": "ok",
-    "Pod::To::Cairo::Style": "expected statement: expected expression statement or expression after infix operator or '}'",
+    "Pod::To::Cairo::Style": "Failed to parse module 'FontConfig::Raw': X::Comp::Group: Function 'FcTypeUnknown' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
     "Pod::To::Cairo::TextChunk": "raku_also_fails",
     "Pod::To::PDF": "raku_also_fails"
   },
@@ -37,7 +37,7 @@
     "date": "2026-09-11",
     "harness": 1,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2ad3301",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -1,0 +1,95 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Crypt::Random",
+      "DBIish",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Which",
+      "HTML::Escape",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "LibraryMake",
+      "Log::Timeline",
+      "MIME::Base64",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "Text::Markdown",
+      "TinyFloats",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "SparrowCI - super fun and flexible CI system with many programming languages support",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "first_failure": "Could not find SparkyCI in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "SparrowCI": "ok",
+    "SparrowCI::Conf": "ok",
+    "SparrowCI::DB": "ok",
+    "SparrowCI::HTML": "ok",
+    "SparrowCI::News": "ok",
+    "SparrowCI::Repo": "ok",
+    "SparrowCI::Security": "ok",
+    "SparrowCI::User": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/PA/SPARROWCISUPERFUNANDFLEXIBLECISYSTEMWITHMANYPROGRAMMINGLANGUAGESSUPPORT/dd666dd2b45cc72c6edffd4d822541fafc992f5f.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

@@ -1,0 +1,57 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "Method::Protected",
+      "Test::META",
+      "Test::Mock",
+      "URI",
+      "zef"
+    ],
+    "unresolved": []
+  },
+  "dist": "SixPM",
+  "files": [],
+  "load": {
+    "App::six-pm::Installer": "ok",
+    "App::six-pm::Meta6": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+    "App::six-pm::SixPM": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+    "App::six-pm::ZefInstaller": "Runtime error: Failed to parse module 'App::six-pm::ZefInstaller': Unable to parse expression in double quotes; couldn't find final '\"' (corresponding starter was at line 1)",
+    "SixPM": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/IX/SIXPM/78322e1505512077e111929fd8a3559146642211.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.11"
+}

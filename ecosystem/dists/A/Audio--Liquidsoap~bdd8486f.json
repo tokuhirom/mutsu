@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.08,
+        "secs": 0.15,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.5,
+        "secs": 0.8,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.25,
+        "secs": 0.31,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.17,
+        "secs": 4.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.25,
+        "secs": 0.32,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 8.92,
+        "secs": 8.6,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.22,
+        "secs": 0.4,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.07,
+        "secs": 1.29,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 78,
         "plan": 78,
-        "secs": 0.41,
+        "secs": 0.39,
         "skip": 78,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 78,
         "plan": 78,
-        "secs": 1.54,
+        "secs": 2.02,
         "skip": 78,
         "todo": 0,
         "verdict": "pass"
@@ -127,11 +127,11 @@
     "Audio::Liquidsoap": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

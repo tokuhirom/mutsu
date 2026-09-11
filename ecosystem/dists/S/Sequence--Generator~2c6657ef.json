@@ -1,0 +1,109 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Sequence::Generator",
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "is &infix:<...> imported?",
+        "nok": 4,
+        "ok": 8,
+        "plan": 16,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 5.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected Iterator:D but got Any (Sequence::Generator::StepUpto())",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-exhaustive.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 129,
+        "plan": 129,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "is &postfix:<...> imported?",
+        "nok": 4,
+        "ok": 2,
+        "plan": 8,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-postfix.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Sequence::Generator": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/EQ/SEQUENCE_GENERATOR/d6fbdc787bbbebf9562d1c6556c2063289af2df2.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 153,
+    "baseline_files": 3,
+    "mutsu_assertions": 10,
+    "parity_files": 0,
+    "regressed_files": 3
+  },
+  "version": "0.0.8"
+}

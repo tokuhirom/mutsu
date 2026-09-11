@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Graphviz::DOT::Grammar",
+  "files": [],
+  "load": {
+    "Graphviz::DOT::Actions::Common": "ok",
+    "Graphviz::DOT::Actions::Layout": "ok",
+    "Graphviz::DOT::Actions::Mathematica": "ok",
+    "Graphviz::DOT::Actions::MermaidJS": "ok",
+    "Graphviz::DOT::Actions::PlantUML": "ok",
+    "Graphviz::DOT::Actions::Raku": "Inconsistent class hierarchy for Graphviz::DOT::Actions::Raku",
+    "Graphviz::DOT::Grammar": "Inconsistent class hierarchy for Graphviz::DOT::Actions::Raku",
+    "Graphviz::DOT::Grammarish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/RA/GRAPHVIZ_DOT_GRAMMAR/8da52de0a18a15893869011abb2598c36e70c7fa.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.1"
+}

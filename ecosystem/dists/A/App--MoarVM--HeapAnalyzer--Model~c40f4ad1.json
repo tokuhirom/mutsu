@@ -9,15 +9,15 @@
   "dist": "App::MoarVM::HeapAnalyzer::Model",
   "files": [],
   "load": {
-    "App::MoarVM::HeapAnalyzer::Model": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-otoeptq0/dist/App-MoarVM-HeapAnalyzer-Model-0.2/lib/App/MoarVM/HeapAnalyzer/Model.rakumod",
-    "App::MoarVM::HeapAnalyzer::Shell": "===SORRY!=== Error while compiling /root/.cache/mutsu-ecosystem/run/ecosweep-otoeptq0/dist/App-MoarVM-HeapAnalyzer-Model-0.2/lib/App/MoarVM/HeapAnalyzer/Model.rakumod"
+    "App::MoarVM::HeapAnalyzer::Model": "Failed to parse module 'App::MoarVM::HeapAnalyzer::Model': Unsupported use of do...for. In Raku please use: repeat...while or repeat...until.",
+    "App::MoarVM::HeapAnalyzer::Shell": "Failed to parse module 'App::MoarVM::HeapAnalyzer::Model': Unsupported use of do...for. In Raku please use: repeat...while or repeat...until."
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "12d29a1",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

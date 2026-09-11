@@ -1,0 +1,85 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "NativeLibs"
+    ],
+    "unresolved": []
+  },
+  "dist": "GtkLayerShell",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-load.rakutest",
+      "raku": {
+        "first_failure": "GtkLayerShell::Native:auth<zef:CIAvash> module can be use-d ok",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-gtk-layer-shell-native.rakutest",
+      "raku": {
+        "first_failure": "Cannot load native library 'libgtk-layer-shell.so.*.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-gtk-layer-shell.rakutest",
+      "raku": {
+        "first_failure": "Cannot load native library 'libgtk-layer-shell.so.*.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "GtkLayerShell": "raku_also_fails",
+    "GtkLayerShell::Native": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/TK/GTKLAYERSHELL/4794e28208de9eb42b8f4c725c8f0142fb891fd4.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.8"
+}

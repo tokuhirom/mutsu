@@ -1,0 +1,121 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Cro::WebSocket",
+      "Crypt::Random",
+      "DBIish",
+      "DBIish::Pool",
+      "Data::Dump",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "Docker::File",
+      "File::Directory::Tree",
+      "File::Find",
+      "File::Ignore",
+      "File::Which",
+      "HTML::Escape",
+      "HTTP::HPACK",
+      "HTTP::Tiny",
+      "Hash::Merge",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "License::SPDX",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "Sparrow6",
+      "Sparrowdo",
+      "Terminal::ANSIColor",
+      "Test::META",
+      "Text::Markdown",
+      "Time::Crontab",
+      "TinyFloats",
+      "URI",
+      "YAMLish",
+      "cro",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Sparky",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-run.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Sparky": "ok",
+    "Sparky::HTML": "ok",
+    "Sparky::Job": "ok",
+    "Sparky::Security": "ok",
+    "Sparky::Utils": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/PA/SPARKY/68a5850081aff595f30101df58d797cdad8155c4.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.2.32"
+}

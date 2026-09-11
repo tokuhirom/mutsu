@@ -1,0 +1,71 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "OO::Monitors",
+      "Terminal::ANSI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Slang::Comments",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-basic.rakutest",
+      "raku": {
+        "first_failure": "Slang::Comments module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 7.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-use.rakutest",
+      "raku": {
+        "first_failure": "Could not find Slangify in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Slang::Comments": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/LA/SLANG_COMMENTS/1314b11ff25c5baf1aeb7519443250bcfb220e2e.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

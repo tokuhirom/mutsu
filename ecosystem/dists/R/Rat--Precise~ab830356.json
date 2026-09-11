@@ -1,0 +1,86 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Rat::Precise",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::islt_I",
+        "nok": 0,
+        "ok": 1,
+        "plan": 153,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-rat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 153,
+        "plan": 153,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::islt_I",
+        "nok": 0,
+        "ok": 1,
+        "plan": 216,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-fatrat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 216,
+        "plan": 216,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Rat::Precise": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/AT/RAT_PRECISE/290abf9ae6dcb3e8a6bff109eadbcc73c437fafc.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 369,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.1.2"
+}

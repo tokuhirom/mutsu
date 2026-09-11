@@ -1,0 +1,138 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "App::RaCoCo",
+      "DB::Pg",
+      "DBIish",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibUUID",
+      "License::SPDX",
+      "META6",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "Path::Finder",
+      "Pod::Usage",
+      "Red",
+      "TAP",
+      "Test::META",
+      "Test::When",
+      "URI",
+      "UUID",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "RedFactory",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "flaky": true,
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 20.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to parse module 'Red': Unexpected block in infix position (missing statement control word before the expression?)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-example.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 8.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected use sta",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-not-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "RedFactory": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/R/ED/REDFACTORY/75455034c834d8e3c1a3bae5d77813b3a5fc196d.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 27,
+    "baseline_files": 2,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 2
+  },
+  "version": "0.0.3"
+}

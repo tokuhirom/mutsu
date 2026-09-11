@@ -1,0 +1,328 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Prove6",
+      "Base64",
+      "CBOR::Simple",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Format",
+      "DateTime::Grammar",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Getopt::Long",
+      "HTTP::HPACK",
+      "HTTP::Tiny",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IO::Socket::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "LibXML",
+      "LibXML::Writer",
+      "Log::Timeline",
+      "MIME::Base64",
+      "Method::Also",
+      "OO::Monitors",
+      "OpenSSL",
+      "Path::Finder",
+      "Pod::Usage",
+      "Syndicate",
+      "TAP",
+      "TinyFloats",
+      "URI",
+      "W3C::DOM",
+      "XML",
+      "YAMLish",
+      "if",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "Sitemap",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-item.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-builder.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-parser.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-grammars.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-formats.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-crawler.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-extensions.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-input-parser.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-dir-scanner.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-jsonld.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-news-sitemap.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 14.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-site-tree.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-site-tree-yaml.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-cli.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 17.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-fetcher.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/16-config.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Sitemap": "raku_also_fails",
+    "Sitemap::Builder": "raku_also_fails",
+    "Sitemap::Config": "raku_also_fails",
+    "Sitemap::Crawler": "raku_also_fails",
+    "Sitemap::DirScanner": "raku_also_fails",
+    "Sitemap::Extraction": "raku_also_fails",
+    "Sitemap::Fetcher": "raku_also_fails",
+    "Sitemap::Format::Atom": "raku_also_fails",
+    "Sitemap::Format::FeedBuilder": "raku_also_fails",
+    "Sitemap::Format::HTML": "raku_also_fails",
+    "Sitemap::Format::MRSS": "raku_also_fails",
+    "Sitemap::Format::RSS": "raku_also_fails",
+    "Sitemap::Format::TXT": "raku_also_fails",
+    "Sitemap::Grammar::LinkExtract": "raku_also_fails",
+    "Sitemap::Grammar::RobotsTxt": "ok",
+    "Sitemap::Grammar::SitemapSniff": "ok",
+    "Sitemap::InputParser": "raku_also_fails",
+    "Sitemap::Item": "raku_also_fails",
+    "Sitemap::JsonLd": "ok",
+    "Sitemap::Parser": "raku_also_fails",
+    "Sitemap::SiteTree": "raku_also_fails",
+    "Sitemap::Subscribable": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-11",
+    "harness": 1,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "1557d41",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/S/IT/SITEMAP/af1773e4378f172b4c420c4738db2912543073e5.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}
