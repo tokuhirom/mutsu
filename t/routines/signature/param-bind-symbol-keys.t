@@ -9,7 +9,7 @@ use Test;
 # share one symbol, so a mix-up would show up as a *wrong name* being bound,
 # marked or cleared rather than as a slowdown.
 
-plan 32;
+plan 55;
 
 # --- the fixed per-call keys -------------------------------------------------
 
@@ -129,3 +129,88 @@ sub container-id($bind) {
 ok container-id(True), 'the marker is set for the bound declaration';
 nok container-id(False), 'a later same-named assigned declaration clears it';
 ok container-id(True), 'and the marker is set again on the next bound declaration';
+
+# --- #7766 unit 2: the read-modify-write ops' name symbol ---------------------
+# `++`, `--` and the fused `$x OP= rhs` take their target's name from a
+# constant-pool operand, and their tail probes it against four Symbol-keyed
+# stores: the readonly registry, the env, the declared-type lane and the
+# native-int constraint. Those probes now share the one symbol
+# `CompiledCode::const_sym` memoizes per chunk instead of re-interning the
+# string at each layer. A mix-up would read or write the WRONG NAME's entry, so
+# every case below gives its neighbours distinguishable values.
+
+# the native-int constraint lane (wrapping) vs. a boxed neighbour
+my int8 $i8 = 127;
+$i8++;
+is $i8, -128, 'int8 ++ wraps at the top';
+my int8 $j8 = -128;
+$j8--;
+is $j8, 127, 'int8 -- wraps at the bottom';
+my int8 $k8 = 120;
+$k8 += 10;
+is $k8, -126, 'int8 += wraps';
+my Int $boxed = 127;
+$boxed++;
+is $boxed, 128, 'a boxed Int neighbour does not wrap';
+
+# the declared-type lane, re-checked after the mutation
+subset Even of Int where * %% 2;
+my Even $even = 2;
+dies-ok { $even++ }, 'a subset constraint rejects the incremented value';
+is $even, 2, 'the rejected increment leaves the variable untouched';
+lives-ok { $even += 2 }, 'a compound assign satisfying the constraint is accepted';
+is $even, 4, 'and stores the new value';
+
+# the readonly registry, and the separate sigilless-readonly marker
+sub ro-param($n) { $n++ }
+dies-ok { ro-param(1) }, 'a readonly parameter rejects ++';
+sub rw-copy($n is copy) { $n++; $n }
+is rw-copy(1), 2, 'an `is copy` parameter accepts ++';
+my \Gbound = 5;
+dies-ok { Gbound++ }, 'a sigilless bind to a value rejects ++';
+
+# two same-named locals in sibling scopes: one symbol, two slots
+sub branch-local($flag) {
+    if $flag { my $c = 10; $c++; return $c }
+    else     { my $c = 20; $c += 5; return $c }
+}
+is branch-local(True), 11, 'the then-branch local increments its own value';
+is branch-local(False), 25, 'the else-branch local compounds its own value';
+
+# the env store: an `our` scalar writes through its canonical cell
+our $pkg-counter = 1;
+$pkg-counter++;
+is $pkg-counter, 2, 'an `our` scalar increments through its canonical cell';
+$pkg-counter ~= "!";
+is $pkg-counter, "2!", 'an `our` scalar concatenates through the same cell';
+
+# a dynamic variable incremented from a callee
+my $*dyn-counter = 1;
+sub bump-dyn() { $*dyn-counter++ }
+bump-dyn();
+is $*dyn-counter, 2, 'a dynamic variable increments in the declaring frame';
+
+# the topic, whose store has its own writeback arm
+my @src = 1, 2, 3;
+my @mapped = @src.map({ $_ += 1 });
+is @mapped.join(","), "2,3,4", 'a compound assign to the topic yields the new value';
+is @src.join(","), "2,3,4", 'and writes back through the rw topic alias';
+for @src <-> $x { $x++ }
+is @src.join(","), "3,4,5", 'a rw loop alias writes back';
+
+# distinct names must not alias one another
+my $first = 1;
+my $second = 100;
+$first++;
+$second += 2;
+is $first, 2, 'the first name increments alone';
+is $second, 102, 'the second name compounds alone';
+
+my $chained = "a";
+$chained ~= "b";
+$chained x= 2;
+is $chained, "abab", 'string compound assignment chains on one name';
+
+my $repeated = 0;
+$repeated++ for ^5;
+is $repeated, 5, 'repeated increments accumulate on one name';

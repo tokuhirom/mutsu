@@ -211,10 +211,24 @@ impl Interpreter {
     /// cell and the bare stores are skipped; otherwise the ordinary bare-name
     /// store applies, exactly as before.
     pub(crate) fn store_scalar_by_name(&mut self, name: &str, val: &Value) {
+        self.store_scalar_by_name_for(name, None, val)
+    }
+
+    /// [`Self::store_scalar_by_name`] for a caller that already holds `name`'s
+    /// interned form — the three read-modify-write ops, whose name operand is a
+    /// constant-pool index with a symbol memoized per chunk
+    /// ([`CompiledCode::const_sym`]). The env is `Symbol`-keyed, so the `&str`
+    /// form re-hashed the name on every `++`/`--`/`OP=`.
+    pub(crate) fn store_scalar_by_name_for(
+        &mut self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        val: &Value,
+    ) {
         if self.our_package_scalar_write(name, val) {
             return;
         }
-        self.set_env_with_main_alias(name, val.clone());
+        self.set_env_with_main_alias_sym(name, name_sym, val.clone());
         // A compound assign / inc-dec to a package-scope free variable (`our $X`
         // or a `package { my $X }` lexical) reached from inside a named sub uses
         // the bare name; mirror the value back into the canonical package store

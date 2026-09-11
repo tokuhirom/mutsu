@@ -83,7 +83,11 @@ impl Interpreter {
         let rhs = self.stack.pop().unwrap();
         self.resolve_pending_alias_binds(code);
         let name = Self::const_str(code, name_idx);
-        self.check_readonly_for_increment(name)?;
+        // The name's interned form, memoized per chunk: this op's tail probes it
+        // against four Symbol-keyed stores (readonly registry, env, type
+        // constraint, native-int constraint), each of which re-hashed the string.
+        let name_sym = code.const_sym(name_idx);
+        self.check_readonly_for_increment_for(name, Some(name_sym))?;
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self
@@ -103,7 +107,7 @@ impl Interpreter {
             // boxed lexical's cell is authoritative and must win over a stale
             // plain `env` copy left by a prior call's return-merge.
             .or_else(|| self.package_scope_lexical(name))
-            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::NIL);
@@ -140,7 +144,8 @@ impl Interpreter {
         let new_val = self.apply_compound_base_op(op, raw_val, rhs)?;
         // `AtomicCompoundVar` is only emitted for a NON-local target (the compiler
         // skips it when `local_map` has the name), so there is no baked slot here.
-        let stored = self.store_named_scalar_rmw_result(code, name, None, new_val)?;
+        let stored =
+            self.store_named_scalar_rmw_result(code, name, Some(name_sym), None, new_val)?;
         self.stack.push(stored);
         Ok(())
     }
@@ -219,6 +224,10 @@ impl Interpreter {
         // Lazily convert pending alias bind names into local_bind_pairs.
         self.resolve_pending_alias_binds(code);
         let name = Self::const_str(code, name_idx);
+        // The name's interned form, memoized per chunk: the readonly registry,
+        // the env, and the type-constraint lane are all Symbol-keyed, and this
+        // op probes each of them once per increment.
+        let name_sym = code.const_sym(name_idx);
         // Handle $CALLER::varname++ — increment through caller scope
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
             let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
@@ -231,7 +240,7 @@ impl Interpreter {
         if let Some(r) = self.try_slotless_attr_incdec(code, name, true, false) {
             return r;
         }
-        self.check_readonly_for_increment(name)?;
+        self.check_readonly_for_increment_for(name, Some(name_sym))?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
@@ -243,17 +252,18 @@ impl Interpreter {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
-                let val = self.normalize_incdec_source_with_type(name, inner);
+                let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), inner);
                 let new_val = self.increment_value_smart(&val)?;
-                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+                let new_val =
+                    self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(val);
                 return Ok(());
             }
             let raw_val = self.locals[slot].clone();
-            let val = self.normalize_incdec_source_with_type(name, raw_val);
+            let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
             let new_val = self.increment_value_smart(&val)?;
-            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+            let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
@@ -268,7 +278,7 @@ impl Interpreter {
             .per_call_anon_state_read(name, Value::int(0))
             .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
-            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::int(0));
@@ -280,9 +290,9 @@ impl Interpreter {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();
-            let val = self.normalize_incdec_source_with_type(name, inner);
+            let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), inner);
             let new_val = self.increment_value_smart(&val)?;
-            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+            let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(val);
             return Ok(());
@@ -294,15 +304,15 @@ impl Interpreter {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
             let val = Self::normalize_incdec_source(fetched);
             let new_val = self.increment_value_smart(&val)?;
-            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+            let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
             loan_env!(self, assign_proxy_lvalue(raw_val, new_val))?;
             self.stack.push(val);
             return Ok(());
         }
-        let val = self.normalize_incdec_source_with_type(name, raw_val);
+        let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
         let new_val = self.increment_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
-        self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
+        let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
+        self.store_named_scalar_rmw_result(code, name, Some(name_sym), slot, new_val)?;
         self.stack.push(val);
         Ok(())
     }
@@ -330,10 +340,13 @@ impl Interpreter {
         slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // See `exec_post_increment_op_inner`: one memoized symbol serves every
+        // Symbol-keyed probe below.
+        let name_sym = code.const_sym(name_idx);
         if let Some(r) = self.try_slotless_attr_incdec(code, name, false, false) {
             return r;
         }
-        self.check_readonly_for_increment(name)?;
+        self.check_readonly_for_increment_for(name, Some(name_sym))?;
         if name.starts_with('!')
             && let Some(slot) = self.find_local_slot(code, name)
             && !matches!(self.locals[slot].view(), ValueView::Proxy { .. })
@@ -345,17 +358,18 @@ impl Interpreter {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
-                let val = self.normalize_incdec_source_with_type(name, inner);
+                let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), inner);
                 let new_val = self.decrement_value_smart(&val)?;
-                let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+                let new_val =
+                    self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
                 arc.lock().unwrap().clone_from(&new_val);
                 self.stack.push(val);
                 return Ok(());
             }
             let raw_val = self.locals[slot].clone();
-            let val = self.normalize_incdec_source_with_type(name, raw_val);
+            let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
             let new_val = self.decrement_value_smart(&val)?;
-            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+            let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
@@ -370,7 +384,7 @@ impl Interpreter {
             .per_call_anon_state_read(name, Value::int(0))
             .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
-            .or_else(|| self.get_env_with_main_alias(name))
+            .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::int(0));
@@ -381,17 +395,17 @@ impl Interpreter {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();
-            let val = self.normalize_incdec_source_with_type(name, inner);
+            let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), inner);
             let new_val = self.decrement_value_smart(&val)?;
-            let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+            let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
             arc.lock().unwrap().clone_from(&new_val);
             self.stack.push(val);
             return Ok(());
         }
-        let val = self.normalize_incdec_source_with_type(name, raw_val);
+        let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
         let new_val = self.decrement_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
-        self.store_named_scalar_rmw_result(code, name, slot, new_val)?;
+        let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
+        self.store_named_scalar_rmw_result(code, name, Some(name_sym), slot, new_val)?;
         self.stack.push(val);
         Ok(())
     }
