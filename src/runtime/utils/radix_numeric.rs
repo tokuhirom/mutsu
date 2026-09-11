@@ -216,6 +216,14 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             .get("value")
             .cloned()
             .unwrap_or(Value::num(0.0)),
+        // A Match numifies through the text it matched. This matters when a
+        // quantified capture is reduced with `.sum`: the capture list holds
+        // Match values, not bare strings, so the normal arithmetic fold must
+        // reach the same coercion as `.Numeric`/`to_f64`.
+        ValueView::Instance { .. } if val.is_match_instance() => val
+            .match_str_value()
+            .map(coerce_to_numeric)
+            .unwrap_or_else(|| Value::int(0)),
         ValueView::Instance {
             class_name,
             attributes,
