@@ -449,7 +449,7 @@ def rmtree(path: str) -> None:
 
 # Characters `actions/upload-artifact` refuses in a path, because NTFS cannot
 # hold them, plus the path separators and `%` (which the escape below uses, so
-# escaping it keeps the mapping injective).
+# escaping it keeps that part of the mapping injective).
 #
 # This list is load-bearing, not defensive tidiness: ONE rejected path fails the
 # WHOLE artifact upload. `App:Racl` and `Slang:Date` -- two fez distributions
@@ -458,17 +458,44 @@ def rmtree(path: str) -> None:
 # first corpus sweep.
 _UNSAFE_IN_FILENAME = re.compile(r'[:"<>|*?%/\\\r\n]')
 
+# How many hex digits of the name's digest go in the filename. It only has to
+# separate names that would otherwise share a stem, and the corpus has exactly
+# two such pairs, so 8 is far more than enough.
+_DIGEST_LEN = 8
+
 
 def record_filename(dist: str) -> str:
     """The `ecosystem/dists/<S>/` filename for a distribution.
 
-    `::` becomes `--` (readable, and no fez name contains a literal `--`), and
-    anything left that a filesystem or an artifact upload would reject becomes
-    `%XX`. So `String::Utils` is `String--Utils.json` and `App:Racl` is
-    `App%3ARacl.json`.
+    `String::Utils` becomes `String--Utils~<digest>.json`. Three properties, each
+    of which the corpus actually needs:
+
+    * **Readable.** `::` becomes `--`, so the stem is the distribution name.
+    * **Legal everywhere.** Anything a filesystem or a GitHub artifact upload
+      would reject becomes `%XX`, so `App:Racl` is `App%3ARacl~...json`. One
+      rejected path fails an entire artifact upload.
+    * **Injective, including case-insensitively.** This is why the digest is
+      there, and it is not paranoia -- `::` -> `--` is NOT injective over the
+      real index, and a case-insensitive filesystem collapses more still:
+
+        | these distinct distributions | shared this filename |
+        |---|---|
+        | `Qwiratry::Location::HTTP`, `Qwiratry--Location--HTTP` | exactly |
+        | `WWW::CloudHosting::Hetzner`, `WWW--CloudHosting--Hetzner` | exactly |
+        | `CSV-AutoClass`, `CSV-Autoclass` | on a case-insensitive filesystem |
+        | `Config::INI`, `Config::Ini` | on a case-insensitive filesystem |
+
+      The first two silently overwrote each other *in the ledger*; the last two
+      were dropped by the artifact upload, which is case-insensitive, and would
+      break a macOS or Windows checkout. A digest over the exact name separates
+      all four pairs and cannot rot as the index grows -- unlike a
+      disambiguate-only-when-needed rule, which would rename an existing record
+      the day a colliding distribution is published.
     """
-    stem = dist.replace("::", "--")
-    return _UNSAFE_IN_FILENAME.sub(lambda m: "%%%02X" % ord(m.group()), stem) + ".json"
+    stem = _UNSAFE_IN_FILENAME.sub(lambda m: "%%%02X" % ord(m.group()),
+                                   dist.replace("::", "--"))
+    digest = hashlib.sha256(dist.encode("utf-8")).hexdigest()[:_DIGEST_LEN]
+    return f"{stem}~{digest}.json"
 
 
 # --- self-test ---------------------------------------------------------------
@@ -517,24 +544,51 @@ def _self_test() -> int:
             print(f"tap_verdict: want {want}, got {got} for {out!r}", file=sys.stderr)
             failures += 1
 
-    for dist, want in [
-        ("String::Utils", "String--Utils.json"),
-        ("BTree", "BTree.json"),
-        # The two real fez names that broke the first corpus sweep.
-        ("App:Racl", "App%3ARacl.json"),
-        ("Slang:Date", "Slang%3ADate.json"),
-        # Every other character an artifact upload rejects, and the escape's own.
-        ('A"B', "A%22B.json"), ("A<B>C", "A%3CB%3EC.json"), ("A|B", "A%7CB.json"),
-        ("A*B", "A%2AB.json"), ("A?B", "A%3FB.json"), ("A%B", "A%25B.json"),
-        ("A/B", "A%2FB.json"), ("A\\B", "A%5CB.json"),
+    # The stem must stay readable, and every character an artifact upload
+    # rejects must be gone. The digest is checked for its own property below.
+    for dist, want_stem in [
+        ("String::Utils", "String--Utils"),
+        ("BTree", "BTree"),
+        # The two real fez names whose single colon cost shards A and S their
+        # measurements on the first corpus sweep.
+        ("App:Racl", "App%3ARacl"),
+        ("Slang:Date", "Slang%3ADate"),
+        # Every other rejected character, and the escape's own.
+        ('A"B', "A%22B"), ("A<B>C", "A%3CB%3EC"), ("A|B", "A%7CB"),
+        ("A*B", "A%2AB"), ("A?B", "A%3FB"), ("A%B", "A%25B"),
+        ("A/B", "A%2FB"), ("A\\B", "A%5CB"),
     ]:
         got = record_filename(dist)
-        if got != want:
-            print(f"record_filename({dist!r}): want {want!r}, got {got!r}", file=sys.stderr)
+        if not re.fullmatch(re.escape(want_stem) + r"~[0-9a-f]{8}\.json", got):
+            print(f"record_filename({dist!r}): want {want_stem}~<8 hex>.json, "
+                  f"got {got!r}", file=sys.stderr)
             failures += 1
         if re.search(r'[:"<>|*?\r\n]', got):
             print(f"record_filename({dist!r}) still artifact-hostile: {got!r}", file=sys.stderr)
             failures += 1
+
+    # Injectivity is the property the ledger depends on, and these four pairs are
+    # real: the first two collide under `::` -> `--` alone, the last two collide
+    # on any case-insensitive filesystem (which is what an artifact upload is).
+    for a, b in [
+        ("Qwiratry::Location::HTTP", "Qwiratry--Location--HTTP"),
+        ("WWW::CloudHosting::Hetzner", "WWW--CloudHosting--Hetzner"),
+        ("CSV-AutoClass", "CSV-Autoclass"),
+        ("Config::INI", "Config::Ini"),
+    ]:
+        fa, fb = record_filename(a), record_filename(b)
+        if fa == fb:
+            print(f"record_filename collides: {a!r} and {b!r} both -> {fa!r}",
+                  file=sys.stderr)
+            failures += 1
+        if fa.lower() == fb.lower():
+            print(f"record_filename collides case-insensitively: {a!r} and {b!r} "
+                  f"-> {fa!r} / {fb!r}", file=sys.stderr)
+            failures += 1
+    # And it is stable: the same name always gets the same filename.
+    if record_filename("String::Utils") != record_filename("String::Utils"):
+        print("record_filename is not deterministic", file=sys.stderr)
+        failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")

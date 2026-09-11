@@ -54,12 +54,23 @@ def main() -> int:
         sys.exit(f"no records at {DISTS_DIR} — run scripts/ecosystem-sweep.py first")
 
     rows, measured = [], {}
+    # The page is keyed by the record's own `dist`, never by its filename, so a
+    # second file claiming the same distribution would list it twice with two
+    # different verdicts. That is what a filename-rule change leaves behind if
+    # the existing records are not renamed with it, so refuse it here as well as
+    # in the rollup.
+    where = {}
     for dirpath, _dirs, names in os.walk(DISTS_DIR):
         for name in names:
             if not name.endswith(".json"):
                 continue
-            with open(os.path.join(dirpath, name), encoding="utf-8") as fh:
+            path = os.path.join(dirpath, name)
+            with open(path, encoding="utf-8") as fh:
                 record = json.load(fh)
+            if record.get("dist") in where:
+                sys.exit(f"two records claim the distribution "
+                         f"{record['dist']!r}:\n  {where[record['dist']]}\n  {path}")
+            where[record.get("dist")] = path
             totals = record.get("totals") or {}
             rows.append({
                 "dist": record["dist"],

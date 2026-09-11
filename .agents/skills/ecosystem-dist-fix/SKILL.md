@@ -63,7 +63,8 @@ the mapping table in [docs/agent-environments.md](../../../docs/agent-environmen
 ## 1. Read the ledger record before you download anything
 
 ```sh
-cat ecosystem/dists/S/String--Utils.json      # <S> = first letter; :: becomes --
+ls ecosystem/dists/S/String--Utils*           # <S> = first letter; :: becomes --,
+                                              # plus a ~<digest> (see ecosystem/README.md)
 ```
 
 `status` tells you what kind of job this is, and it is worth knowing before you spend a build:

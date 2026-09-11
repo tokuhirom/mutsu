@@ -322,12 +322,33 @@ def write_record(record):
 
 
 def load_records():
+    """Every record in the ledger, keyed by nothing but its own `dist` field.
+
+    Two files claiming the same distribution is a hard error rather than a
+    silently double-counted denominator. That is not hypothetical: it is exactly
+    what a change to `record_filename()` produces if the rename of the existing
+    records is forgotten, and a rollup would then report a corpus larger than
+    the corpus with one distribution's numbers counted twice.
+    """
     out = []
+    where = {}
     for dirpath, _dirs, names in os.walk(DISTS_DIR):
         for n in sorted(names):
-            if n.endswith(".json"):
-                with open(os.path.join(dirpath, n), encoding="utf-8") as fh:
-                    out.append(json.load(fh))
+            if not n.endswith(".json"):
+                continue
+            path = os.path.join(dirpath, n)
+            with open(path, encoding="utf-8") as fh:
+                record = json.load(fh)
+            dist = record.get("dist")
+            if dist in where:
+                raise SystemExit(
+                    f"two records claim the distribution {dist!r}:\n"
+                    f"  {where[dist]}\n  {path}\n"
+                    "One of them is stale -- most likely the filename rule "
+                    "changed and an old-named record was left behind. Delete it."
+                )
+            where[dist] = path
+            out.append(record)
     return out
 
 
@@ -606,7 +627,18 @@ def main():
     done = collections.Counter()
 
     def work(name):
-        record = sweep_dist(name, index, args, bundled)
+        try:
+            record = sweep_dist(name, index, args, bundled)
+        except Exception as exc:  # noqa: BLE001 - see below
+            # One distribution must never cost the shard. A `Cro::*` tarball
+            # containing an absolute symlink raised tarfile.AbsoluteLinkError out
+            # of the extractor, through `pool.map`, and killed the whole sweep
+            # process at distribution 93 of 124 -- the 32 after it were never
+            # measured, and only the `if: always()` staging in the workflow saved
+            # the 92 before it. A malformed tarball, an unreadable META6.json or a
+            # surprise from any of 1624 unaudited archives is a fact about that
+            # distribution, so it is recorded as one.
+            record = harness_error_record(name, index, args, exc)
         changed = write_record(record)
         with _tally_lock:
             done[record["status"]] += 1
@@ -629,6 +661,32 @@ def main():
     log("\nrun `--rollup` to regenerate summary.json / summary.md"
         + (" / history.tsv" if args.all else ""))
     return 0
+
+
+def harness_error_record(name, index, opts, exc) -> dict:
+    """A record for a distribution the harness itself could not process.
+
+    `skipped` rather than a failure verdict: nothing was measured, so charging it
+    to mutsu would be a lie, and `blocked_dep` already means something specific.
+    The exception is written into `note` so the ledger says why instead of the
+    distribution simply being absent.
+    """
+    return {
+        "schema": SCHEMA, "dist": name,
+        "version": (index.dists.get(name, {}).get("version") or "?"),
+        "source": {"index": "fez", "url": index.url(name)},
+        "measured": {
+            "date": dt.date.today().isoformat(),
+            "mutsu_commit": opts.mutsu_commit, "mutsu_version": opts.mutsu_version,
+            "raku_version": opts.raku_version, "raku_backend": opts.raku_backend,
+            "host": opts.host, "sandbox": "bwrap" if opts.sandbox else "none",
+            "attempts": opts.attempts, "harness": HARNESS,
+        },
+        "status": "skipped",
+        "note": f"harness error: {type(exc).__name__}: {exc}",
+        "files": [],
+        "totals": empty_totals(),
+    }
 
 
 def bundled_modules() -> set[str]:
