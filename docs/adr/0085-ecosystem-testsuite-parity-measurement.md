@@ -264,7 +264,19 @@ mixed in.
 `.github/workflows/ecosystem-sweep.yml` gives the sweep a **`workflow_dispatch`**
 entry point: one dispatch measures a selection (`stale` / `all` / one shard / a
 list of distributions / one status), fans the corpus out across the 27 letter
-shards, and lands the updated records as an ordinary pull request.
+shards, and lands the updated records as an ordinary pull request that
+**auto-merges when CI passes**.
+
+That last part is deliberate and was initially got wrong: the first version left
+the pull request open for a human, reading §8's "check that `measured.host` is
+uniform before landing" as a call for review. It is not. A records diff is
+thousands of machine-generated measurements, and a reviewer cannot tell a right
+number from a wrong one by reading it — while the uniformity check itself is
+automated (`scripts/ecosystem-ci.py provenance`, whose verdict gates the history
+row). Every other guard is upstream of the diff too, so review added a manual
+step that decided nothing and left correct measurements sitting unlanded. CI is
+the gate; the pull request is the audit trail and the revert handle. `publish:
+branch` remains for a sweep someone does want to inspect first.
 
 What this changes is *who needs the hardware*, not *when the sweep runs*. The
 argument above rejected a **weekly** sweep and that stands — there is no

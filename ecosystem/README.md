@@ -74,7 +74,9 @@ corpus without a sandbox) and a `raku` on PATH.
 the [`Ecosystem sweep`](../.github/workflows/ecosystem-sweep.yml) workflow
 (`gh workflow run ecosystem-sweep.yml -f scope=stale`). It builds mutsu once,
 pins one rakudo and one index snapshot for the whole run, fans `scope: all` out
-across the 27 shards, and opens the pull request itself. Records it measures
+across the 27 shards, and opens the pull request itself — which auto-merges once
+CI passes, because a diff of machine-generated measurements has nothing in it for
+a reviewer to act on (`publish: branch` if you do want to inspect one first). Records it measures
 carry a `gha-*` `measured.host`, so a CI number is never silently mixed with a
 locally-measured one.
 
