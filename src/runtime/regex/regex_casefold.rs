@@ -59,6 +59,13 @@ fn pattern_has_multichar_fold(pattern: &RegexPattern) -> bool {
 fn atom_has_multichar_fold(atom: &RegexAtom) -> bool {
     match atom {
         RegexAtom::Literal(ch) => has_multichar_fold(*ch),
+        RegexAtom::CharClass(class) => {
+            !class.negated
+                && class
+                    .items
+                    .iter()
+                    .any(|item| matches!(item, ClassItem::Char(ch) if has_multichar_fold(*ch)))
+        }
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => pattern_has_multichar_fold(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
@@ -201,6 +208,116 @@ fn casefold_atom(atom: &RegexAtom) -> CasefoldedAtom {
             negated: *negated,
             is_behind: *is_behind,
         }),
+        RegexAtom::CharClass(class) if !class.negated => {
+            CasefoldedAtom::Single(casefold_char_class(class))
+        }
         other => CasefoldedAtom::Single(other.clone()),
+    }
+}
+
+/// Turn a positive character class into folded alternatives when one of its
+/// entries expands to multiple codepoints. A character class normally consumes
+/// one character, but an entry such as `ß` has the folded spelling `ss`; in
+/// folded match space that entry must therefore be represented by a sequence,
+/// not by a single `CharClass` edge. Keeping the ordinary entries in one class
+/// preserves the class's set semantics while the expanded entries become
+/// non-capturing literal branches.
+fn casefold_char_class(class: &CharClass) -> RegexAtom {
+    let mut single_items = Vec::new();
+    let mut expanded = Vec::new();
+
+    for item in &class.items {
+        match item {
+            ClassItem::Char(ch) => {
+                let folded = casefold_char(*ch);
+                if folded.len() == 1 {
+                    single_items.push(ClassItem::Char(folded[0]));
+                } else {
+                    expanded.push(folded);
+                }
+            }
+            ClassItem::Range(start, end) => {
+                let folded_start = casefold_char(*start);
+                let folded_end = casefold_char(*end);
+                if folded_start.len() == 1 && folded_end.len() == 1 {
+                    single_items.push(ClassItem::Range(folded_start[0], folded_end[0]));
+                } else {
+                    // A range whose endpoint has a multi-character fold has
+                    // no useful one-edge representation in folded space. Keep
+                    // the original range; this fallback does not affect the
+                    // expanded-entry path.
+                    single_items.push(item.clone());
+                }
+            }
+            other => single_items.push(other.clone()),
+        }
+    }
+
+    let mut branches = Vec::new();
+    if !single_items.is_empty() {
+        branches.push(one_atom_pattern(RegexAtom::CharClass(CharClass {
+            negated: false,
+            items: single_items,
+        })));
+    }
+    branches.extend(expanded.into_iter().map(|chars| {
+        RegexPattern {
+            tokens: chars
+                .into_iter()
+                .map(|ch| RegexToken {
+                    atom: RegexAtom::Literal(ch),
+                    quant: RegexQuant::One,
+                    named_capture: None,
+                    secondary_named_capture: None,
+                    hash_capture: None,
+                    force_list_capture: false,
+                    ratchet: false,
+                    frugal: false,
+                    separator: None,
+                    from_runtime_interpolation: false,
+                })
+                .collect(),
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case: false,
+            ignore_mark: false,
+        }
+    }));
+
+    match branches.len() {
+        0 => RegexAtom::CharClass(CharClass {
+            negated: false,
+            items: Vec::new(),
+        }),
+        1 => {
+            let branch = branches.pop().unwrap();
+            if branch.tokens.len() == 1 {
+                branch.tokens.into_iter().next().unwrap().atom
+            } else {
+                RegexAtom::Group(branch)
+            }
+        }
+        _ => RegexAtom::Alternation(branches),
+    }
+}
+
+fn one_atom_pattern(atom: RegexAtom) -> RegexPattern {
+    RegexPattern {
+        tokens: vec![RegexToken {
+            atom,
+            quant: RegexQuant::One,
+            named_capture: None,
+            secondary_named_capture: None,
+            hash_capture: None,
+            force_list_capture: false,
+            ratchet: false,
+            frugal: false,
+            separator: None,
+            from_runtime_interpolation: false,
+        }],
+        anchor_start: false,
+        anchor_end: false,
+        ignore_case: false,
+        ignore_mark: false,
     }
 }
