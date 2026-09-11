@@ -78,6 +78,7 @@ roast/S02-literals/hex_chars.t
 roast/S02-literals/listquote-whitespace.t
 roast/S02-literals/listquote.t
 roast/S02-literals/misc-interpolation.t
+roast/S02-literals/numeric.t
 roast/S02-literals/pair-boolean.t
 roast/S02-literals/pairs.t
 roast/S02-literals/pod.t
@@ -1262,6 +1263,7 @@ roast/S32-str/shiftjis-encode-decode.t
 roast/S32-str/space-chars.t
 roast/S32-str/split-simple.t
 roast/S32-str/split.t
+roast/S32-str/sprintf-a.t
 roast/S32-str/sprintf-b.t
 roast/S32-str/sprintf-c.t
 roast/S32-str/sprintf-d.t

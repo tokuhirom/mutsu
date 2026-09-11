@@ -59,25 +59,39 @@ Measured against Rakudo v2026.07:
 | `S05-metasyntax/charset.t` | 89/90 | 57/90 |
 | `S05-metasyntax/regex.t` | 66/68 | 58/68 |
 | `S05-modifier/ignorecase.t` | 110/115 | 103/115 |
-| `S02-literals/numeric.t` | parse error (0/89) | SORRY |
-| `S32-str/sprintf-a.t` | 0/586 | 0/586 |
+| `S02-literals/numeric.t` | parse error (0/89) → **89/89 once #7902 landed** | SORRY |
+| `S32-str/sprintf-a.t` | 0/586 → **586/586 once #7903 landed** | 0/586 |
 
-mutsu is *ahead of* the local rakudo on all four regex files and level with it on the two hexfloat
-ones. Nothing regressed — the target moved.
+mutsu is *ahead of* the local rakudo on all four regex files, and started level with it on the two
+hexfloat ones before overtaking it there too (see below). Nothing regressed — the target moved.
 
-## Whitelist follow-up
+## Whitelist follow-up, and a net gain
 
 Per `docs/vendoring.md`, every whitelisted file upstream touched was re-run. Thirteen of the
-nineteen still pass. The five that no longer pass completely were removed from
-`roast-whitelist.txt` (1436 → 1431) and recorded in `TODO_roast/BLOCKERS.md` under "Files
-dewhitelisted by the 2026-09-11 roast re-vendor", classified **No oracle (spec ahead of the local
-rakudo)** with the exact failing subtest numbers and what each one asserts. The new
-`S32-str/sprintf-a.t` is listed there too.
+nineteen still passed unchanged; six files (five whitelisted, plus the new `sprintf-a.t`) did not,
+and each became a GitHub issue with its failing subtests, its repro, and the measured rakudo
+comparison.
 
-Four of the five miss the whitelist by one or two subtests, so they are close: `caps.t` needs only
-test 47, `charset.t` only test 54, `regex.t` only 59 and 67. `numeric.t` is the outlier — a single
-parse error on `0x1.8P4` kills all 89 subtests, so implementing the C99 hexfloat literal in the
-lexer recovers a whole file at once and would put mutsu ahead of rakudo v2026.07 on it.
+**Two of those six were fixed before this PR even landed.** The C99 hexfloat-literal gap
+([#7902](https://github.com/tokuhirom/mutsu/issues/7902)) and the `%a`/`%A` `sprintf` directives
+([#7903](https://github.com/tokuhirom/mutsu/issues/7903)) were implemented on `main` within hours
+of being filed. Re-measured against them, `S02-literals/numeric.t` passes all 89 subtests and the
+brand-new `S32-str/sprintf-a.t` passes all 586, so both are on the whitelist. The net effect of the
+re-vendor is therefore **1436 → 1433 files but +586 subtests**, and mutsu is now ahead of Rakudo
+v2026.07 on both hexfloat files, which still fail them.
+
+That is the argument for keeping roast current in one data point: the update did not just cost four
+files, it named two concrete, well-scoped features that were worth implementing and got them done
+the same day.
+
+The four that remain off the whitelist —
+[#7904](https://github.com/tokuhirom/mutsu/issues/7904) `caps.t` (test 47),
+[#7905](https://github.com/tokuhirom/mutsu/issues/7905) `charset.t` (test 54),
+[#7906](https://github.com/tokuhirom/mutsu/issues/7906) `regex.t` (tests 59, 67) and
+[#7907](https://github.com/tokuhirom/mutsu/issues/7907) `ignorecase.t` (tests 29/31/35/39/40) — are
+recorded in `TODO_roast/BLOCKERS.md` under "Files dewhitelisted by the 2026-09-11 roast re-vendor",
+classified **No oracle (spec ahead of the local rakudo)**. Each misses by one or two subtests, so
+they are close, and mutsu already scores higher than rakudo v2026.07 on every one of them.
 
 `S32-io/IO-Socket-Async.t` stays whitelisted: it times out at "planned 40 ran 17" in the remote
 agent container, which is the documented network-sandbox failure (see `docs/agent-environments.md`),
