@@ -396,6 +396,68 @@ pub(super) fn substitute_type_params_in_method(
     }
 }
 
+/// Resolve role pseudo-types after a role method is copied into a concrete
+/// class. `::?CLASS` names the class receiving the role, while `::?ROLE` names
+/// the role that originally declared the method. Keep the transformation on
+/// the copied `MethodDef`: the role's own definition must retain the pseudo
+/// types until a consuming class (or a role pun) provides their meaning.
+pub(super) fn resolve_role_pseudo_types_in_method(
+    method: &mut MethodDef,
+    class_name: &str,
+    role_name: &str,
+) {
+    fn resolve_type_name(type_name: &str, class_name: &str, role_name: &str) -> String {
+        type_name
+            .replace("::?CLASS", class_name)
+            .replace("::?ROLE", role_name)
+    }
+
+    fn resolve_param_def(pd: &ParamDef, class_name: &str, role_name: &str) -> ParamDef {
+        let mut resolved = pd.clone();
+        if let Some(type_constraint) = &resolved.type_constraint {
+            resolved.type_constraint =
+                Some(resolve_type_name(type_constraint, class_name, role_name));
+        }
+        if let Some(sub_signature) = &resolved.sub_signature {
+            resolved.sub_signature = Some(
+                sub_signature
+                    .iter()
+                    .map(|p| resolve_param_def(p, class_name, role_name))
+                    .collect(),
+            );
+        }
+        if let Some(outer_sub_signature) = &resolved.outer_sub_signature {
+            resolved.outer_sub_signature = Some(
+                outer_sub_signature
+                    .iter()
+                    .map(|p| resolve_param_def(p, class_name, role_name))
+                    .collect(),
+            );
+        }
+        if let Some((signature_params, signature_return)) = &resolved.code_signature {
+            let resolved_params = signature_params
+                .iter()
+                .map(|p| resolve_param_def(p, class_name, role_name))
+                .collect();
+            let resolved_return = signature_return
+                .as_ref()
+                .map(|r| resolve_type_name(r, class_name, role_name));
+            resolved.code_signature = Some((resolved_params, resolved_return));
+        }
+        resolved
+    }
+
+    method.param_defs = method
+        .param_defs
+        .iter()
+        .map(|pd| resolve_param_def(pd, class_name, role_name))
+        .collect();
+    method.return_type = method
+        .return_type
+        .as_ref()
+        .map(|rt| resolve_type_name(rt, class_name, role_name));
+}
+
 /// Context threaded through the `$!attr` declaration validators so that an
 /// undeclared private attribute can be reported as a fully-populated
 /// `X::Attribute::Undeclared` (with `package-name`/`package-kind`).

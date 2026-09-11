@@ -4,8 +4,8 @@
 //! `registration_class_decl.rs` — no behavior change.
 
 use super::registration_class::{
-    ResolvedRoleCandidate, parse_role_type_args, should_treat_role_arg_as_type_expr,
-    substitute_type_params_in_method, type_value_name,
+    ResolvedRoleCandidate, parse_role_type_args, resolve_role_pseudo_types_in_method,
+    should_treat_role_arg_as_type_expr, substitute_type_params_in_method, type_value_name,
 };
 use super::registration_class_decl::BUILTIN_PARENT_TYPES;
 use super::*;
@@ -359,6 +359,13 @@ impl Interpreter {
                         if method.original_role.is_none() {
                             method.original_role = method.role_origin.clone();
                         }
+                        let source_role = method
+                            .original_role
+                            .as_deref()
+                            .or(method.role_origin.as_deref())
+                            .unwrap_or(base_role_name)
+                            .to_string();
+                        resolve_role_pseudo_types_in_method(&mut method, cx.name, &source_role);
                         method.role_origin = Some(base_role_name.to_string());
                         method.role_param_bindings = candidate_role_bindings.clone();
                         method
@@ -372,6 +379,13 @@ impl Interpreter {
                         if method.original_role.is_none() {
                             method.original_role = method.role_origin.clone();
                         }
+                        let source_role = method
+                            .original_role
+                            .as_deref()
+                            .or(method.role_origin.as_deref())
+                            .unwrap_or(base_role_name)
+                            .to_string();
+                        resolve_role_pseudo_types_in_method(&mut method, cx.name, &source_role);
                         method.role_origin = Some(base_role_name.to_string());
                         method.role_param_bindings = candidate_role_bindings.clone();
                         method

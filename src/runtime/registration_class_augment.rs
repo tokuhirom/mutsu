@@ -1,4 +1,6 @@
-use super::registration_class::{AttrValidationCtx, ResolvedHandle, make_delegation_method};
+use super::registration_class::{
+    AttrValidationCtx, ResolvedHandle, make_delegation_method, resolve_role_pseudo_types_in_method,
+};
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::HandleSpec;
@@ -734,6 +736,16 @@ impl Interpreter {
                 if !has_local {
                     let method_sym = Symbol::intern(&mname);
                     for mut d in mdefs {
+                        if d.original_role.is_none() {
+                            d.original_role = d.role_origin.clone();
+                        }
+                        let source_role = d
+                            .original_role
+                            .as_deref()
+                            .or(d.role_origin.as_deref())
+                            .unwrap_or(base_role)
+                            .to_string();
+                        resolve_role_pseudo_types_in_method(&mut d, name, &source_role);
                         if d.role_origin.is_none() {
                             d.role_origin = Some(base_role.to_string());
                         }
@@ -1106,6 +1118,13 @@ impl Interpreter {
                     if md.original_role.is_none() {
                         md.original_role = md.role_origin.clone();
                     }
+                    let source_role = md
+                        .original_role
+                        .as_deref()
+                        .or(md.role_origin.as_deref())
+                        .unwrap_or(owner)
+                        .to_string();
+                    resolve_role_pseudo_types_in_method(&mut md, role_name, &source_role);
                     md.role_origin = Some(owner.to_string());
                     md
                 })
