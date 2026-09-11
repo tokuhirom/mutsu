@@ -1387,23 +1387,13 @@ impl Compiler {
                     let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
                     // Only the default-init form (a bare `my $f;` / `my Int $f;` /
                     // `my @a;` / `my %h;`, whose RHS is the synthesized empty type
-                    // default) is a value-preserving no-op. A decl with a real RHS
-                    // expression — including internal desugared temps like
+                    // default — see `Compiler::is_synthesized_decl_default`) is a
+                    // value-preserving no-op. A decl with a real RHS expression —
+                    // including internal desugared temps like
                     // `@__destructure_tmp__` (an `Expr::ArrayLiteral`) that
                     // legitimately re-run on each `my (...)` destructure — must always
-                    // execute. The synthesized defaults are, by sigil: `Literal(Nil)`
-                    // ($ / &), an empty `Literal(Array)` (@), and an empty
-                    // `Expr::Hash` (%).
-                    let is_default_init = !has_init
-                        && match expr {
-                            Expr::Literal(lit) => match lit.view() {
-                                ValueView::Nil => true,
-                                ValueView::Array(ad, _) => ad.items().is_empty(),
-                                _ => false,
-                            },
-                            Expr::Hash(pairs) => pairs.is_empty(),
-                            _ => false,
-                        };
+                    // execute.
+                    let is_default_init = !has_init && Self::is_synthesized_decl_default(expr);
                     let already_declared = !self.my_vars_current_scope.insert(name.clone());
                     if already_declared && is_default_init {
                         return;
@@ -1456,12 +1446,23 @@ impl Compiler {
                 } else {
                     None
                 };
-                // For `our` redeclarations with no initializer (expr is Nil),
-                // load the existing package variable value instead of
-                // resetting to Nil. This makes `our $x = 3; ... our $x`
-                // preserve the value 3 in the redeclaration.
-                let is_our_redecl_nil =
-                    *is_our && matches!(expr, Expr::Literal(lit) if lit.is_nil());
+                // A bare `our` declaration (no initializer) loads the existing
+                // package variable instead of resetting it, so `our $x = 3; ...
+                // our $x` preserves the 3.
+                //
+                // Containers count too, and for them the reset is not merely a
+                // redeclaration concern: a `BEGIN` phaser body runs BEFORE the
+                // declaration statement it precedes in the source, so `our %H;
+                // BEGIN %H = (...)` wrote a populated hash that the declaration
+                // then overwrote with the parser's synthesized empty default —
+                // silently, with no error (#7953). The synthesized defaults are,
+                // by sigil: `Literal(Nil)` for `$`/`&`, an empty `Literal(Array)`
+                // for `@`, and an empty `Expr::Hash` for `%`. A real initializer
+                // — including an explicit `our %H = ()` — carries the parser's
+                // `__has_initializer` marker and must still run.
+                let is_our_bare_decl = *is_our
+                    && Self::is_synthesized_decl_default(expr)
+                    && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
@@ -1496,7 +1497,7 @@ impl Compiler {
                 } else {
                     None
                 };
-                if is_our_redecl_nil {
+                if is_our_bare_decl {
                     let qualified = self.qualify_our_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));

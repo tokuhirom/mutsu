@@ -1,6 +1,29 @@
 use super::*;
 
 impl Compiler {
+    /// Whether a `VarDecl`'s RHS is the *parser-synthesized* default for its
+    /// sigil rather than a user-written initializer: `Literal(Nil)` for
+    /// `$`/`&`, an empty `Literal(Array)` for `@`, and an empty `Expr::Hash`
+    /// for `%`.
+    ///
+    /// The shape alone does not settle it — `my @a = ()` parses to the same
+    /// empty `Literal(Array)` — so every caller must also check that the
+    /// declaration does NOT carry the parser's `__has_initializer` trait. What
+    /// this predicate answers is only "could this be the synthesized default",
+    /// which is what both the `my` redeclaration no-op and the `our`
+    /// value-preserving load need.
+    pub(crate) fn is_synthesized_decl_default(expr: &Expr) -> bool {
+        match expr {
+            Expr::Literal(lit) => match lit.view() {
+                crate::value::ValueView::Nil => true,
+                crate::value::ValueView::Array(ad, _) => ad.items().is_empty(),
+                _ => false,
+            },
+            Expr::Hash(pairs) => pairs.is_empty(),
+            _ => false,
+        }
+    }
+
     pub(super) fn is_dostmt_vardecl(expr: &Expr) -> bool {
         matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
     }

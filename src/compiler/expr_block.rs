@@ -294,7 +294,19 @@ impl Compiler {
                         let tc_idx = self.code.add_constant(Value::str(String::new()));
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
-                    self.compile_expr(expr);
+                    if *is_our && !has_initializer && Self::is_synthesized_decl_default(expr) {
+                        // A BARE `our` container declaration loads the package
+                        // variable rather than the synthesized empty default, so
+                        // an earlier write survives the declaration — the
+                        // expression-position twin of the statement path's
+                        // `is_our_bare_decl` (#7953). `GetOurVar` answers the
+                        // sigil's empty container when nothing is stored yet.
+                        let qualified = self.qualify_our_variable_name(name);
+                        let idx = self.code.add_constant(Value::str(qualified));
+                        self.code.emit(OpCode::GetOurVar(idx));
+                    } else {
+                        self.compile_expr(expr);
+                    }
                     // An `@` declaration whose RHS is a `$` scalar variable
                     // itemizes, exactly as the statement-position store does:
                     // `(my @i = $c)` must be one element, like `my @j = $c`.

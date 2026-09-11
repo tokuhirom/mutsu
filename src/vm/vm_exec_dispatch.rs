@@ -837,7 +837,22 @@ impl Interpreter {
                     .get_our_var(name)
                     .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
-                    .unwrap_or(Value::NIL);
+                    .unwrap_or_else(|| {
+                        // A never-stored `our` variable falls back to its
+                        // sigil's empty container, not `Nil`. A bare container
+                        // declaration (`our @a;` / `our %h;`) compiles to this
+                        // opcode so that an EARLIER write — a `BEGIN` phaser
+                        // body runs before the declaration statement does —
+                        // is preserved rather than reset (#7953); on the very
+                        // first declaration there is nothing stored yet and
+                        // the declaration must still install an empty
+                        // container of the right type.
+                        match name.chars().next() {
+                            Some('@') => Value::array(Vec::new()),
+                            Some('%') => Value::hash(crate::value::HashData::default()),
+                            _ => Value::NIL,
+                        }
+                    });
                 // Auto-deref ContainerRef for stack use (ContainerRef axis of
                 // the decont family — mirrors GetGlobal). `our_vars` can now
                 // hold a `ContainerRef` cell for a plain scalar `our`
