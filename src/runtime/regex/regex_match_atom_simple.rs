@@ -670,7 +670,7 @@ impl Interpreter {
                 if spec.token_lookup || !spec.arg_exprs.is_empty() {
                     return None;
                 }
-                let literal = spec.lookup_name;
+                let literal = spec.lookup_name.clone();
                 let name_chars: Vec<char> = literal.chars().collect();
                 if pos + name_chars.len() > chars.len() {
                     false

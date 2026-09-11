@@ -34,7 +34,11 @@
 //! `regex_match_lazy_subrule.rs`), exactly as the first half of Slice 2 does.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+// `STREAMABLE` is probed before every `<subrule>` call is even resolved, so
+// these memo tables are Fx-hashed rather than SipHash-hashed — a grammar rule
+// name is not adversarial input (<https://github.com/tokuhirom/mutsu/issues/7576>).
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::collections::VecDeque;
 
 use super::super::*;
 use crate::runtime::regex_types::{RegexAtom, RegexPattern};
@@ -135,7 +139,7 @@ thread_local! {
     static DIRECT_CALLS: RefCell<(
         u64,
         HashMap<RuleNode, Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline>>,
-    )> = RefCell::new((0, HashMap::new()));
+    )> = RefCell::new((0, HashMap::default()));
 
     /// `pkg -> subrule atom text -> may this call be streamed?`. This is the
     /// hot lookup: it is consulted before the call is resolved (and before its
@@ -149,7 +153,7 @@ thread_local! {
     /// ([`crate::vm::vm_stats::record_subrule_stream`]) without recomputing.
     #[allow(clippy::type_complexity)]
     static STREAMABLE: RefCell<(u64, HashMap<String, HashMap<String, Option<StreamDecline>>>)> =
-        RefCell::new((0, HashMap::new()));
+        RefCell::new((0, HashMap::default()));
 }
 
 fn token_defs_gen() -> u64 {
@@ -164,7 +168,7 @@ impl Interpreter {
     /// different work to clear.
     fn reenter_decline(&mut self, name: &str, pkg: &str) -> Option<StreamDecline> {
         let start: RuleNode = (pkg.to_string(), name.to_string());
-        let mut seen: HashSet<RuleNode> = HashSet::from([start.clone()]);
+        let mut seen: HashSet<RuleNode> = HashSet::from_iter([start.clone()]);
         let mut queue: VecDeque<RuleNode> = VecDeque::from([start]);
         while let Some((cur_pkg, cur_name)) = queue.pop_front() {
             let calls = match self.direct_rule_calls(&cur_name, &cur_pkg) {
@@ -487,7 +491,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: &str, out: &mut Vec<RuleNode>) -> b
             {
                 return false;
             }
-            out.push((pkg.to_string(), spec.lookup_name));
+            out.push((pkg.to_string(), spec.lookup_name.clone()));
             true
         }
         // `<{ ... }>` matches whatever regex the code returns; `<~~>` re-enters

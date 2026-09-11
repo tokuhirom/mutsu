@@ -229,7 +229,7 @@ impl Interpreter {
             pos as i64,
             pos as i64,
             &[],
-            &HashMap::new(),
+            &Default::default(),
             MatchTarget::from_chars(chars),
         );
         let mut call_args = vec![cursor];

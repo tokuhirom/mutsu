@@ -3,6 +3,14 @@ use super::regex_helpers::{NamedRegexLookupSpec, PENDING_REGEX_GOAL_FAILURE};
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+thread_local! {
+    /// Atom text -> its parsed [`NamedRegexLookupSpec`]. See
+    /// [`Interpreter::parse_named_regex_lookup_spec`].
+    static NAMED_LOOKUP_SPEC_CACHE: std::cell::RefCell<
+        rustc_hash::FxHashMap<String, std::sync::Arc<NamedRegexLookupSpec>>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
 impl Interpreter {
     pub(in crate::runtime) fn clear_pending_goal_failure() {
         PENDING_REGEX_GOAL_FAILURE.with(|slot| {
@@ -292,21 +300,9 @@ impl Interpreter {
                 }
             }
         }
-        let variant_prefix = format!("{scope}::{name}");
-        let mut sym_keys: Vec<String> = self
-            .registry()
-            .token_defs
-            .keys()
-            .map(|key| key.resolve())
-            .filter(|key| {
-                key.strip_prefix(&variant_prefix)
-                    .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
-            })
-            .collect();
-        self.sort_sym_keys_by_decl_order(&mut sym_keys);
-        for key in &sym_keys {
-            let sym_val = Self::extract_variant_ident(key);
-            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+        for &key in self.proto_variant_keys_sorted(&exact_key).iter() {
+            let sym_val = Self::extract_variant_ident(key.as_str());
+            if let Some(defs) = self.registry().token_defs.get(&key) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
                         out.push((p, def.package.resolve(), sym_val.clone()));
@@ -533,7 +529,34 @@ impl Interpreter {
         (trimmed.to_string(), Vec::new())
     }
 
-    pub(super) fn parse_named_regex_lookup_spec(name: &str) -> NamedRegexLookupSpec {
+    /// The parsed shape of a `<…>` subrule atom's text, memoized.
+    ///
+    /// [`Self::parse_named_regex_lookup_spec_uncached`] is a pure function of
+    /// the atom text, but it is called once per *match attempt* of the atom —
+    /// so on a grammar parse it re-splits, re-trims and re-allocates the same
+    /// `lookup_name`/`capture_name`/`arg_exprs` thousands of times for a
+    /// handful of distinct strings. A callgrind profile of a YAML parse put it
+    /// (with its callees) at ~2.6% of the whole program, 232k allocations
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    ///
+    /// The answer depends on nothing but the string, so — unlike
+    /// [`crate::runtime::regex_parse::REGEX_PARSE_CACHE`] — this memo needs no
+    /// generation key: a rule (re)definition cannot change how its *reference*
+    /// spells itself.
+    pub(super) fn parse_named_regex_lookup_spec(
+        name: &str,
+    ) -> std::sync::Arc<NamedRegexLookupSpec> {
+        if let Some(hit) = NAMED_LOOKUP_SPEC_CACHE.with(|c| c.borrow().get(name).cloned()) {
+            return hit;
+        }
+        let spec = std::sync::Arc::new(Self::parse_named_regex_lookup_spec_uncached(name));
+        NAMED_LOOKUP_SPEC_CACHE.with(|c| {
+            c.borrow_mut().insert(name.to_owned(), spec.clone());
+        });
+        spec
+    }
+
+    fn parse_named_regex_lookup_spec_uncached(name: &str) -> NamedRegexLookupSpec {
         let mut raw = name.trim();
         let mut silent = false;
         if let Some(stripped) = raw.strip_prefix('.') {

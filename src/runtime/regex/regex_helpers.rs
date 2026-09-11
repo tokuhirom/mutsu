@@ -1,6 +1,6 @@
 use super::super::*;
+use rustc_hash::FxHashMap as HashMap;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 use unicode_segmentation::UnicodeSegmentation;
@@ -235,7 +235,7 @@ impl Drop for InlineVarsSeed {
 /// [`INLINE_REGEX_VARS_SEED`]).
 pub(crate) fn take_inline_regex_vars_seed() -> HashMap<String, Value> {
     if !INLINE_REGEX_VARS_ACTIVE.with(Cell::get) {
-        return HashMap::new();
+        return HashMap::default();
     }
     INLINE_REGEX_VARS_SEED
         .with(|s| s.borrow().clone())
@@ -418,7 +418,7 @@ pub(crate) fn dynvar_overlay_reset_scan() {
     REGEX_DYNVAR_OVERLAY.with(|slot| {
         let mut b = slot.borrow_mut();
         if b.is_some() {
-            *b = Some(HashMap::new());
+            *b = Some(HashMap::default());
         }
     });
     REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(false));
@@ -451,7 +451,7 @@ pub(crate) struct RegexDynvarOverlayGuard {
 impl RegexDynvarOverlayGuard {
     pub(crate) fn activate() -> Self {
         let prev_overlay =
-            REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow_mut().replace(HashMap::new()));
+            REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow_mut().replace(HashMap::default()));
         let prev_seen = REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.replace(false));
         RegexDynvarOverlayGuard {
             prev_overlay,
@@ -1159,9 +1159,9 @@ pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
 /// [`pos_slot_texts`] for the named axis: the per-name text lists. Silent-action
 /// marker keys never had text entries pre-P4 and are skipped.
 pub(super) fn named_slot_texts(
-    named: &HashMap<crate::symbol::Symbol, NamedSlot>,
+    named: &crate::runtime::NamedCaptureMap,
     chars: &[char],
-) -> HashMap<String, Vec<String>> {
+) -> std::collections::HashMap<String, Vec<String>> {
     named
         .iter()
         .filter(|(k, _)| !k.starts_with(SILENT_ACTION_MARKER_PREFIX))

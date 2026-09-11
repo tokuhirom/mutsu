@@ -873,7 +873,7 @@ impl Value {
         named: &HashMap<String, Vec<String>>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        let m = Self::make_match_object_full(from, to, &[], &HashMap::new(), target.clone());
+        let m = Self::make_match_object_full(from, to, &[], &Default::default(), target.clone());
         if positional_texts.is_empty() && named.is_empty() {
             return m;
         }

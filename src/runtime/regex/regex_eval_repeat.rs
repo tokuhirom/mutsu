@@ -351,7 +351,7 @@ impl Interpreter {
     /// accumulator and stored `CapNode`s (their child axes are the same types).
     fn reduce_child_axes(
         &mut self,
-        named: &mut HashMap<Symbol, NamedSlot>,
+        named: &mut crate::runtime::NamedCaptureMap,
         positional: &mut [PosSlot],
         target: Option<&MatchTarget>,
     ) {
@@ -427,7 +427,7 @@ impl Interpreter {
     fn install_fresh_rule_dynvars(
         &mut self,
         rule_name: Option<&str>,
-        recorded: &HashMap<String, Value>,
+        recorded: &crate::runtime::RegexVarMap,
     ) -> Vec<String> {
         if self.grammar_rule_dynvar_decls.is_empty() {
             return Vec::new();

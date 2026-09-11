@@ -498,14 +498,14 @@ impl Interpreter {
             if !handled_state_postfix && !handled_direct_assign {
                 let eval_src = stmt_src.clone();
                 let Some(stmts) = self.parse_regex_code_cached(&eval_src) else {
-                    self.registry_mut().token_defs = saved_token_defs;
+                    self.restore_token_defs(saved_token_defs.clone());
                     self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
                 };
                 if self.eval_block_value(&stmts).is_err() {
-                    self.registry_mut().token_defs = saved_token_defs;
+                    self.restore_token_defs(saved_token_defs.clone());
                     self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
@@ -545,7 +545,7 @@ impl Interpreter {
 
         let mut result = self.regex_match_with_captures_core(&remaining_pattern, text);
         let matched = result.is_some();
-        self.registry_mut().token_defs = saved_token_defs;
+        self.restore_token_defs(saved_token_defs);
         // A declarative `:my`/`:let` lexical is hoisted out of the pattern and
         // evaluated into `env` above, so an inline `{ … }` block reads it straight
         // from there. A `make`-bearing block does not run inline — it is replayed
