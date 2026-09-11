@@ -638,7 +638,11 @@ impl Interpreter {
                     let name = packages.iter().find_map(|package| {
                         let prefix = format!("{package}::");
                         let rest = key.strip_prefix(&prefix)?;
-                        let name = rest.split('/').next().unwrap_or(rest);
+                        // Strip the arity suffix, not the first `/`: an operator
+                        // name can carry a `/` of its own, and splitting there
+                        // listed `infix:</>` in the pseudo-stash as `infix:<`.
+                        let name =
+                            crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(rest);
                         (!name.contains("::") && !name.is_empty()).then(|| name.to_string())
                     })?;
                     let declared_here = def.source_file.is_none()

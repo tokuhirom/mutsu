@@ -827,7 +827,18 @@ fn postfix_expr_loop_from(
                 }
             }
         }
-        if rest.starts_with("->") {
+        // `$obj->method` is the Perl 5 arrow, and Raku rejects it outright. The
+        // rule is purely lexical and the diagnosis says so itself: whitespace
+        // before the `->` delimits a POINTY BLOCK, so only an arrow glued to
+        // the term is the obsolete postfix. Normally the remainder carries that
+        // distinction — with a space it starts with the space, not with `->` —
+        // but term parsers that eat their own trailing whitespace (a bare
+        // listop: `for flat (1,2) X (3,4) -> $x, $y {...}`) have already erased
+        // it by the time we look, which turned a perfectly good pointy block
+        // into this error. `term_ends_with_ws` is the consumed span's own answer
+        // to "did I end on whitespace", the same restoration
+        // `brace_is_postcircumfix` relies on.
+        if rest.starts_with("->") && !term_ends_with_ws {
             return Err(PError::obsolete(
                 "-> as postfix",
                 "either . to call a method, or whitespace to delimit a pointy block",

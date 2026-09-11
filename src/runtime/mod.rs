@@ -611,7 +611,7 @@ mod dispatch_proto;
 mod dispatch_proto_call;
 mod dispatch_proto_candidates;
 mod dispatch_proto_rewrite;
-mod dispatch_resolve;
+pub(crate) mod dispatch_resolve;
 mod end_phasers;
 mod eval_check;
 mod eval_routine_magicals;

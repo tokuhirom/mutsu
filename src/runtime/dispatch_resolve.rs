@@ -1,15 +1,17 @@
 use super::*;
 
-/// The *base name* a registry function key stands for: the key minus its
-/// package prefix and its arity/type suffix. `"Pkg::foo/2:Int,Str"` → `"foo"`,
-/// `"GLOBAL::infix:</>/2"` → `"infix:</>"`, `"foo"` → `"foo"`.
+/// A registry function key minus its arity/type suffix: `"Pkg::foo/2:Int,Str"` →
+/// `"Pkg::foo"`, `"GLOBAL::infix:</>/2"` → `"GLOBAL::infix:</>"`. The package
+/// prefix is left in place — [`function_key_base_name`] strips that too.
 ///
-/// The arity suffix is the RIGHTMOST `/` immediately followed by an ASCII
-/// digit (`/2`, `/3:Int`, `/1__m…`); an operator name's own `/` (as in
-/// `infix:</>`) is never digit-followed, so it survives. The same extraction
-/// is applied to both registry keys and query names, so any exotic spelling
-/// degrades to a consistent (never wrong) bucket.
-fn function_key_base_name(key: &str) -> &str {
+/// The suffix starts at the RIGHTMOST `/` immediately followed by an ASCII
+/// digit, which is what makes an operator name's own `/` survive: the `/` in
+/// `infix:</>` is followed by `>`. Naively splitting at the FIRST `/` instead
+/// mangles that name to `infix:<`, and a caller deciding whether a key is an
+/// *exported* operator then compares the mangled spelling against the real one
+/// and concludes it is not — which is how a module's `multi infix:</>` used to
+/// be reaped from the registry right after its own load (Math::Vector).
+pub(crate) fn function_key_strip_arity_suffix(key: &str) -> &str {
     let bytes = key.as_bytes();
     let mut end = key.len();
     let mut i = key.len();
@@ -20,7 +22,20 @@ fn function_key_base_name(key: &str) -> &str {
             break;
         }
     }
-    let head = &key[..end];
+    &key[..end]
+}
+
+/// The *base name* a registry function key stands for: the key minus its
+/// package prefix and its arity/type suffix. `"Pkg::foo/2:Int,Str"` → `"foo"`,
+/// `"GLOBAL::infix:</>/2"` → `"infix:</>"`, `"foo"` → `"foo"`.
+///
+/// The arity suffix is the RIGHTMOST `/` immediately followed by an ASCII
+/// digit (`/2`, `/3:Int`, `/1__m…`); an operator name's own `/` (as in
+/// `infix:</>`) is never digit-followed, so it survives. The same extraction
+/// is applied to both registry keys and query names, so any exotic spelling
+/// degrades to a consistent (never wrong) bucket.
+fn function_key_base_name(key: &str) -> &str {
+    let head = function_key_strip_arity_suffix(key);
     // A hand-rolled reverse scan for `::`: `str::rfind` builds a two-way
     // searcher per call, which is most of what this function cost on the
     // per-dispatch candidate walk that calls it once per registry key.
