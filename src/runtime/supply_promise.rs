@@ -585,16 +585,14 @@ impl Interpreter {
                 if let ValueView::Promise(shared) = source.view() {
                     let (tx, rx) =
                         crate::runtime::native_methods::supply_channel::supply_event_channel();
-                    let shared_clone = shared.clone();
-                    crate::runtime::builtins_system::spawn_gc_helper_thread(
-                        "promise-wait",
-                        move || {
-                            let (result, _, _) = shared_clone.wait();
-                            let _ =
-                                tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
-                            let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
-                        },
-                    );
+                    // Same thread-free delivery as the react loop's promise
+                    // source (see `vm/vm_react_loop.rs`): the promise's own
+                    // waiter list, not an OS thread parked in `wait()`.
+                    shared.mark_observed();
+                    shared.on_resolve(Box::new(move |_status, result, _output, _stderr| {
+                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
+                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
+                    }));
                     react_subs.push(crate::runtime::react_whenever::ReactSubscription {
                         receiver: Some(rx),
                         promise: Some(shared.clone()),
