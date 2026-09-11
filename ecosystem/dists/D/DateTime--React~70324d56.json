@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.3,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,20 +27,19 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 21.48,
+        "secs": 14.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 119.39,
+        "secs": 120.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +49,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 67.02,
+        "secs": 94.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,9 +63,9 @@
   "measured": {
     "attempts": 3,
     "date": "2026-09-11",
-    "harness": 1,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "harness": 2,
+    "host": "linux-x86_64",
+    "mutsu_commit": "7fcc0140",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -79,10 +78,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 9,
+    "baseline_files": 2,
+    "mutsu_assertions": 9,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.2.0"
