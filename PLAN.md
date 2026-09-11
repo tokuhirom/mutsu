@@ -109,8 +109,9 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ranked by distributions
       affected, and fifteen issues covering ~330 distribution slots were filed from it
       (docs/ecosystem-parity.md §9). What is left of P5 is the tail — 970 clusters below ten
-      distributions, a sampling job rather than a queue to drain. P4's remaining sliver is a local
-      `make`-level wrapper for the sweep.
+      distributions, a sampling job rather than a queue to drain. P4 is closed: the workflow is the
+      entry point, and the `make`-level wrapper it also listed was dropped (it would fail
+      `ci-docs-only.sh --check-inputs`; docs/ecosystem-parity.md §8).
       Decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md);
       operations manual and phases (P1-P5, one PR each):
       [docs/ecosystem-parity.md](docs/ecosystem-parity.md);

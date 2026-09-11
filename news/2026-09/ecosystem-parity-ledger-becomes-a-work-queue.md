@@ -85,5 +85,14 @@ about what the corpus is.
 ## What is left
 
 The tail: 970 clusters below ten distributions, which is a sampling job
-(`--min-dists 1`) rather than a queue to drain. P4's local `make`-level wrapper
-for a sweep is the only other piece of the campaign still missing.
+(`--min-dists 1`) rather than a queue to drain.
+
+P4's local `make`-level wrapper for a sweep was **dropped** the same day rather
+than built. It would alias a command the runbook already spells out, and it would
+cost something real: `scripts/ci-docs-only.sh --check-inputs` fails if the
+Makefile names a path on the documentation allowlist, and `scripts/*.py` is on it.
+A `make ecosystem-sweep` line naming `scripts/ecosystem-sweep.py` trips that CI
+step immediately — verified by adding one and watching it fail — and the only way
+out would be to take the sweep scripts off the allowlist, which puts five build
+jobs back on every ~1300-record data PR. So the campaign's entry points are the
+script and the workflow, and P4 is closed.
