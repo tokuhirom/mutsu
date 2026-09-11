@@ -516,7 +516,7 @@ impl Interpreter {
             start as i64,
             end as i64,
             &[],
-            &std::collections::HashMap::new(),
+            &Default::default(),
             crate::runtime::MatchTarget::new(text),
         )
     }

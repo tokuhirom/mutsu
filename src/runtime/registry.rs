@@ -67,6 +67,11 @@ pub(crate) struct MethodEntry {
     pub(crate) proto: Option<FunctionDef>,
 }
 
+/// The grammar token/rule table's shape: name -> its registered overloads.
+/// Named so the snapshot/restore paths (`Interpreter::restore_token_defs`) can
+/// spell it without re-writing the type.
+pub(crate) type TokenDefsMap = HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>;
+
 /// Program declaration registry. See module docs.
 ///
 /// Fields are migrated here group-by-group (PLAN.md PR-A). Fields are
@@ -426,7 +431,7 @@ pub(crate) struct Registry {
     /// held behind `Arc` so the whole-map snapshot/restore clones (and the
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.
-    pub(crate) token_defs: HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>,
+    pub(crate) token_defs: TokenDefsMap,
     /// `proto sub` declaration markers (existence set). Private: every
     /// mutation must go through the `proto_subs_*` accessors below so the
     /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`

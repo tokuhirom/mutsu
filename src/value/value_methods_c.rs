@@ -19,16 +19,16 @@ impl Value {
         from: i64,
         to: i64,
         positional: &[crate::runtime::PosSlot],
-        named: &HashMap<crate::symbol::Symbol, crate::runtime::NamedSlot>,
+        named: &crate::runtime::NamedCaptureMap,
         target: crate::runtime::MatchTarget,
     ) -> Self {
         let has_children = !named.is_empty() || !positional.is_empty();
         let children = has_children.then(|| {
             Box::new(crate::runtime::CapChildren {
                 named: named.clone(),
-                capture_alias_map: HashMap::new(),
+                capture_alias_map: Default::default(),
                 positional: positional.to_vec(),
-                regex_vars: HashMap::new(),
+                regex_vars: Default::default(),
             })
         });
         let cap = crate::runtime::CapNode {
@@ -49,7 +49,7 @@ impl Value {
         from: i64,
         to: i64,
         positional: &[crate::runtime::PosSlot],
-        named: &HashMap<crate::symbol::Symbol, crate::runtime::NamedSlot>,
+        named: &crate::runtime::NamedCaptureMap,
         target: crate::runtime::MatchTarget,
     ) -> Self {
         let visible_len = positional

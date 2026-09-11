@@ -38,7 +38,7 @@ impl Interpreter {
         let vars = if inline {
             super::regex_helpers::InlineVarsSeed::arm(&current_caps.regex_vars)
         } else {
-            super::regex_helpers::InlineVarsSeed::arm(&HashMap::new())
+            super::regex_helpers::InlineVarsSeed::arm(&Default::default())
         };
         (vars, Self::arm_outer_caps_seed(atom, current_caps))
     }
@@ -351,7 +351,7 @@ impl Interpreter {
                 negated,
                 is_behind,
             } => {
-                let mut inner_vars: HashMap<String, Value> = HashMap::new();
+                let mut inner_vars = crate::runtime::RegexVarMap::default();
                 let matched = if *is_behind {
                     let mut found = false;
                     for start in 0..=pos {
@@ -1038,14 +1038,14 @@ impl Interpreter {
                 if spec.token_lookup {
                     return None;
                 }
-                let literal = spec.lookup_name;
+                let literal = spec.lookup_name.clone();
                 let name_chars: Vec<char> = literal.chars().collect();
                 if pos + name_chars.len() > chars.len() {
                     return None;
                 }
                 if chars[pos..pos + name_chars.len()] == name_chars[..] {
                     let mut new_caps = RegexCaptures::default();
-                    let capture_name = spec.capture_name.unwrap_or(literal);
+                    let capture_name = spec.capture_name.clone().unwrap_or(literal);
                     new_caps
                         .named
                         .entry(Symbol::intern(&capture_name))

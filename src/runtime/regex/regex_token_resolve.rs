@@ -18,8 +18,12 @@ thread_local! {
     /// JSON-grammar parse profile). Entries record the `TOKEN_DEFS_GEN` they
     /// were built under; a stale generation rebuilds (same invalidation
     /// discipline as `REGEX_PARSE_CACHE` and the charclass cache).
+    /// Keyed by interned symbols rather than `(String, String)`: this map is
+    /// probed once per `<subrule>` reference, and building an owned two-`String`
+    /// key just to look it up cost two allocations per probe — visible in a
+    /// YAML-parse profile ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
     static PARSED_TOKEN_CANDIDATES: std::cell::RefCell<
-        rustc_hash::FxHashMap<(String, String), CachedCandidates>,
+        rustc_hash::FxHashMap<(Symbol, Symbol), CachedCandidates>,
     > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
 
     /// Memoized WITH-ARGS subrule resolution: (pkg, name, rendered-args) →
@@ -98,9 +102,10 @@ impl Interpreter {
     ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let cache_key = (Symbol::intern(pkg), Symbol::intern(name));
         if let Some(hit) = PARSED_TOKEN_CANDIDATES.with(|c| {
             c.borrow()
-                .get(&(pkg.to_string(), name.to_string()))
+                .get(&cache_key)
                 .filter(|(cached_gen, _)| *cached_gen == tok_gen)
                 .map(|(_, v)| std::sync::Arc::clone(v))
         }) {
@@ -117,10 +122,8 @@ impl Interpreter {
         }
         let arc = std::sync::Arc::new(parsed_list);
         PARSED_TOKEN_CANDIDATES.with(|c| {
-            c.borrow_mut().insert(
-                (pkg.to_string(), name.to_string()),
-                (tok_gen, std::sync::Arc::clone(&arc)),
-            );
+            c.borrow_mut()
+                .insert(cache_key, (tok_gen, std::sync::Arc::clone(&arc)));
         });
         Some(arc)
     }
@@ -263,19 +266,8 @@ impl Interpreter {
         if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
             out.extend(defs.clone());
         }
-        let mut sym_keys: Vec<String> = self
-            .registry()
-            .token_defs
-            .keys()
-            .map(|key| key.resolve())
-            .filter(|key| {
-                key.strip_prefix(name)
-                    .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
-            })
-            .collect();
-        self.sort_sym_keys_by_decl_order(&mut sym_keys);
-        for key in &sym_keys {
-            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+        for &key in self.proto_variant_keys_sorted(name).iter() {
+            if let Some(defs) = self.registry().token_defs.get(&key) {
                 out.extend(defs.clone());
             }
         }

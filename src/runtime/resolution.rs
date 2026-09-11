@@ -16,6 +16,23 @@ use crate::symbol::Symbol;
 /// registered by the same top-to-bottom pass over its unit.
 static NEXT_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+thread_local! {
+    /// Memo for [`Interpreter::proto_variant_keys_sorted`]: prefix -> the
+    /// `TOKEN_DEFS_GEN` the answer was computed under, and the answer.
+    ///
+    /// The scan it memoizes is O(all registered token keys) and runs once per
+    /// `<subrule>` resolution, for a handful of distinct prefixes — 8.5% of a
+    /// YAML-parse profile went into re-deriving the same few lists
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)). Entries carry
+    /// the generation they were built under, the same invalidation discipline
+    /// as `PARSED_TOKEN_CANDIDATES` and `REGEX_PARSE_CACHE` — anything that
+    /// (re)defines, restores or wholesale-replaces `token_defs` bumps it.
+    #[allow(clippy::type_complexity)]
+    static PROTO_VARIANT_KEYS: std::cell::RefCell<
+        rustc_hash::FxHashMap<String, (u64, std::sync::Arc<Vec<Symbol>>)>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
 /// Take the next declaration-order stamp. Called from every `FunctionDef`
 /// construction site in the registration paths.
 pub(crate) fn next_decl_order() -> u64 {
@@ -202,31 +219,80 @@ impl Interpreter {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Collect token defs for a given scope (exact + :sym<> variants).
-    /// Candidate identity of a token def: the def's own name when it is a
-    /// proto candidate of `token_name` (`statement:sym<expr>`), else the bare
-    /// `token_name`.
-    /// Declaration order of a token key's candidates (the earliest-declared
-    /// one), for sorting proto sym-variant candidates by Rakudo's LTM
-    /// declaration-order tie-break. Unknown keys sort last (`u64::MAX`), then
-    /// alphabetically as a stable fallback.
-    pub(crate) fn token_key_decl_order(&self, key: &str) -> u64 {
+    /// Put `token_defs` back to a snapshot taken before a `:my token …` inside
+    /// a regex could add to it, invalidating every generation-keyed memo built
+    /// while the extra definition was visible (`PROTO_VARIANT_KEYS`,
+    /// `PARSED_TOKEN_CANDIDATES`, `REGEX_PARSE_CACHE`, the call-graph tables).
+    /// The declaration itself bumped the generation on the way in; the removal
+    /// has to bump it on the way out for the same reason.
+    pub(crate) fn restore_token_defs(&mut self, saved: crate::runtime::registry::TokenDefsMap) {
+        self.registry_mut().token_defs = saved;
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The lowest declaration order among the candidates registered under one
+    /// `token_defs` key — Rakudo's LTM tie-break. Takes the key as a `Symbol`
+    /// because that is how `token_defs` is keyed, so a scan never re-interns a
+    /// key it just read out of the map.
+    pub(crate) fn token_key_decl_order_sym(&self, key: Symbol) -> u64 {
         self.registry()
             .token_defs
-            .get(&Symbol::intern(key))
+            .get(&key)
             .and_then(|defs| defs.iter().map(|d| d.decl_order).min())
             .unwrap_or(u64::MAX)
     }
 
-    /// Sort resolved `:sym<>` variant keys by declaration order (Rakudo's LTM
-    /// tie-break), falling back to alphabetical order for keys that share a
-    /// declaration order or are unregistered — keeping the result deterministic.
-    pub(crate) fn sort_sym_keys_by_decl_order(&self, sym_keys: &mut [String]) {
-        sym_keys.sort_by(|a, b| {
-            self.token_key_decl_order(a)
-                .cmp(&self.token_key_decl_order(b))
-                .then_with(|| a.cmp(b))
+    /// Every `token_defs` key that spells a `:sym<…>` proto variant of
+    /// `prefix`, sorted by declaration order (Rakudo's LTM tie-break) and
+    /// falling back to alphabetical order for keys that share a declaration
+    /// order or are unregistered, so the result stays deterministic.
+    ///
+    /// This walks the whole `token_defs` key set, and it is walked once per
+    /// `<subrule>` resolution, so it must not allocate per key: a callgrind
+    /// profile of a YAML parse had the five hand-rolled copies of this scan
+    /// materializing a `String` for every key (`Symbol::resolve`) just to test
+    /// a prefix and throw it away — 4.6M allocations, ~15% of the whole
+    /// program ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    /// `Symbol::as_str` hands out the interned `&'static str` instead, and the
+    /// key symbols come back as symbols so no call site re-interns them.
+    pub(crate) fn proto_variant_keys_sorted(&self, prefix: &str) -> std::sync::Arc<Vec<Symbol>> {
+        let generation =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(hit) = PROTO_VARIANT_KEYS.with(|c| {
+            c.borrow()
+                .get(prefix)
+                .filter(|(entry_gen, _)| *entry_gen == generation)
+                .map(|(_, keys)| keys.clone())
+        }) {
+            return hit;
+        }
+        let keys = std::sync::Arc::new(self.proto_variant_keys_sorted_uncached(prefix));
+        PROTO_VARIANT_KEYS.with(|c| {
+            c.borrow_mut()
+                .insert(prefix.to_owned(), (generation, keys.clone()));
         });
+        keys
+    }
+
+    fn proto_variant_keys_sorted_uncached(&self, prefix: &str) -> Vec<Symbol> {
+        let mut keys: Vec<Symbol> = self
+            .registry()
+            .token_defs
+            .keys()
+            .copied()
+            .filter(|key| {
+                key.as_str()
+                    .strip_prefix(prefix)
+                    .is_some_and(is_proto_variant_suffix)
+            })
+            .collect();
+        keys.sort_by(|a, b| {
+            self.token_key_decl_order_sym(*a)
+                .cmp(&self.token_key_decl_order_sym(*b))
+                .then_with(|| a.as_str().cmp(b.as_str()))
+        });
+        keys
     }
 
     pub(crate) fn token_def_identity(def_name: &str, token_name: &str) -> String {
@@ -262,24 +328,12 @@ impl Interpreter {
             seen.insert(name.to_string());
         }
         let scope_prefix_len = scope.len() + 2;
-        let variant_prefix = format!("{scope}::{name}");
-        let mut sym_keys: Vec<String> = self
-            .registry()
-            .token_defs
-            .keys()
-            .map(|key| key.resolve())
-            .filter(|key| {
-                key.strip_prefix(&variant_prefix)
-                    .is_some_and(is_proto_variant_suffix)
-            })
-            .collect();
-        self.sort_sym_keys_by_decl_order(&mut sym_keys);
-        for key in &sym_keys {
-            let identity = &key[scope_prefix_len..];
+        for &key in self.proto_variant_keys_sorted(&exact_key).iter() {
+            let identity = &key.as_str()[scope_prefix_len..];
             if seen.contains(identity) {
                 continue;
             }
-            if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+            if let Some(sym_defs) = self.registry().token_defs.get(&key) {
                 defs.extend(sym_defs.clone());
                 seen.insert(identity.to_string());
             }
@@ -296,20 +350,8 @@ impl Interpreter {
         if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
-        let variant_prefix = format!("{scope}::{name}");
-        let mut sym_keys: Vec<String> = self
-            .registry()
-            .token_defs
-            .keys()
-            .map(|key| key.resolve())
-            .filter(|key| {
-                key.strip_prefix(&variant_prefix)
-                    .is_some_and(is_proto_variant_suffix)
-            })
-            .collect();
-        self.sort_sym_keys_by_decl_order(&mut sym_keys);
-        for key in &sym_keys {
-            if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+        for &key in self.proto_variant_keys_sorted(&exact_key).iter() {
+            if let Some(sym_defs) = self.registry().token_defs.get(&key) {
                 defs.extend(sym_defs.clone());
             }
         }
@@ -370,16 +412,8 @@ impl Interpreter {
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
-            let mut sym_keys: Vec<String> = self
-                .registry()
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| key.strip_prefix(name).is_some_and(is_proto_variant_suffix))
-                .collect();
-            self.sort_sym_keys_by_decl_order(&mut sym_keys);
-            for key in &sym_keys {
-                if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+            for &key in self.proto_variant_keys_sorted(name).iter() {
+                if let Some(sym_defs) = self.registry().token_defs.get(&key) {
                     defs.extend(sym_defs.clone());
                 }
             }

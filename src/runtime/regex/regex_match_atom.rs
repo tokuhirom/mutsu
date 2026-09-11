@@ -1,5 +1,10 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+// The left-recursion bookkeeping tables below are probed several times per
+// `<subrule>` call at every position, so they are Fx-hashed rather than
+// SipHash-hashed — a grammar rule name is not adversarial input, and the
+// hashing showed up as a measurable share of a YAML-parse profile
+// (<https://github.com/tokuhirom/mutsu/issues/7576>).
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use super::super::*;
 use super::regex_helpers::{
@@ -17,19 +22,19 @@ thread_local! {
     /// regex_match_ends_from_caps_in_pkg). Empty vec means "no match yet" (initial seed).
     #[allow(clippy::type_complexity)]
     static LR_MEMO: RefCell<HashMap<(String, usize), Vec<(usize, RegexCaptures)>>>
-        = RefCell::new(HashMap::new());
+        = RefCell::new(HashMap::default());
 
     /// Set of (rule_name, remaining_chars_count) pairs currently being evaluated.
     /// When a recursive call sees its key here, it returns the current seed.
     static LR_ACTIVE: RefCell<HashMap<(String, usize), ()>>
-        = RefCell::new(HashMap::new());
+        = RefCell::new(HashMap::default());
 
     /// Keys whose seed was actually CONSULTED (read by a recursive re-entry)
     /// while they were active — i.e. the keys that are genuinely
     /// left-recursive at this position. Only those need the seed-growing
     /// loop's second iteration; see the `seed_was_consulted` check below.
     static LR_SEED_READ: RefCell<HashSet<(String, usize)>>
-        = RefCell::new(HashSet::new());
+        = RefCell::new(HashSet::default());
 }
 
 /// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
