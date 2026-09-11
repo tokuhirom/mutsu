@@ -539,9 +539,9 @@ impl Interpreter {
             self.install_subrule_dynamic_params(&start_rule, package_name, &rule_args);
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
-            let (pattern, start_rule_sym) =
-                match self.eval_token_call_values_at(&start_rule, &rule_args, candidate_from) {
-                    Ok(Some(pattern_and_sym)) => pattern_and_sym,
+            let candidates =
+                match self.eval_token_call_candidates_at(&start_rule, &rule_args, candidate_from) {
+                    Ok(Some(candidates)) => candidates,
                     Ok(None) => {
                         // Check for pending regex error (e.g., <sym> used outside proto regex)
                         if let Some(err) = Self::take_pending_regex_error() {
@@ -579,6 +579,7 @@ impl Interpreter {
                     }
                     Err(err) => return Err(err),
                 };
+            let failure_pattern = candidates.first().map(|(pattern, _)| pattern.clone());
 
             // Bind rule args to the env so code assertions { ... } can access them
             if !rule_args.is_empty()
@@ -589,35 +590,55 @@ impl Interpreter {
                 let _ = self.bind_function_args_values(&def.param_defs, &def.params, &rule_args);
             }
 
-            // Candidate selection above (`eval_token_call_values`) may have run a
-            // preliminary match that evolved the reduce-time dyn-var overlay
-            // (e.g. fired a delimiter finalizer). Reset it so the real match
-            // begins from the initial dynamic-var state in `self.env`.
-            super::regex::regex_helpers::dynvar_overlay_reset_scan();
             // When `.parse` fails because the start rule matched only a PREFIX,
             // that prefix's match tree is still what Rakudo dispatched actions
             // over at reduce time, so keep it instead of throwing it away.
             let mut partial_match: Option<RegexCaptures> = None;
-            let captures = if method == "parse" || method == "parsefile" {
-                self.regex_match_with_captures_full_from_start_tracking_partial(
-                    &pattern,
-                    &text,
-                    &mut partial_match,
-                )
-            } else if let Some(pos) = start_pos {
-                // `:pos(N)` — subparse anchored to begin exactly at N.
-                self.regex_match_with_captures_at(&pattern, &text, pos)
-            } else if let Some(cpos) = continue_pos {
-                // `:c(N)`/`:continue(N)` — search for a match from N onwards.
-                self.regex_match_with_captures_from(&pattern, &text, cpos)
-            } else {
-                self.regex_match_with_captures(&pattern, &text)
-            };
-            // Check for pending regex error (e.g., <sym> used outside proto regex)
-            if let Some(err) = Self::take_pending_regex_error() {
-                return Err(err);
+            let mut matched: Option<(RegexCaptures, Option<String>)> = None;
+            for (pattern, sym) in candidates {
+                // Candidate selection above may have run a preliminary match that
+                // evolved the reduce-time dyn-var overlay (e.g. fired a delimiter
+                // finalizer). Each real candidate match must begin from the initial
+                // dynamic-var state in `self.env`, just as a backtracking retry does.
+                super::regex::regex_helpers::dynvar_overlay_reset_scan();
+                let mut candidate_partial = None;
+                let captures = if method == "parse" || method == "parsefile" {
+                    self.regex_match_with_captures_full_from_start_tracking_partial(
+                        &pattern,
+                        &text,
+                        &mut candidate_partial,
+                    )
+                } else if let Some(pos) = start_pos {
+                    // `:pos(N)` — subparse anchored to begin exactly at N.
+                    self.regex_match_with_captures_at(&pattern, &text, pos)
+                } else if let Some(cpos) = continue_pos {
+                    // `:c(N)`/`:continue(N)` — search for a match from N onwards.
+                    self.regex_match_with_captures_from(&pattern, &text, cpos)
+                } else {
+                    self.regex_match_with_captures(&pattern, &text)
+                };
+                // Check for pending regex error (e.g., <sym> used outside proto regex)
+                if let Some(err) = Self::take_pending_regex_error() {
+                    return Err(err);
+                }
+                let had_partial = candidate_partial.is_some();
+                if partial_match.is_none() {
+                    partial_match = candidate_partial;
+                }
+                // A full parse stops at the first candidate that matched a
+                // prefix. The start rule itself succeeded, so the overall
+                // parse must report the leftover input rather than backtrack
+                // into a lower-ranked proto candidate. Only a candidate that
+                // failed to match at all may fall through to the next one.
+                if is_full_parse && had_partial {
+                    break;
+                }
+                if let Some(captures) = captures {
+                    matched = Some((captures, sym));
+                    break;
+                }
             }
-            let Some(mut captures) = captures else {
+            let Some((mut captures, start_rule_sym)) = matched else {
                 // Embedded `{ … }` blocks already ran inline as the cursor
                 // reached them, so their side effects persist even though the
                 // OVERALL parse failed (`regex TOP { x { $x = 42 } }` against
@@ -644,13 +665,13 @@ impl Interpreter {
                     }
                 }
                 if let Some(outcome) =
-                    self.goal_failure_outcome(package_name, Some(&pattern), &text)
+                    self.goal_failure_outcome(package_name, failure_pattern.as_deref(), &text)
                 {
                     return outcome;
                 }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
-                    return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                    return Ok(self.parse_failure_for_pattern(&text, failure_pattern.as_deref()));
                 }
                 // A failed `.subparse` yields a failed Match, not a Failure.
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
@@ -681,7 +702,7 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
-                    return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                    return Ok(self.parse_failure_for_pattern(&text, failure_pattern.as_deref()));
                 }
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             }
