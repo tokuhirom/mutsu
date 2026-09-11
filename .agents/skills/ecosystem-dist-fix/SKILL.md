@@ -86,6 +86,28 @@ evidence about that commit, not about `main`; re-measure rather than trusting it
 If there is no record at all, that is fine — the corpus sweep is partial (see
 `ecosystem/README.md`). Go to step 2 and create one in step 7.
 
+## 1b. Take the lock — it may already be somebody's
+
+Agents run in parallel and a distribution has no issue of its own to carry a
+claim, so the claim goes on the **lock board**,
+[#7884](https://github.com/tokuhirom/mutsu/issues/7884) (the single open issue
+labelled `ecosystem:lock`). This holds however you arrived at the distribution —
+a user naming it does not make it unclaimed.
+
+Read its comments, and if no live `Locking:` line holds your distribution, post
+one whose first line is exactly `Locking: <Dist::Name> <your-branch>`. Then read
+the comments again: among live locks for that distribution the **lowest comment
+id** wins, and if you did not win, post `Unlocking: <dist> <your-branch>` and
+take this up with the user rather than racing. Release it when the run ends —
+merged, filed, blocked or abandoned — with
+`Unlocking: <Dist::Name> <your-branch>` plus one line on how it went.
+
+The full protocol, including the evidence rule for breaking a lock whose session
+died, is
+[`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md), which is also
+the skill to use when the distribution is to be picked at random rather than
+named.
+
 ## 2. Check the distribution out
 
 ```sh

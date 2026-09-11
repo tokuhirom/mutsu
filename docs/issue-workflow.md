@@ -189,6 +189,34 @@ noted the earlier one, judged it forfeit for being unpushed, and proceeded. Both
 agents then ran the full suites and opened a PR for the same work — one of which
 was thrown away.)
 
+### Locking a resource that is not an issue — the lock board
+
+The protocol above needs somewhere to put the claim, and it uses the issue
+itself. Work that is *not* an issue has nowhere: an `ecosystem/` distribution is
+picked out of a ledger of 251 records, and two agents drawing the same one waste
+a build slot exactly as two agents on one issue do.
+
+For those, the claim goes on a **lock board** — one long-lived issue whose
+comments are the append-only log, holding `Locking:` / `Unlocking:` lines that
+name the resource and the claiming branch. The tiebreaker, the exclusivity rule
+and the "re-read before you spend and before you publish" checkpoints are the
+same as above; only the resource differs. Nothing else in the repository can
+carry it: a lock file in git conflicts on every write and outlives the session
+that wrote it, and a label — as the `working` section explains — is a
+read-then-write two agents can both win.
+
+The one addition a board needs is a way to break a lock its session died
+holding, and it is evidence-based rather than a judgement call: 24 hours old
+**and** no such branch on `origin` (or its PR merged/closed). Both halves are
+checkable by anyone, which is what keeps it from reintroducing the race.
+
+The board for `ecosystem/` distributions is
+[#7884](https://github.com/tokuhirom/mutsu/issues/7884) — the single open issue
+labelled `ecosystem:lock`, which is the authority if the number ever drifts — and
+the procedure around it is
+[`.agents/skills/ecosystem-dist-roulette/SKILL.md`](../.agents/skills/ecosystem-dist-roulette/SKILL.md).
+A board issue is infrastructure: it is never worked and never closed.
+
 ### Losing a claim late
 
 Finding out at a checkpoint that someone else's work has landed is not a reason
