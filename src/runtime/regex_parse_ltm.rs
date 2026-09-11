@@ -934,6 +934,15 @@ impl Interpreter {
         if compact.is_empty() {
             return pattern.to_string();
         }
+        // A block quantifier is match-time code, not a literal count that can
+        // be lowered by the string-based LTM expansion below. In particular,
+        // the bare `%` expansion would otherwise rewrite `** {2} % ','` before
+        // the native parser can attach the separator to its `RepeatCode` token.
+        // Leave the whole pattern for the normal parser, which evaluates the
+        // block with the current capture environment.
+        if Self::contains_block_quantifier(&compact) {
+            return pattern.to_string();
+        }
 
         static WITH_COUNT: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new(r"^(.+?)\*\*(\^?[0-9_]+(?:\^?\.\.(?:\^?[0-9_]+|\*))?)(?:(%%|%)(.+))?$")
@@ -1137,6 +1146,51 @@ impl Interpreter {
                 '(' if !in_single && !in_double => return true,
                 _ => {}
             }
+        }
+        false
+    }
+
+    /// Return whether `pattern` contains a `** { ... }` block quantifier,
+    /// including the frugal/explicit-greedy spellings `**? { ... }` and
+    /// `**! { ... }`. The input has already had insignificant whitespace
+    /// removed, so the check is deliberately small and only needs to avoid the
+    /// LTM string rewrite; the structural parser remains authoritative.
+    fn contains_block_quantifier(pattern: &str) -> bool {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut i = 0;
+        let mut escaped = false;
+        let mut quote: Option<char> = None;
+        while i < chars.len() {
+            let c = chars[i];
+            if escaped {
+                escaped = false;
+                i += 1;
+                continue;
+            }
+            if let Some(q) = quote {
+                if c == '\\' {
+                    escaped = true;
+                } else if c == q {
+                    quote = None;
+                }
+                i += 1;
+                continue;
+            }
+            if matches!(c, '\'' | '"') {
+                quote = Some(c);
+                i += 1;
+                continue;
+            }
+            if c == '*' && chars.get(i + 1) == Some(&'*') {
+                let mut j = i + 2;
+                if matches!(chars.get(j), Some('?') | Some('!')) {
+                    j += 1;
+                }
+                if chars.get(j) == Some(&'{') {
+                    return true;
+                }
+            }
+            i += 1;
         }
         false
     }

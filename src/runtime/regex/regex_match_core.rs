@@ -33,6 +33,16 @@ struct WalkCtx<'a> {
 /// variable-length alternation (mirrors the old 20k candidate bound).
 const QUANT_ALT_BUDGET: u32 = 20_000;
 
+/// Compound atoms can expose more than one end for one quantifier iteration.
+/// A quantifier over one of these must let its continuation request the next
+/// inner candidate instead of committing to the singular matcher's first end.
+fn quantifier_atom_needs_candidate_backtracking(atom: &RegexAtom) -> bool {
+    matches!(
+        atom,
+        RegexAtom::Group(_) | RegexAtom::CaptureGroup(_) | RegexAtom::CaptureIsolatedGroup(_)
+    )
+}
+
 /// A continuation invoked at every completed match of one pattern level.
 /// Returns `true` to stop the walk that produced it — the same
 /// "unwind the whole DFS" signal `walk_tokens` returns.
@@ -1223,6 +1233,18 @@ impl Interpreter {
         matches: &mut MatchSink<'_>,
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
+        if !token.ratchet && quantifier_atom_needs_candidate_backtracking(&token.atom) {
+            return self.walk_quant_group_candidates(
+                ctx,
+                idx,
+                pos,
+                min,
+                max,
+                hash_per_iter,
+                store,
+                matches,
+            );
+        }
         let pos_base = store.caps().positional.len();
         let stride = count_capture_groups(&token.atom);
         let m_quant = store.mark();
@@ -1287,6 +1309,155 @@ impl Interpreter {
         }
         store.rewind(m_quant);
         false
+    }
+
+    /// Explore every candidate of a compound atom while growing a quantifier.
+    ///
+    /// The ordinary chain path grows one iteration through the singular atom
+    /// matcher. That is sufficient when an iteration has one viable end, but a
+    /// capture group can expose several ends (for example `(. ** {2..3})`). If
+    /// the continuation rejects the greedy outer chain, the shorter inner end
+    /// must be requested before the matcher advances to the next start
+    /// position. Drive the atom through the same continuation-based producer
+    /// used by `One`/`ZeroOrOne` so those ends are tried in regex priority order.
+    #[allow(clippy::too_many_arguments)]
+    fn walk_quant_group_candidates(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        pos: usize,
+        min: usize,
+        max: Option<usize>,
+        hash_per_iter: bool,
+        store: &mut CapStore,
+        matches: &mut MatchSink<'_>,
+    ) -> bool {
+        let token = &ctx.pattern.tokens[idx];
+        let pos_base = store.caps().positional.len();
+        let stride = count_capture_groups(&token.atom);
+        let mark = store.mark();
+        for name in Self::collect_quantified_names_for_token(token) {
+            store.insert_named_quantified(name);
+        }
+        let mut budget = QUANT_ALT_BUDGET;
+        let stop = self.walk_quant_group_candidates_dfs(
+            ctx,
+            idx,
+            pos,
+            0,
+            min,
+            max,
+            pos_base,
+            stride,
+            hash_per_iter,
+            &mut budget,
+            store,
+            matches,
+        );
+        store.rewind(mark);
+        stop
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_quant_group_candidates_dfs(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        current: usize,
+        count: usize,
+        min: usize,
+        max: Option<usize>,
+        pos_base: usize,
+        stride: usize,
+        hash_per_iter: bool,
+        budget: &mut u32,
+        store: &mut CapStore,
+        matches: &mut MatchSink<'_>,
+    ) -> bool {
+        if *budget == 0 {
+            return false;
+        }
+        let token = &ctx.pattern.tokens[idx];
+
+        // Frugal quantifiers expose the current chain before growing it.
+        if token.frugal
+            && count >= min
+            && self.descend_folded(ctx, idx, current, pos_base, stride, store, matches)
+        {
+            return true;
+        }
+        if max.is_some_and(|limit| count >= limit) {
+            return count >= min
+                && !token.frugal
+                && self.descend_folded(ctx, idx, current, pos_base, stride, store, matches);
+        }
+
+        let suppress_padding = atom_contains_alternation(&token.atom);
+        let prior_quantified = suppress_padding.then(|| {
+            super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.replace(true))
+        });
+        let mut stop = false;
+        {
+            let mut next = |interp: &mut Interpreter,
+                            store: &mut CapStore,
+                            end: usize,
+                            delta: RegexCaptures| {
+                if end == current || *budget == 0 {
+                    return false;
+                }
+                *budget -= 1;
+                let iter_pos_base = store.caps().positional.len();
+                let mark = store.mark();
+                store.merge_delta(delta);
+                Self::store_apply_named_capture(store, token, current, end, pos_base);
+                let hash_base = if hash_per_iter {
+                    iter_pos_base
+                } else {
+                    pos_base
+                };
+                Self::store_apply_hash_capture(store, ctx.chars, token, current, end, hash_base);
+                if hash_per_iter {
+                    interp.maybe_run_reduce_time_dynvar_action(token, store.caps());
+                }
+                stop = interp.walk_quant_group_candidates_dfs(
+                    ctx,
+                    idx,
+                    end,
+                    count + 1,
+                    min,
+                    max,
+                    pos_base,
+                    stride,
+                    hash_per_iter,
+                    budget,
+                    store,
+                    matches,
+                );
+                store.rewind(mark);
+                stop
+            };
+            self.for_each_atom_candidate(
+                &token.atom,
+                ctx.chars,
+                current,
+                store,
+                ctx.pkg,
+                ctx.pattern.ignore_case,
+                false,
+                &mut next,
+            );
+        }
+        if let Some(prior) = prior_quantified {
+            super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));
+        }
+        if stop {
+            return true;
+        }
+        // Greedy quantifiers expose the current chain only after all longer
+        // chains and all higher-priority inner candidates were rejected.
+        count >= min
+            && !token.frugal
+            && self.descend_folded(ctx, idx, current, pos_base, stride, store, matches)
     }
 
     /// Full-backtracking quantifier over a variable-length alternation atom
