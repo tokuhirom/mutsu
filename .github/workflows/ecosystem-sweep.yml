@@ -428,9 +428,14 @@ jobs:
           client-id: ${{ vars.TAGPR_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAGPR_APP_PRIVATE_KEY }}
 
+      # `ref: main` deliberately, not the dispatch-time commit: a corpus sweep
+      # runs for over an hour and main moves under it, so the records are
+      # assembled on top of whatever main is NOW. `fetch-depth: 0` is what lets
+      # `ecosystem-ci.py apply` order two commits with `merge-base`.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
+          ref: main
           fetch-depth: 0
 
       # A sweep whose every verdict matched what is already committed uploads no
@@ -445,12 +450,18 @@ jobs:
           merge-multiple: true
           path: /tmp/incoming
 
+      # Not `cp -a`: a record the base branch measured at a NEWER mutsu commit
+      # must survive. An interpreter fix that lands mid-sweep re-measures the one
+      # distribution it fixed, and copying the sweep's older measurement over it
+      # would silently re-open a record that is already green -- and produce
+      # exactly the merge conflict this job exists to avoid. The rule and its
+      # git-backed ordering are in scripts/ecosystem-ci.py, under --self-test.
       - name: Apply them to the tree
         id: apply
         run: |
           set -euo pipefail
           if [ -d /tmp/incoming ] && [ -n "$(find /tmp/incoming -type f -print -quit)" ]; then
-            cp -a /tmp/incoming/. .
+            python3 scripts/ecosystem-ci.py apply --source /tmp/incoming --repo .
           fi
           # Same `-uall` requirement as the staging step above: a new shard
           # directory would otherwise arrive as a single directory entry, which
@@ -528,6 +539,9 @@ jobs:
             echo "| rakudo | ${{ needs.build.outputs.raku-version }} |"
             echo "| shards | ${{ needs.build.outputs.count }} (\`${{ needs.sweep.result }}\`) |"
             echo "| records changed | ${{ steps.apply.outputs.changed }} |"
+            if [ "${{ steps.apply.outputs.superseded || 0 }}" != "0" ]; then
+              echo "| records left alone (base branch measured them later) | ${{ steps.apply.outputs.superseded }} |"
+            fi
             # These are rates over the WHOLE ledger, not over this run's slice:
             # that is what the published KPI is, and a per-run rate over a
             # hand-picked subset is not one.

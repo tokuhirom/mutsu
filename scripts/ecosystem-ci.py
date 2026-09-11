@@ -6,6 +6,7 @@ locally (`--self-test`) instead of being debugged one dispatched run at a time.
 
     scripts/ecosystem-ci.py plan --scope all --shards letters
     scripts/ecosystem-ci.py plan --scope only --only 'BTree, Trie'
+    scripts/ecosystem-ci.py apply --source /tmp/incoming
     scripts/ecosystem-ci.py provenance ecosystem/dists/B/BTree.json …
     scripts/ecosystem-ci.py --self-test
 
@@ -14,6 +15,10 @@ locally (`--self-test`) instead of being debugged one dispatched run at a time.
 validates every input here, at plan time, so a typo fails in seconds instead of
 after a build and a rakudo install — and so the workflow can word-split
 `args` without smuggling anything into a shell.
+
+`apply` copies a finished sweep's records onto the checkout, skipping any record
+the base branch measured at a NEWER mutsu commit. That is what keeps a
+multi-hour sweep from undoing an interpreter fix that landed while it ran.
 
 `provenance` answers the question docs/ecosystem-parity.md section 8 makes the
 operator ask before landing a sweep: was all of this measured by ONE mutsu
@@ -34,6 +39,7 @@ import collections
 import json
 import os
 import re
+import subprocess
 import sys
 
 # One shard per `ecosystem/dists/` directory: A-Z plus `_` for a distribution
@@ -190,6 +196,107 @@ def cmd_provenance(args):
     return 0
 
 
+# --- apply -------------------------------------------------------------------
+
+def commit_is_ancestor(older, newer, repo="."):
+    """True when `older` is an ancestor of `newer` (so `newer` is the later commit).
+
+    Returns None when git cannot decide -- an unknown sha, a shallow clone.
+    """
+    if older == newer:
+        return False
+    proc = subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", older, newer],
+                          capture_output=True, text=True)
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 1:
+        return False
+    return None
+
+
+def record_measured(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)["measured"]
+    except (OSError, ValueError, KeyError, TypeError):
+        # TypeError covers a file that parses as JSON but is not an object --
+        # any of these means "I cannot read a measurement here", and the caller
+        # must then not claim one side supersedes the other.
+        return None
+
+
+def decide(incoming, existing, *, repo="."):
+    """Which of two measurements of the same distribution should be kept?
+
+    Returns ("apply"|"superseded"|"new", reason).
+
+    The rule is "the newer mutsu commit wins", and it is not a tie-break
+    convenience: a record says what mutsu did at one commit, so a record
+    measured at a LATER commit is simply the more current answer. A sweep runs
+    for over an hour, and an interpreter fix that lands during it re-measures
+    the one distribution it fixed -- at a newer commit, by definition. Letting
+    the sweep's older measurement overwrite that would silently undo the fix in
+    the published ledger and re-open a record that is already green.
+    """
+    if existing is None:
+        return "new", "no record on the base branch"
+    inc, ext = record_measured(incoming), record_measured(existing)
+    if inc is None or ext is None:
+        return "apply", "unreadable record on one side"
+    newer = commit_is_ancestor(inc["mutsu_commit"], ext["mutsu_commit"], repo=repo)
+    if newer is True:
+        return "superseded", f"base branch has {ext['mutsu_commit']}, newer than {inc['mutsu_commit']}"
+    if newer is False:
+        return "apply", f"ours ({inc['mutsu_commit']}) is not older than {ext['mutsu_commit']}"
+    # Git could not order them: fall back on the recorded date, and when even
+    # that ties, keep what is already on the branch. Never clobber a record we
+    # cannot prove ours supersedes.
+    if inc.get("date", "") > ext.get("date", ""):
+        return "apply", "unorderable commits; ours is newer by date"
+    return "superseded", "unorderable commits; keeping the base branch record"
+
+
+def cmd_apply(args):
+    """Copy a sweep's records over the checkout, skipping superseded ones."""
+    src_root = os.path.join(args.source, "ecosystem")
+    if not os.path.isdir(src_root):
+        emit("applied", 0)
+        emit("superseded", 0)
+        print("nothing to apply", file=sys.stderr)
+        return 0
+    applied = superseded = 0
+    notes = []
+    for dirpath, _dirs, names in os.walk(src_root):
+        for name in sorted(names):
+            src = os.path.join(dirpath, name)
+            rel = os.path.relpath(src, args.source)
+            dest = os.path.join(args.repo, rel)
+            # Only per-distribution records carry a measurement to compare;
+            # everything else the sweep produced (index-snapshot.json) is ours.
+            if re.match(r"^ecosystem/dists/.+\.json$", rel.replace(os.sep, "/")):
+                verdict, why = decide(src, dest if os.path.exists(dest) else None, repo=args.repo)
+            else:
+                verdict, why = "apply", "not a distribution record"
+            if verdict == "superseded":
+                superseded += 1
+                notes.append(f"{rel}: {why}")
+                continue
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(src, "rb") as fh:
+                data = fh.read()
+            with open(dest, "wb") as fh:
+                fh.write(data)
+            applied += 1
+    for note in notes:
+        print(f"superseded {note}", file=sys.stderr)
+    if superseded:
+        print(f"::notice title=records superseded::{superseded} record(s) on the base branch "
+              "were measured at a newer mutsu commit and were left alone", file=sys.stderr)
+    emit("applied", applied)
+    emit("superseded", superseded)
+    return 0
+
+
 # --- self-test ---------------------------------------------------------------
 
 def self_test():
@@ -256,6 +363,71 @@ def self_test():
     triples, unreadable = provenance([])
     check("provenance of nothing is not uniform", (len(triples), unreadable), (0, []))
 
+    # --- apply's decision rule, against a REAL throwaway git repo, because the
+    # rule is "the newer mutsu commit wins" and only git can order two shas.
+    import tempfile
+
+    def git(repo, *args):
+        subprocess.run(["git", "-C", repo, *args], check=True,
+                       capture_output=True, text=True)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        git(tmp, "init", "-q")
+        git(tmp, "config", "user.email", "t@example.com")
+        git(tmp, "config", "user.name", "t")
+        shas = []
+        for n in range(3):
+            with open(os.path.join(tmp, "f"), "w", encoding="utf-8") as fh:
+                fh.write(str(n))
+            git(tmp, "add", "f")
+            git(tmp, "commit", "-q", "-m", f"c{n}")
+            shas.append(subprocess.run(["git", "-C", tmp, "rev-parse", "--short", "HEAD"],
+                                       capture_output=True, text=True).stdout.strip())
+        old_sha, mid_sha, new_sha = shas
+
+        def rec(path, commit, date="2026-09-11"):
+            full = os.path.join(tmp, path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                json.dump({"measured": {"mutsu_commit": commit, "raku_version": "2026.07",
+                                        "host": "h", "date": date}}, fh)
+            return full
+
+        ours = rec("ours.json", old_sha)
+        theirs_newer = rec("newer.json", new_sha)
+        theirs_older = rec("older.json", old_sha)
+        theirs_same = rec("same.json", old_sha)
+        mid = rec("mid.json", mid_sha)
+
+        check("ancestry: old is an ancestor of new",
+              commit_is_ancestor(old_sha, new_sha, repo=tmp), True)
+        check("ancestry: new is not an ancestor of old",
+              commit_is_ancestor(new_sha, old_sha, repo=tmp), False)
+        check("ancestry: a commit is not treated as newer than itself",
+              commit_is_ancestor(old_sha, old_sha, repo=tmp), False)
+        check("ancestry: an unknown sha is undecidable",
+              commit_is_ancestor("0" * 12, new_sha, repo=tmp), None)
+
+        check("no record on the base branch -> new",
+              decide(ours, None, repo=tmp)[0], "new")
+        check("base branch measured later -> superseded",
+              decide(ours, theirs_newer, repo=tmp)[0], "superseded")
+        check("base branch measured earlier -> apply",
+              decide(rec("o2.json", new_sha), theirs_older, repo=tmp)[0], "apply")
+        check("same commit -> apply (ours is the fresher measurement)",
+              decide(ours, theirs_same, repo=tmp)[0], "apply")
+        check("mid commit is still newer than ours -> superseded",
+              decide(ours, mid, repo=tmp)[0], "superseded")
+
+        unknown = rec("unknown.json", "0" * 12)
+        check("unorderable, ours newer by date -> apply",
+              decide(rec("o3.json", old_sha, date="2026-09-12"), unknown, repo=tmp)[0], "apply")
+        check("unorderable, no date edge -> keep the base branch",
+              decide(rec("o4.json", old_sha, date="2026-09-01"), unknown, repo=tmp)[0],
+              "superseded")
+        check("an unreadable side is never silently dropped",
+              decide(ours, os.path.join(tmp, "f"), repo=tmp)[0], "apply")
+
     print(f"\n{'FAILED' if failures else 'PASS'}: {failures} failure(s)")
     return 1 if failures else 0
 
@@ -274,6 +446,12 @@ def main():
     p.add_argument("--status", default="")
     p.add_argument("--shards", default="auto", choices=["auto", "letters", "single"])
     p.set_defaults(func=cmd_plan)
+
+    a = sub.add_parser("apply", help="copy a sweep's records over the checkout")
+    a.add_argument("--source", required=True,
+                   help="directory holding the downloaded artifacts (an ecosystem/ tree)")
+    a.add_argument("--repo", default=".", help="the checkout to apply them to")
+    a.set_defaults(func=cmd_apply)
 
     q = sub.add_parser("provenance", help="group records by (mutsu commit, rakudo, host)")
     q.add_argument("paths", nargs="*", help="record paths; read from stdin when absent")
