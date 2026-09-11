@@ -145,6 +145,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             language_version: crate::parser::current_language_version(),
             custom_traits: Vec::new(),
             is_unit: false,
+            implicit_grammar_parent: false,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args: Vec::new(),
         })),
@@ -177,13 +178,29 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
-    let (rest, body) = parse_block_body(rest)?;
+    let (rest, mut body) = parse_block_body(rest)?;
+    // Same `also is Base` extraction the statement path does: this is the route a
+    // named `grammar G { also is Base }.parse(...)` takes.
+    let mut parents = vec!["Grammar".to_string()];
+    let mut implicit_grammar_parent = true;
+    body.retain(|stmt| {
+        if let Some(parent_name) = crate::parser::stmt::class::stmt_also_is_parent(stmt) {
+            crate::parser::stmt::class::push_also_is_parent(
+                &mut parents,
+                &mut implicit_grammar_parent,
+                parent_name,
+            );
+            false
+        } else {
+            true
+        }
+    });
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
             name: Symbol::intern(&name),
             name_expr: None,
-            parents: vec!["Grammar".to_string()],
+            parents,
             class_is_rw: false,
             is_hidden: false,
             is_lexical: false,
@@ -194,6 +211,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             language_version: crate::parser::current_language_version(),
             custom_traits: Vec::new(),
             is_unit: false,
+            implicit_grammar_parent,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args: Vec::new(),
         })),

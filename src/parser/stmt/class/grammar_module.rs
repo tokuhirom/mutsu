@@ -192,7 +192,8 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     // self-parent filter in `exec_register_class_op`). Decided before the
     // `does` clauses are read: a composed role is not an `is` parent, so
     // `grammar G does R { }` must still inherit Grammar.
-    if parents.is_empty() {
+    let mut implicit_grammar_parent = parents.is_empty();
+    if implicit_grammar_parent {
         parents.push("Grammar".to_string());
     }
     let mut does_parents = Vec::new();
@@ -214,10 +215,25 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         r = r2;
     }
-    let (rest, body) = {
+    let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         block(r)?
     };
+    // A `grammar G { also is Base; }` body carries its parent the same way a
+    // `class` body does; without this extraction the bare `is(also, Base)`
+    // infix expression would reach the runtime as "two terms in a row".
+    body.retain(|stmt| {
+        if let Some(parent_name) = crate::parser::stmt::class::stmt_also_is_parent(stmt) {
+            crate::parser::stmt::class::push_also_is_parent(
+                &mut parents,
+                &mut implicit_grammar_parent,
+                parent_name,
+            );
+            false
+        } else {
+            true
+        }
+    });
     super::super::simple::register_user_type(&name);
     // `grammar G { ... }.parse($s)` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
@@ -237,6 +253,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             language_version: super::super::simple::current_language_version(),
             custom_traits: Vec::new(),
             is_unit: false,
+            implicit_grammar_parent,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args,
         },

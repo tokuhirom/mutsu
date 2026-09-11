@@ -310,6 +310,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
             let inner = cell.lock().unwrap().clone();
             gist_value(&inner)
         }
+        // An enum value gists as its KEY, even when the enum's base type makes
+        // its string context the value (`our Str enum S «:A<a>»`: `say S::A`
+        // prints "A", `~S::A` is "a"). Without this arm the gist fell through
+        // to `to_string_value`, which answers the Str-context form.
+        ValueView::Enum { key, .. } => key.resolve(),
         // Promise has no custom gist, so it gists in the default `.raku` form.
         ValueView::Promise(p) => {
             crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&p.status())

@@ -104,8 +104,10 @@ impl Interpreter {
         // highest-priority) path to reach an end wins, later ones are dropped.
         let mut seen_ends: Vec<usize> = Vec::new();
         let mut unwind = false;
+        let mut seed_consulted_in_cont = false;
         {
             let unwind = &mut unwind;
+            let seed_consulted_in_cont = &mut seed_consulted_in_cont;
             let mut cont = |interp: &mut Interpreter, end: usize, inner: RegexCaptures| -> bool {
                 if seen_ends.contains(&end) {
                     return false;
@@ -120,7 +122,24 @@ impl Interpreter {
                 let Some((end, delta)) = wrapped.into_iter().next() else {
                     return false;
                 };
-                if on(interp, store, end, delta) {
+                // The continuation is the CALLER's remaining pattern, not this
+                // rule's body, so this activation must not be visible while it
+                // runs. A *sibling* call to the same rule at the same position
+                // is ordinary, not left recursion — and it is exactly what a
+                // `rule` with a bracketed group compiles to, since sigspace puts
+                // a `<.ws>` both at the end of the group and right after it
+                // (`'[' <.ws> [ <id> <.ws> ] <.ws> ']'`). Leaving the activation
+                // up made that second `<.ws>` read this one's empty seed and
+                // fail, so every such rule stopped matching as soon as the
+                // grammar defined its own `ws` (CSS::Grammar does). Lift it
+                // across the continuation and restore it for the rest of the
+                // body walk; the code-block re-entry the activation exists to
+                // catch happens inside the body, which is still covered.
+                *seed_consulted_in_cont |=
+                    super::regex_match_atom::lr_end_activation(&lr_key, outer_seed_read);
+                let stop = on(interp, store, end, delta);
+                super::regex_match_atom::lr_begin_activation(&lr_key);
+                if stop {
                     *unwind = true;
                     return true;
                 }
@@ -139,7 +158,8 @@ impl Interpreter {
                 &mut MatchSink::Cont(&mut cont),
             );
         }
-        let seed_consulted = super::regex_match_atom::lr_end_activation(&lr_key, outer_seed_read);
+        let seed_consulted = super::regex_match_atom::lr_end_activation(&lr_key, outer_seed_read)
+            || seed_consulted_in_cont;
         if seed_consulted && !unwind {
             // A `{ ... }` block re-entered this key after all, so the single
             // pass above is not the growing-seed loop's answer. Nothing has

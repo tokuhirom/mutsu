@@ -1394,6 +1394,14 @@ pub(crate) enum Stmt {
         custom_traits: Vec<(String, Option<Expr>)>,
         /// Whether this class was declared with `unit class` (file-scoped body)
         is_unit: bool,
+        /// Whether the trailing `Grammar` entry in `parents` was supplied
+        /// implicitly, because a `grammar` declarator carried no `is` clause.
+        /// A later `also is Parent` in the body replaces it rather than adding a
+        /// second parent: Rakudo linearizes `grammar G { also is Base }` exactly
+        /// like `grammar G is Base { }` (`G, Base, ...`), and keeping both would
+        /// make the C3 merge inconsistent whenever `Base` itself is a grammar.
+        #[serde(default)]
+        implicit_grammar_parent: bool,
         /// Stable per-declaration-site id (parse-time assigned, non-zero) used to
         /// distinguish same-named lexical (`my`) classes in different scopes.
         /// 0 means "no stable site" (runtime-synthesized or deserialized node).

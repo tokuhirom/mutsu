@@ -3,8 +3,8 @@ use crate::parser::expr::{
     expression, expression_no_sequence, parse_fat_arrow_value, should_wrap_whatevercode, term_expr,
 };
 use crate::parser::helpers::{
-    consume_unspace, is_loop_label_name, is_raku_identifier_start, normalize_raku_identifier, ws,
-    ws1,
+    consume_unspace, is_loop_label_name, is_raku_identifier_start, normalize_raku_identifier,
+    skip_balanced_parens, ws, ws1,
 };
 use crate::parser::parse_result::{PError, PResult, merge_expected_messages, parse_char};
 use crate::parser::primary::current_line_number;
@@ -106,15 +106,86 @@ fn restore_do_stmt_terminator<'a>(orig: &'a str, after: &'a str) -> &'a str {
     }
 }
 
+/// Consume the distribution selectors (`:ver<…>` / `:ver(…)`, `:auth<…>`,
+/// `:api<…>`, and `:v<…>` — Raku's short spelling of `:ver<…>`) that may follow
+/// a `require` target's module name, returning the rest of the input and the
+/// angle-bracket-literal selectors in the canonical `:key<value>` spelling that
+/// `Interpreter::split_dist_selectors` understands.
+///
+/// These refine *which* distribution to load; they are not import tags, and
+/// without consuming them `require CSS::Grammar:ver(v0.3.3+)` parsed as a call
+/// to an undeclared routine `CSS::Grammar:ver`. `use` handles the same two forms
+/// (see `use_decl.rs`): the parenthesized form holds an arbitrary expression
+/// that cannot be reduced to a selector string at parse time, so — as there —
+/// it is consumed and discarded.
+fn parse_require_dist_selectors(input: &str) -> (&str, String) {
+    let mut rest = input;
+    let mut selectors = String::new();
+    loop {
+        let Some(after_colon) = rest.strip_prefix(':') else {
+            return (rest, selectors);
+        };
+        let name_len = after_colon
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric())
+            .count();
+        let (name, after_name) = after_colon.split_at(name_len);
+        if !matches!(name, "ver" | "v" | "auth" | "api") {
+            return (rest, selectors);
+        }
+        let canonical = if name == "v" { "ver" } else { name };
+        // `:ver:<0.0.5>` spells the value with an extra colon; both forms legal.
+        let after_name = after_name.strip_prefix(':').unwrap_or(after_name);
+        if let Some(after_angle) = after_name.strip_prefix('<') {
+            let Some(end) = after_angle.find('>') else {
+                return (rest, selectors);
+            };
+            selectors.push_str(&format!(":{}<{}>", canonical, &after_angle[..end]));
+            rest = &after_angle[end + 1..];
+        } else if after_name.starts_with('(') {
+            rest = skip_balanced_parens(after_name);
+        } else {
+            return (rest, selectors);
+        }
+    }
+}
+
+/// Split the distribution selectors back off a module name.
+///
+/// `parse_sub_name` reads an extended name, so the angle-bracket form of a
+/// selector (`require Test:ver<0.0.1+>:auth<perl>`) arrives folded into the name
+/// it returns, while the parenthesized form is still ahead in the input. The
+/// tail must be selectors all the way to the end of the name, so an ordinary
+/// package separator (`CSS::Grammar`) is never mistaken for one.
+fn split_dist_selectors_from_name(name: &str) -> (&str, String) {
+    for (i, _) in name.match_indices(':') {
+        let (after, selectors) = parse_require_dist_selectors(&name[i..]);
+        if !selectors.is_empty() && after.is_empty() {
+            return (&name[..i], selectors);
+        }
+    }
+    (name, String::new())
+}
+
 fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     let (mut rest, _) = ws1(rest)?;
+    let mut dist_selectors = String::new();
     let (r_target, target_raw) =
         if let Ok((r_mod, mod_name)) = crate::parser::stmt::parse_sub_name_pub(rest) {
-            if r_mod.starts_with(":file(") {
+            let (bare_name, name_selectors) = split_dist_selectors_from_name(&mod_name);
+            let (after_selectors, trailing_selectors) = parse_require_dist_selectors(r_mod);
+            // A parenthesized selector is consumed but contributes no literal
+            // (its value is an arbitrary expression), so test what was consumed
+            // rather than what came back.
+            if r_mod.starts_with(":file(")
+                || !name_selectors.is_empty()
+                || after_selectors.len() != r_mod.len()
+            {
+                dist_selectors = format!("{name_selectors}{trailing_selectors}");
                 (
-                    r_mod,
+                    after_selectors,
                     Expr::Literal(Value::package(Symbol::intern(&normalize_raku_identifier(
-                        &mod_name,
+                        bare_name,
                     )))),
                 )
             } else {
@@ -140,6 +211,15 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     rest = r_target;
 
     let mut args = vec![target];
+    if !dist_selectors.is_empty() {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(
+                "__mutsu_require_dist_selectors".to_string(),
+            ))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::str(dist_selectors))),
+        });
+    }
 
     match module_name_for_parse {
         Some(module_name) => {

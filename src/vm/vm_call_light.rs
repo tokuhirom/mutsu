@@ -921,6 +921,18 @@ impl Interpreter {
             ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
             ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
+            // An enum value satisfies the base type its values carry (`our Str
+            // enum S «:A<a>»` — `S::A` is a `Str`) as well as its own enum type,
+            // which the catch-all `Wild`-only arm below cannot express. Mirrors
+            // the by-name `fast_type_check`.
+            ValueView::Enum {
+                enum_type, value, ..
+            } => match (kind, value) {
+                (T::Wild, _)
+                | (T::Str, crate::value::EnumValue::Str(_))
+                | (T::Int, crate::value::EnumValue::Int(_)) => true,
+                _ => enum_type == name_sym,
+            },
             // Every other value shape satisfies only `Any`/`Mu` -- the
             // by-name form's `_` arm compares `value_type_name(val)` against a
             // name that, on this path, is always one of the five concrete
@@ -1017,6 +1029,17 @@ impl Interpreter {
             && !matches!(type_name, "Any" | "Mu")
         {
             return sym.resolve() == type_name;
+        }
+        // An enum value satisfies the base type its values carry (`our Str enum
+        // S «:A<a>»` — `S::A` is a `Str`), which neither the by-name arms below
+        // nor `value_type_name` (which answers the enum's own name) can see.
+        if let ValueView::Enum { value: ev, .. } = val.view() {
+            return match (type_name, ev) {
+                ("Str", crate::value::EnumValue::Str(_))
+                | ("Int", crate::value::EnumValue::Int(_))
+                | ("Any" | "Mu", _) => true,
+                _ => runtime::value_type_name(val) == type_name,
+            };
         }
         match type_name {
             "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),

@@ -10,34 +10,58 @@
     "unresolved": []
   },
   "dist": "CSS::Module::CSS3::Selectors",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "css3x-selectors simple-selector warnings",
+        "nok": 12,
+        "ok": 80,
+        "plan": 92,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 92,
+        "plan": 92,
+        "secs": 10.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "CSS::Module::CSS3::Selectors": "Inconsistent class hierarchy for CSS::Grammar::CSS21",
-    "CSS::Module::CSS3::Selectors::Actions": "Error while importing from 'CSS::Grammar::Defs': no such tag 'CSSTrait' declared"
+    "CSS::Module::CSS3::Selectors": "ok",
+    "CSS::Module::CSS3::Selectors::Actions": "ok"
   },
   "measured": {
-    "attempts": 2,
-    "date": "2026-09-10",
+    "attempts": 3,
+    "date": "2026-09-11",
     "harness": 1,
     "host": "linux-x86_64",
-    "mutsu_commit": "a7fe6d9",
+    "mutsu_commit": "99075c8",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
-    "sandbox": "bwrap"
+    "sandbox": "none"
   },
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_MODULE_CSS3_SELECTORS/7167453e1346af70f5194176044416f55906978f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 92,
+    "baseline_files": 1,
+    "mutsu_assertions": 80,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.6"
 }
