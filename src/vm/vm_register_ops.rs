@@ -1082,13 +1082,42 @@ impl Interpreter {
             return env;
         }
         let mut env = self.env().filtered_flat(&|k, _v| {
-            if k == callable_type_sym {
-                return false;
-            }
             // One memoized flags word answers the string questions this filter
             // asks per key (see `symbol::flags`), instead of resolving the
             // symbol and re-scanning its bytes.
-            let flags = k.flags();
+            let mut k = k;
+            let mut flags = k.flags();
+            // `__mutsu_type::<name>` is *shadow metadata*: it says what
+            // `<name>` is constrained to, and nothing can observe it except
+            // through a read or write of `<name>` itself. So it belongs in the
+            // capture on exactly the same terms as its subject, and the rest of
+            // this filter decides it by looking at that subject instead — the
+            // same metadata-key unwrapping `CompiledCode::is_callee_local_sym`
+            // already does for the return merge.
+            //
+            // Kept unconditionally (every one of them is a system name by the
+            // plain-user-lexical test below) it rode along for every typed
+            // lexical anywhere in the creating scope: 11 of the ~35 entries a
+            // closure captured after a bare `use Test`, which scale with the
+            // importer's scope exactly like the `__mutsu_callable_id::` markers
+            // below (#7565).
+            //
+            // Deciding it by its subject rather than by "is it a free
+            // variable" is what keeps a typed *dynamic* (`my Int $*x`) — a
+            // system name that is captured without ever being a free
+            // variable — constrained inside the closure.
+            if flags & crate::symbol::flags::TYPE_META != 0 {
+                // `None` cannot happen (the flag is a pure string property of
+                // the prefix), but keeping the key is the pre-#7565 behaviour.
+                let Some(subject) = k.type_meta_subject() else {
+                    return true;
+                };
+                k = subject;
+                flags = subject.flags();
+            }
+            if k == callable_type_sym {
+                return false;
+            }
             // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
             // materializations of `self`'s attributes, not lexicals: the
             // closure must read them through its captured `self` at RUN time.

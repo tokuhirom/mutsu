@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::fmt;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 /// An interned symbol — a lightweight handle that supports O(1) equality
@@ -317,6 +317,44 @@ fn store_flags(idx: usize, f: u16) {
     chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
 }
 
+/// The "not computed yet" sentinel of [`TYPE_META_SUBJECT_TABLE`]. Symbol id 0
+/// is a real symbol, so the empty state cannot be zero; no symbol can ever have
+/// id `u32::MAX` (ids are assigned from a `Vec`'s length).
+const NO_SUBJECT: u32 = u32::MAX;
+
+/// Lock-free, process-global memo of the `__mutsu_type::<name>` -> `<name>`
+/// unwrapping, indexed by the METADATA symbol's id — the same structure as
+/// [`FLAG_TABLE`], for the same reasons (the mapping is a pure function of an
+/// immutable string, ids are append-only, and a racing writer stores the
+/// identical value).
+///
+/// The thread-local `RefCell<FxHashMap>` this replaced charged ~41 Ir per hit
+/// where the answer is one 32-bit load, and the hit rate is 100% after the
+/// first ask: the closure-capture filter asks it once per visible metadata key
+/// per closure creation (#7565).
+///
+/// Only ids that are actually `__mutsu_type::` keys ever reach the store, so a
+/// program with no typed lexical allocates no chunk at all.
+static TYPE_META_SUBJECT_TABLE: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
+    [const { OnceLock::new() }; FLAG_CHUNKS];
+
+/// The already-allocated subject slot for `idx`, if any.
+#[inline]
+fn subject_slot(idx: usize) -> Option<&'static AtomicU32> {
+    let chunk = TYPE_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    Some(&chunk[idx & (FLAG_CHUNK_LEN - 1)])
+}
+
+/// Memoize `subject` as the type-metadata subject of symbol id `idx`.
+fn store_subject(idx: usize, subject: Symbol) {
+    let Some(cell) = TYPE_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
+        return;
+    };
+    let chunk =
+        cell.get_or_init(|| Box::new([const { AtomicU32::new(NO_SUBJECT) }; FLAG_CHUNK_LEN]));
+    chunk[idx & (FLAG_CHUNK_LEN - 1)].store(subject.raw(), Ordering::Relaxed);
+}
+
 /// Pre-interned symbols for names the VM resolves on hot paths.
 ///
 /// [`Symbol::intern`] hashes the whole string and takes a thread-local borrow,
@@ -593,6 +631,46 @@ impl Symbol {
     #[inline]
     pub(crate) fn is_code_env_entry(self) -> bool {
         self.flags() & flags::CODE_ENV_ENTRY != 0
+    }
+
+    /// The *subject* of a `__mutsu_type::<name>` metadata key: the symbol of
+    /// `<name>`, which is the env key the constraint belongs to. `None` for
+    /// any symbol that is not such a key.
+    ///
+    /// This is the inverse of
+    /// [`Interpreter::type_meta_key_for_sym`](crate::runtime::Interpreter::type_meta_key_for_sym),
+    /// and it is memoized for the same reason that one is: both directions of
+    /// the mapping are fixed for the life of the process (symbols are
+    /// append-only), and both are asked on hot paths — the closure-capture
+    /// filter asks it once per visible metadata key per closure creation, and
+    /// the scoped-overlay return merge (`CompiledCode::is_callee_local_sym`)
+    /// asks it once per metadata key per named call. Computing it meant
+    /// resolving the symbol, re-scanning the prefix, and re-interning the
+    /// suffix — a string hash — every single time.
+    #[inline]
+    pub(crate) fn type_meta_subject(self) -> Option<Symbol> {
+        if self.flags() & flags::TYPE_META == 0 {
+            return None;
+        }
+        let idx = self.0 as usize;
+        if let Some(slot) = subject_slot(idx) {
+            let raw = slot.load(Ordering::Relaxed);
+            if raw != NO_SUBJECT {
+                return Some(Symbol(raw));
+            }
+        }
+        self.compute_and_store_type_meta_subject(idx)
+    }
+
+    /// The miss half of [`Symbol::type_meta_subject`]: reached once per
+    /// metadata symbol (plus the losing side of a race), and it interns, so it
+    /// must not be inlined into the capture filter.
+    #[cold]
+    #[inline(never)]
+    fn compute_and_store_type_meta_subject(self, idx: usize) -> Option<Symbol> {
+        let subject = Symbol::intern(self.as_str().strip_prefix(TYPE_META_PREFIX)?);
+        store_subject(idx, subject);
+        Some(subject)
     }
 
     /// Resolve the symbol back to its string representation.
@@ -875,6 +953,41 @@ mod tests {
                 "flags for {name:?} drifted"
             );
         }
+    }
+
+    #[test]
+    fn type_meta_subject_round_trips_and_is_stable() {
+        // The capture filter decides a `__mutsu_type::<name>` key by running
+        // its predicate on `<name>`, so the unwrapping has to be exact -- and
+        // the memo must answer the same thing on the second ask as the first.
+        for name in [
+            "subject_probe",
+            "@subject_probe_arr",
+            "%subject_probe_hash",
+            "*subject_probe_dyn",
+            "self",
+        ] {
+            let subject = Symbol::intern(name);
+            let meta = Symbol::intern(&format!("{TYPE_META_PREFIX}{name}"));
+            assert_eq!(meta.flags() & flags::TYPE_META, flags::TYPE_META);
+            assert_eq!(meta.type_meta_subject(), Some(subject));
+            assert_eq!(meta.type_meta_subject(), Some(subject));
+            // A name that is not a metadata key has no subject, and asking does
+            // not invent one.
+            assert_eq!(subject.type_meta_subject(), None);
+        }
+    }
+
+    #[test]
+    fn type_meta_subject_is_visible_across_threads() {
+        // The memo is process-global (an `AtomicU32` table indexed by symbol
+        // id), so a subject resolved on one thread is already answered on
+        // another -- closures are captured on every thread.
+        let meta = Symbol::intern("__mutsu_type::cross_thread_subject_probe");
+        let expected = Symbol::intern("cross_thread_subject_probe");
+        assert_eq!(meta.type_meta_subject(), Some(expected));
+        let handle = std::thread::spawn(move || meta.type_meta_subject());
+        assert_eq!(handle.join().unwrap(), Some(expected));
     }
 
     #[test]

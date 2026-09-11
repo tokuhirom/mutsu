@@ -9515,10 +9515,11 @@ impl CompiledFunction {
         if sym.flags() & crate::symbol::flags::TYPE_META == 0 {
             return false;
         }
-        sym.with_str(|s| {
-            s.strip_prefix(crate::symbol::TYPE_META_PREFIX)
-                .is_some_and(|base| self.is_callee_local_sym_direct(Symbol::intern(base)))
-        })
+        // `type_meta_subject` memoizes the unwrapping: resolving the symbol,
+        // re-scanning the prefix and re-interning the suffix (a string hash)
+        // ran per metadata key per named call.
+        sym.type_meta_subject()
+            .is_some_and(|base| self.is_callee_local_sym_direct(base))
     }
 
     /// [`Self::is_callee_local_sym`] without the `__mutsu_type::` metadata-key
