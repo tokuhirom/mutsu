@@ -91,6 +91,11 @@ pub(super) fn install() {
 fn install_alt_stack() -> AltStack {
     let mut stack = Vec::<u8>::with_capacity(ALT_STACK_SIZE);
     let ptr = stack.as_mut_ptr();
+    // `with_capacity` promises *at least* this many bytes, so the guard has to
+    // free the allocation with the capacity that was actually handed out: a
+    // `from_raw_parts` pinned to ALT_STACK_SIZE would be a layout mismatch the
+    // moment `RawVec` rounds a request up.
+    let capacity = stack.capacity();
     std::mem::forget(stack); // owned by the returned guard from here on
     // SAFETY: `ptr` owns ALT_STACK_SIZE bytes, kept alive by the guard.
     let previous = unsafe {
@@ -103,12 +108,17 @@ fn install_alt_stack() -> AltStack {
         libc::sigaltstack(&ss, &mut old);
         old
     };
-    AltStack { ptr, previous }
+    AltStack {
+        ptr,
+        capacity,
+        previous,
+    }
 }
 
 /// Owns one thread's alternate signal stack; see [`install_alt_stack`].
 pub struct AltStack {
     ptr: *mut u8,
+    capacity: usize,
     previous: libc::stack_t,
 }
 
@@ -121,7 +131,7 @@ impl Drop for AltStack {
         // time, and `ptr` is the allocation made there.
         unsafe {
             libc::sigaltstack(&self.previous, std::ptr::null_mut());
-            drop(Vec::from_raw_parts(self.ptr, 0, ALT_STACK_SIZE));
+            drop(Vec::from_raw_parts(self.ptr, 0, self.capacity));
         }
     }
 }

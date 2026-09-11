@@ -111,6 +111,9 @@ OVERRIDES: dict[str, str] = {
     "nested-alias-name-no-leak": "vm",
     # A nested `Any` type constraint on a parameter.
     "nested-any-type-constraint": "routines",
+    # The lifetime of a `signal()` Supply's tap (arm on tap, disarm on the last
+    # untap) -- supply teardown, not the `Signal` enum's type behaviour.
+    "signal-supply-tap-lifetime": "concurrency",
 }
 
 

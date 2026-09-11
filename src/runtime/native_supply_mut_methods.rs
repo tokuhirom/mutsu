@@ -296,6 +296,9 @@ impl Interpreter {
                 // For live/async supplies (e.g., signal, Proc::Async stdout/stderr),
                 // spawn a background thread to consume events from the channel and
                 // call the callback.
+                if !is_proc_output {
+                    crate::runtime::builtins_system_async::rearm_signal_supply(&attrs);
+                }
                 if !is_proc_output
                     && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
                     && let Some(rx) = take_supply_channel(sid)
@@ -701,8 +704,12 @@ impl Interpreter {
                                 attributes: inner_attrs,
                                 ..
                             } = inner_supply.view()
-                                && let Some(chan_sid) =
+                                && let Some(chan_sid) = {
+                                    crate::runtime::builtins_system_async::rearm_signal_supply(
+                                        &inner_attrs.as_map(),
+                                    );
                                     Self::resolve_tap_channel_supply_id(&inner_attrs.as_map())
+                                }
                                 && let Some(rx) = take_supply_channel(chan_sid)
                             {
                                 // Live channel-backed whenever source (e.g.

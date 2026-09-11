@@ -481,35 +481,78 @@ impl Interpreter {
     /// `signal(SIGINT, ...)` — returns a Supply that emits Signal enum values
     /// when the process receives the specified OS signals.
     pub(super) fn builtin_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // Extract signal numbers and their enum representations
-        let signals: Vec<(i64, Value)> = args
+        // Keep the arguments that name a signal, in their original form: they
+        // are both what the Supply emits and the spec a later re-tap re-arms
+        // from (see `rearm_signal_supply`).
+        let signals: Vec<Value> = args
             .iter()
-            .filter_map(|v| match v.view() {
-                ValueView::Enum { value, .. } => Some((value.as_i64(), v.clone())),
-                ValueView::Int(i) => Some((i, v.clone())),
-                _ => None,
-            })
+            .filter(|v| signal_number(v).is_some())
+            .cloned()
             .collect();
 
         let supply_id = super::native_methods::next_supply_id();
-
-        // Create channel for the Supply
-        let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
-
-        // Register the channel in the supply channel map
-        if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
-            map.insert(supply_id, rx);
-        }
-
-        // Set up real signal handling using pipe + sigaction
-        for (signum, sig_val) in &signals {
-            signal_watcher::register_signal(*signum as i32, supply_id, tx.clone(), sig_val.clone());
-        }
+        arm_signal_supply(supply_id, &signals);
 
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
+        attrs.insert("signal_numbers".to_string(), Value::array(signals));
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
+}
+
+/// The signal number an argument of `signal()` names, if it names one: a
+/// `Signal` enum value (`SIGTERM`) or a bare number.
+fn signal_number(value: &Value) -> Option<i64> {
+    match value.view() {
+        ValueView::Enum { value, .. } => Some(value.as_i64()),
+        ValueView::Int(i) => Some(i),
+        _ => None,
+    }
+}
+
+/// Give `supply_id` a fresh event channel and register it with the signal
+/// watcher for each of `signals`.
+///
+/// Run at `signal()` time and again whenever the supply is tapped after the
+/// watcher retired it (`rearm_signal_supply`), which is how rakudo behaves:
+/// its signal Supply arms the handler while a tap is in force and disarms it
+/// when the last one goes.
+fn arm_signal_supply(supply_id: u64, signals: &[Value]) {
+    let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
+
+    // Register the channel in the supply channel map
+    if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
+        map.insert(supply_id, rx);
+    }
+
+    // Set up real signal handling using pipe + sigaction
+    for sig_val in signals {
+        if let Some(signum) = signal_number(sig_val) {
+            signal_watcher::register_signal(signum as i32, supply_id, tx.clone(), sig_val.clone());
+        }
+    }
+}
+
+/// Re-arm a `signal()` Supply that is being tapped again after the watcher
+/// retired its registrations (every earlier tap gone, or `Tap.close`).
+///
+/// Called from the tap paths before they claim the supply's channel. Without
+/// it, re-tapping a signal Supply held in a variable would deliver nothing —
+/// rakudo delivers to the new tap, having re-armed the handler for it.
+/// A no-op for every other Supply, and for a signal Supply that is still
+/// armed.
+pub(crate) fn rearm_signal_supply(attrs: &crate::value::AttrMap) {
+    let Some(ValueView::Array(signals, ..)) = attrs.get("signal_numbers").map(Value::view) else {
+        return;
+    };
+    let Some(ValueView::Int(supply_id)) = attrs.get("supply_id").map(Value::view) else {
+        return;
+    };
+    let supply_id = supply_id as u64;
+    if super::native_methods::has_supply_channel(supply_id) {
+        return;
+    }
+    arm_signal_supply(supply_id, &signals.to_vec());
 }
