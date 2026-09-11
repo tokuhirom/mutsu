@@ -265,7 +265,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         {
             type_constraint = Some(tc);
             rest = r;
-        } else {
+        } else if r.starts_with(':') {
+            // A whitespace-separated invocant marker (`::?CLASS : $x`); the form
+            // with the `:` attached to the type was consumed above.
             let mut p = super::helpers::make_param("self".to_string());
             p.type_constraint = Some(tc);
             p.is_invocant = true;
@@ -273,6 +275,15 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.traits
                 .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
             return Ok((r, p));
+        } else {
+            // Neither a variable nor an invocant marker follows: this is an
+            // ANONYMOUS POSITIONAL parameter typed by the pseudo-type, exactly as
+            // `sub f(Int)` is. Only the `:` marker declares an invocant, so
+            // `multi prefix:<-->(::?CLASS) is export { ... }` (CRDT, #7954) is a
+            // one-argument sub — reading it as an invocant made it an
+            // X::Syntax::Signature::InvocantNotAllowed in a `sub`, and turned
+            // `method m(::?CLASS)` into a zero-argument method.
+            return super::helpers::type_only_param(r, tc, named, slurpy);
         }
     }
 
@@ -532,33 +543,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             }
             // Bare identifier as type-only parameter (e.g., enum values in multi dispatch)
             // multi infix:<->(e1, e2) { ... }
-            let mut p = super::helpers::make_param("__type_only__".to_string());
-            p.type_constraint = Some(tc);
-            p.named = named;
-            p.slurpy = slurpy;
-            // Optional traits (`is rw`, `is copy`, …) and a `where` clause on the
-            // anonymous parameter.
-            let mut param_traits = Vec::new();
-            let (mut r3, _) = ws(r2)?;
-            while let Some(r) = super::super::keyword("is", r3) {
-                let (r, _) = ws1(r)?;
-                let (r, trait_name) = super::super::ident(r)?;
-                let (r, _) =
-                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
-                param_traits.push(trait_name);
-                let (r, _) = ws(r)?;
-                r3 = r;
-            }
-            p.traits = param_traits;
-            let (r3, where_constraint) = if let Some(r) = super::super::keyword("where", r3) {
-                let (r, _) = ws1(r)?;
-                let (r, constraint) = super::where_constraint::parse_where_constraint_expr(r)?;
-                (r, Some(Box::new(constraint)))
-            } else {
-                (r3, None)
-            };
-            p.where_constraint = where_constraint;
-            return Ok((r3, p));
+            return super::helpers::type_only_param(r2, tc, named, slurpy);
         } else {
             // Check for multiple prefix type constraints (e.g. `Int Str $x`)
             if let Some((r3, _second_tc)) = super::type_constraint::parse_type_constraint_expr(r2) {
@@ -625,16 +610,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Handle literal value parameters: multi sub foo(0), foo(-١), foo(Inf), foo("x")
-    if let Ok((lit_rest, lit_expr)) = expression(rest)
-        && let Some(v) = super::super::sub::literal_value_from_expr(&lit_expr)
-        && let Ok((after_lit, _)) = ws(lit_rest)
-        && (after_lit.starts_with(')')
-            || after_lit.starts_with(',')
-            || after_lit.starts_with(';')
-            || after_lit.starts_with(']')
-            || after_lit.starts_with('{')
-            || after_lit.starts_with("-->"))
-    {
+    if let Some((after_lit, v)) = super::helpers::parse_literal_param_value(rest) {
         let mut p = super::helpers::make_param("__literal__".to_string());
         // If no explicit type constraint, infer from the literal value type
         p.type_constraint = type_constraint.or_else(|| {

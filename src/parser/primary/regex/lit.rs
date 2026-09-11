@@ -1414,6 +1414,44 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     } else {
         (r, None)
     };
+    // Indirect method name held in a variable, on the topic: `.$name`, `.@names`,
+    // `.%h<k>`. This mirrors the explicit-invocant postfix path (`$x.$name`), which
+    // builds a `DynamicMethodCall` whose `name_expr` is the variable — a Code object
+    // there is invoked with the invocant, a Str names the method. The topic form had
+    // no such branch, so `{.$function}` (python::itertools, #7954) died in the
+    // method-name parse below. `.&name` keeps its own `CallOn`/`CodeVar` path above.
+    if r.starts_with(['$', '@', '%']) {
+        let (r, name_expr) = crate::parser::primary::primary(r)?;
+        let r = consume_unspace(r);
+        let topic = || Box::new(Expr::Var("_".to_string()));
+        if r.starts_with('(') {
+            let (r, _) = parse_char(r, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            return Ok((
+                r,
+                Expr::DynamicMethodCall {
+                    target: topic(),
+                    name_expr: Box::new(name_expr),
+                    args,
+                    modifier,
+                    quoted: false,
+                },
+            ));
+        }
+        return Ok((
+            r,
+            Expr::DynamicMethodCall {
+                target: topic(),
+                name_expr: Box::new(name_expr),
+                args: Vec::new(),
+                modifier,
+                quoted: false,
+            },
+        ));
+    }
     // Parse the method name with the proper Raku hyphen rule: a `-` is part of
     // the identifier only when followed by another identifier char, so `.value--`
     // is `.value` followed by postfix `--`, not a method named `value--`.

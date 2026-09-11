@@ -25,6 +25,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::helpers::ws;
+pub(in crate::parser) use postfix::consumed_span;
 pub(in crate::parser) use postfix::dot_assign_to_name;
 pub(in crate::parser) use postfix::is_angle_key_char;
 pub(in crate::parser) use postfix::postfix_expr_continue;
@@ -83,7 +84,15 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             let (r, value) = parse_fat_arrow_value(r)?;
             // Auto-quote bareword on LHS of => only for plain barewords.
             // Parenthesized forms like `(Mu) => 4` must preserve the original value key.
-            let consumed = &input[..input.len() - rest.len()];
+            //
+            // `consumed_span` rather than an `input.len() - rest.len()` subtraction:
+            // a heredoc left-hand side with trailing code on its marker line
+            // (`qq:to/E/ => 1`) resumes the parse on a freshly built buffer, so
+            // `rest` is not a tail slice of `input` and the subtraction lands at an
+            // arbitrary offset — a mid-character one panics (#7954). Every use below
+            // only inspects the START of the span, so falling back to the whole
+            // `input` answers each of them identically.
+            let consumed = consumed_span(input, rest).unwrap_or(input);
             // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it is
             // evaluated to its value, so `Bool::True => "a"` has the Bool *value*
             // as its (positional) key, matching raku.
@@ -155,7 +164,7 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
-        let consumed = &input[..input.len() - rest.len()];
+        let consumed = consumed_span(input, rest).unwrap_or(input);
         // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
@@ -218,7 +227,7 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
-        let consumed = &input[..input.len() - rest.len()];
+        let consumed = consumed_span(input, rest).unwrap_or(input);
         let leading_colons = consumed.trim_start().starts_with("::");
         let is_bareword =
             !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
@@ -268,7 +277,7 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
-        let consumed = &input[..input.len() - rest.len()];
+        let consumed = consumed_span(input, rest).unwrap_or(input);
         // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
@@ -373,7 +382,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
-        let consumed = &input[..input.len() - rest.len()];
+        let consumed = consumed_span(input, rest).unwrap_or(input);
         // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");
@@ -441,7 +450,7 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         let r = &r[2..];
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
-        let consumed = &input[..input.len() - rest.len()];
+        let consumed = consumed_span(input, rest).unwrap_or(input);
         // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
         // its value, not autoquoted (see the note in `expression`).
         let leading_colons = consumed.trim_start().starts_with("::");

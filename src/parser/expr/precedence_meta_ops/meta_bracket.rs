@@ -12,12 +12,16 @@ use crate::token_kind::TokenKind;
 ///
 /// Returns `true` when the infix loop should break.
 pub(crate) fn block_newline_terminates(input: &str, rest: &str, after_ws: &str) -> bool {
-    let consumed = input.len() - rest.len();
-    if consumed == 0 {
+    // `consumed_span` rather than an `input.len() - rest.len()` subtraction: a
+    // heredoc left-hand side with trailing code on its marker line resumes the
+    // parse on a freshly built buffer, so `rest` is not a tail slice of `input`
+    // and the subtraction names an unrelated byte (#7954). No consumed span means
+    // no `}` to find, and no statement for this rule to end.
+    let Some(consumed) = crate::parser::expr::postfix::consumed_span(input, rest) else {
         return false;
-    }
+    };
     // Check if the character just before `rest` is `}`
-    if input.as_bytes()[consumed - 1] != b'}' {
+    if !consumed.ends_with('}') {
         return false;
     }
     // Check if the whitespace gap between rest and after_ws contains a newline

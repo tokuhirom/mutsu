@@ -127,6 +127,83 @@ pub(crate) fn parse_subsig_tail(input: &str) -> PResult<'_, SubsigTail> {
     ))
 }
 
+/// An anonymous parameter that is nothing but a type — `multi infix:<->(e1, e2)`,
+/// `sub f(Int)`, `multi prefix:<-->(::?CLASS)` — together with the `is` traits and
+/// `where` clause it may still carry. `input` starts right after the type.
+pub(crate) fn type_only_param(
+    input: &str,
+    type_constraint: String,
+    named: bool,
+    slurpy: bool,
+) -> PResult<'_, ParamDef> {
+    use crate::parser::helpers::{ws, ws1};
+    let mut p = make_param("__type_only__".to_string());
+    p.type_constraint = Some(type_constraint);
+    p.named = named;
+    p.slurpy = slurpy;
+    let mut param_traits = Vec::new();
+    let (mut r, _) = ws(input)?;
+    while let Some(r2) = crate::parser::stmt::keyword("is", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, trait_name) = crate::parser::stmt::ident(r2)?;
+        let (r2, _) =
+            crate::parser::stmt::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+        param_traits.push(trait_name);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
+    p.traits = param_traits;
+    if let Some(r2) = crate::parser::stmt::keyword("where", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, constraint) = super::where_constraint::parse_where_constraint_expr(r2)?;
+        p.where_constraint = Some(Box::new(constraint));
+        r = r2;
+    }
+    Ok((r, p))
+}
+
+/// A literal-value parameter (`multi sub foo(0)`, `foo(-١)`, `foo(Inf)`, `foo("x")`).
+///
+/// Two passes, because the two grammars disagree about `-->`. The broad pass runs the
+/// full expression parser, which is what recognizes every literal spelling mutsu
+/// supports; but nothing stops its postfix layer from lexing the `--` of a signature's
+/// `-->` onto the literal it just read, so `norm(M:D: 'column-sum'--> Numeric)`
+/// (Math::Matrix, #7954) came back as `('column-sum'--) > Numeric` — not a literal, and
+/// the whole parameter list then failed. The narrow pass is the literal-parameter
+/// grammar itself: an optional sign and one primary term, matching exactly what
+/// [`literal_value_from_expr`](crate::parser::stmt::sub::literal_value_from_expr)
+/// accepts. It structurally cannot reach an infix or postfix operator, so the `-->`
+/// survives for the caller to read.
+pub(crate) fn parse_literal_param_value(input: &str) -> Option<(&str, Value)> {
+    fn finish<'a>(lit_rest: &'a str, expr: &Expr) -> Option<(&'a str, Value)> {
+        let v = crate::parser::stmt::sub::literal_value_from_expr(expr)?;
+        let (after_lit, _) = crate::parser::helpers::ws(lit_rest).ok()?;
+        let at_param_end = after_lit.starts_with([')', ',', ';', ']', '{'])
+            || after_lit.starts_with("-->")
+            || after_lit.is_empty();
+        at_param_end.then_some((after_lit, v))
+    }
+    if let Ok((lit_rest, lit_expr)) = crate::parser::expr::expression(input)
+        && let Some(found) = finish(lit_rest, &lit_expr)
+    {
+        return Some(found);
+    }
+    let (signed, sign) = match input.as_bytes().first() {
+        Some(b'-') => (&input[1..], Some(crate::token_kind::TokenKind::Minus)),
+        Some(b'+') => (&input[1..], Some(crate::token_kind::TokenKind::Plus)),
+        _ => (input, None),
+    };
+    let (lit_rest, term) = crate::parser::primary::primary(signed).ok()?;
+    let expr = match sign {
+        Some(op) => Expr::Unary {
+            op,
+            expr: Box::new(term),
+        },
+        None => term,
+    };
+    finish(lit_rest, &expr)
+}
+
 /// Returns (rest, required, optional_marker).
 /// `!` → required=true, optional_marker=false
 /// `?` → required=false, optional_marker=true
