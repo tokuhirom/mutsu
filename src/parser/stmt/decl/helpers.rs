@@ -102,10 +102,10 @@ pub(super) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
 /// parentheses, so `is export (A => 1)` and `is export (:A(1))` must be left
 /// for the enum parser.
 pub(super) fn has_export_tag_argument(input: &str) -> bool {
-    let Ok((rest, _)) = ws(input) else {
-        return false;
-    };
-    let Some(mut inner) = rest.strip_prefix('(') else {
+    // Whitespace is significant here. `is export(:tag)` is a trait argument,
+    // while `is export (:value, ...)` starts the enum's value list. Consuming
+    // the whitespace would make those two spellings indistinguishable.
+    let Some(mut inner) = input.strip_prefix('(') else {
         return false;
     };
     inner = inner.trim_start_matches(|c: char| c.is_whitespace() || c == ',');
