@@ -4,7 +4,8 @@
 //! extraction from `registration_class_decl.rs` — no behavior change.
 
 use super::registration_class::{
-    parse_role_type_args, substitute_type_params_in_method, type_value_name,
+    parse_role_type_args, resolve_role_pseudo_types_in_method, substitute_type_params_in_method,
+    type_value_name,
 };
 use super::registration_class_compose::RoleCompositionCx;
 use super::*;
@@ -410,6 +411,17 @@ impl Interpreter {
                                     if method.original_role.is_none() {
                                         method.original_role = method.role_origin.clone();
                                     }
+                                    let source_role = method
+                                        .original_role
+                                        .as_deref()
+                                        .or(method.role_origin.as_deref())
+                                        .unwrap_or(parent_base)
+                                        .to_string();
+                                    resolve_role_pseudo_types_in_method(
+                                        &mut method,
+                                        cx.name,
+                                        &source_role,
+                                    );
                                     method.role_origin = Some(parent_base.to_string());
                                     method
                                 })
@@ -423,6 +435,17 @@ impl Interpreter {
                                     if method.original_role.is_none() {
                                         method.original_role = method.role_origin.clone();
                                     }
+                                    let source_role = method
+                                        .original_role
+                                        .as_deref()
+                                        .or(method.role_origin.as_deref())
+                                        .unwrap_or(parent_base)
+                                        .to_string();
+                                    resolve_role_pseudo_types_in_method(
+                                        &mut method,
+                                        cx.name,
+                                        &source_role,
+                                    );
                                     method.role_origin = Some(parent_base.to_string());
                                     method
                                 })
