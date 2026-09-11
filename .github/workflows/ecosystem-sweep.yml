@@ -519,8 +519,15 @@ jobs:
           # rate that reads as the ecosystem KPI and is not one
           # (ecosystem/README.md). Refreshing a summary that already exists is
           # fine -- creating the first one from a subset is not.
-          if [ ! -f ecosystem/summary.json ] && [ "$FULL_CORPUS" != "true" ]; then
-            echo "::notice title=no rollup::this would create the first ecosystem/summary.json from a partial sweep; run scope=all for that"
+          #
+          # `scope=all` alone does not prove a corpus was measured: run 4 asked
+          # for all 27 shards and two of them lost every record they had
+          # measured, so the first summary was created over 1423 of 1624
+          # distributions. Completeness is the same condition `--history` uses
+          # below, so require it here too for the FIRST summary.
+          if [ ! -f ecosystem/summary.json ] \
+             && { [ "$FULL_CORPUS" != "true" ] || [ "$ALL_SHARDS_OK" != "true" ]; }; then
+            echo "::notice title=no rollup::this would create the first ecosystem/summary.json from an incomplete sweep; run scope=all with every shard green for that"
             echo "appended-history=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

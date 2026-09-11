@@ -18,13 +18,22 @@ with rakudo as the denominator.
 | `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
-not an ASCII letter), `::` is written `--`, and any character a filesystem or a
-GitHub artifact upload would reject (`: " < > | * ? % / \`) is percent-escaped —
-`App:Racl` is `App%3ARacl.json`. The escaping is not cosmetic: one rejected path
-fails an **entire** artifact upload, which once cost two shards every record they
-had measured. `ecosystem_common.record_filename()` owns the rule and its
-self-test pins it. Otherwise:
-`String::Utils` → `dists/S/String--Utils.json`.
+not an ASCII letter). The rest of the filename is
+`ecosystem_common.record_filename()`, whose self-test pins it:
+`String::Utils` → `dists/S/String--Utils~aed281d9.json`.
+
+- `::` becomes `--`, so the stem reads as the distribution name.
+- Anything a filesystem or a GitHub artifact upload rejects (`: " < > | * ? % / \`)
+  is percent-escaped — `App:Racl` → `App%3ARacl~...`. One rejected path fails an
+  **entire** artifact upload, which once cost two shards every record they had
+  measured.
+- The `~<digest>` suffix makes the mapping **injective, case-insensitively**. It
+  is not decoration: `::` → `--` alone is not injective over the real index
+  (`Qwiratry::Location::HTTP` and `Qwiratry--Location--HTTP` both exist, and so do
+  `WWW::CloudHosting::Hetzner` and `WWW--CloudHosting--Hetzner`), and a
+  case-insensitive filesystem also collapses `CSV-AutoClass`/`CSV-Autoclass` and
+  `Config::INI`/`Config::Ini`. Without the digest the first two pairs overwrote
+  each other in the ledger and the last two were dropped by the artifact upload.
 
 One file per distribution is not an accident. It is what keeps parallel PRs from
 conflicting (the same reasoning as `news/`), and it makes re-measuring one
