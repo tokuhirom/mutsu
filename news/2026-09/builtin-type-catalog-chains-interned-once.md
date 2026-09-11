@@ -70,6 +70,14 @@ own tail, and that a method augmented onto `Cool` is reachable from `Str`, `Int`
 and (through `Int`) `Bool`. `interned_views_agree_with_their_row` does the same
 at the unit level for every row in the catalog, both interned views at once.
 
+Two pre-existing `.^`-MOP divergences turned up while writing that file and are
+filed as [#7937](https://github.com/tokuhirom/mutsu/issues/7937): `.^isa` on a
+*concrete* builtin value answers False (`"x".^isa(Cool)`), and `.^mro` alone
+drops a parametrized name's base row (`Array[Int].^mro` stops at `Any`) where
+both the classifier and the registry splice it in. Neither is caused by this
+change — both reproduce on `main` — so the test uses `.isa` and omits the
+`Array[Int]` row, with a comment saying to swap them back.
+
 ## Not done
 
 The rest of [#7766](https://github.com/tokuhirom/mutsu/issues/7766)'s unit 2 —

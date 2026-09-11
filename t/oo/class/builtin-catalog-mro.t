@@ -45,6 +45,12 @@ is mro-of(StrHeir), "StrHeir Str Cool Any Mu",
 # --- the ancestry is the one dispatch actually uses ---------------------------
 # `.^mro` could be right while the chain the method walk consults is wrong, so
 # pin a call that can only resolve through a catalog ancestor.
+#
+# `.isa`, not `.^isa`: the MOP spelling answers False for a concrete builtin
+# value (mutsu bug, #7937 -- `"x".^isa(Cool)` is 0 where raku says 1). Swap it
+# back when that is fixed. `Array[Int].^mro` is missing from the rows above for
+# the same reason: #7937's second half, where `.^mro` alone drops a
+# parametrized name's base row that every other ancestry consumer splices in.
 
 ok True.isa(Int), 'Bool is-a Int through the catalog chain';
 ok 1.5.Rat.isa(Cool), 'Rat is-a Cool through the catalog chain';
