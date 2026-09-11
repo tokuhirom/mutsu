@@ -86,11 +86,18 @@ Two things keep the coverage:
 
 1. **`cargo test` still runs in debug**, in every job and in `make test`. The 959 lib unit
    tests keep their assertions.
-2. **`gc-stress` and `jit-stress` still run the whole `t/` suite on `target/debug/mutsu`**,
-   serially. Those jobs exist to run the suite under adverse configurations, and a
+2. **`gc-stress` and `jit-stress` still run the whole `t/` suite on `target/debug/mutsu`**.
+   Those jobs exist to run the suite under adverse configurations, and a
    debug build with its assertions live is exactly such a configuration. Every push
    therefore still gets a suite-wide `debug_assert!` pass — twice — just not on the
    critical path of the fast gate.
+
+   *Update 2026-09-11 (#7956):* those two runs were also **serial**, which this ADR
+   described as applying "more wall-clock pressure". That reading was backwards — a serial
+   run gives each file the whole runner to itself — and the cost was real: 15m53s and
+   18m42s against the `test` job's 1m28s for the same 3997 files, leaving both jobs at ~90%
+   of `timeout-minutes: 30`. They run at `-j4` now. The `debug_assert!` argument above is
+   untouched by that: it is about the *binary*, and the binary is still debug.
 
 This is the substantive difference from a blanket switch, and it is why "run everything on
 release" was not adopted.
@@ -103,9 +110,9 @@ release" was not adopted.
 - **Local and CI still agree.** ADR-0014's strongest point was that a local `make test`
   should mean what CI means. It still does: both now run `t/` on release.
 - A debug-only timeout is no longer visible to the fast gate — but it is still visible to
-  `gc-stress`/`jit-stress`, which run the same suite on debug and serially, i.e. under
-  *more* wall-clock pressure than the old `test` job applied. The flaky-test triage
-  protocol is unchanged.
+  `gc-stress`/`jit-stress`, which run the same suite on debug. (As of 2026-09-11 they run
+  it at `-j4` rather than serially, with a 90s per-file budget; see the update in §3.) The
+  flaky-test triage protocol is unchanged.
 - ADR-0014's other consequence — that `make test` no longer produces a release binary as a
   side effect — is reversed: it produces one again, which is what `make roast` and the
   bench scripts want anyway.
