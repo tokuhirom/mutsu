@@ -27,6 +27,7 @@
 <script type="module">
 import { renderChrome, t, currentLang } from './assets/i18n.js';
 import { renderMarkdown } from './assets/mini-md.js';
+import { fetchData } from './assets/data.js';
 
 renderChrome('batteries');
 
@@ -181,7 +182,7 @@ function paintList() {
 
 async function loadLibraries() {
   try {
-    const res = await fetch('content/batteries.json');
+    const res = await fetchData('content/batteries.json');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     LIBRARIES = Array.isArray(data.libraries) ? data.libraries : [];

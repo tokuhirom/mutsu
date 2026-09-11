@@ -35,6 +35,8 @@ assets/
   site.css          all styling
   i18n.js           language selection, UI strings, shared nav + footer
   corpus.js         parser for the .txt snippet corpora (shared with Node)
+  data.js           fetch for the generated content/ files: always revalidate,
+                    never accept a stale cached copy (the file says why)
   highlight.js      the small Raku syntax highlighter
   editor.js         textarea + highlight overlay widget
   runner.js         WASM lifecycle: isolated runs and long-lived REPL sessions

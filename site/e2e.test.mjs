@@ -124,6 +124,18 @@ try {
   const errors = [];
   page.on('pageerror', err => errors.push(err.message));
 
+  // Every generated data file under content/ must be fetched through
+  // assets/data.js, which revalidates rather than accept a copy cached under
+  // GitHub Pages' fixed max-age=600 — those files are regenerated at deploy
+  // time while the page reading them is not. Collected across the whole run and
+  // asserted at the end, once every page has been visited. Module imports of
+  // content/*.js are source, not measurements, and are exempt by design.
+  const dataReqs = new Map();
+  page.on('request', (req) => {
+    const m = /\/content\/([^?]*\.(?:json|txt))$/.exec(req.url());
+    if (m) dataReqs.set(m[1], req);
+  });
+
   /* =============================================================== *
    * Landing page
    * =============================================================== */
@@ -687,6 +699,22 @@ try {
   await page.click('#reset-btn');
   const afterReset = await replEval(page, 'say $x.defined');
   assert(afterReset === 'False', `reset clears declarations (got: ${JSON.stringify(afterReset)})`);
+
+  // --- Test: the generated data files are never read from a stale cache ---
+  // Chromium puts the `cache: 'no-cache'` mode on the wire as
+  // `Cache-Control: max-age=0` (cold load included, measured), and a plain
+  // fetch sends no cache directive at all — so this fails the moment a page
+  // reaches for a generated file with a bare `fetch`.
+  console.log('Test: generated data files are revalidated, not read from a cache');
+  for (const name of ['ecosystem.json', 'batteries.json', 'stats.json',
+                      'highlights.txt', 'lessons.txt']) {
+    const req = dataReqs.get(name);
+    assert(req !== undefined, `some page fetched content/${name}`);
+    const cc = req ? (await req.allHeaders())['cache-control'] ?? '' : '';
+    assert(/(^|,\s*)(no-cache|max-age=0)(\s*,|$)/.test(cc),
+           `content/${name} is fetched with a revalidating cache mode` +
+           ` (Cache-Control: ${JSON.stringify(cc)})`);
+  }
 
   // --- Test: No page errors (unreachable traps) ---
   console.log('Test: No WASM crashes');

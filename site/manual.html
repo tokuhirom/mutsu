@@ -29,6 +29,7 @@
 
 <script type="module">
 import { renderChrome, currentLang } from './assets/i18n.js';
+import { fetchData } from './assets/data.js';
 
 import manualEn from './content/manual.en.js';
 import manualJa from './content/manual.ja.js';
@@ -138,7 +139,7 @@ window.addEventListener('langchange', () => {
 
 async function loadStats() {
   try {
-    const res = await fetch('content/stats.json');
+    const res = await fetchData('content/stats.json');
     if (!res.ok) return;                       // not deployed: keep the fallback
     const s = await res.json();
     if (s.roastPass > 0 && s.roastTotal > 0) {

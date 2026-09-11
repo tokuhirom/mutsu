@@ -65,6 +65,7 @@
 <script type="module">
 import { renderChrome, currentLang, langHref } from './assets/i18n.js';
 import { parseCorpus } from './assets/corpus.js';
+import { fetchData } from './assets/data.js';
 import { createSnippet } from './assets/snippet.js';
 
 import landingEn from './content/landing.en.js';
@@ -286,7 +287,7 @@ function paintAll() {
 
 async function loadStats() {
   try {
-    const res = await fetch('content/stats.json');
+    const res = await fetchData('content/stats.json');
     if (!res.ok) return;                       // not deployed: keep the fallback
     const s = await res.json();
     if (s.roastPass > 0 && s.roastTotal > 0) STATS = s;
@@ -296,7 +297,7 @@ async function loadStats() {
 async function main() {
   renderChrome('home');
   await loadStats();
-  buildCards(parseCorpus(await (await fetch('content/highlights.txt')).text()));
+  buildCards(parseCorpus(await (await fetchData('content/highlights.txt')).text()));
   window.addEventListener('langchange', paintAll);
   paintAll();
   document.body.dataset.ready = '1';
