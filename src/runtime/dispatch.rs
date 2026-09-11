@@ -1,6 +1,7 @@
 use super::*;
 
 type DispatchShape = (Option<String>, bool, bool, bool, bool, bool, bool);
+type TokenCallCandidate = (String, Option<String>);
 
 impl Interpreter {
     pub(crate) fn constraint_base_name(constraint: &str) -> &str {
@@ -146,6 +147,21 @@ impl Interpreter {
         arg_values: &[Value],
         start_pos: usize,
     ) -> Result<Option<(String, Option<String>)>, RuntimeError> {
+        Ok(self
+            .eval_token_call_candidates_at(name, arg_values, start_pos)?
+            .and_then(|candidates| candidates.into_iter().next()))
+    }
+
+    /// Like [`Self::eval_token_call_values_at`], but retains every candidate in
+    /// LTM rank order. The ordinary dispatch callers need only the winner;
+    /// `Grammar.parse(:rule<proto>)` must keep the rest available when that
+    /// candidate fails its real match and the next one should be tried.
+    pub(super) fn eval_token_call_candidates_at(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+        start_pos: usize,
+    ) -> Result<Option<Vec<TokenCallCandidate>>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
             None => return Ok(None),
@@ -199,8 +215,13 @@ impl Interpreter {
         // is stable, so an LTM tie falls back to declaration order (as in
         // Rakudo) — ADR-0022 §4.4's third and final tie-break.
         candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
-        if let Some((_, pattern, sym)) = candidates.into_iter().next() {
-            return Ok(Some((pattern, sym)));
+        if !candidates.is_empty() {
+            return Ok(Some(
+                candidates
+                    .into_iter()
+                    .map(|(_, pattern, sym)| (pattern, sym))
+                    .collect(),
+            ));
         }
         // Nothing matched declaratively. Normally that is a cheap "this rule
         // cannot match" verdict and the real match is skipped — but during a
@@ -213,7 +234,7 @@ impl Interpreter {
             && self.current_grammar_actions.is_some()
             && !self.has_proto_token(name)
         {
-            return Ok(rejected.pop().map(|p| (p, None)));
+            return Ok(rejected.pop().map(|p| vec![(p, None)]));
         }
         if self.has_proto_token(name) {
             return Err(RuntimeError::new(format!(
