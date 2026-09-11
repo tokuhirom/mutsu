@@ -20,6 +20,7 @@ before starting one of these tasks:
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 | [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass ("make `String::Utils`'s tests pass"), or working a red/`blocked_load` `ecosystem/` record |
+| [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution instead of a named one, and locking it on the board so parallel agents do not collide |
 
 ## Where this session is running — check before following any shell recipe
 

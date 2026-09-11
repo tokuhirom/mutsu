@@ -88,6 +88,17 @@ file, fix the interpreter where the gap is bounded and file an issue where it
 needs a complex feature — is the
 [`ecosystem-dist-fix`](../.agents/skills/ecosystem-dist-fix/SKILL.md) skill.
 
+To pick one **at random** rather than by name — and to do so with several agents
+running at once — use
+[`ecosystem-dist-roulette`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
+instead. It draws uniformly from the actionable records here (a uniform sample is
+what keeps the published figure honest; picking the cheapest-looking record games
+it), takes a lock on
+[#7884](https://github.com/tokuhirom/mutsu/issues/7884) so no two agents work the
+same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
+has no issue of its own to carry a claim, which is why the lock lives on that one
+board issue's comments rather than in this tree.
+
 ## Current state — a partial sweep, not the corpus
 
 **The corpus sweep (P2) is in progress and these records cover only part of it.**
