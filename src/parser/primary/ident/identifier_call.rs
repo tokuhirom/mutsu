@@ -19,8 +19,8 @@ use crate::parser::primary::ident::listop::{
 use crate::parser::primary::ident::predicates::{
     balanced_paren_text, is_expr_listop, is_infix_word_op, is_keyword, is_listop,
     is_require_terminator, is_stmt_modifier_ahead, is_unspace_before_postfix,
-    keyword_as_function_error, looks_like_binding, parens_then_block, starts_with_term_keyword,
-    try_extend_colon_name,
+    is_zero_arg_callable_builtin, keyword_as_function_error, looks_like_binding, parens_then_block,
+    starts_with_term_keyword, try_extend_colon_name,
 };
 use crate::parser::primary::ident::supply::supply_method_call;
 use crate::parser::primary::misc::{
@@ -2094,8 +2094,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, make_call_expr(name, input, args)));
     }
 
-    // Functions that can be called with no arguments as bare words
-    if matches!(name.as_str(), "await" | "slip" | "slurp") && is_terminator_or_dot {
+    // A core routine whose parameters are ALL optional is a real zero-arg call
+    // when nothing follows it, not a bare word: `sleep;` must sleep forever and
+    // `my $x = exit;` must exit rather than binding the string "exit" and
+    // letting execution carry on. A following `.` counts as "nothing follows"
+    // because it is a method call on the result (`slurp.lines`). Routines that
+    // genuinely need an argument are absent from the table and keep falling
+    // through to the bareword/X::Obsolete path below. See
+    // [`is_zero_arg_callable_builtin`] for how the table was measured.
+    if is_terminator_or_dot && is_zero_arg_callable_builtin(&name) {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
@@ -2116,22 +2123,20 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
-    // callframe and caller are term-like functions: always a zero-arg call
-    if matches!(name.as_str(), "callframe" | "caller") {
-        return Ok((rest, make_call_expr(name, input, vec![])));
-    }
-
-    // A bare `return` in EXPRESSION position (`$err and return;`) transfers
-    // control with Nil: compile it as the zero-arg `return` call (which raises
-    // the return control exception), not an inert BareWord — that resolved to
-    // the `&return` routine object and fell through, so Text::CSV's
-    // `$error and return;` guard kept executing the rest of the sub. A
-    // user-declared `\return` term never reaches this fallback (term_literals
-    // resolves it first).
-    // `return-rw` gets the same treatment: a bare `return-rw` returns Nil from
-    // the enclosing routine rather than resolving to an inert BareWord (which
-    // stringified to "return-rw" and let the rest of the sub keep running).
-    if name == "return" || name == "return-rw" {
+    // The same rescue, but UNGATED: these four must compile to a zero-arg call
+    // even when what follows is not a statement terminator.
+    //
+    // `callframe`/`caller` are term-like functions. A bare `return` in
+    // EXPRESSION position (`$err and return;`) transfers control with Nil, so it
+    // has to raise the return control exception rather than resolve to an inert
+    // BareWord — that resolved to the `&return` routine object and fell through,
+    // so Text::CSV's `$error and return;` guard kept executing the rest of the
+    // sub. `return-rw` gets the same treatment. A user-declared `\return` term
+    // never reaches this fallback (term_literals resolves it first).
+    if matches!(
+        name.as_str(),
+        "callframe" | "caller" | "return" | "return-rw"
+    ) {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

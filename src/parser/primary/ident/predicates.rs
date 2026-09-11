@@ -153,6 +153,80 @@ pub(crate) fn is_prefix_pseudo_op(name: &str) -> bool {
     )
 }
 
+/// Core routines whose signature is *entirely optional parameters*, so a
+/// paren-less, argument-less use (`sleep;`, `my $x = exit;`) is a real zero-arg
+/// call rather than a bare word.
+///
+/// The identifier-call parser's final fallback turns an unrecognised word into
+/// `Expr::BareWord(name)`, i.e. the *string* `"sleep"`. For a routine that
+/// genuinely requires an argument that is the right shape (the caller then
+/// raises `Unsupported use of bare "..."`), but for one whose parameters are
+/// all optional it silently drops the call: `sleep;` returned instantly instead
+/// of sleeping forever, and `my $x = exit;` left `$x` as `Str "exit"` while
+/// execution carried on. This table is the general answer, replacing the
+/// ad-hoc arms that were rescuing one name per bug report.
+///
+/// Membership is measured against Rakudo, not guessed: a name belongs here iff
+/// `raku -e 'my $x = NAME;'` compiles. Rakudo rejects a bare argument-requiring
+/// routine at compile time — either with `Unsupported use of bare "say"`
+/// (the Perl 5 unary carve-out) or with `Calling elems() will never work with
+/// signature of the proto ($, *%)` — so a name that compiles there is one whose
+/// signature really does accept zero arguments. Names that fail that check
+/// (`say`, `ord`, `elems`, `floor`, `map`, `set`, `bag`, `sleep-until`, ...)
+/// are deliberately absent and keep falling through to the bareword path.
+///
+/// Two names Rakudo accepts are still excluded because mutsu has no zero-arg
+/// routine behind them — compiling them to a call would trade a wrong value for
+/// a worse error: `take-rw` (only reachable with an argument, so a zero-arg call
+/// is an "Undeclared routine" *parse* error) and `parse-names` (implemented only
+/// as a method bypass, so a zero-arg call is "Unknown function").
+///
+/// `callframe`/`caller`/`return`/`return-rw` also take no arguments but are
+/// handled by their own *ungated* arm at the call site, because they must
+/// compile to a call even when what follows is not a statement terminator.
+pub(crate) fn is_zero_arg_callable_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "await"
+            | "chdir"
+            | "cross"
+            | "die"
+            | "dir"
+            | "exit"
+            | "fail"
+            | "flat"
+            | "get"
+            | "hash"
+            | "item"
+            | "join"
+            | "lines"
+            | "max"
+            | "min"
+            | "minmax"
+            | "note"
+            | "prompt"
+            | "repeated"
+            | "repl"
+            | "roundrobin"
+            | "run"
+            | "sleep"
+            | "sleep-timer"
+            | "slip"
+            | "slurp"
+            | "sort"
+            | "squish"
+            | "succeed"
+            | "sum"
+            | "take"
+            | "undefine"
+            | "unique"
+            | "val"
+            | "warn"
+            | "words"
+            | "zip"
+    )
+}
+
 /// Check if a name is a listop (can take args without parens).
 pub(crate) fn is_listop(name: &str) -> bool {
     matches!(

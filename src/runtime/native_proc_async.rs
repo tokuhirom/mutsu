@@ -989,19 +989,39 @@ impl Interpreter {
                 Ok((ret, attrs))
             }
             "kill" => {
-                let started = attrs.get("started").is_some_and(|v| v.truthy());
-                let has_pid = attrs.contains_key("pid");
+                // `started` and `pid` are written into `.start`'s own copy of
+                // the instance attributes, so a thread that did not call
+                // `.start` never sees them -- `start { await $p.ready; $p.kill }`
+                // raised X::Proc::Async::MustBeStarted against a running
+                // process (roast/S17-procasync/kill.t). The ready promise is
+                // shared by reference and `.start` keeps it with the pid, so it
+                // is the cross-thread source of truth for both facts.
+                let ready_pid = match attrs.get("ready_promise").map(Value::view) {
+                    Some(ValueView::Promise(ready)) if ready.status() == "Kept" => {
+                        match ready.result_blocking().view() {
+                            ValueView::Int(pid) => Some(pid),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                let started =
+                    attrs.get("started").is_some_and(|v| v.truthy()) || ready_pid.is_some();
+                let pid = match attrs.get("pid").map(Value::view) {
+                    Some(ValueView::Int(pid)) => Some(pid),
+                    _ => ready_pid,
+                };
                 if !started {
                     return Err(proc_async_error(
                         "X::Proc::Async::MustBeStarted",
                         &[("method", Value::str_from("kill"))],
                     ));
                 }
-                if !has_pid {
+                if pid.is_none() {
                     return Ok((Value::NIL, attrs));
                 }
                 #[cfg(feature = "native")]
-                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                if let Some(pid) = pid {
                     let sig = args
                         .first()
                         .and_then(|v| match v.view() {
@@ -1181,15 +1201,26 @@ impl Interpreter {
                     promise.break_with(err, String::new(), String::new());
                     return Ok((Value::promise(promise), attrs));
                 }
-                // Returns a Promise that resolves with the PID when the process
-                // has been started. If already started, resolves immediately.
-                let promise = SharedPromise::new();
+                // Returns the Promise `.start` keeps with the PID once the
+                // process has been spawned. It is built by the constructor, not
+                // here: creating it lazily stored it through this handler's own
+                // copy of the instance attributes, so `start { await $p.ready }`
+                // running before (or on another thread from) `.start` awaited a
+                // promise nobody held and deadlocked.
+                let ready = match attrs.get("ready_promise").map(Value::view) {
+                    Some(ValueView::Promise(p)) => p.clone(),
+                    // A Proc::Async built by some other path still gets a working
+                    // promise, kept immediately when the process already runs.
+                    _ => {
+                        let p = SharedPromise::new();
+                        attrs.insert("ready_promise".to_string(), Value::promise(p.clone()));
+                        p
+                    }
+                };
                 if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
-                    promise.keep(Value::int(pid), String::new(), String::new());
+                    ready.try_keep(Value::int(pid)).ok();
                 }
-                // Store the ready promise so start can resolve it
-                attrs.insert("ready_promise".to_string(), Value::promise(promise.clone()));
-                Ok((Value::promise(promise), attrs))
+                Ok((Value::promise(ready), attrs))
             }
             "stdout" | "stderr" => {
                 if attrs

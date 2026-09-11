@@ -323,6 +323,17 @@ impl Interpreter {
             "supply".to_string(),
             Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
         );
+        // `.ready` must hand out the SAME promise that `.start` keeps, so it is
+        // created here rather than lazily by the `ready` handler. A lazily
+        // created one is stored through the handler's own copy of the instance
+        // attributes, which is lost whenever `.ready` and `.start` do not run in
+        // that order on the same thread: `start { await $p.ready }; await
+        // $p.start` then awaited a promise nobody ever kept and deadlocked
+        // (roast/S17-procasync/kill.t, whose child is a bare `sleep`).
+        attrs.insert(
+            "ready_promise".to_string(),
+            Value::promise(SharedPromise::new()),
+        );
         if w_flag {
             attrs.insert("w".to_string(), Value::TRUE);
         }
