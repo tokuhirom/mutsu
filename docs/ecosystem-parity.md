@@ -183,7 +183,12 @@ ecosystem/
 ```
 
 `<S>` is the uppercased first character of the dist name (`_` when it is not an
-ASCII letter); `::` becomes `--` in the filename. `String::Utils` →
+ASCII letter); `::` becomes `--` in the filename, and any character a filesystem
+or a GitHub artifact upload would reject (`: " < > | * ? % / \`) is
+percent-escaped, so `App:Racl` is `App%3ARacl.json` —
+`ecosystem_common.record_filename()` owns that rule and its self-test pins it,
+because one rejected path fails an entire artifact upload and once cost two
+shards every record they had measured. `String::Utils` →
 `ecosystem/dists/S/String--Utils.json`.
 
 One file per dist is the merge-conflict answer (the same reasoning as
