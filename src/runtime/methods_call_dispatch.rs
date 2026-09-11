@@ -176,13 +176,15 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
-        // The NQP cursor protocol (#7883), both halves of it: building a
-        // cursor (`Match.!cursor_init($s, :0c)`, reached through the callable
-        // `Match.^lookup("!cursor_init")` hands back) and *calling a regex on*
-        // one (`$needle($cursor)`, which arrives here as `Regex.CALL-ME`).
-        // Gated on the method name so the common dispatch pays one comparison
-        // against an interned-length string and nothing else.
-        if method.as_bytes().first() == Some(&b'!')
+        // The NQP cursor protocol (#7883, #7931): building a cursor
+        // (`Match.!cursor_init($s, :0c)`, reached through the callable
+        // `Match.^lookup("!cursor_init")` hands back), advancing one
+        // (`CURSOR_MORE`), and *calling a regex on* one (`$needle($cursor)`,
+        // which arrives here as `Regex.CALL-ME`). Gated on the protocol's own
+        // name list so there is a single source of truth; `&str` equality
+        // compares lengths first, so the common dispatch pays two length
+        // checks and nothing else.
+        if super::regex::regex_cursor::is_cursor_protocol_method(method)
             && let Some(result) = self.try_cursor_protocol_method(&target, method, &args)
         {
             return result;

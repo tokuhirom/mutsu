@@ -12,7 +12,7 @@
 //! say $cursor.pos;   # 4
 //! ```
 //!
-//! Three pieces make that work, and this module owns all three:
+//! Four pieces make that work, and this module owns all four:
 //!
 //! 1. `Match.^lookup("!cursor_init")` must find a method whose name begins
 //!    with `!`. Those are not Raku private methods — in NQP a leading `!` is
@@ -22,6 +22,9 @@
 //! 2. `!cursor_init` itself, which builds the cursor.
 //! 3. Invoking a `Regex` (or a grammar token method) **on a cursor**, which
 //!    means "match at this cursor and report where you got to".
+//! 4. `CURSOR_MORE`, which advances a cursor that just matched to the next
+//!    match of the *same* regex — the `while` half of the idiom
+//!    (`String::Utils`'s `replace-all`, #7931).
 //!
 //! ## Cursor shape
 //!
@@ -50,15 +53,70 @@
 //! `False`, gists as `#<failed match>`) whose `$!from` is the position the
 //! attempt started at and whose `$!pos` is [`CURSOR_FAIL_POS`].
 //!
+//! ## `CURSOR_MORE`
+//!
+//! rakudo's `Cursor.CURSOR_MORE` re-invokes the cursor's own `$!regexsub` on a
+//! fresh un-started cursor placed just past the last match, so a caller can
+//! walk every match without re-scanning the prefix:
+//!
+//! ```raku
+//! my $global = Match.^lookup("CURSOR_MORE");
+//! my $c := /o/($cursor-init(Match, "foo boo", :0c));
+//! $c := $global($c) while $c.pos >= 0;   # [1,2] [2,3] [5,6] [6,7] [7,-3]
+//! ```
+//!
+//! Two details of it were measured against rakudo 2026.07 and are load-bearing:
+//!
+//! - the resumption position is `$!pos`, bumped by one when the last match was
+//!   **zero-width** (`$!from == $!pos`) — otherwise `/x*/` would find the same
+//!   empty match forever;
+//! - the fresh cursor is un-started (`$!from == -1`), so the re-invocation
+//!   *scans* forward rather than anchoring, and a run that finds nothing more
+//!   yields the ordinary failed cursor (`$!pos == -3`).
+//!
+//! mutsu therefore has to remember which callable produced a cursor. That is
+//! [`crate::value::match_view::CURSOR_REGEXSUB_ATTR`], stamped on the result of
+//! every cursor-protocol regex call and re-invoked through the same
+//! `Regex.CALL-ME` path the original call took — so an `rx:i//`'s adverbs, or
+//! any later fix to how they are honoured, are inherited rather than
+//! reconstructed from a pattern string.
+//!
 //! ## What this does NOT adopt
 //!
-//! Only the entry point the idiom needs. The rest of the protocol
+//! Only the entry points the idiom needs. The rest of the protocol
 //! (`!cursor_start`, `!cursor_pass`, `!cursor_capture`, the `$!shared` /
 //! `$!braid` state NQP threads through a parse) stays internal to mutsu's own
 //! engine: a cursor here is produced complete, never advanced step by step by
 //! user code. One consequence is that a cursor mutsu returns carries its
 //! captures, where rakudo's carries none until `!reduce` builds the Match —
 //! strictly more information, and not something the idiom reads.
+//!
+//! `CURSOR_MORE` resumes a cursor produced by **a `Regex` called on a cursor**,
+//! and only that. Two narrower surfaces are deliberately left out:
+//!
+//! - an ordinary `"abc".match(/b/)`. In rakudo every `Match` *is* a spent
+//!   `Cursor` and carries its `$!regexsub`, so `CURSOR_MORE` works on one;
+//!   here the stamp would have to go on every match the engine produces, and
+//!   since it rebuilds the Match eagerly that would cost ADR-0016 P5's
+//!   laziness on the hottest path in the interpreter for a surface no known
+//!   consumer reaches for. Making it free instead means threading the invoked
+//!   regex down to the engine entry points — the same objection the
+//!   `cursor_class` stamp records, and a change worth its own issue if a
+//!   consumer ever needs it.
+//! - a grammar *token method* called on a cursor. Its result feeds the
+//!   custom-HOW subrule side channel by instance identity
+//!   (`regex_token_method`), so stamping the regexsub on it would perturb a
+//!   path that has nothing to do with this protocol.
+//!
+//! `CURSOR_MORE` on either reports that rather than guessing — as it does for
+//! a cursor that never ran, or one whose match failed (rakudo dies with a null
+//! `$!regexsub` on both of those too).
+//!
+//! Finally, `.^lookup`'s *return value* is still a plain mutsu `Method`:
+//! rakudo answers an `NQPRoutine` for `!cursor_init` and a
+//! `Method+{is-implementation-detail}` for `CURSOR_MORE`. Both are callable
+//! and that is all the idiom uses; mutsu has no NQP-level routine type to
+//! report.
 
 use super::super::*;
 
@@ -74,7 +132,7 @@ pub(crate) const CURSOR_NOT_STARTED: i64 = -1;
 /// The cursor-protocol methods mutsu answers for. `.^lookup` / `.^find_method`
 /// consult this so `Match.^lookup("!cursor_init")` returns a callable instead
 /// of `Nil`.
-pub(crate) const CURSOR_PROTOCOL_METHODS: &[&str] = &["!cursor_init"];
+pub(crate) const CURSOR_PROTOCOL_METHODS: &[&str] = &["!cursor_init", "CURSOR_MORE"];
 
 /// Is `method_name` one of them? The receiver's own `Match`-ness is the
 /// caller's check — `Match` itself, or any grammar, since a grammar IS a
@@ -84,19 +142,31 @@ pub(crate) fn is_cursor_protocol_method(method_name: &str) -> bool {
 }
 
 impl Interpreter {
-    /// `Type.!cursor_init($target, :c($pos))` / `:p($pos)` — build a fresh
-    /// cursor over `$target`. `None` when `method` is not a cursor-protocol
-    /// method mutsu answers for, so the caller falls through to normal
-    /// dispatch.
+    /// Dispatch a cursor-protocol method. `None` when `method` is not one
+    /// mutsu answers for, or when the receiver is not the kind of thing it
+    /// applies to, so the caller falls through to normal dispatch.
     pub(crate) fn try_cursor_protocol_method(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if method != "!cursor_init" {
-            return None;
+        match method {
+            "!cursor_init" => self.cursor_init(target, args),
+            // `CURSOR_MORE` is an instance method on the cursor itself, so a
+            // receiver that is not a Match is somebody else's `CURSOR_MORE`.
+            "CURSOR_MORE" if target.is_match_instance() => Some(self.cursor_more(target)),
+            _ => None,
         }
+    }
+
+    /// `Type.!cursor_init($target, :c($pos))` / `:p($pos)` — build a fresh
+    /// cursor over `$target`.
+    fn cursor_init(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
         // The receiver is the type object the cursor should have: `Match` for
         // a plain regex, the grammar's own type for a parse (rakudo: a
         // grammar's cursors are Match objects of the grammar's own type).
@@ -216,14 +286,66 @@ impl Interpreter {
         };
         let cursor = args.first()?;
         let (orig, start, anchored) = Self::cursor_call_position(cursor)?;
-        let cursor_class = cursor.match_dispatch_class().to_string();
-        Some(Ok(self.run_regex_at_cursor(
-            &pattern,
-            &orig,
-            start,
-            anchored,
-            &cursor_class,
-        )))
+        let cursor_class = Self::cursor_class_of(cursor);
+        let next = self.run_regex_at_cursor(&pattern, &orig, start, anchored, &cursor_class);
+        // Remember what produced this cursor, so `CURSOR_MORE` can resume it.
+        Some(Ok(Self::stamp_cursor_regexsub(next, regex)))
+    }
+
+    /// Record `regexsub` (rakudo's `$!regexsub`) on a cursor. Identity is
+    /// preserved: a cursor is handed straight to user code, and the rebuild
+    /// the stamp forces must not mint a new `Match` id under it.
+    fn stamp_cursor_regexsub(cursor: Value, regexsub: &Value) -> Value {
+        cursor
+            .match_with_attrs_keeping_id(vec![(
+                crate::value::match_view::CURSOR_REGEXSUB_ATTR,
+                regexsub.clone(),
+            )])
+            .unwrap_or(cursor)
+    }
+
+    /// The class a cursor reports (`Match`, or a grammar's own type). Every
+    /// cursor that reaches this protocol is an eager `Instance` — one
+    /// `!cursor_init` minted, or one already carrying a stamped regexsub — so
+    /// the instance's own class name is the answer. `match_dispatch_class`
+    /// answers only for a still-lazy `Match`, which is why it is the fallback
+    /// rather than the first choice.
+    fn cursor_class_of(cursor: &Value) -> String {
+        match cursor.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => cursor.match_dispatch_class().to_string(),
+        }
+    }
+
+    /// `$cursor.CURSOR_MORE` — the next match of the regex that produced
+    /// `cursor`, as a new cursor. See the module doc for the two measured
+    /// details (the zero-width bump, and resuming un-started so the
+    /// re-invocation scans).
+    fn cursor_more(&mut self, cursor: &Value) -> Result<Value, RuntimeError> {
+        let Some(regexsub) = cursor.match_cursor_regexsub() else {
+            return Err(RuntimeError::new(
+                "CURSOR_MORE: no regex to resume (only a cursor a Regex was called on can be advanced)",
+            ));
+        };
+        let from = cursor.match_from().unwrap_or(CURSOR_NOT_STARTED);
+        let pos = cursor.match_to().unwrap_or(CURSOR_FAIL_POS);
+        if pos < 0 {
+            return Err(RuntimeError::new(
+                "CURSOR_MORE: cannot advance a cursor whose match failed",
+            ));
+        }
+        let orig = cursor
+            .match_orig()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        // A zero-width match would otherwise be found again in the same
+        // place, forever; rakudo bumps past it by one.
+        let next = if from == pos { pos + 1 } else { pos };
+        let cursor_class = Self::cursor_class_of(cursor);
+        let fresh = Self::make_cursor_value(&cursor_class, &orig, CURSOR_NOT_STARTED, next, false);
+        // Through `CALL-ME`, i.e. the same path `$regex($cursor)` takes, so
+        // the resumed call and the original one cannot drift apart.
+        self.call_method_with_values(regexsub, "CALL-ME", vec![fresh])
     }
 
     /// Shared body of a cursor call: match `pattern` against `orig` at (or

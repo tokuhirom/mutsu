@@ -121,8 +121,10 @@ impl MatchNode {
             "action_name" => self.cap.action_name.clone().map(Value::str),
             // Post-hoc attributes exist only on REBUILT eager Matches (the
             // rebuild helpers produce plain Instances); a live lazy node
-            // never carries them.
+            // never carries them. Answering `None` here rather than falling
+            // through keeps a probe for one from forcing the materialization.
             "actions" | "__failed_match__" | "pos" => None,
+            crate::value::match_view::CURSOR_REGEXSUB_ATTR => None,
             _ => self.force_attrs().as_map().get(name).cloned(),
         }
     }
