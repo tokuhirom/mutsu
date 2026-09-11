@@ -130,6 +130,13 @@ pub(in crate::runtime) fn close_act_loop(id: u64) {
     if let Some(flag) = flag {
         flag.store(true, Ordering::Release);
     }
+    // Closing the tap is the one supply teardown mutsu observes synchronously,
+    // so a `signal()` supply that has just lost its last tap gives the signal
+    // back to its previous disposition here — as rakudo does when the last tap
+    // on its signal Supply goes. Unconditional: an act loop that already
+    // retired itself has dropped its receiver and unregistered its id, which
+    // is the same "no tap left" state with no flag to set.
+    crate::runtime::signal_watcher::sweep_retired_registrations();
 }
 
 /// Registry-hygiene removal called by the worker on every exit path, so the

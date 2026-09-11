@@ -189,6 +189,13 @@ impl Interpreter {
         if let Some(base) = stream_base {
             self.supply_stream_consumers.truncate(base);
         }
+        // The drive loop has dropped its subscriptions, so a `signal()` supply
+        // that only this react tapped has lost its last tap: retire its
+        // registration and hand the signal back to the disposition it
+        // displaced, the way rakudo does when the last tap goes. A react loop
+        // per iteration is exactly the shape `roast/S17-procasync/stress.t`
+        // runs 1200 times.
+        crate::runtime::signal_watcher::sweep_retired_registrations();
         result
     }
 
@@ -230,6 +237,12 @@ impl Interpreter {
                         ..
                     } if class_name == "Supply" => {
                         // Find the supply channel
+                        // A `signal()` Supply the watcher retired (its
+                        // previous taps all gone) re-arms here, so a `whenever`
+                        // on one held in a variable works a second time.
+                        crate::runtime::builtins_system_async::rearm_signal_supply(
+                            &(attributes).as_map(),
+                        );
                         let supply_id = self.resolve_supply_channel_id(&(attributes).as_map());
                         let is_lines = matches!(
                             attributes.as_map().get("is_lines").map(Value::view),

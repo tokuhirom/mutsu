@@ -74,6 +74,29 @@ impl SupplySender {
         }
         Ok(())
     }
+
+    /// Whether this sender can never deliver to anyone again — the same three
+    /// conditions `send` reports as "receiver gone", asked without an event in
+    /// hand: `Tap.close` set the close flag, the broadcast point itself is
+    /// gone, or every tap it ever had has been dropped (ADR-0074).
+    ///
+    /// A producer registry that outlives its producers (the signal watcher's,
+    /// which a `signal()` supply is entered in for the process's whole life)
+    /// uses this to drop its dead entries instead of walking them forever.
+    /// A supply that has never been tapped is *not* retired: its first tap may
+    /// still be coming.
+    // The signal watcher is the only caller, and it is unix-only: on the wasm32
+    // lib this compiles with no call site at all.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) fn is_retired(&self) -> bool {
+        if self.closed.load(Ordering::Acquire) {
+            return true;
+        }
+        match self.broadcast.upgrade() {
+            None => true,
+            Some(broadcast) => broadcast.all_taps_gone(),
+        }
+    }
 }
 
 impl Drop for SupplySender {
@@ -406,6 +429,38 @@ mod tests {
             assert_eq!(drain(&sub), vec![1]);
         }
         assert!(tx.send(SupplyEvent::Emit(Value::int(2))).is_err());
+    }
+
+    #[test]
+    fn a_sender_retires_exactly_when_it_can_no_longer_deliver() {
+        let (tx, template) = supply_event_channel();
+        // Never tapped: the first tap may still be coming, so not retired.
+        assert!(!tx.is_retired());
+        let sub = template.subscribe();
+        assert!(!tx.is_retired());
+        drop(sub);
+        assert!(tx.is_retired());
+    }
+
+    #[test]
+    fn a_closed_sender_is_retired_even_with_a_live_tap() {
+        // `Tap.close` sets the flag while the subscriber handle is still
+        // alive in the act loop that is about to notice it.
+        let (tx, template) = supply_event_channel();
+        let _sub = template.subscribe();
+        assert!(!tx.is_retired());
+        template
+            .close_flag()
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(tx.is_retired());
+    }
+
+    #[test]
+    fn a_sender_whose_broadcast_is_gone_is_retired() {
+        let (tx, template) = supply_event_channel();
+        let _ = template.subscribe();
+        drop(template);
+        assert!(tx.is_retired());
     }
 
     #[test]

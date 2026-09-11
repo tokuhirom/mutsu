@@ -89,6 +89,7 @@ impl Interpreter {
             if class_name != "Supply" {
                 return None;
             }
+            crate::runtime::builtins_system_async::rearm_signal_supply(&(attributes).as_map());
             let supply_id = self.resolve_supply_channel_id_for_react(&(attributes).as_map());
             let is_lines = matches!(
                 attributes.as_map().get("is_lines").map(Value::view),
