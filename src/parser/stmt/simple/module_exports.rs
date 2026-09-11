@@ -841,37 +841,45 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
             Stmt::SubDecl {
                 name,
                 is_export,
-                export_tags,
                 associativity,
                 precedence_trait,
                 is_test_assertion,
                 ..
             } if *is_export => {
-                // Only include subs that are in the DEFAULT or MANDATORY export tags.
-                // Subs tagged only with custom tags (e.g. :others) should not be
-                // imported by a plain `use Module`.
-                if export_tags
-                    .iter()
-                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
-                {
-                    let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
-                        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
-                            "tighter" => ref_level + 5,
-                            "looser" => ref_level - 5,
-                            _ => ref_level,
-                        })
-                    });
-                    let resolved = name.resolve();
-                    exports.insert(
-                        resolved.clone(),
-                        InlineModuleExport {
-                            name: resolved,
-                            precedence,
-                            associativity: associativity.clone(),
-                            is_test_assertion: *is_test_assertion,
-                        },
-                    );
-                }
+                // Every `is export` sub is collected, whatever tag it carries.
+                // The tag decides which `use` *imports* the name; it does not
+                // decide whether the name is a routine, and this set answers
+                // only the latter question (ADR-0087): it lands in
+                // `Scope::imported_functions`, whose every consumer is a
+                // parser decision such as "is `joined <a b c>` a listop call
+                // or an infix `<`". Filtering by DEFAULT/MANDATORY here made
+                // `use M :extra; joined <a b c>` a hard parse error even
+                // though `:extra` does import `joined` -- the scan is given
+                // the module name only, never the importer's tag list, so it
+                // cannot tell that case from a plain `use M` (#7939).
+                //
+                // Run-time name resolution is a separate path that honours
+                // the tags, so a name the importer's tag list withholds still
+                // fails to resolve; the superset costs a worse diagnostic for
+                // such a name and can never change the meaning of a program
+                // that runs.
+                let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
+                    resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+                        "tighter" => ref_level + 5,
+                        "looser" => ref_level - 5,
+                        _ => ref_level,
+                    })
+                });
+                let resolved = name.resolve();
+                exports.insert(
+                    resolved.clone(),
+                    InlineModuleExport {
+                        name: resolved,
+                        precedence,
+                        associativity: associativity.clone(),
+                        is_test_assertion: *is_test_assertion,
+                    },
+                );
             }
             Stmt::ProtoDecl {
                 name, is_export, ..
@@ -903,7 +911,9 @@ fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
     // `multi sub foo(...) is export`
     // `proto sub foo(|) is export`
     // Group 2 captures the declaration text between the name and `is export`,
-    // which may include a `is test-assertion` trait; group 3 is the export tag list.
+    // which may include a `is test-assertion` trait; group 3 is the export tag
+    // list, matched only so a tagged `is export(:foo)` is recognised as an
+    // export at all -- its contents are not consulted (see below).
     let sub_re = Regex::new(
         r"\b(?:our\s+)?(?:proto\s+|multi\s+)?sub\s+([A-Za-z_][A-Za-z0-9_'\-]*)\b([^;{]*)\bis\s+export\b(\s*\([^)]*\))?",
     )
@@ -920,9 +930,10 @@ fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
     let mut names: HashMap<String, bool> = HashMap::new();
     for re in [&sub_re, &proto_re] {
         for caps in re.captures_iter(source) {
-            if let Some(name) = caps.get(1)
-                && is_default_export_from_regex_match_group(&caps, 3)
-            {
+            // Group 3 (the `is export(...)` tag list) is deliberately not
+            // consulted: like the AST walk above, this set is parse-time
+            // routine-name knowledge, not the importer's actual import set.
+            if let Some(name) = caps.get(1) {
                 let prefix = caps.get(2).map(|m| m.as_str()).unwrap_or("");
                 let is_ta = test_assertion_re.is_match(prefix);
                 let entry = names.entry(name.as_str().to_string()).or_insert(false);
@@ -934,19 +945,6 @@ fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
     let mut names: Vec<(String, bool)> = names.into_iter().collect();
     names.sort();
     names
-}
-
-/// Check if an `is export(...)` match should be included in the DEFAULT import set.
-/// If no tag list is present (`is export` bare), it's DEFAULT.
-/// If a tag list is present, include only if it mentions DEFAULT or MANDATORY.
-fn is_default_export_from_regex_match_group(caps: &regex::Captures, group: usize) -> bool {
-    match caps.get(group) {
-        None => true, // bare `is export` → DEFAULT
-        Some(tag_match) => {
-            let tag_text = tag_match.as_str();
-            tag_text.contains("DEFAULT") || tag_text.contains("MANDATORY")
-        }
-    }
 }
 
 /// What `use Test` puts in scope, as a parse-time shortcut.
