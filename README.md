@@ -102,6 +102,19 @@ For interactive use:
 
 mutsu passes **1,433 out of 1,464** official [Roast](https://github.com/Raku/roast) test files in full. Compatibility is improving daily; the [site](https://tokuhirom.github.io/mutsu/) shows the figure counted at its last deploy.
 
+Roast measures the language against its spec. The other question — *does the
+module I actually use work?* — is measured by running each zef distribution's own
+test suite under both rakudo and mutsu and comparing the two. Across all
+**1,624** distributions in the ecosystem index, **41.2%** pass every test file
+that rakudo passes (**53.6%** of test files, **62.4%** of assertions). Look up a
+particular distribution on the [ecosystem
+page](https://tokuhirom.github.io/mutsu/ecosystem.html); the per-distribution
+records are in [`ecosystem/`](ecosystem/), the metric over time is
+[`ecosystem/history.tsv`](ecosystem/history.tsv) and its chart
+[`ecosystem/history.svg`](ecosystem/history.svg), and the method is
+[docs/ecosystem-parity.md](docs/ecosystem-parity.md). rakudo is the denominator
+throughout: a test rakudo also fails is not counted against mutsu.
+
 ## What Works
 
 ### Variables and Basic Types

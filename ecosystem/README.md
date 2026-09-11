@@ -121,14 +121,25 @@ same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
 has no issue of its own to carry a claim, which is why the lock lives on that one
 board issue's comments rather than in this tree.
 
-## Current state — a partial sweep, not the corpus
+## Current state — the corpus, measured at one commit
 
-**The corpus sweep (P2) is in progress and these records cover only part of it.**
-`site/content/ecosystem.json` carries a `coverage` figure and the page leads with
-it, so a partial sweep can never publish a parity figure that reads as the whole
-ecosystem's.
+**The whole index is in.** [Run
+34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231)
+(2026-09-11, `scope=all`) measured all 1624 distributions at mutsu `1557d41`
+against rakudo 2026.07, every one of its 27 shards green, and `summary.json`,
+`summary.md`, `history.tsv` and `history.svg` exist as of that sweep. The
+headline is **41.2%** dist parity (393 green of 953 graded); `file_parity` 53.6%
+and `assertion_parity` 62.4% are the metrics that actually steer the work, since
+a distribution goes green only when its last failing file does.
 
-There is deliberately still no `summary.*` or `history.tsv`: `history.tsv` takes
-**one row per full sweep** (`--rollup --history`), and appending a row for a
-third of the corpus would put a point on the KPI chart that is not comparable
-with the ones after it.
+`site/content/ecosystem.json` still carries a `coverage` figure and the page
+still leads with it. That is not vestigial: a *targeted* re-measurement
+(`--only`, `--prefix`, `--status`) leaves the rest of the ledger at whatever
+commit last measured it, so "how much of this ledger is current" stays a
+question worth answering out loud.
+
+`history.tsv` takes **one row per full sweep** (`--rollup --history`), and the
+workflow refuses to append one unless `scope=all` *and* all 27 shards
+succeeded — a row for a third of the corpus would put a point on the KPI chart
+that is not comparable with the ones after it. It refused for exactly that
+reason on the sweep before this one.
