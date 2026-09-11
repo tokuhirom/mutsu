@@ -480,6 +480,7 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         let block_expr = Expr::AnonSub {
             body,
             is_rw: false,
+            is_raw: false,
             is_block: true,
         };
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, block_expr)?;

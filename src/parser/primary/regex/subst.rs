@@ -123,6 +123,7 @@ pub(super) fn build_topic_subst_compound_expr(
         Expr::AnonSub {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
+            is_raw: false,
             is_block: true,
         },
     ];
@@ -170,6 +171,7 @@ pub(super) fn build_topic_subst_expr(
         Expr::AnonSub {
             body: vec![Stmt::Expr(replacement)],
             is_rw: false,
+            is_raw: false,
             is_block: true,
         },
     ];
@@ -216,6 +218,7 @@ pub(super) fn build_non_destructive_subst_expr(
         Expr::AnonSub {
             body: vec![Stmt::Expr(replacement)],
             is_rw: false,
+            is_raw: false,
             is_block: true,
         },
     ];

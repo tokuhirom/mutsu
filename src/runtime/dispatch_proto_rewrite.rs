@@ -327,10 +327,12 @@ impl Interpreter {
             Expr::AnonSub {
                 body,
                 is_rw,
+                is_raw,
                 is_block,
             } => Expr::AnonSub {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
+                is_raw: *is_raw,
                 is_block: *is_block,
             },
             Expr::AnonSubParams {
@@ -339,6 +341,7 @@ impl Interpreter {
                 return_type,
                 body,
                 is_rw,
+                is_raw,
                 is_whatever_code,
                 is_sub,
             } => Expr::AnonSubParams {
@@ -347,6 +350,7 @@ impl Interpreter {
                 return_type: return_type.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
+                is_raw: *is_raw,
                 is_whatever_code: *is_whatever_code,
                 is_sub: *is_sub,
             },

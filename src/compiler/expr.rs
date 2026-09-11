@@ -1083,9 +1083,10 @@ impl Compiler {
             Expr::AnonSub {
                 body,
                 is_rw,
+                is_raw,
                 is_block,
             } => {
-                self.compile_expr_anon_sub(body, *is_rw, *is_block);
+                self.compile_expr_anon_sub(body, *is_rw || *is_raw, *is_block);
             }
             Expr::AnonSubParams {
                 params,
@@ -1093,6 +1094,7 @@ impl Compiler {
                 return_type,
                 body,
                 is_rw,
+                is_raw,
                 is_whatever_code,
                 // `is_sub` records the source spelling. It selects the Block
                 // vs Sub compile path (see `compile_expr_anon_sub_params`), so
@@ -1106,6 +1108,7 @@ impl Compiler {
                     return_type,
                     body,
                     *is_rw,
+                    *is_raw,
                     *is_whatever_code,
                     *is_sub,
                 );
