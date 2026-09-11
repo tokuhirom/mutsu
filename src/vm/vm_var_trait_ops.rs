@@ -229,6 +229,20 @@ impl Interpreter {
                 if has_arg {
                     self.stack.pop(); // discard unsupported trait argument
                 }
+                // `SetLocal` normally gives an `@` declaration an Array-backed
+                // value, but `is List` changes the declared container itself.
+                // Retag the existing backing store instead of only marking the
+                // variable readonly; otherwise `.^name`/`.raku` still report
+                // Array even though List's immutability is enforced.
+                let name_str = name.to_string();
+                if let Some(current) = self.read_var_trait_target(code, eff_slot, &name_str)
+                    && let ValueView::Array(items, _) = current.view()
+                {
+                    let list = Value::array_with_kind(items.clone(), crate::value::ArrayKind::List);
+                    if !self.write_var_trait_target(code, eff_slot, &name_str, list.clone()) {
+                        self.set_env_with_main_alias(&name_str, list);
+                    }
+                }
                 self.mark_readonly_with(name, crate::ast::ReadonlyKind::ImmutableValue);
                 return Ok(());
             }
