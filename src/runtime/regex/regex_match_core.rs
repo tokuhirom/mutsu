@@ -446,6 +446,17 @@ impl Interpreter {
                 ..Default::default()
             })
         };
+        // `$<alias>=<.subrule>` is a visible alias around a silent subrule.
+        // The silent call itself does not create a named capture, so the alias
+        // would otherwise be only a span carrier and the subrule's action would
+        // never be dispatched. Preserve the original rule name on the alias
+        // node, just as the `<alias=.subrule>` spelling does in the matcher.
+        if let RegexAtom::Named(atom_name) = &token.atom {
+            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            if spec.silent && !spec.lookup_name.is_empty() {
+                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_name);
+            }
+        }
         // A sigil-prefixed alias (`$<alias> = <rule>`) shares the subrule's
         // capture node with the original rule-name entry, just like the
         // angle-bracket form (`<alias=rule>`). Tag that shared node with the
