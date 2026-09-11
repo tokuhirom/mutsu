@@ -4,6 +4,53 @@ use super::methods_signature_errors::{
 use super::*;
 use crate::symbol::Symbol;
 
+/// Byte offset of the first extended-name adverb in a method name (`:sym<…>`,
+/// `:sym«…»`, `:sym[…]`, and the nameless `:<…>` spelling), or the name's length
+/// when it has none.
+///
+/// A proto-regex candidate puts arbitrary text inside that adverb, `::`
+/// included: `rule pseudo:sym<::element>` is real Raku (CSS::Grammar::CSS3
+/// spells the CSS3 pseudo-element selector exactly that way), and so is the
+/// action method `method pseudo:sym<::element>($/)` that matches it. Splitting
+/// such a name on `::` invented a package qualifier `pseudo:sym<` and a method
+/// `element>`, so the action never dispatched.
+fn extended_name_adverb_start(method: &str) -> usize {
+    let b = method.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b':' || b.get(i + 1) == Some(&b':') {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'-') {
+            j += 1;
+        }
+        let opens_value = method[j..].starts_with(['<', '[']) || method[j..].starts_with('\u{ab}');
+        if opens_value {
+            return i;
+        }
+        i = j.max(i + 1);
+    }
+    method.len()
+}
+
+/// Split a method name into `(package qualifier, method)` at the LAST `::` that
+/// is a package separator — one outside any extended-name adverb (see
+/// [`extended_name_adverb_start`]).
+fn split_method_qualifier_last(method: &str) -> Option<(&str, &str)> {
+    let cut = extended_name_adverb_start(method);
+    let at = method[..cut].rfind("::")?;
+    Some((&method[..at], &method[at + 2..]))
+}
+
+/// Like [`split_method_qualifier_last`], but splits at the FIRST package-separating `::`.
+fn split_method_qualifier_first(method: &str) -> Option<(&str, &str)> {
+    let cut = extended_name_adverb_start(method);
+    let at = method[..cut].find("::")?;
+    Some((&method[..at], &method[at + 2..]))
+}
+
 impl Interpreter {
     /// Handle private method calls on non-Instance, non-Package values.
     /// Returns Some(err) if handled, None to continue.
@@ -70,7 +117,7 @@ impl Interpreter {
         if method.starts_with('!') || !args.is_empty() {
             return None;
         }
-        let (qualifier, actual_method) = method.rsplit_once("::")?;
+        let (qualifier, actual_method) = split_method_qualifier_last(method)?;
         if !matches!(qualifier, "Mu" | "Any" | "Cool") {
             return None;
         }
@@ -138,7 +185,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (qualifier, actual_method) = method.rsplit_once("::")?;
+        let (qualifier, actual_method) = split_method_qualifier_last(method)?;
         if method.starts_with('!') {
             return None;
         }
@@ -668,7 +715,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (qualifier, actual_method) = method.rsplit_once("::")?;
+        let (qualifier, actual_method) = split_method_qualifier_last(method)?;
         if method.starts_with('!') {
             return None;
         }
@@ -846,7 +893,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (qualifier, actual_method) = method.split_once("::")?;
+        let (qualifier, actual_method) = split_method_qualifier_first(method)?;
         if method.starts_with('!') || matches!(target.view(), ValueView::Instance { .. }) {
             return None;
         }

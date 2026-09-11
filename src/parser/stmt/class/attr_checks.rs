@@ -201,6 +201,29 @@ pub(crate) fn stmt_also_is_parent(stmt: &Stmt) -> Option<String> {
     }
 }
 
+/// Record an `also is <Parent>` parent on a package declaration.
+///
+/// A `grammar` declarator with no `is` clause carries an implicit `Grammar`
+/// parent. An `also is Parent` in the body **replaces** that implicit parent
+/// instead of adding a second one, which is what Rakudo does:
+/// `grammar G { also is Base }` linearizes as `G, Base, Grammar, ...` — exactly
+/// like `grammar G is Base { }` — and never as multiple inheritance from both.
+/// Keeping both would make the C3 merge inconsistent for every grammar whose
+/// base is itself a grammar ("Inconsistent class hierarchy"), which is how
+/// CSS::Grammar::CSS21 (`unit grammar ...; also is CSS::Grammar;`) failed to
+/// load.
+pub(crate) fn push_also_is_parent(
+    parents: &mut Vec<String>,
+    implicit_grammar_parent: &mut bool,
+    parent_name: String,
+) {
+    if *implicit_grammar_parent {
+        parents.retain(|p| p != "Grammar");
+        *implicit_grammar_parent = false;
+    }
+    parents.push(parent_name);
+}
+
 pub(crate) fn reject_no_self_in_subs(body: &[Stmt]) -> Result<(), PError> {
     for stmt in body {
         if let Stmt::SubDecl { body: sub_body, .. } = stmt

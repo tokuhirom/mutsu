@@ -483,6 +483,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         language_version: crate::parser::current_language_version(),
         custom_traits: Vec::new(),
         is_unit: false,
+        implicit_grammar_parent: false,
         // A hand-built or lowered declaration has no parse-time site, which is
         // exactly what `decl_id: 0` means.
         decl_id: 0,

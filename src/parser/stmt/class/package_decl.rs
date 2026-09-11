@@ -325,6 +325,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits,
                     is_unit: true,
+                    implicit_grammar_parent: false,
                     decl_id: crate::ast::next_class_decl_id(),
                     parent_args,
                 },
@@ -495,7 +496,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // (see the self-parent filter in `exec_register_class_op`). A composed
         // role is not an `is` parent, so `unit grammar G does R;` must still
         // inherit Grammar.
-        if is_parent_count == 0 {
+        let implicit_grammar_parent = is_parent_count == 0;
+        if implicit_grammar_parent {
             parents.push("Grammar".to_string());
         }
         let (r, _) = opt_char(r, ';');
@@ -518,6 +520,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     language_version: super::super::simple::current_language_version(),
                     custom_traits: Vec::new(),
                     is_unit: true,
+                    implicit_grammar_parent,
                     decl_id: crate::ast::next_class_decl_id(),
                     parent_args: Vec::new(),
                 },

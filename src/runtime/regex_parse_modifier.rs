@@ -16,11 +16,17 @@ impl Interpreter {
         fn is_word_boundary(rest: &str) -> bool {
             rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
         }
+        // A short modifier (`:i`, `:s`, `:r`, `:m`) ends wherever an identifier
+        // would: the next character just has to not continue the adverb's name.
+        // Anything else (a quote, bracket, backslash, metacharacter) is the
+        // start of the atom the modifier scopes over, and Rakudo needs no space
+        // there — `/:i'not('/` is how CSS::Grammar spells every case-insensitive
+        // CSS keyword. Requiring a space/`:`/`/` here silently left `:i'...'`
+        // unrecognized, which made the whole pattern fail to match.
+        // Longer adverbs (`:my`, `:sym<…>`, `:ss`) are still rejected, because
+        // their next character IS an identifier character.
         fn is_short_boundary(rest: &str) -> bool {
-            rest.is_empty()
-                || rest.starts_with(' ')
-                || rest.starts_with(':')
-                || rest.starts_with('/')
+            is_word_boundary(rest)
         }
         // Check negated long forms first
         if let Some(rest) = remaining.strip_prefix("!ratchet")

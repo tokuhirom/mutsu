@@ -608,11 +608,19 @@ impl Interpreter {
     pub(super) fn builtin_require(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut module_value: Option<Value> = None;
         let mut file_target: Option<String> = None;
+        let mut dist_selectors = String::new();
         let mut imports: Vec<String> = Vec::new();
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, value) if key == "__mutsu_require_file" => {
                     file_target = Some(value.to_string_value());
+                }
+                // `require Foo:ver<1.2>:auth<zef:bar>` — the selectors refine
+                // which installed distribution is loaded, exactly as they do on
+                // `use`, but they are not part of the module's name: the stub
+                // installed below and the package this returns stay bare.
+                ValueView::Pair(key, value) if key == "__mutsu_require_dist_selectors" => {
+                    dist_selectors = value.to_string_value();
                 }
                 ValueView::Array(items, ..) => {
                     imports.extend(items.iter().map(|v| v.to_string_value()));
@@ -673,7 +681,11 @@ impl Interpreter {
                 crate::runtime::cow_table_mut(&mut self.loaded_modules).remove(module);
             }
             let saved = std::mem::replace(&mut self.require_propagates_missing_module, true);
-            let result = self.use_module(module);
+            let result = if dist_selectors.is_empty() {
+                self.use_module(module)
+            } else {
+                self.use_module(&format!("{module}{dist_selectors}"))
+            };
             self.require_propagates_missing_module = saved;
             result?;
         } else {
