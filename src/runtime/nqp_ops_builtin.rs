@@ -319,6 +319,23 @@ impl Interpreter {
         if let ValueView::Hash(_) = obj.view() {
             return Some(obj.clone());
         }
+        // A `Match`'s NQP-level attribute names are not the keys mutsu stores,
+        // and a still-lazy Match is not an `Instance` at all, so neither the
+        // bare-name nor the twigil spelling would find them. rakudo's `$!pos`
+        // is mutsu's `to` -- the position the match (or cursor) reached, which
+        // `.pos` already reads -- and there is no separate `$!to`. This is what
+        // lets the cursor protocol's `nqp::getattr_i($cursor, Match, '$!pos')`
+        // read where a hand-driven regex got to (#7883).
+        if obj.is_match_instance() {
+            let bare = Self::nqp_attr_keys(name).swap_remove(0);
+            return match bare.as_str() {
+                "pos" | "to" => obj.match_to().map(Value::int),
+                "from" => obj.match_from().map(Value::int),
+                "orig" => obj.match_orig(),
+                "made" | "ast" => Some(obj.match_ast().unwrap_or(Value::NIL)),
+                _ => None,
+            };
+        }
         let ValueView::Instance { attributes, .. } = obj.view() else {
             return None;
         };

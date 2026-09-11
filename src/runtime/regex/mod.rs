@@ -1,5 +1,6 @@
 mod regex_call_graph;
 mod regex_casefold;
+pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
 mod regex_eval;
 mod regex_eval_class;

@@ -52,6 +52,20 @@ impl Interpreter {
         // Cursor: a Match instance (orig + to = current position) or a plain Str.
         let (text, pos) = match args.first() {
             Some(m) if m.is_match_instance() => {
+                // A cursor that has not started matching (`!cursor_init`'s
+                // `:c`, marked by `$!from == -1`) means SCAN forward from its
+                // position rather than anchor at it -- rakudo's own
+                // discriminator, and the only case where a token method call
+                // is not anchored. See `regex_cursor`.
+                if let Some((orig, start, false)) = Self::cursor_call_position(m) {
+                    return Some(self.run_token_method_scanning(
+                        pkg,
+                        name,
+                        &args[1..],
+                        &orig,
+                        start,
+                    ));
+                }
                 let orig = m.match_orig().map(|v| v.to_string_value())?;
                 let to = m.match_to().filter(|t| *t >= 0).unwrap_or(0) as usize;
                 (orig, to)
@@ -60,6 +74,29 @@ impl Interpreter {
             _ => return None,
         };
         Some(self.run_token_method_at(pkg, name, &args[1..], &text, pos))
+    }
+
+    /// A token method called on a not-yet-started cursor: try `run_token_method_at`
+    /// at each position from `start` on, returning the first cursor that
+    /// matched, and a failed cursor if none did. This is the scanning half of
+    /// the cursor protocol (#7883); the anchored half is `run_token_method_at`
+    /// itself.
+    fn run_token_method_scanning(
+        &mut self,
+        pkg: &str,
+        name: &str,
+        extra_args: &[Value],
+        text: &str,
+        start: usize,
+    ) -> Result<Value, RuntimeError> {
+        let len = text.chars().count();
+        for pos in start..=len {
+            let m = self.run_token_method_at(pkg, name, extra_args, text, pos)?;
+            if m.is_match_instance() {
+                return Ok(m);
+            }
+        }
+        Ok(Self::cursor_failure(pkg, text, start))
     }
 
     /// Run token `pkg::name` anchored at char position `pos` of `text` and

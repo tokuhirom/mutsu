@@ -226,7 +226,7 @@ mod identity_hash;
 pub use hash_key::HashKey;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
-mod match_view;
+pub(crate) mod match_view;
 pub(crate) mod which_id;
 pub(crate) use match_lazy::MatchNode;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
