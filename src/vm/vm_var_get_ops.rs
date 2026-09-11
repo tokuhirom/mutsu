@@ -240,6 +240,31 @@ impl Interpreter {
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
             Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
+        } else if let Some(module_val) = self.running_module_bareword(name) {
+            // A file-scope symbol of the running routine's OWN compunit —
+            // an imported enum key or `constant`, or one the module declared
+            // itself — beats whatever the scope that loaded the module left
+            // under the same `env` key (#7960).
+            //
+            // A module body executes in the loading frame's env, and that
+            // binding is undone when the load ends, so the module's own
+            // routines are served from `module_scope_lexicals` instead. That
+            // table was consulted only as the LAST resort, below every
+            // live-env route, which meant the caller's unrelated same-named
+            // lexical — very often just the `Nil`/`Package("Any")` decl-seed
+            // placeholder a mainline `my $x` leaves behind — answered the
+            // module's own bareword. It is the term-resolution twin of the
+            // redirect `get_env_with_main_alias_sym` already performs for a
+            // *variable* read, and carries the same frame guard.
+            //
+            // Placed here, immediately above the generic `env[name]` probe,
+            // rather than at the top of the chain: every type route
+            // (`resolve_suppressed_type`, the type-object branch just above,
+            // `has_type`, `resolve_type_in_current_package`) and the enum-key
+            // namespace probe (#7914) keep first refusal, so this reorders
+            // exactly one thing — the env-alias fallback that was serving the
+            // wrong scope's symbol.
+            module_val
         } else if let Some(v) = self.env().get(name) {
             if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil)
                 || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
@@ -533,6 +558,105 @@ impl Interpreter {
         let val = val.into_deref();
         self.stack.push(val);
         Ok(())
+    }
+
+    /// The value a bareword takes from the running routine's OWN compunit
+    /// scope, or `None` when the name is not one of that module's file-scope
+    /// symbols (#7960).
+    ///
+    /// Three sources, with deliberately different strengths — see the inline
+    /// comments for which is which and why. The split is the whole point of the
+    /// fix: two of them live in namespaces a lexical cannot occupy and so may
+    /// answer unconditionally, while the third is keyed by bare name and may
+    /// answer only when `env` holds no real binding.
+    ///
+    /// All are gated on the running routine belonging to a unit compunit, the
+    /// same `lexical_package` guard `get_env_with_main_alias_sym` uses for the
+    /// variable-read twin of this redirect. Outside such a routine the env key
+    /// IS the right scope and nothing here applies — in particular this leaves
+    /// the MAINLINE collision (`my $c` beside an imported `constant c`, both in
+    /// `env` under the one key) exactly as it was: that one needs a storage
+    /// namespace of the kind #7914 gave enum keys, not a precedence change.
+    fn running_module_bareword(&self, name: &str) -> Option<Value> {
+        if !self
+            .routine_stack()
+            .iter()
+            .rev()
+            .any(|frame| frame.lexical_package.is_some())
+        {
+            return None;
+        }
+        // Two namespaces a lexical of the loading scope can never occupy, so
+        // nothing is displaced by letting them answer first:
+        //
+        // - `module_imported_lexical`, whose contract already is "an imported
+        //   alias must beat the caller's same-named env entry";
+        // - the package-qualified `our` store, where a module's own file-scope
+        //   `constant` lives (`ModuleScopeSymbolUser::mss-own`). Its key
+        //   carries a `::`, which no lexical name can.
+        //
+        // Both must be unconditional rather than gated on the env entry being
+        // a placeholder: the caller's REAL value does reach the module's env —
+        // on the second call of the same routine, and on the first as soon as
+        // an unrelated `use` has run in between — so a placeholder-only rule
+        // fixes one call and leaves the next one wrong.
+        if let Some(v) = self.module_imported_lexical(name) {
+            return Some(v.clone());
+        }
+        if let Some(v) = self.running_package_our_var(name) {
+            return Some(v);
+        }
+        // `module_scope_lexicals` is keyed by BARE name, so it CAN collide with
+        // a captured local of the module's own routine — and such a local must
+        // win ("a captured local in an anonymous block must beat the module's
+        // own `our $name`", `module_imported_lexical`'s doc). Let it answer
+        // only when `env` holds nothing for the name, or holds nothing but the
+        // decl-seed placeholder a `my $x` leaves behind; a real value means a
+        // real binding, and that binding keeps the name.
+        let env_entry_is_placeholder = match self.env().get(name).map(Value::view) {
+            None => true,
+            Some(ValueView::Nil) => true,
+            Some(ValueView::Package(pkg)) => pkg.resolve() == "Any" && name != "Any",
+            Some(_) => false,
+        };
+        if !env_entry_is_placeholder {
+            return None;
+        }
+        self.module_scope_lexical(name).cloned()
+    }
+
+    /// The package-qualified `our`-store entry for a bare `name`, looked up
+    /// from every package the running routine could belong to
+    /// ([`Interpreter::running_package_candidates`]), each walked up its `::`
+    /// chain.
+    ///
+    /// This is the `our`-store half of what `package_chain_var_fallback`
+    /// already does further down the bareword chain, minus its
+    /// `package_lexicals` probe (bare-keyed, so subject to the same
+    /// captured-local collision as `module_scope_lexicals`) and minus its
+    /// anchor on `current_package` — which is GLOBAL while a method body runs,
+    /// so the plain entry point declines for exactly the methods that need it.
+    fn running_package_our_var(&self, name: &str) -> Option<Value> {
+        if crate::runtime::utils::has_double_colon(name) || name.is_empty() {
+            return None;
+        }
+        for candidate in self.running_package_candidates().into_iter().flatten() {
+            let mut pkg = candidate;
+            loop {
+                if !pkg.is_empty()
+                    && pkg != "GLOBAL"
+                    && !crate::runtime::utils::has_routine_scope_marker(pkg)
+                    && let Some(v) = self.get_our_var(&format!("{pkg}::{name}"))
+                {
+                    return Some(v.clone());
+                }
+                match pkg.rsplit_once("::") {
+                    Some((parent, _)) => pkg = parent,
+                    None => break,
+                }
+            }
+        }
+        None
     }
 
     /// Whether `name` currently has a sigilless binding in scope (`my \x`,

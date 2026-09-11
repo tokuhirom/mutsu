@@ -507,27 +507,43 @@ impl Interpreter {
         table: &'a crate::runtime::PackageKeyed<V>,
         name: &str,
     ) -> Option<&'a V> {
-        let current = self.current_package();
+        for candidate in self.running_package_candidates().into_iter().flatten() {
+            if let Some(found) = Self::lookup_in_package_chain(table, candidate, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// The packages a lookup anchored on "whatever routine is running" should
+    /// try, most specific first. Split out of [`Self::lookup_in_running_package`]
+    /// so a lookup that is NOT over a [`crate::runtime::PackageKeyed`] table —
+    /// the `our`-store walk in `Interpreter::running_package_our_var`, which
+    /// builds `Pkg::name` keys instead — anchors on exactly the same packages
+    /// rather than re-deriving its own notion of "the running package".
+    ///
+    /// Why the list is needed at all: `current_package` is GLOBAL while a
+    /// method body runs (module bodies execute under GLOBAL), so the owning
+    /// package has to come from the running frame — the method's class first,
+    /// then the nearest enclosing named routine (anonymous blocks inherit that
+    /// lexical owner), then whatever package is current.
+    pub(crate) fn running_package_candidates(&self) -> [Option<&str>; 4] {
         let frame = self
             .routine_stack
             .iter()
             .rev()
             .find(|frame| !frame.is_block)
             .or_else(|| self.routine_stack.last());
-        let candidates = [
+        [
             self.method_class_stack_top_str(),
             frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
             frame
                 .map(|frame| frame.package.as_str())
                 .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
-            Some(current.as_str()),
-        ];
-        for candidate in candidates.into_iter().flatten() {
-            if let Some(found) = Self::lookup_in_package_chain(table, candidate, name) {
-                return Some(found);
-            }
-        }
-        None
+            // The atomic `Symbol` mirror of `current_package`, which yields a
+            // `&'static str` instead of cloning the `String` behind the lock.
+            Some(self.current_package_sym().as_str()),
+        ]
     }
 
     /// Look `name` up in a per-package table starting from a *known* owner
