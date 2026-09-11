@@ -222,18 +222,37 @@ re-running a suite. In a remote container, confirm any red `make roast` is a sub
 the environment-only failures in
 [docs/agent-environments.md](../../../docs/agent-environments.md).
 
-## 7. Re-measure and update the ledger record
+## 7. Re-measure with `--only` and update the ledger record
 
-The record is part of the deliverable — a fix that leaves the ledger saying `red` has not been
-reported.
+**Every interpreter change made in this loop ends with a `--only` re-measure — no exceptions.** It
+is not a formality: it is how you learn whether the fix moved the distribution at all, and how
+often it moved a *different* file than the one you were chasing. The record is part of the
+deliverable, and a fix that leaves the ledger saying `red` has not been reported. This applies to
+the small fixes too — one method, one operator, one parse gap — and to a run that ends in an issue
+rather than a fix, where the re-measure is what proves the residue is what you say it is.
 
 ```sh
 touch src/main.rs && cargo build --release        # a stale binary is measured silently
-MUTSU_BIN=target/release/mutsu scripts/ecosystem-sweep.py --only String::Utils --sandbox none
+MUTSU_BIN=target/release/mutsu scripts/ecosystem-sweep.py --only String::Utils
 ```
 
-- `--sandbox none` is permitted **only** with `--only`, for a distribution you have read. A shard or
-  corpus sweep needs `bubblewrap`, which a remote container does not have — do not attempt one there.
+- **Re-measure with the release binary you actually built.** `touch src/main.rs` is not
+  superstition: the sweep reads `MUTSU_BIN` and will happily measure yesterday's binary, producing
+  a record that says your fix did nothing.
+- **`ecosystem/index-snapshot.json` must not appear in your diff.** It is corpus-level provenance —
+  "the records beside me were resolved against this fez/REA snapshot" — so a one-distribution run
+  has no business dating the whole ledger to today's index. `--only` therefore leaves it alone
+  (the sweep logs `index-snapshot.json: left unchanged`); `--no-index-snapshot` does the same for a
+  `--status` / `--stale` re-measure after a fix. If it shows up in `git status` anyway, revert it
+  rather than committing it: `git checkout -- ecosystem/index-snapshot.json`.
+- **The sandbox is the default and you should keep it.** `.claude/hooks/session-start.sh` installs
+  and verifies `bwrap` in a remote container too, so the "no bubblewrap here" excuse is gone. Drop
+  to `--sandbox none` only when the hook reported that the sandbox does not work (`bwrap --version`
+  to check), and then only for a `--only` distribution whose suite you have read — never for a shard
+  or a corpus sweep, which the sweep refuses unsandboxed by design.
+- A **corpus or shard sweep still does not belong in a remote container** — 4 cores and a fixed disk
+  allowance, not a missing sandbox, are what rule it out. Dispatch
+  `.github/workflows/ecosystem-sweep.yml` instead (`docs/ecosystem-parity.md` §8.1).
 - The sweep aborts unless `use Test` reaches the vendored `modules/Rakudo-Core/lib/Test.rakumod` on
   both sides. That is the fairness precondition, not a nuisance: fix it rather than working around it.
 - Timestamps are date-granular, so an unchanged same-day re-run produces no diff. A record that did
@@ -244,7 +263,15 @@ MUTSU_BIN=target/release/mutsu scripts/ecosystem-sweep.py --only String::Utils -
   design, not implementation — the harness does not accept them today. Use the flags in
   `--help`.
 
-Commit the changed `ecosystem/dists/<S>/<Dist--Name>.json` in the same PR as the fix.
+**If the fix plausibly reaches beyond this distribution, re-measure the neighbours too** — one
+`--only` per distribution, in the same run. A parser or builtin gap is rarely one module's alone,
+and a second record flipping to `green` for free is the cheapest evidence this loop produces that
+the fix was general rather than a dressed-up special case. Pick them by the root cause (the ledger
+records naming the same failing construct), not by convenience, and add them to the PR body.
+
+Commit the changed `ecosystem/dists/<S>/<Dist--Name>.json` files — and nothing else under
+`ecosystem/` — in the same PR as the fix. `git status --porcelain ecosystem/` before you commit is
+the one-command check: every line should be a `dists/` record.
 
 ## 8. Publish — to `tokuhirom/mutsu`
 

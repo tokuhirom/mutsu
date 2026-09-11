@@ -2,7 +2,7 @@
 # SessionStart hook: bring a freshly provisioned container up to the toolchain
 # this repository needs, before the agent runs its first command.
 #
-# Two things are routinely missing or stale in the ephemeral containers that
+# Four things are routinely missing or stale in the ephemeral containers that
 # Claude Code on the web / the Claude app provision:
 #
 #   1. rustc — the base image ships whatever stable it was built with, which is
@@ -14,8 +14,12 @@
 #   3. libmysqlclient — the base image ships libpq and libsqlite3 but not this
 #      one, so every DBIish MySQL file in the battery suite dies with a
 #      NativeCall "symbol 'mysql_init' not found ... dlsym failed".
+#   4. bubblewrap — the ecosystem sweep (scripts/ecosystem-sweep.py) executes
+#      unaudited third-party test suites and confines every interpreter run in
+#      `bwrap`. Without it the sweep refuses a corpus outright and a single
+#      `--only` re-measure has to fall back to `--sandbox none`.
 #
-# All three are mechanical to fix, so fix them here rather than paying for the
+# All four are mechanical to fix, so fix them here rather than paying for the
 # rediscovery every session.
 #
 # Local checkouts are left alone: a developer machine is pinned by .mise.toml
@@ -31,6 +35,21 @@ cd "$REPO"
 
 say() { printf 'session-start: %s\n' "$*"; }
 warn() { printf 'session-start: WARNING: %s\n' "$*" >&2; }
+
+# Package installs are best-effort: a container that is not root, or has no
+# apt, gets a warning from the caller rather than a failed session start.
+can_apt() { [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; }
+
+# A stale package index is the usual reason the first attempt fails, and
+# `apt-get update` is slow enough to be worth skipping unless it is needed.
+apt_install() {
+  export DEBIAN_FRONTEND=noninteractive
+  if apt-get install -y --no-install-recommends "$@" >/dev/null 2>&1; then
+    return 0
+  fi
+  apt-get update -qq >/dev/null 2>&1 || true
+  apt-get install -y --no-install-recommends "$@" >/dev/null 2>&1
+}
 
 # ------------------------------------------------------------------- rustc --
 # Three places declare a Rust version and they can drift apart, so take the
@@ -132,30 +151,57 @@ setup_native_libs() {
     return 0
   fi
 
-  if [ "$(id -u)" != 0 ] || ! command -v apt-get >/dev/null 2>&1; then
+  if ! can_apt; then
     warn "missing native libraries (${missing[*]}) and no way to install them; the DBIish MySQL battery files will fail with 'dlsym failed'"
     return 0
   fi
 
   say "installing native libraries: ${missing[*]}"
-  export DEBIAN_FRONTEND=noninteractive
-  if apt-get install -y --no-install-recommends "${missing[@]}" >/dev/null 2>&1; then
+  if apt_install "${missing[@]}"; then
     say "native libraries installed"
-    return 0
-  fi
-  # A stale package index is the usual reason the first attempt fails; an
-  # `apt-get update` is slow enough to be worth skipping unless it is needed.
-  apt-get update -qq >/dev/null 2>&1 || true
-  if apt-get install -y --no-install-recommends "${missing[@]}" >/dev/null 2>&1; then
-    say "native libraries installed (after apt-get update)"
   else
     warn "could not install ${missing[*]}; the DBIish MySQL battery files will fail with 'dlsym failed'"
+  fi
+}
+
+# ------------------------------------------------------------------- bwrap --
+# scripts/ecosystem-sweep.py runs each zef distribution's own test suite under
+# both interpreters. Loading a module already executes its BEGIN phasers, so
+# every run is confined with bubblewrap (no network, read-only root, throwaway
+# HOME) and the sweep refuses a corpus sweep when `bwrap` is absent -- leaving
+# `--sandbox none`, which is only defensible for one distribution you have read.
+# Installing it is a two-second apt away, so do it up front rather than
+# discovering the gap in the middle of an ecosystem-dist-fix run.
+#
+# The probe matters as much as the package: a container can ship `bwrap` and
+# still deny the unprivileged user namespace `--unshare-all` needs, and that
+# failure surfaces as an unexplained non-zero exit from every measured file.
+setup_bwrap() {
+  if command -v bwrap >/dev/null 2>&1; then
+    say "bwrap already present: $(bwrap --version 2>/dev/null)"
+  elif ! can_apt; then
+    warn "bwrap is absent and cannot be installed; an ecosystem sweep will need --sandbox none"
+    return 0
+  else
+    say "installing bubblewrap (the ecosystem sweep's sandbox)"
+    if ! apt_install bubblewrap; then
+      warn "could not install bubblewrap; an ecosystem sweep will need --sandbox none"
+      return 0
+    fi
+  fi
+
+  if bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc \
+       --die-with-parent true >/dev/null 2>&1; then
+    say "bwrap sandbox verified"
+  else
+    warn "bwrap is installed but its sandbox does not work here (unprivileged user namespaces are probably restricted); an ecosystem sweep will need --sandbox none"
   fi
 }
 
 setup_rust
 setup_raku
 setup_native_libs
+setup_bwrap
 
 # Warm the crate cache so the first build is compile-only. Cheap next to the
 # build itself, and the container image is snapshotted after this hook.
