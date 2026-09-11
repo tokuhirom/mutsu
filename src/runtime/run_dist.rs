@@ -178,7 +178,7 @@ impl Interpreter {
     /// unrelated directory tree with no META6.json anywhere above it.
     pub(super) fn find_real_distribution_meta6(source_path: &Path) -> Option<Value> {
         let mut dir = source_path.parent()?;
-        for _ in 0..4 {
+        loop {
             let meta_path = dir.join("META6.json");
             if meta_path.exists()
                 && let Ok(content) = fs::read_to_string(&meta_path)
@@ -190,7 +190,6 @@ impl Interpreter {
             }
             dir = dir.parent()?;
         }
-        None
     }
 
     /// Detect a distribution (META6.json) for the given module source path.

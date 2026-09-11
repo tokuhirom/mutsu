@@ -1,8 +1,9 @@
 use v6;
-use lib 't/lib/ResCaller/lib', 't/lib/ResDist/lib', 't/lib/ResInner/lib';
+use lib 't/lib/ResCaller/lib', 't/lib/ResDist/lib', 't/lib/ResInner/lib',
+    't/lib/ResDeep/lib';
 use Test;
 
-plan 3;
+plan 4;
 
 # `%?RESOURCES` is lexically tied to the compilation unit that contains the
 # token, so a module's own mainline/`BEGIN` must see ITS distribution's
@@ -26,3 +27,7 @@ is $greeting, 'hello from the ResInner resources',
 # The plain `use` path must keep working too.
 lives-ok { EVAL 'use ResDist; ResDist.greeting' },
     '%?RESOURCES still resolves on the `use` path';
+
+use A::B::C::D;
+is deep-resource-text(), 'hello from the deep resource',
+    '%?RESOURCES finds META6.json above a four-segment module path';
