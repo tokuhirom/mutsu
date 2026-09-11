@@ -890,7 +890,9 @@ fn reorder_at_level(
             // initializer with the `__has_initializer` custom trait (checked
             // the same way at e.g. `compiler/stmt.rs`'s `has_init` sites) —
             // use that instead of guessing from the expression shape.
-            let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+            let has_init = custom_traits
+                .iter()
+                .any(|(n, _)| n == "__has_initializer" || n == "__scalar_bind");
             // The hoisted bare declaration's interim value (before any real
             // initializer in `rest` runs) must match what an uninitialized
             // declaration of this sigil actually holds: `Nil` for a scalar,
