@@ -250,29 +250,47 @@ pub(crate) fn set_current_language_version(version: &str) {
     });
 }
 
-/// Register an EXPORTHOW::DECLARE declarator keyword (from a `use`d module's
-/// scan) for the rest of the compilation unit: `keyword Name { ... }` then
-/// parses like `class` with the declarator's HOW protocol driving registration.
-pub(crate) fn register_declare_keyword(keyword: &str, how_type: &str) {
+/// What a registered declarator keyword declares. Only the package *kind* is
+/// a parse-time concern: which metaclass the declaration is built with is
+/// resolved at registration time, from the module's `EXPORTHOW::DECLARE`
+/// constant or from the slang's own record (ADR-0091 §2.2).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DeclareKeyword {
+    /// Whether the keyword declares a `role` rather than a `class`. An
+    /// EXPORTHOW::DECLARE keyword is always class-like; a slang declarator
+    /// says which through its `$*PKGDECL` (ADR-0091).
+    pub(crate) is_role: bool,
+}
+
+/// Register a declarator keyword (from a `use`d module's EXPORTHOW::DECLARE
+/// block, or from a slang's `package_declarator:sym<kw>` candidate) for the
+/// rest of the compilation unit: `keyword Name { ... }` then parses like
+/// `class`/`role` with the declarator's HOW protocol driving registration.
+pub(crate) fn register_declare_keyword(keyword: &str, is_role: bool) {
     DECLARE_KEYWORDS.with(|m| {
         m.borrow_mut()
-            .insert(keyword.to_string(), how_type.to_string());
+            .insert(keyword.to_string(), DeclareKeyword { is_role });
     });
 }
 
-/// The currently registered EXPORTHOW::DECLARE declarator keywords.
+/// The currently registered declarator keywords.
 pub(crate) fn declare_keyword_names() -> Vec<String> {
     DECLARE_KEYWORDS.with(|m| m.borrow().keys().cloned().collect())
+}
+
+/// Does `keyword` declare a role rather than a class?
+pub(crate) fn declare_keyword_is_role(keyword: &str) -> bool {
+    DECLARE_KEYWORDS.with(|m| m.borrow().get(keyword).is_some_and(|d| d.is_role))
 }
 
 /// Snapshot / restore the DECLARE keyword table around a nested module scan
 /// (the nested parse's reset clears it, and any keywords the scanned module
 /// itself imports are lexical to that module, not to the importer).
-pub(in crate::parser) fn declare_keywords_snapshot() -> HashMap<String, String> {
+pub(in crate::parser) fn declare_keywords_snapshot() -> HashMap<String, DeclareKeyword> {
     DECLARE_KEYWORDS.with(|m| m.borrow().clone())
 }
 
-pub(in crate::parser) fn restore_declare_keywords(saved: HashMap<String, String>) {
+pub(in crate::parser) fn restore_declare_keywords(saved: HashMap<String, DeclareKeyword>) {
     DECLARE_KEYWORDS.with(|m| *m.borrow_mut() = saved);
 }
 

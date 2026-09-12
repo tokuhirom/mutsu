@@ -205,6 +205,22 @@ impl Interpreter {
                         &args[1..],
                     ));
                 }
+                // `$*LANG.HOW.mixin($*LANG.WHAT, $role)` — the same recording,
+                // reached through the *type object* rather than a handle
+                // instance. `.WHAT` on the `$*LANG` handle is the CompLang
+                // type, so mixing a grammar role into the language itself
+                // (rather than into a named slang) lands here; without this it
+                // fell through to the generic `but`-style composition and the
+                // role was lost, taking the whole slang registration with it.
+                if let ValueView::Package(sym) = args[0].view()
+                    && sym.resolve().starts_with("Mutsu::Slang::")
+                {
+                    return Ok(Self::slang_handle_mixin(
+                        crate::runtime::slang_activation::GRAMMAR_HANDLE_CLASS,
+                        &crate::value::AttrMap::default(),
+                        &args[1..],
+                    ));
+                }
                 // Generic `.^mixin(R)`: same composition as infix `but`
                 // (`Str.^mixin(R)` is the `Str+{R}` mixin type object). When
                 // `R` is an actual role, route through the same role

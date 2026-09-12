@@ -11,6 +11,9 @@
   follows), CLAUDE.md "Raku's context-dependent parsing (slangs)",
   [docs/batteries/csv.md](../batteries/csv.md) (the CSV campaign this unblocks)
 - Addresses: `todo/deep/text-csv-needs-slang-tuxic-support.md`
+- Extended by: [ADR-0091](0091-slang-package-declarators.md) (a slang may also
+  *add* a package declarator, read out of its `package_declarator:sym<...>`
+  candidate; §4's refusal to execute token bodies is preserved)
 
 ## Outcome (2026-08-12)
 

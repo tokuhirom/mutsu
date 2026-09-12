@@ -116,3 +116,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0088](0088-rakuast-regex-boundary-tree.md) | RakuAST and execution share a source-level regex tree | Proposed |
 | [0089](0089-role-mixins-own-a-separate-attribute-cell.md) | A role mixin owns an attribute cell separate from its wrapped value | Proposed (revised after design review 2026-09-12) |
 | [0090](0090-has-embedded-cstruct-members.md) | A `HAS` member is laid out by value, and its handle points into the enclosing struct | Accepted (implemented) |
+| [0091](0091-slang-package-declarators.md) | A slang's `package_declarator:sym<...>` candidate is read as a declarator registration, not executed | Accepted (implemented) |

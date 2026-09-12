@@ -191,8 +191,8 @@ pub(crate) fn register_module_exports(module: &str) {
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
         apply_scan_types(&scan);
         apply_module_exports(&scan.exports);
-        for (keyword, how_type) in &scan.declare_keywords {
-            register_declare_keyword(keyword, how_type);
+        for (keyword, _how_type) in &scan.declare_keywords {
+            register_declare_keyword(keyword, false);
         }
     } else if !import_is_pragma_like(module) {
         note_type_index_incomplete();

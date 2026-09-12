@@ -222,6 +222,14 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         let Some(rest) = keyword(&kw, input) else {
             continue;
         };
+        // A slang declarator whose `$*PKGDECL` is `role` declares a role, not
+        // a class (ADR-0091): `test-bundle Foo { ... }` is `role Foo { ... }`
+        // with Test::Async's BundleHOW attached. It shares `role`'s whole
+        // syntax (type parameters, `does`, `hides`), so it re-parses from the
+        // keyword rather than from `rest`.
+        if super::super::simple::declare_keyword_is_role(&kw) {
+            return super::role_decl::role_decl_with_keyword(input, &kw);
+        }
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
         if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {

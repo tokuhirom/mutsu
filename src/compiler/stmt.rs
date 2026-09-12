@@ -3939,6 +3939,19 @@ impl Compiler {
                     // experimental features that mutsu provides unconditionally
                     // (e.g. pack/unpack), so the pragma is a compile-time no-op.
                     || module == "experimental" => {}
+            // `use Foo:from<NQP>;` — an NQP-language compunit (NQPHLL,
+            // QAST, ...). mutsu has no NQP compunit repository: its `nqp::`
+            // ops are native and there is nothing to load, so the `use` is a
+            // no-op rather than a hard "Could not find" failure that would
+            // abort the rest of the importing module's mainline. Any symbol
+            // the NQP module would have provided stays undeclared, which is
+            // the honest outcome — the alternative (failing the load) loses
+            // every declaration that follows it.
+            Stmt::Use { tags, arg, .. }
+                if tags.len() == 1
+                    && tags[0] == "from"
+                    && matches!(arg, Some(Expr::Literal(v))
+                        if matches!(v.view(), ValueView::Str(s) if s.as_str() == "NQP")) => {}
             Stmt::Use { module, .. } if module == "MONKEY-TYPING" || module == "MONKEY" => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::UseModule {

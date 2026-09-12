@@ -26,6 +26,25 @@ pub(crate) enum ModuleExportDef {
 }
 
 impl Interpreter {
+    /// Bind `$*LANG` for the duration of a `sub EXPORT` call.
+    ///
+    /// In Rakudo `EXPORT` runs at *compile* time of the importing unit, where
+    /// `$*LANG` is the live language object; a module that adds a slang reads
+    /// it there (`$*LANG.define_slang`, `$*LANG.set_how`). mutsu runs `EXPORT`
+    /// at module-load time instead, so nothing would otherwise bind it and the
+    /// whole registration died on `Nil`. Bind the same minimal `CompLang`
+    /// handle the parse-time activation sub-interpreter uses (ADR-0026 §4), so
+    /// one EXPORT body works in both. Only ever *adds* the binding: an
+    /// activation run has already put its own there.
+    fn bind_compile_time_lang(&mut self) {
+        if self.env.get("*LANG").is_none() {
+            self.env.insert(
+                "*LANG".to_string(),
+                crate::runtime::slang_activation::comp_lang_instance(),
+            );
+        }
+    }
+
     /// If the just-loaded module defined `sub EXPORT`, call it with the `use`
     /// arguments and install the symbols from its returned `Map`(s) into the
     /// caller's scope. `EXPORT` itself is special (never an export), so it is
@@ -69,6 +88,7 @@ impl Interpreter {
                 // EXPORT's effects are its return value, not caller-env writes.
                 let caller_env = self.env.clone();
                 self.env = module_env;
+                self.bind_compile_time_lang();
                 let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
                 self.env = caller_env;
                 self.install_export_map(&result, importer.as_deref());
@@ -97,6 +117,7 @@ impl Interpreter {
         let empty_fns = crate::opcode::CompiledFns::default();
         let caller_env = self.env.clone();
         self.env = module_env.clone();
+        self.bind_compile_time_lang();
         // Anchor the call to the module's own compunit. `EXPORT` is the
         // module's code, so a prelude splice made into the module's unit (the
         // NativeCall `trait_mod:<is>` candidates `NativeLibs` introspects) has
@@ -136,6 +157,7 @@ impl Interpreter {
             ModuleExportDef::Sub(d, module_env) => {
                 let empty_fns = crate::opcode::CompiledFns::default();
                 self.env = module_env;
+                self.bind_compile_time_lang();
                 // Same compunit anchoring as the first-load path above.
                 let saved_unit = self.current_unit;
                 self.current_unit = self.unit_of_declaring_file(d.source_file.as_deref());
@@ -143,7 +165,10 @@ impl Interpreter {
                 self.current_unit = saved_unit;
                 r?
             }
-            ModuleExportDef::Value(v) => self.call_sub_value(v, export_args, false)?,
+            ModuleExportDef::Value(v) => {
+                self.bind_compile_time_lang();
+                self.call_sub_value(v, export_args, false)?
+            }
         };
         self.env = saved_env;
         let importer = self.module_load_stack.last().cloned();

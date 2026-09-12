@@ -51,9 +51,11 @@ pub(crate) use l10n::{
     l10n_match_infix, l10n_match_keyword, l10n_named_alias, set_l10n_preseed, set_l10n_vocabulary,
 };
 pub(crate) use registry::{
+    DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
+};
+pub(crate) use registry::{
     current_language_version, current_language_version_starts_with, set_current_language_version,
 };
-pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
 pub(crate) use slang_modes::{
     SlangModes, apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes,
     slang_modes, slang_spaced_call, slang_spaced_methodop,
@@ -235,10 +237,12 @@ thread_local! {
     static EVAL_USER_VALUE_TERM_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
     /// Declarator keywords registered by a `use`d module's EXPORTHOW::DECLARE
-    /// (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
-    /// keyword → HOW type name. Unit-scoped: cleared on parser reset and
+    /// (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`)
+    /// or by a slang's `token package_declarator:sym<kw>` (ADR-0091):
+    /// keyword → what it declares. Unit-scoped: cleared on parser reset and
     /// saved/restored around nested module scans.
-    static DECLARE_KEYWORDS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    static DECLARE_KEYWORDS: RefCell<HashMap<String, DeclareKeyword>> =
+        RefCell::new(HashMap::new());
     /// Language version the EVAL'd unit starts at, instead of the 6.d default.
     /// EVAL inherits the caller's language revision in rakudo (`use v6.e.PREVIEW;
     /// EVAL 'sprintf("%#x", -256)'` yields `-0x100`), and a `use vX` inside the
