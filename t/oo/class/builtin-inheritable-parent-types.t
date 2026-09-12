@@ -22,7 +22,7 @@ my @inheritable =
     'Metamodel::EnumHOW', 'Metamodel::ModuleHOW', 'Metamodel::PackageHOW',
     'Metamodel::ParametricRoleGroupHOW', 'Metamodel::SubsetHOW';
 
-plan @inheritable.elems + 5;
+plan @inheritable.elems + 6;
 
 use MONKEY-SEE-NO-EVAL;
 
@@ -58,4 +58,26 @@ dies-ok { EVAL 'class Nope does Attribute { }' },
     my $mixed = Holder.^attributes[0] but Tag;
     is $mixed.tag ~ ' ' ~ $mixed.name, 'tagged $!x',
         'mixing a role into an Attribute still keeps both halves';
+}
+
+# GH #8062: PDF::COS::Tie declares an attribute-trait helper class INSIDE a
+# role body (`my class COSAttr is Attribute { ... }` within `role Tie { }`,
+# further nested as `COSAttr::CosOfAttr`). The role-body scope reaches the
+# same `validate_class_parents` path as a top-level declaration, so this was
+# never a separate code path -- but it is the shape the issue's own repro
+# names, so pin it directly rather than trusting the top-level case above to
+# stand in for it. (A role's own top-level statements run only once it is
+# composed into a class, and a role body may only declare a `my`-scoped
+# class -- both true in rakudo too -- so the role below is composed into a
+# throwaway consumer to make `COSAttr` reachable.)
+{
+    role Tie {
+        my class COSAttr is Attribute {
+            method label { 'cos-attr' }
+        }
+        method describe-attr { COSAttr.label }
+    }
+    class Consumer does Tie { }
+    is Consumer.new.describe-attr, 'cos-attr',
+        'a `my class` nested in a role body may inherit Attribute and be used';
 }
