@@ -47,9 +47,10 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   holds **40 vendored upstream dists** run verbatim, plus `vendor/zef`. The policy — grow the
   interpreter until the real module runs (rung 2), never reimplement it natively (rung 3) —
   now has only **two** standing native providers: `NativeCall` (measured non-vendorable,
-  [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and `JSON::Fast`. The native `Test`
-  provider was deleted outright on 2026-09-10 (~3,300 lines); a bare `use Test` loads rakudo's
-  own `Test.rakumod`.
+  [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the JSON `to-json`/`from-json`
+  fast path, which is a deliberate, measured, permanent exception rather than a pending
+  retirement (§1.8). The native `Test` provider was deleted outright on 2026-09-10
+  (~3,300 lines); a bare `use Test` loads rakudo's own `Test.rakumod`.
 - **The active architectural thread is the call and closure path**, and it is nearly closed:
   a per-callsite inline cache (ADR-0066), locals and the five per-call bookkeeping stacks as
   windows into shared stacks rather than moved `Vec`s (ADR-0077/0078), built-in dynamics
@@ -226,7 +227,16 @@ in the code, and the exception list has shrunk to two entries:
 
 - `NativeCall` — measured non-vendorable (it needs `use QAST:from<NQP>`, MoarVM dispatch
   programs, and 61 missing `nqp::` ops), [#7560](https://github.com/tokuhirom/mutsu/issues/7560).
-- `JSON::Fast`.
+- **The JSON `to-json`/`from-json` fast path** (`runtime/json.rs`, 759 lines, plus
+  `vm/vm_native_json.rs`) — gated at `use`-time and intercepting **both** `JSON::Fast` and
+  `JSON::Tiny`. This is a partial exception, not a whole-module one: the real `JSON::Tiny` *is*
+  vendored and its `Grammar`/`Actions` are not intercepted, so they run for real and pass their
+  upstream suite. Two measurements hold the split in place — the real `JSON::Fast` needs ~50
+  `nqp::` ops mutsu does not implement (and the `nqp::` op layer itself was measured and
+  rejected), and the real grammar decodes 200 META-shaped documents in ~600s against the native
+  path's 0.49s, on a path zef walks for every metadata read. `docs/batteries/json-tiny.md`
+  records the split as **permanent policy**, which is what distinguishes it from `Test`: that
+  provider was a stopgap awaiting deletion, this one is a decision.
 
 `Test` left that list entirely on 2026-09-10: the native TAP provider, its `tap_state`
 bookkeeping, the native subtest machinery, `Stmt::Subtest`/`OpCode::SubtestScope`, the
@@ -549,10 +559,12 @@ Reading 95 ADRs as a list is not useful; they fall into a small number of campai
 **The batteries adoption policy.** "Grow the interpreter until the real upstream module runs
 verbatim (rung 2); native provision (rung 3) is banned" is a load-bearing, costly-to-reverse
 decision recorded only in `BATTERIES.md` and `CLAUDE.md` as a user decision. Its rejected
-alternative (native reimplementation), its two surviving exceptions (`NativeCall`,
-`JSON::Fast`), the retirement precedent now set by deleting the native `Test` provider, and the
-companion measurement "do not build an `nqp::` op layer" are exactly the "why, and what we
-rejected" an ADR exists to preserve. It is listed here rather than drafted unilaterally because
+alternative (native reimplementation), its two surviving exceptions (`NativeCall`, and the JSON
+`to-json`/`from-json` fast path — the latter declared permanent in a batteries record rather
+than in a decision document, despite being exactly the kind of measured, costly-to-reverse
+carve-out an ADR is for), the retirement precedent now set by deleting the native `Test`
+provider, and the companion measurement "do not build an `nqp::` op layer" are exactly the
+"why, and what we rejected" an ADR exists to preserve. It is listed here rather than drafted unilaterally because
 the decision is the user's.
 
 ---
