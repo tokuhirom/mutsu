@@ -204,6 +204,13 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_int_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
+        // An `is Version` subclass (#8070) delegates any method it does not
+        // define itself to its native Version payload -- `.raku`, `.Str`, and
+        // any other Version method a real `Version::Raku`/`Version::Nginx`
+        // caller reaches without overriding.
+        if let Some(payload) = attributes.as_map().get("__mutsu_version_value").cloned() {
+            return Some(self.call_method_with_values(payload, method, vec![]));
+        }
         if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }

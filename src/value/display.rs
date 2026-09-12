@@ -1064,6 +1064,18 @@ impl Value {
                     .map(Value::to_string_value)
                     .unwrap_or_default()
             }
+            // A subclass of native `Version` (`class Foo is Version {}`) carries
+            // its built `Version` in `__mutsu_version_value` (#8070); stringify
+            // as that Version, e.g. `v1.2.3`.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_version_value") =>
+            {
+                attributes
+                    .as_map()
+                    .get("__mutsu_version_value")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default()
+            }
             ValueView::Instance { class_name, .. } => format!("{}()", class_name),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {

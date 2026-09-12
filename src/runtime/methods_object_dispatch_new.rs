@@ -815,6 +815,36 @@ impl Interpreter {
             if is_cathandle_like && !self.has_user_method(class_key, "new") {
                 return Ok(self.build_io_cathandle(*class_name, &args));
             }
+            // A user subclass of Version (`class MyVer is Version {}`) inherits
+            // the native positional-string constructor. `Version`'s own
+            // `ValueView::Version` representation carries no class-name tag (#8070),
+            // so unlike the constructor_dispatch_name-matched exact-"Version" arm
+            // below, a genuine subclass is built as an ordinary tagged Instance —
+            // the same `__mutsu_*_value` native-payload convention `is Int`/`is Str`
+            // subclasses already use (`seed_native_subclass_payloads`,
+            // `display.rs`/`gist.rs`/`methods_instance_ops.rs`) — carrying the
+            // built Version under `__mutsu_version_value`. This gives the instance
+            // its own method table (so `Version::Raku`'s/`Version::Nginx`'s own
+            // added methods resolve normally) while `.Str`/`.raku`/`.gist` and any
+            // other unimplemented-on-the-subclass method fall through to the real
+            // Version's behavior via the same native-payload delegation.
+            let is_version_like = base_class_name == "Version"
+                || self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "Version");
+            if is_version_like
+                && cn_resolved != "Version"
+                && !self.has_user_method(class_key, "new")
+            {
+                let arg = args.first().cloned().unwrap_or(Value::NIL);
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "__mutsu_version_value".to_string(),
+                    Self::version_from_value(arg),
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             match constructor_dispatch_name {
                 "IO::CatHandle" if !self.has_user_method(class_key, "new") => {
                     return Ok(self.build_io_cathandle(*class_name, &args));
