@@ -1234,6 +1234,15 @@ impl Compiler {
         name: crate::symbol::Symbol,
         args: &[CallArg],
     ) {
+        // An invocant colon makes this a method call on the first argument
+        // (`warn $x:` is `$x.warn`), exactly as the statement-position
+        // `Stmt::Call` arm already handles. Without this the `CallArg::Invocant`
+        // reached the named/slip branch below and hit its `unreachable!()`
+        // (#8141).
+        if let Some(method_call) = Self::invocant_colon_method_call(name, args) {
+            self.compile_expr(&method_call);
+            return;
+        }
         let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
         let positional_only = rewritten_args
             .iter()

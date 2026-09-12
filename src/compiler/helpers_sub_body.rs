@@ -104,9 +104,47 @@ impl Compiler {
         out
     }
 
+    /// The listop invocant colon: `foo($obj:)`, and the no-paren `foo $obj: @a`,
+    /// both make the first argument the *invocant*, so the call IS the method
+    /// call `$obj.foo(@a)`.
+    ///
+    /// Every path that compiles a `Stmt::Call` must consult this before treating
+    /// the argument list as ordinary positionals. `call_args_to_expr_args` below
+    /// cannot express the distinction — it maps `CallArg::Invocant(e)` to a plain
+    /// positional — so a tail `Stmt::Call` used to silently drop the colon and
+    /// call the sub normally. That is a wrong answer wherever the method does not
+    /// exist: `warn "w":` is `X::Method::NotFound` in Rakudo, not a warning
+    /// (#8141).
+    pub(super) fn invocant_colon_method_call(
+        name: crate::symbol::Symbol,
+        args: &[crate::ast::CallArg],
+    ) -> Option<Expr> {
+        let crate::ast::CallArg::Invocant(invocant) = args.first()? else {
+            return None;
+        };
+        let method_args: Vec<Expr> = args[1..]
+            .iter()
+            .filter_map(|arg| match arg {
+                crate::ast::CallArg::Positional(e) => Some(e.clone()),
+                _ => None,
+            })
+            .collect();
+        Some(Expr::MethodCall {
+            target: Box::new(invocant.clone()),
+            name,
+            args: method_args,
+            modifier: None,
+            quoted: false,
+        })
+    }
+
     /// Convert `Stmt::Call`'s `Vec<CallArg>` to `Vec<Expr>` for expression-level
     /// compilation (needed when a Stmt::Call is the last statement in a sub body
     /// and its return value must be preserved as implicit return).
+    ///
+    /// Callers must first rule out an invocant colon with
+    /// [`Compiler::invocant_colon_method_call`] — this mapping flattens
+    /// `CallArg::Invocant` to a positional and would drop it.
     pub(super) fn call_args_to_expr_args(args: &[crate::ast::CallArg]) -> Vec<Expr> {
         args.iter()
             .map(|arg| match arg {
@@ -737,6 +775,13 @@ impl Compiler {
                     // Stmt::Call as last statement: convert to expression-level
                     // Expr::Call so the return value is left on the stack.
                     Stmt::Call { name, args } => {
+                        // An invocant colon makes this a method call, not a sub
+                        // call (`warn $x:` is `$x.warn`); the arg-list mapping
+                        // below cannot carry that, so check it first.
+                        if let Some(method_call) = Self::invocant_colon_method_call(*name, args) {
+                            sub_compiler.compile_expr(&method_call);
+                            continue;
+                        }
                         let expr_args: Vec<Expr> = Self::call_args_to_expr_args(args);
                         sub_compiler.compile_expr(&Expr::Call {
                             name: *name,
