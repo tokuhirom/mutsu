@@ -697,6 +697,7 @@ impl Compiler {
                 topic: post_topic,
                 body: post_body,
                 is_statement_modifier: false,
+                with_kind: None,
             });
         }
         // KEEP/UNDO runs before LEAVE on normal (uninterrupted) completion,
@@ -744,6 +745,7 @@ impl Compiler {
                 topic: Expr::Var(last_topic_var),
                 body: last_ph,
                 is_statement_modifier: false,
+                with_kind: None,
             };
             vec![Stmt::If {
                 cond: Expr::Var(ran_var),

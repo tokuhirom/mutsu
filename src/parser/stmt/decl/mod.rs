@@ -97,6 +97,7 @@ fn wrap_with_will_leave(
             topic: topic_expr,
             body,
             is_statement_modifier: false,
+            with_kind: None,
         }];
         stmts.push(Stmt::Phaser {
             kind,

@@ -2793,6 +2793,9 @@ impl Compiler {
                 topic,
                 body,
                 is_statement_modifier,
+                // `with_kind` records which source keyword desugared into this
+                // `Given`; it changes nothing about how one executes.
+                with_kind: _,
             } => {
                 // A pointy `-> $_ is copy` block starts with a parser-generated
                 // lexical declaration carrying the `__pointy_copy` marker: the

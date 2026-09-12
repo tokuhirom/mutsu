@@ -1143,6 +1143,21 @@ pub(crate) enum ReadonlyKind {
     ImmutableValue,
 }
 
+/// Which `with`-family keyword the parser desugared into a [`Stmt::Given`].
+///
+/// The desugar is lossy on its own: `STMT with X` becomes
+/// `given X { if $_.defined { STMT } }`, which a hand-written
+/// `(STMT if $_.defined) given X` also produces. `Stmt::Given`'s `with_kind`
+/// carries the distinction so the RakuAST converter can render
+/// `StatementModifier::With` / `::Without` instead of guessing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum GivenWithKind {
+    /// `STMT with EXPR` -- run `STMT` when the topic is defined.
+    With,
+    /// `STMT without EXPR` -- run `STMT` when the topic is NOT defined.
+    Without,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -1420,6 +1435,15 @@ pub(crate) enum Stmt {
         /// True for postfix statement-modifier `STMT given EXPR`. Unlike the
         /// block form, a modifier does not introduce a lexical scope.
         is_statement_modifier: bool,
+        /// Which source keyword produced this `Given`, when it was not `given`
+        /// itself. `STMT with X` and `STMT without X` desugar to
+        /// `given X { if $_.defined { STMT } }` (negated for `without`), which
+        /// is exactly the shape a hand-written `(STMT if $_.defined) given X`
+        /// produces -- so without this marker the source keyword is
+        /// unrecoverable. Only the RakuAST converter reads it; execution
+        /// treats every `Given` alike. Mirrors `Stmt::If`'s `is_unless` and
+        /// `Stmt::While`'s `is_until`.
+        with_kind: Option<GivenWithKind>,
     },
     When {
         cond: Expr,
