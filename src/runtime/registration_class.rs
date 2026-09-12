@@ -653,22 +653,25 @@ impl Interpreter {
     /// MRO links `X::Decode` to the built-in namespace (an unknown parent, so it
     /// falls back to `Any`) instead of the module-local `M::X`.
     ///
-    /// Only rewrites a name (no type args) when `{current_package}::{name}` names
-    /// a registered class/role. A module-local class lexically shadows any
-    /// same-named outer or built-in type, so the package-qualified sibling is
-    /// preferred even when a bare built-in of that name also exists (e.g. `X`,
-    /// which is registered as the built-in `X::` exception namespace class);
-    /// genuine built-in and cross-package parents, which have no
-    /// current-package-qualified sibling, are left untouched.
+    /// Rewrites a name when `{current_package}::{name}` names a registered
+    /// class/role. Type arguments, when present, are kept on the qualified
+    /// base (`Packet[Type::Connect]` becomes `M::Packet[Type::Connect]`). A
+    /// module-local class lexically shadows any same-named outer or built-in
+    /// type, so the package-qualified sibling is preferred even when a bare
+    /// built-in of that name also exists (e.g. `X`, which is registered as the
+    /// built-in `X::` exception namespace class); genuine built-in and
+    /// cross-package parents, which have no current-package-qualified sibling,
+    /// are left untouched.
     ///
     /// A *nested* parent name is qualified the same way — the third link of
     /// `class X {}; class X::Decode is X {}; class X::Decode::Length is X::Decode {}`
     /// inside a module has to reach `M::X::Decode`, not a bare `X::Decode` that
     /// nothing declared.
     pub(crate) fn qualify_sibling_parent_name(&self, parent: &str) -> String {
-        if parent.contains('[') {
-            return parent.to_string();
-        }
+        let (base, suffix) = parent
+            .find('[')
+            .map(|start| (&parent[..start], &parent[start..]))
+            .unwrap_or((parent, ""));
         // The `Grammar` metatype, when it appears as an inheritance parent, is the
         // implicit default parent the parser auto-adds to every grammar. In Raku a
         // grammar with no explicit `is` clause always inherits the *core* `Grammar`
@@ -679,20 +682,20 @@ impl Interpreter {
         // tokens/actions/`parse` override (the YAMLish `Schema::*` reduce bug).
         // Direct references (`Grammar.parse`) still resolve to the module-local
         // grammar via bare-word resolution, so the module-local shadow is intact.
-        if parent == "Grammar" {
+        if base == "Grammar" {
             return parent.to_string();
         }
         let pkg = self.current_package();
         if pkg.is_empty() || pkg == "GLOBAL" {
             return parent.to_string();
         }
-        let qualified = format!("{}::{}", pkg, parent);
+        let qualified = format!("{}::{}", pkg, base);
         let registered = {
             let reg = self.registry();
             reg.classes.contains_key(&qualified) || reg.roles.contains_key(&qualified)
         };
         if registered {
-            qualified
+            format!("{qualified}{suffix}")
         } else {
             parent.to_string()
         }
