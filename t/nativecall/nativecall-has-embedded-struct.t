@@ -15,7 +15,7 @@ use NativeCall;
 #
 # The sizes asserted here are C's, and were measured against rakudo.
 
-plan 22;
+plan 23;
 
 sub calloc(size_t, size_t --> Pointer) is native { * }
 sub free(Pointer) is native { * }
@@ -79,16 +79,17 @@ free($block);
 }
 
 # `HAS Type $!x` -- the private-twigil spelling -- is the same declaration and
-# takes up the same storage, which the public tail behind it proves.
-#
-# (Reading it back as `$!x` from inside a method is a *separate*, pre-existing
-# gap: mutsu resolves `$!a` on a CStruct handle through the instance's Raku
-# attributes rather than through native memory, so even a plain
-# `has int32 $!a` reads as Nil there -- see GH #8030.)
+# takes up the same storage, which the public tail behind it proves. Reading
+# it back as `$!x` from inside a method used to be a *separate* gap (GH
+# #8030): mutsu resolved `$!a` on a CStruct handle through the instance's
+# (empty) Raku attributes instead of through native memory, so even a plain
+# `has int32 $!a` read as Nil there. Fixed alongside this test's restored
+# assertion.
 {
     class Priv is repr('CStruct') {
         HAS Point $!p;
         has int32 $.tail is rw;
+        method px() { $!p.x }
     }
     is nativesizeof(Priv), 12,  'a private HAS member is laid out the same way';
     my $blk = calloc(1, 32);
@@ -96,6 +97,8 @@ free($block);
     $p.tail = 17;
     is nativecast(Flat, $blk).c, 17,
                                 'the tail sits past the private member, not past a pointer';
+    nativecast(Point, $blk).x = 42;
+    is $p.px, 42,               'a private $!x read reaches native memory, not Nil';
     free($blk);
 }
 
