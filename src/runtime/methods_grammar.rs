@@ -72,14 +72,34 @@ impl Interpreter {
         }
         // Evaluate each declaration in `self.env`, saving the prior value.
         let mut saved: Vec<(String, Option<Value>)> = Vec::new();
-        for (code, var_key) in decls
+        for (code, raw_key) in decls
             .iter()
             .filter_map(|d| Self::dynamic_decl_var_key(d).map(|k| (d, k)))
         {
+            // A `$`-sigil dynamic variable lives in env under TWO keys kept in
+            // sync as an alias pair by `set_env_with_main_alias_inner`'s
+            // `twigil_dynamic_alias`: the bare form (`$*S` -> `*S`, what a
+            // `my $*x = ...;` declaration and the reduce-time
+            // `install_fresh_rule_dynvars` write and read) and the sigil-kept
+            // form (`$*S`) that a plain `$*x` read can also resolve through.
+            // `@*A` / `%*H` have no such pair -- only their sigil-kept key
+            // exists. Saving/restoring only one half of the pair left the
+            // other one untouched by the restore below, so a `$*`-sigil
+            // declaration leaked past `.parse` into the caller's scope
+            // (#8096).
+            let is_scalar_dynvar = raw_key.starts_with('$');
+            let var_key = match raw_key.strip_prefix('$') {
+                Some(rest) => rest.to_string(),
+                None => raw_key,
+            };
             if saved.iter().any(|(k, _)| k == &var_key) {
                 continue;
             }
             saved.push((var_key.clone(), self.env.get(&var_key).cloned()));
+            if is_scalar_dynvar {
+                let alias_key = format!("${var_key}");
+                saved.push((alias_key.clone(), self.env.get(&alias_key).cloned()));
+            }
             let source = format!("{code};");
             if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
                 let _ = self.eval_block_value(&stmts);
