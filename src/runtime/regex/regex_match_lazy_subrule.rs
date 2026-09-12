@@ -50,7 +50,7 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn drive_named_subrule_candidates(
         &mut self,
-        name: &str,
+        name: &crate::runtime::regex_types::NamedAtom,
         chars: &[char],
         pos: usize,
         store: &mut CapStore,
@@ -78,7 +78,7 @@ impl Interpreter {
         if let Some(reason) = self.subrule_call_stream_decline(name, pkg) {
             return decline(reason);
         }
-        let spec = Self::parse_named_regex_lookup_spec(name);
+        let spec = name.spec();
         let lr_key = super::regex_lr_state::LrKey::new(spec.lookup_sym, None, chars.len() - pos);
         if super::regex_lr_state::lr_key_is_active(&lr_key) {
             return decline(StreamDecline::LrKeyActive);
@@ -86,7 +86,7 @@ impl Interpreter {
         // Same resolution the eager arm performs (memoized for a static body,
         // per-call otherwise). The shape was settled above, but a body that is
         // re-parsed per call is re-checked rather than assumed.
-        let (candidates, _) = self.parsed_subrule_candidates(&spec, pkg, &[]);
+        let (candidates, _) = self.parsed_subrule_candidates(spec, pkg, &[]);
         let [(parsed, sub_pkg, sym_key)] = &candidates[..] else {
             return decline(StreamDecline::SeveralCandidates);
         };
@@ -116,7 +116,7 @@ impl Interpreter {
                 let wrapped = Interpreter::build_named_candidates_from_inner(
                     vec![(end, inner)],
                     pos,
-                    &spec,
+                    spec,
                     None,
                 );
                 let Some((end, delta)) = wrapped.into_iter().next() else {

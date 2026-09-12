@@ -793,10 +793,87 @@ pub(crate) struct RegexSeparatorSpec {
     pub(crate) allow_trailing: bool,
 }
 
+/// A `<subrule>` atom's written text, with its parsed lookup spec memoized
+/// alongside it.
+///
+/// The spec (silent/token flavour, alias, interned names, argument
+/// expressions) is a pure function of the text, and the text is fixed once the
+/// pattern is parsed — but the matcher asked for it per *call*, through a
+/// process-wide `text -> spec` map: 113,480 probes and 1.35% of a 60-row
+/// YAMLish parse, all of them re-deriving what one node had already answered
+/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)). Answering it from
+/// the node costs one already-initialized `OnceLock` read.
+///
+/// The first read still goes through
+/// [`Interpreter::parse_named_regex_lookup_spec`](crate::runtime::Interpreter),
+/// so two atoms spelled the same share one `Arc` exactly as before.
+#[derive(Clone, Default)]
+pub(crate) struct NamedAtom {
+    text: String,
+    spec: std::sync::OnceLock<Arc<crate::runtime::regex::regex_helpers::NamedRegexLookupSpec>>,
+}
+
+impl NamedAtom {
+    /// The atom exactly as written between the angle brackets.
+    #[inline]
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// This atom's parsed lookup spec, derived once.
+    #[inline]
+    pub(crate) fn spec(&self) -> &Arc<crate::runtime::regex::regex_helpers::NamedRegexLookupSpec> {
+        self.spec
+            .get_or_init(|| crate::runtime::Interpreter::parse_named_regex_lookup_spec(&self.text))
+    }
+}
+
+impl From<String> for NamedAtom {
+    fn from(text: String) -> Self {
+        NamedAtom {
+            text,
+            spec: std::sync::OnceLock::new(),
+        }
+    }
+}
+
+impl From<&str> for NamedAtom {
+    fn from(text: &str) -> Self {
+        NamedAtom::from(text.to_string())
+    }
+}
+
+impl std::ops::Deref for NamedAtom {
+    type Target = str;
+
+    #[inline]
+    fn deref(&self) -> &str {
+        &self.text
+    }
+}
+
+impl std::fmt::Display for NamedAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+impl PartialEq<str> for NamedAtom {
+    fn eq(&self, other: &str) -> bool {
+        self.text == other
+    }
+}
+
+impl PartialEq<&str> for NamedAtom {
+    fn eq(&self, other: &&str) -> bool {
+        self.text == *other
+    }
+}
+
 #[derive(Clone)]
 pub(crate) enum RegexAtom {
     Literal(char),
-    Named(String),
+    Named(NamedAtom),
     Any,
     CharClass(CharClass),
     /// `<.ws>` — Raku's word-boundary-aware whitespace rule:

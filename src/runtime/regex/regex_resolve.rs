@@ -543,7 +543,7 @@ impl Interpreter {
     /// [`crate::runtime::regex_parse::REGEX_PARSE_CACHE`] — this memo needs no
     /// generation key: a rule (re)definition cannot change how its *reference*
     /// spells itself.
-    pub(super) fn parse_named_regex_lookup_spec(
+    pub(crate) fn parse_named_regex_lookup_spec(
         name: &str,
     ) -> std::sync::Arc<NamedRegexLookupSpec> {
         if let Some(hit) = NAMED_LOOKUP_SPEC_CACHE.with(|c| c.borrow().get(name).cloned()) {

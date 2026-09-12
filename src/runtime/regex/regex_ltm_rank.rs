@@ -324,18 +324,18 @@ impl Interpreter {
                     }
                 }
                 RegexAtom::Named(name) => {
-                    if depth >= LTM_LITLEN_MAX_DEPTH || seen.contains(name) {
+                    if depth >= LTM_LITLEN_MAX_DEPTH || seen.contains(name.text()) {
                         return (acc, false);
                     }
-                    let spec = Self::parse_named_regex_lookup_spec(name);
+                    let spec = name.spec();
                     if !spec.arg_exprs.is_empty() {
                         return (acc, false);
                     }
-                    let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
+                    let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
                     if raw_empty {
                         return (acc, false);
                     }
-                    seen.insert(name.clone());
+                    seen.insert(name.text().to_string());
                     let mut best = 0usize;
                     let mut all_full = true;
                     for (cand_pattern, cand_pkg, _sym) in candidates.iter() {
@@ -350,7 +350,7 @@ impl Interpreter {
                         best = best.max(len);
                         all_full &= full;
                     }
-                    seen.remove(name);
+                    seen.remove(name.text());
                     acc += best;
                     if !all_full {
                         return (acc, false);

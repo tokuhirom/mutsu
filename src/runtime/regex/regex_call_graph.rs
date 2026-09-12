@@ -479,7 +479,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
             true
         }
         RegexAtom::Named(name) => {
-            let spec = Interpreter::parse_named_regex_lookup_spec(name);
+            let spec = name.spec();
             // `<::(EXPR)>` names its target at runtime, and a rule call with
             // arguments resolves per argument list — neither is a static edge.
             if spec.lookup_name == "::" || !spec.arg_exprs.is_empty() {

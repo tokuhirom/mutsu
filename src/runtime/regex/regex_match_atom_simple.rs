@@ -510,7 +510,7 @@ impl Interpreter {
             _ => {}
         }
         if let RegexAtom::Named(name) = atom {
-            let spec = Self::parse_named_regex_lookup_spec(name);
+            let spec = name.spec();
             let default_caps = RegexCaptures::default();
             let arg_values = if spec.arg_exprs.is_empty() {
                 Vec::new()
@@ -520,7 +520,7 @@ impl Interpreter {
             // Establish the subrule's `$*`-twigil parameters for the whole
             // resolve-and-match (see `regex_dynparams`); the wrapper restores.
             *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
-            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
+            let candidates = self.resolve_named_regex_candidates_in_pkg(spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
                 let mut best_len: Option<usize> = None;
@@ -666,7 +666,7 @@ impl Interpreter {
                 }
             }
             RegexAtom::Named(name) => {
-                let spec = Self::parse_named_regex_lookup_spec(name);
+                let spec = name.spec();
                 if spec.token_lookup || !spec.arg_exprs.is_empty() {
                     return None;
                 }
@@ -844,7 +844,7 @@ impl Interpreter {
         if matched {
             match atom {
                 RegexAtom::Named(name) => {
-                    let spec = Self::parse_named_regex_lookup_spec(name);
+                    let spec = name.spec();
                     Some(pos + spec.lookup_name.chars().count())
                 }
                 // Literal matches advance by exactly 1 codepoint — they do
