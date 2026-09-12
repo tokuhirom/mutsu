@@ -67,18 +67,24 @@ start:
 - `t/15-modifier`, `t/13-package`, `t/14-routine` need `RakuAST::QuotedRegex`
   and the `RakuAST::Regex::*` node tree (`Sequence`, `Literal`, `WithWhitespace`,
   `CharClass::*`, `Quote`), which `token` / `rule` / `regex` declarations inside
-  a grammar are built out of.
+  a grammar are built out of. mutsu keeps such a body as a raw
+  `Literal(Regex("\\d+ "))` string, so there is no internal regex tree to
+  convert from at all --
+  [#8033](https://github.com/tokuhirom/mutsu/issues/8033).
 - `t/16-enum-subset` needs the `term` field of `RakuAST::Type::Enum`, which is
   the *unevaluated* variant list — a word-quoted `QuotedString` carrying
   `processors => <words val>` for `enum C <A B>` and a parenthesized pair list
   for `enum C (A => 1)`. mutsu's `Stmt::EnumDecl` has already normalized both
   into `Vec<(String, Option<Expr>)>`, and `processors` is not modelled on
   `QuotedString` at all, so rendering it faithfully needs a parser change first
-  rather than a guess in the converter.
-- `t/11-use-import` needs `use` to render as `RakuAST::Pragma`, plus `import`.
+  rather than a guess in the converter --
+  [#8034](https://github.com/tokuhirom/mutsu/issues/8034).
+- `t/11-use-import` needs `use` to render as `RakuAST::Pragma`, plus `import` --
+  [#8035](https://github.com/tokuhirom/mutsu/issues/8035).
 - The `with` / `without` statement modifiers (in `t/10-block`, a file rakudo
   itself cannot run) are desugared by mutsu's parser into `given` plus an
-  `if $_.defined`, so the modifier kind is gone before conversion sees it.
+  `if $_.defined`, so the modifier kind is gone before conversion sees it --
+  [#8036](https://github.com/tokuhirom/mutsu/issues/8036).
 
 `t/rakuast/rakuast-l10n-constructs.t` pins all eight constructs in both
 directions and passes under rakudo as well as mutsu, which is what makes the
