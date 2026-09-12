@@ -1060,15 +1060,12 @@ impl Interpreter {
         // the caller on return (`* ~~ /<$r>/` invoked inside a grep-in-`for`).
         let own_locals = cc.capture_local_set();
         // Keep only the upvalue set, shadow-meta, and system names, walking the
-        // env tiers directly (`filtered_flat`) — flattening first (`clone_env`)
-        // deep-cloned the entire parent-chain map per lambda creation. The
-        // filter is key-pure, so the tier walk's shadow/tombstone handling is
-        // exactly the flattened view. `__mutsu_callable_type` is
-        // closure-identity metadata (the WhateverCode marker), (re)installed on
-        // the genuine closure's own env after capture — never inherit it, or an
-        // ordinary inner block would be mis-detected as a WhateverCode (see the
-        // by-name path above).
-        let callable_type_sym = crate::symbol::well_known::callable_type();
+        // env tiers directly (`filtered_flat_capture`) — flattening first
+        // (`clone_env`) deep-cloned the entire parent-chain map per lambda
+        // creation. The filter is key-pure, so the tier walk's shadow/tombstone
+        // handling is exactly the flattened view, and the half of it that reads
+        // nothing but the key is memoized per tier
+        // (`env_tier::capture_never_keeps`) rather than re-asked per creation.
         // The filter below reads only the KEY, so its result is a pure function
         // of the visible env contents and of `cc` — which is what lets a
         // repeated creation of the same closure literal from an unchanged scope
@@ -1081,7 +1078,7 @@ impl Interpreter {
             self.finish_closure_capture(code, cc, &mut env);
             return env;
         }
-        let mut env = self.env().filtered_flat(&|k, _v| {
+        let mut env = self.env().filtered_flat_capture(&|k, _v| {
             // One memoized flags word answers the string questions this filter
             // asks per key (see `symbol::flags`), instead of resolving the
             // symbol and re-scanning its bytes.
@@ -1100,7 +1097,7 @@ impl Interpreter {
             // lexical anywhere in the creating scope: 11 of the ~35 entries a
             // closure captured after a bare `use Test`, which scale with the
             // importer's scope exactly like the `__mutsu_callable_id::` markers
-            // below (#7565).
+            // do (#7565).
             //
             // Deciding it by its subject rather than by "is it a free
             // variable" is what keeps a typed *dynamic* (`my Int $*x`) — a
@@ -1115,30 +1112,15 @@ impl Interpreter {
                 k = subject;
                 flags = subject.flags();
             }
-            // Two unconditional rejects, fused into one mask test because both
-            // are pure string properties of the key and neither needs a set
-            // probe. Most of what this filter walks is answered here:
-            //
-            // * Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
-            //   materializations of `self`'s attributes, not lexicals: the
-            //   closure must read them through its captured `self` at RUN time.
-            //   A creation-time snapshot goes stale the moment the instance
-            //   mutates — a `start` block reading `@!before` inside
-            //   Cro::CompositeConnector.connect saw an empty pre-mutation copy.
-            // * `__mutsu_callable_id::<pkg>::<name>` is a routine-registration
-            //   marker, one per named routine visible in the creating scope —
-            //   after a bare `use Test` that is 49 of the 95 keys this filter
-            //   walks, none of which any closure body can name. Every consumer
-            //   reads it from the LIVE env at call time, where it is still
-            //   visible through the frame chain; the single case that is not (an
-            //   escaping closure whose `use`-inside-`EVAL` scope has been
-            //   popped) is pinned by name in `capture_bare_callees`.
-            const DROP: u16 =
-                crate::symbol::flags::ATTR_TWIGIL_ENV_KEY | crate::symbol::flags::CALLABLE_ID_META;
-            if flags & DROP != 0 {
-                return false;
-            }
-            if k == callable_type_sym {
+            // The unconditional, key-only rejects — see
+            // `env_tier::capture_never_keeps`, which is the same verdict, asked
+            // once per key SET rather than once per closure creation so that
+            // `filtered_flat_capture` can skip these keys without visiting
+            // them. It stays spelled out here as well, and this is deliberate:
+            // both halves of the filter open by loading the key's flags word,
+            // so a version that tested the memoized half separately paid that
+            // load twice per key (#7565).
+            if crate::env_tier::capture_never_keeps_resolved(k, flags) {
                 return false;
             }
             // A plain user lexical is inherited only as an upvalue, so the

@@ -13,7 +13,11 @@ use crate::value::Value;
 /// cost dominated method/variable-heavy benchmarks (perf: ~7% of self time in
 /// `SipHasher::write`/`hash_one`). Iteration order is unspecified either way, so
 /// no env-iteration consumer (`iter`/`keys`/`values`/pseudo-stash) is affected.
-pub(crate) type SymMap = rustc_hash::FxHashMap<Symbol, Value>;
+///
+/// An env *tier* is this map plus the indexes derived from its key set; see
+/// [`crate::env_tier::Tier`], which owns the map and is what `Env::inner`
+/// actually holds.
+pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 /// Process-wide immutable "base" tier of the environment.
 ///
@@ -443,7 +447,7 @@ pub(crate) fn note_env_key(key: &str) {
 /// environment, so it is invisible to `iter`/`keys`/`values`/`len`/`remove`.
 #[derive(Clone)]
 pub struct Env {
-    inner: Arc<SymMap>,
+    inner: Arc<Tier>,
     /// Optional read-through "parent" tier: the enclosing call frame's whole env
     /// (itself possibly scoped, forming a *chain*). When present (a *scoped* env),
     /// name lookups fall through overlay -> parent-chain -> [`GLOBAL_BASE`], but
@@ -538,15 +542,15 @@ const MAX_OVERLAY_DEPTH: u16 = 16;
 /// copy-on-write, no behavioral difference. `Env::ptr_eq` consumers are
 /// unaffected: two envs sharing this map are both empty, and any write
 /// un-shares the writer before it can be observed.
-fn empty_overlay() -> Arc<SymMap> {
+fn empty_overlay() -> Arc<Tier> {
     empty_overlay_ref().clone()
 }
 
 /// Borrowed access to the shared empty overlay singleton, for identity checks
 /// that must not pay the `Arc` refcount round-trip a `clone` would cost.
-fn empty_overlay_ref() -> &'static Arc<SymMap> {
-    static EMPTY: std::sync::OnceLock<Arc<SymMap>> = std::sync::OnceLock::new();
-    EMPTY.get_or_init(|| Arc::new(SymMap::default()))
+fn empty_overlay_ref() -> &'static Arc<Tier> {
+    static EMPTY: std::sync::OnceLock<Arc<Tier>> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(|| Arc::new(Tier::default()))
 }
 
 /// The interned `"?FILE"` key. Interning it once keeps the maintenance hook in
@@ -569,7 +573,7 @@ fn file_sym_of(v: &Value) -> Option<Symbol> {
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
-            inner: Arc::new(SymMap::default()),
+            inner: Arc::new(Tier::default()),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -953,7 +957,7 @@ impl Env {
                     tiers.push(cur);
                     cur = parent;
                 }
-                let mut merged: SymMap = (*cur.inner).clone();
+                let mut merged: SymMap = (**cur.inner).clone();
                 for tier in tiers.into_iter().rev() {
                     // An overlay that never received a write (and holds no
                     // tombstone) is invisible to lookups.
@@ -967,7 +971,7 @@ impl Env {
                     }
                 }
                 Self {
-                    inner: Arc::new(merged),
+                    inner: Arc::new(Tier::new(merged)),
                     parent: None,
                     tombstones: None,
                     depth: 0,
@@ -994,19 +998,21 @@ impl Env {
     /// lambda creation inside method frames (`todo/deep/closure-env-capture-cost.md`).
     /// The base tier (`GLOBAL_BASE`) is — as in `flattened()` — never
     /// materialized; it stays reachable through the flat env's tail lookup.
-    pub(crate) fn filtered_flat(&self, keep: &dyn Fn(Symbol, &Value) -> bool) -> Env {
+    pub(crate) fn filtered_flat<F: Fn(Symbol, &Value) -> bool>(&self, keep: &F) -> Env {
         /// `outermost` is true for the base of the chain -- the tier processed
         /// first, while `out` still holds nothing. A rejected or tombstoned key
         /// there cannot be shadowing an outer tier's kept entry (there is no
         /// outer tier, and a map yields each of its own keys once), so the
         /// suppressing `out.remove` is a guaranteed miss: a hash and a probe per
         /// rejected key, on the widest tier of the chain. A closure created in a
-        /// sub after a bare `use Test` walks 95 visible keys and keeps 31, and
-        /// all 62 of its removes landed on that one tier (#7565).
-        fn collect(
+        /// sub after a bare `use Test` walked 95 visible keys and kept 31, and
+        /// all 62 of its removes landed on that one tier (#7565); that capture
+        /// now goes through [`Env::filtered_flat_capture`], but the shape of
+        /// the saving is the same for any other wide chain this walks.
+        fn collect<F: Fn(Symbol, &Value) -> bool>(
             env: &Env,
             out: &mut SymMap,
-            keep: &dyn Fn(Symbol, &Value) -> bool,
+            keep: &F,
             outermost: bool,
         ) {
             let outermost = match &env.parent {
@@ -1054,7 +1060,111 @@ impl Env {
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         Self {
-            inner: Arc::new(out),
+            inner: Arc::new(Tier::new(out)),
+            parent: None,
+            tombstones: None,
+            depth: 0,
+            file_sym,
+            frame_writes: None,
+            code_entries: None,
+        }
+    }
+
+    /// [`Self::filtered_flat`] specialized for the closure capture: the keys no
+    /// capture can ever keep are skipped **without being visited**, by walking
+    /// each tier's [`Tier::capture_candidates`] memo instead of its whole map.
+    ///
+    /// `keep` therefore only has to decide the part of the capture filter that
+    /// depends on which closure is being created; the key-only part lives in
+    /// [`crate::env_tier::capture_never_keeps`], which is what the memo caches.
+    ///
+    /// Skipping a non-candidate outright — rather than rejecting it and then
+    /// suppressing an outer tier's entry with `out.remove`, as
+    /// [`Self::filtered_flat`] must — is sound precisely because that verdict is
+    /// a pure function of the key: a key rejected on one tier was rejected on
+    /// every tier, so it was never inserted into `out` and there is nothing to
+    /// suppress. The candidate list is a *superset* (a removal does not prune
+    /// it), so each key is looked up rather than assumed present.
+    ///
+    /// After a bare `use Test` this is the difference between visiting 96 keys
+    /// and visiting 47 for the same 31-entry result, on every closure creation
+    /// in the importing file (#7565).
+    pub(crate) fn filtered_flat_capture<F: Fn(Symbol, &Value) -> bool>(&self, keep: &F) -> Env {
+        fn collect<F: Fn(Symbol, &Value) -> bool>(
+            env: &Env,
+            out: &mut SymMap,
+            keep: &F,
+            outermost: bool,
+        ) {
+            let outermost = match &env.parent {
+                Some(parent) => {
+                    collect(parent, out, keep, outermost);
+                    false
+                }
+                None => outermost,
+            };
+            if let Some(tomb) = &env.tombstones
+                && !outermost
+            {
+                for k in tomb {
+                    out.remove(k);
+                }
+            }
+            // The body is spelled out per arm rather than shared through a
+            // closure: a capturing `FnMut` here is not inlined, and that cost
+            // more per key than skipping the rejected ones saved (#7565).
+            //
+            // `keep` is the WHOLE filter in both arms, never-keeps included.
+            // Hoisting the key-only half out of it and testing it separately
+            // here looks like an obvious saving and is not: both halves start
+            // by loading the key's memoized flags word, so splitting them made
+            // every walked key pay that load twice — measured at +880
+            // instructions per closure creation on an import-free program,
+            // which is more than the memo saves on one that imports (#7565).
+            match env.inner.capture_walk() {
+                CaptureWalk::Entries => {
+                    for (k, v) in env.inner.iter() {
+                        if keep(*k, v) {
+                            out.insert(*k, v.clone());
+                        } else if !outermost {
+                            out.remove(k);
+                        }
+                    }
+                }
+                CaptureWalk::Candidates(keys) => {
+                    for &k in keys {
+                        // Superset index: the key may have been removed since
+                        // the memo was built.
+                        let Some(v) = env.inner.get(&k) else {
+                            continue;
+                        };
+                        if keep(k, v) {
+                            out.insert(k, v.clone());
+                        } else if !outermost {
+                            out.remove(&k);
+                        }
+                    }
+                }
+            }
+        }
+        // Pre-size from the candidate counts rather than the whole chain's key
+        // count: the rejected families are exactly what makes the two diverge
+        // (36 against 96 after a bare `use Test`), and over-reserving cost a
+        // 2 KiB allocation and its zeroing per closure creation.
+        let mut cap = 0usize;
+        {
+            let mut cur = Some(self);
+            while let Some(env) = cur {
+                cap += env.inner.capture_upper_bound();
+                cur = env.parent.as_deref();
+            }
+        }
+        let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
+        collect(self, &mut out, keep, true);
+        // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
+        let file_sym = out.get(&file_key()).and_then(file_sym_of);
+        Self {
+            inner: Arc::new(Tier::new(out)),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -1175,7 +1285,7 @@ impl Env {
     /// O(env_size) deep copy whenever the env is shared (the real dual-store
     /// cost; see docs/vm-dual-store.md and `vm_stats::record_env_deep_copy`).
     #[inline]
-    fn cow_mut(&mut self) -> &mut SymMap {
+    fn cow_mut(&mut self) -> &mut Tier {
         if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
             crate::vm::vm_stats::record_env_deep_copy(self.inner.len());
         }
@@ -1537,7 +1647,7 @@ impl Env {
     #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut SymMap {
         self.code_entries = None;
-        self.cow_mut()
+        self.cow_mut().map_mut()
     }
 
     /// Direct read access to the inner HashMap (this env's OWN tier only — it
@@ -1580,7 +1690,7 @@ impl Env {
     /// be freed and re-allocated at one of them) AND forces copy-on-write on
     /// the next by-name write to any tier, so an address match proves the
     /// visible contents are byte-for-byte the ones that were there before.
-    pub(crate) fn tier_maps(&self) -> Vec<Arc<SymMap>> {
+    pub(crate) fn tier_maps(&self) -> Vec<Arc<Tier>> {
         let mut maps = Vec::new();
         let mut cur = self;
         loop {
@@ -1610,7 +1720,7 @@ pub(crate) struct TierAddrs {
 impl TierAddrs {
     /// True when `maps` (an owning [`Env::tier_maps`] snapshot) is exactly the
     /// chain these addresses describe.
-    pub(crate) fn matches(&self, maps: &[Arc<SymMap>]) -> bool {
+    pub(crate) fn matches(&self, maps: &[Arc<Tier>]) -> bool {
         maps.len() == self.len
             && maps
                 .iter()
@@ -1633,7 +1743,7 @@ impl From<HashMap<String, Value>> for Env {
             .collect();
         let file_sym = sym_map.get(&file_key()).and_then(file_sym_of);
         Self {
-            inner: Arc::new(sym_map),
+            inner: Arc::new(Tier::new(sym_map)),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -1649,7 +1759,7 @@ impl From<HashMap<Symbol, Value>> for Env {
         let map: SymMap = map.into_iter().collect();
         let file_sym = map.get(&file_key()).and_then(file_sym_of);
         Self {
-            inner: Arc::new(map),
+            inner: Arc::new(Tier::new(map)),
             parent: None,
             tombstones: None,
             depth: 0,
@@ -1682,6 +1792,7 @@ impl IntoIterator for Env {
     fn into_iter(self) -> Self::IntoIter {
         Arc::try_unwrap(self.inner)
             .unwrap_or_else(|arc| (*arc).clone())
+            .into_map()
             .into_iter()
     }
 }

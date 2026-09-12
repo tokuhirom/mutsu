@@ -9,6 +9,7 @@ mod compiler;
 pub mod crash_report;
 pub mod doc_mode;
 pub(crate) mod env;
+pub(crate) mod env_tier;
 pub mod error_render;
 pub(crate) mod gc;
 mod interpreter;
