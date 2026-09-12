@@ -82,7 +82,10 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             &spelled_assign_operator(after_q),
         ));
     }
-    if is_assignment_expr(&else_expr) && !assign_operator_is_tight(&else_expr) {
+    if !crate::parser::expr::allow_ternary_else_assignment()
+        && is_assignment_expr(&else_expr)
+        && !assign_operator_is_tight(&else_expr)
+    {
         return Err(conditional_precedence_too_loose_error(
             &spelled_assign_operator(after_bang),
         ));

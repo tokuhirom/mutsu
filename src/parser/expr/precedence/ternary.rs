@@ -294,7 +294,15 @@ pub(crate) fn call_arg_ternary_expr(input: &str) -> PResult<'_, Expr> {
 /// because its no-`??` fallback (`or_expr_mode`) includes assignment, which would
 /// swallow the default value (e.g. `$x where Int = 9`).
 pub(crate) fn ternary_no_assign(input: &str) -> PResult<'_, Expr> {
-    let (rest, cond) = or_expr_no_assign_mode(input, ExprMode::Full)?;
+    let (rest, cond) = if crate::parser::expr::allow_ternary_else_assignment() {
+        // A sigilless declaration initializer is the one Raku grammar context
+        // where an assignment may be nested in the else branch of `?? !!`.
+        // Parse that branch at the ordinary expression precedence so indexed
+        // compound assignments such as `%cache<key> //= value` are consumed.
+        or_expr_mode(input, ExprMode::Full)?
+    } else {
+        or_expr_no_assign_mode(input, ExprMode::Full)?
+    };
     let (rest_ws, _) = ws(rest)?;
     if rest_ws.starts_with("??") {
         // A conditional constraint: the full ternary parser is safe because a
@@ -396,7 +404,10 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 &spelled_assign_operator(then_src),
             ));
         }
-        if is_assignment_expr(&else_expr) && !assign_operator_is_tight(&else_expr) {
+        if !crate::parser::expr::allow_ternary_else_assignment()
+            && is_assignment_expr(&else_expr)
+            && !assign_operator_is_tight(&else_expr)
+        {
             return Err(conditional_precedence_too_loose_error(
                 &spelled_assign_operator(else_src),
             ));
