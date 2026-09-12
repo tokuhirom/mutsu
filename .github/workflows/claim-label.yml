@@ -44,10 +44,29 @@ permissions:
   contents: read
   issues: write
 
-# One run at a time: two concurrent runs would read the same log and issue the
-# same label edit twice.
+# One run at a time PER ISSUE: two concurrent runs over the same log would read
+# it identically and issue the same label edit twice.
+#
+# The group must be keyed by the issue, not global. `cancel-in-progress: false`
+# protects a run that is already executing, but GitHub allows only one PENDING
+# run per group -- queueing a new one cancels the previously pending one. Since
+# an `issue_comment` run reconciles only `github.event.issue.number` (see the
+# Reconcile step), a global group let a comment on issue B cancel the pending
+# run for issue A, and the run that replaced it then reconciled B instead: A's
+# claim or release was simply dropped. The 3-hourly schedule below caught it
+# eventually, but up to three hours late -- long enough for another agent to
+# take an issue somebody is on, which is the failure this workflow exists to
+# prevent. Observed on #7988: its `Releasing:` comment's run was cancelled one
+# second later by an unrelated issue's, and the label stayed on for an hour
+# until a manual dispatch cleared it.
+#
+# Collapsing two runs for the SAME issue stays correct and is the point of the
+# group: each run replays that issue's whole comment log, so it is idempotent,
+# and the surviving (newer) run sees strictly more comments than the one it
+# replaced. The whole-queue runs (`schedule`, and a dispatch with no `issue`)
+# share the `all` key and still serialise against each other.
 concurrency:
-  group: claim-label
+  group: claim-label-${{ github.event.issue.number || inputs.issue || 'all' }}
   cancel-in-progress: false
 
 jobs:
