@@ -528,6 +528,15 @@ impl Interpreter {
         self.var_defaults.insert(name.to_string(), value);
     }
 
+    /// Whether any variable in this program carries an `is default(...)` trait.
+    /// When false, no store has a default to substitute for a `Nil` and no
+    /// declaration has a stale one to clear — the gate the plain-scalar store
+    /// fast path asks before committing.
+    #[inline(always)]
+    pub(crate) fn has_var_defaults(&self) -> bool {
+        !self.var_defaults.is_empty()
+    }
+
     /// Get the default value for a variable, if one was set with `is default(...)`.
     pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
         if self.var_defaults.is_empty() {

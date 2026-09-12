@@ -366,6 +366,57 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::LazyList))
     }
 
+    /// Whether this word is a value that a plain `$x = ...` scalar store can
+    /// take through the narrow path in `exec_set_local_op_inner` — i.e. it is
+    /// NOT one of the kinds that store has to unwrap, reshape or record on the
+    /// way in (a `:=` source wrapper, a Proxy to FETCH through, a lazy sequence
+    /// to itemize, a shared cell to decontainerize, a thunk that marks the
+    /// variable readonly, or the `Nil` that resets an untyped scalar to `Any`).
+    ///
+    /// A pure tag probe, for the same reason as
+    /// [`Self::needs_element_itemization`]: it runs before anything else on the
+    /// hottest write path in the VM, and `view()` on a lazy `Match` would force
+    /// the match (ADR-0016 P5).
+    #[inline]
+    pub(in crate::value) fn is_plain_scalar_store_payload(&self) -> bool {
+        !matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                Kind::VarRef
+                    | Kind::Proxy
+                    | Kind::Seq
+                    | Kind::Slip
+                    | Kind::LazyList
+                    | Kind::ContainerRef
+                    | Kind::ContainerRefItemized
+                    | Kind::ContainerView
+                    | Kind::HashEntryRef
+                    | Kind::LazyThunk
+                    | Kind::Scalar
+                    | Kind::Nil
+            )
+        )
+    }
+
+    /// Whether a local slot holding this word can be overwritten outright by a
+    /// plain scalar store. The three write-through holders cannot: a
+    /// `ContainerRef` stores into its shared cell, a `Proxy` runs its `STORE`,
+    /// and a `HashEntryRef` materializes its phantom entry. A pure tag probe,
+    /// for the same reason as [`Self::is_plain_scalar_store_payload`].
+    #[inline]
+    pub(in crate::value) fn is_plain_scalar_store_slot(&self) -> bool {
+        !matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                Kind::ContainerRef
+                    | Kind::ContainerRefItemized
+                    | Kind::ContainerView
+                    | Kind::Proxy
+                    | Kind::HashEntryRef
+            )
+        )
+    }
+
     /// Whether this word is one of the kinds ADR-0040's element store itemizes
     /// (`Value::needs_element_itemization`) — a pure tag probe.
     ///

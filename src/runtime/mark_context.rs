@@ -92,6 +92,18 @@ impl MarkContextState {
         | bit::EXPLICIT_INITIALIZER
         | bit::VARDECL;
 
+    /// Whether *no* store-flavour mark is pending: the next store is a plain
+    /// `=` into an already-declared variable, with no bind, rebind, `constant`,
+    /// declaration, initializer or array-share flavour to apply.
+    ///
+    /// One load and one test, and — because there is then nothing to clear —
+    /// it leaves the word alone, which is what lets the plain-scalar store fast
+    /// path decide its whole flavour question before it touches the stack.
+    #[inline]
+    pub(crate) fn store_flags_clear(&self) -> bool {
+        self.flags.get() & Self::CONSUMED_BY_STORE == 0
+    }
+
     /// Snapshot the flag word and clear everything a store consumes, in one
     /// load and one store. See [`MarkFlags`].
     #[inline]

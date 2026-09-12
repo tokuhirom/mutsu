@@ -706,6 +706,22 @@ impl Value {
         self.0.is_lazy_thunk()
     }
 
+    /// Whether a plain `$x = ...` scalar store can take this value through its
+    /// narrow path (`Interpreter::exec_set_local_scalar_fast`). A pure tag
+    /// probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_plain_scalar_store_payload(&self) -> bool {
+        self.0.is_plain_scalar_store_payload()
+    }
+
+    /// Whether a local slot holding this value can be overwritten outright by a
+    /// plain scalar store, rather than written *through*. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_plain_scalar_store_slot(&self) -> bool {
+        self.0.is_plain_scalar_store_slot()
+    }
+
     /// Whether this is a `Package` type object. A pure tag probe (see
     /// [`Self::is_junction_value`]).
     #[inline]
