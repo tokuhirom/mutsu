@@ -151,6 +151,31 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Carry a declared scalar `of` constraint onto a cell created while
+    /// promoting that scalar for a closure or named-sub capture. Once a scalar
+    /// is boxed, the cell is the authoritative write target and name metadata
+    /// is not enough to protect writes from a different frame.
+    pub(crate) fn register_container_cell_constraint_for_name(
+        &mut self,
+        value: &Value,
+        name: &str,
+    ) {
+        let ValueView::ContainerRef(cell) = value.view() else {
+            return;
+        };
+        let constraint = self
+            .var_type_constraint(name)
+            .or_else(|| self.var_type_constraint(name.trim_start_matches('$')));
+        if let Some(constraint) = constraint {
+            let display = if name.starts_with(['$', '@', '%', '&']) {
+                name.to_string()
+            } else {
+                format!("${name}")
+            };
+            crate::value::register_container_constraint_named(&cell, &constraint, &display);
+        }
+    }
+
     /// Materialize a deferred vivification token's terminal slot into a fresh
     /// shared `ContainerCell` holding `val`, and install it at the slot.
     ///

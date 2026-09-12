@@ -122,6 +122,11 @@ impl Interpreter {
             let mut guard = arc.lock().unwrap();
             let old = seed_meta_assign_identity(guard.clone(), identity)?;
             let new_val = self.apply_compound_base_op(op, old, rhs)?;
+            // The compound result is still a write through the declared
+            // variable's cell.  User infix dispatch can take this fused path
+            // instead of the ordinary typed assignment path, so enforce the
+            // cell-carried constraint before publishing the new value.
+            self.check_container_cell_constraint(&arc, &new_val)?;
             *guard = new_val.clone();
             drop(guard);
             self.stack.push(new_val);
