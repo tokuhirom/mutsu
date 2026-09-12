@@ -3677,7 +3677,7 @@ pub(crate) enum ClassBodyOp {
     /// lives in `attr_decls`, keyed by this same name (ADR-0019 D10:
     /// `attr_decls` covers a class-level `our`/`my` attribute too, so no
     /// raw-statement fallback is needed here — see `class_body_has_decl`).
-    Attr { name: Symbol },
+    Attr { name: Symbol, sigil: char },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -3814,7 +3814,10 @@ fn classify_class_body_stmt(stmt: &Stmt, decl_line: Option<i64>) -> ClassBodyOp 
             chunk: None,
             raw: stmt.clone(),
         },
-        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr { name: *name },
+        Stmt::HasDecl { name, sigil, .. } => ClassBodyOp::Attr {
+            name: *name,
+            sigil: *sigil,
+        },
         Stmt::MethodDecl { .. } => ClassBodyOp::Method,
         Stmt::DoesDecl { name, .. } => ClassBodyOp::Does {
             name: *name,
@@ -3928,7 +3931,7 @@ pub(crate) enum RoleBodyOp {
     /// always covered a role-level `our`/`my` attribute too, so no
     /// raw-statement fallback is needed here (ADR-0019 D10; see
     /// `role_body_has_decl`).
-    Attr { name: Symbol },
+    Attr { name: Symbol, sigil: char },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -3971,7 +3974,10 @@ pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
 
 fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
     match stmt {
-        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr { name: *name },
+        Stmt::HasDecl { name, sigil, .. } => RoleBodyOp::Attr {
+            name: *name,
+            sigil: *sigil,
+        },
         Stmt::MethodDecl { .. } => RoleBodyOp::Method,
         Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
         _ => RoleBodyOp::Deferred {
@@ -5198,8 +5204,8 @@ impl CallIcSlot {
 
 /// The per-local-slot attribute-key table of a chunk (see
 /// [`CompiledCode::local_attr_keys`]): one entry per slot, `Some((bare attribute
-/// `Symbol`, is_private))` for an attribute twigil and `None` otherwise.
-pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool)>]>;
+/// `Symbol`, is_private, sigil))` for an attribute twigil and `None` otherwise.
+pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool, char)>]>;
 
 /// The per-`stmt_pool`-slot shared closure body of a chunk (see
 /// [`CompiledCode::closure_body_arc`]): one lazily-filled slot per pool entry,
@@ -5573,13 +5579,15 @@ impl CompiledCode {
     /// not an attribute twigil. Built once per chunk (see `local_attr_keys`): the
     /// VM's `$!x` / `$.x` read and write paths would otherwise re-parse the
     /// twigil and re-intern the bare name on every access.
-    pub(crate) fn local_attr_key(&self, idx: usize) -> Option<(Symbol, bool)> {
+    pub(crate) fn local_attr_key(&self, idx: usize) -> Option<(Symbol, bool, char)> {
         let slots = self.local_attr_keys.get_or_init(|| {
             self.locals
                 .iter()
                 .map(|name| {
-                    crate::value::attr_twigil_base(name)
-                        .map(|(bare, is_private)| (Symbol::intern(bare), is_private))
+                    crate::value::attr_twigil_base(name).map(|(bare, is_private)| {
+                        let sigil = crate::value::attr_twigil_sigil(name).unwrap_or('$');
+                        (Symbol::intern(bare), is_private, sigil)
+                    })
                 })
                 .collect()
         });

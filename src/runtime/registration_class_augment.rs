@@ -583,6 +583,7 @@ impl Interpreter {
                             is_rw: decl.is_rw,
                             is_required: decl.is_required.clone(),
                             sigil: decl.sigil,
+                            type_constraint: decl.type_constraint.clone(),
                             where_constraint: decl.where_constraint.clone(),
                             declared_shape: decl.declared_shape.clone(),
                         });
@@ -703,7 +704,10 @@ impl Interpreter {
                             .extend(mdefs.clone());
                     }
                     for attr in &parent_role.attributes {
-                        if !all_attributes.iter().any(|a| a.name == attr.name) {
+                        if !all_attributes
+                            .iter()
+                            .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+                        {
                             all_attributes.push(attr.clone());
                         }
                     }
@@ -719,7 +723,11 @@ impl Interpreter {
         }
         if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
             for attr in all_attributes {
-                if !class_def.attributes.iter().any(|a| a.name == attr.name) {
+                if !class_def
+                    .attributes
+                    .iter()
+                    .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+                {
                     class_def.attributes.push(attr);
                 }
             }
@@ -1148,7 +1156,10 @@ impl Interpreter {
                     if let Some(parent_role) = self.registry().roles.get(&parent_role_name).cloned()
                     {
                         for attr in &parent_role.attributes {
-                            if !all_attributes.iter().any(|a| a.name == attr.name) {
+                            if !all_attributes
+                                .iter()
+                                .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+                            {
                                 all_attributes.push(attr.clone());
                             }
                         }

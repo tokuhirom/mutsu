@@ -154,9 +154,11 @@ impl Interpreter {
             let attr_name = &attr.name;
             let sigil = &attr.sigil;
             let where_constraint = &attr.where_constraint;
-            if let Some(constraint) = type_constraints.get(attr_name)
+            let storage_key = super::attribute_storage_key(class_attrs_info, attr_name, *sigil);
+            if let Some(constraint) =
+                super::attribute_type_constraint(class_attrs_info, attr, &type_constraints)
                 && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
-                && let Some(value) = attrs.get(attr_name)
+                && let Some(value) = attrs.get(storage_key)
                 && !value.is_nil()
             {
                 // For array/hash attributes, the type constraint applies to
@@ -164,15 +166,15 @@ impl Interpreter {
                 if *sigil == '@' || *sigil == '%' {
                     // Skip container-level type check for @ and % attributes;
                     // element-level checking happens at assignment time.
-                } else if !self.type_matches_value(constraint, value)
-                    && !self.is_container_subclass(constraint)
+                } else if !self.type_matches_value(&constraint, value)
+                    && !self.is_container_subclass(&constraint)
                 {
                     // Rakudo raises a typed X::TypeCheck::Assignment here (with
                     // the `expected X but got Y (repr)` wording), not an
                     // untyped AdHoc. The reported type carries the attribute's
                     // smiley (`Str:D`), which the constraint map drops.
                     let reported =
-                        self.attribute_reported_constraint(class_name, attr_name, constraint);
+                        self.attribute_reported_constraint(class_name, attr_name, &constraint);
                     return Err(crate::runtime::utils::type_check_assignment_typed_error(
                         &format!("$!{}", attr_name),
                         &reported,
@@ -183,7 +185,7 @@ impl Interpreter {
             let Some(pred) = where_constraint else {
                 continue;
             };
-            let Some(value) = attrs.get(attr_name) else {
+            let Some(value) = attrs.get(storage_key) else {
                 continue;
             };
             if value.is_nil() {

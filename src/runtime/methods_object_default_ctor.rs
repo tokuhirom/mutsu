@@ -181,6 +181,8 @@ impl Interpreter {
             let attr_name = &attr.name;
             let default_expr = &attr.default;
             let sigil = &attr.sigil;
+            let attr_type_constraint =
+                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints);
             if attrs.contains_key(attr_sym) {
                 continue;
             }
@@ -228,7 +230,7 @@ impl Interpreter {
                     // through. Native-typed attributes are exempt (their default
                     // is stored without a type check); coercion-typed attributes
                     // are exempt too (their default is coerced in the final pass).
-                    if let Some(c) = type_constraints.get(attr_name)
+                    if let Some(c) = attr_type_constraint.as_ref()
                         && Self::native_scalar_default(c).is_none()
                         && !Self::is_native_coercion_ctor_constraint(c)
                         && !self.type_matches_value(c, &val)
@@ -248,7 +250,7 @@ impl Interpreter {
                     let empty = match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash(HashMap::new()),
-                        _ => match type_constraints.get(attr_name) {
+                        _ => match attr_type_constraint.as_ref() {
                             Some(c) => Self::native_scalar_default(c).unwrap_or(Value::NIL),
                             None => Value::package(crate::symbol::wk::any()),
                         },
@@ -271,15 +273,18 @@ impl Interpreter {
         // the result is identical; the gate already excluded user-class targets,
         // so only built-in coercion logic runs here.
         for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
-            let attr_name = &attr.name;
             if attr.sigil != '$' {
                 continue;
             }
-            if let Some(tc) = type_constraints.get(attr_name)
-                && Self::is_native_coercion_ctor_constraint(tc)
-                && let Some(val) = attrs.remove(attr_name)
+            let Some(tc) =
+                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints)
+            else {
+                continue;
+            };
+            if Self::is_native_coercion_ctor_constraint(&tc)
+                && let Some(val) = attrs.remove(attr_sym)
             {
-                let coerced = self.coerce_value_for_constraint(tc, val);
+                let coerced = self.coerce_value_for_constraint(&tc, val);
                 attrs.insert(attr_sym, coerced);
             }
         }
@@ -296,11 +301,10 @@ impl Interpreter {
         // `Slip`), so materialize it into a plain mutable `Array` here. Without
         // this the attribute keeps a `Slip` whose `.^name` is `Slip`.
         for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
-            let attr_name = &attr.name;
             if attr.sigil != '@' {
                 continue;
             }
-            let flat_items = match attrs.get(attr_name).map(Value::view) {
+            let flat_items = match attrs.get(attr_sym).map(Value::view) {
                 Some(ValueView::Slip(items)) => Some((**items).clone()),
                 Some(ValueView::Seq(items)) => Some(items.to_vec()),
                 _ => None,
@@ -319,10 +323,12 @@ impl Interpreter {
             if !matches!(sigil, '@' | '%') {
                 continue;
             }
-            let Some(elem_type) = type_constraints.get(attr_name).cloned() else {
+            let Some(elem_type) =
+                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints)
+            else {
                 continue;
             };
-            if let Some(val) = attrs.get(attr_name).cloned() {
+            if let Some(val) = attrs.get(attr_sym).cloned() {
                 match self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val) {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
@@ -405,13 +411,15 @@ impl Interpreter {
             for attr in class_attrs.iter() {
                 let attr_name = &attr.name;
                 if let Some(reason) = &attr.is_required {
+                    let storage_key =
+                        super::attribute_storage_key(class_attrs, attr_name, attr.sigil);
                     // The pre-BUILD seed for an unset untyped attribute is
                     // the Any type object (not Nil), so treat it as unset too.
                     let is_set = !matches!(
-                        attrs.get(attr_name).map(Value::view),
+                        attrs.get(storage_key).map(Value::view),
                         Some(ValueView::Nil) | None
                     ) && !matches!(
-                        attrs.get(attr_name).map(Value::view),
+                        attrs.get(storage_key).map(Value::view),
                         Some(ValueView::Package(n)) if n == "Any"
                     );
                     if !is_set {

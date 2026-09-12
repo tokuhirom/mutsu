@@ -1110,7 +1110,7 @@ impl Interpreter {
             // per-var constraint.
             if let Some(attr) = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))
                 && !attr.is_empty()
-                && let Some(tc) = self.self_attr_type_constraint(attr)
+                && let Some(tc) = self.self_attr_type_constraint(name)
             {
                 return Value::package(crate::symbol::Symbol::intern(&tc));
             }
@@ -1134,8 +1134,8 @@ impl Interpreter {
         if name.starts_with('@') || name.starts_with('%') {
             return None;
         }
-        let (bare, _) = crate::value::attr_twigil_base(name)?;
-        let tc = self.self_attr_type_constraint(bare)?;
+        let (_, _) = crate::value::attr_twigil_base(name)?;
+        let tc = self.self_attr_type_constraint(name)?;
         (!matches!(tc.as_str(), "Mu" | "Any")).then_some(tc)
     }
 
@@ -1151,7 +1151,41 @@ impl Interpreter {
             },
             _ => None,
         })?;
-        let tc = self.get_attr_type_constraint(&class_name, attr_name)?;
+        let (bare, sigil) = if let Some((bare, _)) = crate::value::attr_twigil_base(attr_name) {
+            (
+                bare,
+                crate::value::attr_twigil_sigil(attr_name).unwrap_or('$'),
+            )
+        } else {
+            (attr_name, '$')
+        };
+        let has_sigil_collision = self.mro_readonly(&class_name).iter().any(|cls| {
+            self.registry()
+                .classes
+                .get(cls.as_str())
+                .is_some_and(|class_def| {
+                    class_def
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == bare && attr.sigil != sigil)
+                })
+        });
+        let tc = if has_sigil_collision {
+            self.mro_readonly(&class_name).iter().find_map(|cls| {
+                self.registry()
+                    .classes
+                    .get(cls.as_str())
+                    .and_then(|class_def| {
+                        class_def
+                            .attributes
+                            .iter()
+                            .find(|attr| attr.name == bare && attr.sigil == sigil)
+                            .and_then(|attr| attr.type_constraint.clone())
+                    })
+            })?
+        } else {
+            self.get_attr_type_constraint(&class_name, bare)?
+        };
         // A nested class type (`class URI { class Authority {}; has Authority
         // $.authority }`) is declared by its short name but registered fully
         // qualified — resolve it so the reset type object dispatches methods.

@@ -1887,11 +1887,21 @@ impl Interpreter {
                             {
                                 let sigil = sigil_map.get(k).copied().unwrap_or('$');
                                 let mut value = v.clone();
+                                let attr_type_constraint = class_attrs_info
+                                    .iter()
+                                    .find(|attr| attr.name == *k && attr.sigil == sigil)
+                                    .and_then(|attr| {
+                                        super::attribute_type_constraint(
+                                            &class_attrs_info,
+                                            attr,
+                                            &attr_type_constraints,
+                                        )
+                                    });
                                 // A coercion-typed attribute (`has Int() $.x`)
                                 // coerces its provided value through the target
                                 // type (built-in coercion or a user COERCE method).
                                 if sigil == '$'
-                                    && let Some(tc) = attr_type_constraints.get(k)
+                                    && let Some(tc) = attr_type_constraint.as_ref()
                                     && crate::runtime::types::is_coercion_constraint(tc)
                                 {
                                     value = self.coerce_value_for_constraint(tc, value);
@@ -1926,7 +1936,9 @@ impl Interpreter {
                                         coerced
                                     }
                                 };
-                                attrs.insert(k.clone(), coerced);
+                                let storage_key =
+                                    super::attribute_storage_key(&class_attrs_info, k, sigil);
+                                attrs.insert(storage_key, coerced);
                             }
                             // When BUILD exists, named args are passed to BUILD
                             // which controls attribute initialization directly
@@ -1997,8 +2009,10 @@ impl Interpreter {
                 // `.^name` is `Slip` and whose re-iteration differs from raku's `Array`.
                 for attr in &class_attrs_info {
                     let attr_name = &attr.name;
+                    let storage_key =
+                        super::attribute_storage_key(&class_attrs_info, attr_name, attr.sigil);
                     let flat_items = if attr.sigil == '@' {
-                        match attrs.get(attr_name).map(Value::view) {
+                        match attrs.get(storage_key).map(Value::view) {
                             Some(ValueView::Slip(items)) => Some((**items).clone()),
                             Some(ValueView::Seq(items)) => Some(items.to_vec()),
                             _ => None,
@@ -2011,16 +2025,18 @@ impl Interpreter {
                             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             ArrayKind::Array,
                         );
-                        attrs.insert(attr_name.clone(), flattened);
+                        attrs.insert(storage_key, flattened);
                     }
                 }
                 // For @-sigiled attributes with shaped array declarations,
                 // convert user-provided values to shaped arrays preserving shape.
                 for attr in &class_attrs_info {
                     let attr_name = &attr.name;
+                    let storage_key =
+                        super::attribute_storage_key(&class_attrs_info, attr_name, attr.sigil);
                     if attr.sigil == '@'
                         && let Some(dims) = &attr.declared_shape
-                        && let Some(val) = attrs.get(attr_name)
+                        && let Some(val) = attrs.get(storage_key)
                         && !matches!(val.view(), ValueView::Array(_, ArrayKind::Shaped))
                     {
                         let items = match val.view() {
@@ -2030,7 +2046,7 @@ impl Interpreter {
                         let shaped =
                             Value::array_with_kind(crate::gc::Gc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(dims));
-                        attrs.insert(attr_name.clone(), shaped);
+                        attrs.insert(storage_key, shaped);
                     }
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
@@ -2086,13 +2102,20 @@ impl Interpreter {
                     }
                 }
                 for attr in class_attrs_info.clone() {
+                    let attr_type_constraint = super::attribute_type_constraint(
+                        &class_attrs_info,
+                        &attr,
+                        &attr_type_constraints,
+                    );
                     let ClassAttributeDef {
                         name: attr_name,
                         default,
                         sigil,
                         ..
                     } = attr;
-                    if attrs.contains_key(&attr_name) {
+                    let storage_key =
+                        super::attribute_storage_key(&class_attrs_info, &attr_name, sigil);
+                    if attrs.contains_key(storage_key) {
                         continue;
                     }
                     // Clone the override out and drop the registry guard before
@@ -2119,7 +2142,7 @@ impl Interpreter {
                             build_override,
                             seed: seed.clone(),
                         });
-                        attrs.insert(attr_name, seed);
+                        attrs.insert(storage_key, seed);
                         continue;
                     }
                     let val = if let Some(build_override) = build_override {
@@ -2152,14 +2175,14 @@ impl Interpreter {
                     // provided value. (The bare type-object default for an
                     // uninitialized coercion attribute coerces to itself.)
                     let val = if sigil == '$'
-                        && let Some(tc) = attr_type_constraints.get(&attr_name)
+                        && let Some(tc) = attr_type_constraint.as_ref()
                         && crate::runtime::types::is_coercion_constraint(tc)
                     {
                         self.coerce_value_for_constraint(tc, val)
                     } else {
                         val
                     };
-                    attrs.insert(attr_name, val);
+                    attrs.insert(storage_key, val);
                 }
                 // Embed `is default(...)` element defaults into `@`/`%` containers
                 // (evaluating any role-deferred expression while type params are
@@ -2172,8 +2195,10 @@ impl Interpreter {
                 // final attributes after the BUILD phase (a deferred initializer
                 // implies a BUILD phase, so that pass always happens).
                 {
-                    let deferred_names: std::collections::HashSet<&str> =
-                        deferred_defaults.iter().map(|d| d.name.as_str()).collect();
+                    let deferred_names: std::collections::HashSet<(&str, char)> = deferred_defaults
+                        .iter()
+                        .map(|d| (d.name.as_str(), d.sigil))
+                        .collect();
                     let pruned_info: Vec<ClassAttributeDef>;
                     let pruned_attrs: AttrMap;
                     let (check_info, check_attrs) = if deferred_names.is_empty() {
@@ -2181,12 +2206,13 @@ impl Interpreter {
                     } else {
                         pruned_info = class_attrs_info
                             .iter()
-                            .filter(|a| !deferred_names.contains(a.name.as_str()))
+                            .filter(|a| !deferred_names.contains(&(a.name.as_str(), a.sigil)))
                             .cloned()
                             .collect();
                         let mut pruned = attrs.clone();
-                        for name in &deferred_names {
-                            pruned.remove(*name);
+                        for (name, sigil) in &deferred_names {
+                            let key = super::attribute_storage_key(&class_attrs_info, name, *sigil);
+                            pruned.remove(key);
                         }
                         pruned_attrs = pruned;
                         (&pruned_info[..], &pruned_attrs)
@@ -2244,7 +2270,12 @@ impl Interpreter {
                     for attr in &class_attrs_info {
                         let attr_name = &attr.name;
                         if let Some(reason) = &attr.is_required {
-                            let attr_val = attrs.get(attr_name.as_str());
+                            let key = super::attribute_storage_key(
+                                &class_attrs_info,
+                                attr_name,
+                                attr.sigil,
+                            );
+                            let attr_val = attrs.get(key);
                             // The pre-BUILD seed for an unset untyped
                             // attribute is the Any type object, not Nil.
                             let is_set =
@@ -2457,7 +2488,11 @@ impl Interpreter {
                     if !matches!(sigil, '@' | '%') {
                         continue;
                     }
-                    let Some(elem_type) = attr_type_constraints.get(attr_name).cloned() else {
+                    let Some(elem_type) = super::attribute_type_constraint(
+                        &class_attrs_info,
+                        attr,
+                        &attr_type_constraints,
+                    ) else {
                         continue;
                     };
                     // Only plain class element types (`has Int @.nums`). Native
@@ -2474,10 +2509,12 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    if let Some(val) = attrs.get(attr_name).cloned() {
+                    let storage_key =
+                        super::attribute_storage_key(&class_attrs_info, attr_name, sigil);
+                    if let Some(val) = attrs.get(storage_key).cloned() {
                         let tagged =
                             self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val)?;
-                        attrs.insert(attr_name.clone(), tagged);
+                        attrs.insert(storage_key, tagged);
                     }
                 }
                 // Apply `has $.x does Role` attribute traits (shared with the

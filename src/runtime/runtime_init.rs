@@ -462,6 +462,7 @@ impl Interpreter {
                     is_rw: false,
                     is_required: None,
                     sigil,
+                    type_constraint: None,
                     where_constraint: None,
                     declared_shape: None,
                 }
@@ -1511,6 +1512,7 @@ impl Interpreter {
                             is_rw: false,
                             is_required: None,
                             sigil: *sigil,
+                            type_constraint: None,
                             where_constraint: None,
                             declared_shape: None,
                         })

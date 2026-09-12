@@ -25,8 +25,23 @@ impl Interpreter {
             return Ok(());
         };
         // Already declared (e.g. a duplicate EVAL): no-op rather than abort.
-        if class_def.attributes.iter().any(|a| &a.name == attr_name) {
+        if class_def
+            .attributes
+            .iter()
+            .any(|a| &a.name == attr_name && a.sigil == decl.sigil)
+        {
             return Ok(());
+        }
+        if crate::runtime::attribute_accessor_conflicts(
+            &class_def.attributes,
+            attr_name,
+            decl.sigil,
+            decl.is_public,
+        ) {
+            return Err(RuntimeError::new(format!(
+                "Two or more attributes declared that both want an accessor method '{}'",
+                attr_name
+            )));
         }
         self.validate_static_attribute_default(
             attr_name,
@@ -43,6 +58,10 @@ impl Interpreter {
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
+            type_constraint: decl
+                .type_constraint
+                .as_ref()
+                .map(|tc| tc.replace("::?CLASS", class_name)),
             where_constraint: None,
             declared_shape: decl.declared_shape.clone(),
         });
@@ -116,6 +135,7 @@ impl Interpreter {
         &mut self,
         cx: &mut ClassBodyCx<'_>,
         name: crate::symbol::Symbol,
+        sigil: char,
     ) -> Result<ClassBodyFlow, RuntimeError> {
         // Look up this attribute's precompiled descriptor (ADR-0019 D2b
         // remainder/D10) by name — `compile_class_attr_decls` walks the same
@@ -125,7 +145,7 @@ impl Interpreter {
         let decl = cx
             .attr_decls
             .iter()
-            .find(|(n, _)| *n == name)
+            .find(|(n, decl)| *n == name && decl.sigil == sigil)
             .map(|(_, decl)| decl.clone())
             .expect("class_body_has_decl: no attr_decls entry for this Attr op's name");
         let attr_name_str = decl.name.clone();
@@ -190,13 +210,26 @@ impl Interpreter {
             .class_def
             .attributes
             .iter()
-            .any(|a| a.name == attr_name_str)
+            .any(|a| a.name == attr_name_str && a.sigil == decl.sigil)
         {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();
             return Err(RuntimeError::new(format!(
                 "X::Comp::Trait::Duplicate: attribute '{}' already exists in class '{}' (possibly from role composition)",
                 attr_name_str, cx.name,
+            )));
+        }
+        if crate::runtime::attribute_accessor_conflicts(
+            &cx.class_def.attributes,
+            &attr_name_str,
+            decl.sigil,
+            decl.is_public,
+        ) {
+            self.set_current_package(cx.saved_package.clone());
+            self.env = cx.saved_env.clone();
+            return Err(RuntimeError::new(format!(
+                "Two or more attributes declared that both want an accessor method '{}'",
+                attr_name_str
             )));
         }
         let effective_is_rw =
@@ -208,6 +241,10 @@ impl Interpreter {
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
+            type_constraint: decl
+                .type_constraint
+                .as_ref()
+                .map(|tc| tc.replace("::?CLASS", cx.name)),
             where_constraint: decl.where_constraint.clone(),
             declared_shape: decl.declared_shape.clone(),
         });

@@ -707,10 +707,15 @@ impl Interpreter {
         if skip {
             return;
         }
-        let names: Vec<crate::symbol::Symbol> = attributes.keys().copied().collect();
-        for attr_name in names {
+        let class_attrs = self.collect_class_attributes(class_name);
+        for attr in &class_attrs {
+            if !matches!(attr.sigil, '@' | '%') {
+                continue;
+            }
+            let attr_name = &attr.name;
+            let key = super::attribute_storage_key(&class_attrs, attr_name, attr.sigil);
             if !matches!(
-                attributes.get(attr_name).map(Value::view),
+                attributes.get(key).map(Value::view),
                 Some(ValueView::Array(..)) | Some(ValueView::Hash(_))
             ) {
                 continue;
@@ -724,15 +729,15 @@ impl Interpreter {
                     let arg = self
                         .registry()
                         .class_attribute_default_exprs
-                        .get(&(class_name.to_string(), attr_name.resolve()))
+                        .get(&(class_name.to_string(), attr_name.clone()))
                         .cloned()?;
                     self.eval_decl_trait_arg(&arg).ok()
                 });
             if let Some(def) = def
-                && let Some(val) = attributes.remove(attr_name)
+                && let Some(val) = attributes.remove(key)
             {
                 let tagged = self.tag_container_default(val, def);
-                attributes.insert(attr_name, tagged);
+                attributes.insert(key, tagged);
             }
         }
     }
@@ -790,8 +795,7 @@ impl Interpreter {
         if !name.starts_with('%') {
             return None;
         }
-        let (bare, _) = crate::value::attr_twigil_base(name)?;
-        let tc = self.self_attr_type_constraint(bare)?;
+        let tc = self.self_attr_type_constraint(name)?;
         let (_, key_type) = crate::runtime::types::split_object_hash_constraint(&tc);
         key_type.map(str::to_string)
     }

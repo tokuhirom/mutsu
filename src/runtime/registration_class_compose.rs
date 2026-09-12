@@ -249,7 +249,23 @@ impl Interpreter {
                 ))
             };
         for attr in &role.attributes {
-            if !cx.class_def.attributes.iter().any(|a| a.name == attr.name) {
+            if !cx
+                .class_def
+                .attributes
+                .iter()
+                .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+            {
+                if crate::runtime::attribute_accessor_conflicts(
+                    &cx.class_def.attributes,
+                    &attr.name,
+                    attr.sigil,
+                    attr.is_public,
+                ) {
+                    return Err(RuntimeError::new(format!(
+                        "Two or more attributes declared that both want an accessor method '{}'",
+                        attr.name
+                    )));
+                }
                 cx.class_def.attributes.push(attr.clone());
             }
         }
