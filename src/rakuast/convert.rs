@@ -7,7 +7,7 @@
 //! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{AssignOp, Expr, ForMode, ParamDef, Stmt};
+use crate::ast::{AssignOp, EnumVariantForm, Expr, ForMode, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
@@ -826,6 +826,45 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
                 fields,
+            })))
+        }
+        // `enum NAME <A B>` / `enum NAME <<A B>>` / `enum NAME (A => 1)`
+        // -> `Type::Enum(name => Name, term => ...)`. The runtime only needs
+        // normalized variants, but Rakudo preserves the source-level quoting
+        // form in `term`, so the parser records it on `Stmt::EnumDecl`.
+        Stmt::EnumDecl {
+            name,
+            variants,
+            variant_form,
+            is_export,
+            export_tags,
+            is_my,
+            base_type,
+            roles,
+            ..
+        } => {
+            if *is_export
+                || !export_tags.is_empty()
+                || *is_my
+                || base_type.is_some()
+                || !roles.is_empty()
+                || matches!(variant_form, EnumVariantForm::Computed)
+                || variants.is_empty()
+            {
+                return Err(unsupported("enum with scope / traits / computed body"));
+            }
+            let term = match variant_form {
+                EnumVariantForm::Words => enum_quoted_string(variants, "words")?,
+                EnumVariantForm::QuoteWords => enum_quoted_string(variants, "quotewords")?,
+                EnumVariantForm::PairList => enum_pair_list(variants)?,
+                EnumVariantForm::Computed => unreachable!("checked above"),
+            };
+            Ok(Some(statement_expression(RakuAstNode {
+                class: RakuAstClass::TypeEnum,
+                fields: vec![
+                    node_field(Some("name"), name_from_identifier(&name.resolve())),
+                    node_field(Some("term"), term),
+                ],
             })))
         }
         // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`.
@@ -2965,6 +3004,84 @@ fn quoted_string(str_value: Value) -> RakuAstNode {
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(seg))]),
         }],
     }
+}
+
+/// The unevaluated word-list term of an enum declaration. `processors` is part
+/// of the RakuAST contract: omitting it would turn `Red Green` into one enum
+/// member named "Red Green" when the node is evaluated.
+fn enum_quoted_string(
+    variants: &[(String, Option<Expr>)],
+    processor: &'static str,
+) -> Result<RakuAstNode, RuntimeError> {
+    if variants.iter().any(|(_, value)| value.is_some()) {
+        return Err(unsupported("word-quoted enum with explicit values"));
+    }
+    let text = variants
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let segment = RakuAstNode {
+        class: RakuAstClass::StrLiteral,
+        fields: vec![leaf_field(None, Value::str(text))],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::QuotedString,
+        fields: vec![
+            RakuAstField {
+                name: Some("processors"),
+                value: RakuAstFieldValue::List(vec![
+                    Value::str(processor.to_string()),
+                    Value::str("val".to_string()),
+                ]),
+            },
+            RakuAstField {
+                name: Some("segments"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(segment))]),
+            },
+        ],
+    })
+}
+
+/// The parenthesized pair-list term of an enum declaration.
+fn enum_pair_list(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
+    let operands = variants
+        .iter()
+        .map(|(name, value)| {
+            let value = match value {
+                Some(value) => convert_expr(value)?,
+                None => RakuAstNode {
+                    class: RakuAstClass::TermEnum,
+                    fields: vec![leaf_field(None, Value::str("True".to_string()))],
+                },
+            };
+            Ok(Value::rakuast(Box::new(RakuAstNode {
+                class: RakuAstClass::FatArrow,
+                fields: vec![
+                    leaf_field(Some("key"), Value::str(name.clone())),
+                    node_field(Some("value"), value),
+                ],
+            })))
+        })
+        .collect::<Result<Vec<_>, RuntimeError>>()?;
+    let list = RakuAstNode {
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
+    };
+    let semilist = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(list))],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(None, semilist)],
+    })
 }
 
 /// A listop `say EXPR` — `Call::Name::WithoutParentheses`.

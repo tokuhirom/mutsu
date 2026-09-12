@@ -72,6 +72,7 @@ impl Interpreter {
             base_type,
             roles,
             language_version,
+            ..
         } = stmt
         {
             // See the class arm: `enum void <a b>` shadows NativeCall's `void`
