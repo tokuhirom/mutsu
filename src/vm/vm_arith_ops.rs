@@ -158,7 +158,7 @@ impl Interpreter {
     /// invokes a block that was compiled in the *main script*, so the script's
     /// own `sub infix:<+>` must still apply inside it.
     #[inline]
-    fn user_infix_override(&self, canon: &str) -> bool {
+    pub(super) fn user_infix_override(&self, canon: &str) -> bool {
         if self.user_declared_infix_ops.is_empty() {
             return false;
         }
