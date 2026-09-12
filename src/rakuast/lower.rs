@@ -1381,7 +1381,7 @@ fn lower_regex_adverb(node: &RakuAstNode) -> Result<crate::regex_tree::RegexAdve
 /// RakuAST and the compiler still emits the existing match opcode.
 fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
     if tree.adverbs.is_empty() {
-        return Ok(Value::regex(tree.to_source()));
+        return Ok(Value::regex(tree.to_source()).with_regex_source_tree(tree.clone()));
     }
     let mut pattern = tree.to_source();
     let mut value = RegexAdverbs {
@@ -1401,6 +1401,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         samecase: false,
         samespace: false,
         captured: None,
+        source_tree: None,
     };
     for adverb in &tree.adverbs {
         if adverb.argument.is_some() {
@@ -1441,7 +1442,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         }
     }
     value.pattern = Arc::new(pattern);
-    Ok(Value::regex_with_adverbs(value))
+    Ok(Value::regex_with_adverbs(value).with_regex_source_tree(tree.clone()))
 }
 
 fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {

@@ -952,16 +952,11 @@ impl Interpreter {
                             if !a.global && !a.exhaustive && !a.overlap && !a.perl5
                     ) =>
             {
-                let pat: String = match right.view() {
-                    ValueView::Regex(p) => p.to_string(),
-                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
-                    _ => unreachable!(),
-                };
                 let text = self.regex_match_text(left);
                 // Set $_ to the match target so $( $_ ) works inside regex
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), Value::str(text.clone()));
-                let match_result = self.regex_match_with_captures(&pat, &text);
+                let match_result = self.regex_match_with_captures_value(right, &text);
                 if let Some(v) = &saved_topic {
                     self.env.insert("_".to_string(), v.clone());
                 } else {

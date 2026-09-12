@@ -100,8 +100,13 @@ impl Compiler {
             Expr::LiteralSrc(v, _) => {
                 self.compile_expr(&Expr::Literal(v.clone()));
             }
-            Expr::RegexLiteral { value, .. } => {
-                self.compile_expr(&Expr::Literal(value.clone()));
+            Expr::RegexLiteral { value, tree } => {
+                // The tree is part of the AST contract, not merely parser
+                // bookkeeping. Reattach it here as well so a serialized AST
+                // whose Value payload predates provenance still reaches the
+                // value-aware execution entry point.
+                let value = value.with_regex_source_tree(tree.clone());
+                self.compile_expr(&Expr::Literal(value));
             }
             Expr::Literal(v) => match v.view() {
                 ValueView::Nil => {
@@ -152,8 +157,9 @@ impl Compiler {
             Expr::MatchRegex(v) => {
                 self.compile_match_regex(v);
             }
-            Expr::MatchRegexTree { value, .. } => {
-                self.compile_match_regex(value);
+            Expr::MatchRegexTree { value, tree } => {
+                let value = value.with_regex_source_tree(tree.clone());
+                self.compile_match_regex(&value);
             }
             Expr::Var(name) => {
                 let name = self.resolve_self_lexical(name);

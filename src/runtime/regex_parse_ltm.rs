@@ -2,12 +2,13 @@ use super::regex_parse::*;
 use super::*;
 use crate::regex_tree::RegexTree;
 use ::regex::Regex;
+use std::hash::{Hash, Hasher};
 
 /// Lower the static subset of the shared source tree directly to the matcher
 /// plan.  Prefixes are the execution spelling produced by the existing parser;
 /// anything outside this small flag set stays on `parse_regex_structural`,
 /// because it may carry sigspace, captures, interpolation, or package state.
-fn lower_static_execution_pattern(pattern: &str) -> Option<RegexPattern> {
+fn static_execution_policy(pattern: &str) -> Option<(bool, bool, bool, &str)> {
     fn strip_flag<'a>(source: &'a str, flag: &str) -> Option<&'a str> {
         let rest = source.strip_prefix(flag)?;
         if rest.is_empty()
@@ -50,7 +51,20 @@ fn lower_static_execution_pattern(pattern: &str) -> Option<RegexPattern> {
         }
     }
 
+    Some((ratchet, ignore_case, ignore_mark, source))
+}
+
+fn lower_static_execution_pattern(pattern: &str) -> Option<RegexPattern> {
+    let (ratchet, ignore_case, ignore_mark, source) = static_execution_policy(pattern)?;
     let tree = RegexTree::parse_static(source, false)?;
+    tree.lower_execution(ratchet, ignore_case, ignore_mark)
+}
+
+/// Lower a parser-produced tree using the execution policy already encoded in
+/// the regex value. The value's string remains the compatibility spelling, but
+/// the body is no longer reparsed when the tree can provide the static plan.
+fn lower_static_execution_tree(pattern: &str, tree: &RegexTree) -> Option<RegexPattern> {
+    let (ratchet, ignore_case, ignore_mark, _) = static_execution_policy(pattern)?;
     tree.lower_execution(ratchet, ignore_case, ignore_mark)
 }
 
@@ -1512,6 +1526,57 @@ impl Interpreter {
         self.parse_regex_uncached(pattern, RegexParseMode::Match)
             .map(std::sync::Arc::new)
     }
+
+    /// Parse a regex value while retaining parser-produced source provenance.
+    /// Static values use the shared `RegexTree` directly; values synthesized by
+    /// runtime code, and trees outside the current execution subset, retain the
+    /// established string parser path.
+    pub(super) fn parse_regex_value(&self, value: &Value) -> Option<std::sync::Arc<RegexPattern>> {
+        let pattern = match value.view() {
+            ValueView::Regex(pattern) => pattern.to_string(),
+            ValueView::RegexWithAdverbs(adverbs) => adverbs.pattern.to_string(),
+            _ => return None,
+        };
+        let Some(tree) = value.regex_source_tree() else {
+            return self.parse_regex(&pattern);
+        };
+        if !regex_pattern_is_static(&pattern) {
+            return self.parse_regex(&pattern);
+        }
+
+        // Include the tree fingerprint in the existing plan-cache key. This
+        // keeps the cache honest if a future parser creates two source trees
+        // with the same compatibility spelling.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        tree.hash(&mut hasher);
+        let key = format!(
+            "{}\u{0}{}\u{0}tree:{:016x}",
+            self.current_package(),
+            pattern,
+            hasher.finish()
+        );
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(cached) = REGEX_PARSE_CACHE.with(|c| {
+            c.borrow()
+                .get(&key)
+                .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                .map(|(_, p)| std::sync::Arc::clone(p))
+        }) {
+            return Some(cached);
+        }
+
+        let parsed = lower_static_execution_tree(&pattern, tree)
+            .map(std::sync::Arc::new)
+            .or_else(|| self.parse_regex(&pattern));
+        if let Some(ref p) = parsed {
+            REGEX_PARSE_CACHE.with(|c| {
+                c.borrow_mut()
+                    .insert(key, (tok_gen, std::sync::Arc::clone(p)));
+            });
+        }
+        parsed
+    }
 }
 
 #[cfg(test)]
@@ -1553,5 +1618,22 @@ mod static_execution_tests {
         assert!(lower_static_execution_pattern("(a)").is_none());
         assert!(lower_static_execution_pattern(r#""\x20""#).is_none());
         assert!(lower_static_execution_pattern("\u{1}42\u{1}").is_none());
+    }
+
+    #[test]
+    fn lowers_from_parser_tree_without_using_value_spelling() {
+        let tree = RegexTree::parse_static("tree", false).expect("source tree");
+        let value = Value::regex("stale".to_string()).with_regex_source_tree(tree);
+        let interp = Interpreter::new();
+        let parsed = interp.parse_regex_value(&value).expect("execution plan");
+        let literals: String = parsed
+            .tokens
+            .iter()
+            .filter_map(|token| match token.atom {
+                RegexAtom::Literal(ch) => Some(ch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(literals, "tree");
     }
 }
