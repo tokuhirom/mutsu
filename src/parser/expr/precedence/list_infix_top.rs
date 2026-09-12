@@ -22,7 +22,28 @@ use super::*;
 /// which is TIGHTER than item assignment and therefore appears here rather than
 /// at the top-level word-logical layer.
 pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, left) = assign_not_expr_mode(input, mode)?;
+    item_expr_inner(input, mode, true)
+}
+
+/// [`item_expr`], with the item-assignment layer switchable.
+///
+/// A conditional's ELSE branch is parsed with `allow_assign == false`. `?? !!`
+/// sits at item-assignment precedence and is right-associative, so an
+/// assignment written after the else branch takes the WHOLE conditional as its
+/// lvalue rather than nesting inside that branch (`c ?? $a !! $b = 3` is
+/// `(c ?? $a !! $b) = 3`, verified against rakudo). Parsing the branch
+/// no-assign leaves the operator for
+/// [`super::ternary::ternary_trailing_assignment`] below, which is where that
+/// lvalue reading is built. The THEN branch keeps the
+/// assignment layer: an assignment there really does sit between `??` and
+/// `!!`, which is rakudo's
+/// `X::Syntax::ConditionalOperator::PrecedenceTooLoose`.
+fn item_expr_inner(input: &str, mode: ExprMode, allow_assign: bool) -> PResult<'_, Expr> {
+    let (rest, left) = if allow_assign {
+        assign_not_expr_mode(input, mode)?
+    } else {
+        not_expr_mode(input, mode)?
+    };
     // If the item layer already consumed an assignment (`$x = ...`), the ternary
     // condition would be that assignment, which is looser than `?? !!` — so a
     // following `??` binds to the assignment's RHS, which was already parsed
@@ -71,7 +92,7 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (after_bang, _) = parse_tag(after_then, "!!")
         .map_err(|err| ternary_missing_bang_bang_error(after_then, err, after_then.len()))?;
     let (after_bang, _) = ws(after_bang)?;
-    let (rest, else_expr) = item_expr(after_bang, mode).map_err(|err| {
+    let (rest, else_expr) = item_expr_inner(after_bang, mode, false).map_err(|err| {
         enrich_expected_error(err, "expected else-expression after '!!'", after_bang.len())
     })?;
     // Only a LOOSE assignment is an error here; the mutating method call `.=` is
@@ -82,22 +103,18 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             &spelled_assign_operator(after_q),
         ));
     }
-    if !crate::parser::expr::allow_ternary_else_assignment()
-        && is_assignment_expr(&else_expr)
-        && !assign_operator_is_tight(&else_expr)
+    let ternary_expr = Expr::Ternary {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    };
+    if allow_assign
+        && let Some((rest, assigned)) =
+            super::ternary::ternary_trailing_assignment(rest, &ternary_expr, mode)?
     {
-        return Err(conditional_precedence_too_loose_error(
-            &spelled_assign_operator(after_bang),
-        ));
+        return Ok((rest, assigned));
     }
-    Ok((
-        rest,
-        Expr::Ternary {
-            cond: Box::new(cond),
-            then_expr: Box::new(then_expr),
-            else_expr: Box::new(else_expr),
-        },
-    ))
+    Ok((rest, ternary_expr))
 }
 
 /// The top-level list-infix layer: `Z`, `X`, their meta-ops, infixed functions,

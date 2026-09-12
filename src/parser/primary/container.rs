@@ -44,3 +44,7 @@ pub(super) use sigil_context::{
 // pub(crate) re-exports — visible throughout the crate
 pub(crate) use allomorph::angle_word_value;
 pub(crate) use meta_ops::{lift_list_infix_in_arg_list, try_parse_sequence_arg_list};
+// A colonpair's parenthesized value takes a statement modifier just as a plain
+// parenthesized group does (`:t( $x.uc given $x )`), so the colonpair parser in
+// `parser::primary::misc` needs the same helper `paren` uses.
+pub(super) use meta_ops::try_inline_modifier;

@@ -787,6 +787,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         (rest, None)
     };
 
+    // `has $.x := ...` is a compile-time refusal in rakudo: a per-instance
+    // attribute's container is built by the constructor, so there is nothing
+    // for `:=` to bind at declaration time. Only the class-level spellings
+    // (`my $.x := ...`, `our $.x := ...`) name an already-existing container,
+    // and `try_dot_twigil_attr` parses those. Without this the `:=` fell
+    // through as unconsumed input and the whole compilation unit failed with a
+    // generic "Confused".
+    if rest.starts_with(":=") {
+        return Err(super::helpers::attribute_bind_initializer_error());
+    }
+
     // Default value
     let (rest, mut default) = if let Some(stripped) = rest.strip_prefix(".=") {
         let (rest, _) = ws(stripped)?;

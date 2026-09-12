@@ -294,22 +294,82 @@ pub(crate) fn call_arg_ternary_expr(input: &str) -> PResult<'_, Expr> {
 /// because its no-`??` fallback (`or_expr_mode`) includes assignment, which would
 /// swallow the default value (e.g. `$x where Int = 9`).
 pub(crate) fn ternary_no_assign(input: &str) -> PResult<'_, Expr> {
-    let (rest, cond) = if crate::parser::expr::allow_ternary_else_assignment() {
-        // A sigilless declaration initializer is the one Raku grammar context
-        // where an assignment may be nested in the else branch of `?? !!`.
-        // Parse that branch at the ordinary expression precedence so indexed
-        // compound assignments such as `%cache<key> //= value` are consumed.
-        or_expr_mode(input, ExprMode::Full)?
-    } else {
-        or_expr_no_assign_mode(input, ExprMode::Full)?
-    };
+    ternary_no_assign_mode(input, ExprMode::Full)
+}
+
+/// [`ternary_no_assign`] at an explicit [`ExprMode`] -- what a conditional's own
+/// ELSE branch is parsed with, so a trailing assignment stays for
+/// [`ternary_trailing_assignment`] instead of nesting inside that branch.
+pub(crate) fn ternary_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    let (rest, cond) = or_expr_no_assign_mode(input, mode)?;
     let (rest_ws, _) = ws(rest)?;
     if rest_ws.starts_with("??") {
         // A conditional constraint: the full ternary parser is safe because a
         // top-level `=` only appears after the complete `?? !!` expression.
-        return ternary_mode(input, ExprMode::Full);
+        return ternary_mode(input, mode);
     }
     Ok((rest, cond))
+}
+
+/// Apply a trailing item-assignment to a COMPLETE conditional, which the
+/// conditional itself becomes the lvalue of.
+///
+/// `?? !!` sits at *item assignment* precedence and is right-associative, so an
+/// assignment written after the else branch does not nest inside that branch --
+/// it takes the whole conditional as its lvalue. `raku -e 'my $x=5; my $y=7;
+/// 1 ?? $y !! $x = 3; say "$x $y"'` prints `5 3`: the THEN branch was written,
+/// so the parse is `(1 ?? $y !! $x) = 3`, never `1 ?? $y !! ($x = 3)`. Every
+/// compound spelling behaves the same (`+=`, `//=`, `min=`, ...), and
+/// `build_compound_assign_expr` already knows how to push one into both
+/// branches of a ternary lvalue so only the selected branch is written and the
+/// right-hand side is evaluated once.
+///
+/// Only an assignment BETWEEN `??` and `!!` is the
+/// `X::Syntax::ConditionalOperator::PrecedenceTooLoose` error rakudo reports;
+/// the callers keep that guard on the then-branch.
+///
+/// `after_ternary` is the unconsumed input right after the else branch (not yet
+/// whitespace-skipped). Returns `None`, consuming nothing, when no assignment
+/// operator follows.
+pub(crate) fn ternary_trailing_assignment<'a>(
+    after_ternary: &'a str,
+    ternary_expr: &Expr,
+    mode: ExprMode,
+) -> Result<Option<(&'a str, Expr)>, PError> {
+    let (r, _) = ws(after_ternary)?;
+    // Compound spellings first, so `//=` is not read as a bare `=` with a `//`
+    // glued to the else branch.
+    if let Some((after_op, op)) = parse_compound_assign_op(r) {
+        let (rhs_in, _) = ws(after_op)?;
+        let (r2, rhs) = ternary_mode(rhs_in, mode).map_err(|err| {
+            enrich_expected_error(
+                err,
+                "expected value after compound assignment",
+                rhs_in.len(),
+            )
+        })?;
+        let assigned =
+            crate::parser::stmt::assign::build_compound_assign_expr(ternary_expr.clone(), op, rhs)?;
+        return Ok(Some((r2, assigned)));
+    }
+    if r.starts_with('=')
+        && !r.starts_with("==")
+        && !r.starts_with("=>")
+        && !r.starts_with("=:=")
+        && !r.starts_with("=~=")
+    {
+        let (rhs_in, _) = ws(&r[1..])?;
+        let (r2, rhs) = ternary_mode(rhs_in, mode)
+            .map_err(|err| enrich_expected_error(err, "expected value after '='", rhs_in.len()))?;
+        return Ok(Some((
+            r2,
+            Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![ternary_expr.clone(), Expr::ArrayLiteral(Vec::new()), rhs],
+            },
+        )));
+    }
+    Ok(None)
 }
 
 pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
@@ -379,14 +439,22 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             parse_tag(input, "!!")?
         };
         let (input, _) = ws(input)?;
-        // Parse the else-expr. In Full mode do NOT absorb a trailing assignment:
-        // `=` is LOOSER than the conditional `?? !!`, so `cond ?? t !! lhs = rhs`
-        // parses as `(cond ?? t !! lhs) = rhs` (an lvalue-ternary assignment),
-        // not as an assignment nested inside the else-branch. Parsing the
-        // else-branch no-assign leaves `= rhs` for the trailing handler below.
+        // Parse the else-expr WITHOUT absorbing a trailing assignment: `?? !!`
+        // sits at item-assignment precedence and is right-associative, so
+        // `cond ?? t !! lhs = rhs` parses as `(cond ?? t !! lhs) = rhs` (an
+        // lvalue-ternary assignment), not as an assignment nested inside the
+        // else-branch. Parsing the else-branch no-assign leaves the operator
+        // for the trailing handler below.
+        //
+        // The two call-argument modes are the exception: they disable the
+        // item-assignment layer wholesale (`assign_not_expr_mode`), because a
+        // listop's own comma-list machinery owns that boundary. They therefore
+        // neither parse the branch no-assign nor claim the trailing operator.
+        let handles_trailing_assign =
+            !matches!(mode, ExprMode::NoSequenceNoFeed | ExprMode::ListopArg);
         let else_src = input;
-        let (input, else_expr) = if mode == ExprMode::Full {
-            ternary_no_assign(input).map_err(|err| {
+        let (input, else_expr) = if handles_trailing_assign {
+            ternary_no_assign_mode(input, mode).map_err(|err| {
                 enrich_expected_error(err, "expected else-expression after '!!'", input.len())
             })?
         } else {
@@ -404,10 +472,7 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 &spelled_assign_operator(then_src),
             ));
         }
-        if !crate::parser::expr::allow_ternary_else_assignment()
-            && is_assignment_expr(&else_expr)
-            && !assign_operator_is_tight(&else_expr)
-        {
+        if is_assignment_expr(&else_expr) && !assign_operator_is_tight(&else_expr) {
             return Err(conditional_precedence_too_loose_error(
                 &spelled_assign_operator(else_src),
             ));
@@ -452,28 +517,14 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 else_expr: Box::new(else_expr),
             }
         };
-        // A trailing simple assignment binds the whole ternary as an lvalue:
-        // `cond ?? $a !! $b = rhs` is `(cond ?? $a !! $b) = rhs` (raku precedence).
-        if mode == ExprMode::Full {
-            let (after_ws, _) = ws(input)?;
-            if after_ws.starts_with('=')
-                && !after_ws.starts_with("==")
-                && !after_ws.starts_with("=>")
-                && !after_ws.starts_with("=:=")
-                && !after_ws.starts_with("=~=")
-            {
-                let (rhs_in, _) = ws(&after_ws[1..])?;
-                let (input2, rhs) = ternary_mode(rhs_in, mode).map_err(|err| {
-                    enrich_expected_error(err, "expected value after '='", rhs_in.len())
-                })?;
-                return Ok((
-                    input2,
-                    Expr::Call {
-                        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
-                        args: vec![ternary_expr, Expr::ArrayLiteral(Vec::new()), rhs],
-                    },
-                ));
-            }
+        // A trailing assignment binds the whole ternary as an lvalue:
+        // `cond ?? $a !! $b = rhs` is `(cond ?? $a !! $b) = rhs`, and likewise
+        // for every compound spelling (see `ternary_trailing_assignment`).
+        if handles_trailing_assign
+            && let Some((input2, assigned)) =
+                ternary_trailing_assignment(input, &ternary_expr, mode)?
+        {
+            return Ok((input2, assigned));
         }
         return Ok((input, ternary_expr));
     }

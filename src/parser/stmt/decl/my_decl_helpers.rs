@@ -89,8 +89,7 @@ pub(super) fn parse_sigilless_decl(
     let (r, _) = ws(r)?;
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
-        let (r, expr) =
-            crate::parser::expr::with_ternary_else_assignment(|| parse_assign_expr_or_comma(r))?;
+        let (r, expr) = parse_assign_expr_or_comma(r)?;
         let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
@@ -152,8 +151,7 @@ pub(super) fn parse_sigilless_decl(
     if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
         let r = &r[1..];
         let (r, _) = ws(r)?;
-        let (r, expr) =
-            crate::parser::expr::with_ternary_else_assignment(|| parse_assign_expr_or_comma(r))?;
+        let (r, expr) = parse_assign_expr_or_comma(r)?;
         let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
@@ -311,7 +309,18 @@ pub(super) fn try_dot_twigil_attr<'a>(
         })?;
         let attr_name = attr_name.to_string();
         let (after_name, _) = ws(after_name)?;
-        let (after_name, default) = if after_name.starts_with('=')
+        // A class-level attribute may be BOUND as well as assigned:
+        // `our @.operations := @operations` (Math::Symbolic, #7954) makes the
+        // accessor hand back the very container on the right, so a later push
+        // to it is visible through the accessor. `has @.x := ...` is an error
+        // in rakudo ("Cannot use := to initialize an attribute"), which is why
+        // this branch lives here -- only the `my`/`our` scoped spellings reach
+        // it -- and not in `has_decl`, which rejects it outright.
+        let (after_name, default) = if let Some(r) = after_name.strip_prefix(":=") {
+            let (r, _) = ws(r)?;
+            let (r, expr) = expression(r)?;
+            (r, Some(expr))
+        } else if after_name.starts_with('=')
             && !after_name.starts_with("==")
             && !after_name.starts_with("=>")
         {

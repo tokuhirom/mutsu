@@ -311,6 +311,23 @@ pub(super) fn is_parser_keyword(name: &str) -> bool {
 /// destructuring list lowers to `VarDecl`s that never learn they were `our`,
 /// and a class attribute is a `HasDecl` the class-body planner compiles rather
 /// than `compile_stmt`.
+/// The compile-time refusal rakudo raises for `has $.x := ...`.
+///
+/// An attribute's per-instance storage is created by the constructor, so there
+/// is nothing for `:=` to bind at declaration time. Only the class-level
+/// spellings (`my $.x := ...`, `our $.x := ...`) name a container that already
+/// exists, and those are parsed by `try_dot_twigil_attr` instead. Verified
+/// against `raku -e 'class C { has $.x := 1 }'`, which raises `X::Comp::AdHoc`
+/// with exactly this message.
+pub(in crate::parser::stmt) fn attribute_bind_initializer_error() -> PError {
+    const MSG: &str = "Cannot use := to initialize an attribute";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(MSG.to_string()));
+    attrs.insert("payload".to_string(), Value::str(MSG.to_string()));
+    let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs);
+    PError::fatal_with_exception(MSG.to_string(), Box::new(ex))
+}
+
 pub(in crate::parser::stmt) fn our_type_constraint_error() -> PError {
     const MSG: &str = "Cannot put a type constraint on an 'our'-scoped variable";
     let mut attrs = std::collections::HashMap::new();
