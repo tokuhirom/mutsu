@@ -266,6 +266,7 @@ impl Interpreter {
         mut attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "add-bytes" => {

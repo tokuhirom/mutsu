@@ -573,6 +573,7 @@ impl Interpreter {
         mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -896,6 +897,11 @@ impl Interpreter {
                 bump_supplier_done_count(supplier_id_from_attrs(&attrs));
                 let preserving = attrs.contains_key("preserving");
                 attrs.insert("done".to_string(), Value::TRUE);
+                // Everything from here on wakes the taps, and a concurrent
+                // `.emit` gates on exactly this flag (`supply_is_terminated`);
+                // publishing at return would let that emit slip past a `done`
+                // the taps have already been told about.
+                publish.publish(&attrs);
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     // With a tap already listening the done is delivered now, so
                     // it is not left in the preserved replay list for a later
@@ -1042,6 +1048,10 @@ impl Interpreter {
                 };
                 attrs.insert("done".to_string(), Value::TRUE);
                 attrs.insert("quit_reason".to_string(), reason.clone());
+                // Same as `done` above: the quit propagation below wakes the taps
+                // and runs their QUIT phasers, so the terminal state must already
+                // be on the shared cell when they look.
+                publish.publish(&attrs);
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_quit(supplier_id, reason.clone());
                 }

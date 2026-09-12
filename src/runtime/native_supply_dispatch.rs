@@ -365,7 +365,12 @@ impl Interpreter {
                 // there is a single source of truth. The &self path does not
                 // write the receiver attributes back, so the returned map is
                 // discarded (matching the prior immutable-tap behavior).
-                let (tap, _) = self.native_supply_mut(attributes.clone(), method, args)?;
+                let (tap, _) = self.native_supply_mut(
+                    attributes.clone(),
+                    method,
+                    args,
+                    &mut crate::runtime::native_methods::AttrPublisher::detached(),
+                )?;
                 Ok(tap)
             }
             "on-close" => {

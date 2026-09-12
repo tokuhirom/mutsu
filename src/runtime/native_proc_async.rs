@@ -222,18 +222,18 @@ pub(in crate::runtime) fn malformed_utf8_quit_value() -> Value {
 }
 
 impl Interpreter {
-    /// `live` is the receiver's shared attribute cell when the caller has it.
-    /// `start` needs it: it keeps the `.ready` promise as soon as the child is
-    /// spawned, and whatever wakes on that promise reads `started`/`pid` off the
-    /// cell straight away — long before this handler returns and its caller
-    /// commits. Publishing those two through the cell *before* the keep is what
-    /// makes `await $p.ready; $p.kill` well-defined (tokuhirom/mutsu#7923).
+    /// `publish` is the receiver's cross-thread publish point. `start` needs it:
+    /// it keeps the `.ready` promise as soon as the child is spawned, and whatever
+    /// wakes on that promise reads `started`/`pid` off the instance straight away
+    /// — long before this handler returns and the dispatcher commits. Publishing
+    /// those two *before* the keep is what makes `await $p.ready; $p.kill`
+    /// well-defined (tokuhirom/mutsu#7923).
     pub(super) fn native_proc_async_mut(
         &mut self,
         mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
-        live: Option<&crate::value::InstanceAttrs>,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "start" => {
@@ -249,9 +249,7 @@ impl Interpreter {
                 // `$p.started` while we are still in here. Rakudo sets its
                 // `$!started` attribute first thing in `start` for the same
                 // reason, and that write is on the shared object too.
-                if let Some(live) = live {
-                    live.insert("started", Value::TRUE);
-                }
+                publish.publish(&attrs);
 
                 // The merged Supply may have been fetched before `.start()`;
                 // its later `.tap`/`whenever` registration must still reject
@@ -463,9 +461,7 @@ impl Interpreter {
                     // Published before the break below, for the same reason as
                     // `started`: whoever wakes on the broken `.ready` promise may
                     // ask this object about the failure before we return.
-                    if let Some(live) = live {
-                        live.insert("spawn_error", os_error.clone());
-                    }
+                    publish.publish(&attrs);
 
                     // Break ready promise if set
                     if let Some(ValueView::Promise(ready)) =
@@ -505,9 +501,7 @@ impl Interpreter {
                 // Same reason as `started` above: the `.ready` keep a few lines
                 // down hands the pid to another thread, which may then ask this
                 // object for it.
-                if let Some(live) = live {
-                    live.insert("pid", Value::int(pid as i64));
-                }
+                publish.publish(&attrs);
 
                 if let Some(ValueView::Instance {
                     attributes: stdout_attrs,

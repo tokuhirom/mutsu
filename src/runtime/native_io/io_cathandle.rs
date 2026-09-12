@@ -560,12 +560,13 @@ impl Interpreter {
     /// Mutable dispatch for `IO::CatHandle` methods. All reads advance internal
     /// state, so every method goes through here and the caller writes the updated
     /// attributes back into the receiver's shared cell.
-    pub(crate) fn native_io_cathandle_mut(
+    pub(in crate::runtime) fn native_io_cathandle_mut(
         &mut self,
         class_name: Symbol,
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let mut attrs = attributes;
         // Character-oriented reads are illegal on a binary-mode cat handle.
