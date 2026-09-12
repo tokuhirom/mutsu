@@ -2233,16 +2233,21 @@ impl Interpreter {
                             // method found". The `WrapVarRef` site distinguishes
                             // them: a real slot for `g($z)` / `g(p)`, the
                             // `u32::MAX` "known NOT a local of this frame" sentinel
-                            // for `g(C1)`. Only that explicit sentinel vetoes the
-                            // cell — a `None` slot (a method call, whose arguments
-                            // carry no varref tag) keeps the existing behaviour,
-                            // and a genuine free sigilless variable arrives as a
-                            // `ContainerRef` already (see `exec_wrap_var_ref_op`'s
-                            // container-capture reuse), which the arm below binds
-                            // directly. Explicit `is rw` / `is raw` are untouched.
+                            // for `g(C1)`. Method arguments do not currently carry
+                            // that tag, so also veto an untagged type object. A
+                            // qualified type name otherwise gets mistaken for a
+                            // writable sigilless variable and is replaced in the
+                            // environment by a `ContainerRef`; the next use then
+                            // cannot follow the imported type alias. Explicit
+                            // `is rw` / `is raw` are untouched.
                             let implicit_raw_veto = is_raw
                                 && !pd.traits.iter().any(|t| t == "raw")
-                                && args[positional_idx].varref_slot() == Some(u32::MAX);
+                                && (args[positional_idx].varref_slot() == Some(u32::MAX)
+                                    || (args[positional_idx].varref_slot().is_none()
+                                        && matches!(
+                                            args[positional_idx].unwrap_varref().view(),
+                                            ValueView::Package(_)
+                                        )));
                             if param_is_plain_scalar
                                 && source_is_plain_scalar
                                 && !source_is_indexed
