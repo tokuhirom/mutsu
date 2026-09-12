@@ -149,11 +149,10 @@ is_run ｢use NativeCall;
     # parameterisation, and what matters is that it is a CArray and not a bare
     # `Pointer` (which cannot be indexed).
     ok $mat.m.^name.ends-with('CArray[int32]'), 'an inline array reads back as a CArray';
-    # Bound to a variable first on purpose: assigning into an index of a
-    # native CArray handle that came straight from a call is a separate
-    # pre-existing no-op (GH #8031).
-    my $m = $mat.m;
-    $m[2] = 7;
+    # Direct form (GH #8031): assigning into an index of the accessor's
+    # result, with no intermediate `my $m = $mat.m;` binding, writes into
+    # the same native memory.
+    $mat.m[2] = 7;
     is nativecast(Flat, $blk).c, 7, 'element 2 is the third word of the struct';
     is $mat.t, 42,                  'the tail sits past the whole array';
     free($blk);
