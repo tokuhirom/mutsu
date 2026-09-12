@@ -4266,6 +4266,17 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) classes: HashSet<String>,
     pub(crate) proto_subs: HashSet<String>,
     pub(crate) proto_functions: HashSet<Symbol>,
+    /// Function definitions hidden by an imported proto/multi family in this
+    /// scope. Imports merge multi candidates into one package key, so the
+    /// ordinary key snapshot cannot restore an enclosing candidate that the
+    /// import intentionally shadowed.
+    pub(crate) shadowed_functions: HashMap<Symbol, Arc<FunctionDef>>,
+    /// Proto definitions hidden by an imported proto in this scope.
+    pub(crate) shadowed_proto_functions: HashMap<Symbol, Arc<FunctionDef>>,
+    /// Fully-qualified imported proto names already given shadowing semantics
+    /// in this scope. Multiple imports in one scope still merge candidates;
+    /// only the first import hides the enclosing family.
+    pub(crate) shadowed_proto_names: HashSet<String>,
     /// Exact `env` keys `import_module` wrote as an imported alias while
     /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
     /// or the importing-package-qualified `&GLOBAL::ok` the trait-value

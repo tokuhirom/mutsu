@@ -5261,6 +5261,9 @@ impl Interpreter {
             OpCode::RoutineScope { body_end } => {
                 self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
             }
+            OpCode::ImportScope { body_end } => {
+                self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
+            }
 
             OpCode::BlockScope {
                 pre_end,
