@@ -1558,35 +1558,55 @@ fn require_rakuast_type(value: &Value, constructor: &str) -> Result<(), RuntimeE
     }
 }
 
-fn normalize_slurpy_marker(value: Value) -> Result<Value, RuntimeError> {
-    let class = match value.view() {
+/// The value a `Parameter`'s `slurpy` field holds: the
+/// `RakuAST::Parameter::Slurpy::*` **TYPE OBJECT**, not a node of that class.
+///
+/// Rakudo builds no node for a slurpy marker -- the type object itself is
+/// stored in `$!slurpy` -- and the difference is visible on the field even
+/// though the two render identically inside the parent's gist. mutsu used to
+/// normalize the other way (type object in, empty node out), which made
+/// `$p.slurpy.defined` answer `True` for every slurpy parameter where rakudo
+/// answers `False`, `$p.slurpy.gist` the full class name where rakudo gists
+/// `(Flattened)`, and `$p.slurpy === RakuAST::Parameter::Slurpy::Flattened`
+/// `False` where rakudo says `True`. On rakudo the test for "is this parameter
+/// slurpy?" is which CLASS of type object the field holds, never definedness
+/// (GH #8157).
+///
+/// Both spellings are accepted on the way in: rakudo's `.new` takes only the
+/// type object, and that is what `t/rakuast/rakuast-construct-rich-parameters.t`
+/// passes, but a node of the same class is an unambiguous way to name the same
+/// marker and there is nothing to gain from rejecting it.
+pub(crate) fn slurpy_marker_value(class: RakuAstClass) -> Value {
+    Value::package(crate::symbol::Symbol::intern(class.printed_name()))
+}
+
+/// The slurpy class a field's value names, whichever of the two spellings it
+/// uses. `None` for anything that is not a slurpy marker.
+pub(crate) fn slurpy_marker_class(value: &Value) -> Option<RakuAstClass> {
+    match value.view() {
         ValueView::RakuAst(node)
             if matches!(
                 node.class,
                 RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
             ) =>
         {
-            return Ok(value);
+            Some(node.class)
         }
         ValueView::Package(name) => match name.resolve().as_str() {
-            "RakuAST::Parameter::Slurpy::Flattened" => RakuAstClass::ParameterSlurpyFlattened,
-            "RakuAST::Parameter::Slurpy::Unflattened" => RakuAstClass::ParameterSlurpyUnflattened,
-            _ => {
-                return Err(RuntimeError::new(
-                    "RakuAST::Parameter.new expects a RakuAST slurpy marker",
-                ));
+            "RakuAST::Parameter::Slurpy::Flattened" => Some(RakuAstClass::ParameterSlurpyFlattened),
+            "RakuAST::Parameter::Slurpy::Unflattened" => {
+                Some(RakuAstClass::ParameterSlurpyUnflattened)
             }
+            _ => None,
         },
-        _ => {
-            return Err(RuntimeError::new(
-                "RakuAST::Parameter.new expects a RakuAST slurpy marker",
-            ));
-        }
-    };
-    Ok(Value::rakuast(Box::new(RakuAstNode {
-        class,
-        fields: Vec::new(),
-    })))
+        _ => None,
+    }
+}
+
+fn normalize_slurpy_marker(value: Value) -> Result<Value, RuntimeError> {
+    slurpy_marker_class(&value)
+        .map(slurpy_marker_value)
+        .ok_or_else(|| RuntimeError::new("RakuAST::Parameter.new expects a RakuAST slurpy marker"))
 }
 
 /// The class for a single-positional-argument constructor, or `None`.

@@ -1115,20 +1115,19 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         def.required = !is_optional;
         def.optional_marker = is_optional;
     }
-    // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker node.
+    // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker: the
+    // `RakuAST::Parameter::Slurpy::*` type object, as rakudo stores it (a node
+    // of the same class is accepted too -- see `slurpy_marker_class`).
     if let Some(s) = parameter.fields.iter().find(|f| f.name == Some("slurpy")) {
-        if let RakuAstFieldValue::Node(val) = &s.value
-            && let ValueView::RakuAst(marker) = val.view()
-        {
-            match marker.class {
-                RakuAstClass::ParameterSlurpyFlattened => def.slurpy = true,
-                RakuAstClass::ParameterSlurpyUnflattened => def.double_slurpy = true,
-                _ => return Err(unsupported(owner)),
-            }
-            def.required = false;
-        } else {
+        let RakuAstFieldValue::Node(val) = &s.value else {
             return Err(unsupported(owner));
+        };
+        match super::slurpy_marker_class(val) {
+            Some(RakuAstClass::ParameterSlurpyFlattened) => def.slurpy = true,
+            Some(RakuAstClass::ParameterSlurpyUnflattened) => def.double_slurpy = true,
+            _ => return Err(unsupported(owner)),
         }
+        def.required = false;
     }
     // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
     // handled; the implicit `Type::Setting(Any)` on an untyped param is
