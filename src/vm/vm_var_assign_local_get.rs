@@ -343,7 +343,7 @@ impl Interpreter {
         // compiles to a method call and already goes through that path, but
         // `$!field` (this op) does not, so it stayed stuck reading `Nil` (#8030).
         if !self.locals[idx].is_container_ref()
-            && let Some((bare, true)) = code.local_attr_key(idx)
+            && let Some((bare, true, _)) = code.local_attr_key(idx)
             && let Some(self_val) = self.get_env_self()
             && let Some(field_val) =
                 self.cstruct_field_value(&self_val.deref_container(), bare.as_str())
