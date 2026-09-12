@@ -219,7 +219,18 @@ from the real dispatch table (ADR-0019 F1/F2). The pool's one open follow-up: it
 of per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
 levers — [#7571](https://github.com/tokuhirom/mutsu/issues/7571), actively worked.
 
-- [ ] Semaphore / non-blocking await / lock contention (S17; hard; separate axis).
+- [ ] **Non-blocking `await` — ADR-0020's rejected alternative (b), kept as a standing axis.**
+      mutsu's `await` is a blocking condvar wait (`SharedPromise::wait`,
+      `src/value/value_async.rs`), as are `Lock`/`Semaphore` critical sections, so a blocked frame
+      costs an OS thread and nested `await` of depth N materializes ~N of them.
+      [ADR-0020](docs/adr/0020-shared-worker-pool.md) §2 chose the elastic pool that makes this
+      correct rather than deadlocking; rakudo instead parks the frame on a continuation
+      (`$*AWAITER`) and returns the worker to a *capped* pool. Doing the same here means turning
+      every blocking point (`await`, channel receive, lock, sleep) into a suspension point and
+      teaching the VM to unwind and restore native Rust stack frames — VM-scale, hence still
+      deferred. **No roast pressure remains** (all 99 S17 files are whitelisted); the motive is
+      thread consumption under heavy concurrency, so start this only on a measured trigger and an
+      updated ADR.
 - [ ] Propagate Supply detached-worker panics to QUIT (currently swallowed) — [#8185](https://github.com/tokuhirom/mutsu/issues/8185).
 - [ ] Split out the roast fudge logic. File size (376 over 500 lines, 138 over 1000, still growing —
       `ANALYSIS.md` §6) is **not** a standalone campaign: split when a campaign opens the file and the
