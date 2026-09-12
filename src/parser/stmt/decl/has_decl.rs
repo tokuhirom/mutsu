@@ -14,9 +14,14 @@ use crate::value::Value;
 
 use super::super::sub::parse_type_constraint_expr;
 
-/// Parse parenthesized list form of `has`: `has ($a, $.b, $!c)`
+/// Parse parenthesized list form of `has`: `has ($a, $.b, $!c)` or
+/// `has Int ($a, $.b, $!c)`.
 /// Desugars into a SyntheticBlock containing multiple HasDecl statements.
-fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
+fn has_decl_list(
+    input: &str,
+    type_constraint: Option<String>,
+    type_smiley: Option<String>,
+) -> PResult<'_, Stmt> {
     let (mut rest, _) = parse_char(input, '(')?;
     let mut stmts = Vec::new();
     loop {
@@ -52,8 +57,8 @@ fn has_decl_list(input: &str) -> PResult<'_, Stmt> {
             handles: Vec::new(),
             is_rw: false,
             is_readonly: false,
-            type_constraint: None,
-            type_smiley: None,
+            type_constraint: type_constraint.clone(),
+            type_smiley: type_smiley.clone(),
             is_required: None,
             sigil: sigil as char,
             where_constraint: None,
@@ -205,10 +210,11 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         return Err(err);
     }
 
-    // Handle parenthesized list form: has ($a, $.b, $!c)
+    // Handle parenthesized list form: has ($a, $.b, $!c), including a common
+    // type constraint such as `has Int ($a, $.b)`.
     // This desugars into a Block containing multiple HasDecl statements.
     if rest.starts_with('(') {
-        return has_decl_list(rest);
+        return has_decl_list(rest, None, None);
     }
 
     // Optional type constraint.
@@ -219,7 +225,11 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             if r2.starts_with("method") || r2.starts_with("submethod") {
                 return has_type_method_decl(r2, &tc);
             }
-            if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
+            if r2.starts_with('(')
+                || r2.starts_with('$')
+                || r2.starts_with('@')
+                || r2.starts_with('%')
+            {
                 // Extract smiley suffix and strip it for the type_constraint name
                 let (base, smiley) = if let Some(b) = tc.strip_suffix(":D") {
                     (b.to_string(), Some("D".to_string()))
@@ -230,6 +240,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 } else {
                     (tc.to_string(), None)
                 };
+                if r2.starts_with('(') {
+                    return has_decl_list(r2, Some(base), smiley);
+                }
                 (r2, Some(base), smiley)
             } else {
                 (saved, None, None)
