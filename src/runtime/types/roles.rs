@@ -64,7 +64,7 @@ impl Interpreter {
         }
         let (inner, mut mixins) = match sub_val.view() {
             ValueView::Mixin(inner, existing) => (inner.as_ref().clone(), (**existing).clone()),
-            _ => (sub_val, HashMap::new()),
+            _ => (sub_val, HashMap::new().into()),
         };
         for role_name in &roles {
             mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
@@ -86,12 +86,12 @@ impl Interpreter {
                 );
             }
         }
-        Value::mixin(inner, mixins)
+        Value::mixin_with_state(inner, mixins)
     }
 
     pub(crate) fn role_def_for_mixin_role(
         &self,
-        mixins: &std::collections::HashMap<String, Value>,
+        mixins: &crate::value::MixinOverrides,
         role_name: &str,
     ) -> Option<RoleDef> {
         let role_id = mixins
@@ -214,7 +214,7 @@ impl Interpreter {
 
     pub(crate) fn delegated_role_attr_key_from_mixins(
         &self,
-        mixins: &std::collections::HashMap<String, Value>,
+        mixins: &crate::value::MixinOverrides,
         method_name: &str,
     ) -> Option<String> {
         for role_name in mixins
@@ -238,6 +238,45 @@ impl Interpreter {
                     let attr_name = attr_var_name.trim_start_matches(['.', '!']);
                     return Some(format!("__mutsu_attr__{attr_name}"));
                 }
+            }
+        }
+        None
+    }
+
+    /// Return the live role attribute used by a `handles` delegation method.
+    /// The `__mutsu_attr__*` entry is only a construction seed; reads must use
+    /// the owner-qualified role cell so a delegated container mutation remains
+    /// visible through every alias of the Mixin.
+    pub(crate) fn delegated_role_attr_value_from_mixins(
+        &self,
+        mixins: &crate::value::MixinOverrides,
+        method_name: &str,
+    ) -> Option<Value> {
+        for role_name in mixins
+            .keys()
+            .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+        {
+            let Some(role) = self.role_def_for_mixin_role(mixins, role_name) else {
+                continue;
+            };
+            let Some(method_defs) = role.methods.get(method_name) else {
+                continue;
+            };
+            for method_def in method_defs {
+                let Some((attr_var_name, target_method)) = &method_def.delegation else {
+                    continue;
+                };
+                if attr_var_name.starts_with('&') || target_method != method_name {
+                    continue;
+                }
+                let attr_name = attr_var_name.trim_start_matches(['.', '!']);
+                let marker = format!("__mutsu_attr__{attr_name}");
+                if !mixins.contains_key(&marker) {
+                    continue;
+                }
+                return mixins
+                    .role_attribute(role_name, attr_name)
+                    .or_else(|| mixins.get(&marker).cloned());
             }
         }
         None
@@ -361,7 +400,7 @@ impl Interpreter {
                 .entry(format!("__mutsu_role_group__{name}"))
                 .or_insert_with(|| Value::int(group));
         }
-        Value::mixin(inner.as_ref().clone(), mixins)
+        Value::mixin_with_state(inner.as_ref().clone(), mixins)
     }
 
     /// Open an application group that the next runs of
@@ -703,7 +742,7 @@ impl Interpreter {
         let (inner, mut mixins) = if let ValueView::Mixin(inner, existing) = left.view() {
             (inner.as_ref().clone(), (**existing).clone())
         } else {
-            (left, HashMap::new())
+            (left, HashMap::new().into())
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
         // A monotonic application-order stamp: Rakudo resolves a method-name
@@ -870,7 +909,7 @@ impl Interpreter {
             );
         }
 
-        Ok(Value::mixin(inner, mixins))
+        Ok(Value::mixin_with_state(inner, mixins))
     }
 
     /// Call BUILD and TWEAK submethods from a role after mixin composition.
@@ -937,7 +976,10 @@ impl Interpreter {
         if let ValueView::Mixin(_, mixins) = target.view() {
             for (attr_name, sigil) in &attr_names {
                 let key = format!("__mutsu_attr__{}", attr_name);
-                if let Some(val) = mixins.get(&key) {
+                if let Some(val) = mixins
+                    .role_attribute(role_name, attr_name)
+                    .or_else(|| mixins.get(&key).cloned())
+                {
                     self.env
                         .insert(attr_env_key(*sigil, attr_name), val.clone());
                 }
@@ -975,12 +1017,11 @@ impl Interpreter {
         // Execute the body directly in current scope so closure variable
         // mutations propagate to the outer scope. `$!attr` reads/writes
         // inside the compiled body resolve to `GetLocal`/`SetLocal` ops on a
-        // slot named `"!attr"` (ADR-0019 D8-3): `self_instance_attrs` finds
-        // no cell for a Mixin over a non-Instance `self` (the scenario here
-        // — `does`/`but` on a plain value) and its cell-mirror is a silent
-        // no-op both ways, so the locals<->env bridge that `run_nested`
-        // performs at entry/exit is what actually threads the seeded
-        // `env["!attr"]` values through. Run D8-1's precompiled chunk when
+        // slot named `"!attr"` (ADR-0019 D8-3). For a Mixin over a non-Instance
+        // value, the role-owned attribute cell is the authoritative storage;
+        // the locals<->env bridge that `run_nested` performs at entry/exit is
+        // retained for the role-body execution path and copied back to that
+        // cell below. Run D8-1's precompiled chunk when
         // available instead of re-parsing/re-compiling `def.body` on every
         // composition; a method not yet compiled (e.g. installed via a
         // meta-programming hook) falls back to the raw-AST carrier.
@@ -997,6 +1038,7 @@ impl Interpreter {
             for (attr_name, sigil) in &attr_names {
                 let env_key = attr_env_key(*sigil, attr_name);
                 if let Some(val) = self.env.get(&env_key) {
+                    mixins.set_role_attribute(role_name, attr_name, val.clone());
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), val.clone());
                 }
             }
@@ -1004,7 +1046,7 @@ impl Interpreter {
             for (attr_name, sigil) in &attr_names {
                 self.env.remove(&attr_env_key(*sigil, attr_name));
             }
-            Value::mixin((**inner).clone(), mixins)
+            Value::mixin_with_state((**inner).clone(), mixins)
         } else {
             target
         };

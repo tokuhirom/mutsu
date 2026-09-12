@@ -97,6 +97,13 @@ impl Clone for InstanceAttrs {
 }
 
 impl InstanceAttrs {
+    /// Build a private attribute store for a role mixin. It reuses the
+    /// interior-mutability and GC tracing machinery of ordinary instances but
+    /// is not a Raku object: it has no user identity or DESTROY lifecycle.
+    pub(crate) fn role_storage(attributes: AttrMap) -> Self {
+        Self::new(Symbol::intern("Any"), attributes, 0, false)
+    }
+
     pub(crate) fn new(
         class_name: Symbol,
         attributes: AttrMap,

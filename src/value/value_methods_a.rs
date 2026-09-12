@@ -81,6 +81,11 @@ impl Value {
         })
     }
     pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
+        Self::mixin_with_state(inner, overrides.into())
+    }
+
+    pub(crate) fn mixin_with_state(inner: Value, overrides: crate::value::MixinOverrides) -> Self {
+        overrides.seed_missing_attributes();
         Value::Mixin(Arc::new(inner), crate::gc::Gc::new(overrides))
     }
     pub fn generic_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Self {

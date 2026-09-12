@@ -185,7 +185,7 @@ impl Interpreter {
     fn apply_single_mixin(left: Value, mixin_type: String, right: Value) -> Value {
         let mut mixins = match left.view() {
             ValueView::Mixin(_, existing_mixins) => (**existing_mixins).clone(),
-            _ => std::collections::HashMap::new(),
+            _ => std::collections::HashMap::new().into(),
         };
         mixins.insert(mixin_type, right);
         let anon = crate::parser::next_anon_role_name();
@@ -211,8 +211,8 @@ impl Interpreter {
         mixins.insert(format!("__mutsu_role_seq__{anon}"), Value::int(seq));
         mixins.insert(format!("__mutsu_role_group__{anon}"), Value::int(seq));
         match left.view() {
-            ValueView::Mixin(inner, _) => Value::mixin(inner.as_ref().clone(), mixins),
-            _ => Value::mixin(left, mixins),
+            ValueView::Mixin(inner, _) => Value::mixin_with_state(inner.as_ref().clone(), mixins),
+            _ => Value::mixin_with_state(left, mixins),
         }
     }
 

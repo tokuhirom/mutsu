@@ -1868,8 +1868,8 @@ impl Interpreter {
             }
             (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
                 if let ValueView::Mixin(_, mixins) = target.view()
-                    && let Some(attr_key) = self.delegated_mixin_attr_key(mixins, "AT-POS")
-                    && let Some(attr_value) = mixins.get(&attr_key).cloned()
+                    && let Some(attr_value) =
+                        self.delegated_role_attr_value_from_mixins(mixins, "AT-POS")
                 {
                     self.stack.push(attr_value);
                     self.stack.push(Value::int(i));
@@ -1937,8 +1937,7 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(keys.len());
                 let delegated_attr: Option<Value> =
                     if let ValueView::Mixin(_, mixins) = target.view() {
-                        self.delegated_mixin_attr_key(mixins, "AT-POS")
-                            .and_then(|attr_key| mixins.get(&attr_key).cloned())
+                        self.delegated_role_attr_value_from_mixins(mixins, "AT-POS")
                     } else {
                         None
                     };

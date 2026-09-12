@@ -717,7 +717,20 @@ pub(crate) fn native_method_0arg(
                 Some(Err(e)) => return Some(Err(e)),
                 None => inner.as_ref().clone(),
             };
-            return Some(Ok(Value::mixin(inner_clone, mixins.as_ref().clone())));
+            return Some(Ok(Value::mixin_with_state(
+                inner_clone,
+                mixins.as_ref().clone(),
+            )));
+        }
+        // Role mixins need the interpreter-backed clone path below so their
+        // private role cell is deep-copied. Delegating this one method to the
+        // native inner value would silently drop the wrapper.
+        if method == "clone"
+            && mixins
+                .keys()
+                .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
+        {
+            return None;
         }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.

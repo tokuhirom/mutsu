@@ -1,6 +1,6 @@
 # ADR-0089: A role mixin owns an attribute cell separate from its wrapped value
 
-- **Status**: Proposed (revised after design review on 2026-09-12)
+- **Status**: Accepted and implemented (2026-09-12)
 - **Date**: 2026-09-12
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) (one
   authoritative interior-mutable cell),

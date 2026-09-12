@@ -630,14 +630,14 @@ impl Interpreter {
                 crate::value::ValueView::Mixin(inner, existing) => {
                     (inner.as_ref().clone(), (**existing).clone())
                 }
-                _ => (base.clone(), HashMap::new()),
+                _ => (base.clone(), HashMap::new().into()),
             };
             for map in &override_maps {
                 for (k, v) in map {
                     mixins.insert(k.clone(), v.clone());
                 }
             }
-            attrs.insert(attr_name, Value::mixin(inner, mixins));
+            attrs.insert(attr_name, Value::mixin_with_state(inner, mixins));
         }
     }
 

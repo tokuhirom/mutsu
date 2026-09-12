@@ -207,7 +207,7 @@ where
         ValueView::Mixin(inner, mixins) if inner.is_range() => {
             let inner_val = (**inner).clone();
             let mix_clone = (**mixins).clone();
-            Some(op(inner_val, right).map(|r| Value::mixin(r, mix_clone)))
+            Some(op(inner_val, right).map(|r| Value::mixin_with_state(r, mix_clone)))
         }
         _ => None,
     }
@@ -221,7 +221,7 @@ where
     match left.view() {
         ValueView::Mixin(inner, mixins) if inner.is_range() => {
             let result = op((**inner).clone(), right);
-            Some(Value::mixin(result, (**mixins).clone()))
+            Some(Value::mixin_with_state(result, (**mixins).clone()))
         }
         _ => None,
     }
