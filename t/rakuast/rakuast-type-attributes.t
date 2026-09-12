@@ -28,7 +28,7 @@ is RakuAST::Var::Lexical.^attributes(:local).map(*.name).join(','),
 is RakuAST::StatementList.^attributes(:local).map(*.name).join(','),
     '$!statements', 'statement children are discoverable as a model field';
 is RakuAST::Statement::Expression.^attributes(:local).map(*.name).join(','),
-    '$!expression,$!loop-modifier',
-    'statement expression and modifier are discoverable as model fields';
+    '$!expression,$!condition-modifier,$!loop-modifier',
+    'statement expression and both modifier slots are discoverable as model fields';
 is RakuAST::Assignment.^attributes(:local).elems, 0,
     'a class without modeled fields reports no local attributes';

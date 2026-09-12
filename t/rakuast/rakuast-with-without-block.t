@@ -70,9 +70,7 @@ unlike Q[with 1 { say 2 } elsif 0 { say 3 } else { say 4 }].AST.statements[0].el
 
 # --- a nested `with` statement is not a continuation clause ------------------
 
-# (spelled against `.gist` rather than `.elsifs`, which throws on mutsu when the
-# field is absent instead of returning an empty list -- see #8124)
-unlike Q[if 1 { say 1 } else { with 2 { say 2 } }].AST.statements[0].gist, /'elsifs'/,
+is Q[if 1 { say 1 } else { with 2 { say 2 } }].AST.statements[0].elsifs.elems, 0,
     'a with block inside an else is a statement, not an elsif clause';
 like Q[if 1 { say 1 } else { with 2 { say 2 } }].AST.statements[0].else.gist,
     /'Statement::With'/,
