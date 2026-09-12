@@ -74,12 +74,13 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1433 / 1465** (2026-09-11, `wc -l roast-whitelist.txt` against
-  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **32** files not whitelisted. The count
-  moved from 1435/1463 because the 2026-09-11 roast re-vendor (`b2cbe8a4` → `85a87909`) added
-  subtests to six whitelisted files and one new file; two of those seven were recovered the same
-  day by implementing what they asked for — see "Files dewhitelisted by the 2026-09-11 roast
-  re-vendor" below.
+- The whitelist stands at **1437 / 1465** (2026-09-12, `wc -l roast-whitelist.txt` against
+  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **28** files not whitelisted — the
+  highest it has ever been, and two files better than before the 2026-09-11 roast re-vendor.
+  That re-vendor (`b2cbe8a4` → `85a87909`) added subtests to six whitelisted files and one new
+  file, temporarily costing five whitelist entries; **all seven were recovered within a day** by
+  implementing what each one asked for (#7902, #7903, #7904, #7905, #7906, #7907), so the section
+  that used to track them here is gone. See `news/2026-09/` for the write-ups.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -90,7 +91,7 @@ Concretely:
   ([ADR-0009](../docs/adr/0009-regex-code-assertion-execution-model.md)). The former
   ①(stack overflow)/②(unparseable)/③(hang)/④(error-message) clusters are all cleared
   (history: [news/2026-07.md](../news/2026-07.md)).
-- **No cluster remains.** The 32 non-whitelisted files are nearly all non-goal / no-oracle /
+- **No cluster remains.** The 28 non-whitelisted files are nearly all non-goal / no-oracle /
   awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
   unrelated feature. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
   §5 (perf) or §6, and pick up a roast file only when such work happens to unblock it.
@@ -139,41 +140,6 @@ noted.
 | Non-goal | `S12-traits/basic.t` | 0 at parse | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
 | Unpassable | `S32-temporal/time.t` | 8/10, notok 2 | SORRY | The test contains 2 deliberate `flunk("FIXME ...")` failures, plus raku also has `gmtime`/`localtime`/`times` undefined |
-
-## Files dewhitelisted by the 2026-09-11 roast re-vendor
-
-The re-vendor moved roast from `b2cbe8a4` (2026-06-12) to `85a87909` (2026-09-07). Seventeen
-upstream commits touched 20 test files; 19 of those were whitelisted. Thirteen still pass
-unchanged, and the four rows below are the ones that do not.
-
-**Two of the six files this section originally listed are already gone from it.** The C99
-hexfloat-literal gap ([#7902](https://github.com/tokuhirom/mutsu/issues/7902)) and the `%a`/`%A`
-`sprintf` directives ([#7903](https://github.com/tokuhirom/mutsu/issues/7903)) were both
-implemented on `main` within hours of being filed, so `S02-literals/numeric.t` went straight back
-onto the whitelist (89 subtests) and the brand-new `S32-str/sprintf-a.t` joined it (586 subtests) —
-a net gain over the pre-re-vendor whitelist. Their details are in `news/`.
-
-**Read the raku column before assuming the rest are mutsu defects.** Each remaining subtest is a
-*spec test written against an unfixed rakudo bug* (rakudo#4105, #5588, #2962, #4512), so the local
-oracle — Rakudo v2026.07 — fails them too, and by a wider margin than mutsu does in every one of
-these four files. These are therefore **No oracle (spec ahead of the local rakudo)**, not
-regressions: mutsu did not get worse, the target moved. Verify against a newer rakudo before
-treating any single subtest here as settled.
-
-Measured 2026-09-11 on `target/release/mutsu` (`MUTSU_FUDGE=1 prove`); raku measured by running
-the unfudged files under `raku -I roast/packages/Test-Helpers`.
-
-| Classification | File | mutsu | raku (v2026.07) | Blocker (one line) |
-|---|---|---|---|---|
-| No oracle | `S05-capture/caps.t` ([#7904](https://github.com/tokuhirom/mutsu/issues/7904)) | **55/56**, notok 47 | 43/56 | Test 47 `^ [(\d) \s]+ <?{ $0.sum == 28 }>` — a code assertion must see only the captures left *after* backtracking into a quantified group (rakudo#4105). mutsu already passes the other 12 new backtracking-capture subtests that rakudo v2026.07 fails |
-| No oracle | `S05-metasyntax/charset.t` ([#7905](https://github.com/tokuhirom/mutsu/issues/7905)) | **89/90**, notok 54 | 57/90 | Test 54 `'bb' ~~ /<![a] - [b]> ./` — a negated lookahead of a *class subtraction* must match a subtracted character (rakudo#4512). mutsu returns Nil; so does raku v2026.07. The other 34 new mixed-class/subtraction lookahead subtests pass in mutsu and 32 of them fail in rakudo |
-| No oracle | `S05-metasyntax/regex.t` ([#7906](https://github.com/tokuhirom/mutsu/issues/7906)) | **66/68**, notok 59/67 | 58/68 | Block-quantifier limits under backtracking (rakudo#5588). 59: `("abcdn" ~~ /(. ** {2..3})+ n/)` must keep the `{2..3}` minimum across a restart (mutsu matches `bcdn`, raku `abcdn` with the wrong capture split — both wrong, differently). 67: `("a,a" ~~ /^ (a **? {2} % ",") $/)` — a frugal block quantifier with a separator must count its first repetition once; Nil in both |
-| No oracle | `S05-modifier/ignorecase.t` ([#7907](https://github.com/tokuhirom/mutsu/issues/7907)) | **110/115**, notok 29/31/35/39/40 | 103/115 | Character-class fold semantics (rakudo#2962): a class entry that case-folds to *two* characters (`ß`, the `ﬀ` ligature) must still match itself but must not match part of its fold, and an entry written as base character + combining escape (`<[ a \x[308] ]>`) must match the composed grapheme and not the bare base. mutsu already passes the hex/named-escape and titlecase subtests that rakudo v2026.07 fails |
-
-`S32-io/IO-Socket-Async.t` also changed upstream (the EADDRINUSE probe now holds a real port
-instead of guessing one) and stays whitelisted: it still times out in the remote agent container at
-"planned 40 ran 17", which is the container's network sandbox, not this change — see
-[docs/agent-environments.md](../docs/agent-environments.md).
 
 ### Investigation notes (carried over from the retired S*.md files)
 
