@@ -222,6 +222,7 @@ impl Compiler {
             param_itemize_on_bind: Vec::new(),
             param_const_fills: Vec::new(),
             light_required_positionals: None,
+            light_full_arity_only: false,
             return_fast_type: None,
             package: package_name.to_string(),
             compiled_fns: (!own_compiled_fns.is_empty())

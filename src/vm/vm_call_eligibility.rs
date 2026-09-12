@@ -174,11 +174,84 @@ impl Interpreter {
             })
     }
 
+    /// The positional argument count an owned argument vector presents to the
+    /// light bind: its length minus the synthetic `__mutsu_test_callsite_line`
+    /// marker the parser appends to a parenthesized zero-argument call, which
+    /// [`Interpreter::call_compiled_function_positional_light`] filters out
+    /// before binding. Only the cold call sites that hold such a vector need
+    /// this; the hot cached dispatch already knows from its own argument scan
+    /// whether a marker is present.
+    pub(super) fn positional_light_argc(args: &[Value]) -> usize {
+        args.iter()
+            .filter(|v| !Self::is_callsite_line_marker(v))
+            .count()
+    }
+
+    /// Whether this call supplies every positional of a routine that the
+    /// light paths may serve *only* at full arity
+    /// ([`CompiledFunction::light_full_arity_only`]).
+    ///
+    /// Kept as one function because two very different call sites must agree
+    /// on it: [`Interpreter::is_positional_light_call_eligible`], which decides
+    /// whether to install a `pos_light_call_cache` entry, and the cached
+    /// dispatch itself, which re-checks per call because that cache is keyed by
+    /// NAME — one entry serves every arity the call sites use, so a routine
+    /// admitted by `f(1, 2)` would otherwise be served at `f(1)` too, where the
+    /// light bind has no value to give the omitted parameter and would raise
+    /// "Too few positionals" for a call the general binder defaults happily.
+    ///
+    /// `argc` excludes the synthetic callsite-line marker; see
+    /// [`Interpreter::call_compiled_function_positional_light_at`]'s
+    /// precondition. `args` is the call's argument slice, which may still
+    /// carry that marker — a marker-bearing call is by construction a
+    /// parenthesized ZERO-argument call, so it fails the arity test first and
+    /// never reaches the `Pair` scan below.
+    ///
+    /// The `Pair` scan is what keeps this admission from changing any answer.
+    /// The light bind takes every argument positionally, so it binds a named
+    /// argument to a positional parameter where rakudo rejects the call:
+    /// `sub f($x, $y = 2) { }; f(1, :verbose)` answers `1/verbose` here and
+    /// "Unexpected named argument" in rakudo. That bug predates this admission
+    /// and is not widened by it — a routine with a non-constant default has
+    /// always taken the general binder, which gets the call right, so refusing
+    /// a `Pair`-carrying call leaves its behaviour exactly as it was. The scan
+    /// cannot distinguish `f(1, :verbose)` from a legitimate positional `Pair`
+    /// (`f(1, (y => 2))`), so it conservatively refuses both; the second merely
+    /// forgoes a speedup. Run only for a flagged routine, and only once arity
+    /// matches.
+    #[inline]
+    pub(super) fn positional_light_full_arity_call(
+        cf: &CompiledFunction,
+        argc: usize,
+        args: &[Value],
+    ) -> bool {
+        cf.light_full_arity_only
+            && cf
+                .param_local_slots
+                .as_ref()
+                .is_some_and(|slots| slots.len() == argc)
+            && !args
+                .iter()
+                .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+    }
+
     /// Check if eligible for the positional light call path.
     /// This path avoids push_call_frame, Sub value creation, block/routine push,
     /// callable_id lookup, and full bind_function_args_values. Parameters are
     /// bound to pre-computed local slots and written to env.
-    pub(super) fn is_positional_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
+    ///
+    /// `argc` is the call's positional argument count with any synthetic
+    /// callsite-line marker already excluded. It is a parameter rather than a
+    /// per-callee property because a signature whose optional parameters the
+    /// const-fill precompute could not represent is still light-servable for
+    /// the calls that supply everything — see
+    /// [`CompiledFunction::light_full_arity_only`].
+    pub(super) fn is_positional_light_call_eligible(
+        cf: &CompiledFunction,
+        fn_name: &str,
+        argc: usize,
+        args: &[Value],
+    ) -> bool {
         !fn_name.is_empty()
             && cf.code.state_locals.is_empty()
             && !cf.is_cached
@@ -198,13 +271,16 @@ impl Interpreter {
                 .as_deref()
                 .is_none_or(Self::is_fast_type_name)
             && !cf.param_defs.is_empty()
-            // A defaulted / `?`-optional positional is admitted only when the
-            // precompute could reduce every one of them to a constant fill and
-            // they form a suffix (`light_required_positionals`). Without that,
-            // an omitted parameter would need `eval_param_default` — an
-            // arbitrary expression evaluated with the parameter shadowed — which
-            // only the general binder performs.
-            && cf.light_required_positionals.is_some()
+            // A call that may OMIT a defaulted / `?`-optional positional is
+            // admitted only when the precompute could reduce every one of them
+            // to a constant fill and they form a suffix
+            // (`light_required_positionals`) — an omitted parameter otherwise
+            // needs `eval_param_default`, an arbitrary expression evaluated
+            // with the parameter shadowed, which only the general binder
+            // performs. A call that supplies every positional omits nothing and
+            // so is admitted regardless (`positional_light_full_arity_call`).
+            && (cf.light_required_positionals.is_some()
+                || Self::positional_light_full_arity_call(cf, argc, args))
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
                     && pd.where_constraint.is_none()

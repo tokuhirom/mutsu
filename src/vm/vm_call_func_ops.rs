@@ -668,7 +668,39 @@ impl Interpreter {
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
-                        if !has_junction && !call_has_slip && !share_into_scalar {
+                        if !has_junction
+                            && !call_has_slip
+                            && !share_into_scalar
+                            // This cache is keyed by NAME, so one entry serves
+                            // every arity the call sites use. A routine the
+                            // light paths may serve only at full arity
+                            // (`light_full_arity_only` — a default the
+                            // const-fill precompute could not represent) must
+                            // therefore be re-checked per call, or a shorter
+                            // call would reach a light bind with no value to
+                            // give the omitted parameter and would raise "Too
+                            // few positionals" where the general binder
+                            // defaults happily.
+                            //
+                            // Last in the chain, and behind the flag, so an
+                            // ordinary routine pays exactly one bool test:
+                            // neither the `param_local_slots` load nor the
+                            // marker peek below is reached for it. The peek is
+                            // repeated inside the branch rather than hoisted
+                            // for the same reason — hoisting it put a
+                            // `cl.is_some()` test on every cached light call.
+                            && (!cf.light_full_arity_only
+                                || Self::positional_light_full_arity_call(
+                                    cf,
+                                    arity_usize
+                                        - (cl.is_some()
+                                            && Self::is_callsite_line_marker(
+                                                &self.stack[self.stack.len() - 1],
+                                            ))
+                                            as usize,
+                                    stack_args,
+                                ))
+                        {
                             // Bind straight out of the stack (no args buffer):
                             // the callee takes the arguments in place from
                             // `stack[start..]` and truncates back to `start` on
@@ -895,7 +927,12 @@ impl Interpreter {
                         } else if !share_into_scalar
                             && !named_share
                             && !mainline_capture_blocked
-                            && Self::is_positional_light_call_eligible(&cf, name_str)
+                            && Self::is_positional_light_call_eligible(
+                                &cf,
+                                name_str,
+                                Self::positional_light_argc(&args),
+                                &args,
+                            )
                         {
                             // Promote to the ultra-fast positional cache at the
                             // top of this function, so the next call skips this
@@ -1583,8 +1620,12 @@ impl Interpreter {
             if let Some(cf) = compiled {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
-                if Self::is_positional_light_call_eligible(cf, name)
-                    && !Self::call_shares_container_into_scalar_param(cf, &args)
+                if Self::is_positional_light_call_eligible(
+                    cf,
+                    name,
+                    Self::positional_light_argc(&args),
+                    &args,
+                ) && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !self.has_multi_candidates_cached(name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()

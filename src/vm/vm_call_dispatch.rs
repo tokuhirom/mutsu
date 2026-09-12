@@ -316,6 +316,7 @@ impl Interpreter {
             param_itemize_on_bind: Vec::new(),
             param_const_fills: Vec::new(),
             light_required_positionals: None,
+            light_full_arity_only: false,
             return_fast_type: None,
             package: pkg.clone(),
             compiled_fns: (!own_compiled_fns.is_empty())
@@ -448,7 +449,12 @@ impl Interpreter {
         // to one off the loading script's same-named lexical
         // (`t/module-file-scope-lexical.t`).
         let light_eligible = self.unit_of_source(cf.source_file.as_deref()) == self.current_unit
-            && Self::is_positional_light_call_eligible(&cf, &name)
+            && Self::is_positional_light_call_eligible(
+                &cf,
+                &name,
+                Self::positional_light_argc(&args),
+                &args,
+            )
             && !Self::call_shares_container_into_scalar_param(&cf, &args)
             && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
             && self.wrap_sub_id_for_name(&name).is_none()

@@ -139,6 +139,22 @@ impl Interpreter {
             "positional light bind saw a callsite-line marker: its caller must strip it"
         );
 
+        // A routine the light paths may serve only at full arity
+        // (`CompiledFunction::light_full_arity_only` -- an optional parameter
+        // whose default the const-fill precompute could not represent) must be
+        // gated by every dispatch site, because the bind below has no value to
+        // give an omitted one: it would fill from `param_const_fills`, which is
+        // empty for exactly these parameters, or take the arity branch and
+        // report "Too few positionals" for a call the general binder defaults
+        // happily. Four sites do the gating (`is_positional_light_call_eligible`
+        // for the three cold ones, an inline re-check for the name-keyed cached
+        // dispatch); this is where a fifth one forgetting to would show up.
+        debug_assert!(
+            !cf.light_full_arity_only || actual_count == positional_count,
+            "a light_full_arity_only routine reached the light bind at {actual_count} of \
+             {positional_count} positionals: its dispatch site did not gate on arity"
+        );
+
         // A positional-light-eligible signature is either all-mandatory or a
         // mandatory prefix followed by parameters the precompute reduced to a
         // constant fill (`light_required_positionals`; no slurpy either way --
