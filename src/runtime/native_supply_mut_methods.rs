@@ -11,6 +11,7 @@ impl Interpreter {
         mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go

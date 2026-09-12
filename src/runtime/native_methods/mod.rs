@@ -1,4 +1,5 @@
 // Native method dispatch submodules, split from the original native_methods.rs
+pub(in crate::runtime) mod attr_publish;
 mod compiler_config;
 mod concurrency;
 mod encoding;
@@ -31,6 +32,8 @@ pub(crate) use state::{
     split_supply_chunks_into_lines, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
+
+pub(in crate::runtime) use attr_publish::AttrPublisher;
 
 // Re-export items accessed from sibling `runtime` modules. A handful are also
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop
@@ -284,6 +287,12 @@ impl Interpreter {
     /// through [`crate::value::InstanceAttrs::commit_attrs_delta`] keeps the keys the handler
     /// never touched, so the concurrent write survives.
     ///
+    /// The commit is also the handler's *only* publish point unless it asks for
+    /// another: nothing it writes is visible to another thread until it returns.
+    /// A handler that wakes a thread mid-flight must therefore publish first,
+    /// through the [`AttrPublisher`] opened here — see
+    /// `docs/adr/0095-native-mut-publish-before-wake.md`.
+    ///
     /// This is the **only** entry to the mutable native handlers: having one place
     /// own the snapshot-dispatch-commit triple is what keeps the lost update from
     /// being reintroduced at a fifth call site.
@@ -295,15 +304,15 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let working = attributes.to_map();
-        let before = working.bits_image();
+        let mut publisher = AttrPublisher::new(Some(attributes), working.bits_image());
         let (result, updated) = self.dispatch_native_instance_method_mut(
             class_name,
             working,
             method,
             args,
-            Some(attributes),
+            &mut publisher,
         )?;
-        attributes.commit_attrs_delta(&before, &updated);
+        publisher.commit(&updated);
         Ok(result)
     }
 
@@ -315,19 +324,21 @@ impl Interpreter {
     /// whole-map write-back that lost concurrent updates
     /// (tokuhirom/mutsu#7923) cannot be written at a call site again.
     ///
-    /// `cell` is the receiver's live attribute cell, for handlers that must make a
-    /// mutation **visible before they return** because they also publish a promise
-    /// or wake another thread mid-flight: committing at return is too late,
-    /// whatever the commit does. `Proc::Async.start` is the case that forced it —
-    /// it keeps the `.ready` promise as soon as the child is spawned, and the
-    /// thread that wakes on it immediately reads `started`.
+    /// `publish` is the receiver's cross-thread publish point, for handlers that
+    /// must make a mutation **visible before they return** because they also keep
+    /// a promise or wake another thread mid-flight: committing at return is too
+    /// late, whatever the commit does. `Proc::Async.start` is the case that forced
+    /// it — it keeps the `.ready` promise as soon as the child is spawned, and the
+    /// thread that wakes on it immediately reads `started`. Every mutable handler
+    /// takes one, so the rule is uniform and no class has to invent its own
+    /// cross-thread latch; see [`AttrPublisher`].
     fn dispatch_native_instance_method_mut(
         &mut self,
         class_name: &str,
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-        cell: Option<&crate::value::InstanceAttrs>,
+        publish: &mut AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let dispatch_class = if matches!(
             class_name,
@@ -371,21 +382,27 @@ impl Interpreter {
                 })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
-            "IO::Handle" => self.native_io_handle_mut(attributes, method, args),
-            "IO::CatHandle" => {
-                self.native_io_cathandle_mut(Symbol::intern(class_name), attributes, method, args)
-            }
-            "Proc" => self.native_proc_mut(attributes, method, args),
-            "Promise" => self.native_promise_mut(attributes, method, args),
-            "Channel" => self.native_channel_mut(attributes, method, args),
-            "Supply" => self.native_supply_mut(attributes, method, args),
+            "IO::Handle" => self.native_io_handle_mut(attributes, method, args, publish),
+            "IO::CatHandle" => self.native_io_cathandle_mut(
+                Symbol::intern(class_name),
+                attributes,
+                method,
+                args,
+                publish,
+            ),
+            "Proc" => self.native_proc_mut(attributes, method, args, publish),
+            "Promise" => self.native_promise_mut(attributes, method, args, publish),
+            "Channel" => self.native_channel_mut(attributes, method, args, publish),
+            "Supply" => self.native_supply_mut(attributes, method, args, publish),
             "Supplier" | "Supplier::Preserving" => {
-                self.native_supplier_mut(attributes, method, args)
+                self.native_supplier_mut(attributes, method, args, publish)
             }
-            "Proc::Async" => self.native_proc_async_mut(attributes, method, args, cell),
-            "Encoding::Decoder" => Self::native_encoding_decoder_mut(attributes, method, args),
+            "Proc::Async" => self.native_proc_async_mut(attributes, method, args, publish),
+            "Encoding::Decoder" => {
+                Self::native_encoding_decoder_mut(attributes, method, args, publish)
+            }
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
-                Interpreter::native_scheduler_mut(attributes, method, args)
+                Interpreter::native_scheduler_mut(attributes, method, args, publish)
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on '{}'",
@@ -511,6 +528,7 @@ impl Interpreter {
                     attributes.clone(),
                     method,
                     args,
+                    &mut AttrPublisher::detached(),
                 )?;
                 Ok(result)
             }

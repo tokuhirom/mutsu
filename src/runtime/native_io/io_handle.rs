@@ -25,11 +25,12 @@ impl Interpreter {
     /// `updated` map is written back to the receiver by the caller
     /// (`write_back_sharing`). Any other method falls back to the immutable path
     /// via the sentinel "No native mutable method" error.
-    pub(crate) fn native_io_handle_mut(
+    pub(in crate::runtime) fn native_io_handle_mut(
         &mut self,
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         if method == "open" {
             let result = self.native_io_handle(&attributes, "open", args)?;

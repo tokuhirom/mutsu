@@ -265,6 +265,7 @@ impl Interpreter {
         mut attrs: AttrMap,
         method: &str,
         _args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "keep" => {
@@ -287,6 +288,7 @@ impl Interpreter {
         mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "send" => {

@@ -15,6 +15,7 @@ impl Interpreter {
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
+        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let new_proc = match method {
             "spawn" | "run" => self.builtin_run(&args)?,
