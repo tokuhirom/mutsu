@@ -1,8 +1,9 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
-- Status: Accepted (static source-tree, RakuAST, execution-lowering, and
-  static-value-provenance slices implemented 2026-09-12; dynamic contents and
-  the complete execution-tree migration remain)
+- Status: Accepted (static source-tree, RakuAST, execution-lowering,
+  static-value-provenance, declaration-provenance, and positional-capture
+  slices implemented 2026-09-12; dynamic contents and the complete
+  execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -431,3 +432,21 @@ The focused regressions are in `t/rakuast/rakuast-regex.t`,
 `t/regex/regex-tree-value-provenance.t`. They pin AST parity for adjacent
 groups, an EVAL'd rule's execution boundary, and repeated named-rule
 smartmatches.
+
+## 11. Positional capture-group source and execution slice (2026-09-12)
+
+The shared tree now retains ordinary positional capture groups as
+`CapturingGroup`, distinct from the non-capturing `Group` used for square
+brackets. The read direction emits `RakuAST::Regex::CapturingGroup`, and the
+write direction accepts that node and lowers it to the existing
+`RegexAtom::CaptureGroup` path. Nested source trees and quantified capture
+slots therefore keep the matcher's established sub-Match and positional
+numbering semantics without executing user code during conversion.
+
+This slice intentionally covers only the ordinary `( ... )` form. Named
+capture aliases, subrule assertions, variable interpolation, code
+assertions, and other runtime-valued regex nodes remain explicit follow-up
+boundaries. The focused regressions are in
+`t/rakuast/rakuast-regex.t` and `t/regex/regex-tree-captures.t`; they pin the
+model shape, constructor/EVAL lowering, capture spans, and quantified capture
+iteration values.

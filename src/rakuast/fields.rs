@@ -151,7 +151,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         RegexSequence | RegexAlternation => &[("terms", Absent::EmptyList)],
         RegexLiteral => &[("text", Absent::Required)],
         RegexQuote => &[("quoted", Absent::Required)],
-        RegexGroup | RegexWithWhitespace => &[("regex", Absent::Required)],
+        RegexGroup | RegexCapturingGroup | RegexWithWhitespace => &[("regex", Absent::Required)],
         RegexQuantifiedAtom => &[
             ("atom", Absent::Required),
             ("quantifier", Absent::Required),
@@ -212,7 +212,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexLiteral => "text",
         RegexQuote => "quoted",
         RegexSequence | RegexAlternation => "terms",
-        RegexGroup | RegexWithWhitespace => "regex",
+        RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
         StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless

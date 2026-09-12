@@ -2309,6 +2309,10 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             RakuAstClass::RegexGroup,
             vec![node_field(None, regex_node(child)?)],
         ),
+        RegexNode::CapturingGroup(child) => (
+            RakuAstClass::RegexCapturingGroup,
+            vec![node_field(None, regex_node(child)?)],
+        ),
         RegexNode::Quantified { atom, quantifier } => {
             let quantifier = match quantifier {
                 RegexQuantifier::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
