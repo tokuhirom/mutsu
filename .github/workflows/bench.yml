@@ -54,7 +54,10 @@ concurrency:
 jobs:
   bench:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Raised from 30 when the deterministic instruction-count pass was added
+    # (#8085): callgrind is ~90x native, which costs roughly 12 more minutes
+    # for the two configurations of the whole suite.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -112,6 +115,20 @@ jobs:
           mkdir -p tmp
           scripts/bench-ci.sh | tee tmp/bench-results.tsv
 
+      - name: Install valgrind (deterministic metric)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq valgrind
+
+      - name: Run deterministic benchmarks (instruction counts)
+        # The wall-clock series above has a 16-33% median commit-to-commit noise
+        # floor, so its own 1.5x alarm is inside its p90 and cannot see an
+        # ordinary regression (#8085). This pass simulates instruction counts,
+        # which do not depend on the runner at all and reproduce to ~0.1%.
+        # Complementary, not a replacement: instruction counts are blind to
+        # cache behaviour, memory boundness, lock contention and real thread
+        # parallelism, and they step whenever the toolchain changes. See the
+        # header of scripts/bench-det.sh.
+        run: scripts/bench-det.sh | tee tmp/bench-det-results.tsv
+
       - name: Compare with previous run and render summary
         # Read-only look at the existing history BEFORE appending: warn when a
         # benchmark's mutsu median slowed >1.5x vs its most recent recorded
@@ -145,6 +162,36 @@ jobs:
             fi
             echo "| $name | $m_med | $m_min | $r_med | $ratio | $prev | $change |" >> "$GITHUB_STEP_SUMMARY"
           done < tmp/bench-results.tsv
+
+          # The deterministic series (#8085). Its alarm is 2%, not 1.5x: the
+          # measured run-to-run spread is ~0.1%, so 2% is still 20x the noise
+          # while being 25x tighter than anything wall clock can support. A
+          # toolchain bump steps every row at once and is not a regression --
+          # that is the one shape to read past here.
+          DHIST=/tmp/bench-prev/bench-det-history.tsv
+          {
+            echo ""
+            echo "### Deterministic (simulated instruction counts)"
+            echo ""
+            echo "| benchmark | instructions | prev | change |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r name ir; do
+            dprev="NA"; dchange="—"
+            if [ -f "$DHIST" ]; then
+              dprev=$(awk -F'\t' -v b="$name" '$3==b {v=$4} END {print (v=="" ? "NA" : v)}' "$DHIST")
+            fi
+            if [ "$dprev" != "NA" ] && [ "$ir" != "NA" ]; then
+              dchange=$(awk -v n="$ir" -v p="$dprev" 'BEGIN{
+                if (p > 0) printf "%+.2f%%", (n/p - 1) * 100; else print "—"
+              }')
+              dslow=$(awk -v n="$ir" -v p="$dprev" 'BEGIN{print (p > 0 && n > p * 1.02) ? 1 : 0}')
+              if [ "$dslow" = 1 ]; then
+                echo "::warning title=deterministic regression::$name executed ${dprev} -> ${ir} instructions ($dchange) vs previous recorded run"
+              fi
+            fi
+            echo "| $name | $ir | $dprev | $dchange |" >> "$GITHUB_STEP_SUMMARY"
+          done < tmp/bench-det-results.tsv
           git worktree remove --force /tmp/bench-prev 2>/dev/null || true
 
       - name: Append to bench-data branch
@@ -156,6 +203,7 @@ jobs:
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           RUNNER_INFO="$(nproc)c-$(uname -m)-${ImageOS:-unknown}"
           RAKUDO_VER=$(raku --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
+          RUSTC_VER=$(rustc --version 2>/dev/null | tr '\t' ' ' || echo unknown)
           REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # Retry loop: re-clone fresh each attempt so a concurrent writer's
           # push (from another repo clone / manual run) only costs a retry.
@@ -178,7 +226,19 @@ jobs:
                 "$DATE" "$SHA" "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$runs" "$RUNNER_INFO" "$RAKUDO_VER" \
                 >> bench-history.tsv
             done < "$GITHUB_WORKSPACE/tmp/bench-results.tsv"
-            git add bench-history.tsv
+            # The deterministic series lives in its own file (#8085): it has no
+            # raku counterpart, no median/min, and a different runner column
+            # (the instruction count does not depend on the runner's CPU, but
+            # the toolchain that produced the binary is what steps it, so that
+            # is what is recorded instead).
+            if [ ! -f bench-det-history.tsv ]; then
+              printf 'date\tcommit\tbenchmark\tinstructions\ttoolchain\n' > bench-det-history.tsv
+            fi
+            while IFS=$'\t' read -r name ir; do
+              printf '%s\t%s\t%s\t%s\t%s\n' \
+                "$DATE" "$SHA" "$name" "$ir" "$RUSTC_VER" >> bench-det-history.tsv
+            done < "$GITHUB_WORKSPACE/tmp/bench-det-results.tsv"
+            git add bench-history.tsv bench-det-history.tsv
             git commit -q -m "bench: ${SHA} (${DATE})"
             if git push -q origin bench-data; then
               echo "Appended $(wc -l < "$GITHUB_WORKSPACE/tmp/bench-results.tsv") rows for $SHA"

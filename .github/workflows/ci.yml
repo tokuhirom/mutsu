@@ -250,7 +250,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The three ledger checks run FIRST, before any toolchain: they read
+      # The four ledger checks run FIRST, before any toolchain: they read
       # files and finish in about a second each, so an unsorted whitelist or an
       # expired quarantine entry should not have to wait out a clippy pass.
       - name: Roast whitelist is sorted
@@ -266,6 +266,13 @@ jobs:
         # quarantine cannot quietly become permanent. See
         # docs/flaky-test-policy.md §5.
         run: make check-flaky-list
+
+      - name: Hand-built __mutsu_* env keys did not grow
+        # A ratchet, not a ban: the per-file count of
+        # `format!("__mutsu_...::{name}")` sites may go down but never up. Build
+        # them with `MetaNs` instead, which memoizes the key. This pattern has
+        # been the profiling finding in five separate perf campaigns (#8087).
+        run: make check-magic-keys
 
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:

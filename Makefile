@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -37,7 +37,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-value-wall check-flaky-list check-t-layout
+test: check-value-wall check-flaky-list check-t-layout check-magic-keys
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -63,6 +63,13 @@ check-flaky-list:
 check-t-layout:
 	scripts/check-t-layout.sh
 	python3 scripts/migrate-t-layout.py --check
+
+# Hand-built `format!("__mutsu_...::{name}")` env keys may only go down, never
+# up (#8087). Build them with `MetaNs` (src/runtime/meta_ns.rs) instead, which
+# memoizes the key per (namespace, name). Re-cut the baseline after converting
+# sites with: scripts/check-magic-keys.sh --update
+check-magic-keys:
+	scripts/check-magic-keys.sh
 
 roast:
 	@mkdir -p tmp

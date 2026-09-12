@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// `@!attr = ...` / `@.attr = ...` (and the `%` twins): the declared
@@ -425,13 +426,16 @@ impl Interpreter {
             // for `@`/`%` containers).
             self.reset_nil_untyped_scalar(&name, val)
         };
-        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        let name_sym = Symbol::intern(&name);
         if matches!(
-            self.env().get(&readonly_key).map(Value::view),
+            self.env()
+                .get_sym(MetaNs::SigillessReadonly.key(name_sym))
+                .map(Value::view),
             Some(ValueView::Bool(true))
         ) && !matches!(
-            self.env().get(&alias_key).map(Value::view),
+            self.env()
+                .get_sym(MetaNs::SigillessAlias.key(name_sym))
+                .map(Value::view),
             Some(ValueView::Str(_))
         ) {
             return Err(RuntimeError::assignment_ro(None));
@@ -440,15 +444,18 @@ impl Interpreter {
             let mut resolved_source = source_name;
             let mut seen = std::collections::HashSet::new();
             while seen.insert(resolved_source.clone()) {
-                let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) else {
+                let key = MetaNs::SigillessAlias.key_for_str(&resolved_source);
+                let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
                     break;
                 };
                 resolved_source = next.to_string();
             }
+            self.env_mut().insert_sym(
+                MetaNs::SigillessAlias.key(name_sym),
+                Value::str(resolved_source),
+            );
             self.env_mut()
-                .insert(alias_key.clone(), Value::str(resolved_source));
-            self.env_mut().insert(readonly_key, Value::FALSE);
+                .insert_sym(MetaNs::SigillessReadonly.key(name_sym), Value::FALSE);
             self.mark_sigilless_alias_seen();
         }
         // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
@@ -664,13 +671,16 @@ impl Interpreter {
             self.env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
         }
-        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-            if let ValueView::Str(name) = v.view() {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
+        let mut alias_name = self
+            .env()
+            .get_sym(MetaNs::SigillessAlias.key(name_sym))
+            .and_then(|v| {
+                if let ValueView::Str(name) = v.view() {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            });
         let mut seen_aliases = std::collections::HashSet::new();
         while let Some(current_alias) = alias_name {
             if !seen_aliases.insert(current_alias.clone()) {

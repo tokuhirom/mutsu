@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 /// Process-global, monotonic: set the first time any atomic variable / atomic
 /// storage is registered on ANY interpreter. See
@@ -73,20 +74,7 @@ impl Interpreter {
     /// needs it for something else in the same operation, so no string is
     /// hashed here at all — only the `Symbol -> Symbol` memo.
     pub(crate) fn type_meta_key_for_sym(name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        if let Some(sym) = META_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
-            return sym;
-        }
-        let sym = name_sym.with_str(|name| {
-            Symbol::intern(&format!("{}{}", crate::symbol::TYPE_META_PREFIX, name))
-        });
-        META_KEYS.with(|c| {
-            c.borrow_mut().insert(name_sym, sym);
-        });
-        sym
+        MetaNs::Type.key(name_sym)
     }
 
     /// The env key for `name`'s object-hash key-type metadata,
@@ -95,19 +83,7 @@ impl Interpreter {
     /// key (`set_var_type_constraint_impl`), so once one typed lexical exists
     /// it was a `format!` + intern per declaration.
     pub(crate) fn hash_key_meta_key_for_sym(name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static HASH_KEY_META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        if let Some(sym) = HASH_KEY_META_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
-            return sym;
-        }
-        let sym =
-            name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_hash_key_type::{name}")));
-        HASH_KEY_META_KEYS.with(|c| {
-            c.borrow_mut().insert(name_sym, sym);
-        });
-        sym
+        MetaNs::HashKeyType.key(name_sym)
     }
 
     /// The env key a routine's registration clone id is stored under,
@@ -149,54 +125,19 @@ impl Interpreter {
     /// variable per call that was the largest remaining `format!` site in the
     /// RIPEMD profile (~3.2% of the run, plus its malloc/free pair) (#7571).
     pub(crate) fn sigilless_readonly_key_for_sym(name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
-            return sym;
-        }
-        let sym = name_sym
-            .with_str(|name| Symbol::intern(&crate::runtime::utils::sigilless_readonly_key(name)));
-        KEYS.with(|c| {
-            c.borrow_mut().insert(name_sym, sym);
-        });
-        sym
+        MetaNs::SigillessReadonly.key(name_sym)
     }
 
     /// The `__mutsu_sigilless_alias::<name>` env key, memoized exactly like
     /// [`Self::sigilless_readonly_key_for_sym`].
     pub(crate) fn sigilless_alias_key_for_sym(name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
-            return sym;
-        }
-        let sym = name_sym
-            .with_str(|name| Symbol::intern(&crate::runtime::utils::sigilless_alias_key(name)));
-        KEYS.with(|c| {
-            c.borrow_mut().insert(name_sym, sym);
-        });
-        sym
+        MetaNs::SigillessAlias.key(name_sym)
     }
 
     /// The `__mutsu_state_key::<name>` metadata key, memoized exactly like
     /// [`Self::sigilless_readonly_key_for_sym`].
     pub(crate) fn state_meta_key_for_sym(name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
-            return sym;
-        }
-        let sym = name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_state_key::{name}")));
-        KEYS.with(|c| {
-            c.borrow_mut().insert(name_sym, sym);
-        });
-        sym
+        MetaNs::State.key(name_sym)
     }
 
     /// The env key for `name`'s placeholder-parameter twin, `^<name>`, as a

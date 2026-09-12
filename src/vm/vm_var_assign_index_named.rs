@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;
 use std::collections::HashMap;
@@ -376,22 +377,37 @@ impl Interpreter {
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let original_var_name = Self::const_str(code, name_idx).to_string();
+        let original_var_sym = code.const_sym(name_idx);
         // Resolve sigilless alias: if `h` is a sigilless alias for `%a`,
         // operate on `%a` directly so in-place mutations are visible.
-        let sigilless_alias_target = {
-            let alias_key = format!("__mutsu_sigilless_alias::{}", original_var_name);
-            self.env().get(&alias_key).and_then(|v| {
+        //
+        // #8087: the derived key comes from `MetaNs`, which memoizes
+        // `(namespace, name) -> key` per thread, instead of a `format!` whose
+        // ~40-byte result is then hashed to intern it. This probe runs on
+        // EVERY element store, and it was one of the 22 interns and 8 heap
+        // allocations #8069 measured per `@a[$i] = $v`.
+        let sigilless_alias_target = self
+            .env()
+            .get_sym(MetaNs::SigillessAlias.key(original_var_sym))
+            .and_then(|v| {
                 if let ValueView::Str(target) = v.view() {
                     Some(target.to_string())
                 } else {
                     None
                 }
-            })
-        };
+            });
         let var_name = sigilless_alias_target
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // The symbol `var_name`'s own metadata keys are derived from. Reuses
+        // the constant-pool symbol in the overwhelmingly common no-alias case,
+        // so the hot path hashes no string at all; only a resolved alias (a
+        // DIFFERENT name from the one the bytecode names) has to intern.
+        let var_sym = match sigilless_alias_target.as_deref() {
+            None => original_var_sym,
+            Some(target) => Symbol::intern(target),
+        };
         // A SetHash element assignment evaluates to the key's Bool existence, not
         // the assigned value (`$sh<k> = 2` is `Bool::True`); set in the Set store
         // arm and applied at the final result push.
@@ -460,8 +476,9 @@ impl Interpreter {
         let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
-        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
-        let has_declared_shape = self.env().contains_key(&declared_shape_key);
+        let has_declared_shape = self
+            .env()
+            .contains_key_sym(MetaNs::ShapedArrayDims.key(var_sym));
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
         // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).
@@ -1106,9 +1123,7 @@ impl Interpreter {
         if declared_type.as_deref().is_some_and(|t| t == "Map") && !is_shadowing_user_class {
             let is_ro_constant_hash = var_name.starts_with('%')
                 && self.is_readonly(&var_name)
-                && !self
-                    .env()
-                    .contains_key(&format!("__mutsu_bound::{}", var_name))
+                && !self.env().contains_key_sym(MetaNs::Bound.key(var_sym))
                 && matches!(
                     self.env().get(&var_name).map(Value::view),
                     Some(ValueView::Hash(_))
@@ -2363,10 +2378,8 @@ impl Interpreter {
                 // writable bound hash from a `constant %M` — both are readonly,
                 // but only the former may be mutated in place.
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
-                let is_bound_hash_var = is_readonly_hash_var
-                    && self
-                        .env()
-                        .contains_key(&format!("__mutsu_bound::{}", var_name));
+                let is_bound_hash_var =
+                    is_readonly_hash_var && self.env().contains_key_sym(MetaNs::Bound.key(var_sym));
                 // A readonly `%`-var that was NOT `:=`-bound is a `constant %M`
                 // (an immutable Map): element assignment must die with
                 // X::Assignment::RO, mirroring raku and mutsu's own `constant @A`
