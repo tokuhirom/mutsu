@@ -33,11 +33,15 @@ pub(crate) fn apply_slang_overrides(
             continue;
         }
         if !over.aliases.is_empty() {
-            vocabulary.insert_aliases(
-                over.aliases
-                    .iter()
-                    .map(|(localized, canonical)| (localized.as_str(), canonical.as_str())),
-            );
+            let aliases = over
+                .aliases
+                .iter()
+                .map(|(localized, canonical)| (localized.as_str(), canonical.as_str()));
+            if over.name.ends_with("2str") {
+                vocabulary.insert_position_aliases(&over.name, aliases);
+            } else {
+                vocabulary.insert_aliases(aliases);
+            }
             continue;
         }
         if vocabulary.try_insert_token(&over.name, over.body.as_deref()) {

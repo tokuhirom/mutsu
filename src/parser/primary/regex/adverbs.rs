@@ -225,6 +225,10 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         if name.is_empty() {
             break;
         }
+        if let Some(canonical) = crate::parser::stmt::simple::l10n_adverb_alias("adverb-rx", &name)
+        {
+            name = canonical;
+        }
 
         let mut arg: Option<&str> = None;
         if r.starts_with('(') {

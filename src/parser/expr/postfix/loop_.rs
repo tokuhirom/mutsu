@@ -1257,6 +1257,9 @@ fn postfix_expr_loop_from(
             let r = ws(r).map_or(r, |(r_ws, _)| r_ws);
             if let Ok((r, parsed_name)) = crate::parser::primary::var::parse_ident_with_hyphens(r) {
                 let mut method_name = parsed_name.to_string();
+                if let Some(canonical) = crate::parser::stmt::simple::l10n_alias(&method_name) {
+                    method_name = canonical;
+                }
                 let mut trailing_postfix: Option<TokenKind> = None;
                 if !r.starts_with('(') {
                     if method_name.ends_with("++") && method_name.len() > 2 {
@@ -3203,6 +3206,7 @@ fn postfix_expr_loop_from(
                 parsed_static_name
             };
             if let Some((r, name)) = parsed_static_name {
+                let name = crate::parser::stmt::simple::l10n_alias(&name).unwrap_or(name);
                 // Bare (non-dotted) hyper postfix on a builtin wordy postfix
                 // operator (currently just `i`, e.g. `@a»i`) calls the
                 // *operator* (`&postfix:<i>`), not a method — `i` is not a

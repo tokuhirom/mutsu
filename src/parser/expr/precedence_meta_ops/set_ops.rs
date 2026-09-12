@@ -8,6 +8,13 @@ use super::hyper_concat::concat_expr;
 use super::meta_bracket::block_newline_terminates;
 
 fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
+        match canonical.as_str() {
+            "(elem)" => return Some((TokenKind::SetElem, len)),
+            "(cont)" => return Some((TokenKind::SetCont, len)),
+            _ => {}
+        }
+    }
     if input.starts_with("(==)") {
         Some((TokenKind::Ident("(==)".to_string()), 4))
     } else if input.starts_with('≡') {
@@ -138,8 +145,20 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
         if block_newline_terminates(input, rest, r) {
             break;
         }
-        if r.starts_with("but") && !is_ident_char(r.as_bytes().get(3).copied()) {
-            let r = &r[3..];
+        let localized = crate::parser::stmt::simple::l10n_match_infix(r);
+        let (but_len, does_len) = match localized.as_ref().map(|(name, len)| (name.as_str(), *len))
+        {
+            Some(("but", len)) => (len, 0),
+            Some(("does", len)) => (0, len),
+            _ => (0, 0),
+        };
+        if (but_len > 0)
+            || (but_len == 0
+                && r.starts_with("but")
+                && !is_ident_char(r.as_bytes().get(3).copied()))
+        {
+            let len = if but_len > 0 { but_len } else { 3 };
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = concat_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after 'but'", r.len())
@@ -152,8 +171,13 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
-        if r.starts_with("does") && !is_ident_char(r.as_bytes().get(4).copied()) {
-            let r = &r[4..];
+        if (does_len > 0)
+            || (does_len == 0
+                && r.starts_with("does")
+                && !is_ident_char(r.as_bytes().get(4).copied()))
+        {
+            let len = if does_len > 0 { does_len } else { 4 };
+            let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = concat_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected expression after 'does'", r.len())

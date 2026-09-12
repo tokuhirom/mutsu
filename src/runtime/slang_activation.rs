@@ -218,7 +218,10 @@ impl Interpreter {
         // names, `is` trait arguments) through a `<category>2ast` method rather
         // than through a token, so read those maps too.
         for (method_name, defs) in &def.methods {
-            let Some(category) = method_name.strip_suffix("2ast") else {
+            let Some(category) = method_name
+                .strip_suffix("2ast")
+                .or_else(|| method_name.strip_suffix("2str"))
+            else {
                 continue;
             };
             if category.is_empty() {

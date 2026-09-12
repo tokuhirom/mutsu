@@ -54,6 +54,25 @@ pub(in crate::parser::expr) fn parse_comparison_op(r: &str) -> Option<(Compariso
     if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
         return None;
     }
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(r) {
+        let op = match canonical.as_str() {
+            "eq" => ComparisonOp::StrEq,
+            "ne" => ComparisonOp::StrNe,
+            "lt" => ComparisonOp::StrLt,
+            "gt" => ComparisonOp::StrGt,
+            "le" => ComparisonOp::StrLe,
+            "ge" => ComparisonOp::StrGe,
+            "leg" => ComparisonOp::Leg,
+            "cmp" => ComparisonOp::Cmp,
+            "coll" => ComparisonOp::Coll,
+            "unicmp" => ComparisonOp::Unicmp,
+            "eqv" => ComparisonOp::Eqv,
+            "before" => ComparisonOp::Before,
+            "after" => ComparisonOp::After,
+            _ => return None,
+        };
+        return Some((op, len));
+    }
     // Unicode comparison operators
     if r.starts_with('\u{2A75}') {
         // ⩵ (U+2A75) — numeric equality (alias for ==)

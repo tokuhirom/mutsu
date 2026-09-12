@@ -532,6 +532,18 @@ pub(crate) fn next_word_is_listop_bareword_arg(input: &str) -> bool {
 
 /// Check if a name is an infix word operator (should not be treated as a listop call).
 pub(crate) fn is_infix_word_op(name: &str) -> bool {
+    // Infix vocabulary entries have their own position-specific map. This is
+    // important when a localized spelling is also used by another category,
+    // such as JA's `と` (`infix-and` and `modifier-with`): the generic
+    // canonical map cannot express which grammar position is being checked.
+    if let Some((canonical, length)) = crate::parser::stmt::simple::l10n_match_infix(name)
+        && length == name.len()
+    {
+        return is_infix_word_op(&canonical);
+    }
+    if let Some(canonical) = crate::parser::stmt::simple::l10n_canonical_keyword(name) {
+        return is_infix_word_op(&canonical);
+    }
     matches!(
         name,
         "Z" | "X"

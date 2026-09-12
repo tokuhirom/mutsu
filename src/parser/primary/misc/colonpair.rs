@@ -446,14 +446,20 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     // :name(expr) or :name (boolean true pair)
-    let (mut rest, name) = parse_ident_with_hyphens(r)?;
+    let (mut rest, parsed_name) = parse_ident_with_hyphens(r)?;
+    // Generated L10N roles keep named-argument translations in `named2str`,
+    // because a named argument is a colonpair key rather than a bareword
+    // term. Store the canonical key in the AST so named dispatch sees the
+    // same name it would have seen in ordinary Raku source.
+    let name = crate::parser::stmt::simple::l10n_named_alias(parsed_name)
+        .unwrap_or_else(|| parsed_name.to_string());
     if rest.starts_with('?') || rest.starts_with('!') {
         rest = &rest[1..];
     }
     // Don't parse statement-modifier keywords as bare colonpairs (`:when`),
     // but allow them when followed by a value (`:when<now>`, `:if(True)`, etc.)
     if matches!(
-        name,
+        name.as_str(),
         "if" | "unless" | "for" | "while" | "until" | "given" | "when"
     ) && !rest.starts_with('(')
         && !rest.starts_with('[')
