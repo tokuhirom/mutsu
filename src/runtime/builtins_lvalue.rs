@@ -716,7 +716,7 @@ impl Interpreter {
         if crate::env::sigilless_readonly_keys_possible() {
             let key = crate::runtime::sigilless_readonly_key(&name);
             if matches!(
-                self.env.get(&key).map(Value::view),
+                self.env.get_sym(key).map(Value::view),
                 Some(ValueView::Bool(true))
             ) {
                 return Ok(Value::FALSE);
@@ -829,7 +829,7 @@ impl Interpreter {
         if !target_name.starts_with('@') {
             return Ok(Value::NIL);
         }
-        let key = format!("__mutsu_shaped_array_dims::{target_name}");
+        let key = crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&target_name);
         let dims = self
             .env
             .get(&target_name)
@@ -840,9 +840,9 @@ impl Interpreter {
                 crate::gc::Gc::new(shape.into_iter().map(|n| Value::int(n as i64)).collect()),
                 ArrayKind::List,
             );
-            self.env.insert(key, dims_val);
+            self.env.insert_sym_noting(key, dims_val);
         } else {
-            self.env.remove(&key);
+            self.env.remove_sym(key);
         }
         Ok(Value::NIL)
     }

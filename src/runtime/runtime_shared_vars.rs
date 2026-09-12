@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::value::ValueView;
 
 /// The bare scalar names [`Interpreter::mask_thread_redeclared_params`] newly
@@ -104,10 +105,9 @@ impl Interpreter {
         // a thread-local `my %h` (not present in shared_vars) also falls through
         // to the normal local assignment.
         if Self::is_plain_lexical_name(key) {
-            let atomic_key = format!("__mutsu_atomic_hash::{key}");
-            let is_shared = {
-                self.shared_vars.contains_key(&atomic_key) || self.shared_vars.contains_key(key)
-            };
+            let atomic_key = atomic_lane_str_key(key, true);
+            let is_shared =
+                { self.shared_vars.contains_key(atomic_key) || self.shared_vars.contains_key(key) };
             if is_shared {
                 return Some(self.shared_hash_elem_set(key, elem_key, value));
             }
@@ -201,10 +201,9 @@ impl Interpreter {
         // keep the base-key path; a thread-local `my @a` (not present in
         // shared_vars) falls through to the normal local assignment.
         if Self::is_plain_lexical_name(key) {
-            let atomic_key = format!("__mutsu_atomic_arr::{key}");
-            let is_shared = {
-                self.shared_vars.contains_key(&atomic_key) || self.shared_vars.contains_key(key)
-            };
+            let atomic_key = atomic_lane_str_key(key, false);
+            let is_shared =
+                { self.shared_vars.contains_key(atomic_key) || self.shared_vars.contains_key(key) };
             if is_shared {
                 return Some(self.shared_array_elem_set(key, idx, value));
             }
@@ -589,8 +588,8 @@ impl Interpreter {
         if !key.starts_with('@') {
             return;
         }
-        let atomic_key = format!("__mutsu_atomic_arr::{key}");
-        self.shared_vars.remove(&atomic_key);
+        let atomic_key = atomic_lane_str_key(key, false);
+        self.shared_vars.remove(atomic_key);
     }
 
     /// Hash analogue of `clear_atomic_array_state`: drop the
@@ -601,8 +600,8 @@ impl Interpreter {
         if !key.starts_with('%') {
             return;
         }
-        let atomic_key = format!("__mutsu_atomic_hash::{key}");
-        self.shared_vars.remove(&atomic_key);
+        let atomic_key = atomic_lane_str_key(key, true);
+        self.shared_vars.remove(atomic_key);
     }
 
     /// Sync shared variables back from shared_vars into the local env.
@@ -667,15 +666,15 @@ impl Interpreter {
                 }
 
                 // Check for atomic array CAS storage
-                let atomic_arr_key = format!("__mutsu_atomic_arr::{key}");
-                if let Some(val) = sv.get(&atomic_arr_key) {
+                let atomic_arr_key = atomic_lane_str_key(key, false);
+                if let Some(val) = sv.get(atomic_arr_key) {
                     updates.push((key.clone(), val));
                     continue;
                 }
 
                 // Check for atomic hash CAS storage
-                let atomic_hash_key = format!("__mutsu_atomic_hash::{key}");
-                if let Some(val) = sv.get(&atomic_hash_key) {
+                let atomic_hash_key = atomic_lane_str_key(key, true);
+                if let Some(val) = sv.get(atomic_hash_key) {
                     updates.push((key.clone(), val));
                     continue;
                 }
@@ -769,11 +768,7 @@ impl Interpreter {
             return;
         }
         for key in std::mem::take(&mut self.transient_lane_containers) {
-            let atomic_key = if key.starts_with('@') {
-                format!("__mutsu_atomic_arr::{key}")
-            } else {
-                format!("__mutsu_atomic_hash::{key}")
-            };
+            let atomic_key = atomic_lane_str_key(&key, !key.starts_with('@'));
             // **Only a CLEAN entry is retired**, and that restriction is what
             // makes the whole mechanism safe rather than merely narrow. A clean
             // entry is positive proof that no thread ever used the lane for
@@ -798,7 +793,7 @@ impl Interpreter {
             {
                 continue;
             }
-            self.shared_vars.remove(&atomic_key);
+            self.shared_vars.remove(atomic_key);
             self.shared_vars.remove(&key);
         }
     }

@@ -20,8 +20,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
-        let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
+        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
             map.contains_key(encoded)
         } else {
             false
@@ -29,8 +29,8 @@ impl Interpreter {
     }
 
     pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
-        let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key)
+        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key)
             && entry
                 .with_hash_mut(|map| {
                     crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
@@ -41,7 +41,7 @@ impl Interpreter {
         }
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::TRUE);
-        self.env_mut().insert(key, Value::hash(map));
+        self.env_mut().insert_sym_noting(key, Value::hash(map));
     }
 
     /// Slice 2b (`docs/scalar-array-sharing.md`): mark element `encoded` of
@@ -160,8 +160,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return;
         }
-        let key = format!("__mutsu_bound_index::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key) {
+        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
                 crate::gc::Gc::make_mut(map).remove(encoded);
             });
@@ -293,8 +293,8 @@ impl Interpreter {
     /// Remove deleted indices from the bound-index tracking set.
     /// This must be called after array element deletion to sever bindings.
     pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = format!("__mutsu_bound_index::{}", var_name);
-        let Some(entry) = self.env_mut().get_mut(&key) else {
+        let key = crate::runtime::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
+        let Some(entry) = self.env_mut().get_mut_sym(key) else {
             return;
         };
         entry.with_hash_mut(|map| {

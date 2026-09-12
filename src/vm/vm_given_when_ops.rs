@@ -184,9 +184,9 @@ impl Interpreter {
             // still reads the parameter's final value.
             if let Some(p) = &pointy_param {
                 this.env_mut()
-                    .remove(&format!("__mutsu_sigilless_alias::{}", p));
+                    .remove_sym(crate::runtime::sigilless_alias_key(p));
                 this.env_mut()
-                    .remove(&format!("__mutsu_sigilless_readonly::{}", p));
+                    .remove_sym(crate::runtime::sigilless_readonly_key(p));
                 this.env_mut()
                     .remove(&format!("__mutsu_bound_decont::{}", p));
                 this.unmark_readonly(p);

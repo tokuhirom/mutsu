@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
@@ -922,8 +923,8 @@ impl Interpreter {
                         }
                     })
                     .or_else(|| {
-                        let key = format!("__mutsu_callable_id::GLOBAL::{}", func_name);
-                        self.env.get(&key).and_then(|v| {
+                        let key = MetaNs::CallableId.key_pair_for_strs("GLOBAL", &func_name);
+                        self.env.get_sym(key).and_then(|v| {
                             if let ValueView::Int(n) = v.view() {
                                 Some(n)
                             } else {

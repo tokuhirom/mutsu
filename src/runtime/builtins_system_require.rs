@@ -553,14 +553,14 @@ impl Interpreter {
                 Value::package(Symbol::intern(&source_single)),
             );
             self.env
-                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
+                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             return true;
         }
         if self.has_class(symbol) || self.is_role(symbol) {
             self.env
                 .insert(symbol.to_string(), Value::package(Symbol::intern(symbol)));
             self.env
-                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
+                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             return true;
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
@@ -574,14 +574,14 @@ impl Interpreter {
             }
             self.env.insert(symbol.to_string(), value);
             self.env
-                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
+                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             return true;
         }
         if let Some(value) = self.env.get(symbol).cloned() {
             let is_nil = value.is_nil();
             self.env.insert(symbol.to_string(), value);
             self.env
-                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
+                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             return !is_nil;
         }
         false

@@ -616,7 +616,7 @@ impl Interpreter {
                     let mut seen = std::collections::HashSet::new();
                     let mut alias = self
                         .env()
-                        .get(&crate::runtime::sigilless_alias_key(&pd.name))
+                        .get_sym(crate::runtime::sigilless_alias_key(&pd.name))
                         .and_then(|v| match v.view() {
                             ValueView::Str(s) => Some(s.to_string()),
                             _ => None,
@@ -628,7 +628,7 @@ impl Interpreter {
                         sigilless_writebacks.push((target.clone(), final_val.clone()));
                         alias = self
                             .env()
-                            .get(&crate::runtime::sigilless_alias_key(&target))
+                            .get_sym(crate::runtime::sigilless_alias_key(&target))
                             .and_then(|v| match v.view() {
                                 ValueView::Str(s) => Some(s.to_string()),
                                 _ => None,

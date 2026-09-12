@@ -1121,7 +1121,7 @@ impl Interpreter {
                 let is_bound_container = name.starts_with(['@', '%'])
                     && matches!(
                         self.env()
-                            .get(&format!("__mutsu_bound::{}", name))
+                            .get_sym(crate::runtime::meta_ns::MetaNs::Bound.key_for_str(&name))
                             .map(Value::view),
                         Some(ValueView::Bool(true))
                     )
@@ -1543,8 +1543,8 @@ impl Interpreter {
                     let mut resolved_source = source_name.clone();
                     let mut seen = std::collections::HashSet::new();
                     while seen.insert(resolved_source.clone()) {
-                        let key = format!("__mutsu_sigilless_alias::{}", resolved_source);
-                        let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view)
+                        let key = crate::runtime::sigilless_alias_key(&resolved_source);
+                        let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view)
                         else {
                             break;
                         };
@@ -1643,8 +1643,9 @@ impl Interpreter {
                         // the method returns. Check via the reverse alias:
                         // `__mutsu_sigilless_alias::!x` → `"x"`.
                         {
-                            let reverse_key = format!("__mutsu_sigilless_alias::!{}", name);
-                            if let Some(reverse_val) = self.env().get(&reverse_key).cloned()
+                            let reverse_key =
+                                crate::runtime::sigilless_alias_key(&format!("!{name}"));
+                            if let Some(reverse_val) = self.env().get_sym(reverse_key).cloned()
                                 && let ValueView::Str(target) = reverse_val.view()
                                 && target.as_str() == name
                             {
@@ -1823,8 +1824,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     // Also check alias target for sigilless attributes
-                    let alias_key_check = format!("__mutsu_sigilless_alias::{}", name);
-                    if let Some(alias_val) = self.env().get(&alias_key_check).cloned()
+                    let alias_key_check = crate::runtime::sigilless_alias_key(&name);
+                    if let Some(alias_val) = self.env().get_sym(alias_key_check).cloned()
                         && let ValueView::Str(alias_target) = alias_val.view()
                         && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
@@ -2062,8 +2063,8 @@ impl Interpreter {
                     // into self's shared cell so a same-method cell-direct read of
                     // the sigilless attr sees the new value (Phase 3 Stage 2c (ii)).
                     self.write_self_attr_cell(&current_alias, val.clone());
-                    let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                    alias_name = self.env().get(&next_key).and_then(|v| {
+                    let next_key = crate::runtime::sigilless_alias_key(&current_alias);
+                    alias_name = self.env().get_sym(next_key).and_then(|v| {
                         if let ValueView::Str(name) = v.view() {
                             Some(name.to_string())
                         } else {
@@ -5657,9 +5658,9 @@ impl Interpreter {
                 // program never creates either marker — skipping the two
                 // `format!` allocations plus env lookups entirely.
                 if crate::env::bound_marker_possible() {
-                    let bound_key = format!("__mutsu_bound::{}", name);
+                    let bound_key = crate::runtime::meta_ns::MetaNs::Bound.key_for_str(name);
                     if matches!(
-                        self.env().get(&bound_key).map(Value::view),
+                        self.env().get_sym(bound_key).map(Value::view),
                         Some(ValueView::Bool(true))
                     ) {
                         *ip += 1;
@@ -5679,9 +5680,9 @@ impl Interpreter {
                 // in a closure).  The readonly_vars set is scope-local
                 // and gets restored on frame pop, but the env key persists.
                 if crate::env::sigilless_readonly_keys_possible() {
-                    let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+                    let readonly_key = crate::runtime::sigilless_readonly_key(name);
                     if matches!(
-                        self.env().get(&readonly_key).map(Value::view),
+                        self.env().get_sym(readonly_key).map(Value::view),
                         Some(ValueView::Bool(true))
                     ) {
                         // A sigilless term (`my \\c = 5`) IS the value, so
@@ -5749,7 +5750,7 @@ impl Interpreter {
                                 crate::env::sigilless_readonly_keys_possible()
                                     && matches!(
                                         self.env()
-                                            .get(&crate::runtime::sigilless_readonly_key(s))
+                                            .get_sym(crate::runtime::sigilless_readonly_key(s))
                                             .map(Value::view),
                                         Some(ValueView::Bool(true))
                                     )
@@ -5808,7 +5809,7 @@ impl Interpreter {
                     )
                 });
                 if !writable {
-                    self.env_mut().insert(
+                    self.env_mut().insert_sym_noting(
                         crate::runtime::sigilless_readonly_key(&name_sym.resolve()),
                         Value::TRUE,
                     );

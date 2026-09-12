@@ -298,13 +298,11 @@ pub(crate) fn decode_slurpy_rw_param(param: &str) -> Option<(&str, usize, Option
     Some((key, elem_idx, src_idx))
 }
 
-pub(in crate::runtime) fn sigilless_alias_key(name: &str) -> String {
-    format!("__mutsu_sigilless_alias::{}", name)
-}
-
-pub(in crate::runtime) fn sigilless_readonly_key(name: &str) -> String {
-    format!("__mutsu_sigilless_readonly::{}", name)
-}
+// The sigilless alias/readonly keys have one definition, in `runtime::utils`,
+// built through `MetaNs` so the key symbol is memoized rather than formatted
+// per use (#8087). Re-exported here because this module's neighbours reach for
+// them unqualified through `use super::*`.
+pub(in crate::runtime) use crate::runtime::utils::{sigilless_alias_key, sigilless_readonly_key};
 
 /// Collect the `Pair`/`ValuePair` elements of a list into a named map. Used
 /// when a list of pairs is destructured by named sub-signature params.
@@ -1032,10 +1030,9 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 // compiles to, so `CheckReadOnly` treats this identically to a
                 // top-level sigilless param or a `my \x = 5` bind (X::Assignment::RO,
                 // "Cannot modify an immutable TYPE (VALUE)").
-                interpreter.env.insert(
-                    format!("__mutsu_sigilless_readonly::{}", sub_pd.name),
-                    Value::TRUE,
-                );
+                interpreter
+                    .env
+                    .insert_sym_noting(sigilless_readonly_key(&sub_pd.name), Value::TRUE);
             } else if !sub_pd.name.starts_with('@')
                 && !sub_pd.name.starts_with('%')
                 && !sub_pd.name.starts_with('!')

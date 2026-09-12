@@ -150,8 +150,8 @@ impl Interpreter {
         let mut resolved = source_name.to_string();
         let mut seen = std::collections::HashSet::new();
         while seen.insert(resolved.clone()) {
-            let key = format!("__mutsu_sigilless_alias::{}", resolved);
-            let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) else {
+            let key = crate::runtime::sigilless_alias_key(&resolved);
+            let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
                 break;
             };
             resolved = next.to_string();
@@ -947,8 +947,8 @@ impl Interpreter {
         if !self.sigilless_alias_seen() {
             return;
         }
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
+        let alias_key = crate::runtime::sigilless_alias_key(name);
+        let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
             if let ValueView::Str(n) = v.view() {
                 Some(n.to_string())
             } else {
@@ -969,8 +969,8 @@ impl Interpreter {
             // reverse `sync_locals_from_env` pull).
             self.pending_rw_writeback_sources
                 .push(current_alias.clone());
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.env().get(&next_key).and_then(|v| {
+            let next_key = crate::runtime::sigilless_alias_key(&current_alias);
+            alias_name = self.env().get_sym(next_key).and_then(|v| {
                 if let ValueView::Str(n) = v.view() {
                     Some(n.to_string())
                 } else {

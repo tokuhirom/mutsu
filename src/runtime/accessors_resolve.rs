@@ -1,5 +1,6 @@
 //! Method-body compilation, `resolve_code_var`, and smart-match/sequence eval.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -272,9 +273,9 @@ impl Interpreter {
         if name.is_empty() {
             return None;
         }
-        let key = format!("__mutsu_callable_id::{}::{}", package, name);
+        let key = MetaNs::CallableId.key_pair_for_strs(package, name);
         self.env
-            .get(&key)
+            .get_sym(key)
             .and_then(|v| v.as_int())
             .filter(|i| *i != 0)
             .map(|i| i as u64)

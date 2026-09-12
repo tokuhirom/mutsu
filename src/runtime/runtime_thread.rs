@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
     /// The scalar lexicals a spawned block captures itself, as bare env keys.
@@ -1089,9 +1090,9 @@ impl Interpreter {
             && Self::is_plain_lexical_array_name(key)
         {
             let in_shared = {
-                let atomic_key = format!("__mutsu_atomic_arr::{key}");
+                let atomic_key = atomic_lane_str_key(key, false);
                 self.shared_vars
-                    .get(&atomic_key)
+                    .get(atomic_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
                     || self
                         .shared_vars
@@ -1209,9 +1210,9 @@ impl Interpreter {
         // only handle a var already present in the shared store.
         if Self::is_plain_lexical_array_name(key) {
             let in_shared = {
-                let atomic_key = format!("__mutsu_atomic_arr::{key}");
+                let atomic_key = atomic_lane_str_key(key, false);
                 self.shared_vars
-                    .get(&atomic_key)
+                    .get(atomic_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
                     || self
                         .shared_vars

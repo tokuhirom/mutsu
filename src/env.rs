@@ -268,7 +268,7 @@ static CLOSURE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// program that creates a `__mutsu_state_key::` (a `state` variable) or a
 /// `__mutsu_predictive_seq_iter::` arms the readonly probe too -- and that
 /// probe runs on EVERY whole-variable assignment (`OpCode::CheckReadOnly`),
-/// building a `format!("__mutsu_sigilless_readonly::{name}")` and hashing it
+/// building an `__mutsu_sigilless_readonly::<name>` key and hashing it
 /// into the env for a key the program never created. Sigilless/`:=` readonly
 /// markers are much rarer than `state` variables, so they deserve their own
 /// latch. Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every creation

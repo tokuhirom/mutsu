@@ -5849,7 +5849,7 @@ impl CompiledCode {
             None => self
                 .locals
                 .get(idx)
-                .map(|n| Symbol::intern(&crate::runtime::sigilless_alias_key(n))),
+                .map(|n| crate::runtime::sigilless_alias_key(n)),
         }
     }
 
@@ -5861,7 +5861,7 @@ impl CompiledCode {
             None => self
                 .locals
                 .get(idx)
-                .map(|n| Symbol::intern(&crate::runtime::sigilless_readonly_key(n))),
+                .map(|n| crate::runtime::sigilless_readonly_key(n)),
         }
     }
 
@@ -5906,12 +5906,12 @@ impl CompiledCode {
         self.locals_alias_sym = self
             .locals
             .iter()
-            .map(|s| Symbol::intern(&crate::runtime::sigilless_alias_key(s)))
+            .map(|s| crate::runtime::sigilless_alias_key(s))
             .collect();
         self.locals_readonly_sym = self
             .locals
             .iter()
-            .map(|s| Symbol::intern(&crate::runtime::sigilless_readonly_key(s)))
+            .map(|s| crate::runtime::sigilless_readonly_key(s))
             .collect();
         self.locals_deleted_index_sym = self
             .locals

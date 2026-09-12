@@ -328,8 +328,8 @@ impl Interpreter {
             .map(|(i, name)| {
                 let val = self.env().get(name).cloned();
                 let was_readonly = self.readonly_kind(name);
-                let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
-                let sigilless_ro = self.env().get(&sigilless_key).cloned();
+                let sigilless_key = crate::runtime::sigilless_readonly_key(name);
+                let sigilless_ro = self.env().get_sym(sigilless_key).cloned();
                 let saved_local = spec
                     .multi_param_locals
                     .get(i)
@@ -860,8 +860,8 @@ impl Interpreter {
                 // Clear regular readonly flag
                 self.unmark_readonly(mp_name);
                 // Clear sigilless readonly flag
-                let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
-                self.env_mut().insert(key, Value::FALSE);
+                let key = crate::runtime::sigilless_readonly_key(mp_name);
+                self.env_mut().insert_sym_noting(key, Value::FALSE);
             }
             'body_redo: loop {
                 let run_start = nested_entry.take().unwrap_or(body_start);
@@ -1328,11 +1328,11 @@ impl Interpreter {
                 self.locals[slot] = v;
             }
             self.restore_readonly(&name, was_readonly);
-            let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
+            let sigilless_key = crate::runtime::sigilless_readonly_key(&name);
             if let Some(ro_val) = sigilless_ro {
-                self.env_mut().insert(sigilless_key, ro_val);
+                self.env_mut().insert_sym_noting(sigilless_key, ro_val);
             } else {
-                self.env_mut().remove(&sigilless_key);
+                self.env_mut().remove_sym(sigilless_key);
             }
         }
         self.unmask_for_params(&masked_params);

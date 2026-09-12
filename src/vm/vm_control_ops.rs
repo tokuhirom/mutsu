@@ -364,11 +364,10 @@ impl Interpreter {
             // branch exits. Mirrors the prefix-stripping restore
             // `exec_block_scope_op` already does for genuine `{ ... }`
             // blocks.
-            sym.with_str(|s| {
-                self.env_mut().remove(&format!("__mutsu_type::{}", s));
-                self.env_mut()
-                    .remove(&format!("__mutsu_hash_key_type::{}", s));
-            });
+            self.env_mut()
+                .remove_sym(Interpreter::type_meta_key_for_sym(*sym));
+            self.env_mut()
+                .remove_sym(Interpreter::hash_key_meta_key_for_sym(*sym));
             for &idx in &owned_slots {
                 if idx < self.locals.len() && code.local_sym(idx) == Some(*sym) {
                     self.locals[idx] = Value::NIL;

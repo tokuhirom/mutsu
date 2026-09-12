@@ -84,10 +84,10 @@ impl Interpreter {
                 return Ok(result);
             }
         }
-        let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+        let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
+        let alias_key = crate::runtime::sigilless_alias_key(target_var);
         let has_sigilless_meta =
-            self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+            self.env.contains_key_sym(readonly_key) || self.env.contains_key_sym(alias_key);
         let scalar_like_target = target_var.starts_with('$')
             || (!target_var.starts_with('@')
                 && !target_var.starts_with('%')
@@ -277,14 +277,14 @@ impl Interpreter {
                     return Ok(existing);
                 }
             }
-            let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
-            let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
+            let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
+            let alias_key = crate::runtime::sigilless_alias_key(target_var);
             let has_sigilless_meta =
-                self.env.contains_key(&readonly_key) || self.env.contains_key(&alias_key);
+                self.env.contains_key_sym(readonly_key) || self.env.contains_key_sym(alias_key);
             if has_sigilless_meta {
                 let readonly = self
                     .env
-                    .get(&readonly_key)
+                    .get_sym(readonly_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)));
                 let itemized_array =
                     matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());

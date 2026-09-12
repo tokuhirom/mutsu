@@ -97,22 +97,7 @@ impl Interpreter {
     /// then a hash of those 40 bytes to intern it — per call, for a mapping
     /// that is fixed for the life of the routine (#7573).
     pub(crate) fn callable_id_key_for_syms(package_sym: Symbol, name_sym: Symbol) -> Symbol {
-        thread_local! {
-            static CALLABLE_ID_KEYS: std::cell::RefCell<
-                rustc_hash::FxHashMap<(Symbol, Symbol), Symbol>,
-            > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        let pair = (package_sym, name_sym);
-        if let Some(sym) = CALLABLE_ID_KEYS.with(|c| c.borrow().get(&pair).copied()) {
-            return sym;
-        }
-        let sym = package_sym.with_str(|pkg| {
-            name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_callable_id::{pkg}::{name}")))
-        });
-        CALLABLE_ID_KEYS.with(|c| {
-            c.borrow_mut().insert(pair, sym);
-        });
-        sym
+        MetaNs::CallableId.key_pair(package_sym, name_sym)
     }
 
     /// The `__mutsu_sigilless_readonly::<name>` env key as a pre-interned
@@ -241,8 +226,8 @@ impl Interpreter {
         if info.value_type == "atomicint" || constraint.contains("atomicint") {
             self.mark_atomic_var_seen();
         }
-        self.env.insert(
-            format!("__mutsu_type::{}", name),
+        self.env.insert_sym_noting(
+            Self::type_meta_key_for_sym(Symbol::intern(name)),
             Value::str(info.value_type),
         );
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be

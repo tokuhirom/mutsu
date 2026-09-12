@@ -5,6 +5,7 @@
 //! `builtins_atomic_shared`.
 
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::token_kind::TokenKind;
 use crate::value::ValueView;
 
@@ -378,13 +379,13 @@ impl Interpreter {
 
         // Use an internal key to avoid interference with set_shared_var
         // which would overwrite our atomic array with stale local values.
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
 
         // Track B element cells: box elements at first atomic touch, then CAS
         // the one element in place through its cell (no whole-array COW per
         // op — see `init_celled_atomic_store`).
-        self.init_celled_atomic_store(&atomic_key, &arr_name);
-        let cell = self.celled_array_elem(&atomic_key, &arr_name, index);
+        self.init_celled_atomic_store(atomic_key, &arr_name);
+        let cell = self.celled_array_elem(atomic_key, &arr_name, index);
         let mut did_swap = false;
         let current;
         {

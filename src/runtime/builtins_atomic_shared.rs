@@ -4,6 +4,7 @@
 //! (`self_attr_cell_target`) shared with `builtins_atomic`/`builtins_atomic_cas`.
 
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
     /// Box `v` into a fresh element cell unless it already is one (Track B
@@ -292,14 +293,14 @@ impl Interpreter {
     }
 
     pub(crate) fn atomic_array_entry_exists(&self, arr_name: &str) -> bool {
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
         matches!(
             self.shared_vars
                 .atomic_lane_scope(arr_name)
                 .own_map()
                 .read()
                 .unwrap()
-                .get(&atomic_key)
+                .get(atomic_key)
                 .map(Value::view),
             Some(ValueView::Array(..))
         )
@@ -319,7 +320,7 @@ impl Interpreter {
         arr_name: &str,
         f: impl FnOnce(&mut crate::value::ArrayData, &mut crate::value::ArrayKind) -> R,
     ) -> (R, Value) {
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
             // Drop this thread's env copy so the atomic entry's Gc stays
@@ -335,7 +336,7 @@ impl Interpreter {
             // initialized/type). Afterwards the atomic entry is authoritative
             // and is mutated in place under the write lock.
             if !matches!(
-                shared.get(&atomic_key).map(Value::view),
+                shared.get(atomic_key).map(Value::view),
                 Some(ValueView::Array(..))
             ) {
                 // The env binding may be a `ContainerRef` cell rather than a
@@ -365,14 +366,14 @@ impl Interpreter {
                     _ => crate::value::ArrayData::default(),
                 };
                 shared.insert(
-                    atomic_key.clone(),
+                    atomic_key.to_string(),
                     Value::array_with_kind(
                         crate::gc::Gc::new(seed),
                         crate::value::ArrayKind::Array,
                     ),
                 );
             }
-            let Some(slot) = shared.get_mut(&atomic_key) else {
+            let Some(slot) = shared.get_mut(atomic_key) else {
                 unreachable!("atomic array entry seeded just above");
             };
             slot.with_array_mut(|arc_items, kind| {
@@ -436,14 +437,14 @@ impl Interpreter {
         idx: usize,
         value: Value,
     ) -> Value {
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
         // Track B cell fast path: an already-celled slot is assigned through
         // its cell in place — every snapshot holder sees it, no COW, no
         // republish.
         {
             let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
             let shared = atomic_root.own_map().read().unwrap();
-            if let Some(ValueView::Array(elems, _)) = shared.get(&atomic_key).map(Value::view)
+            if let Some(ValueView::Array(elems, _)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = elems.get(idx).map(Value::view)
             {
                 let cell = c.clone();
@@ -462,7 +463,7 @@ impl Interpreter {
             // (module file-scope / mainline captured free var) before the
             // plain `env` entry, and deref through a `ContainerRef` binding
             // either way — see `shared_array_mutate`'s twin comment.
-            let mut elements: Vec<Value> = match shared.get(&atomic_key).map(Value::view) {
+            let mut elements: Vec<Value> = match shared.get(atomic_key).map(Value::view) {
                 Some(ValueView::Array(elems, _)) => elems.to_vec(),
                 _ => match shared
                     .get(arr_name)
@@ -486,7 +487,7 @@ impl Interpreter {
                 crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
                 crate::value::ArrayKind::Array,
             );
-            shared.insert(atomic_key, new_arr.clone());
+            shared.insert(atomic_key.to_string(), new_arr.clone());
             new_arr
         };
         if let Ok(mut dirty) = self.shared_vars_dirty.write() {
@@ -515,12 +516,12 @@ impl Interpreter {
         elem_key: String,
         value: Value,
     ) -> Value {
-        let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
+        let atomic_key = atomic_lane_str_key(&hash_name, true);
         // Track B cell fast path — see `shared_array_elem_set`.
         {
             let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
             let shared = atomic_root.own_map().read().unwrap();
-            if let Some(ValueView::Hash(h)) = shared.get(&atomic_key).map(Value::view)
+            if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = h.get(&elem_key).map(Value::view)
             {
                 let cell = c.clone();
@@ -536,7 +537,7 @@ impl Interpreter {
             let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
             let mut shared = atomic_root.own_map().write().unwrap();
             // ADR-0039 slice 1: see `shared_array_elem_set`'s twin comment.
-            let mut map = match shared.get(&atomic_key).map(Value::view) {
+            let mut map = match shared.get(atomic_key).map(Value::view) {
                 Some(ValueView::Hash(h)) => h.as_ref().clone(),
                 _ => match shared
                     .get(hash_name)
@@ -554,7 +555,7 @@ impl Interpreter {
             };
             Value::hash_insert_through(&mut map.map, elem_key, value.clone());
             let new_hash = Value::hash_with_data(crate::gc::Gc::new(map));
-            shared.insert(atomic_key, new_hash.clone());
+            shared.insert(atomic_key.to_string(), new_hash.clone());
             new_hash
         };
         if let Ok(mut dirty) = self.shared_vars_dirty.write() {
@@ -600,7 +601,7 @@ impl Interpreter {
         // (raku checks it even when the compare fails — roadmap T5).
         self.check_atomic_elem_type(&arr_name, &new_val)?;
 
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
 
         // Track B element cells (T4, gc-post-3a-roadmap §2): same template as
         // the 1-dim `builtin_cas_array_elem` — box top-level elements at first
@@ -612,9 +613,9 @@ impl Interpreter {
         // cell. This also makes 1-dim and multidim CAS on the same array
         // coherent (the old republish path read plain elements and returned 0
         // once a 1-dim CAS had celled the store).
-        self.init_celled_atomic_store(&atomic_key, &arr_name);
+        self.init_celled_atomic_store(atomic_key, &arr_name);
         let cell =
-            self.celled_array_elem(&atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
+            self.celled_array_elem(atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
         let inner_dims = if dims.len() > 1 { &dims[1..] } else { &[] };
         let mut did_swap = false;
         let current;
@@ -1052,13 +1053,13 @@ impl Interpreter {
         let hash_name = args[0].to_string_value();
         let key = args[1].to_string_value();
         let code = args[2].clone();
-        let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
+        let atomic_key = atomic_lane_str_key(&hash_name, true);
 
         // Track B element cells: box every element at the container's first
         // atomic touch, then RMW individual elements in place through their
         // cell — no whole-map COW per op (see `init_celled_atomic_store`).
-        self.init_celled_atomic_store(&atomic_key, &hash_name);
-        let cell = self.celled_hash_elem(&atomic_key, &hash_name, &key);
+        self.init_celled_atomic_store(atomic_key, &hash_name);
+        let cell = self.celled_hash_elem(atomic_key, &hash_name, &key);
 
         // Check if code is {.succ} or {.pred} for fast path
         if let ValueView::Sub(sub) = code.view() {

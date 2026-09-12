@@ -145,13 +145,14 @@ impl Interpreter {
         if self.loop_local_saved_env.is_empty() {
             return;
         }
+        let name_sym = crate::symbol::Symbol::intern(name);
         for key in [
-            format!("__mutsu_type::{}", name),
-            format!("__mutsu_hash_key_type::{}", name),
+            Interpreter::type_meta_key_for_sym(name_sym),
+            Interpreter::hash_key_meta_key_for_sym(name_sym),
         ] {
-            let prev = self.env().get(&key).cloned();
+            let prev = self.env().get_sym(key).cloned();
             if let Some(scope) = self.loop_local_saved_env.last_mut() {
-                scope.entry(key).or_insert(prev);
+                scope.entry(key.as_str().to_string()).or_insert(prev);
             }
         }
     }

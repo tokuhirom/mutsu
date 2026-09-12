@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::cell::RefCell;
@@ -848,8 +849,8 @@ impl Interpreter {
                     });
             if already_installed {
                 let callable_key =
-                    format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
-                self.env.insert(
+                    MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
+                self.env.insert_sym_noting(
                     callable_key,
                     Value::int(crate::value::next_instance_id() as i64),
                 );
@@ -892,8 +893,8 @@ impl Interpreter {
                 if pkg != "GLOBAL" {
                     self.mark_my_scoped_package_item(fq);
                 }
-                let callable_key = format!("__mutsu_callable_id::{}::{}", pkg, name);
-                self.env.insert(
+                let callable_key = MetaNs::CallableId.key_pair_for_strs(&pkg, name);
+                self.env.insert_sym_noting(
                     callable_key,
                     Value::int(crate::value::next_instance_id() as i64),
                 );
@@ -1175,8 +1176,8 @@ impl Interpreter {
                         .insert((single_key_sym, fp));
                 }
                 let callable_key =
-                    format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
-                self.env.insert(
+                    MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
+                self.env.insert_sym_noting(
                     callable_key,
                     Value::int(crate::value::next_instance_id() as i64),
                 );
@@ -1199,8 +1200,8 @@ impl Interpreter {
                     metadata.map_or_else(|| body.is_empty(), |m| m.body_is_empty);
                 if decl_body_is_empty && same_signature {
                     let callable_key =
-                        format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
-                    self.env.insert(
+                        MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
+                    self.env.insert_sym_noting(
                         callable_key,
                         Value::int(crate::value::next_instance_id() as i64),
                     );
@@ -1262,8 +1263,8 @@ impl Interpreter {
                         .contains(&(single_key_sym, fp))
                 {
                     let callable_key =
-                        format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
-                    self.env.insert(
+                        MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
+                    self.env.insert_sym_noting(
                         callable_key,
                         Value::int(crate::value::next_instance_id() as i64),
                     );
@@ -1459,8 +1460,8 @@ impl Interpreter {
             let fq = format!("{}::{}", self.current_package(), name);
             self.mark_my_scoped_package_item(fq);
         }
-        let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
-        self.env.insert(
+        let callable_key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), name);
+        self.env.insert_sym_noting(
             callable_key,
             Value::int(crate::value::next_instance_id() as i64),
         );
