@@ -197,6 +197,79 @@ impl Interpreter {
         None
     }
 
+    /// Return the attribute stores visible to a method, in lookup order. A
+    /// role method on a Mixin owns the Mixin's role cell; attributes not found
+    /// there fall through to the wrapped instance cell. Methods owned by the
+    /// wrapped class see the ordinary instance cell only.
+    pub(crate) fn method_attr_cells(
+        &self,
+        val: &Value,
+        owner: &str,
+    ) -> (
+        Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
+        Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
+    ) {
+        let inner = Self::self_instance_attrs(val);
+        if !self.is_role(owner) {
+            return (None, inner);
+        }
+        let mut current = val.clone();
+        for _ in 0..8 {
+            match current.view() {
+                ValueView::Mixin(inner_value, mixins) => {
+                    let marker = format!("__mutsu_role__{owner}");
+                    if mixins.contains_key(&marker) {
+                        return (Some(mixins.attributes().clone()), inner);
+                    }
+                    current = inner_value.as_ref().clone();
+                }
+                ValueView::ContainerRef(_) => {
+                    current = current.deref_container();
+                }
+                _ => break,
+            }
+        }
+        (None, inner)
+    }
+
+    /// Select the primary live attribute cell for a resolved method owner.
+    /// Per-key reads and writes additionally fall through from a role cell to
+    /// the wrapped instance cell.
+    pub(crate) fn method_attr_cell(
+        &self,
+        val: &Value,
+        owner: &str,
+    ) -> Option<crate::gc::Gc<crate::value::InstanceAttrs>> {
+        let (role, inner) = self.method_attr_cells(val, owner);
+        role.or(inner)
+    }
+
+    pub(crate) fn method_role_attr_key(
+        &self,
+        val: &Value,
+        owner: &str,
+        bare: crate::symbol::Symbol,
+    ) -> Option<crate::symbol::Symbol> {
+        if !self.is_role(owner) {
+            return None;
+        }
+        let mut current = val.clone();
+        for _ in 0..8 {
+            match current.view() {
+                ValueView::Mixin(inner_value, mixins) => {
+                    let marker = format!("__mutsu_role__{owner}");
+                    if mixins.contains_key(&marker) {
+                        return Some(mixins.role_attribute_key(owner, bare.as_str()));
+                    }
+                    current = inner_value.as_ref().clone();
+                }
+                ValueView::ContainerRef(_) => current = current.deref_container(),
+                _ => return None,
+            }
+        }
+        None
+    }
+
     /// Read a scalar attribute straight from `self`'s shared cell. `Some` only
     /// when `name` is a scalar attr-twigil, `self` is a concrete instance (or a
     /// Mixin wrapping one), and the attribute exists in the cell.
@@ -234,23 +307,24 @@ impl Interpreter {
         bare: crate::symbol::Symbol,
         is_private: bool,
     ) -> Option<Value> {
-        if let Some(self_val) = self.get_env_self()
-            && let Some(attributes) = Self::self_instance_attrs(&self_val)
-        {
-            let map = attributes.as_map();
-            if let Some(key) = self.attr_key_in_map(bare, is_private, &map) {
-                // An attribute slot promoted to a shared `ContainerRef` cell
-                // (`promote_attr_to_container`, reached by a `:=` bind to the
-                // accessor, ADR-0067's E6 producer, or an `is rw` method whose
-                // tail is the bare attribute) is a *container*: reading `$!x`
-                // yields what it holds, exactly as the accessor read does. The
-                // undereferenced cell was indistinguishable from a defined
-                // value, so `with $!x { ... }` entered on an attribute holding
-                // a type object and the topic was the cell rather than the
-                // object (URI's `multi method authority(--> Authority) is rw`
-                // promoted the slot; `with $!authority` then took the wrong
-                // branch and died assigning through the topic).
-                return map.get(key).map(|v| v.deref_container());
+        if let Some(self_val) = self.get_env_self() {
+            let owner = self.method_class_stack_top_str().unwrap_or("");
+            let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
+            if let Some(attributes) = role_cell {
+                let map = attributes.as_map();
+                let key = self
+                    .method_role_attr_key(&self_val, owner, bare)
+                    .filter(|key| map.contains_key(*key))
+                    .or_else(|| self.attr_key_in_map(bare, is_private, &map));
+                if let Some(key) = key {
+                    return map.get(key).map(|v| v.deref_container());
+                }
+            }
+            if let Some(attributes) = inner_cell {
+                let map = attributes.as_map();
+                if let Some(key) = self.attr_key_in_map(bare, is_private, &map) {
+                    return map.get(key).map(|v| v.deref_container());
+                }
             }
         }
         self.read_class_level_attr_cell(bare, is_private)
@@ -404,24 +478,32 @@ impl Interpreter {
     /// Mixin). No-op when `self` is not a concrete instance or the attribute does
     /// not exist on it.
     fn write_attr_cell_by_key(&self, bare: crate::symbol::Symbol, is_private: bool, val: Value) {
-        if let Some(self_val) = self.get_env_self()
-            && let Some(attributes) = Self::self_instance_attrs(&self_val)
-        {
-            let key = {
-                let map = attributes.as_map();
-                self.attr_key_in_map(bare, is_private, &map)
-            };
-            if let Some(key) = key {
-                self.record_build_attr_write(&attributes, key);
-                // Write *through* a promoted `ContainerRef` slot rather than
-                // replacing it: the cell is the attribute's Scalar, so
-                // `$!x = v` must be visible to every alias handed out of it
-                // (a `:=`-bound name, an `is rw` method result, an `is rw`
-                // argument). Replacing the slot would disconnect all of them at
-                // the first internal write. See the matching deref in
-                // `read_attr_cell_by_key`.
-                attributes.store_through_container(key, val);
-                return;
+        if let Some(self_val) = self.get_env_self() {
+            let owner = self.method_class_stack_top_str().unwrap_or("");
+            let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
+            if let Some(attributes) = role_cell {
+                let key = {
+                    let map = attributes.as_map();
+                    self.method_role_attr_key(&self_val, owner, bare)
+                        .filter(|key| map.contains_key(*key))
+                        .or_else(|| self.attr_key_in_map(bare, is_private, &map))
+                };
+                if let Some(key) = key {
+                    self.record_build_attr_write(&attributes, key);
+                    attributes.store_through_container(key, val.clone());
+                    return;
+                }
+            }
+            if let Some(attributes) = inner_cell {
+                let key = {
+                    let map = attributes.as_map();
+                    self.attr_key_in_map(bare, is_private, &map)
+                };
+                if let Some(key) = key {
+                    self.record_build_attr_write(&attributes, key);
+                    attributes.store_through_container(key, val);
+                    return;
+                }
             }
         }
         // Class-level attribute fallback: see `read_class_level_attr_cell`'s

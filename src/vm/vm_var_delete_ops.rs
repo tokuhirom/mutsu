@@ -328,7 +328,7 @@ impl Interpreter {
         if let Some(overrides) = mixin_overrides
             && let Some(mutated) = self.env().get(&var_name).cloned()
         {
-            let rewrapped = Value::mixin(mutated, overrides);
+            let rewrapped = Value::mixin_with_state(mutated, overrides);
             self.env_mut().insert(var_name.clone(), rewrapped.clone());
             self.write_local_slot_or_name(code, slot, &var_name, rewrapped);
         }

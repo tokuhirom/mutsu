@@ -1,40 +1,11 @@
 use super::*;
-use crate::symbol::Symbol;
-
 impl Interpreter {
-    /// Mirror an accessor write to a role-mixin attribute into the wrapped
-    /// instance's own cell.
-    ///
-    /// The `__mutsu_attr__` mixin entries are construction-time seeds; the cell
-    /// is the store of record, because that is what a private access (`$!attr`)
-    /// inside a role method reads and writes. A write that only updated the
-    /// mixin map would be invisible to `$!attr`, and the next accessor read —
-    /// which prefers the cell — would serve the stale seed.
-    fn sync_mixin_attr_to_instance(inner: &Value, attr: &str, value: &Value) {
-        let Some(cell) = Self::self_instance_attrs(inner) else {
-            return;
-        };
-        let sym = Symbol::intern(attr);
-        // Only mirror an attribute the instance already carries: a `but Role`
-        // mixin over an unrelated object must not gain attributes it never had.
-        if !cell.as_map().contains_key(sym) {
-            return;
-        }
-        let mut map = cell.to_map();
-        map.insert(attr, value.clone());
-        cell.commit_attrs(map);
-    }
-
     /// Whether the role attribute backing a mixin override key
     /// (`__mutsu_attr__{method}`) is declared `is rw`. Scans the mixin's
     /// `__mutsu_role__*` entries for a role that declares the attribute; an
     /// ad-hoc mixin with no declaring role stays writable (matching the
     /// lenient ad-hoc branch of the Instance mixin path).
-    fn mixin_attr_is_rw(
-        &self,
-        mixins: &std::collections::HashMap<String, Value>,
-        method: &str,
-    ) -> bool {
+    fn mixin_attr_is_rw(&self, mixins: &crate::value::MixinOverrides, method: &str) -> bool {
         let mut found_attr = false;
         for role_name in mixins
             .keys()
@@ -53,6 +24,20 @@ impl Interpreter {
             }
         }
         !found_attr
+    }
+
+    fn mixin_has_public_attr(&self, mixins: &crate::value::MixinOverrides, method: &str) -> bool {
+        mixins
+            .keys()
+            .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+            .any(|role_name| {
+                let base = role_name.split('[').next().unwrap_or(role_name);
+                [role_name, base].iter().any(|candidate| {
+                    self.collect_role_attributes_for_class(candidate)
+                        .iter()
+                        .any(|attr| attr.name == method && attr.is_public)
+                })
+            })
     }
 
     /// `Pair.freeze`: decontainerize the pair's value (severing any
@@ -961,7 +946,7 @@ impl Interpreter {
                     }
                     let mut updated = (**mixins).clone();
                     updated.insert(mixin_attr_key, value.clone());
-                    Self::sync_mixin_attr_to_instance(minner, method, &value);
+                    updated.set_role_attribute_by_name(method, value.clone());
                     *cell.lock().unwrap() =
                         Value::mixin_parts(minner.clone(), crate::gc::Gc::new(updated));
                     return Ok(value);
@@ -979,56 +964,37 @@ impl Interpreter {
 
         // Handle Mixin-wrapped instances (e.g. from role punning) by updating
         // the mixin attribute entry directly.
-        if let ValueView::Mixin(inner, mixins) = target.view()
-            && let ValueView::Instance { class_name, .. } = inner.as_ref().view()
-        {
+        if let ValueView::Mixin(inner, mixins) = target.view() {
             let mixin_attr_key = format!("__mutsu_attr__{}", method);
-            // Check if the role attribute is public and rw before allowing assignment
-            let cn = class_name.resolve();
-            let role_attrs = self.collect_role_attributes_for_class(&cn);
-            for attr in &role_attrs {
-                if attr.name == method && attr.is_public {
-                    if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
-                        return Err(RuntimeError::new(format!(
-                            "X::Assignment::RO: method '{}' is not rw",
-                            method
-                        )));
-                    }
-                    let mut updated_mixins = (**mixins).clone();
-                    updated_mixins.insert(
-                        if mixins.contains_key(&mixin_attr_key) {
-                            mixin_attr_key
-                        } else {
-                            format!("__mutsu_attr__{}", method)
-                        },
-                        value.clone(),
-                    );
-                    Self::sync_mixin_attr_to_instance(inner, method, &value);
-                    let new_mixin =
-                        Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
-                    if let Some(var_name) = target_var {
-                        self.env
-                            .insert_through(var_name.to_string(), new_mixin.clone());
-                    }
-                    // Inside a trait_mod the rebuilt Mixin must also refresh the
-                    // writeback capture (same convention as DoesVar): the value
-                    // DoesVar captured predates this assignment and would hand
-                    // the trait's caller a mixin missing it (JSON::Name's
-                    // `$a.json-name = $json-name` right after `$a does ...`).
-                    if self.trait_mod_writeback_key.is_some()
-                        && self.trait_mod_writeback_value.is_some()
-                    {
-                        self.trait_mod_writeback_value = Some(new_mixin);
-                    }
-                    return Ok(value);
+            if mixins.contains_key(&mixin_attr_key) && self.mixin_has_public_attr(mixins, method) {
+                if !self.mixin_attr_is_rw(mixins, method) {
+                    return Err(RuntimeError::new(format!(
+                        "X::Assignment::RO: method '{}' is not rw",
+                        method
+                    )));
                 }
+                let mut updated_mixins = (**mixins).clone();
+                updated_mixins.insert(mixin_attr_key, value.clone());
+                updated_mixins.set_role_attribute_by_name(method, value.clone());
+                let new_mixin =
+                    Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
+                if let Some(var_name) = target_var {
+                    self.env
+                        .insert_through(var_name.to_string(), new_mixin.clone());
+                }
+                if self.trait_mod_writeback_key.is_some()
+                    && self.trait_mod_writeback_value.is_some()
+                {
+                    self.trait_mod_writeback_value = Some(new_mixin);
+                }
+                return Ok(value);
             }
             // If we have the mixin key but didn't find a matching role attribute,
             // still allow the update (e.g. for ad-hoc mixins)
             if mixins.contains_key(&mixin_attr_key) {
                 let mut updated_mixins = (**mixins).clone();
                 updated_mixins.insert(mixin_attr_key, value.clone());
-                Self::sync_mixin_attr_to_instance(inner, method, &value);
+                updated_mixins.set_role_attribute_by_name(method, value.clone());
                 let new_mixin =
                     Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                 if let Some(var_name) = target_var {

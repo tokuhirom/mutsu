@@ -51,7 +51,7 @@ impl Interpreter {
             .mixin_what_cache
             .entry(key)
             .or_insert_with(|| {
-                crate::gc::Gc::new(crate::value::types::filter_composition_markers(mixins))
+                crate::gc::Gc::new(crate::value::types::filter_composition_markers(mixins).into())
             })
             .clone()
     }
@@ -96,7 +96,7 @@ impl Interpreter {
         role_name: &str,
     ) -> Result<Value, RuntimeError> {
         self.ensure_role_punned_to_class(role_name)?;
-        let mut mixins: crate::value::MixinOverrides = HashMap::new();
+        let mut mixins: crate::value::MixinOverrides = HashMap::new().into();
         mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
         // Mirrors `mark_punned_role_instance`'s own role-id lookup so a
         // punned instance's `.WHAT` and `^pun`'s return value key to the

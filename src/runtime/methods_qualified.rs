@@ -778,9 +778,16 @@ impl Interpreter {
                     } else {
                         AttrMap::new()
                     };
+                for attr in &role.attributes {
+                    if let Some(value) = mixins.role_attribute(qualifier, &attr.name) {
+                        role_attrs.insert(attr.name.clone(), value);
+                    }
+                }
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
-                        role_attrs.insert(attr.to_string(), value.clone());
+                        role_attrs
+                            .entry(attr.to_string())
+                            .or_insert_with(|| value.clone());
                     }
                 }
                 let mut saved: Vec<(String, Option<Value>)> = Vec::new();
@@ -804,7 +811,21 @@ impl Interpreter {
                         self.env.remove(&name);
                     }
                 }
-                return Some(res.map(|(result, _updated)| result));
+                return Some(res.map(|(result, updated)| {
+                    if mixins.contains_key(&format!("__mutsu_role__{qualifier}")) {
+                        let inner_cell = Self::self_instance_attrs(inner.as_ref());
+                        self.commit_mixin_role_method_attrs(
+                            mixins,
+                            qualifier,
+                            &role,
+                            inner_cell.as_ref(),
+                            updated,
+                        );
+                    } else if let Some(cell) = self.method_attr_cell(target, qualifier) {
+                        cell.commit_attrs(updated);
+                    }
+                    result
+                }));
             }
         }
 
@@ -861,7 +882,12 @@ impl Interpreter {
                     args,
                     Some(target.clone()),
                 );
-                return Some(res.map(|(result, _updated)| result));
+                return Some(res.map(|(result, updated)| {
+                    if let Some(cell) = self.method_attr_cell(target, qualifier) {
+                        cell.commit_attrs(updated);
+                    }
+                    result
+                }));
             }
             // Last resort: qualifier is a native builtin ancestor of the mixin's
             // inner instance (e.g. `self.IO::Path::slurp` where `self` is a

@@ -59,7 +59,7 @@ impl Interpreter {
         Some(if remaining.is_empty() {
             inner
         } else {
-            Value::mixin(inner, remaining)
+            Value::mixin_with_state(inner, remaining)
         })
     }
 

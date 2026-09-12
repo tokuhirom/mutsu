@@ -4458,7 +4458,10 @@ impl Interpreter {
         if let ValueView::Mixin(inner, mixins) = target.view() {
             if args.is_empty() {
                 let attr_key = format!("__mutsu_attr__{}", method);
-                if let Some(value) = mixins.get(&attr_key) {
+                if let Some(value) = mixins
+                    .role_attribute_by_name(method)
+                    .or_else(|| mixins.get(&attr_key).cloned())
+                {
                     return Ok(value.clone());
                 }
             }

@@ -961,7 +961,7 @@ impl Interpreter {
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            reconciled_attrs = self.reconcile_attrs(&base, cc, &method_def.params);
+            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
 
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -988,7 +988,7 @@ impl Interpreter {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            reconciled_attrs = self.reconcile_attrs(&base, cc, &method_def.params);
+            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
             // Callee-frame key predicate for the merge (formerly a per-call
             // materialized HashSet<String>): the method's params and locals,
             // the frame fixtures, the attribute twigil forms and sigilless
@@ -1244,15 +1244,11 @@ impl Interpreter {
     fn reconcile_attrs(
         &self,
         base: &Value,
+        owner_class: &str,
         code: &CompiledCode,
         params: &[String],
     ) -> Option<AttrMap> {
-        let ValueView::Instance {
-            attributes: cell, ..
-        } = base.view()
-        else {
-            return None;
-        };
+        let cell = self.method_attr_cell(base, owner_class)?;
         // Cheap pre-check: a `:=` attr override can only be observed as a
         // ContainerRef value in THIS frame's locals or env overlay (the bind
         // op writes it there). No ContainerRef anywhere -> skip the per-attr
@@ -1489,10 +1485,12 @@ impl Interpreter {
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         crate::alloc_scope!("mfast");
         crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
-        let attrs_cell = match base.view() {
-            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
-            _ => None,
-        };
+        let attrs_cell = self.method_attr_cell(&base, owner_class);
+        let fallback_attrs_cell = self.method_attr_cells(&base, owner_class).1.filter(|cell| {
+            attrs_cell.as_ref().is_some_and(|primary| {
+                crate::gc::Gc::as_ptr(primary) != crate::gc::Gc::as_ptr(cell)
+            })
+        });
         // RAII (`MarkContextGuard`,
         // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
         // isolate the "mark context" one-shot flag family (bind_context et
@@ -1869,8 +1867,32 @@ impl Interpreter {
 
         {
             let attrs_guard = attrs_cell.as_ref().map(|c| c.as_map());
+            let fallback_attrs_guard = fallback_attrs_cell.as_ref().map(|c| c.as_map());
+            let role_state = if self.is_role(owner_class) {
+                match base.view() {
+                    ValueView::Mixin(_, mixins)
+                        if mixins.contains_key(&format!("__mutsu_role__{owner_class}")) =>
+                    {
+                        Some(mixins.clone())
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let attr_get = |key: &str| -> Option<Value> {
-                attrs_guard.as_ref().and_then(|g| g.get(key).cloned())
+                let bare = key.rsplit('\0').next().unwrap_or(key);
+                let role_key = role_state
+                    .as_ref()
+                    .map(|state| state.role_attribute_key(owner_class, bare));
+                role_key
+                    .and_then(|key| attrs_guard.as_ref().and_then(|g| g.get(key).cloned()))
+                    .or_else(|| attrs_guard.as_ref().and_then(|g| g.get(key).cloned()))
+                    .or_else(|| {
+                        fallback_attrs_guard
+                            .as_ref()
+                            .and_then(|g| g.get(key).cloned())
+                    })
             };
             for (i, local_name) in cc.locals.iter().enumerate() {
                 self.locals[i] = match local_name.as_str() {
@@ -2136,7 +2158,7 @@ impl Interpreter {
         });
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
-        let reconciled = self.reconcile_attrs(&base, cc, &method_def.params);
+        let reconciled = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
 
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;

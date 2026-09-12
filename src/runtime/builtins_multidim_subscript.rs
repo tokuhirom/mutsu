@@ -50,7 +50,10 @@ impl Interpreter {
         // Handle Mixin targets (e.g. `&b does R` followed by `push &b.s, val`).
         if let ValueView::Mixin(inner, mixins) = target.view() {
             let attr_key = format!("__mutsu_attr__{}", attr_name);
-            if let Some(current) = mixins.get(&attr_key).cloned() {
+            if let Some(current) = mixins
+                .role_attribute_by_name(&attr_name)
+                .or_else(|| mixins.get(&attr_key).cloned())
+            {
                 let old_array_arc = match current.view() {
                     ValueView::Array(arc, ..) => Some(arc.clone()),
                     _ => None,

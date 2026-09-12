@@ -157,11 +157,11 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
             // string. A bare-role pun keeps its attrs in the mixin map.
             if mixins.contains_key("__mutsu_role__Rational")
                 && let (Some(n), Some(d)) = (
-                    mixins.get("__mutsu_attr__numerator"),
-                    mixins.get("__mutsu_attr__denominator"),
+                    mixins.role_attribute("Rational", "numerator"),
+                    mixins.role_attribute("Rational", "denominator"),
                 )
             {
-                jsonify(&rational_as_rat(n, d), opts, level, out);
+                jsonify(&rational_as_rat(&n, &d), opts, level, out);
             } else {
                 jsonify(inner, opts, level, out);
             }

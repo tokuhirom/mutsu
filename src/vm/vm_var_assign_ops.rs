@@ -74,7 +74,7 @@ impl Interpreter {
 
     pub(super) fn delegated_mixin_attr_key(
         &self,
-        mixins: &std::collections::HashMap<String, Value>,
+        mixins: &crate::value::MixinOverrides,
         method_name: &str,
     ) -> Option<String> {
         self.delegated_role_attr_key_from_mixins(mixins, method_name)
@@ -83,15 +83,15 @@ impl Interpreter {
     /// Element-assign into a punned role object (`$obj{k} = v` / `$obj[i] = v`)
     /// by mutating the container attribute its role delegates the subscript to.
     ///
-    /// The wrapped instance's shared attribute cell is the store of record for a
-    /// punned role's attributes (every sigil is seeded into it), so the mutated
-    /// container is written there: that is what the delegation forwarder reads,
-    /// and it reaches every alias — including an object held in an attribute or a
-    /// collection element, which the caller-side env writeback never could.
+    /// The Mixin-owned role cell is the store of record for role attributes
+    /// (every sigil is seeded into it), so the mutated container is written
+    /// there: that is what the delegation forwarder reads, and it reaches every
+    /// alias — including an object held in an attribute or a collection element,
+    /// which the caller-side env writeback never could.
     ///
-    /// Returns the rebuilt `Mixin` when the assignment applied (the caller stores
-    /// it back if the object lives in a plain lexical), `None` when `target` is
-    /// not a role mixin or no delegated container accepted the index.
+    /// Returns the same `Mixin` when the assignment applied, preserving aliases;
+    /// returns `None` when `target` is not a role mixin or no delegated container
+    /// accepted the index.
     pub(crate) fn assign_role_mixin_element(
         &mut self,
         target: &Value,
@@ -137,18 +137,24 @@ impl Interpreter {
             inner.hash_assign_at(&key, Self::itemize_value(val.clone()));
             return Ok(Some(target.clone()));
         }
-        // Refresh each `__mutsu_attr__` marker from the cell before mutating, so
-        // an element write made directly inside a role method (`%!h<k> = 1`,
-        // which goes to the cell) is not overwritten by a stale marker.
-        let inst_attrs = Self::self_instance_attrs(&inner);
-        if let Some(attrs) = &inst_attrs {
-            let map = attrs.as_map();
-            for (key, attr_value) in updated_mixins.iter_mut() {
-                if let Some(bare) = key.strip_prefix("__mutsu_attr__")
-                    && let Some(cur) = map.get(Symbol::intern(bare))
-                {
-                    *attr_value = cur.clone();
-                }
+        // Refresh each marker from the live role cell before mutating, so an
+        // element write made directly inside a role method (`%!h<k> = 1`) is
+        // not overwritten by a stale construction seed.
+        let role_attribute_values: Vec<(String, Value)> = updated_mixins
+            .iter()
+            .filter_map(|(key, _)| {
+                key.strip_prefix("__mutsu_attr__").and_then(|bare| {
+                    updated_mixins
+                        .role_attribute_by_name(bare)
+                        .map(|v| (bare.to_string(), v))
+                })
+            })
+            .collect();
+        for (key, attr_value) in updated_mixins.iter_mut() {
+            if let Some(bare) = key.strip_prefix("__mutsu_attr__")
+                && let Some((_, cur)) = role_attribute_values.iter().find(|(name, _)| name == bare)
+            {
+                *attr_value = cur.clone();
             }
         }
         // Which delegation applies is decided by the *delegate container*, not by
@@ -226,16 +232,22 @@ impl Interpreter {
         let Some(assigned_key) = assigned_key else {
             return Ok(None);
         };
-        if let Some(attrs) = &inst_attrs
-            && let Some(bare) = assigned_key.strip_prefix("__mutsu_attr__")
+        if let Some(bare) = assigned_key.strip_prefix("__mutsu_attr__")
             && let Some(new_value) = updated_mixins.get(&assigned_key)
         {
-            attrs.insert(Symbol::intern(bare), new_value.clone());
+            // `updated_mixins` is a deep composition copy, so its role cell is
+            // detached from the Mixin held by an attribute, a lexical alias, or
+            // a collection element. Publish the changed delegate into the
+            // original live cell instead. The marker map remains a
+            // construction-time seed; the next delegated write refreshes its
+            // working copy from this cell before applying another change.
+            mixins.set_role_attribute_by_name(bare, new_value.clone());
         }
-        Ok(Some(Value::mixin_parts(
-            inner,
-            crate::gc::Gc::new(updated_mixins),
-        )))
+        // Role-cell mutation is already visible through every alias of this
+        // Mixin. Returning the original value is important for a plain lexical:
+        // replacing it with the deep-copied `updated_mixins` would silently
+        // detach aliases that still point at the old role cell.
+        Ok(Some(Value::mixin_parts(inner, mixins)))
     }
 
     pub(crate) fn assign_mixin_container_slot(

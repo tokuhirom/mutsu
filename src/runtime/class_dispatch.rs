@@ -512,7 +512,9 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        let cell = invocant.as_ref().and_then(Self::self_instance_attrs);
+        let cell = invocant
+            .as_ref()
+            .and_then(|value| self.method_attr_cell(value, owner_class));
         // Non-instance invocant (no live cell): keep the entry snapshot as the
         // unadjusted fallback map, mirroring the pre-Option return contract.
         let fallback = if cell.is_none() {

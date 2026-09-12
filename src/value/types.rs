@@ -24,7 +24,7 @@ pub(crate) const ANON_ROLE_MARKER_PREFIX: &str = "__mutsu_anon_role__";
 
 /// The anonymous roles recorded in `mixins`, as `(group, seq, display name)`.
 fn anon_role_entries(
-    mixins: &std::collections::HashMap<String, Value>,
+    mixins: &crate::value::MixinOverrides,
 ) -> impl Iterator<Item = (i64, i64, String)> + '_ {
     mixins
         .keys()
@@ -192,9 +192,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
 /// double underscore distinguishes them from the bookkeeping keys
 /// `__mutsu_role_id__` / `__mutsu_role_typeargs__` / `__mutsu_role_param__`).
 /// Returns e.g. `Foo::Bar` for `5 but Foo::Bar` so `.^name` reads `Int+{Foo::Bar}`.
-pub(crate) fn role_mixin_suffix(
-    mixins: &std::collections::HashMap<String, Value>,
-) -> Option<String> {
+pub(crate) fn role_mixin_suffix(mixins: &MixinOverrides) -> Option<String> {
     role_mixin_suffix_excluding(mixins, "")
 }
 
@@ -212,10 +210,7 @@ pub(crate) fn role_mixin_suffix(
 /// name equals it, for the punning case
 /// ([`role_mixin_suffix_excluding`]'s argument of the same name); pass `""`
 /// to exclude nothing.
-pub(crate) fn mixin_roles_applied_last_first(
-    mixins: &std::collections::HashMap<String, Value>,
-    base: &str,
-) -> Vec<String> {
+pub(crate) fn mixin_roles_applied_last_first(mixins: &MixinOverrides, base: &str) -> Vec<String> {
     let mut entries: Vec<(i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
@@ -244,10 +239,7 @@ pub(crate) fn mixin_roles_applied_last_first(
 /// [`role_mixin_suffix`], but skipping the role whose name equals `base` — the
 /// role-punning case, where `R.new` builds `Mixin(Instance{R}, __mutsu_role__R)`
 /// and raku reports plain `R` rather than `R+{R}`. Pass `""` to exclude nothing.
-pub(crate) fn role_mixin_suffix_excluding(
-    mixins: &std::collections::HashMap<String, Value>,
-    base: &str,
-) -> Option<String> {
+pub(crate) fn role_mixin_suffix_excluding(mixins: &MixinOverrides, base: &str) -> Option<String> {
     // APPLICATION order, not alphabetical: raku gives each composition its own
     // bracket and shows them in the order they were applied, which is the
     // property that distinguishes `(1 but A) but B` (`Int+{A}+{B}`) from
@@ -311,7 +303,7 @@ pub(crate) fn role_mixin_suffix_excluding(
 /// group of its own -- the pre-stamp behaviour and the right answer for every
 /// single-role application.
 fn role_application_group(
-    mixins: &std::collections::HashMap<String, Value>,
+    mixins: &crate::value::MixinOverrides,
     role_name: &str,
     fallback: i64,
 ) -> i64 {
@@ -328,7 +320,7 @@ fn role_application_group(
 /// composition time (`__mutsu_role_seq__{name}`), or `i64::MIN` when the marker
 /// is absent (a value built before the stamp existed, or by a path that does
 /// not record one) so such entries sort first and stay deterministic.
-fn role_application_seq(mixins: &std::collections::HashMap<String, Value>, role_name: &str) -> i64 {
+fn role_application_seq(mixins: &crate::value::MixinOverrides, role_name: &str) -> i64 {
     mixins
         .get(&format!("__mutsu_role_seq__{role_name}"))
         .and_then(|v| match v.view() {
@@ -353,10 +345,7 @@ fn role_application_seq(mixins: &std::collections::HashMap<String, Value>, role_
 /// * A parameterised role keeps its type arguments in the name
 ///   (`Int+{G[Int]}`, `Hash+{Associative[Int,Int]}`), read back from the
 ///   `__mutsu_role_typeargs__{name}` marker recorded alongside the role marker.
-fn role_mixin_suffix_entry(
-    mixins: &std::collections::HashMap<String, Value>,
-    role_name: &str,
-) -> String {
+fn role_mixin_suffix_entry(mixins: &crate::value::MixinOverrides, role_name: &str) -> String {
     let display = crate::value::user_facing_type_name(role_name).into_owned();
     // An already-parameterised spelling (a role registered under a bracketed
     // name) must not get a second `[...]` appended.
@@ -399,10 +388,7 @@ fn role_mixin_suffix_entry(
 /// by typeargs), and every other non-composition key this flat map can
 /// carry (`__mutsu_var_target`, `__mutsu_how_target`, `__mutsu_topic_ro__`,
 /// the allomorph `"Str"` key, `__mutsu_language_revision`, ...).
-pub(crate) fn mixin_composition_key(
-    base_type_name: &str,
-    mixins: &std::collections::HashMap<String, Value>,
-) -> String {
+pub(crate) fn mixin_composition_key(base_type_name: &str, mixins: &MixinOverrides) -> String {
     let mut parts: Vec<(i64, i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
@@ -496,7 +482,7 @@ pub(crate) fn mixin_composition_key(
 /// (`<42> === IntStr.new(42, "forty-two")` is `False`) and
 /// [`VALUE_MIXIN_MARKER`]'s fresh anonymous name per `but <non-role>`
 /// application (`(1 but "x") === (1 but "x")` is `False`).
-pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Value>) -> String {
+pub(crate) fn mixin_identity_key(mixins: &MixinOverrides) -> String {
     // Roles in application order (`__mutsu_role_seq__` ascending, name as the
     // tie-break for a marker that carries no stamp), each with the same
     // (name, role_id, typeargs) triple `mixin_composition_key` uses.
@@ -597,7 +583,7 @@ pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Valu
 /// `__mutsu_type_name__` (the mutable `.^set_name` target — written later,
 /// in place, onto the cache entry itself), and any other bookkeeping key.
 pub(crate) fn filter_composition_markers(
-    mixins: &std::collections::HashMap<String, Value>,
+    mixins: &MixinOverrides,
 ) -> std::collections::HashMap<String, Value> {
     mixins
         .iter()
@@ -627,10 +613,7 @@ pub(crate) fn filter_composition_markers(
 
 /// Return the allomorphic type name for a Mixin value, if it is allomorphic.
 /// An allomorphic Mixin has a "Str" key and a numeric inner value.
-pub(crate) fn allomorph_type_name(
-    inner: &Value,
-    mixins: &std::collections::HashMap<String, Value>,
-) -> Option<String> {
+pub(crate) fn allomorph_type_name(inner: &Value, mixins: &MixinOverrides) -> Option<String> {
     if !mixins.contains_key("Str") {
         return None;
     }

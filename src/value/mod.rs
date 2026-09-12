@@ -68,11 +68,245 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
-/// The overrides map of a [`ValueRepr::Mixin`]: a type or role name (or one of
-/// the `__mutsu_*__` marker keys) to the value that overrides it. Lives behind
-/// a `Gc` so `^set_name`'s in-place write is sound and so the collector can
-/// trace through it — see the variant's doc comment.
-pub(crate) type MixinOverrides = HashMap<String, Value>;
+/// The mutable state attached to a [`ValueRepr::Mixin`].
+///
+/// `overrides` is composition metadata: type/method overrides and the
+/// `__mutsu_*__` markers used by the existing mixin machinery. `attributes` is
+/// a separate, private cell for attributes declared by roles in this
+/// composition. Keeping the cell behind the same GC node preserves the
+/// NaN-box payload shape while making aliases of one mixin share role state.
+///
+/// The two fields deliberately do not implement `Deref` to one another. A
+/// caller must choose whether it is inspecting composition metadata or live
+/// role state. `Clone` is the composition-copy operation: it copies the marker
+/// map and deep-copies the role cell. Ordinary `Value` cloning only clones the
+/// containing `Gc<MixinOverrides>`, and therefore aliases both fields.
+#[derive(Debug)]
+pub(crate) struct MixinOverrides {
+    overrides: HashMap<String, Value>,
+    attributes: Gc<InstanceAttrs>,
+}
+
+impl MixinOverrides {
+    pub(crate) fn new(overrides: HashMap<String, Value>) -> Self {
+        let state = Self::with_attributes(overrides, AttrMap::new());
+        state.seed_missing_attributes();
+        state
+    }
+
+    pub(crate) fn with_attributes(overrides: HashMap<String, Value>, attributes: AttrMap) -> Self {
+        Self {
+            overrides,
+            attributes: Gc::new(InstanceAttrs::role_storage(attributes)),
+        }
+    }
+
+    /// The composition/override map. This is the only map used for type
+    /// identity, method overrides, and marker inspection.
+    pub(crate) fn overrides(&self) -> &HashMap<String, Value> {
+        &self.overrides
+    }
+
+    pub(crate) fn overrides_mut(&mut self) -> &mut HashMap<String, Value> {
+        &mut self.overrides
+    }
+
+    pub(crate) fn attributes(&self) -> &Gc<InstanceAttrs> {
+        &self.attributes
+    }
+
+    /// Seed newly composed role attributes into the live role cell without
+    /// overwriting a value that an earlier method call already established.
+    pub(crate) fn seed_missing_attributes(&self) {
+        let role_names: Vec<String> = self
+            .overrides
+            .keys()
+            .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+            .map(str::to_string)
+            .collect();
+        for (key, value) in &self.overrides {
+            let Some(name) = key.strip_prefix("__mutsu_attr__") else {
+                continue;
+            };
+            if role_names.is_empty() {
+                // Compatibility for ad-hoc/legacy values that have an
+                // attribute marker but no role declaration marker.
+                self.attributes
+                    .insert_if_absent(Symbol::intern(name), value.clone());
+            } else {
+                for role_name in &role_names {
+                    self.attributes
+                        .insert_if_absent(self.role_attribute_key(role_name, name), value.clone());
+                }
+            }
+        }
+    }
+
+    fn role_identity(&self, owner: &str) -> String {
+        self.get(&format!("__mutsu_role_id__{owner}"))
+            .and_then(|value| match value.view() {
+                ValueView::Int(id) if id > 0 => Some(id.to_string()),
+                _ => None,
+            })
+            .unwrap_or_else(|| owner.to_string())
+    }
+
+    pub(crate) fn role_attribute_key(&self, owner: &str, name: &str) -> Symbol {
+        Symbol::intern(&format!(
+            "__mutsu_role_attr__\0{}\0{name}",
+            self.role_identity(owner)
+        ))
+    }
+
+    pub(crate) fn role_attribute(&self, owner: &str, name: &str) -> Option<Value> {
+        let key = self.role_attribute_key(owner, name);
+        let map = self.attributes.as_map();
+        map.get(key)
+            .or_else(|| map.get(Symbol::intern(name)))
+            .cloned()
+    }
+
+    pub(crate) fn set_role_attribute_by_name(&self, name: &str, value: Value) -> bool {
+        let keys: Vec<Symbol> = self
+            .attributes
+            .as_map()
+            .keys()
+            .copied()
+            .filter(|key| key.as_str() == name || key.as_str().ends_with(&format!("\0{name}")))
+            .collect();
+        if keys.is_empty() {
+            return false;
+        }
+        for key in keys {
+            self.attributes.store_through_container(key, value.clone());
+        }
+        true
+    }
+
+    /// Update one role's live attribute, preferring its owner-qualified cell
+    /// entry and falling back to the legacy bare entry for pre-cell values.
+    pub(crate) fn set_role_attribute(&self, owner: &str, name: &str, value: Value) -> bool {
+        let key = {
+            let map = self.attributes.as_map();
+            let qualified = self.role_attribute_key(owner, name);
+            if map.contains_key(qualified) {
+                Some(qualified)
+            } else {
+                let bare = Symbol::intern(name);
+                map.contains_key(bare).then_some(bare)
+            }
+        };
+        if let Some(key) = key {
+            self.attributes.store_through_container(key, value);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn role_attribute_by_name(&self, name: &str) -> Option<Value> {
+        let suffix = format!("\0{name}");
+        self.attributes
+            .as_map()
+            .iter()
+            .find(|(key, _)| key.as_str() == name || key.as_str().ends_with(&suffix))
+            .map(|(_, value)| value.clone())
+    }
+
+    // Map-shaped accessors keep the representation migration local while
+    // callers are moved to the explicit `overrides()` API. They are not a
+    // Deref implementation: taking a clone of this state always has the
+    // intentionally different deep-copy semantics documented above.
+    pub(crate) fn get<Q>(&self, key: &Q) -> Option<&Value>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.overrides.get(key)
+    }
+
+    pub(crate) fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.overrides.get_mut(key)
+    }
+
+    pub(crate) fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.overrides.contains_key(key)
+    }
+
+    pub(crate) fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+        self.overrides.insert(key, value)
+    }
+
+    pub(crate) fn entry(
+        &mut self,
+        key: String,
+    ) -> std::collections::hash_map::Entry<'_, String, Value> {
+        self.overrides.entry(key)
+    }
+
+    pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Value> {
+        self.overrides.iter()
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> std::collections::hash_map::IterMut<'_, String, Value> {
+        self.overrides.iter_mut()
+    }
+
+    pub(crate) fn keys(&self) -> std::collections::hash_map::Keys<'_, String, Value> {
+        self.overrides.keys()
+    }
+
+    pub(crate) fn values(&self) -> std::collections::hash_map::Values<'_, String, Value> {
+        self.overrides.values()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.overrides.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.overrides.is_empty()
+    }
+
+    pub(crate) fn remove<Q>(&mut self, key: &Q) -> Option<Value>
+    where
+        String: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.overrides.remove(key)
+    }
+}
+
+impl From<HashMap<String, Value>> for MixinOverrides {
+    fn from(overrides: HashMap<String, Value>) -> Self {
+        Self::new(overrides)
+    }
+}
+
+impl Clone for MixinOverrides {
+    fn clone(&self) -> Self {
+        Self {
+            overrides: self.overrides.clone(),
+            attributes: Gc::new((*self.attributes).clone()),
+        }
+    }
+}
+
+impl PartialEq for MixinOverrides {
+    fn eq(&self, other: &Self) -> bool {
+        // Mutable role state is not composition metadata. Equality and type
+        // identity retain their pre-cell semantics.
+        self.overrides == other.overrides
+    }
+}
 
 /// How the bytes of one element read back out of a [`BufData`] node.
 ///

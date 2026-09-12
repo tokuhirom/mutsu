@@ -512,13 +512,15 @@ impl Trace for BufData {
 /// however many mixin values share the map.
 impl Trace for MixinOverrides {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        for v in self.values() {
+        for v in self.overrides().values() {
             v.gc_trace(visit);
         }
+        visit(&self.attributes().erased());
     }
 
     fn drop_gc_edges(&mut self) {
-        self.clear();
+        self.overrides_mut().clear();
+        self.attributes().clear_gc_edges();
     }
 }
 
@@ -1015,7 +1017,39 @@ mod tests {
             panic!("not a Mixin");
         };
         map.trace(&mut |_| nested += 1);
-        assert_eq!(nested, 1, "the overrides node traces its own Value edges");
+        assert_eq!(
+            nested, 2,
+            "the overrides node traces its own Value edges and role cell"
+        );
+    }
+
+    #[test]
+    fn mixin_role_cell_aliases_value_clones_but_deep_clone_detaches() {
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("__mutsu_role__R".to_string(), Value::Bool(true));
+        overrides.insert("__mutsu_attr__n".to_string(), Value::Int(1));
+        let value = Value::mixin(Value::Int(0), overrides);
+        let alias = value.clone();
+
+        let ValueView::Mixin(_, state) = value.view() else {
+            panic!("not a Mixin");
+        };
+        let key = state.role_attribute_key("R", "n");
+        state
+            .attributes()
+            .store_through_container(key, Value::Int(2));
+
+        let ValueView::Mixin(_, alias_state) = alias.view() else {
+            panic!("alias is not a Mixin");
+        };
+        assert_eq!(alias_state.role_attribute("R", "n"), Some(Value::Int(2)));
+
+        let detached = crate::gc::Gc::new((**state).clone());
+        detached
+            .attributes()
+            .store_through_container(key, Value::Int(3));
+        assert_eq!(state.role_attribute("R", "n"), Some(Value::Int(2)));
+        assert_eq!(detached.role_attribute("R", "n"), Some(Value::Int(3)));
     }
 
     #[test]

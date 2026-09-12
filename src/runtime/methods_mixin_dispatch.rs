@@ -102,6 +102,57 @@ impl Interpreter {
             .any(|role_name| self.role_has_method(role_name, method_name))
     }
 
+    /// Commit the merged attribute snapshot returned by a role method to the
+    /// two stores it may contain. The method frame deliberately presents one
+    /// flat namespace to the Raku body, but a role's attributes belong to the
+    /// Mixin-owned cell while attributes inherited from the wrapped instance
+    /// belong to that instance's cell. Committing the merged snapshot to one
+    /// cell would leak class attributes into the role cell (and would replace
+    /// owner-qualified role keys with bare names).
+    pub(crate) fn commit_mixin_role_method_attrs(
+        &self,
+        mixins: &crate::value::MixinOverrides,
+        role_name: &str,
+        role: &RoleDef,
+        inner_cell: Option<&crate::gc::Gc<crate::value::InstanceAttrs>>,
+        updated: AttrMap,
+    ) {
+        let role_attr_names: Vec<Symbol> = role
+            .attributes
+            .iter()
+            .map(|attr| Symbol::intern(&attr.name))
+            .collect();
+        for attr in &role.attributes {
+            if let Some(value) = updated.get(Symbol::intern(&attr.name)) {
+                mixins.set_role_attribute(role_name, &attr.name, value.clone());
+            }
+        }
+        let Some(inner_cell) = inner_cell else {
+            return;
+        };
+
+        // `run_resolved_method_compiled_or_treewalk` returns only attributes
+        // whose frame slots were dirty, rather than a complete copy of the
+        // input map. Start with the live inner snapshot so an otherwise
+        // untouched class attribute cannot disappear on a role call.
+        let mut inner_updated = inner_cell.to_map();
+        for (key, value) in &updated {
+            if !role_attr_names.contains(key) {
+                inner_updated.insert(*key, value.clone());
+            }
+        }
+        // A role attribute can shadow a same-named class attribute in the
+        // merged frame. Preserve the class cell's current value, including a
+        // mutation made by nextsame/callsame, instead of writing the role value
+        // into the class-owned cell.
+        for key in &role_attr_names {
+            if let Some(value) = inner_cell.as_map().get(*key) {
+                inner_updated.insert(*key, value.clone());
+            }
+        }
+        inner_cell.commit_attrs(inner_updated);
+    }
+
     /// Dispatch method calls on Mixin targets.
     /// Returns Some(result) if the method was handled, None if not.
     pub(crate) fn dispatch_mixin_method_call(
@@ -114,14 +165,13 @@ impl Interpreter {
             return None;
         };
 
-        // `.clone` on a role mixin. A punned role's attributes live in
-        // `__mutsu_attr__*` mixin markers, not the inner instance's attr map (see
-        // `dispatch_new` — a bare-role `.new` returns `Mixin(empty-instance,
-        // {__mutsu_attr__x: ...})`). The generic instance clone unwraps to the
-        // inner value and drops every marker, so the clone lost all attributes
-        // (`Zef::Client.fetch`'s `$candi.clone(:$dist)` then had no `.as`). Clone
-        // the mixin instead: recursively clone the inner value, copy every marker,
-        // and apply each `:attr(val)` override to its `__mutsu_attr__` marker.
+        // `.clone` on a role mixin. A punned role's `__mutsu_attr__*` entries are
+        // construction seeds for the Mixin-owned role cell, not the live state.
+        // The generic instance clone unwraps to the inner value and drops the
+        // role composition, so the clone lost all attributes (`Zef::Client.fetch`'s
+        // `$candi.clone(:$dist)` then had no `.as`). Clone the mixin instead:
+        // recursively clone the inner value, deep-copy the role cell, copy every
+        // marker, and apply each `:attr(val)` override to the new role cell.
         // Restricted to role mixins (a `__mutsu_role__`/`__mutsu_attr__` marker is
         // present) so allomorph / non-role `but` mixins keep their existing path.
         if method == "clone"
@@ -130,15 +180,14 @@ impl Interpreter {
                 .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
         {
             let inner_owned = inner.as_ref().clone();
-            let mut new_mixins: HashMap<String, Value> = mixins.as_ref().clone();
+            let mut new_mixins = mixins.as_ref().clone();
             // An override names either a role attribute (a `__mutsu_attr__`
             // marker) or an attribute of the inner class. Apply the former to the
             // marker; forward the rest to the inner clone so `$w.clone(:id(99))`
             // on a `Widget but Named` still overrides Widget's own `$.id`.
-            // A punned role's attributes also live in the inner instance's own
-            // cell (that is what `$!attr` reads), so an override that lands on a
-            // marker must reach the cell too — otherwise the accessor, which
-            // prefers the cell, keeps serving the pre-clone value.
+            // An override that lands on a role marker must reach the deep-copied
+            // role cell too — otherwise the accessor would keep serving the
+            // pre-clone value from that cell.
             let inner_attrs = Self::self_instance_attrs(inner);
             let mut inner_args: Vec<Value> = Vec::new();
             for arg in &args {
@@ -147,9 +196,13 @@ impl Interpreter {
                         new_mixins.entry(format!("__mutsu_attr__{}", key))
                 {
                     e.insert(val.clone());
+                    let attr = Symbol::intern(key);
+                    if new_mixins.set_role_attribute_by_name(key, val.clone()) {
+                        continue;
+                    }
                     let in_cell = inner_attrs
                         .as_ref()
-                        .is_some_and(|c| c.as_map().contains_key(Symbol::intern(key)));
+                        .is_some_and(|c| c.as_map().contains_key(attr));
                     if !in_cell {
                         continue;
                     }
@@ -160,7 +213,7 @@ impl Interpreter {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
-            return Some(Ok(Value::mixin(inner_clone, new_mixins)));
+            return Some(Ok(Value::mixin_with_state(inner_clone, new_mixins)));
         }
 
         if method == "of"
@@ -201,13 +254,33 @@ impl Interpreter {
                             })
                         });
                 if is_public {
-                    // The marker is only the construction-time seed. If the
-                    // wrapped instance carries the attribute, that cell is the
-                    // store of record — a `$!foo = ...` inside a role method
-                    // writes there, and the accessor must not serve the stale
-                    // seed afterwards.
+                    // Role attributes live in the Mixin-owned cell. The
+                    // wrapped instance is only the fallback for an attribute
+                    // belonging to the wrapped class with the same public
+                    // spelling.
+                    let attr = Symbol::intern(method);
+                    let role_live = mixins
+                        .keys()
+                        .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+                        .filter_map(|role_name| {
+                            self.registry()
+                                .roles
+                                .get(role_name)
+                                .cloned()
+                                .map(|role| (role_name.to_string(), role))
+                        })
+                        .find_map(|(role_name, role)| {
+                            role.attributes
+                                .iter()
+                                .any(|attr| attr.name == method && attr.is_public)
+                                .then(|| mixins.role_attribute(&role_name, method))
+                                .flatten()
+                        });
+                    if let Some(live) = role_live {
+                        return Some(Ok(live));
+                    }
                     if let Some(cell) = Self::self_instance_attrs(inner)
-                        && let Some(live) = cell.as_map().get(Symbol::intern(method))
+                        && let Some(live) = cell.as_map().get(attr)
                     {
                         return Some(Ok(live.clone()));
                     }
@@ -303,6 +376,11 @@ impl Interpreter {
                     }
                     _ => (None, AttrMap::new()),
                 };
+                for attr in &role.attributes {
+                    if let Some(value) = mixins.role_attribute(&role_name, &attr.name) {
+                        method_attrs.insert(attr.name.clone(), value);
+                    }
+                }
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
                         let sym = Symbol::intern(attr);
@@ -375,16 +453,19 @@ impl Interpreter {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
-                // Propagate attribute mutations made by the role method back to
-                // the inner instance, so that changes to class attributes (e.g.
-                // `push @.order, ...`) are visible after the call returns. This
-                // updates every binding in scope that holds the same instance
-                // (including the one wrapped inside this Mixin).
-                //
-                // A role's OWN attributes on a mixin over a non-Instance value
-                // (`%h does R`) have no store to come back to at all — see
-                // tokuhirom/mutsu#8026.
-                if let Some(cell) = &inner_cell {
+                // Propagate attribute mutations made by the role method to the
+                // owner-selected store. Role attributes go to the Mixin-owned
+                // cell; class attributes go to the wrapped instance cell. This
+                // updates every binding in scope that holds the same store.
+                if self.is_role(&role_name) {
+                    self.commit_mixin_role_method_attrs(
+                        mixins,
+                        &role_name,
+                        &role,
+                        inner_cell.as_ref(),
+                        updated,
+                    );
+                } else if let Some(cell) = &inner_cell {
                     cell.commit_attrs(updated);
                 }
                 return Some(Ok(result));

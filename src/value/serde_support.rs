@@ -110,6 +110,14 @@ enum SerValue {
         sig_info: Option<crate::value::signature::SigInfo>,
     },
     Mixin(Box<SerValue>, HashMap<String, SerValue>),
+    /// Current role-cell state for a Mixin. The two-field `Mixin` variant is
+    /// retained so pre-cell serialized values continue to decode as seed-only
+    /// compositions.
+    MixinWithAttributes {
+        inner: Box<SerValue>,
+        overrides: HashMap<String, SerValue>,
+        attributes: HashMap<String, SerValue>,
+    },
     Capture {
         positional: Vec<SerValue>,
         named: HashMap<String, SerValue>,
@@ -123,6 +131,8 @@ enum SerValue {
         type_args: Vec<SerValue>,
     },
     Scalar(Box<SerValue>),
+    ContainerRef(Box<SerValue>),
+    ContainerView(Box<SerValue>),
     Nil,
     Whatever,
     HyperWhatever,
@@ -310,10 +320,17 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
                 .collect();
-            Ok(SerValue::Mixin(
-                Box::new(value_to_ser(inner)?),
-                ser_overrides?,
-            ))
+            let ser_attributes: Result<HashMap<_, _>, _> = overrides
+                .attributes()
+                .as_map()
+                .iter()
+                .map(|(k, v)| value_to_ser(v).map(|sv| (k.resolve(), sv)))
+                .collect();
+            Ok(SerValue::MixinWithAttributes {
+                inner: Box::new(value_to_ser(inner)?),
+                overrides: ser_overrides?,
+                attributes: ser_attributes?,
+            })
         }
         ValueView::Capture { positional, named } => {
             let ser_pos: Result<Vec<_>, _> = positional.iter().map(value_to_ser).collect();
@@ -341,6 +358,18 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             })
         }
         ValueView::Scalar(inner) => Ok(SerValue::Scalar(Box::new(value_to_ser(inner)?))),
+        ValueView::ContainerRef(cell) => {
+            let value = cell
+                .lock()
+                .map_err(|_| "cannot lock ContainerRef for serialization".to_string())?;
+            Ok(SerValue::ContainerRef(Box::new(value_to_ser(&value)?)))
+        }
+        ValueView::ContainerView(cell) => {
+            let value = cell
+                .lock()
+                .map_err(|_| "cannot lock ContainerView for serialization".to_string())?;
+            Ok(SerValue::ContainerView(Box::new(value_to_ser(&value)?)))
+        }
         ValueView::Nil => Ok(SerValue::Nil),
         ValueView::Whatever => Ok(SerValue::Whatever),
         ValueView::HyperWhatever => Ok(SerValue::HyperWhatever),
@@ -354,9 +383,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | ValueView::CustomType { .. }
         | ValueView::CustomTypeInstance(_)
         | ValueView::LazyThunk(_)
-        | ValueView::HashEntryRef { .. }
-        | ValueView::ContainerRef(_)
-        | ValueView::ContainerView(_) => Err(format!(
+        | ValueView::HashEntryRef { .. } => Err(format!(
             "cannot serialize Value variant: {}",
             super::what_type_name(v)
         )),
@@ -534,13 +561,31 @@ fn ser_to_value(sv: SerValue) -> Value {
         }),
         SerValue::Mixin(inner, overrides) => Value::Mixin(
             Arc::new(ser_to_value(*inner)),
-            crate::gc::Gc::new(
+            crate::gc::Gc::new(crate::value::MixinOverrides::from(
                 overrides
                     .into_iter()
                     .map(|(k, v)| (k, ser_to_value(v)))
-                    .collect(),
-            ),
+                    .collect::<HashMap<_, _>>(),
+            )),
         ),
+        SerValue::MixinWithAttributes {
+            inner,
+            overrides,
+            attributes,
+        } => {
+            let overrides = overrides
+                .into_iter()
+                .map(|(k, v)| (k, ser_to_value(v)))
+                .collect::<HashMap<_, _>>();
+            let attributes = attributes
+                .into_iter()
+                .map(|(k, v)| (Symbol::intern(&k), ser_to_value(v)))
+                .collect();
+            Value::mixin_with_state(
+                ser_to_value(*inner),
+                crate::value::MixinOverrides::with_attributes(overrides, attributes),
+            )
+        }
         SerValue::Capture { positional, named } => Value::capture(
             positional.into_iter().map(ser_to_value).collect(),
             named
@@ -557,6 +602,12 @@ fn ser_to_value(sv: SerValue) -> Value {
             type_args: type_args.into_iter().map(ser_to_value).collect(),
         }),
         SerValue::Scalar(inner) => Value::Scalar(Box::new(ser_to_value(*inner))),
+        SerValue::ContainerRef(inner) => Value::container_ref(crate::gc::Gc::new(
+            crate::value::ContainerCell::new(ser_to_value(*inner)),
+        )),
+        SerValue::ContainerView(inner) => Value::container_view(crate::gc::Gc::new(
+            crate::value::ContainerCell::new(ser_to_value(*inner)),
+        )),
         SerValue::Nil => Value::Nil,
         SerValue::Whatever => Value::Whatever,
         SerValue::HyperWhatever => Value::HyperWhatever,
@@ -574,5 +625,54 @@ impl<'de> Deserialize<'de> for Value {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let sv = SerValue::deserialize(deserializer)?;
         Ok(ser_to_value(sv))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixin_serialization_preserves_live_role_cell_and_promoted_value() {
+        let mut overrides = HashMap::new();
+        overrides.insert("__mutsu_role__R".to_string(), Value::TRUE);
+        overrides.insert("__mutsu_attr__n".to_string(), Value::int(1));
+        let value = Value::mixin(Value::int(0), overrides);
+        let ValueView::Mixin(_, state) = value.view() else {
+            panic!("expected a mixin");
+        };
+        let key = state.role_attribute_key("R", "n");
+        state
+            .attributes()
+            .store_through_container(key, Value::int(2));
+        let promoted = state.attributes().promote_attr_to_container(key);
+        if let ValueView::ContainerRef(cell) = promoted.view() {
+            *cell.lock().unwrap() = Value::int(3);
+        } else {
+            panic!("expected a promoted role attribute");
+        }
+
+        let encoded = serde_json::to_string(&value).expect("serialize mixin");
+        let restored: Value = serde_json::from_str(&encoded).expect("deserialize mixin");
+        let ValueView::Mixin(_, restored_state) = restored.view() else {
+            panic!("expected a restored mixin");
+        };
+        let restored_value = restored_state
+            .role_attribute("R", "n")
+            .expect("restored role attribute");
+        assert_eq!(restored_value.deref_container(), Value::int(3));
+        assert!(matches!(restored_value.view(), ValueView::ContainerRef(_)));
+    }
+
+    #[test]
+    fn legacy_seed_only_mixin_serialization_still_decodes() {
+        let mut overrides = HashMap::new();
+        overrides.insert("__mutsu_role__R".to_string(), SerValue::Bool(true));
+        overrides.insert("__mutsu_attr__n".to_string(), SerValue::Int(7));
+        let restored = ser_to_value(SerValue::Mixin(Box::new(SerValue::Int(0)), overrides));
+        let ValueView::Mixin(_, state) = restored.view() else {
+            panic!("expected a restored legacy mixin");
+        };
+        assert_eq!(state.role_attribute("R", "n"), Some(Value::int(7)));
     }
 }
