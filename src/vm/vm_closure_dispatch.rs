@@ -1764,6 +1764,54 @@ impl Interpreter {
             self.propagate_pending_caller_writes(&mut restored_env, &callee_private);
         }
 
+        // The names the END-phaser refresh below has to consider: the captured
+        // names this call can have CHANGED in the caller. Collected here, while
+        // `self.env()` is still the callee frame, because the refresh itself has
+        // to read the restored caller env.
+        //
+        // Every caller-visible write a closure call makes passes through this
+        // frame's own overlay tier — the writeback loop above is an iteration of
+        // exactly that tier, and a value that never reached it cannot have
+        // reached `restored_env` either. So the overlay's own keys bound the
+        // set, and after a `use Test` that is ~6 names against the capture's
+        // ~35 (#7565). Three things widen it back:
+        //
+        // * `cc.free_var_syms`, because a slot-authoritative write to a free
+        //   variable need not have mirrored into `env` at all (the `(B)`
+        //   per-store skip in `vm_var_assign_set_local.rs`);
+        // * a by-name write whose target only exists at run time (an `EVAL`'d
+        //   `$a = 32`), which `propagate_pending_caller_writes` merges from a
+        //   side channel rather than from the overlay;
+        // * a resume-safe CONTROL handler's write into an ancestor frame.
+        //
+        // The last two fall back to the whole capture, as does a frame whose
+        // env is not a scoped overlay at all (then `keys()` is the whole env,
+        // so the narrowing would cost more than it saves).
+        let end_refresh_keys: Vec<Symbol> = if self.has_end_phasers() && !data.env.is_empty() {
+            if self.pending_runtime_name_writes.is_empty()
+                && self.inline_control_env_writes.len() == inline_control_writes_at_entry
+                && self.env().len() < data.env.len()
+            {
+                let captured = data.env.inner();
+                // Sized up front: the `filter` hides the exact size hint the
+                // two iterators have, so `collect` would otherwise walk
+                // hashbrown's growth ladder for a handful of names.
+                let mut keys = Vec::with_capacity(self.env().len() + cc.free_var_syms.len());
+                keys.extend(
+                    self.env()
+                        .keys()
+                        .copied()
+                        .chain(cc.free_var_syms.iter().copied())
+                        .filter(|k| captured.contains_key(k)),
+                );
+                keys
+            } else {
+                data.env.keys().copied().collect()
+            }
+        } else {
+            Vec::new()
+        };
+
         *self.env_mut() = restored_env;
 
         // After a closure returns, update captured envs of END phasers for
@@ -1776,7 +1824,7 @@ impl Interpreter {
         // names, and asking first is what keeps the `clone_env()` flatten below
         // off every closure return in a program that merely declares an `END`
         // (#7565).
-        if self.has_end_phasers() && !data.env.is_empty() && self.end_phasers_watch_any(&data.env) {
+        if !end_refresh_keys.is_empty() && self.end_phasers_watch_any(&end_refresh_keys) {
             // The refresh reads the live env ONE KEY AT A TIME
             // (`current_env.get_sym`), and a scoped env's `get_sym` already
             // walks its parent chain — so it needs the full lexical *view*, not
@@ -1786,7 +1834,7 @@ impl Interpreter {
             // instructions per iteration of a loop in a file that had done
             // nothing but `use Test` (#7565).
             let current = self.take_env();
-            self.update_end_phaser_envs_for_keys(&data.env, &current);
+            self.update_end_phaser_envs_for_keys(&end_refresh_keys, &current);
             self.set_env(current);
         }
 
