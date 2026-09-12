@@ -84,7 +84,7 @@ impl Interpreter {
     fn collect_named_captures_in_atom(atom: &RegexAtom, out: &mut HashSet<String>) {
         match atom {
             RegexAtom::Named(name) => {
-                let spec = Self::parse_named_regex_lookup_spec(name);
+                let spec = name.spec();
                 if !spec.silent {
                     // A non-suppressing alias captures under BOTH names (see
                     // `also_under_original` in `regex_match_atom.rs`), so both are
@@ -413,7 +413,7 @@ impl Interpreter {
         let subrule_subcap = if group_subcap.is_none()
             && let RegexAtom::Named(atom_name) = &token.atom
         {
-            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            let spec = atom_name.spec();
             let own_key = spec
                 .capture_name
                 .clone()
@@ -454,7 +454,7 @@ impl Interpreter {
         // never be dispatched. Preserve the original rule name on the alias
         // node, just as the `<alias=.subrule>` spelling does in the matcher.
         if let RegexAtom::Named(atom_name) = &token.atom {
-            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            let spec = atom_name.spec();
             if spec.silent && !spec.lookup_name.is_empty() {
                 std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_name.clone());
             }
@@ -467,7 +467,7 @@ impl Interpreter {
         // per node: one alias name can select different rules in different
         // alternatives (`$<part> = <text> || $<part> = <code>`).
         if let RegexAtom::Named(atom_name) = &token.atom {
-            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            let spec = atom_name.spec();
             if !spec.silent
                 && !spec.lookup_name.is_empty()
                 && name != &spec.lookup_name

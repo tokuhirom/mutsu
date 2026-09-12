@@ -135,6 +135,7 @@ impl OuterCapsSeed {
     }
 
     /// Leave the enclosing atom's seed in place untouched.
+    #[inline]
     pub(crate) fn inert() -> Self {
         OuterCapsSeed {
             prev: None,
@@ -144,6 +145,7 @@ impl OuterCapsSeed {
 }
 
 impl Drop for OuterCapsSeed {
+    #[inline]
     fn drop(&mut self) {
         if !self.armed {
             return;
@@ -188,6 +190,14 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
     }
 }
 
+/// Is anything published in [`INLINE_REGEX_VARS_SEED`] right now? A `false`
+/// means an atom that has no lexicals of its own to publish cannot change what
+/// any nested store would see, so it need not arm the seed at all.
+#[inline]
+pub(crate) fn inline_regex_vars_active() -> bool {
+    INLINE_REGEX_VARS_ACTIVE.with(Cell::get)
+}
+
 /// Arms the [`INLINE_REGEX_VARS_SEED`] for the duration of one atom match,
 /// restoring the enclosing atom's seed on drop. An atom that is an inline
 /// sub-pattern arms it with the lexicals in scope; every other atom — a subrule
@@ -202,6 +212,7 @@ impl InlineVarsSeed {
     /// Publish `vars` (already a shared handle — `None` means "publish
     /// nothing", which is what a subrule reference arms) for the duration of
     /// one atom match.
+    #[inline]
     pub(crate) fn arm(vars: Option<&std::sync::Arc<crate::runtime::RegexVarMap>>) -> Self {
         let active = INLINE_REGEX_VARS_ACTIVE.with(Cell::get);
         if vars.is_none() && !active {
@@ -217,9 +228,21 @@ impl InlineVarsSeed {
         let prev = INLINE_REGEX_VARS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
         InlineVarsSeed { prev, armed: true }
     }
+
+    /// Leave the enclosing atom's seed in place untouched. Equivalent to
+    /// [`Self::arm`]`(None)` when nothing is published, without asking the
+    /// thread-local whether anything is.
+    #[inline]
+    pub(crate) fn inert() -> Self {
+        InlineVarsSeed {
+            prev: None,
+            armed: false,
+        }
+    }
 }
 
 impl Drop for InlineVarsSeed {
+    #[inline]
     fn drop(&mut self) {
         if !self.armed {
             return;
@@ -640,7 +663,7 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         RegexAtom::Named(name) => {
             // Named subrule / literal string match — strip marks from the name
             let stripped: String = name.nfd().filter(|c| !is_combining_mark(*c)).collect();
-            RegexAtom::Named(stripped)
+            RegexAtom::Named(stripped.into())
         }
         RegexAtom::Group(p) => RegexAtom::Group(strip_marks_pattern(p)),
         RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern(p)),
@@ -886,28 +909,28 @@ impl Iterator for CaseFoldIter {
     }
 }
 
-pub(super) struct NamedRegexLookupSpec {
-    pub(super) silent: bool,
-    pub(super) token_lookup: bool,
-    pub(super) lookup_name: String,
+pub(crate) struct NamedRegexLookupSpec {
+    pub(crate) silent: bool,
+    pub(crate) token_lookup: bool,
+    pub(crate) lookup_name: String,
     /// [`Self::lookup_name`] interned. The spec itself is memoized per atom
     /// text, so this interns once per distinct `<subrule>` atom in the program
     /// rather than once per call — the left-recursion key is built from it on
     /// every subrule call at every position
     /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-    pub(super) lookup_sym: crate::symbol::Symbol,
-    pub(super) capture_name: Option<String>,
+    pub(crate) lookup_sym: crate::symbol::Symbol,
+    pub(crate) capture_name: Option<String>,
     /// [`Self::capture_name`] interned, `None` when the atom carries no alias.
     /// Interned with the spec (once per distinct `<subrule>` atom) rather than
     /// per candidate: `build_named_candidates_from_inner` files every matched
     /// subrule under this name, so interning it there re-hashed the same string
     /// once per capture -- 37,012 interns on a 60-row YAML parse
     /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-    pub(super) capture_sym: Option<crate::symbol::Symbol>,
-    pub(super) arg_exprs: Vec<String>,
+    pub(crate) capture_sym: Option<crate::symbol::Symbol>,
+    pub(crate) arg_exprs: Vec<String>,
     /// When true, the alias replaces the original capture name (dot-call alias).
     /// `<foo=.alpha>` sets this to true; `<foo=alpha>` leaves it false.
-    pub(super) alias_replaces_original: bool,
+    pub(crate) alias_replaces_original: bool,
 }
 
 /// Check if a character is a "word" character for word boundary purposes.

@@ -175,7 +175,7 @@ fn casefold_atom(atom: &RegexAtom) -> CasefoldedAtom {
         RegexAtom::Named(name) => {
             // Case-fold the literal name text
             let folded: String = name.chars().flat_map(casefold_char).collect();
-            CasefoldedAtom::Single(RegexAtom::Named(folded))
+            CasefoldedAtom::Single(RegexAtom::Named(folded.into()))
         }
         RegexAtom::Group(p) => CasefoldedAtom::Single(RegexAtom::Group(casefold_pattern(p))),
         RegexAtom::CaptureGroup(p) => {

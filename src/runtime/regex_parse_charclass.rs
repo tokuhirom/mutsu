@@ -1047,7 +1047,7 @@ impl Interpreter {
             .into_iter()
             // Prefix with `.` so the subrule is matched *silently* (no named
             // capture) — a character class never captures.
-            .map(|name| guard_pattern(make_pattern(RegexAtom::Named(format!(".{name}")))))
+            .map(|name| guard_pattern(make_pattern(RegexAtom::Named(format!(".{name}").into()))))
             .collect();
         // Statically-folded token bodies join the alternation directly (they
         // are closed patterns: no captures, no runtime resolution).

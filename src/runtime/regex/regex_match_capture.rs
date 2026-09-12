@@ -27,7 +27,41 @@ impl Interpreter {
     /// enclosing level's captures for the sub-pattern matches this atom is
     /// about to run. See [`super::regex_helpers::INLINE_REGEX_VARS_SEED`] and
     /// [`super::regex_helpers::INLINE_OUTER_CAPS_SEED`].
+    ///
+    /// Every atom match calls this, and on a grammar that publishes neither
+    /// mechanism every call is a no-op: on a 60-row YAMLish parse it ran
+    /// 402,202 times and touched a thread-local 507 of them, for 1.63% of the
+    /// program between the call, the two seed constructions and their drop glue
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)). Both "is
+    /// anything published" questions are answered without looking at the atom
+    /// at all, so they gate an inlined early-out and the real work moves to an
+    /// out-of-line cold path.
+    #[inline]
     pub(super) fn arm_inline_vars_seed(
+        atom: &RegexAtom,
+        current_caps: &RegexCaptures,
+    ) -> (
+        super::regex_helpers::InlineVarsSeed,
+        super::regex_helpers::OuterCapsSeed,
+    ) {
+        use super::regex_helpers::{
+            InlineVarsSeed, OuterCapsSeed, any_regex_backref_lowered, inline_regex_vars_active,
+        };
+        // Nothing published and nothing to publish: whichever branch the cold
+        // path would take, it arms `InlineVarsSeed::arm(None)` with the slot
+        // already empty (inert) and, with no backreference lowered anywhere in
+        // the process, `OuterCapsSeed::inert()`.
+        if !any_regex_backref_lowered()
+            && !inline_regex_vars_active()
+            && current_caps.regex_vars_shared().is_none()
+        {
+            return (InlineVarsSeed::inert(), OuterCapsSeed::inert());
+        }
+        Self::arm_inline_vars_seed_cold(atom, current_caps)
+    }
+
+    #[inline(never)]
+    fn arm_inline_vars_seed_cold(
         atom: &RegexAtom,
         current_caps: &RegexCaptures,
     ) -> (
@@ -785,13 +819,13 @@ impl Interpreter {
             _ => {}
         }
         if let RegexAtom::Named(name) = atom {
-            let spec = Self::parse_named_regex_lookup_spec(name);
+            let spec = name.spec().clone();
             // Symbolic indirect subrule `<::(EXPR)>`: evaluate EXPR to obtain the
             // dynamic rule name, then dispatch as if it were `<NAME>` so that
             // builtin character classes and user-defined tokens both resolve.
             if spec.lookup_name == "::" && spec.arg_exprs.len() == 1 {
                 let val = self.eval_regex_expr_value(&spec.arg_exprs[0], current_caps)?;
-                let dyn_atom = RegexAtom::Named(val.to_string_value());
+                let dyn_atom = RegexAtom::Named(val.to_string_value().into());
                 return self
                     .regex_match_atom_all_with_capture_in_pkg(
                         &dyn_atom,
@@ -1043,7 +1077,7 @@ impl Interpreter {
         }
         match atom {
             RegexAtom::Named(name) => {
-                let spec = Self::parse_named_regex_lookup_spec(name);
+                let spec = name.spec();
                 if spec.token_lookup {
                     return None;
                 }

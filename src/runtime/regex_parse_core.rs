@@ -455,7 +455,7 @@ impl Interpreter {
     ) -> RegexAtom {
         let inner_pattern = RegexPattern {
             tokens: vec![RegexToken {
-                atom: RegexAtom::Named(subrule.to_string()),
+                atom: RegexAtom::Named(subrule.to_string().into()),
                 quant: RegexQuant::One,
                 named_capture: None,
                 hash_capture: None,
@@ -2793,7 +2793,7 @@ impl Interpreter {
                                     && mode == RegexParseMode::Validate
                                 {
                                     // <?@var> / <!@var> lookahead — opaque at parse time.
-                                    RegexAtom::Named(name.clone())
+                                    RegexAtom::Named(name.clone().into())
                                 } else if trimmed.starts_with("?@") || trimmed.starts_with("!@") {
                                     // <?@var> / <!@var> — zero-width lookahead asserting the
                                     // position matches (or, negated, does not match) any
@@ -2840,7 +2840,7 @@ impl Interpreter {
                                 } else if let Some(negated_name) = trimmed.strip_prefix('!') {
                                     if negated_name.is_empty() {
                                         // <!> — always-fail (handled as Named("!") downstream)
-                                        RegexAtom::Named(name)
+                                        RegexAtom::Named(name.into())
                                     } else if negated_name == "same" || negated_name == ".same" {
                                         // <!same> — zero-width assertion: next two chars are different
                                         RegexAtom::SameAssertion { negated: true }
@@ -2998,7 +2998,7 @@ impl Interpreter {
                                             }
                                         } else {
                                             // Not a known builtin — pass through as Named
-                                            RegexAtom::Named(name)
+                                            RegexAtom::Named(name.into())
                                         }
                                     } // close else (non-empty negated_name)
                                 } else if trimmed.starts_with("::") {
@@ -3006,7 +3006,7 @@ impl Interpreter {
                                     // double colon distinguishes it from a `<:PropName>`
                                     // Unicode-property assertion; keep it as a Named atom
                                     // so the dynamic name is resolved at match time.
-                                    RegexAtom::Named(name)
+                                    RegexAtom::Named(name.into())
                                 } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
                                     // <:!PropName> or <-:PropName> — negated Unicode property
                                     let prop_name = &trimmed[2..];
@@ -3101,7 +3101,7 @@ impl Interpreter {
                                     // <$var> interpolation — opaque at parse time (the variable's
                                     // value is unavailable). Accept it as a syntactically-valid
                                     // assertion; the runtime `Match` path below resolves it.
-                                    RegexAtom::Named(name.clone())
+                                    RegexAtom::Named(name.clone().into())
                                 } else if let Some(var_name) = trimmed.strip_prefix('$') {
                                     // <$var> — look up scalar variable and compile as regex.
                                     // The `${name}` fallback and `.into_deref()` mirror the
@@ -3233,7 +3233,7 @@ impl Interpreter {
                                     && mode == RegexParseMode::Validate
                                 {
                                     // <@var> interpolation — opaque at parse time.
-                                    RegexAtom::Named(name.clone())
+                                    RegexAtom::Named(name.clone().into())
                                 } else if trimmed.starts_with('@') {
                                     // <@var> — look up array variable and compile
                                     // each element as a regex pattern (alternation).
@@ -3402,7 +3402,7 @@ impl Interpreter {
                                     match crate::runtime::regex_parse::TopLevelSourceScope::current(
                                     ) {
                                         Some(src) => RegexAtom::RecurseSelf(Box::from(&*src)),
-                                        None => RegexAtom::Named(name),
+                                        None => RegexAtom::Named(name.into()),
                                     }
                                 } else if trimmed == "|w" {
                                     // <|w> — zero-width assertion at a boundary of the
@@ -3415,7 +3415,7 @@ impl Interpreter {
                                     if let Ok(pos) = inner.trim().parse::<usize>() {
                                         RegexAtom::AtPosition(pos)
                                     } else {
-                                        RegexAtom::Named(name)
+                                        RegexAtom::Named(name.into())
                                     }
                                 } else if let Some(sub) = trimmed
                                     .strip_prefix('?')
@@ -3462,7 +3462,7 @@ impl Interpreter {
                                         && !self.current_package().is_empty()
                                         && self.resolve_token_defs(class_name).is_some();
                                     if grammar_overrides_builtin {
-                                        RegexAtom::Named(name)
+                                        RegexAtom::Named(name.into())
                                     } else {
                                         // Check for named character classes
                                         match class_name {
@@ -3574,7 +3574,7 @@ impl Interpreter {
                                                     });
                                                     return None;
                                                 }
-                                                RegexAtom::Named(name)
+                                                RegexAtom::Named(name.into())
                                             }
                                         }
                                     } // close else of grammar_overrides_builtin

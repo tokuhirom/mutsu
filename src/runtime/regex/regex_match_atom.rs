@@ -480,7 +480,7 @@ impl Interpreter {
             }
             out
         } else if let RegexAtom::Named(name) = atom {
-            let spec = Self::parse_named_regex_lookup_spec(name);
+            let spec = name.spec().clone();
             // Symbolic indirect subrule `<::(EXPR)>`: evaluate EXPR to obtain
             // the rule name dynamically, then dispatch as if it were `<NAME>`.
             // This must resolve through the same path as a literal subrule so
@@ -491,7 +491,7 @@ impl Interpreter {
                     return Vec::new();
                 };
                 let dyn_name = val.to_string_value();
-                let dyn_atom = RegexAtom::Named(dyn_name);
+                let dyn_atom = RegexAtom::Named(dyn_name.into());
                 return self.regex_match_atom_all_with_capture_opts(
                     &dyn_atom,
                     chars,
