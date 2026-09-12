@@ -6,11 +6,15 @@ use crate::value::ValueView;
 /// that carries a parenthesized argument; see `skip_optional_trait_arg`.
 const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw", "encoded"];
 
-/// After a parameter trait name, skip an optional parenthesized argument such as
-/// the `('utf8')` in `is encoded('utf8')`. Balances nested parens and ignores
-/// parens inside single/double-quoted string literals. Leading whitespace before
-/// the `(` is permitted. Returns the input unchanged when no `(` follows.
+/// After a parameter trait name, skip an optional argument such as the
+/// `('utf8')` in `is encoded('utf8')` or the `<!>` in `is option<!>`. Balances
+/// nested parens and ignores parens inside single/double-quoted string
+/// literals. Leading whitespace before the `(` is permitted. Returns the input
+/// unchanged when no argument follows.
 pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
+    if let Some(rest) = skip_optional_trait_word_arg(input) {
+        return rest;
+    }
     let trimmed = input.trim_start();
     if !trimmed.starts_with('(') {
         return input;
@@ -45,6 +49,37 @@ pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
     }
     // Unbalanced: leave the input as-is so the normal parser reports the error.
     input
+}
+
+/// A trait argument written as a word quote directly after the trait name —
+/// `Bool :$timer is option<!>` (App::Prove6, via `Trait::Option`), `is foo«a b»`.
+/// Rakudo lowers it to a named argument on `trait_mod:<is>`; mutsu keeps only
+/// the trait *name* on a parameter, so the argument is skipped like the
+/// parenthesized form. The opener must follow the name with no intervening
+/// whitespace, which keeps `$x is copy where * < 3` out of this path.
+/// `<...>` nests, matching the word-quote grammar. Returns `None` when no word
+/// quote follows, and also when it is unbalanced so the normal parser reports
+/// the error.
+fn skip_optional_trait_word_arg(input: &str) -> Option<&str> {
+    let (open, close) = if input.starts_with('<') {
+        ('<', '>')
+    } else if input.starts_with('\u{ab}') {
+        ('\u{ab}', '\u{bb}')
+    } else {
+        return None;
+    };
+    let mut depth = 0u32;
+    for (i, c) in input.char_indices() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(&input[i + c.len_utf8()..]);
+            }
+        }
+    }
+    None
 }
 
 /// Trait validation for a pointy-block parameter parsed by `parse_for_params`

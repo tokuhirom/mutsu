@@ -86,13 +86,38 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     // Sigilless parameter: \name, optionally preceded by a type constraint
     // (`-> Mu \type { ... }` — how JSON::Unmarshal writes its `where` lambdas).
     if let Some(r) = rest.strip_prefix('\\') {
-        let (rest, name) = ident(r)?;
+        let (r, name) = ident(r)?;
+        // ...and, like every other parameter shape, it may carry `is` traits and
+        // a default: `-> $, \v is raw { ... }` is how Proxee writes its `STORE`
+        // block. Only the sigilled and `+name` branches parsed a tail, so the
+        // trait was left unconsumed and the whole pointy block failed at its
+        // opening brace.
+        let mut traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(after_is) = keyword("is", r) {
+            let (after_is, _) = ws1(after_is)?;
+            let (after_is, trait_name) = ident(after_is)?;
+            let (after_is, _) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            traits.push(trait_name);
+            let (after_is, _) = ws(after_is)?;
+            r = after_is;
+        }
+        let mut default = None;
+        if let Some(after_eq) = r.strip_prefix('=')
+            && !after_eq.starts_with('>')
+        {
+            let (after_eq, _) = ws(after_eq)?;
+            let (after_default, default_expr) = expression(after_eq)?;
+            default = Some(default_expr);
+            r = after_default;
+        }
+        let rest = r;
         return Ok((
             rest,
             ParamDef {
                 type_capture: None,
                 name,
-                default: None,
+                default,
                 multi_invocant: true,
                 required: false,
                 named: false,
@@ -107,7 +132,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 outer_sub_signature: None,
                 code_signature: None,
                 where_constraint: None,
-                traits: Vec::new(),
+                traits,
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,

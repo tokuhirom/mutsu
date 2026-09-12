@@ -97,31 +97,24 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
 /// precomposed Unicode "negated" glyph. Returns the *positive* `TokenKind`,
 /// which the caller wraps in a `Bang` unary.
 ///
-/// Handles the ASCII forms `!(elem)`, `!(cont)`, `!(<=)`, `!(>=)`, `!(>)`,
-/// `!(==)` and the Unicode glyphs `\u{2209}` (\u{2209}), `\u{220C}` (\u{220C}),
-/// `\u{2288}` (\u{2288}), `\u{2289}` (\u{2289}). `!(<)` and `\u{2284}`/`\u{2285}`/`\u{2262}`
-/// already have dedicated handling in `parse_set_op`, so they are intentionally
-/// left out here.
+/// Handles the ASCII forms `!(elem)`, `!(cont)`, `!(<=)`, `!(>=)`, `!(<)`,
+/// `!(>)`, `!(==)`, the same relations spelled with their Unicode glyph
+/// (`!\u{2208}`, `!\u{2286}`, ...), and the precomposed negated glyphs `\u{2209}`,
+/// `\u{220C}`, `\u{2288}`, `\u{2289}`.
+///
+/// The `!` meta-prefix applies to any Bool-returning infix, so rather than
+/// listing the negatable spellings a second time this defers to `parse_set_op`
+/// and keeps whatever it returns if the relation is iffy. That is what admits
+/// `@vars .= grep: * !\u{2208} @$positional` (Math::Symbolic), which the ASCII-only
+/// list used to reject. The non-Bool set operators (`\u{222a}`, `\u{2229}`, `\u{2216}`, ...) stay
+/// out, so `!\u{222a}` is still not an operator.
 fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize)> {
     if let Some(rest) = input.strip_prefix('!') {
-        // Check the 4-char forms before the 3-char ones so that e.g. `(<=)`
-        // is not mis-parsed as `(<)` followed by stray `=`.
-        let positive = if rest.starts_with("(elem)") {
-            Some((TokenKind::SetElem, 6))
-        } else if rest.starts_with("(cont)") {
-            Some((TokenKind::SetCont, 6))
-        } else if rest.starts_with("(<=)") {
-            Some((TokenKind::SetSubset, 4))
-        } else if rest.starts_with("(>=)") {
-            Some((TokenKind::SetSuperset, 4))
-        } else if rest.starts_with("(>)") {
-            Some((TokenKind::SetStrictSuperset, 3))
-        } else if rest.starts_with("(==)") {
-            Some((TokenKind::Ident("(==)".to_string()), 4))
-        } else {
-            None
-        };
-        return positive.map(|(tok, len)| (tok, 1 + len));
+        let (tok, len) = parse_set_op(rest)?;
+        if !is_iffy_set_op(&tok) {
+            return None;
+        }
+        return Some((tok, 1 + len));
     }
     // Precomposed Unicode negated glyphs missing from `parse_set_op`.
     if input.starts_with('\u{2209}') {
@@ -134,6 +127,24 @@ fn parse_negated_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetSuperset, '\u{2289}'.len_utf8()))
     } else {
         None
+    }
+}
+
+/// True for the set operators that return a Bool and can therefore carry the
+/// `!` meta-negation. `(==)`/`\u{2261}` are set equality, also Bool-valued.
+fn is_iffy_set_op(tok: &TokenKind) -> bool {
+    match tok {
+        TokenKind::SetElem
+        | TokenKind::SetCont
+        | TokenKind::SetSubset
+        | TokenKind::SetSuperset
+        | TokenKind::SetStrictSubset
+        | TokenKind::SetStrictSuperset => true,
+        TokenKind::Ident(name) => matches!(
+            name.as_str(),
+            "(==)" | "\u{2261}" | "\u{2262}" | "\u{2284}" | "\u{2285}"
+        ),
+        _ => false,
     }
 }
 
