@@ -39,6 +39,7 @@ pub(crate) const BUILTIN_ROLE_NAMES: &[&str] = &[
     "Sequence",
     "PositionalBindFailover",
     "Systemic",
+    "Awaitable",
 ];
 
 /// Is `name` one of [`BUILTIN_ROLE_NAMES`]?

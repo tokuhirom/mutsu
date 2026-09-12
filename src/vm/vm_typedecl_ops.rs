@@ -860,12 +860,19 @@ impl Interpreter {
             let current_package = self.current_package().to_string();
             let qualified_name = if let Some(stripped) = name_str.strip_prefix("GLOBAL::") {
                 stripped.to_string()
-            } else if name_str.contains("::")
-                || current_package == "GLOBAL"
+            } else if current_package == "GLOBAL"
                 || name_str == current_package
+                || name_str.starts_with(&format!("{current_package}::"))
             {
                 name_str.clone()
             } else {
+                // A *nested* declared name is qualified by the enclosing package
+                // like any other, exactly as `exec_register_class_op` does it:
+                // `module M { my role A::B { } }` declares `M::A::B`, so
+                // `M::A::B` (and the relative `A::B`) both resolve. Leaving a
+                // compound name bare registered `TAP.rakumod`'s `my role
+                // Entry::Handler` as a global `Entry::Handler`, so its own
+                // `my class State does TAP::Entry::Handler` found no such role.
                 format!("{current_package}::{name_str}")
             };
             // If the short name was suppressed by an earlier lexical type with
