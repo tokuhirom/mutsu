@@ -64,7 +64,9 @@ named by `our role Packet[...]`'s
 `is_resolvable_type` now follows the same alias that type-object position
 follows, via `resolve_bare_type_name`, which already confirms the target is a
 class or role before handing back a name. Pinned by
-`t/oo/role/role-method-param-lexical-class.t`.
+`t/oo/role/role-method-param-lexical-class.t`. That gets `Protocol::MQTT` past
+`EncodeBuffer` and onto an unrelated next blocker,
+[#8145](https://github.com/tokuhirom/mutsu/issues/8145).
 
 ## `try EXPR` is a statement prefix, not a block
 
@@ -94,22 +96,27 @@ followed by an `if` *statement* still works.
 ## What the re-measure says about the cluster
 
 Re-running `scripts/ecosystem-sweep.py` over all 21 distributions with those
-fixes in place, the single cluster has fragmented into unrelated root causes,
-which is the answer #7993 was after. The updated records are in
-`ecosystem/dists/`.
+fixes in place, the cluster has fragmented, which is the answer #7993 was after.
+**The typename failure now affects 6 distributions rather than 21, and 4 distinct
+names rather than 14** — and each of the four is a separate root cause with a
+ticket of its own:
 
-The typename failures that survive belong to tickets of their own:
-[#8061](https://github.com/tokuhirom/mutsu/issues/8061) (`my role A::B` does not
-install `B` into package `A` — `TAP`, `App::Mi6`, `Mi6::Helper`),
-[#8115](https://github.com/tokuhirom/mutsu/issues/8115) (`Enumeration` is the one
-core role that is not composable, which is what `Logic::Ternary`'s entry in the
-cluster always was) and
-[#8131](https://github.com/tokuhirom/mutsu/issues/8131) (an imported `constant`
-type alias is not accepted as a type — `Gnome::N`'s `GType`).
+| name | distributions | ticket |
+|---|---|---|
+| `TAP::Entry::Handler` | `TAP`, `App::Mi6`, `Mi6::Helper` | [#8061](https://github.com/tokuhirom/mutsu/issues/8061) — `my role A::B` does not install `B` into package `A` |
+| `Enumeration` | `Logic::Ternary` | [#8115](https://github.com/tokuhirom/mutsu/issues/8115) — the one core role that is not composable |
+| `GType` | `Gnome::N` | [#8131](https://github.com/tokuhirom/mutsu/issues/8131) — an imported `constant` type alias is not accepted as a type |
+| `Packet[Type::Connect]` | `Protocol::MQTT` | [#8145](https://github.com/tokuhirom/mutsu/issues/8145) — a parameterised role whose method names a `my class`, with a `my enum` type parameter |
 
-The distributions that now get past their typename error land on blockers that
-were never about typenames at all:
-[#8062](https://github.com/tokuhirom/mutsu/issues/8062) (`class Foo is Attribute`
-— the PDF family) and
-[#8121](https://github.com/tokuhirom/mutsu/issues/8121) (a re-exported
-`&trait_mod:<is>` is invisible to the importer — `Ddt` through `JSON::Class`).
+The other 15 distributions are past their typename error entirely, onto blockers
+that were never about typenames: `class Foo is Attribute`
+([#8062](https://github.com/tokuhirom/mutsu/issues/8062), the six PDF-family
+distributions), a re-exported `&trait_mod:<is>` the importer cannot see
+([#8121](https://github.com/tokuhirom/mutsu/issues/8121), `Ddt` through
+`JSON::Class`), a parse gap in `Selkie::App::Internal::Dispatch` shared by
+`Selkie`, `Selkie::UI`, `Grammar::Editor` and `App::Moneymoor`, an our-scoped
+enum in a role (`LibXML`), and a handful of one-off failures.
+
+`Test::Async` and `Gnome::N` are `partial` rather than `blocked_load` now: their
+modules all load, and what remains is per-file assertion work. The updated
+records are in `ecosystem/dists/`.
