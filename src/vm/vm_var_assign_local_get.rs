@@ -520,6 +520,7 @@ impl Interpreter {
             return;
         }
         let container = cur.into_container_ref();
+        self.register_container_cell_constraint_for_name(&container, name);
         self.locals[idx] = container.clone();
         let nm = code.locals[idx].clone();
         self.env_mut().insert(nm.clone(), container.clone());

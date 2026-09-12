@@ -1591,6 +1591,7 @@ impl Interpreter {
                 continue;
             }
             let container = cur.clone().into_container_ref();
+            self.register_container_cell_constraint_for_name(&container, &s);
             self.locals[idx] = container.clone();
             self.env_mut().insert(s.clone(), container.clone());
             // Track C: if a thread is already running (shared_vars active) and a
