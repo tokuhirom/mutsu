@@ -82,17 +82,17 @@ pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
     register_module_exports, register_module_type_names, type_index_is_complete,
 };
-pub(in crate::parser) use pragma_preseed::{
-    current_attributes_pragma, is_imported_value_term, is_user_declared_sub,
-    is_user_declared_type, push_package_path, register_imported_type, register_imported_value_term,
-    register_user_enum_value, register_user_type, reset_package_path, set_attributes_pragma,
-    set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
-    set_eval_user_type_preseed, set_eval_user_value_term_preseed,
-};
 /// Crate-wide (not just `pub(in crate::parser)` like its siblings above): the
 /// compiler's `is_definite_return_spec` twin needs this parse-time enum-value
 /// registry too (#8022), and has no interpreter to consult instead.
 pub(crate) use pragma_preseed::is_user_declared_enum_value;
+pub(in crate::parser) use pragma_preseed::{
+    current_attributes_pragma, is_imported_value_term, is_user_declared_sub, is_user_declared_type,
+    push_package_path, register_imported_type, register_imported_value_term,
+    register_user_enum_value, register_user_type, reset_package_path, set_attributes_pragma,
+    set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
+    set_eval_user_type_preseed, set_eval_user_value_term_preseed,
+};
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, is_declared_loop_label, lookup_custom_infix_precedence,
     lookup_postfix_precedence, lookup_prefix_precedence, lookup_user_infix_assoc,
