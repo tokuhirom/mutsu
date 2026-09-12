@@ -40,6 +40,63 @@ thread_local! {
     pub(crate) static REGEX_PARSE_CACHE: RefCell<HashMap<String, (u64, std::sync::Arc<RegexPattern>)>> =
         RefCell::new(HashMap::new());
 
+    /// Memoization cache for *sub-pattern* parses — every `parse_regex_uncached`
+    /// entry, not just the outermost one [`REGEX_PARSE_CACHE`] covers.
+    ///
+    /// The parser is recursive: a group, a lookaround body, an alternation
+    /// branch, a conjunction part and a `%`-separator atom each re-enter
+    /// `parse_regex_uncached` through `parse_regex_with_mode`, which was a bare
+    /// passthrough with no memo of its own. So the *outer* pattern was cached
+    /// while everything inside it was re-parsed on every outer parse. A
+    /// `rust-gdb` hit-count sweep over one 60-row
+    /// `benchmarks/bench-yaml-parse.raku` document counted **10,958 parses of
+    /// only 255 distinct patterns** — `<.space>` alone 1,005 times — for 11.6%
+    /// of the whole program ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    ///
+    /// Two levels of key, so a probe allocates nothing: the outer key is
+    /// `(current package, mode)`, both `Copy`, and the inner map is probed with
+    /// the pattern as a borrowed `&str`. Entries record the `TOKEN_DEFS_GEN`
+    /// they were parsed under, exactly like [`REGEX_PARSE_CACHE`].
+    ///
+    /// Keyed on the pattern text *after* variable interpolation, because that
+    /// is where purity begins: `Match` mode substitutes `$`/`@`/`%` variable
+    /// values into the pattern first, and the structural parse that follows is
+    /// a function of the resulting string plus the token registry. Keying on
+    /// the source text instead would have to refuse everything
+    /// [`regex_pattern_is_static`] calls dynamic, which on the profiled
+    /// document is most of the repeated patterns — that predicate
+    /// conservatively counts `$<name>` *capture* forms (`$<value> = [ … ]`) as
+    /// interpolation even though they name a capture rather than read a
+    /// variable.
+    ///
+    /// Only `Match` mode is stored. A `Validate`-mode parse pushes non-fatal
+    /// diagnostics onto [`REGEX_SORROWS`] on its way to a successful parse and
+    /// [`validate_regex_structurally`] drains them, so a cache hit
+    /// would report none the second time — and validation runs once per regex
+    /// literal at compile time, so there is nothing to gain either.
+    ///
+    /// One `Match`-mode shape is still excluded: text containing `~~`. `<~~>` bakes
+    /// the *enclosing* regex's source into `RegexAtom::RecurseSelf`, read from
+    /// [`PARSING_TOP_LEVEL_SOURCE`], so the same sub-pattern text can parse to
+    /// different trees under different outer patterns. `RecurseSelf` is
+    /// produced only where the text handed to *this* parse literally spells
+    /// `<~~>`, so testing that text is sufficient.
+    ///
+    /// A failed parse is never stored: failure reports through the
+    /// [`PENDING_REGEX_ERROR`] side channel, which a cache hit would not
+    /// reproduce.
+    ///
+    /// Bounded by [`SUBPATTERN_PARSE_CACHE_MAX`] per bucket — see the note at
+    /// the insert site for why interpolated text, unlike source text, is not
+    /// bounded by the program.
+    #[allow(clippy::type_complexity)]
+    pub(crate) static REGEX_SUBPATTERN_PARSE_CACHE: RefCell<
+        rustc_hash::FxHashMap<
+            (Symbol, RegexParseMode),
+            rustc_hash::FxHashMap<String, (u64, std::sync::Arc<RegexPattern>)>,
+        >,
+    > = RefCell::new(rustc_hash::FxHashMap::default());
+
     /// Memoization cache for the *main-slang* code strings evaluated during
     /// regex matching: `{ … }` side-effect blocks, `<?{ … }>`/`<!{ … }>`
     /// assertions, `<{ … }>` closure interpolations, `** {code}` quantifier
@@ -53,6 +110,28 @@ thread_local! {
     /// them, the same discipline as `REGEX_PARSE_CACHE`'s `TOKEN_DEFS_GEN`.
     pub(crate) static REGEX_CODE_PARSE_CACHE: RefCell<HashMap<String, CachedCodeParse>> =
         RefCell::new(HashMap::new());
+
+    /// Set by any point in the structural parse that consults interpreter or
+    /// ambient state the [`REGEX_SUBPATTERN_PARSE_CACHE`] key does not capture:
+    /// the `<$var>` / `<@var>` assertion forms, which read the variable's value
+    /// at PARSE time (unlike a bare `$var`, which
+    /// `Interpreter::interpolate_regex_scalars` substitutes into the text
+    /// first, so the key already reflects it), and `<~~>`, which reads
+    /// [`PARSING_TOP_LEVEL_SOURCE`].
+    ///
+    /// `Interpreter::parse_regex_uncached` refuses to store a parse that raised
+    /// this, and propagates it to the enclosing parse so an outer pattern
+    /// containing such a sub-pattern is not stored either.
+    ///
+    /// This is a flag raised at the reads themselves rather than a list of
+    /// pattern syntaxes tested up front, because the list cannot be kept
+    /// correct as the parser grows: the first version of this memo derived the
+    /// exclusions from reading the code, missed the `<$var>` form, and made
+    /// `roast/S05-metasyntax/litvar.t` reuse the tree of `$var = '$i'` for
+    /// `$var = '<$i>'`. Anything that reads such state must raise this;
+    /// `Interpreter::note_regex_parse_ambient_read` is the single way to do it.
+    pub(crate) static PARSE_CONSULTED_AMBIENT_STATE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 
     /// The source text of the regex currently being parsed at TOP level, so a
     /// `<~~>` found at any nesting depth inside it can record what "recurse into
@@ -316,6 +395,13 @@ mod static_pattern_tests {
     }
 }
 
+/// Per-bucket entry cap for [`REGEX_SUBPATTERN_PARSE_CACHE`]. Reaching it
+/// clears the bucket: the memo is an optimization, so dropping it costs
+/// re-parses and nothing else, and a bound is needed because its keys are
+/// interpolated pattern text — a regex that splices a loop counter mints a
+/// fresh one on every iteration.
+pub(crate) const SUBPATTERN_PARSE_CACHE_MAX: usize = 4096;
+
 /// Parsing mode for the shared regex grammar parser (`parse_regex_uncached`).
 ///
 /// The structural parser is the single source of truth for Raku regex grammar.
@@ -330,7 +416,7 @@ mod static_pattern_tests {
 ///   variable references as opaque, syntactically-valid atoms. Every structural
 ///   and grammar syntax check still fires, so this replaces the former standalone
 ///   `regex_validate` module.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum RegexParseMode {
     Match,
     Validate,

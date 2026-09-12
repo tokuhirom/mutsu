@@ -364,6 +364,15 @@ impl Interpreter {
         !self.current_package().is_empty() && self.resolve_token_defs(name).is_some()
     }
 
+    /// Raise [`PARSE_CONSULTED_AMBIENT_STATE`]
+    /// for the parse in progress. Call this from any point in the structural
+    /// parse that reads interpreter or ambient state, so
+    /// [`Interpreter::parse_regex_uncached`] does not memoize a tree that is
+    /// not a function of its key.
+    pub(super) fn note_regex_parse_ambient_read() {
+        crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+    }
+
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
     /// compile each element as a regex pattern, collapsing to a character class
@@ -371,6 +380,9 @@ impl Interpreter {
     /// is empty / unset. Shared by `<@var>` and its `<?@var>` / `<!@var>`
     /// lookahead forms.
     fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> Option<RegexAtom> {
+        // Reads the array's VALUE at parse time; the tree is not a function of
+        // the pattern text alone.
+        Self::note_regex_parse_ambient_read();
         let value = self.env.get(env_key).cloned().unwrap_or(Value::NIL);
         let elements = match value.view() {
             ValueView::Array(arr, _) => arr.as_ref().clone(),
@@ -631,9 +643,118 @@ impl Interpreter {
             })
     }
 
+    /// Parse `pattern`, memoizing the structural parse in
+    /// [`REGEX_SUBPATTERN_PARSE_CACHE`].
+    ///
+    /// This wraps EVERY entry into the recursive-descent parser, not just the
+    /// outermost one [`REGEX_PARSE_CACHE`]
+    /// covers: the parser re-enters itself through
+    /// [`Interpreter::parse_regex_with_mode`] for groups, lookaround bodies,
+    /// alternation branches, conjunction parts and `%`-separator atoms, and
+    /// that path had no memo of its own, so the inside of a cached outer
+    /// pattern was re-parsed on every outer parse.
+    ///
+    /// The memo key is the **interpolated** text, not the source pattern,
+    /// because that is where purity mostly begins: `Match` mode substitutes
+    /// `$`/`@`/`%` variable values into the pattern first, and what follows is
+    /// a function of the resulting string plus the grammar-token registry
+    /// (pinned by `TOKEN_DEFS_GEN`). Keying on the source text instead would
+    /// have to refuse every pattern `regex_pattern_is_static` calls dynamic —
+    /// which on the profiled document is most of the repeated ones, since that
+    /// predicate conservatively counts `$<name>` *capture* forms
+    /// (`$<value> = [ … ]`) as interpolation. Measured: source-keyed -2.7%,
+    /// interpolated-keyed -9.0%.
+    ///
+    /// "Mostly", because a few parse steps read state the key does not carry —
+    /// the `<$var>` / `<@var>` assertion forms take the variable's value at
+    /// parse time, and `<~~>` reads the enclosing regex's source. Those raise
+    /// [`PARSE_CONSULTED_AMBIENT_STATE`]
+    /// at the read itself and their parse is not stored; the flag propagates
+    /// outward, so an enclosing pattern is not stored either.
+    ///
+    /// A hit clones the stored tree rather than handing out the `Arc`, because
+    /// every caller moves the `RegexPattern` into a `RegexAtom`. The clone is a
+    /// memory copy of one sub-tree; the parse it replaces re-scans the source,
+    /// re-resolves grammar tokens against the registry, and re-runs LTM
+    /// expansion over it.
     pub(super) fn parse_regex_uncached(
         &self,
         pattern: &str,
+        mode: RegexParseMode,
+    ) -> Option<RegexPattern> {
+        // `Match` mode interpolates `$`/`@`/`%` variable values into the pattern
+        // before structural parsing. `Validate` mode (parse-time dry run) has no
+        // variable values available, so it skips interpolation and treats sigil
+        // references as opaque atoms further down.
+        let interpolated = if mode == RegexParseMode::Match {
+            match self.interpolate_regex_scalars(pattern) {
+                Ok(s) => s,
+                Err(e) => {
+                    PENDING_REGEX_ERROR.with(|err| {
+                        *err.borrow_mut() = Some(e);
+                    });
+                    return None;
+                }
+            }
+        } else {
+            pattern.to_string()
+        };
+        // `Validate` mode is not memoized: a structurally-questionable pattern
+        // pushes non-fatal diagnostics onto `REGEX_SORROWS` on its way to a
+        // successful parse, and `validate_regex_structurally` drains them — a
+        // cache hit would report none the second time. It also has nothing to
+        // gain: validation runs once per regex literal at compile time (20
+        // times over the whole profiled document, against 10,958 match-mode
+        // parses).
+        if mode != RegexParseMode::Match {
+            return self.parse_regex_structural(&interpolated, mode);
+        }
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let bucket = (self.current_package_sym(), mode);
+        if let Some(hit) = crate::runtime::regex_parse::REGEX_SUBPATTERN_PARSE_CACHE.with(|c| {
+            c.borrow()
+                .get(&bucket)
+                .and_then(|m| m.get(interpolated.as_str()))
+                .filter(|(entry_gen, _)| *entry_gen == tok_gen)
+                .map(|(_, p)| std::sync::Arc::clone(p))
+        }) {
+            return Some((*hit).clone());
+        }
+        // Run the parse with a cleared ambient-read flag so it reports only its
+        // OWN reads, then restore the enclosing parse's flag — OR-ing this
+        // parse's result in, since a pattern containing an impure sub-pattern is
+        // itself impure. The borrow above is dropped first: the parse recurses
+        // back into this function for its own sub-patterns.
+        let ambient = &crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE;
+        let outer_read = ambient.with(|f| f.replace(false));
+        let parsed = self.parse_regex_structural(&interpolated, mode);
+        let this_read = ambient.with(|f| f.replace(outer_read || f.get()));
+        let stored = std::sync::Arc::new(parsed?);
+        if !this_read {
+            crate::runtime::regex_parse::REGEX_SUBPATTERN_PARSE_CACHE.with(|c| {
+                let mut cache = c.borrow_mut();
+                let bucket_map = cache.entry(bucket).or_default();
+                // Interpolated text is unbounded in a way source text is not: a
+                // pattern that splices a loop counter produces a fresh key every
+                // iteration. Keep the memo bounded rather than let it grow with
+                // the program's data; dropping it only costs re-parses.
+                if bucket_map.len() >= crate::runtime::regex_parse::SUBPATTERN_PARSE_CACHE_MAX {
+                    bucket_map.clear();
+                }
+                bucket_map.insert(interpolated, (tok_gen, std::sync::Arc::clone(&stored)));
+            });
+        }
+        Some((*stored).clone())
+    }
+
+    /// The structural parse proper: everything after variable interpolation.
+    /// Pure in `interpolated` given the grammar-token registry and (for a
+    /// `<~~>`-bearing pattern) `PARSING_TOP_LEVEL_SOURCE` — which is what lets
+    /// [`Interpreter::parse_regex_uncached`] memoize around it.
+    fn parse_regex_structural(
+        &self,
+        interpolated: &str,
         mode: RegexParseMode,
     ) -> Option<RegexPattern> {
         fn token_is_ws_like(token: &RegexToken) -> bool {
@@ -652,30 +773,13 @@ impl Interpreter {
             }
         }
 
-        // `Match` mode interpolates `$`/`@`/`%` variable values into the pattern
-        // before structural parsing. `Validate` mode (parse-time dry run) has no
-        // variable values available, so it skips interpolation and treats sigil
-        // references as opaque atoms further down.
-        let interpolated = if mode == RegexParseMode::Match {
-            match self.interpolate_regex_scalars(pattern) {
-                Ok(s) => s,
-                Err(e) => {
-                    PENDING_REGEX_ERROR.with(|err| {
-                        *err.borrow_mut() = Some(e);
-                    });
-                    return None;
-                }
-            }
-        } else {
-            pattern.to_string()
-        };
         // Remember what `<~~>` would recurse into. The text recorded is the
         // *interpolated* one (leading `:i`/`:s`/… adverb prefixes included), so
         // re-parsing it at match time reproduces exactly this tree. Only the
         // OUTERMOST parse installs a value; sub-pattern parses (groups,
         // lookaround bodies, alternation branches) re-enter here and inherit it.
         let _top_level_source =
-            crate::runtime::regex_parse::TopLevelSourceScope::enter(&interpolated);
+            crate::runtime::regex_parse::TopLevelSourceScope::enter(interpolated);
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
         let mut ignore_mark = false;
@@ -2993,6 +3097,10 @@ impl Interpreter {
                                     // scalar into a shared `ContainerRef` cell (bug 1 of
                                     // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`),
                                     // which must be dereferenced before it is stringified.
+                                    // Reads the scalar's VALUE at parse time (and
+                                    // recompiles it as a regex), so the tree is not a
+                                    // function of the pattern text alone.
+                                    Self::note_regex_parse_ambient_read();
                                     let value = match self
                                         .env
                                         .get(var_name)
@@ -3275,6 +3383,9 @@ impl Interpreter {
                                     // `<~~N>` — recursing into a numbered capture — is
                                     // "not yet implemented" in Rakudo too, so it keeps
                                     // falling through to the generic subrule path.
+                                    // Reads the ENCLOSING regex's source, which the
+                                    // memo key (this pattern's own text) does not carry.
+                                    Self::note_regex_parse_ambient_read();
                                     match crate::runtime::regex_parse::TopLevelSourceScope::current(
                                     ) {
                                         Some(src) => RegexAtom::RecurseSelf(Box::from(&*src)),
