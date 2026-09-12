@@ -16,9 +16,11 @@ operating manual and `docs/triage.md` ranks the backlog. Only ever file, label,
 comment on or close issues in `tokuhirom/mutsu` — never in any other
 repository. Agents run in parallel, so **claim an issue before starting it**:
 post `Claiming: <your-branch-name>`, re-read the comments and yield if an older
-live claim is there, then add the `working` label; post
-`Releasing: <your-branch-name>` and drop the label when you finish. Skip any
-issue that already carries `working` or a live claim.
+live claim is there, then start; post `Releasing: <your-branch-name>` when you
+finish. Keep the keyword on the comment's **first line** and the branch name
+identical in both: `.github/workflows/claim-label.yml` reads them to add and
+remove the `working` label, so never set it by hand. Skip any issue that already
+carries `working` or a live claim.
 
 For a request to implement a `todo:ticket` issue, use the `mutsu-ticket-flow`
 skill. It defines the required lifecycle through a verified merge and selection

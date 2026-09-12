@@ -1,0 +1,84 @@
+name: Sync the `working` label from the claim log
+
+# docs/issue-workflow.md makes an issue's comment thread the record of who is
+# working on it, and the `working` label a fast filter over that record. Keeping
+# the two in sync by hand did not work: agents post the `Claiming:` comment and
+# then forget the label (#8033 was claimed for six hours without it), so the
+# filter lies in the one direction that costs a build slot -- an issue that
+# looks free while somebody is on it.
+#
+# So the label is no longer written by hand at all. This replays the claim log
+# and makes the label agree with it:
+#
+#   * a comment whose first line is `Claiming: <branch>` -> the label goes on
+#   * the matching `Releasing: <branch>`                 -> it comes off
+#
+# An agent that still adds or removes the label itself changes nothing; the run
+# is idempotent.
+#
+# The scheduled run additionally breaks a claim whose session died, by the
+# evidence-based test docs/issue-workflow.md already defines for the ecosystem
+# lock board (older than 24h AND no such branch on origin), and prints the live
+# claims as a board in the run summary.
+
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+  schedule:
+    # Every three hours. The label itself is event-driven; this run exists to
+    # expire dead claims and to catch an event that was never delivered.
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to reconcile (empty = every open issue)'
+        required: false
+        type: string
+      release_stale:
+        description: 'Also auto-release claims older than 24h with no branch on origin'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+# One run at a time: two concurrent runs would read the same log and issue the
+# same label edit twice.
+concurrency:
+  group: claim-label
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # `issue_comment` also fires for pull request comments, which carry no claim.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request == null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The claim-log parser is the fragile part (it has to survive the prose
+      # agents append after the keyword line), so it pins itself before running.
+      - name: Self-test the claim-log parser
+        run: .github/scripts/sync-working-label.sh --self-test
+
+      - name: Reconcile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          RELEASE_STALE: ${{ (github.event_name == 'schedule' || inputs.release_stale) && '1' || '0' }}
+        run: |
+          set -eu
+          {
+            echo '## `working` label sync'
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${ISSUE:-}" ]; then
+            .github/scripts/sync-working-label.sh "$ISSUE" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            .github/scripts/sync-working-label.sh --all | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

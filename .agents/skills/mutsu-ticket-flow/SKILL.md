@@ -31,7 +31,7 @@ nothing. The settled defaults:
 | --- | --- |
 | One PR per issue, or one for the batch? | **One issue, one PR.** Never bundle, never stack. |
 | Which issues are in scope? | The filter the user named, oldest-first, skipping `working` / live claims. No `tier:*` is a workable state, not a blocker. |
-| Should I claim it / add `working`? | Yes — the protocol below, every time. |
+| Should I claim it? | Yes — the comment protocol below, every time. The `working` label is derived from it; never set it by hand. |
 | Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
 | May I open the PR / enable auto-merge? | Yes. The request already said so; use the merge method, then watch CI and fix forward. |
 | Shall I continue to the next ticket? | Yes, straight on, up to the five-ticket run cap below. |
@@ -53,7 +53,8 @@ itself. Before any investigation:
 3. Read the comments again. The live claim with the **lowest comment id** wins (they come back
    oldest-first; ids increase, `created_at` can tie). If that is not yours, post
    `Releasing: <your branch>` and take another issue.
-4. Only then add the `working` label and start.
+4. Only then start. **Do not add the `working` label** — `.github/workflows/claim-label.yml`
+   derives it from the comment you just posted, and removes it again on your `Releasing:`.
 5. **Re-read the comments again at two later checkpoints** — before the pre-publication
    `make test` + `make roast` run, and immediately before you open the PR (see "Publish"
    below). Steps 1-3 settle only the claims that exist in the first few seconds; they cannot
@@ -70,16 +71,19 @@ claimant who has gone quiet is released only by a matching `Releasing:` comment.
 judged it forfeit for being unpushed, and proceeded; both agents ran the full suites and opened
 a PR for the same work.)
 
-When you are done — merged, stopped, or blocked — post `Releasing: <your branch>` and remove the
-`working` label. Read `docs/issue-workflow.md` for the full label scheme, why the comment log is
-the record, and what to salvage when a checkpoint shows you lost.
+When you are done — merged, stopped, or blocked — post `Releasing: <your branch>`; the label comes
+off with it. **The keyword must be the first line of the comment and the branch name must match your
+claim exactly** — that pairing is what the sync reads, and what every other agent reads. Anything
+after the branch on that line, and every line below it, is free (prose, a PR link, a footer).
+Read `docs/issue-workflow.md` for the full label scheme, why the comment log is the record, and what
+to salvage when a checkpoint shows you lost.
 
 **`working` is a lock, so there is no exception for a long-lived issue.** Taking one slice of a
-campaign issue that will stay open for many more slices still means claiming it and labelling it for
-the duration of that slice — two agents inside the same ADR collide even when their slices sound
-unrelated. (This was got wrong on [#7543](https://github.com/tokuhirom/mutsu/issues/7543): three
-slices were worked with no claim and no label, on the reasoning that the issue was not being "taken".
-That reasoning is wrong — the lock is over the *work*, not over the issue's lifetime.)
+campaign issue that will stay open for many more slices still means claiming it for the duration of
+that slice — two agents inside the same ADR collide even when their slices sound unrelated. (This was
+got wrong on [#7543](https://github.com/tokuhirom/mutsu/issues/7543): three slices were worked with
+no claim at all, on the reasoning that the issue was not being "taken". That reasoning is wrong — the
+lock is over the *work*, not over the issue's lifetime.)
 
 Process at most **five tickets in one user-triggered run**, and only continue beyond the first
 when the user explicitly asks to process multiple tickets or the queue. Any request that names a
@@ -110,8 +114,8 @@ the cap on the grounds that a slice was "small" — start a fresh run instead.
    ADR/campaign, so the re-triage is not a bare label change.
 
 Re-triage touches no repository files, so it needs no `cargo fmt`, `cargo clippy`, `make test`, or
-`make roast` — but it is not "done" until the `working` label is removed and the comment explaining
-the relabel is posted.
+`make roast` — but it is not "done" until the `Releasing:` comment is posted (which drops the
+`working` label) and the comment explaining the relabel is posted.
 
 Never overlap full-suite runs. They share Cargo locks, temporary logs, and
 test-harness state; wait for one to finish before rerunning it for evidence.
@@ -281,7 +285,8 @@ git merge-base --is-ancestor "$merge_oid" origin/main
 ## Continue the queue
 
 After each verified merge, close the issue (the PR body's `Closes #NNNN` does this; verify it
-actually closed), remove any lingering `working` label, and write the accomplishment up as
+actually closed), post `Releasing: <your branch>` so the `working` label comes off, and write the
+accomplishment up as
 `news/YYYY-MM/<slug>.md`. If the session pinned you to one branch, this is also where you run the
 prune-and-reset loop above before starting the next ticket.
 
