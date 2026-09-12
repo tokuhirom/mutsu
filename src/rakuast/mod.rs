@@ -63,6 +63,7 @@ pub enum RakuAstClass {
     RegexQuote,
     RegexWithWhitespace,
     RegexGroup,
+    RegexCapturingGroup,
     RegexAlternation,
     RegexQuantifiedAtom,
     RegexQuantifierZeroOrMore,
@@ -265,6 +266,7 @@ impl RakuAstClass {
             RegexQuote => "RakuAST::Regex::Quote",
             RegexWithWhitespace => "RakuAST::Regex::WithWhitespace",
             RegexGroup => "RakuAST::Regex::Group",
+            RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
             RegexQuantifierZeroOrMore => "RakuAST::Regex::Quantifier::ZeroOrMore",
@@ -474,7 +476,7 @@ impl RakuAstClass {
             // through this list.
             | TermSelf => TERM,
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
-            RegexLiteral | RegexQuote | RegexGroup | RegexWithWhitespace => &[
+            RegexLiteral | RegexQuote | RegexGroup | RegexCapturingGroup | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
@@ -604,6 +606,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         "RakuAST::Regex::Literal"
         | "RakuAST::Regex::Quote"
         | "RakuAST::Regex::Group"
+        | "RakuAST::Regex::CapturingGroup"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
@@ -687,6 +690,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexQuote,
     RakuAstClass::RegexWithWhitespace,
     RakuAstClass::RegexGroup,
+    RakuAstClass::RegexCapturingGroup,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexQuantifiedAtom,
     RakuAstClass::RegexQuantifierZeroOrMore,
@@ -1524,6 +1528,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexQuote
                     | RakuAstClass::RegexWithWhitespace
                     | RakuAstClass::RegexGroup
+                    | RakuAstClass::RegexCapturingGroup
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
                     | RakuAstClass::RegexCharClassDigit
@@ -1631,6 +1636,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Regex::Literal", "new") => RakuAstClass::RegexLiteral,
         ("RakuAST::Regex::Quote", "new") => RakuAstClass::RegexQuote,
         ("RakuAST::Regex::Group", "new") => RakuAstClass::RegexGroup,
+        ("RakuAST::Regex::CapturingGroup", "new") => RakuAstClass::RegexCapturingGroup,
         ("RakuAST::Regex::WithWhitespace", "new") => RakuAstClass::RegexWithWhitespace,
         ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
         _ => return None,
@@ -1828,6 +1834,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexQuote
             | RakuAstClass::RegexWithWhitespace
             | RakuAstClass::RegexGroup
+            | RakuAstClass::RegexCapturingGroup
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore
             | RakuAstClass::RegexQuantifierOneOrMore

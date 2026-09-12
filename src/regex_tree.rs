@@ -44,6 +44,7 @@ pub(crate) enum RegexNode {
     Sequence(Vec<RegexNode>),
     Alternation(Vec<RegexNode>),
     Group(Box<RegexNode>),
+    CapturingGroup(Box<RegexNode>),
     Quantified {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
@@ -258,6 +259,19 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
+                RegexNode::CapturingGroup(child) => {
+                    let tokens =
+                        lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::CaptureGroup(pattern(
+                            tokens,
+                            ignore_case,
+                            ignore_mark,
+                        )),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -344,6 +358,7 @@ impl RegexNode {
                     })
             }
             Self::Group(child) => format!("[{}]", child.to_source()),
+            Self::CapturingGroup(child) => format!("({})", child.to_source()),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
                     RegexQuantifier::ZeroOrMore => '*',
@@ -485,11 +500,16 @@ impl Parser {
                     inner,
                 ))))
             }
-            // Parentheses are capture groups in regex slang.  Captures need
-            // runtime slot metadata, which this source tree does not retain;
-            // leave them on the established execution parser instead of
-            // silently turning them into a non-capturing `RegexGroup`.
-            '(' => None,
+            '(' => {
+                self.pos += 1;
+                let inner = self.parse_alternation(&[')'], false)?;
+                if !self.consume_if(')') {
+                    return None;
+                }
+                Some(RegexNode::CapturingGroup(Box::new(
+                    sequence_for_multichar_literal(inner),
+                )))
+            }
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '$' | '<' | '>' => None,
             _ => self.parse_literal(),

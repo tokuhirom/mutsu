@@ -1615,7 +1615,15 @@ mod static_execution_tests {
         assert!(lower_static_execution_pattern(":s a b").is_none());
         assert!(lower_static_execution_pattern("a.b").is_none());
         assert!(lower_static_execution_pattern("[ab]+ %% ','").is_none());
-        assert!(lower_static_execution_pattern("(a)").is_none());
+        let capture = lower_static_execution_pattern("(a)").expect("capture group");
+        assert!(matches!(
+            capture.tokens.as_slice(),
+            [RegexToken {
+                atom: RegexAtom::CaptureGroup(_),
+                quant: RegexQuant::One,
+                ..
+            }]
+        ));
         assert!(lower_static_execution_pattern(r#""\x20""#).is_none());
         assert!(lower_static_execution_pattern("\u{1}42\u{1}").is_none());
     }

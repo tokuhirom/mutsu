@@ -1592,6 +1592,9 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexGroup => Ok(RegexNode::Group(Box::new(lower_regex_node(
             named_child_or_positional(node)?,
         )?))),
+        RakuAstClass::RegexCapturingGroup => Ok(RegexNode::CapturingGroup(Box::new(
+            lower_regex_node(named_child_or_positional(node)?)?,
+        ))),
         RakuAstClass::RegexWithWhitespace => Ok(RegexNode::WithWhitespace(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,
         ))),

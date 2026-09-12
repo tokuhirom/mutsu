@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. These examples are intentionally static: dynamic
 # assertions and interpolations remain explicit follow-up boundaries.
 
-plan 16;
+plan 17;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -71,6 +71,18 @@ is Q[/\d+/].AST.gist, q:to/END/.chomp, 'a digit class and quantifier remain stru
           body => RakuAST::Regex::QuantifiedAtom.new(
             atom       => RakuAST::Regex::CharClass::Digit.new,
             quantifier => RakuAST::Regex::Quantifier::OneOrMore.new
+          )
+        )
+      )
+    )
+    END
+
+is Q[/(a)/].AST.gist, q:to/END/.chomp, 'a capture group remains a CapturingGroup';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::CapturingGroup.new(
+            RakuAST::Regex::Literal.new("a")
           )
         )
       )
