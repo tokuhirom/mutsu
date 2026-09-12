@@ -865,6 +865,17 @@ impl Interpreter {
             // in this scope (which may be stored under a mangled name), matching
             // the class-parent remapping in `exec_register_class_op`.
             self.remap_role_parents_via_env(&qualified_name);
+            // An `is export`ed `subset` declared directly in the role body is
+            // a COMPILE-TIME declaration in rakudo, not a composition-time side
+            // effect: `role PDF::COS { my subset IndRef of Pair is export(:IndRef)
+            // … }` makes `IndRef` importable the moment `PDF::COS` is loaded,
+            // long before any class composes the role. Register it here as well
+            // as at composition — see `register_role_body_exported_subsets`.
+            self.register_role_body_exported_subsets(
+                &qualified_name,
+                deferred_body_ops,
+                type_params,
+            );
             // A role declared in a CLASS body (`unit class UA; role Connection
             // { … }`) is scoped to that class, like a nested `my class`. Record
             // the short name so `resolve_suppressed_type` resolves it through the

@@ -437,4 +437,74 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// Register every `is export`ed `subset` declared directly in a role body
+    /// at ROLE-DECLARATION time, in addition to the composition-time run.
+    ///
+    /// A role body's statements are deferred to composition (see
+    /// `exec_register_role_op`'s comment on why), but a `subset` is a
+    /// *declaration*, and rakudo installs it — and its `is export` entry — when
+    /// the role is compiled, not when some class finally composes it. Deferring
+    /// it wholesale meant a module that hands its types out from a role body
+    /// exported nothing until an unrelated class composed the role:
+    ///
+    /// ```raku
+    /// # Types.rakumod
+    /// role Types { my subset IndRef of Pair is export(:IndRef) where {.key eq 'ind-ref'} }
+    /// # consumer
+    /// use Types :IndRef;   # imported nothing; `IndRef` fell back to a bareword Str
+    /// ```
+    ///
+    /// `PDF::COS` is exactly this shape, and `PDF::COS::Tie`'s
+    /// `multi method deref(IndRef $ind-ref!)` then failed role-composition
+    /// validation with `Invalid typename 'IndRef' in parameter declaration.` —
+    /// six PDF-family distributions ([#7993]).
+    ///
+    /// [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
+    ///
+    /// Only `is export` subsets are registered here. A role-private one is
+    /// already accepted in its own body via `RoleDeclCx::body_declared_types`
+    /// and has no cross-module consumer to serve, so registering it early would
+    /// widen its visibility for no gain. A subset whose base type is one of the
+    /// role's own type parameters (`role R[::T] { my subset S of T … }`) is
+    /// skipped too: its base is not known until the role is parameterised, so
+    /// composition remains the only point where it can be registered correctly.
+    pub(crate) fn register_role_body_exported_subsets(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+        type_params: &[String],
+    ) {
+        for op in deferred_body_ops {
+            let Stmt::SubsetDecl {
+                name,
+                base,
+                predicate,
+                version,
+                is_export: true,
+                export_tags,
+                is_my,
+                ..
+            } = &op.raw
+            else {
+                continue;
+            };
+            if type_params.iter().any(|tp| tp == base) {
+                continue;
+            }
+            let resolved_name = name.resolve();
+            crate::value::note_user_declared_type_name(&resolved_name);
+            self.register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my);
+            if self.suppress_exports {
+                continue;
+            }
+            let (export_pkg, export_short) = match resolved_name.rsplit_once("::") {
+                Some((pkg, short)) => (pkg.to_string(), short.to_string()),
+                // A role body's own package IS the role, so an unqualified
+                // subset exports from the role's name (`use PDF::COS :IndRef`).
+                None => (role_name.to_string(), resolved_name.clone()),
+            };
+            self.register_exported_var(export_pkg, export_short, export_tags.clone());
+        }
+    }
 }

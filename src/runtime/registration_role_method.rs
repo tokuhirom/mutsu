@@ -106,10 +106,23 @@ impl Interpreter {
                     // runs; accept its name here.
                     || cx.body_declared_types.contains(tc_base)
                     || self.is_resolvable_type(tc)
-                    || (!tc.contains("::")
-                        && enclosing_prefixes
-                            .iter()
-                            .any(|pfx| self.is_resolvable_type(&format!("{pfx}::{tc}"))))
+                    // Qualify with each enclosing package. `tc_base`, not
+                    // `tc`: a decorated constraint (`Column::List(Any)`,
+                    // `Event:D`) never matches a registered name verbatim,
+                    // so prefixing the undecorated form is the only spelling
+                    // that can resolve. And a RELATIVELY qualified name is
+                    // exactly what needs prefixing: `unit class SQL::Abstract`
+                    // registers its nested `class Column::List` as
+                    // `SQL::Abstract::Column::List`, while
+                    // `role Distinction { multi method COERCE(Column::List(Any) $c) }`
+                    // in the same file names it by the relative `Column::List`
+                    // ([#7993]). Gating this walk on an unqualified `tc` left
+                    // every such sibling unresolvable.
+                    //
+                    // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
+                    || enclosing_prefixes
+                        .iter()
+                        .any(|pfx| self.is_resolvable_type(&format!("{pfx}::{tc_base}")))
                     // Last resort: any registered type known by this
                     // short name. A compound role name in a `unit
                     // package` (`my role Packet::Empty`) leaves the
