@@ -49,7 +49,7 @@
 
 use std::sync::Arc;
 
-use crate::env::{Env, SymMap, TierAddrs};
+use crate::env::{Env, Tier, TierAddrs};
 use crate::opcode::CompiledCode;
 
 /// Consecutive wasted arms (armed, then replaced without a single hit) after
@@ -66,7 +66,7 @@ const ARM_RETRY_EVERY: u32 = 512;
 struct ArmedCapture {
     /// Every tier's overlay map, leaf first — see the module docs for why these
     /// are held rather than merely addressed.
-    tiers: Vec<Arc<SymMap>>,
+    tiers: Vec<Arc<Tier>>,
     /// The closure chunk whose free-var / own-local sets shaped the filter.
     /// Held so `Arc::ptr_eq` against a later chunk cannot be fooled by a
     /// recycled allocation.
@@ -135,7 +135,7 @@ impl CaptureCache {
         &mut self,
         addrs: Option<TierAddrs>,
         code: &Arc<CompiledCode>,
-        tiers: Option<Vec<Arc<SymMap>>>,
+        tiers: Option<Vec<Arc<Tier>>>,
         captured: &Env,
     ) {
         self.last = addrs.map(|addrs| (addrs, Arc::as_ptr(code) as usize));
