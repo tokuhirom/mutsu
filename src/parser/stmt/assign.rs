@@ -19,6 +19,45 @@ use super::{ident, parse_statement_modifier};
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Strip a leading atomic compound-assignment operator, returning the rest of
+/// the input and whether the delta must be negated.
+///
+/// `⚛+=` and `⚛-=` are the same read-modify-write on the same target; only the
+/// sign of the delta differs, so both lower to `__mutsu_atomic_add_var` and the
+/// subtract forms negate their right-hand side. Doing it here rather than with
+/// a second builtin keeps the atomicity identical — the negation is applied to
+/// the delta expression, before the atomic update ever runs.
+///
+/// rakudo declares the minus form under two spellings (see
+/// `runtime::core_infix_names`): ASCII HYPHEN-MINUS and U+2212 MINUS SIGN.
+/// Both were already listed there as operators mutsu claims to know, while the
+/// parser only ever recognised `⚛+=` — so `$i ⚛-= 2` (Async::Workers,
+/// FFmpegProgressBar, Russian) failed to parse at all.
+pub(crate) fn strip_atomic_compound_assign(rest: &str) -> Option<(&str, bool)> {
+    if let Some(stripped) = rest.strip_prefix("⚛+=") {
+        return Some((stripped, false));
+    }
+    for minus in ["⚛-=", "⚛\u{2212}="] {
+        if let Some(stripped) = rest.strip_prefix(minus) {
+            return Some((stripped, true));
+        }
+    }
+    None
+}
+
+/// Wrap an atomic compound assignment's right-hand side in unary minus when the
+/// operator was a subtract form. See [`strip_atomic_compound_assign`].
+pub(crate) fn atomic_delta_expr(rhs: Expr, negate: bool) -> Expr {
+    if negate {
+        Expr::Unary {
+            op: TokenKind::Minus,
+            expr: Box::new(rhs),
+        }
+    } else {
+        rhs
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompoundAssignOp {
     Comma,

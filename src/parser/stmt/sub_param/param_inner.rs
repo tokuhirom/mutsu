@@ -312,10 +312,19 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.default = Some(default);
             return Ok((r, p));
         }
+        // What can follow a BARE capture (`::Enum` with no variable of its
+        // own): the end of the list, the next parameter, or the signature's
+        // return constraint. `-->` belongs here for the same reason `)` does —
+        // it ends the parameter, and the arrow is the enclosing signature's to
+        // parse, not this parameter's. Without it, `method add-enum-type(Str
+        // $name, ::Enum --> Promise)` (Protocol::Postgres, and Net::Postgres
+        // through it) fell through to the "anything else is a parameter in its
+        // own right" path below, which tried to parse `--> Promise)` as one.
         if rest.starts_with(')')
             || rest.starts_with(']')
             || rest.starts_with(',')
             || rest.starts_with(';')
+            || rest.starts_with("-->")
         {
             let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
             p.type_capture = Some(capture_name);
@@ -370,11 +379,17 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // Restricting this to lowercase let an uppercase alias fall into the
     // type-constraint/coercion path, which returned without consuming a trailing
     // default (`:ASTART($a) = 0`).
+    //
+    // The test is on the first CHARACTER, through the same oracle
+    // `parse_raku_ident` starts from — not on the first BYTE. A Raku identifier
+    // may start with any Unicode alphabetic character, and an alias is an
+    // identifier like any other (`:ν(:$!nu) = 1` in Statistics::Distributions,
+    // `:σ($s)`, `:名前($s)`). A byte test sees a UTF-8 lead byte such as 0xCE,
+    // decides it is not a name, and drops the alias into exactly the
+    // type-constraint path this flag exists to avoid — the same failure the
+    // uppercase case above describes, reached by a different route.
     let skip_type_for_named_alias = named
-        && rest
-            .as_bytes()
-            .first()
-            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+        && rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && rest.contains('(');
     if type_constraint.is_none()
         && !skip_type_for_named_alias
