@@ -1532,17 +1532,17 @@ impl Interpreter {
 
                 // Every enum type object and every enum value does the
                 // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).
-                if base_type == "Enumeration" {
-                    let is_enum = match left.view() {
-                        ValueView::Enum { .. } => true,
-                        ValueView::Package(n) => {
-                            self.registry().enum_types.contains_key(&*n.resolve())
-                        }
-                        _ => false,
-                    };
-                    if !is_enum {
-                        return false;
-                    }
+                // A non-enum LHS falls through to the ordinary role check
+                // instead of failing here: an ordinary class may compose the
+                // role too (`ENUMERATION_ROLE_PRELUDE`, `class DNA does
+                // Enumeration`), and returning `False` outright made
+                // `$instance ~~ Enumeration` wrong for one that had.
+                let is_enum = match left.view() {
+                    ValueView::Enum { .. } => true,
+                    ValueView::Package(n) => self.registry().enum_types.contains_key(&*n.resolve()),
+                    _ => false,
+                };
+                if base_type == "Enumeration" && is_enum {
                     // An enum value is defined (:D); a bare enum type object is
                     // undefined (:U).
                     return match smiley {

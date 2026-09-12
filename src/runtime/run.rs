@@ -214,6 +214,40 @@ role GLOBAL::IO::Socket {
 }
 "#;
 
+/// Builtin `Enumeration` role. mutsu models the role's behaviour natively for
+/// *enum values* (they are their own `Value` shape, with native `key`/`value`/
+/// `kv`/`pair`/`Numeric` methods), but Rakudo's `Enumeration` is a real role
+/// with state — `has $.key`, `has $.value` — that an ordinary user class may
+/// compose to get a key/value pair with the enum API on top, and the
+/// documentation's own example does exactly that (`class DNA does Enumeration`
+/// in `raku-doc/doc/Type/Enumeration.rakudoc`; `Logic::Ternary` in the
+/// ecosystem). Supplying it as a real role rather than as a second native
+/// implementation is what makes a composing class get the state, the generated
+/// accessors, and the attribute-collision diagnostics for free.
+///
+/// The method set is exactly the part of `Enumeration.^methods` that WORKS on a
+/// composing class in Rakudo, measured there rather than copied from the role's
+/// source: `enums`, `pred`, `succ`, `pick`, `roll` and `CALL-ME` all reach
+/// `self.^enum_values`, which a `ClassHOW` does not have, so in Rakudo they die
+/// ("No such method 'enum_values' for invocant of type
+/// 'Perl6::Metamodel::ClassHOW'") and faking them here would be a divergence,
+/// not a feature. `.Str` is likewise absent deliberately: Rakudo's composing
+/// class falls back to `Mu.Str` (`Tern<4665716083224>`), even though a real
+/// enum value stringifies to its key.
+pub(super) const ENUMERATION_ROLE_PRELUDE: &str = r#"
+role GLOBAL::Enumeration {
+    has $.key;
+    has $.value;
+    method kv() { self.key, self.value }
+    method pair() { self.key => self.value }
+    method Numeric() { self.value }
+    method Int() { self.value.Int }
+    method Real() { self.value }
+    method gist() { self.key.Str }
+    method raku() { self.^name ~ '::' ~ self.key }
+}
+"#;
+
 /// `trait_mod:<does>` — CORE.setting's callable form of the `does` mixin
 /// operator, with the same three overloads Rakudo's `SETTING::src/core.c/
 /// traits.rakumod` declares (verified against real `raku`: calling it with a
@@ -602,6 +636,7 @@ impl Interpreter {
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
+        Self::inject_enumeration_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
         // statement, in source order. That is what rakudo does (it installs at
