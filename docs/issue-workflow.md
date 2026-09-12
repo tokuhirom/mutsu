@@ -123,6 +123,41 @@ sides *agree on who lost* and back off.
 owner's), so a claim is worthless unless it names *which* agent made it. Use the
 branch name you will push — unique, and it turns up again on the eventual PR.
 
+#### You do not add the label — the claim comment does
+
+`.github/workflows/claim-label.yml` derives the label from the log: it replays
+an issue's comments on every new one and makes the label agree — any live claim
+and the issue carries `working`, none and it does not. Adding or removing it by
+hand is harmless (the run is idempotent) but unnecessary, and forgetting it no
+longer costs anything.
+
+This exists because keeping two things in sync by hand did not work. Agents
+posted the claim and skipped the label often enough that the filter lied in the
+one direction that wastes a build slot — [#8033](https://github.com/tokuhirom/mutsu/issues/8033)
+was claimed and worked for six hours while reading as free, and
+[#8094](https://github.com/tokuhirom/mutsu/issues/8094) for an hour.
+
+What this makes load-bearing is the **comment format**, which used to be only a
+convention:
+
+- The keyword must be on the **first line** of the comment, as
+  `Claiming: <branch>` or `Releasing: <branch>`. A claim mentioned lower down —
+  under a paragraph of findings, say — is invisible to the sync and to every
+  other agent's eye.
+- Only the first two whitespace-separated words are read, so anything after the
+  branch name is free: `Releasing: my-branch — fixed in #8114`, a footer, and
+  as many following paragraphs as you like all work.
+- The branch name in `Releasing:` must match the one in `Claiming:` exactly.
+  It is how the sync pairs them, and a mismatch leaves the claim live forever.
+- `Locking:` / `Unlocking:` on the lock board are deliberately not claims — that
+  board locks distributions, not the issue they are posted on.
+
+A claim whose session died is expired by the scheduled run of the same workflow,
+on the evidence-based test the lock board already uses: older than 24 hours
+**and** no such branch on `origin`. It posts a real `Releasing:` comment rather
+than silently dropping the label, because the log is the record. Re-claim if it
+expires one you are still on.
+
 To claim an issue:
 
 1. **Read its comments** (`get_comments` / `gh issue view --comments`). If a
@@ -139,8 +174,9 @@ To claim an issue:
    increase, so it is the first entry. Compare ids, not `created_at`: that has
    one-second resolution and two agents can tie on it. If you did not win, post
    `Releasing: <your-branch-name>` and take a different issue.
-4. **Only then add the `working` label** and start work. Re-reading *after*
-   posting is what makes this converge; adding the label first defeats it.
+4. **Only then start work.** The `working` label follows from the comment you
+   posted — you do not add it. Re-reading *after* posting is what makes this
+   converge; claiming the issue in any other way defeats it.
 5. **Re-read the comments again before you spend, and again before you
    publish.** Steps 1-3 settle only the claims that exist in the first few
    seconds. They cannot see an agent who claims *later* and declines to yield,
@@ -157,11 +193,11 @@ To claim an issue:
    conflict on a finished PR, which is the most expensive possible moment.
 
 To finish — the PR merged, you stopped, or you are blocked — post
-`Releasing: <your-branch-name>` **and** remove the `working` label. An abandoned
-issue that keeps either one silently removes itself from every other agent's
-queue. A closing PR takes the issue out of the queue anyway, but release it
-explicitly: the label and the comment are what other agents read while your PR
-is still in CI.
+`Releasing: <your-branch-name>`; the label comes off with it. An abandoned issue
+that keeps its claim silently removes itself from every other agent's queue
+until the 24-hour expiry catches it. A closing PR takes the issue out of the
+queue anyway, but release it explicitly: the claim is what other agents read
+while your PR is still in CI.
 
 ### The comment id is the whole tiebreaker
 
@@ -266,7 +302,8 @@ costs one tool call and is always worth it.
 - **open, no `working` label and no live claim comment** → available. Claim it
   by the protocol above.
 - **open + `working`** → an agent has claimed it and is on it. The claim comment
-  says which branch; the label is the quick filter.
+  says which branch; the label is the quick filter, kept in step with the
+  comments by `.github/workflows/claim-label.yml`.
 - **closed** → the fixing PR closed it (`Closes #NNNN` in the PR body), or it
   was closed as `not_planned` because it evaporated. Either way, write the
   accomplishment up as `news/YYYY-MM/<slug>.md` as before — `news/` is still the
@@ -293,21 +330,26 @@ for PRs and workflows are in
 # gh, where it exists
 gh issue list  --repo tokuhirom/mutsu --label todo:ticket --search '-label:working'
 gh issue create --repo tokuhirom/mutsu --title '...' --body-file tmp/issue.md --label todo:ticket
-gh issue edit  <n> --repo tokuhirom/mutsu --add-label working
-gh issue edit  <n> --repo tokuhirom/mutsu --remove-label working
 gh issue view  <n> --repo tokuhirom/mutsu --comments   # check for a live claim
+# Claim and release. The `working` label follows from these; do not set it.
 gh issue comment <n> --repo tokuhirom/mutsu --body 'Claiming: <branch>'
+gh issue comment <n> --repo tokuhirom/mutsu --body 'Releasing: <branch>'
 # the pre-publish checkpoint: has someone already opened a PR for this issue?
 gh pr list --repo tokuhirom/mutsu --state all --search '<n> in:body' --json number,state,title
 ```
 
 Otherwise use the GitHub MCP tools (`list_issues`, `issue_write`,
-`add_issue_comment`, `issue_read`), always with
-`owner: tokuhirom`, `repo: mutsu`. **`issue_write` with `method: "update"`
-*replaces* the whole label set**, so to add `working` you must pass the issue's
-existing labels alongside it — read them first, or you will silently drop its
-kind and tier. `gh issue edit --add-label` / `--remove-label` do not have this
-hazard.
+`add_issue_comment`, `issue_read`), always with `owner: tokuhirom`,
+`repo: mutsu`. Claiming needs only `add_issue_comment` there, which is the
+other reason the label is derived now: **`issue_write` with `method: "update"`
+*replaces* the whole label set**, so adding `working` through MCP meant reading
+the issue's existing labels and passing them back, and getting that wrong
+silently dropped its kind and tier. A one-call claim has no such hazard.
+
+If a label ever does need fixing by hand — an expiry you disagree with, a label
+left by an agent that bypassed the protocol — the sync is authoritative and will
+put it back; change the comment log instead, or re-run the workflow
+(`workflow_dispatch`, optionally for one issue) once it is right.
 
 Do **not** wrap `gh` in `dotenvx run --`: the `GH_TOKEN` in `.env` is stale and
 would override the working token with bad credentials.
