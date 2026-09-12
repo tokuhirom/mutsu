@@ -7,6 +7,7 @@ use crate::value::Value;
 /// `parser::stmt::sub_param::helpers::make_param`.
 fn scalar_param(name: &str) -> crate::ast::ParamDef {
     crate::ast::ParamDef {
+        type_capture: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

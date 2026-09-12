@@ -215,16 +215,25 @@ pub(crate) fn parse_param_list_with_return_inner(
         }
         rest = r;
     }
-    if let Some((r, invocant_type)) = parse_implicit_invocant_marker(rest) {
+    // `method merge(::T CRDT:D: $x)` captures the invocant's type *and*
+    // constrains it (#7984): split the capture off before reading the marker.
+    let (head, invocant_capture) = super::param_list::split_invocant_type_capture(rest);
+    if let Some((r, invocant_type)) = parse_implicit_invocant_marker(head) {
         let (r, _) = ws(r)?;
         rest = r;
         // A definedness smiley (`Foo:D:` / `Foo:U:`) on an anonymous invocant
         // constrains dispatch and must survive as an invocant param so that
         // `multi method g(Foo:U:)` and `multi method g(Foo:D:)` are distinct
-        // candidates rather than collapsing into an ambiguous pair. Other
-        // anonymous typed markers (`Foo:`) are still discarded as before.
-        if invocant_type.ends_with(":D") || invocant_type.ends_with(":U") {
+        // candidates rather than collapsing into an ambiguous pair. A type
+        // capture has to survive for the same reason — it is the only record of
+        // the captured name. Other anonymous typed markers (`Foo:`) are still
+        // discarded as before.
+        if invocant_capture.is_some()
+            || invocant_type.ends_with(":D")
+            || invocant_type.ends_with(":U")
+        {
             let mut inv = super::param_list::make_smiley_invocant_param(invocant_type);
+            inv.type_capture = invocant_capture;
             inv.multi_invocant = multi_invocant;
             params.push(inv);
         }

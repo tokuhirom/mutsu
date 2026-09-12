@@ -5,6 +5,7 @@ use crate::parser::primary::misc::parse_block_body_routine;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     crate::ast::ParamDef {
+        type_capture: None,
         name: "self".to_string(),
         default: None,
         multi_invocant: true,

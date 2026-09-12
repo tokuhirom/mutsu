@@ -17,6 +17,12 @@ use std::sync::Mutex;
 pub(crate) struct SigParam {
     pub(crate) name: String,
     pub(crate) type_constraint: Option<String>,
+    /// The `::T` capture name this parameter declares, rendered before the
+    /// nominal type in `.gist` (`(::T  $x)`). Held apart from
+    /// `type_constraint` for the reason `ParamDef::type_capture` is (#7984): a
+    /// parameter can declare a capture and a nominal type at once.
+    #[serde(default)]
+    pub(crate) type_capture: Option<String>,
     pub(crate) multi_invocant: bool,
     pub(crate) named: bool,
     #[serde(default)]
@@ -262,6 +268,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         "_".to_string()
     } else if p.name == "_capture"
         || p.name == "__type_only__"
+        // A bare `::T` / `::T:` capture carries a synthetic parameter name; the
+        // parameter itself is anonymous, and rakudo renders it as a bare `$`.
+        || p.name.starts_with("__type_capture__")
         || p.name.starts_with("__ANON_STATE_")
         || p.name == "__ANON_OPTIONAL__"
         || p.name == "__subsig__"
@@ -300,6 +309,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     SigParam {
         name,
         type_constraint,
+        type_capture: p.type_capture.clone(),
         // The synthetic topic parameter is rendered after the top-level `;;`
         // separator, even though it is not an explicit invocant in the AST.
         multi_invocant: p.multi_invocant && !is_implicit_topic,
@@ -532,10 +542,21 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> HashMap<
     // type: resolve to type object (Package) instead of string
     // type_captures: extract ::T style type capture names
     let mut type_captures: Vec<Value> = Vec::new();
+    if let Some(name) = &p.type_capture {
+        type_captures.push(Value::str(name.clone()));
+    }
     let type_val = match &p.type_constraint {
+        // `::?CLASS` / `::?ROLE` / `::(expr)` still reach here with their `::`
+        // prefix (see `ParamDef::captured_type_name`); an ident capture is
+        // carried by `type_capture` above and leaves `type_constraint` free for
+        // the nominal half.
         Some(t) if t.starts_with("::") => {
-            // Type capture like ::T — type is Any, capture name is T
             type_captures.push(Value::str(t[2..].to_string()));
+            Value::Package(crate::symbol::wk::any())
+        }
+        // A parameter that is ONLY a capture (`::T $x`) has no nominal type:
+        // rakudo reports `.type` as `Any`, not the sigil's container role.
+        None if !type_captures.is_empty() && p.sigil == '$' => {
             Value::Package(crate::symbol::wk::any())
         }
         // `Int @x` / `Int %h` constrain the *element* type; the parameter's
@@ -992,11 +1013,28 @@ fn render_signature(info: &SigInfo) -> String {
 
 fn render_param(p: &SigParam) -> String {
     let mut result = String::new();
+    // A `::T` capture is rendered before the nominal type, with its own
+    // trailing space — rakudo prints `(::T  $x)` for `sub f(::T $x)`, i.e. the
+    // capture, a space, the (empty) type, a space, the target.
+    let capture = |result: &mut String| {
+        if let Some(ref tc) = p.type_capture {
+            result.push_str("::");
+            result.push_str(tc);
+            result.push(' ');
+            // The nominal-type slot is rendered next and is empty when the
+            // parameter is a capture only; rakudo still emits its separator, so
+            // `sub f(::T $x)` gists as `(::T  $x)`, with two spaces.
+            if p.type_constraint.is_none() {
+                result.push(' ');
+            }
+        }
+    };
 
     // Invocant parameter: rendered as `TypeName $name::` (e.g., `B $self::`),
     // with an anonymous `$` standing in for an implicit/unnamed invocant
     // (`C $::`) -- raku only shows a name when the user wrote one explicitly.
     if p.is_invocant {
+        capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
             result.push_str(tc);
             result.push(' ');
@@ -1024,6 +1062,7 @@ fn render_param(p: &SigParam) -> String {
 
     // Sigilless (backslash) parameters
     if p.sigilless {
+        capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
             result.push_str(tc);
             result.push(' ');
@@ -1049,6 +1088,7 @@ fn render_param(p: &SigParam) -> String {
     }
 
     // Type constraint comes before the named marker: `Any :$x` not `:Any $x`
+    capture(&mut result);
     if p.named {
         if let Some(ref tc) = p.type_constraint {
             result.push_str(tc);

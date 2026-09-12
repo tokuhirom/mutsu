@@ -290,8 +290,7 @@ impl Interpreter {
         // type names for the rest of the signature.
         let captures: std::collections::HashSet<&str> = param_defs
             .iter()
-            .filter_map(|pd| pd.type_constraint.as_deref())
-            .filter_map(|tc| tc.strip_prefix("::"))
+            .filter_map(|pd| pd.captured_type_name())
             .collect();
         for pd in param_defs {
             let Some(tc) = pd.type_constraint.as_deref() else {
@@ -466,8 +465,7 @@ impl Interpreter {
         // return type names too (`sub f(::T $x --> T) {...}`).
         let captures: std::collections::HashSet<&str> = param_defs
             .iter()
-            .filter_map(|pd| pd.type_constraint.as_deref())
-            .filter_map(|tc| tc.strip_prefix("::"))
+            .filter_map(|pd| pd.captured_type_name())
             .collect();
         // Only a bare identifier starting uppercase is considered; anything
         // decorated (`Positional[Int]`, `Int:D`, lowercase native, …) is skipped.
@@ -933,6 +931,7 @@ impl Interpreter {
             let mut defs = Vec::new();
             if use_positional {
                 defs.push(ParamDef {
+                    type_capture: None,
                     name: "@_".to_string(),
                     default: None,
                     multi_invocant: true,
@@ -958,6 +957,7 @@ impl Interpreter {
             }
             if use_named {
                 defs.push(ParamDef {
+                    type_capture: None,
                     name: "%_".to_string(),
                     default: None,
                     multi_invocant: true,

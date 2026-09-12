@@ -373,6 +373,7 @@ impl Interpreter {
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
         crate::ast::ParamDef {
+            type_capture: None,
             name: String::new(),
             default: None,
             multi_invocant: true,

@@ -185,6 +185,9 @@ impl Interpreter {
                                     } else {
                                         5
                                     }
+                                } else if pd.captured_type_name().is_some() {
+                                    // A bare `::T` type parameter is generic (#7984).
+                                    1
                                 } else {
                                     0
                                 };
@@ -604,10 +607,7 @@ impl Interpreter {
                 // and the captured type under the bare capture name; the role
                 // body reads the latter. Same lookup `materialize_default_
                 // parametric_role` performs for the `.new` path.
-                let capture = candidate.type_param_defs[i]
-                    .type_constraint
-                    .as_deref()
-                    .and_then(|constraint| constraint.strip_prefix("::"));
+                let capture = candidate.type_param_defs[i].captured_type_name();
                 let Some(value) = self
                     .env
                     .get(capture.unwrap_or(sig_name.as_str()))

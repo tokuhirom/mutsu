@@ -2500,11 +2500,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     {
         return Err(unsupported("non-positional signature sub-signature"));
     }
-    let type_capture = match pd.type_constraint.as_deref() {
-        Some(type_constraint) if type_constraint.starts_with("::") => {
-            Some(type_capture_node(type_constraint)?)
-        }
-        _ => None,
+    let type_capture = match pd.captured_type_name() {
+        Some(name) => Some(type_capture_node(name)?),
+        None => None,
     };
     // A bare `::T` is represented internally by a synthetic parameter name,
     // but RakuAST models it as a Parameter with no target. Keep the synthetic
@@ -2582,10 +2580,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
 /// richer capture spellings need more internal metadata and remain deferred.
-fn type_capture_node(type_constraint: &str) -> Result<RakuAstNode, RuntimeError> {
-    let Some(name) = type_constraint.strip_prefix("::") else {
-        return Err(unsupported("type capture"));
-    };
+fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     if name.is_empty()
         || !name
             .chars()

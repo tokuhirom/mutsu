@@ -175,6 +175,7 @@ impl Interpreter {
                     params
                         .into_iter()
                         .map(|name| ParamDef {
+                            type_capture: None,
                             name,
                             default: None,
                             multi_invocant: true,
@@ -257,6 +258,7 @@ impl Interpreter {
                     params
                         .into_iter()
                         .map(|name| ParamDef {
+                            type_capture: None,
                             name,
                             default: None,
                             multi_invocant: true,
@@ -377,6 +379,7 @@ impl Interpreter {
                 params
                     .into_iter()
                     .map(|name| ParamDef {
+                        type_capture: None,
                         name,
                         default: None,
                         multi_invocant: true,
@@ -536,8 +539,7 @@ impl Interpreter {
                 let capture_decls: std::collections::HashSet<&str> = next
                     .param_defs
                     .iter()
-                    .filter_map(|pd| pd.type_constraint.as_deref())
-                    .filter_map(|t| t.strip_prefix("::"))
+                    .filter_map(|pd| pd.captured_type_name())
                     .collect();
                 for (pos_idx, pd) in next
                     .param_defs

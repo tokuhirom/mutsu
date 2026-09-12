@@ -120,7 +120,12 @@ impl Interpreter {
     fn role_candidate_specificity_score(&self, param_defs: &[ParamDef]) -> i32 {
         let mut score = 0i32;
         for pd in param_defs.iter().filter(|pd| !pd.named) {
-            score += self.role_constraint_specificity(pd.type_constraint.as_deref());
+            // A bare `::T` type parameter is generic: it scores 1, like the
+            // legacy `"::T"` constraint spelling it replaced (#7984).
+            score += match (pd.type_constraint.as_deref(), pd.captured_type_name()) {
+                (None, Some(_)) => 1,
+                (constraint, _) => self.role_constraint_specificity(constraint),
+            };
             if pd.where_constraint.is_some() {
                 score += 20;
             }

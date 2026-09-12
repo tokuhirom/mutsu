@@ -599,6 +599,7 @@ impl Interpreter {
                 2usize
             };
             let pd = crate::ast::ParamDef {
+                type_capture: None,
                 name: String::new(),
                 default: None,
                 multi_invocant: false,

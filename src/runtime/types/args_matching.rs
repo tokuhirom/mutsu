@@ -395,6 +395,14 @@ impl Interpreter {
                 // Filled in by the type-constraint block below, applied to
                 // `arg_for_checks` once its borrow of it has ended.
                 let mut coerced_for_checks: Option<Value> = None;
+                // Bind the `::T` capture before the nominal checks below, so a
+                // parameter that carries both (`::T Foo:D $x`) gets both (#7984).
+                if let Some(captured_name) = pd.captured_type_name()
+                    && let Some(arg) = arg_for_checks.as_ref()
+                {
+                    let arg = arg.clone();
+                    self.bind_type_capture(captured_name, &arg);
+                }
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
@@ -453,8 +461,9 @@ impl Interpreter {
                             )
                         })
                     });
-                    if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
-                        self.bind_type_capture(captured_name, &dispatch_arg);
+                    if resolved_constraint.starts_with("::") {
+                        // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
+                        // never a nominal check.
                     } else if pd.name == "__type_only__"
                         && !self.is_resolvable_type(&resolved_constraint)
                     {

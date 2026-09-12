@@ -294,7 +294,7 @@ impl Interpreter {
         // Remove type capture markers (but keep the variables
         // created by the deferred stmts for method closures)
         for param_name in role_param_values.keys() {
-            self.env.remove(&format!("__type_capture__{}", param_name));
+            self.env.remove(&Self::type_capture_marker_key(param_name));
             // Don't remove the param name itself - methods may need it
         }
         Ok(())

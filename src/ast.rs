@@ -76,6 +76,16 @@ pub(crate) struct ParamDef {
     #[allow(dead_code)]
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
+    /// The name a `::T` type capture binds, with NO `::` prefix and no type
+    /// smiley — `None` on a parameter that captures nothing.
+    ///
+    /// This is deliberately a field of its own rather than a `"::T"` spelling
+    /// inside [`ParamDef::type_constraint`]: a parameter can carry a capture
+    /// *and* a nominal type at the same time (`method m(::T Foo:D: $x)`, #7984),
+    /// which a single `Option<String>` cannot express. `type_constraint` is
+    /// therefore only ever the nominal half.
+    #[serde(default)]
+    pub(crate) type_capture: Option<String>,
     pub(crate) literal_value: Option<Value>,
     #[allow(dead_code)]
     pub(crate) sub_signature: Option<Vec<ParamDef>>,
@@ -154,6 +164,29 @@ impl ParamDef {
     /// invocant's env key, and it declares no lexical (ADR-0061).
     pub(crate) fn declares_self_lexical(&self) -> bool {
         self.name == "self" && !self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+    }
+
+    /// The name a `::T` type capture on this parameter binds, if any.
+    ///
+    /// The single oracle for "does this parameter capture a type, and under what
+    /// name". Prefer it over reading [`ParamDef::type_constraint`] and stripping
+    /// a `::` prefix: that spelling cannot hold a capture and a nominal type at
+    /// once, which is exactly what `method m(::T Foo:D: $x)` needs (#7984).
+    ///
+    /// The fallback covers the two constraint spellings the parser still keeps
+    /// in `type_constraint` with their `::` prefix intact, because dispatch also
+    /// consumes them as nominal constraints: the pseudo-types `::?CLASS` /
+    /// `::?ROLE` (with an optional smiley) and the indirect form `::(expr)`.
+    /// Those are not ident captures, and their long-standing behavior — binding
+    /// a capture under the post-`::` spelling, which makes the constraint a
+    /// no-op type check — is preserved verbatim.
+    pub(crate) fn captured_type_name(&self) -> Option<&str> {
+        if let Some(name) = self.type_capture.as_deref() {
+            return Some(name);
+        }
+        self.type_constraint
+            .as_deref()
+            .and_then(|tc| tc.strip_prefix("::"))
     }
 
     /// True when this parameter is a capture that carries a subsignature, i.e.
@@ -3443,6 +3476,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    type_capture: None,
                     name: name.clone(),
                     default: None,
                     multi_invocant: true,
@@ -3492,6 +3526,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     // Named placeholders use `:` twigil: $:f, @:f, %:f
                     let is_named = name.contains(':');
                     ParamDef {
+                        type_capture: None,
                         name: name.clone(),
                         default: None,
                         multi_invocant: true,

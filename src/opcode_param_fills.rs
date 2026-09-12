@@ -147,6 +147,7 @@ mod param_fill_tests {
 
     fn param(name: &str) -> ParamDef {
         ParamDef {
+            type_capture: None,
             name: name.to_string(),
             default: None,
             multi_invocant: false,

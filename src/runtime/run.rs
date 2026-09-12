@@ -440,6 +440,7 @@ impl Interpreter {
                         method_params.push("%_".to_string());
                     }
                     let mut method_param_defs = vec![crate::ast::ParamDef {
+                        type_capture: None,
                         name: "self".to_string(),
                         default: None,
                         multi_invocant: true,
@@ -470,6 +471,7 @@ impl Interpreter {
                     );
                     if !method_param_defs.iter().any(|p| p.name == "%_") {
                         method_param_defs.push(crate::ast::ParamDef {
+                            type_capture: None,
                             name: "%_".to_string(),
                             default: None,
                             multi_invocant: true,

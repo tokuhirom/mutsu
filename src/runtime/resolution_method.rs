@@ -83,22 +83,18 @@ impl Interpreter {
             if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
                 continue;
             }
+            // `::?CLASS` / `::?ROLE` are pseudo-types (the current class), NOT
+            // type captures — reading them as a capture named `?CLASS`/`?ROLE:U`
+            // would both bind a bogus capture and skip the invocant check, so a
+            // role's `multi method m(::?ROLE:U:)` / `(::?ROLE:D:)` pair became an
+            // ambiguous call once composed into a class. Only a genuine `::T`
+            // capture (not starting with `?`) binds here.
+            if let Some(captured_name) = pd.captured_type_name()
+                && !captured_name.starts_with('?')
+            {
+                self.bind_type_capture(captured_name, &Value::package(Symbol::intern(class_name)));
+            }
             if let Some(constraint) = pd.type_constraint.as_deref() {
-                // `::?CLASS` / `::?ROLE` are pseudo-types (the current class), NOT
-                // type captures — `constraint.strip_prefix("::")` would otherwise
-                // read them as a capture named `?CLASS`/`?ROLE:U` and both bind a
-                // bogus capture and skip the invocant check, so a role's
-                // `multi method m(::?ROLE:U:)` / `(::?ROLE:D:)` pair became an
-                // ambiguous call once composed into a class. Only a genuine
-                // `::T` capture (not starting with `?`) binds here.
-                if let Some(captured_name) = constraint.strip_prefix("::")
-                    && !captured_name.starts_with('?')
-                {
-                    self.bind_type_capture(
-                        captured_name,
-                        &Value::package(Symbol::intern(class_name)),
-                    );
-                }
                 // Check type constraint on the invocant (including :U/:D smileys).
                 // Resolve the `::?CLASS`/`::?ROLE` pseudo-types to the actual
                 // class name for matching. Pure type captures (e.g. ::T) don't

@@ -16,6 +16,7 @@ use super::Interpreter;
 /// Build a required positional `ParamDef` with the given (sigilless) name.
 fn positional_param(name: &str) -> ParamDef {
     ParamDef {
+        type_capture: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

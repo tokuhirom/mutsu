@@ -131,8 +131,18 @@ impl Interpreter {
         if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
             let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
                 (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
-                    && pd.type_constraint.is_some()
+                    && (pd.type_constraint.is_some() || pd.type_capture.is_some())
             });
+            // A `::T` type capture has to be BOUND before the body runs, and the
+            // fast path has no binder step that does it. It used to be kept out
+            // by accident: the capture lived in `type_constraint`, so either
+            // `has_invocant_constraint` or the fast path's own nominal type check
+            // (which `::T` could never satisfy) bounced the call. Now that the
+            // capture is a field of its own, the gate has to name it (#7984).
+            let has_type_capture = method_def
+                .param_defs
+                .iter()
+                .any(|pd| pd.captured_type_name().is_some());
             let has_role_bindings = method_def.role_param_bindings.is_some()
                 || self.class_role_param_bindings(owner_class).is_some()
                 || self
@@ -290,6 +300,7 @@ impl Interpreter {
                 && !named_container_share
                 && !has_missing_required
                 && !has_invocant_constraint
+                && !has_type_capture
                 && !has_attr_aliases
                 && !has_role_bindings
                 && !has_complex_params
@@ -509,11 +520,20 @@ impl Interpreter {
                 .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                 .unwrap_or(false);
             if is_invocant {
+                if let Some(pd) = method_def.param_defs.get(idx) {
+                    // `method m(::T Foo:D: ...)` captures the invocant's type
+                    // AND constrains it, so the capture is bound first and the
+                    // nominal check below still runs (#7984).
+                    if let Some(captured_name) = pd.captured_type_name() {
+                        loan_env!(self, bind_type_capture(captured_name, &base));
+                    }
+                }
                 if let Some(pd) = method_def.param_defs.get(idx)
                     && let Some(constraint) = &pd.type_constraint
                 {
-                    if let Some(captured_name) = constraint.strip_prefix("::") {
-                        loan_env!(self, bind_type_capture(captured_name, &base));
+                    if constraint.starts_with("::") {
+                        // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, not a
+                        // nominal constraint.
                     } else {
                         let coercion_target = if let Some(open) = constraint.find('(') {
                             if constraint.ends_with(')') && open > 0 {
@@ -939,6 +959,16 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
+        // A `--> T` return constraint names a type CAPTURE bound by this call's
+        // own signature, so it has to be resolved while the callee env is still
+        // live. The sub paths already do this before popping the frame; the
+        // method paths resolved it after the env had been restored, which left
+        // the literal `T` as the expected type (#7984).
+        let effective_return_spec = method_def
+            .return_type
+            .as_deref()
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
+
         // Sync state variables back
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
@@ -1161,8 +1191,7 @@ impl Interpreter {
         };
 
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
-        let final_result = if let Some(ref return_spec) = method_def.return_type {
-            let effective_return_spec = loan_env!(self, resolved_type_capture_name(return_spec));
+        let final_result = if let Some(ref effective_return_spec) = effective_return_spec {
             self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {
             match final_result {
@@ -2118,6 +2147,13 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
+        // Resolve a capture-valued `--> T` before the env teardown below (see
+        // the slow path's note, #7984).
+        let effective_return_spec = method_def
+            .return_type
+            .as_deref()
+            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
+
         // Sync state variables
         for (slot, key) in &cc.state_locals {
             let val = self.locals[*slot].clone();
@@ -2266,8 +2302,7 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        let final_result = if let Some(ref return_spec) = method_def.return_type {
-            let effective_return_spec = loan_env!(self, resolved_type_capture_name(return_spec));
+        let final_result = if let Some(ref effective_return_spec) = effective_return_spec {
             self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
         } else {
             match final_result {

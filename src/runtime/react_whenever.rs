@@ -310,6 +310,7 @@ impl Interpreter {
         // news/2026-08/whenever-parameter-type-constraint-enforced.md.
         let main_param_defs: Vec<ParamDef> = match (param, param_type) {
             (Some(name), Some(tc)) => vec![ParamDef {
+                type_capture: None,
                 name: name.clone(),
                 default: None,
                 multi_invocant: true,

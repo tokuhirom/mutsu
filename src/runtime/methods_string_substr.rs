@@ -233,6 +233,7 @@ impl Interpreter {
         let len = end - start;
 
         let make_param_def = |name: &str| crate::ast::ParamDef {
+            type_capture: None,
             name: name.to_string(),
             default: None,
             multi_invocant: false,

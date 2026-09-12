@@ -294,30 +294,19 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Type-capture parameter: ::T $x  or bare ::T
-    if let Some(after_capture) = rest.strip_prefix("::")
-        && let Ok((r, capture_name)) = super::super::ident(after_capture)
-    {
-        type_constraint = Some(format!("::{}", capture_name));
-        // A type smiley may follow the capture: `::T:U`, `::T:D`, `::T:_`
-        // constrains the argument to a type object / instance while still binding
-        // the capture. Consume it before the `:`-named-marker check below, which
-        // would otherwise misread `:U` as a named-parameter marker. (YAMLish uses
-        // `::GrammarType:U :$schema`.)
-        if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            let smiley = &r[..2];
-            type_constraint = Some(format!("::{}{}", capture_name, smiley));
-            let (r, _) = ws(&r[2..])?;
-            rest = r;
-        } else {
-            let (r, _) = ws(r)?;
-            rest = r;
-        }
+    //
+    // The capture name lives in `ParamDef::type_capture`, NEVER as a `"::T"`
+    // spelling in `type_constraint` (#7984): a parameter can carry a capture and
+    // a nominal type at once, which one `Option<String>` cannot express.
+    if let Some((after_capture, capture_name)) = super::type_constraint::strip_type_capture(rest) {
+        let (r, _) = ws(after_capture)?;
+        rest = r;
         if rest.starts_with('=') && !rest.starts_with("==") {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             let (r, default) = super::helpers::parse_param_default_expr(r)?;
             let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-            p.type_constraint = type_constraint;
+            p.type_capture = Some(capture_name);
             p.named = named;
             p.slurpy = slurpy;
             p.default = Some(default);
@@ -329,7 +318,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             || rest.starts_with(';')
         {
             let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-            p.type_constraint = type_constraint;
+            p.type_capture = Some(capture_name);
             p.named = named;
             p.slurpy = slurpy;
             return Ok((rest, p));
@@ -350,29 +339,29 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 // Return the bare ::T as a standalone param; leave `:` for the
                 // outer param-list loop to handle as the invocant marker.
                 let mut p = super::helpers::make_param(format!("__type_capture__{}", capture_name));
-                p.type_constraint = type_constraint;
+                p.type_capture = Some(capture_name);
                 p.named = named;
                 p.slurpy = slurpy;
                 return Ok((rest, p));
             }
-            named = true;
-            rest = &rest[1..];
         }
+        // Anything else after the capture is a parameter in its own right:
+        // a variable (`::T $x`), a named one (`::T :$x`), or a nominal type
+        // (`::T Foo:D $x`). Parse it normally and hang the capture off the
+        // result — one choke point, so every later-built `ParamDef` shape
+        // (defaults, traits, `where`, sub-signatures) keeps the capture
+        // without each construction site having to remember it.
+        let (r, mut p) = parse_single_param_inner(rest)?;
+        p.type_capture = Some(capture_name);
+        p.named |= named;
+        p.slurpy |= slurpy;
+        return Ok((r, p));
     }
 
     // Type constraint (may be qualified: IO::Path)
-    // Skip type constraint parsing for named params with lowercase identifiers followed by '('
-    // Parametric type constraint: ::T
-    if let Some(after_colon) = rest.strip_prefix("::")
-        && let Ok((r, tc_name)) = super::super::ident(after_colon)
-    {
-        let tc = format!("::{}", tc_name);
-        let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') {
-            type_constraint = Some(tc);
-            rest = r2;
-        }
-    }
+    // Skip type constraint parsing for named params with lowercase identifiers
+    // followed by '('. A `::T` ident capture never reaches here — the
+    // type-capture branch above consumes every spelling of one and returns.
 
     // — those are named aliases like :x($r), not type constraints. The external
     // name may start with an uppercase letter too (`:PRUNED($p)`, `:ASTART($a)` in

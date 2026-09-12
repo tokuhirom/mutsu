@@ -52,6 +52,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r2,
                 ParamDef {
+                    type_capture: None,
                     name: "__type_only__".to_string(),
                     default: None,
                     multi_invocant: true,
@@ -89,6 +90,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                type_capture: None,
                 name,
                 default: None,
                 multi_invocant: true,
@@ -167,6 +169,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                type_capture: None,
                 name,
                 default,
                 multi_invocant: true,
@@ -201,6 +204,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    type_capture: None,
                     name,
                     default: None,
                     multi_invocant: true,
@@ -233,6 +237,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    type_capture: None,
                     name,
                     default: None,
                     multi_invocant: true,
@@ -264,6 +269,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                type_capture: None,
                 name: "_capture".to_string(),
                 default: None,
                 multi_invocant: true,
@@ -327,6 +333,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                type_capture: None,
                 name: "&".to_string(),
                 default: None,
                 multi_invocant: true,
@@ -368,6 +375,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                type_capture: None,
                 name: "__literal__".to_string(),
                 default: None,
                 multi_invocant: true,
@@ -410,6 +418,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    type_capture: None,
                     name: "__literal__".to_string(),
                     default: None,
                     multi_invocant: true,
@@ -560,6 +569,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            type_capture: None,
             name: param_name,
             default,
             multi_invocant: true,

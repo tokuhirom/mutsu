@@ -155,8 +155,7 @@ impl Interpreter {
                 if !pd.named && !pd.slurpy {
                     if pos_idx < assumed_positional.len() {
                         if !is_placeholder(&assumed_positional[pos_idx])
-                            && let Some(tc) = &pd.type_constraint
-                            && let Some(capture_name) = tc.strip_prefix("::")
+                            && let Some(capture_name) = pd.captured_type_name()
                         {
                             let resolved_type = crate::runtime::utils::value_type_name(
                                 &assumed_positional[pos_idx],

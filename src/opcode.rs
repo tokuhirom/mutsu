@@ -3322,6 +3322,7 @@ fn expr_uses_return_rw(expr: &Expr) -> bool {
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
     ParamDef {
+        type_capture: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,
