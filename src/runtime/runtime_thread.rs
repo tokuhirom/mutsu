@@ -258,6 +258,19 @@ impl Interpreter {
         // an excluded captured scalar or an already-visible name legitimately
         // could be).
         let mut referenced_handle_ids = std::collections::HashSet::new();
+        // The built-in dynamics live in the per-interpreter base tier, which
+        // `&self.env` (map-only) does not yield (ADR-0086) — but `$*OUT` /
+        // `$*ERR` / `$*IN` / `$*ARGFILES` are exactly the handles the child
+        // must be able to keep using, so collect their ids explicitly. The
+        // seeding walk below deliberately skips these names anyway (a dynamic
+        // is thread-local), so only the handle-id half applies to them.
+        if let Some(base) = self.env.dyn_base() {
+            for val in base.values() {
+                if let Some(id) = Self::handle_id_from_value(val) {
+                    referenced_handle_ids.insert(id);
+                }
+            }
+        }
         {
             // Slice 5 step A instrumentation: how many env entries this walk
             // visits vs. how many actually land in the store. Accumulated
@@ -1011,6 +1024,14 @@ impl Interpreter {
         cloned.env.insert("$/".to_string(), Value::NIL);
         cloned.env.insert("$!".to_string(), Value::NIL);
         cloned.init_io_environment_for_thread_clone();
+        // The rebuild above writes the child's own `$*CWD`/`$*TMPDIR`/… into
+        // its env map; hoist them straight back down into a base tier of the
+        // child's own, so a closure created inside the spawned block captures
+        // no more than one created on the parent would (ADR-0086). The child's
+        // base starts as a copy of the parent's, so an inherited `$*OUT`
+        // redirection is preserved and a later write on either side promotes
+        // into that side's overlay only.
+        cloned.hoist_builtin_dynamics();
         cloned
     }
 

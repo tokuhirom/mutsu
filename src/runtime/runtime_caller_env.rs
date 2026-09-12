@@ -291,7 +291,17 @@ impl Interpreter {
             // parent tiers from this walk even though `Env::get()` would
             // find them. See ADR-0035 Mechanism 1 (docs/adr/0035-method-calls-observe-caller-frames.md).
             let merged = env.filtered_flat(&|_, _| true);
-            for (k, v) in merged.iter() {
+            // The built-in dynamics live in the per-interpreter base tier, not
+            // in any env's own map (ADR-0086), and `iter()` is map-only — so
+            // ask for them explicitly, before the map's entries, which shadow
+            // them. Without this, `DYNAMIC::<$*OUT>` / `PROCESS::<$OUT>` would
+            // stop finding what the interpreter seeded.
+            for (k, v) in merged
+                .visible_base_dynamics()
+                .iter()
+                .map(|(k, v)| (k, v))
+                .chain(merged.iter())
+            {
                 let key = k.resolve();
                 let spelled = if let Some(n) = key.strip_prefix("@*") {
                     format!("@*{n}")

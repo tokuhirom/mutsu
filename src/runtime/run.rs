@@ -557,6 +557,13 @@ impl Interpreter {
             self.env
                 .insert("*PROGRAM".to_string(), Value::str(String::new()));
         }
+        // ADR-0086: with `$*PROGRAM`/`@*ARGS` now seeded (`set_program_path` /
+        // `set_args` run between `Interpreter::new()` and here), move the
+        // built-in dynamics out of the env's own map and into the
+        // per-interpreter base tier, so no closure this program creates rebuilds
+        // the ~20 of them into its capture. Idempotent, so a REPL's second
+        // `run()` is a no-op.
+        self.hoist_builtin_dynamics();
         self.establish_pod_variables(&preprocessed)?;
         let file_name = self
             .program_path

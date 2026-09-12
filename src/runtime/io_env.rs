@@ -3,6 +3,47 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::sync::OnceLock;
 
+/// The built-in dynamic variables that live in the **per-interpreter base
+/// tier** rather than in any env's own map — see
+/// [`Interpreter::hoist_builtin_dynamics`] and ADR-0086.
+///
+/// Each dynamic is seeded under both its `$*X` and its sigil-less `*X`
+/// spelling (mutsu stores scalars sigil-less, and different read paths reach
+/// for different spellings), so both are listed.
+///
+/// Not listed, deliberately:
+///
+/// * `$*PID` / `$*TZ` / `$*INIT-INSTANT` / `$*EXECUTABLE` / `$*EXECUTABLE-NAME`
+///   / `$*SPEC` — already hoisted further, into the process-wide `GLOBAL_BASE`
+///   (`IMMUTABLE_BASE_DYNAMICS`), because they are process constants.
+/// * `$*VM` / `$*PERL` / `$*RAKU` / `$*KERNEL` / `$*DISTRO` / `$*COLLATION` /
+///   `$*TOLERANCE` / `$*USER` / `$*GROUP` — never in an env at all; they
+///   materialize on first read through [`Interpreter::lazy_magic_dynamic_var`].
+/// * `=pod` and `?FILE` — not dynamics. `?FILE` in particular is mirrored on
+///   the `Env` itself (`source_file_sym`), so it must stay in the env's map.
+pub(crate) const BASE_TIER_DYNAMICS: &[&str] = &[
+    "$*OUT",
+    "*OUT",
+    "$*ERR",
+    "*ERR",
+    "$*IN",
+    "*IN",
+    "$*ARGFILES",
+    "*ARGFILES",
+    "$*CWD",
+    "*CWD",
+    "$*TMPDIR",
+    "*TMPDIR",
+    "$*HOME",
+    "*HOME",
+    "%*ENV",
+    "@*ARGS",
+    "*PROGRAM",
+    "*PROGRAM-NAME",
+    "*REPO",
+    "*SCHEDULER",
+];
+
 impl Interpreter {
     /// Rebuild the per-interpreter IO/dynamic-var environment. Called from
     /// `Interpreter::new()`; every `clone_for_thread` spawn uses the
@@ -32,6 +73,63 @@ impl Interpreter {
     /// ordinary programs).
     pub(super) fn init_io_environment(&mut self) {
         self.init_io_environment_impl(false)
+    }
+
+    /// Move the built-in dynamic variables out of `self.env`'s own map and into
+    /// the per-interpreter base tier ([`crate::env::Env::set_dyn_base`],
+    /// ADR-0086). Idempotent, and a no-op for a scratch interpreter (which
+    /// shares its caller's env wholesale) or a scoped env (there is no frame
+    /// tier to hoist *from*: the base belongs to the chain's tail).
+    ///
+    /// Why they leave the env. A closure capture keeps every key that is not a
+    /// plain user lexical, so all of [`BASE_TIER_DYNAMICS`] — ~20 entries, the
+    /// bulk of every capture — were re-inserted and `Value`-cloned on *each*
+    /// closure creation, and `call_compiled_closure_in_unit`'s merge then
+    /// discarded all of them, because it never overwrites what the live chain
+    /// already has and the live chain bottoms out at this same interpreter.
+    /// They are read through the base tier now, so an ordinary capture holds a
+    /// dynamic's key only when the *program* bound one (`my $*CWD = …`,
+    /// `indir`) — which is the only case the capture was ever read for.
+    ///
+    /// A later write is promoted into the writer's overlay by
+    /// [`crate::env::Env::get_mut_sym`] / `insert`, where it shadows the base
+    /// exactly as an overlay entry shadows `GLOBAL_BASE` today; the base map
+    /// itself never changes after this call, which is what lets every env share
+    /// it by `Arc`.
+    pub(crate) fn hoist_builtin_dynamics(&mut self) {
+        if Self::is_building_scratch() || self.env.is_scoped() {
+            return;
+        }
+        // `set_dyn_base` absorbs `GLOBAL_BASE` into the tier it installs, so
+        // the process-wide constants must already be there; they are installed
+        // by `Interpreter::new` (non-scratch), which always precedes a `run()`.
+        if !crate::env::global_base_installed() {
+            return;
+        }
+        let mut base: crate::env::SymMap = match self.env.dyn_base() {
+            Some(existing) => (**existing).clone(),
+            None => crate::env::SymMap::default(),
+        };
+        let mut moved = false;
+        for key in BASE_TIER_DYNAMICS {
+            let sym = Symbol::intern(key);
+            // `remove_overlay_sym`, not `remove_sym`: the entry is being moved
+            // one tier DOWN, not deleted, so it must not leave a tombstone.
+            if let Some(v) = self.env.remove_overlay_sym(sym) {
+                base.insert(sym, v);
+                moved = true;
+            }
+        }
+        // Count what was *taken out of the env*, not the base's size: a hoist
+        // that overwrites an existing base entry (every thread clone, which
+        // rebuilds its own `$*CWD`/`$*TMPDIR` over the inherited copy) leaves
+        // the length unchanged while carrying a value that must be installed.
+        if !moved && self.env.dyn_base().is_some() {
+            // Nothing moved and a base is already installed: re-installing
+            // would hand out a fresh `Arc` that no already-captured env shares.
+            return;
+        }
+        self.env.set_dyn_base(base);
     }
 
     /// [`Self::init_io_environment`] for a `clone_for_thread` spawn
