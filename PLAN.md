@@ -7,7 +7,7 @@
 > |---|---|
 > | completed work | [news/](news/) — one file per accomplishment |
 > | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
-> | which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked, periodically regenerated snapshot |
+> | which finding to pick up next | the `tier:*` labels on the issues themselves — `tier:S` first, then `tier:B`, `tier:N`; `tier:icebox` is out of the queue. Untiered `todo:*` issues are where the next triage pass starts |
 > | architectural decisions | [docs/adr/](docs/adr/) |
 > | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
 > | performance numbers | the bench CI (`bench-data` branch), [PERFORMANCE.md](PERFORMANCE.md) |

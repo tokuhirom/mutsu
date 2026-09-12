@@ -13,7 +13,7 @@ is noise. `bench-ctor+jit` reads 0.3472 / 0.2341 / 0.3495 / 0.2326 / 0.3475 /
 0.3604 across six consecutive main commits — a ~48% bimodal swing with nothing
 in those diffs to explain it — and plain `bench-fib` jumps 13% on an unrelated
 commit as well. The `runner` column says `4c-x86_64-ubuntu24` for every row, so
-this is not the host-class caveat `docs/triage.md` already records; the same
+this is not the host-class caveat PERFORMANCE.md already records; the same
 class evidently spans hosts differing by more than the change under measurement.
 
 A few-percent single-commit change is therefore below this series' resolution,

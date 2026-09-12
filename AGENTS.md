@@ -12,7 +12,7 @@ relying on an old issue's description.
 
 The open-findings backlog is **GitHub issues on `tokuhirom/mutsu`**, labelled
 `todo:ticket` / `todo:deep` / `todo:perf`; `docs/issue-workflow.md` is the
-operating manual and `docs/triage.md` ranks the backlog. Only ever file, label,
+operating manual, and the issues' own `tier:*` labels rank the backlog. Only ever file, label,
 comment on or close issues in `tokuhirom/mutsu` — never in any other
 repository. Agents run in parallel, so **claim an issue before starting it**:
 post `Claiming: <your-branch-name>`, re-read the comments and yield if an older

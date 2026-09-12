@@ -59,8 +59,11 @@ that profiling reveals to be a wrong answer rather than a slow one moves out of
 
 ### Tier — how much it matters
 
-Assigned by the triage regen (see [triage.md](triage.md)), not by the filer.
-Leave it off when you file; a missing tier just means "not yet triaged".
+Assigned by a triage pass over the open backlog, not by the filer. Leave it off
+when you file; a missing tier just means "not yet triaged", and listing the open
+`todo:*` issues that carry no `tier:*` label is where the next pass starts.
+Effort is not part of the tier: `tier:S` outranks everything regardless of how
+much work it is.
 
 | Label | Meaning |
 | --- | --- |
