@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Track C: route a simple `%h{$k} = $v` through the shared cell when a
@@ -80,11 +81,12 @@ impl Interpreter {
         // exactly the cost `ELEM_INDEX_META_SEEN` was introduced to avoid. The
         // key can only exist once the program `:=`-binds an element, which
         // latches the flag through `Env::insert`.
-        if crate::env::elem_index_meta_possible() {
-            let bound_key = format!("__mutsu_bound_index::{}", var_name);
-            if self.env().contains_key(&bound_key) {
-                return None;
-            }
+        if crate::env::elem_index_meta_possible()
+            && self
+                .env()
+                .contains_key_sym(MetaNs::BoundIndex.key(code.const_sym(name_idx)))
+        {
+            return None;
         }
         let var_name = var_name.to_string();
         let key = idx_ref.to_string_value();

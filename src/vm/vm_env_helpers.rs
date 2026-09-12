@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
@@ -2394,7 +2395,7 @@ impl Interpreter {
             // `x` into a cell detaches it from `$a` — skip it.
             if self
                 .env()
-                .get(&format!("__mutsu_sigilless_alias::{}", name))
+                .get_sym(MetaNs::SigillessAlias.key_for_str(&name))
                 .is_some()
             {
                 continue;

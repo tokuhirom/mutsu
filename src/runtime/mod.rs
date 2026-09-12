@@ -653,6 +653,7 @@ mod lvalue_container_return;
 mod main_args;
 pub(crate) mod mark_context;
 mod match_target;
+pub(crate) mod meta_ns;
 mod metamodel;
 mod metamodel_new_type;
 mod methods;
