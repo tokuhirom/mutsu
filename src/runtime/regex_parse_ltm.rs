@@ -1636,4 +1636,30 @@ mod static_execution_tests {
             .collect();
         assert_eq!(literals, "tree");
     }
+
+    #[test]
+    fn lowers_rule_declaration_whitespace_from_source_tree() {
+        let mut tree = RegexTree::parse_static("a b", true).expect("source tree");
+        tree.declaration_kind = Some(crate::regex_tree::RegexDeclKind::Rule);
+        let pattern = tree
+            .lower_execution(false, false, false)
+            .expect("execution plan");
+        assert!(matches!(
+            pattern.tokens.as_slice(),
+            [
+                RegexToken {
+                    atom: RegexAtom::Literal('a'),
+                    ..
+                },
+                RegexToken {
+                    atom: RegexAtom::WsRule,
+                    ..
+                },
+                RegexToken {
+                    atom: RegexAtom::Literal('b'),
+                    ..
+                }
+            ]
+        ));
+    }
 }

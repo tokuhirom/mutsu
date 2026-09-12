@@ -96,7 +96,18 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
         return Err(null_regex_error());
     }
     let source_pattern = normalize_token_pattern(&pattern);
-    let source_regex = crate::regex_tree::RegexTree::parse_static(&source_pattern, true);
+    let regex_kind = if is_rule {
+        crate::regex_tree::RegexDeclKind::Rule
+    } else if is_regex {
+        crate::regex_tree::RegexDeclKind::Regex
+    } else {
+        crate::regex_tree::RegexDeclKind::Token
+    };
+    let source_regex =
+        crate::regex_tree::RegexTree::parse_static(&source_pattern, true).map(|mut tree| {
+            tree.declaration_kind = Some(regex_kind);
+            tree
+        });
     pattern = source_pattern;
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
@@ -111,7 +122,11 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     if is_ratchet {
         pattern = format!(":ratchet {pattern}");
     }
-    let body = vec![Stmt::Expr(Expr::Literal(Value::regex(pattern)))];
+    let regex_value = Value::regex(pattern);
+    let body = vec![Stmt::Expr(Expr::Literal(match &source_regex {
+        Some(tree) => regex_value.with_regex_source_tree(tree.clone()),
+        None => regex_value,
+    }))];
 
     if is_rule {
         Ok((
@@ -136,11 +151,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 param_defs,
                 body,
                 source_regex,
-                regex_kind: if is_regex {
-                    crate::regex_tree::RegexDeclKind::Regex
-                } else {
-                    crate::regex_tree::RegexDeclKind::Token
-                },
+                regex_kind,
                 multi: is_multi,
                 is_my: false,
                 is_our: false,

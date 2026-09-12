@@ -641,13 +641,13 @@ impl Interpreter {
         out
     }
 
-    /// Extract the regex pattern string from a named token/regex definition.
-    /// Returns `Some(pattern)` if the token body contains a single regex literal.
-    pub(in crate::runtime) fn extract_token_regex_pattern(&self, name: &str) -> Option<String> {
+    /// Extract the regex value from a named token/regex definition.
+    /// Returns `Some(value)` if the token body contains a single regex literal.
+    /// The value may carry the declaration's source tree alongside its
+    /// compatibility spelling.
+    pub(in crate::runtime) fn extract_token_regex_value(&self, name: &str) -> Option<Value> {
         let defs = self.resolve_token_defs(name)?;
         let def = defs.first()?;
-        // Look for a body consisting of a single Expr(Literal(Regex(pat))),
-        // skipping SetLine statements.
         let effective: Vec<_> = def
             .body
             .iter()
@@ -655,10 +655,21 @@ impl Interpreter {
             .collect();
         if effective.len() == 1
             && let Stmt::Expr(Expr::Literal(lit)) = effective[0]
-            && let ValueView::Regex(pat) = lit.view()
+            && matches!(lit.view(), ValueView::Regex(_))
         {
-            return Some(pat.to_string());
+            return Some(lit.clone());
         }
         None
+    }
+
+    /// Extract the regex pattern string from a named token/regex definition.
+    /// This compatibility helper is retained for matcher entry points that
+    /// have not migrated to the value-aware source-tree path yet.
+    pub(in crate::runtime) fn extract_token_regex_pattern(&self, name: &str) -> Option<String> {
+        let value = self.extract_token_regex_value(name)?;
+        match value.view() {
+            ValueView::Regex(pattern) => Some(pattern.to_string()),
+            _ => None,
+        }
     }
 }

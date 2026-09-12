@@ -684,10 +684,17 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let body = named_child(node, "body")?;
+    let declaration_kind = match node.class {
+        RakuAstClass::RegexDeclaration => crate::regex_tree::RegexDeclKind::Regex,
+        RakuAstClass::TokenDeclaration => crate::regex_tree::RegexDeclKind::Token,
+        RakuAstClass::RuleDeclaration => crate::regex_tree::RegexDeclKind::Rule,
+        _ => return Err(unsupported(node)),
+    };
     let tree = RegexTree {
         body: lower_regex_node(body)?,
         match_immediately: false,
         adverbs: Vec::new(),
+        declaration_kind: Some(declaration_kind),
     };
     let source = tree.to_source();
     let execution_pattern = match node.class {
@@ -698,9 +705,10 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             let pattern = crate::parser::inject_separator_ws(&pattern);
             format!(":ratchet {pattern}")
         }
-        _ => return Err(unsupported(node)),
+        _ => unreachable!("declaration kind was checked above"),
     };
-    let body = vec![Stmt::Expr(Expr::Literal(Value::regex(execution_pattern)))];
+    let value = Value::regex(execution_pattern).with_regex_source_tree(tree.clone());
+    let body = vec![Stmt::Expr(Expr::Literal(value))];
     let source_regex = Some(tree);
     match node.class {
         RakuAstClass::RegexDeclaration | RakuAstClass::TokenDeclaration => Ok(Stmt::TokenDecl {
@@ -1748,6 +1756,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body: lower_regex_node(body)?,
                 match_immediately,
                 adverbs,
+                declaration_kind: None,
             };
             let value = regex_execution_value(&tree)?;
             if tree.match_immediately {

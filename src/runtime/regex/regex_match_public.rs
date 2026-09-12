@@ -207,12 +207,16 @@ impl Interpreter {
             _ => return None,
         };
         // The value-aware path is intentionally only a leaf for the static
-        // tree slice. Declarative prefixes and the anchored single-subrule
-        // ranking path have side effects and package-resolution steps that the
-        // ordinary string entry point owns; preserve those semantics intact.
-        if regex.regex_source_tree().is_none()
-            || Self::parse_anchored_single_subrule(&pattern).is_some()
-            || !Self::parse_regex_declarative_prefix(&pattern).0.is_empty()
+        // tree slice. Declarative prefixes on source-less values and the
+        // anchored single-subrule ranking path have side effects and
+        // package-resolution steps that the ordinary string entry point owns;
+        // preserve those semantics intact.
+        let Some(tree) = regex.regex_source_tree() else {
+            return self.regex_match_with_captures(&pattern, text);
+        };
+        if Self::parse_anchored_single_subrule(&pattern).is_some()
+            || (!Self::parse_regex_declarative_prefix(&pattern).0.is_empty()
+                && tree.declaration_kind.is_none())
         {
             return self.regex_match_with_captures(&pattern, text);
         }
