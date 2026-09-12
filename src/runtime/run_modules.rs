@@ -1071,14 +1071,41 @@ impl Interpreter {
             // module's own routines still read it through `module_scope_lexicals`,
             // and the `saved_plain_env` restore below puts back whatever the
             // loading scope had under the same name.
-            if unit_name.is_some() {
-                for name in Self::collect_unit_package_scope_names(&stmts) {
-                    self.env.remove(&name);
+            if let Some(unit) = unit_name.as_deref() {
+                let package_scope_names = Self::collect_unit_package_scope_names(&stmts);
+                // Also protect these names the same way a plain file-scope `my`
+                // is protected (below): `module_scope_lexicals` is consulted only
+                // as a LAST RESORT, after `env`, so a `my constant @x` (unlike a
+                // package-qualified `our constant`/bare `constant`, which also
+                // gets a `@Unit::x` global the reads below find first) is
+                // reachable ONLY through the bare `env` key until it is removed
+                // a few lines down -- and in that window an IMPORTER's own
+                // same-named declaration (sharing the identical bare env key)
+                // can shadow it. Copying the value into `unit_lexicals` here
+                // gives the module's own routines the same env-independent
+                // read `unit_scope_lexical` already gives a plain `my` (#8027).
+                // A copy, not a move: `module_scope_names` keeps the value too,
+                // unlike the `unit_lex_names` loop below.
+                for name in &package_scope_names {
+                    if let Some(value) = module_scope_names.get(name) {
+                        let cell = if value.is_container_ref() {
+                            value.clone()
+                        } else {
+                            value.clone().into_container_ref()
+                        };
+                        crate::runtime::cow_table_mut(&mut self.unit_lexicals)
+                            .entry(unit.to_string())
+                            .or_default()
+                            .insert(name.clone(), cell);
+                    }
+                }
+                for name in &package_scope_names {
+                    self.env.remove(name);
                     // An enum value's bare binding lives in the enum-key namespace
                     // (#7914), so dropping the plain key alone would leave it
                     // resolvable in the loading scope.
                     self.env
-                        .remove(&crate::runtime::enum_bare_names::enum_bare_key(&name));
+                        .remove(&crate::runtime::enum_bare_names::enum_bare_key(name));
                 }
             }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
