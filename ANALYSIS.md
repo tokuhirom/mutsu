@@ -49,8 +49,9 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   now has only **two** standing native providers: `NativeCall` (measured non-vendorable,
   [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the JSON `to-json`/`from-json`
   fast path — recorded as permanent policy, but on a rationale half of which has since expired,
-  through a module-name-keyed interception mechanism that is debt in its own right (§1.8). The
-  native `Test` provider was deleted outright on 2026-09-10
+  and delivered through a module-name-keyed interception that should be retired: a measured
+  performance gap is a reason to optimize, not to substitute a semantically divergent
+  implementation under the module's own name (§1.8). The native `Test` provider was deleted outright on 2026-09-10
   (~3,300 lines); a bare `use Test` loads rakudo's own `Test.rakumod`.
 - **The active architectural thread is the call and closure path**, and it is nearly closed:
   a per-callsite inline cache (ADR-0066), locals and the five per-call bookkeeping stacks as
@@ -259,9 +260,18 @@ in the code, and the exception list has shrunk to two entries:
     site-repo `JSON::Tiny` cannot override it — flagged in the record itself, and a real
     problem the day an upstream security fix needs to reach a user who cannot rebuild mutsu.
 
-  Whether the fast path survives is a performance question about the grammar engine. Whether it
-  should keep *this shape* is not: load-order-dependent exception types and a hardcoded
-  two-module bypass of the precedence chain are debt independent of that decision.
+  **Being slow is not a licence for this.** A measured 1000x gap is a reason to make something
+  fast; it is not a reason to shadow a resolved module by name, diverge from its semantics, and
+  bypass the resolution ladder — that is the private-dialect risk BATTERIES.md §1 exists to
+  prevent, arrived at through a performance argument instead of a convenience one. The
+  distinction the project should hold is between an **optimization** and a **substitution**: a
+  fast path that is selected transparently and is semantically indistinguishable from the code
+  it replaces is legitimate (that is what the JIT does to bytecode); one that changes which
+  exception type a program sees, depending on which module names were `use`d, is a different
+  implementation wearing the module's name. The current path is the second kind. Retiring it
+  means paying the real bill — the regex/grammar engine's speed on the vendored module, or an
+  honest transparent specialization of that module's own code — not keeping the interception
+  because the bill is large.
 
 `Test` left that list entirely on 2026-09-10: the native TAP provider, its `tap_state`
 bookkeeping, the native subtest machinery, `Stmt::Subtest`/`OpCode::SubtestScope`, the
@@ -523,7 +533,7 @@ Ordering rule, stated so it can be argued with:
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the parity frontier** (§1.8) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," recorded only in `BATTERIES.md`/`CLAUDE.md`. Its rejected alternative and its two named exceptions are exactly what an ADR preserves — including the one whose stated rationale has already expired (the `nqp::` op rejection) and which no document currently reflects. With ADR-0085 shipping a nightly parity number, the follow-on work can be chosen by measurement instead of by anecdote. |
-| 1b | **Re-decide the JSON interception's shape, separately from whether it survives** (§1.8, §4) | design cleanup | Keeping a fast path is a grammar-engine performance question and may well be right. Deciding it by module-name string matching at three layers, letting the loaded-module *set* choose an exception type, and bypassing the module-resolution ladder for two hardcoded names is a separate question with a worse answer. If the path stays, it should be one explicit, documented dispatch decision, not an interception the rest of the dispatch code has to remember. |
+| 1b | **Retire the JSON `use`-time interception** (§1.8, §4) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
 | 2 | **Close ADR-0068 step 3's last route, then decide the `gc_contents_mut` general case** (§2.2) | soundness | One identified unsynchronized store path is a bounded, actionable task; the 167-site general hazard ([#7543](https://github.com/tokuhirom/mutsu/issues/7543)) is the ADR-0001 layer 3c decision behind it. Everything else in this document is a quality issue; this one is a correctness one. |
 | 3 | **Supply panic propagation, and a mechanism against the panic-surface trend** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 4 | **Finish the call-path thread: ADR-0084** (§1.3) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
@@ -599,7 +609,15 @@ provider are exactly the "why, and what we rejected" an ADR exists to preserve. 
 record the reversal that already happened in practice: "do not build an `nqp::` op layer" was
 the companion measurement to the original policy, and mutsu has since built one (111 ops and
 growing, §1.8) without any document saying so. A rejection the codebase has outgrown is worse
-than no record, because it keeps being cited. It is listed here rather than drafted unilaterally because
+than no record, because it keeps being cited.
+
+The clause that record most needs is the one the JSON carve-out was allowed to skip: **a
+performance measurement is not a justification for a substitution.** Rung 3 is banned because a
+module that only looks like the upstream one is a private dialect, and that argument does not
+weaken when the reason for the divergence is speed rather than convenience. What speed does
+justify is optimization — transparent, semantics-preserving, and applied to the real module's
+own code path. An ADR that states the ban but leaves "unless it is slow" implicit will keep
+producing mechanisms like this one. It is listed here rather than drafted unilaterally because
 the decision is the user's.
 
 ---
