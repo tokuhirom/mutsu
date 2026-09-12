@@ -1914,6 +1914,9 @@ impl Compiler {
         self.code
             .plain_locals
             .push(Self::is_plain_lexical_name(name));
+        self.code
+            .simple_scalar_locals
+            .push(Self::is_simple_scalar_store_name(name));
         self.local_map.insert(name.to_string(), slot);
         slot
     }
@@ -1928,6 +1931,18 @@ impl Compiler {
             && !name.contains("::")
             && !name.starts_with("__mutsu_")
             && !name.starts_with("__ANON")
+    }
+
+    /// See [`CompiledCode::simple_scalar_locals`]. A plain lexical name, minus
+    /// the two shapes that still reach a name-derived branch of the store
+    /// cascade: a `term:<...>` definition (mirrored into its own and its
+    /// package-qualified env keys on every store) and a compiler-synthesised
+    /// anonymous container slot (`__ANON_HASH__`, which `is_plain_lexical_name`
+    /// only rejects as a *prefix*).
+    pub(crate) fn is_simple_scalar_store_name(name: &str) -> bool {
+        Self::is_plain_lexical_name(name)
+            && !crate::runtime::utils::has_anon_marker(name)
+            && crate::runtime::Interpreter::term_symbol_from_name(name).is_none()
     }
 
     /// Store a finalized closure body in this frame's `closure_compiled_codes`,

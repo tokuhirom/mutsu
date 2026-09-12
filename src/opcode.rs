@@ -4364,6 +4364,23 @@ pub(crate) struct CompiledCode {
     /// rather than on every store (`flush_local_to_env` runs on each `my $x =
     /// ...`).
     pub(crate) plain_locals: Vec<bool>,
+    /// Bitmap: true if a store into `local[i]` can take the plain-scalar fast
+    /// path in `exec_set_local_op` — i.e. the slot's *name* alone makes every
+    /// name-derived branch of the store cascade inert.
+    ///
+    /// A strict subset of [`CompiledCode::plain_locals`]: on top of "no sigil,
+    /// twigil, qualifier, attribute marker, topic or compiler-internal name" it
+    /// also rules out a `term:<...>` definition (which mirrors itself into two
+    /// extra env keys) and any `__ANON` container slot. What remains is the
+    /// ordinary user scalar (`my $i` -> `"i"`, a scalar parameter `$n` -> `"n"`)
+    /// whose store has no container identity to preserve, no attribute cell to
+    /// mirror, no `is default` / atomic / alias lane keyed on its name, and no
+    /// `@`/`%` coercion to run — see the fast path's own doc comment for the
+    /// full list and for the runtime half of the decision.
+    ///
+    /// Like `plain_locals` this is a scan of the name's bytes, so it is settled
+    /// once per slot at compile time instead of on every store.
+    pub(crate) simple_scalar_locals: Vec<bool>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, Symbol)>,
     /// Maps local slot indices to qualified package names for `our` variables.
@@ -5494,6 +5511,7 @@ impl CompiledCode {
             locals_bound_slice_sym: Vec::new(),
             locals_scalar_no_container_sym: Vec::new(),
             plain_locals: Vec::new(),
+            simple_scalar_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             param_bind_names: Vec::new(),

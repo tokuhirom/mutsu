@@ -292,11 +292,140 @@ impl Interpreter {
         })
     }
 
+    /// The plain `$x = <ordinary scalar>` store: an already-declared user
+    /// scalar, no store-flavour mark pending, and none of the rare metadata
+    /// lanes the full cascade exists to serve in play. Returns `false` without
+    /// touching the stack or any flag when a guard fails, so the caller falls
+    /// through to [`Interpreter::exec_set_local_op`]'s full path unchanged.
+    ///
+    /// `exec_set_local_op_inner` is ~2,000 lines of store-*flavour* cascade, and
+    /// a plain scalar store fell through all of it: 746 instructions of self
+    /// cost per store, 21.6% of a `while` loop that does nothing but compare,
+    /// add and store ([#8094](https://github.com/tokuhirom/mutsu/issues/8094)).
+    /// None of it applied. The cost was not one hot spot but a dozen inert
+    /// helpers at 20-60 instructions each — `maybe_tied_store_reassign` on a
+    /// name with no `@`/`%` sigil, `scalar_attr_type_constraint` on a name with
+    /// no twigil, `reset_atomic_var_key` with no atomic variable in the program,
+    /// and so on — which is exactly the shape that a single up-front decision
+    /// removes and no local fix does.
+    ///
+    /// The decision splits in two. The **compile-time** half is
+    /// [`CompiledCode::simple_scalar_locals`]: the slot's name settles every
+    /// sigil / twigil / attribute / topic / term / anon branch at compile time,
+    /// where it is already known. The **runtime** half is the guards below, each
+    /// of which names the branch of the full path it stands in for; every one is
+    /// a flag load, a tag probe or an `is_empty`, and the single env probe is the
+    /// one the full path would run anyway. A guard that fails is never wrong —
+    /// it just takes the (unchanged) slow path.
+    #[inline]
+    fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
+        let idx = idx as usize;
+        // The slot's name makes every name-derived branch inert (see the
+        // bitmap's doc), and there is no `@`/`%`/`&`/attribute slot in play for
+        // the wrapper's tied-store, `our`-sync and attribute-mirror steps either.
+        if !code.simple_scalar_locals.get(idx).copied().unwrap_or(false) {
+            return false;
+        }
+        // A plain `=` into an existing variable: no bind, rebind, `constant`,
+        // declaration, explicit initializer or array-share flavour is pending,
+        // so every `is_bind` / `is_vardecl` / `is_constant` branch is inert —
+        // and, since nothing is set, nothing needs consuming either. The
+        // declaration flag also being clear is what makes the wrapper's
+        // `box_decl` / `stamp_decl_name` / `our`-sync steps inert.
+        if !self.mark_ctx.store_flags_clear() || self.shaped_decl_context {
+            return false;
+        }
+        // Every metadata lane the store would otherwise consult, in the order
+        // the full path consults them. All are monotonic "has this program ever
+        // done X" latches or empty-collection tests, so the common program
+        // answers the whole block with a handful of loads:
+        //   - a sigilless multi-dim slice bind to distribute through
+        //     (`distribute_bound_multidim_slice`),
+        //   - a `:=`-bound decont marker to clear (`update_bound_decont_marker`),
+        //   - a pending alias bind to resolve, or a recorded bind pair to
+        //     propagate the write to,
+        //   - an `is default(...)` value to substitute for a stored `Nil`,
+        //   - a typed lexical whose constraint has to be checked and coerced,
+        //   - a sigilless-readonly marker that would reject the write,
+        //   - an atomic-variable cell to detach the name from,
+        //   - a `:=` alias chain to walk forward,
+        //   - a `Failure` to turn fatal, or a declaration still in flight on
+        //     another thread.
+        if crate::env::bound_array_slice_possible()
+            || self.bound_decont_active().get()
+            || !self.pending_alias_bind_names.is_empty()
+            || !self.local_bind_pairs.is_empty()
+            || self.has_var_defaults()
+            || Self::env_type_constraint_seen()
+            || crate::env::sigilless_readonly_keys_possible()
+            || Self::atomic_var_seen_anywhere()
+            || crate::env::closure_meta_keys_possible()
+            || self.fatal_mode
+            || !self.thread_decl_in_flight.is_empty()
+            || !code.our_locals.is_empty()
+        {
+            return false;
+        }
+        // The incoming value is an ordinary scalar — nothing to unwrap, reify,
+        // decontainerize or record — and the slot holds one too, so the store
+        // replaces it rather than writing *through* a cell, Proxy or phantom
+        // hash entry. Both are pure tag probes: a `view()` here would force a
+        // lazy `Match`.
+        if !self
+            .stack
+            .last()
+            .is_some_and(Value::is_plain_scalar_store_payload)
+            || !self.locals[idx].is_plain_scalar_store_slot()
+        {
+            return false;
+        }
+        // The one probe the full path would run anyway: a shared cell or Proxy
+        // parked in env under this name, which the slot adopts and then writes
+        // through. Rare, but not latched by any flag, so it is asked for real.
+        let name = &code.locals[idx];
+        let name_sym = code.locals_sym.get(idx).copied();
+        if self
+            .env()
+            .get_for(name, name_sym)
+            .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
+        {
+            return false;
+        }
+        // -- committed: from here the store cannot fall back --
+        let v = self.stack.pop().unwrap_or(Value::NIL);
+        // The two value-shaping steps that survive: a re-store of the same
+        // backing array keeps its kind (the hyper-func-op writeback), everything
+        // else gets the `$` container's itemization. The name half of
+        // `itemize_scalar_store` is settled by `simple_scalar_locals`.
+        let val = if Self::is_identity_scalar_restore(&self.locals[idx], &v) {
+            v
+        } else {
+            Self::itemize_scalar_store_value(v)
+        };
+        self.locals[idx] = val.clone();
+        // `(B)` per-store env-write, verbatim from the full path: a
+        // slot-authoritative plain lexical skips its env mirror. The `is_bind` /
+        // `is_constant` / term-symbol terms of that condition are all settled
+        // above, so only the two live tests remain.
+        if code.needs_env_sync.get(idx).copied().unwrap_or(true)
+            || crate::opcode::reflective_name_access_possible()
+        {
+            let name = code.locals[idx].clone();
+            self.set_env_plain_lexical(&name, name_sym, val);
+        }
+        true
+    }
+
     pub(super) fn exec_set_local_op(
         &mut self,
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // The hot `$x = <scalar>` store, decided up front so it pays for none of
+        // the cascade below or in `exec_set_local_op_inner`. See its doc comment.
+        if self.exec_set_local_scalar_fast(code, idx) {
+            return Ok(());
+        }
         // A re-assignment to a tied container (`my %h is Foo; %h = ...`, Foo
         // `does Associative`/`Positional`) routes through the class's `STORE`,
         // preserving the tied instance, instead of overwriting the slot with a

@@ -509,7 +509,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn term_symbol_from_name(name: &str) -> Option<&str> {
+    pub(crate) fn term_symbol_from_name(name: &str) -> Option<&str> {
         let bytes = name.as_bytes();
         if bytes.is_empty() {
             return None;
