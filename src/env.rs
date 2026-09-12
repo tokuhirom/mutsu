@@ -52,6 +52,13 @@ fn global_base() -> Option<&'static SymMap> {
     GLOBAL_BASE.get()
 }
 
+/// True once [`set_global_base`] has run. The per-interpreter base tier copies
+/// `GLOBAL_BASE` in (see [`Env::set_dyn_base`]), so its installer checks this
+/// rather than silently building a tier that is missing the built-in enums.
+pub(crate) fn global_base_installed() -> bool {
+    GLOBAL_BASE.get().is_some()
+}
+
 /// True if `name` is a built-in global-base constant — the process-wide enum
 /// values such as `Endian` (`NativeEndian`/`LittleEndian`/`BigEndian`), `Order`
 /// (`Less`/`Same`/`More`), `ProtocolFamily`, `Signal`, .... Used to recognise a
@@ -528,6 +535,34 @@ pub struct Env {
     /// `Arc` for the same reason as `frame_writes`: an env clone stays a
     /// refcount bump.
     code_entries: Option<Arc<Vec<Symbol>>>,
+    /// The **per-interpreter** never-copied base tier: the built-in dynamic
+    /// variables (`$*OUT`, `$*CWD`, `%*ENV`, `@*ARGS`, `$*REPO`, ...) the
+    /// interpreter seeds once at startup. ADR-0086.
+    ///
+    /// Read exactly like [`GLOBAL_BASE`] — at the chain's tail, after the
+    /// overlay and every parent tier — but per interpreter rather than per
+    /// process, because these values are not process constants: the IO handles
+    /// and `$*PROGRAM`/`@*ARGS` belong to one interpreter (Test::Util's
+    /// `is_run` fast path runs a nested one in the same process) and `$*CWD`
+    /// is mutable. A write is *promoted* into the writer's own overlay, where
+    /// it shadows the base; the base map itself is immutable for the
+    /// interpreter's life, so it can be shared by `Arc` with no
+    /// copy-on-write.
+    ///
+    /// Why they are not in the env at all: a closure capture keeps every key
+    /// that is not a plain user lexical, so all ~20 of them were rebuilt —
+    /// inserted, `Value`-cloned, later dropped — on *every* closure creation,
+    /// and the call-time merge (`entry_or_insert_sym_with`, "don't overwrite
+    /// what the chain already has") then discarded all ~20 because the live
+    /// chain bottoms out at the same interpreter. See
+    /// [ADR-0086](../docs/adr/0086-builtin-dynamics-are-not-closure-capture-material.md)
+    /// §1.3 and [#7557](https://github.com/tokuhirom/mutsu/issues/7557).
+    ///
+    /// Carried only by a **flat** env (the chain's tail) and by anything
+    /// derived from one: [`Self::scoped_child`] deliberately does not copy it,
+    /// so the `Arc` refcount is not touched on the per-call frame path, and a
+    /// chain walk reaches the tail's copy anyway.
+    dyn_base: Option<Arc<SymMap>>,
 }
 
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
@@ -551,6 +586,40 @@ fn empty_overlay() -> Arc<Tier> {
 fn empty_overlay_ref() -> &'static Arc<Tier> {
     static EMPTY: std::sync::OnceLock<Arc<Tier>> = std::sync::OnceLock::new();
     EMPTY.get_or_init(|| Arc::new(Tier::default()))
+}
+
+/// The tombstones a chain collapse (`flattened`/`filtered_flat`) must carry
+/// into its flat result: keys removed somewhere in the chain that are still
+/// present in the per-interpreter base tier and were not re-inserted by a
+/// nearer tier.
+///
+/// Without a base tier there is nothing below the merged map for a tombstone to
+/// hide, so the answer is `None` — which is also the answer whenever no tier in
+/// the chain carries a tombstone, i.e. nearly always. The walk is O(chain
+/// depth) and [`MAX_OVERLAY_DEPTH`] bounds that at 16.
+fn residual_base_tombstones(
+    env: &Env,
+    merged: &SymMap,
+    base: Option<&SymMap>,
+) -> Option<rustc_hash::FxHashSet<Symbol>> {
+    let base = base?;
+    let mut out: Option<rustc_hash::FxHashSet<Symbol>> = None;
+    let mut cur = env;
+    loop {
+        if let Some(tomb) = &cur.tombstones {
+            for k in tomb {
+                if base.contains_key(k) && !merged.contains_key(k) {
+                    out.get_or_insert_with(rustc_hash::FxHashSet::default)
+                        .insert(*k);
+                }
+            }
+        }
+        match &cur.parent {
+            Some(parent) => cur = parent,
+            None => break,
+        }
+    }
+    out
 }
 
 /// The interned `"?FILE"` key. Interning it once keeps the maintenance hook in
@@ -580,6 +649,58 @@ impl Env {
             file_sym: None,
             frame_writes: None,
             code_entries: None,
+            dyn_base: None,
+        }
+    }
+
+    /// Install the per-interpreter base tier on this (flat) env — see
+    /// [`Self::dyn_base`]. Called by `Interpreter::hoist_builtin_dynamics`,
+    /// right after the built-in dynamics have been lifted out of the env's own
+    /// map — once for an ordinary interpreter, and once more for each thread
+    /// clone, which rebuilds some of them and so needs a tier of its own.
+    pub(crate) fn set_dyn_base(&mut self, mut base: SymMap) {
+        debug_assert!(
+            !base.contains_key(&file_key()),
+            "the hoist moves `*`-twigil dynamics only, never `?FILE` (whose value is cached on the env)"
+        );
+        // Absorb [`GLOBAL_BASE`] rather than sit beside it. The tail of a
+        // lookup already paid one map probe for the process-wide tier; a
+        // *second* probe for the per-interpreter one would make every env miss
+        // — which is every metadata key the VM speculatively reads — more
+        // expensive than before this tier existed. Merged, the tail still costs
+        // exactly one probe (measured: two probes cost `word-count` ~13M Ir in
+        // `Env::get_sym` alone). `GLOBAL_BASE` is a `OnceLock` installed by
+        // `Interpreter::new` before any `run()`, so this copy is complete, and
+        // `or_insert` keeps a hoisted dynamic ahead of it in the impossible
+        // case that both hold a key.
+        if let Some(global) = global_base() {
+            for (k, v) in global.iter() {
+                base.entry(*k).or_insert_with(|| v.clone());
+            }
+        }
+        self.dyn_base = Some(Arc::new(base));
+    }
+
+    /// This env's per-interpreter base tier, or the one its chain bottoms out
+    /// at. `None` for an env that was never given one (`Env::new()` and
+    /// friends — those hold no built-in dynamics today either).
+    pub(crate) fn dyn_base(&self) -> Option<&Arc<SymMap>> {
+        let mut cur = self;
+        while let Some(parent) = &cur.parent {
+            cur = parent;
+        }
+        cur.dyn_base.as_ref()
+    }
+
+    /// This env's own base-tier entry for `key`: the per-interpreter tier when
+    /// it has one (a superset of the process-wide tier — see
+    /// [`Self::set_dyn_base`]), else [`GLOBAL_BASE`]. Consults THIS env only,
+    /// never the parent chain, so it is the tail half of a lookup.
+    #[inline]
+    fn base_get(&self, key: Symbol) -> Option<&Value> {
+        match &self.dyn_base {
+            Some(base) => base.get(&key),
+            None => global_base().and_then(|b| b.get(&key)),
         }
     }
 
@@ -634,6 +755,7 @@ impl Env {
                     file_sym,
                     frame_writes: None,
                     code_entries: None,
+                    dyn_base: None,
                 };
             }
             return Self {
@@ -644,6 +766,7 @@ impl Env {
                 file_sym,
                 frame_writes: None,
                 code_entries: None,
+                dyn_base: None,
             };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
@@ -659,6 +782,7 @@ impl Env {
             file_sym,
             frame_writes: None,
             code_entries: None,
+            dyn_base: None,
         }
     }
 
@@ -970,10 +1094,29 @@ impl Env {
                         merged.insert(*k, v.clone());
                     }
                 }
+                let dyn_base = cur.dyn_base.clone();
+                let any_tombstone = {
+                    let mut cur = self;
+                    let mut any = cur.tombstones.is_some();
+                    while let Some(parent) = &cur.parent {
+                        cur = parent;
+                        any |= cur.tombstones.is_some();
+                    }
+                    any
+                };
+                // A tombstone that hides a base-tier dynamic has to survive the
+                // collapse: the merged map does not contain the key (nothing
+                // ever wrote it into an overlay), so without the tombstone the
+                // base would shadow straight back through. `None` whenever the
+                // chain carries no tombstone or no base tier, which is nearly
+                // always.
+                let tombstones = any_tombstone
+                    .then(|| residual_base_tombstones(self, &merged, dyn_base.as_deref()))
+                    .flatten();
                 Self {
                     inner: Arc::new(Tier::new(merged)),
                     parent: None,
-                    tombstones: None,
+                    tombstones,
                     depth: 0,
                     // Flattening preserves every visible value, `?FILE` included.
                     file_sym: self.file_sym,
@@ -982,6 +1125,7 @@ impl Env {
                     // writes when a light frame needs them (#7630).
                     frame_writes: None,
                     code_entries: None,
+                    dyn_base,
                 }
             }
         }
@@ -1048,25 +1192,42 @@ impl Env {
         // starting at zero capacity, i.e. five reallocations and ~52 entry
         // moves, on every construction.
         let mut cap = 0usize;
+        // The same walk answers two more questions for free: which
+        // per-interpreter base tier the chain's tail carries (ADR-0086) and
+        // whether any tier holds a tombstone — so neither costs its own pass.
+        let mut dyn_base = None;
+        let mut any_tombstone = false;
         {
             let mut cur = Some(self);
             while let Some(env) = cur {
                 cap += env.inner.len();
+                any_tombstone |= env.tombstones.is_some();
+                dyn_base = env.dyn_base.as_ref();
                 cur = env.parent.as_deref();
             }
         }
+        let dyn_base = dyn_base.cloned();
         let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
         collect(self, &mut out, keep, true);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
+        // The per-interpreter base tier rides along by reference, exactly as
+        // `GLOBAL_BASE` does: it is what stops the built-in dynamics from being
+        // rebuilt into every closure capture (ADR-0086). `keep` never sees them
+        // and so cannot reject them — which is the point, since a capture that
+        // dropped them would have to prove the caller's chain re-supplies them.
+        let tombstones = any_tombstone
+            .then(|| residual_base_tombstones(self, &out, dyn_base.as_deref()))
+            .flatten();
         Self {
             inner: Arc::new(Tier::new(out)),
             parent: None,
-            tombstones: None,
+            tombstones,
             depth: 0,
             file_sym,
             frame_writes: None,
             code_entries: None,
+            dyn_base,
         }
     }
 
@@ -1152,25 +1313,41 @@ impl Env {
         // (36 against 96 after a bare `use Test`), and over-reserving cost a
         // 2 KiB allocation and its zeroing per closure creation.
         let mut cap = 0usize;
+        // As in [`Self::filtered_flat`], the same walk also answers which
+        // per-interpreter base tier the chain's tail carries (ADR-0086) and
+        // whether any tier holds a tombstone.
+        let mut dyn_base = None;
+        let mut any_tombstone = false;
         {
             let mut cur = Some(self);
             while let Some(env) = cur {
                 cap += env.inner.capture_upper_bound();
+                any_tombstone |= env.tombstones.is_some();
+                dyn_base = env.dyn_base.as_ref();
                 cur = env.parent.as_deref();
             }
         }
+        let dyn_base = dyn_base.cloned();
         let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
         collect(self, &mut out, keep, true);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
+        // The per-interpreter base tier rides along by reference, exactly as
+        // `GLOBAL_BASE` does: the built-in dynamics are not in any map for this
+        // walk to visit, which is what stops them being rebuilt into every
+        // capture (ADR-0086).
+        let tombstones = any_tombstone
+            .then(|| residual_base_tombstones(self, &out, dyn_base.as_deref()))
+            .flatten();
         Self {
             inner: Arc::new(Tier::new(out)),
             parent: None,
-            tombstones: None,
+            tombstones,
             depth: 0,
             file_sym,
             frame_writes: None,
             code_entries: None,
+            dyn_base,
         }
     }
 
@@ -1240,7 +1417,14 @@ impl Env {
         if let Some(parent) = &self.parent {
             return parent.get_sym(key);
         }
-        global_base().and_then(|b| b.get(&key))
+        // Chain tail: one base-tier probe. The per-interpreter tier (built-in
+        // dynamics, ADR-0086) is a superset of the process-wide one, so an env
+        // that has it needs no second look at `GLOBAL_BASE` — see
+        // [`Self::set_dyn_base`].
+        match &self.dyn_base {
+            Some(base) => base.get(&key),
+            None => global_base().and_then(|b| b.get(&key)),
+        }
     }
 
     #[inline]
@@ -1259,7 +1443,10 @@ impl Env {
         if let Some(parent) = &self.parent {
             return parent.contains_key_sym(key);
         }
-        global_base().is_some_and(|b| b.contains_key(&key))
+        match &self.dyn_base {
+            Some(base) => base.contains_key(&key),
+            None => global_base().is_some_and(|b| b.contains_key(&key)),
+        }
     }
 
     /// True if `key` is declared in THIS frame's own overlay tier specifically
@@ -1407,6 +1594,13 @@ impl Env {
         // a handle). Every `my` declaration speculatively removes several
         // metadata keys that the common program never creates, so this no-op
         // removal is on the hottest declaration path in the VM.
+        //
+        // Unchanged by the per-interpreter base tier (ADR-0086): a flat env's
+        // `remove` still never tombstones, so it costs no base probe here. The
+        // effect on a key the tier also holds is to *un-shadow* it — the
+        // overlay entry goes and the seeded value below shows through — which
+        // is what a tier below an overlay means, and what `GLOBAL_BASE` has
+        // always done for a flat env's enum constants.
         if self.parent.is_none() && !self.inner.contains_key(&key) {
             return None;
         }
@@ -1421,7 +1615,7 @@ impl Env {
                 .parent
                 .as_ref()
                 .and_then(|p| p.get_sym(key))
-                .or_else(|| global_base().and_then(|b| b.get(&key)))
+                .or_else(|| self.base_get(key))
                 .cloned();
             if parent_val.is_some() {
                 let visible = from_overlay.or(parent_val);
@@ -1455,7 +1649,7 @@ impl Env {
                 .parent
                 .as_ref()
                 .and_then(|p| p.get_sym(key))
-                .or_else(|| global_base().and_then(|b| b.get(&key)))
+                .or_else(|| self.base_get(key))
                 .cloned();
             if let Some(v) = promote {
                 self.untombstone(key);
@@ -1534,7 +1728,34 @@ impl Env {
         }
         if let Some(parent) = &self.parent {
             parent.visit_values(visitor);
+            return;
         }
+        // Chain tail: the per-interpreter base tier's built-in dynamics are
+        // roots too (ADR-0086) — they hold the IO handles, `%*ENV` and
+        // `$*REPO`. `GLOBAL_BASE` is deliberately not visited: it is a
+        // process-lifetime `OnceLock` that is never reclaimed.
+        if let Some(base) = &self.dyn_base {
+            for v in base.values() {
+                visitor.visit_value(v);
+            }
+        }
+    }
+
+    /// The per-interpreter base-tier entries this **flat** env still exposes:
+    /// the built-in dynamics neither shadowed by its own map nor tombstoned.
+    ///
+    /// For the consumers that present an env as *the visible environment*
+    /// rather than look one name up in it — the `DYNAMIC::` and `PROCESS::`
+    /// pseudo-stashes — which would otherwise lose `$*OUT` and friends when
+    /// they moved out of the map (ADR-0086 §4).
+    pub(crate) fn visible_base_dynamics(&self) -> Vec<(Symbol, Value)> {
+        let Some(base) = self.dyn_base() else {
+            return Vec::new();
+        };
+        base.iter()
+            .filter(|(k, _)| !self.inner.contains_key(k) && !self.is_tombstoned(**k))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 
     /// Full name->value snapshot, merging the immutable base tier under the
@@ -1546,9 +1767,12 @@ impl Env {
         // layer this frame's tombstones and overlay on top.
         let mut out: HashMap<String, Value> = match &self.parent {
             Some(parent) => parent.flatten(),
-            None => global_base()
-                .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
-                .unwrap_or_default(),
+            None => match &self.dyn_base {
+                Some(base) => base.iter().map(|(k, v)| (k.resolve(), v.clone())).collect(),
+                None => global_base()
+                    .map(|b| b.iter().map(|(k, v)| (k.resolve(), v.clone())).collect())
+                    .unwrap_or_default(),
+            },
         };
         if let Some(tomb) = &self.tombstones {
             for k in tomb {
@@ -1572,14 +1796,19 @@ impl Env {
     pub fn visible_keys_where(&self, keep: impl Fn(&str) -> bool + Copy) -> HashSet<String> {
         let mut out: HashSet<String> = match &self.parent {
             Some(parent) => parent.visible_keys_where(keep),
-            None => global_base()
-                .map(|b| {
+            None => {
+                let tier = match self.dyn_base.as_deref() {
+                    Some(base) => Some(base),
+                    None => global_base(),
+                };
+                tier.map(|b| {
                     b.keys()
                         .map(|k| k.resolve())
                         .filter(|k| keep(k))
                         .collect::<HashSet<String>>()
                 })
-                .unwrap_or_default(),
+                .unwrap_or_default()
+            }
         };
         if let Some(tomb) = &self.tombstones {
             for k in tomb {
@@ -1750,6 +1979,7 @@ impl From<HashMap<String, Value>> for Env {
             file_sym,
             frame_writes: None,
             code_entries: None,
+            dyn_base: None,
         }
     }
 }
@@ -1766,6 +1996,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             file_sym,
             frame_writes: None,
             code_entries: None,
+            dyn_base: None,
         }
     }
 }

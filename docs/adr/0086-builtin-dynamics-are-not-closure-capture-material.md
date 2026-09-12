@@ -1,6 +1,6 @@
 # ADR-0086: The built-in dynamics are not closure-capture material
 
-- Status: Proposed
+- Status: Accepted (implemented 2026-09-12)
 - Date: 2026-09-10
 - Related: [ADR-0084](0084-the-frame-env-is-not-the-programs-symbol-table.md)
   (the per-frame `Env` is not the program's symbol table) — this ADR refines the
@@ -200,6 +200,51 @@ unchanged: that is §2's work.
 - `t/start-dynamic-var-indir.t`, `t/start-inherits-dynamic-out.t`,
   `roast/S32-io/indir.t` and the `$DYNAMIC::`/`CALLER::` tests stay green.
 - `make test` and `make roast` stay green.
+
+## 6a. What was implemented (2026-09-12)
+
+`Env` carries a `dyn_base: Option<Arc<SymMap>>`, read at the chain's tail
+exactly where `GLOBAL_BASE` is read, and `Interpreter::hoist_builtin_dynamics`
+(`src/runtime/io_env.rs`, key list `BASE_TIER_DYNAMICS`) moves the ~20 entries
+into it — from `run()`, late enough that `set_program_path`/`set_args` have
+seeded `$*PROGRAM` and `@*ARGS`, and again on every thread clone so a spawned
+block's captures are no wider than its parent's.
+
+Two refinements the design did not anticipate:
+
+- **The tier absorbs `GLOBAL_BASE` instead of sitting beside it.** Consulting
+  two base maps made every env *miss* — which is every metadata key the VM
+  speculatively reads — pay a second probe, and that cost more on `word-count`
+  (~13M Ir in `Env::get_sym` alone) than the capture saved. `set_dyn_base`
+  copies the process-wide tier in, so the tail still costs exactly one probe.
+- **A flat env still never tombstones.** §4 said a write is promoted rather
+  than applied to the base, and that holds; but making a flat env's `remove`
+  *tombstone* a base key (rather than un-shadow it) would have put a base probe
+  on the hottest declaration path in the VM for no semantic gain — `GLOBAL_BASE`
+  has always un-shadowed there. `flattened`/`filtered_flat` still carry forward
+  a tombstone a *scoped* tier in the collapsed chain set on a base key.
+
+Three consumers had to learn the tier: `flatten()`/`visible_keys_where()`
+(which already merged `GLOBAL_BASE`), `dynamic_pseudo_stash_entries` (backing
+`DYNAMIC::`/`PROCESS::`), and the thread-clone spawn walk that collects the IO
+handle ids the child must keep working — `iter()` is map-only, and missing that
+last one made a plain `await start { print "X" }` die with `Invalid IO::Handle`.
+
+Measured with callgrind (deterministic instruction counts; a local A/B of two
+release binaries, with the precompilation cache warmed, not wall clock — the
+bench CI history remains the source of truth for tracked performance). A
+200000-iteration `my $c = * + 1;` loop **−38.4%**, which is **−44.0% per
+creation** (13,503 → 7,564 Ir) once the control loop — flat at +0.06% — is
+subtracted; the same loop with 30 extra enclosing lexicals −26.1% (−28.6% per
+creation); a 20000-iteration `sub make($n) { my $c = { $n + 1 } }` loop −12.6%;
+`bench-ctor` −7.6%, `bench-class` −3.3%, `bench-yaml-parse` −2.2%,
+`bench-grammar-parse` −1.0%. `bench-fib`, `bench-mandelbrot`, `bench-tak`,
+`bench-array` and `bench-string` are within +0.5%, `bench-hash` +1.0% and
+`word-count` +1.7% — the price of one more `Option<Arc<_>>` on `Env` and one
+more branch at the tail of a lookup, paid by a program that creates no closures.
+
+Acceptance test: `t/vm/scope/dynamic-vars-base-tier.t` (18 assertions, all green
+under rakudo too).
 
 ## 7. Alternatives rejected
 
