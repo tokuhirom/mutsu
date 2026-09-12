@@ -110,11 +110,25 @@ jobs:
         # concurrently, so this page catches up on the next push (a ~1-commit
         # lag, fine for a trend view). Best-effort: if bench-data has no history
         # yet, skip without failing the deploy.
+        #
+        # BOTH series are rendered onto one page (#8085): the wall-clock one and
+        # the deterministic instruction-count one, as metric buttons on the same
+        # commit axis, because the whole point is to read them together — the
+        # deterministic series localizes a change to ~0.1%, the wall-clock one
+        # says whether it mattered. `--det` is optional and a missing file is not
+        # an error, which is what the window before bench.yml has recorded its
+        # first deterministic row needs.
         run: |
           git fetch --depth 1 origin bench-data 2>/dev/null || true
           if git show FETCH_HEAD:bench-history.tsv > /tmp/bench-history.tsv 2>/dev/null; then
+            det=()
+            if git show FETCH_HEAD:bench-det-history.tsv > /tmp/bench-det-history.tsv 2>/dev/null; then
+              det=(--det /tmp/bench-det-history.tsv)
+            else
+              echo "no bench-det-history.tsv on bench-data yet; rendering wall clock only"
+            fi
             python3 scripts/bench-visualize.py --standalone --site-chrome \
-              /tmp/bench-history.tsv -o site/bench-trend.html
+              "${det[@]}" /tmp/bench-history.tsv -o site/bench-trend.html
           else
             echo "no bench-history.tsv on bench-data yet; skipping bench-trend"
           fi

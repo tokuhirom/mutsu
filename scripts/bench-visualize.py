@@ -44,6 +44,19 @@ COLUMNS = [
 ]
 
 
+# bench-det-history.tsv (issue #8085): the deterministic series. No raku
+# counterpart, no median/min -- an instruction count is exact -- and the
+# toolchain rather than the runner, because a simulated count does not depend on
+# the runner's CPU but DOES step when the binary's codegen changes.
+DET_COLUMNS = [
+    "date",
+    "commit",
+    "benchmark",
+    "instructions",
+    "toolchain",
+]
+
+
 def parse_rows(text):
     rows = []
     for i, line in enumerate(text.splitlines()):
@@ -64,10 +77,35 @@ def parse_rows(text):
     return rows
 
 
-def build_model(rows):
+def parse_det_rows(text):
+    """Rows of bench-det-history.tsv. Same shape as `parse_rows`, different
+    columns; returns [] for an absent or header-only file so a checkout with no
+    deterministic history yet simply renders without that metric."""
+    rows = []
+    for i, line in enumerate(text.splitlines()):
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if i == 0 and parts[0] == "date":
+            continue  # header
+        if len(parts) < 4:
+            continue
+        rec = dict(zip(DET_COLUMNS, parts))
+        try:
+            rec["instructions"] = int(rec["instructions"])
+        except (ValueError, KeyError):
+            continue  # an NA row (the measurement failed)
+        rows.append(rec)
+    return rows
+
+
+def build_model(rows, det_rows=()):
     # Chronological commit order: each distinct commit keyed by first-seen date.
+    # Both series are appended by the same job on the same commit, so they share
+    # this axis -- but build it from BOTH, so a commit recorded in only one of
+    # them still gets a column instead of silently dropping the other's point.
     first_seen = {}
-    for r in rows:
+    for r in list(rows) + list(det_rows):
         c = r["commit"]
         if c not in first_seen or r["date"] < first_seen[c]:
             first_seen[c] = r["date"]
@@ -75,26 +113,54 @@ def build_model(rows):
     idx = {c: i for i, c in enumerate(order)}
     commit_meta = [{"sha": c[:9], "date": first_seen[c]} for c in order]
 
+    def split_lane(name):
+        """`foo+jit` -> ("foo", "jit"); `foo` -> ("foo", "base")."""
+        return (name[:-4], "jit") if name.endswith("+jit") else (name, "base")
+
+    # The deterministic row for each (benchmark, commit), keyed the same way, so
+    # it can be attached to the matching wall-clock point below.
+    det = {}
+    for r in det_rows:
+        det[(r["benchmark"], r["commit"])] = r["instructions"]
+
     # benchmark basename -> {"base": [...pts], "jit": [...pts]}
+    # A point is [commitIdx, seconds, ratio, instructions|None] -- the fourth
+    # slot is None wherever the deterministic series has no row, which is every
+    # commit before it started being recorded.
     benches = {}
     for r in rows:
         name = r["benchmark"]
-        lane = "jit" if name.endswith("+jit") else "base"
-        base_name = name[:-4] if lane == "jit" else name
+        base_name, lane = split_lane(name)
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
         # last write wins if a commit reran a benchmark
         b[lane][idx[r["commit"]]] = [
             idx[r["commit"]],
             round(r["mutsu_median_s"], 5),
             round(r["ratio"], 4),
+            det.pop((name, r["commit"]), None),
         ]
+
+    # Any deterministic row with no wall-clock twin (the wall-clock measurement
+    # failed, or the benchmark is recorded in only one of the two) still gets a
+    # point, with the seconds/ratio slots empty.
+    for (name, commit), instr in det.items():
+        base_name, lane = split_lane(name)
+        b = benches.setdefault(base_name, {"base": {}, "jit": {}})
+        b[lane].setdefault(idx[commit], [idx[commit], None, None, instr])
 
     out = []
     for name in sorted(benches):
         base = [benches[name]["base"][k] for k in sorted(benches[name]["base"])]
         jit = [benches[name]["jit"][k] for k in sorted(benches[name]["jit"])]
         out.append({"name": name, "base": base, "jit": jit})
-    return {"commits": commit_meta, "benches": out}
+    return {
+        "commits": commit_meta,
+        "benches": out,
+        # Drives whether the "instructions" metric button is offered at all: a
+        # checkout whose bench-data has no deterministic history yet would
+        # otherwise show a button that renders nothing.
+        "hasDet": bool(det_rows),
+    }
 
 
 TEMPLATE = r"""<title>Benchmark trend &mdash; mutsu</title>
@@ -201,6 +267,7 @@ __CHROME_NAV__
     <div class="seg" id="metric" role="group" aria-label="Metric">
       <button data-v="seconds" aria-pressed="true">mutsu seconds</button>
       <button data-v="ratio" aria-pressed="false">ratio vs raku</button>
+      <button data-v="instr" aria-pressed="false" id="metricInstr" hidden>instructions</button>
     </div>
     <span class="ctl-label">Window</span>
     <div class="seg" id="window" role="group" aria-label="Commit window">
@@ -233,17 +300,33 @@ const commits = DATA.commits, benches = DATA.benches;
 const N = commits.length;
 let metric = 'seconds', windowN = 0, view = 'charts';
 
-const yval = (pt) => metric === 'seconds' ? pt[1] : pt[2];
-const fmt = (v) => metric === 'seconds'
-  ? (v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
-  : v.toFixed(2);
-const unit = () => metric === 'seconds' ? 's' : '×';
+// A point is [commitIdx, seconds, ratio, instructions]. `instructions` is null
+// for every commit before the deterministic series started being recorded, so
+// every consumer below has to tolerate a null y -- see `defined`.
+const YIDX = { seconds: 1, ratio: 2, instr: 3 };
+const yval = (pt) => pt[YIDX[metric]];
+const defined = (pt) => yval(pt) != null;
+// Instruction counts run to 1e9-1e13, so they get SI suffixes rather than the
+// seconds formatter's fixed decimals.
+function fmtInstr(v) {
+  const a = Math.abs(v);
+  if (a >= 1e12) return (v / 1e12).toFixed(2) + 'T';
+  if (a >= 1e9) return (v / 1e9).toFixed(2) + 'G';
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+  return String(v);
+}
+const fmt = (v) => metric === 'instr' ? fmtInstr(v)
+  : metric === 'seconds'
+    ? (v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
+    : v.toFixed(2);
+const unit = () => metric === 'seconds' ? 's' : metric === 'ratio' ? '×' : '';
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
 // Percent change of the last point vs the previous, in the active window.
 function delta(pts) {
-  const w = pts.filter(p => p[0] >= windowStart());
+  const w = pts.filter(p => p[0] >= windowStart() && defined(p));
   if (w.length < 2) return null;
   const a = yval(w[w.length - 2]), b = yval(w[w.length - 1]);
   if (!a) return null;
@@ -256,7 +339,7 @@ function chart(b) {
   const x0 = windowStart(), span = Math.max(1, (N - 1) - x0);
   const sx = (i) => PADL + (i - x0) / span * (W - PADL - PADR);
   const lanes = [['base', b.base], ['jit', b.jit]]
-    .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0)]);
+    .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0 && defined(p))]);
   let lo = Infinity, hi = -Infinity;
   for (const [, pts] of lanes) for (const p of pts) {
     const v = yval(p); if (v < lo) lo = v; if (v > hi) hi = v;
@@ -297,7 +380,9 @@ function cardHTML(b) {
   if (d) {
     const cls = Math.abs(d.pct) < 0.5 ? 'flat' : (d.pct > 0 ? 'up' : 'down');
     const sign = d.pct > 0 ? '+' : '';
-    const arrow = metric === 'seconds' ? (d.pct > 0 ? ' slower' : (d.pct < 0 ? ' faster' : '')) : '';
+    const arrow = metric === 'seconds' ? (d.pct > 0 ? ' slower' : (d.pct < 0 ? ' faster' : ''))
+      : metric === 'instr' ? (d.pct > 0 ? ' more' : (d.pct < 0 ? ' fewer' : ''))
+      : '';
     chip = `<span class="chip ${cls}">${sign}${d.pct.toFixed(1)}%${cls==='flat'?'':arrow}</span>`;
     now = `<span class="now mono">${fmt(d.now)}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`;
   }
@@ -319,7 +404,8 @@ function wireHover(card, b) {
   const svg = card.querySelector('svg'), tip = card.querySelector('.tip');
   const cross = card.querySelector('.crosshair');
   const x0 = windowStart(), span = Math.max(1, (N - 1) - x0);
-  const all = [...b.base.map(p => ['base', p]), ...b.jit.map(p => ['jit', p])].filter(([, p]) => p[0] >= x0);
+  const all = [...b.base.map(p => ['base', p]), ...b.jit.map(p => ['jit', p])]
+    .filter(([, p]) => p[0] >= x0 && defined(p));
   function move(ev) {
     const r = svg.getBoundingClientRect();
     const px = (ev.clientX - r.left) / r.width;   // 0..1 across svg width
@@ -330,7 +416,8 @@ function wireHover(card, b) {
     if (best == null) return;
     const bx = PADL + (best - x0) / span * (W - PADL - PADR);
     cross.setAttribute('x1', bx); cross.setAttribute('x2', bx); cross.style.opacity = 1;
-    const bp = b.base.find(p => p[0] === best), jp = b.jit.find(p => p[0] === best);
+    const bp = b.base.find(p => p[0] === best && defined(p));
+    const jp = b.jit.find(p => p[0] === best && defined(p));
     const cm = commits[best];
     let rows = '';
     if (bp) rows += `interp ${fmt(yval(bp))}${unit()}`;
@@ -349,8 +436,9 @@ function renderTable() {
   const wrap = document.getElementById('tableWrap');
   const rows = benches.map(b => {
     const dj = delta(b.jit), db = delta(b.base);
-    const lastB = b.base.length ? yval(b.base[b.base.length - 1]) : null;
-    const lastJ = b.jit.length ? yval(b.jit[b.jit.length - 1]) : null;
+    const defB = b.base.filter(defined), defJ = b.jit.filter(defined);
+    const lastB = defB.length ? yval(defB[defB.length - 1]) : null;
+    const lastJ = defJ.length ? yval(defJ[defJ.length - 1]) : null;
     return { name: b.name, base: lastB, jit: lastJ,
              dpct: (dj || db) ? (dj || db).pct : null };
   });
@@ -388,6 +476,7 @@ function seg(id, cb) {
     cb(btn.dataset.v); render();
   });
 }
+if (DATA.hasDet) document.getElementById('metricInstr').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
 seg('view', v => view = v);
@@ -399,7 +488,16 @@ document.getElementById('foot').innerHTML =
   `Each chart has an independent y-axis (small multiples). Values are the median of 7 runs; ` +
   `ratio is mutsu ÷ Rakudo on the same runner (below 1× = faster than raku). ` +
   `Δ latest = last commit vs the previous in the window. ` +
-  `Source: <span class="mono">bench-history.tsv</span> on <span class="mono">bench-data</span>.`;
+  (DATA.hasDet
+    ? `<b>instructions</b> is the deterministic series: simulated instruction counts ` +
+      `(callgrind), which do not depend on the runner and reproduce to ~0.1%, against ` +
+      `16-33% for wall clock. It is blind to cache behaviour, memory boundness, lock ` +
+      `contention and real thread parallelism, and it steps whenever the toolchain ` +
+      `changes &mdash; read it together with the seconds series, not instead of it. `
+    : '') +
+  `Source: <span class="mono">bench-history.tsv</span>` +
+  (DATA.hasDet ? ` and <span class="mono">bench-det-history.tsv</span>` : '') +
+  ` on <span class="mono">bench-data</span>.`;
 render();
 </script>
 """
@@ -430,6 +528,15 @@ def main():
         "directly in a browser (omit when publishing as an Artifact, which adds its own)",
     )
     ap.add_argument(
+        "--det",
+        metavar="TSV",
+        help="bench-det-history.tsv, the deterministic instruction-count series "
+        "(#8085). Optional: without it the page renders exactly as before and the "
+        "`instructions` metric button is not offered, which is what a checkout whose "
+        "bench-data has no deterministic history yet needs. A missing file is not an "
+        "error, for the same reason.",
+    )
+    ap.add_argument(
         "--site-chrome",
         action="store_true",
         help="add the mutsu site's shared nav and footer (pulls in assets/site.css and "
@@ -442,7 +549,14 @@ def main():
     rows = parse_rows(text)
     if not rows:
         sys.exit("no usable rows parsed from input")
-    model = build_model(rows)
+    det_rows = []
+    if args.det:
+        try:
+            det_rows = parse_det_rows(open(args.det, encoding="utf-8").read())
+        except OSError as e:
+            print(f"bench-visualize: no deterministic series ({e}); "
+                  f"rendering wall clock only", file=sys.stderr)
+    model = build_model(rows, det_rows)
     payload = json.dumps(model, separators=(",", ":"))
     # Guard against a stray </script> in the data breaking the inline block.
     payload = payload.replace("</", "<\\/")
@@ -459,7 +573,8 @@ def main():
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(doc)
         print(f"wrote {args.output} ({len(model['benches'])} benchmarks, "
-              f"{len(model['commits'])} commits)", file=sys.stderr)
+              f"{len(model['commits'])} commits, "
+              f"{len(det_rows)} deterministic rows)", file=sys.stderr)
     else:
         sys.stdout.write(doc)
 
