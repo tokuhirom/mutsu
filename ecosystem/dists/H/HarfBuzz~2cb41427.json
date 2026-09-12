@@ -10,27 +10,140 @@
     "unresolved": []
   },
   "dist": "HarfBuzz",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/10_basic.t",
+      "raku": {
+        "first_failure": "got version",
+        "nok": 1,
+        "ok": 0,
+        "plan": 28,
+        "secs": 29.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20_shaper.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30_kern.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/direction.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/face.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/features.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 23,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/glyph.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/mutate.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libharfbuzz.so': libharfbuzz.so: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "HarfBuzz": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Blob": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Buffer": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Face": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Feature": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Font": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Glyph": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Map": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Raw": "Variable $!var used where no 'self' is available",
+    "HarfBuzz": "ok",
+    "HarfBuzz::Blob": "ok",
+    "HarfBuzz::Buffer": "ok",
+    "HarfBuzz::Face": "ok",
+    "HarfBuzz::Feature": "ok",
+    "HarfBuzz::Font": "ok",
+    "HarfBuzz::Glyph": "ok",
+    "HarfBuzz::Map": "ok",
+    "HarfBuzz::Raw": "ok",
     "HarfBuzz::Raw::Defs": "ok",
-    "HarfBuzz::Set": "Variable $!var used where no 'self' is available",
-    "HarfBuzz::Shaper": "Variable $!var used where no 'self' is available"
+    "HarfBuzz::Set": "ok",
+    "HarfBuzz::Shaper": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -41,7 +154,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/AR/HARFBUZZ/b12ea87821a3aba0a5aa26e0f7d39c6c088d83b6.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

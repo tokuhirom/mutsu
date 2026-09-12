@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.16,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.74,
+        "secs": 0.83,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,29 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 34,
-        "plan": 34,
-        "secs": 0.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/020-grammar.t",
-      "raku": {
-        "nok": 0,
-        "ok": 34,
-        "plan": 34,
-        "secs": 1.24,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,11 +57,34 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Level 3 Examples",
-        "nok": 2,
-        "ok": 2,
+        "first_failure": "special cases",
+        "nok": 1,
+        "ok": 33,
+        "plan": 34,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/020-grammar.t",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Level 2 Examples",
+        "nok": 3,
+        "ok": 1,
         "plan": 4,
-        "secs": 1.05,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -93,7 +94,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.07,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +107,7 @@
         "nok": 8,
         "ok": 1,
         "plan": 9,
-        "secs": 1.5,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -116,7 +117,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.01,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,7 +130,7 @@
         "nok": 2,
         "ok": 2,
         "plan": 4,
-        "secs": 0.53,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -139,7 +140,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.18,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,7 +152,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +162,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.6,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +184,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.68,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -195,10 +196,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -213,9 +214,9 @@
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 8,
-    "mutsu_assertions": 44,
-    "parity_files": 5,
-    "regressed_files": 3
+    "mutsu_assertions": 42,
+    "parity_files": 4,
+    "regressed_files": 4
   },
   "version": "0.0.11"
 }

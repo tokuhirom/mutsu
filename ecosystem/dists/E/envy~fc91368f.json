@@ -16,7 +16,7 @@
         "nok": 4,
         "ok": 3,
         "plan": 7,
-        "secs": 2.0,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -25,11 +25,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "crc32_hex(12345678901234567890123456789012345678901234567890123456789012345678901234567890) => expect:7ca94a72,got:FFFFFFFF",
+        "first_failure": "crc32_hex(message digest) => expect:20159d7f,got:FFFFFFBC",
         "nok": 6,
         "ok": 1,
         "plan": 7,
-        "secs": 0.13,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.42,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,10 +57,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

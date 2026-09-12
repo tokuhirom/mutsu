@@ -18,23 +18,23 @@
   "dist": "Syndicate",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Use of Nil in string context",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "RSS feed contains item tag",
+        "nok": 1,
+        "ok": 9,
         "plan": 10,
-        "secs": 10.66,
+        "secs": 7.97,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/00-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 71.49,
+        "secs": 72.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,11 +43,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "RSS output encodes & in title",
+        "first_failure": "RSS output encodes item title",
         "nok": 5,
-        "ok": 0,
+        "ok": 13,
         "plan": 18,
-        "secs": 7.04,
+        "secs": 4.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -57,30 +57,29 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.22,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "rss091-full.xml detected as RSS091",
-        "nok": 3,
-        "ok": 35,
+        "nok": 0,
+        "ok": 38,
         "plan": 38,
-        "secs": 15.97,
+        "secs": 5.92,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-parse.rakutest",
       "raku": {
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.71,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +91,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 7.9,
+        "secs": 4.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,76 +101,74 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.07,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Invalid RSS 0.91 XML: could not parse XML",
-        "nok": 0,
-        "ok": 47,
+        "first_failure": "roundtrip item count",
+        "nok": 2,
+        "ok": 57,
         "plan": 59,
-        "secs": 7.97,
+        "secs": 4.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/04-rss091-parse.rakutest",
       "raku": {
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 2.39,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Invalid RSS 1.0 XML: could not parse XML",
         "nok": 0,
-        "ok": 18,
+        "ok": 32,
         "plan": 32,
-        "secs": 7.13,
+        "secs": 4.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-rss1-parse.rakutest",
       "raku": {
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 1.32,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Invalid Atom XML: could not parse XML",
         "nok": 0,
-        "ok": 42,
+        "ok": 55,
         "plan": 55,
-        "secs": 7.25,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-atom-parse.rakutest",
       "raku": {
         "nok": 0,
         "ok": 55,
         "plan": 55,
-        "secs": 1.26,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +181,7 @@
         "nok": 0,
         "ok": 48,
         "plan": 63,
-        "secs": 6.94,
+        "secs": 3.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -194,30 +191,30 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 1.8,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
-        "nok": 0,
-        "ok": 22,
+        "first_failure": "RSS output has items",
+        "nok": 1,
+        "ok": 30,
         "plan": 140,
-        "secs": 7.49,
+        "secs": 4.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/08-builder.rakutest",
       "raku": {
         "nok": 0,
         "ok": 140,
         "plan": 140,
-        "secs": 3.68,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -231,53 +228,53 @@
         "nok": 0,
         "ok": 1,
         "plan": 61,
-        "secs": 1.46,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Invalid RSS XML: could not parse XML",
-        "nok": 0,
-        "ok": 29,
+        "first_failure": "Builder media-content carries medium and nested title/description",
+        "nok": 1,
+        "ok": 50,
         "plan": 51,
-        "secs": 7.33,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/10-media-rss.rakutest",
       "raku": {
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 1.5,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Calling matches-ns(Any, Nil, Str) will never work with declared signature (XML::Element $e, Str $ns-uri, Str $canonical-prefix)",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "builder item title",
+        "nok": 1,
+        "ok": 32,
         "plan": 33,
-        "secs": 8.22,
+        "secs": 4.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/11-itunes-podcast.rakutest",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.47,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -289,7 +286,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.62,
+        "secs": 3.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -299,7 +296,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.66,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -311,7 +308,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.86,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -321,30 +318,29 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.63,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
         "nok": 0,
-        "ok": 0,
+        "ok": 27,
         "plan": 27,
-        "secs": 0.35,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/14-utils.rakutest",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.99,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -356,7 +352,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.67,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -366,30 +362,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.61,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
         "nok": 0,
-        "ok": 5,
+        "ok": 19,
         "plan": 19,
-        "secs": 0.51,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/16-ext-utils.rakutest",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.67,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -401,7 +396,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 5.67,
+        "secs": 4.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -411,30 +406,29 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.82,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "direct Atom construction emits link rel=alternate",
-        "nok": 3,
-        "ok": 12,
+        "nok": 0,
+        "ok": 30,
         "plan": 30,
-        "secs": 5.95,
+        "secs": 4.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/18-audit-regressions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 1.71,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -448,76 +442,73 @@
         "nok": 0,
         "ok": 12,
         "plan": 43,
-        "secs": 1.53,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
         "nok": 0,
-        "ok": 1,
+        "ok": 16,
         "plan": 16,
-        "secs": 1.1,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/20-rss-common.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.94,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "dc:language-only feed regenerates dc declaration",
-        "nok": 5,
-        "ok": 8,
+        "nok": 0,
+        "ok": 39,
         "plan": 39,
-        "secs": 1.58,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/21-entity-roundtrip.rakutest",
       "raku": {
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 1.1,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "normalized skipDays regenerated",
-        "nok": 1,
-        "ok": 9,
+        "nok": 0,
+        "ok": 10,
         "plan": 10,
-        "secs": 1.05,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/22-code-quality.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.58,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -526,11 +517,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "EST offset applied",
-        "nok": 3,
-        "ok": 23,
+        "first_failure": "builder 0.91 item emits only title, link, description",
+        "nok": 2,
+        "ok": 31,
         "plan": 34,
-        "secs": 2.75,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -540,53 +531,52 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.19,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "half-hour abbreviation IST offset applied",
-        "nok": 2,
-        "ok": 40,
+        "nok": 0,
+        "ok": 43,
         "plan": 43,
-        "secs": 1.4,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/24-date-offsets.rakutest",
       "raku": {
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 1.04,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "B1: output keeps the self link",
-        "nok": 2,
-        "ok": 2,
+        "first_failure": "X::Undeclared::Symbols: Undeclared name:",
+        "nok": 0,
+        "ok": 31,
         "plan": 47,
-        "secs": 5.11,
+        "secs": 4.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/25-audit-round-8.rakutest",
       "raku": {
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 1.48,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -600,7 +590,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 41,
-        "secs": 1.14,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -614,7 +604,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 41,
-        "secs": 1.16,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -623,11 +613,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "B6: regenerated RSS 2.0 emits pubDate",
-        "nok": 4,
-        "ok": 18,
+        "first_failure": "B6: builder RSS 2.0 emits pubDate",
+        "nok": 1,
+        "ok": 59,
         "plan": 60,
-        "secs": 5.03,
+        "secs": 4.59,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -637,7 +627,29 @@
         "nok": 0,
         "ok": 60,
         "plan": 60,
-        "secs": 1.13,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 4.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/29-audit-round-12.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -646,44 +658,21 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "B3: builder item declares xmlns:content",
-        "nok": 4,
-        "ok": 5,
-        "plan": 26,
-        "secs": 4.79,
+        "first_failure": "B2: builder V1_0 feed item still carries rdf:about",
+        "nok": 1,
+        "ok": 12,
+        "plan": 13,
+        "secs": 4.2,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
-      "path": "t/29-audit-round-12.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 26,
-        "plan": 26,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Blob[uint8]:0x<>)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 13,
-        "secs": 4.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
       "path": "t/30-audit-round-13.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.25,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -696,7 +685,7 @@
         "nok": 1,
         "ok": 21,
         "plan": 38,
-        "secs": 5.3,
+        "secs": 4.38,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -715,11 +704,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "R2: XML emits the computed updated",
-        "nok": 2,
-        "ok": 13,
+        "first_failure": "R2: rendering a fully timestamp-less feed fails",
+        "nok": 1,
+        "ok": 14,
         "plan": 28,
-        "secs": 5.34,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -729,7 +718,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 0.77,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -739,10 +728,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "2a: valued <base href> still returned",
-        "nok": 3,
-        "ok": 42,
+        "nok": 1,
+        "ok": 65,
         "plan": 66,
-        "secs": 5.59,
+        "secs": 5.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -752,7 +741,29 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.56,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 4.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/34-audit-round-17.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -761,44 +772,21 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "1: «15 Jan 2024» parses",
+        "first_failure": "rss091 -> RSS2: has items",
         "nok": 2,
-        "ok": 7,
-        "plan": 56,
-        "secs": 4.7,
+        "ok": 79,
+        "plan": 195,
+        "secs": 4.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
-      "path": "t/34-audit-round-17.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 0.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "parse-feed: unable to detect feed format — input is not valid XML or JSON",
-        "nok": 0,
-        "ok": 78,
-        "plan": 195,
-        "secs": 5.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
       "path": "t/35-convert.rakutest",
       "raku": {
         "nok": 0,
         "ok": 195,
         "plan": 195,
-        "secs": 2.55,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -836,10 +824,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -854,9 +842,9 @@
   "totals": {
     "baseline_assertions": 1306,
     "baseline_files": 32,
-    "mutsu_assertions": 586,
-    "parity_files": 5,
-    "regressed_files": 27
+    "mutsu_assertions": 1002,
+    "parity_files": 17,
+    "regressed_files": 15
   },
   "version": "0.0.6"
 }

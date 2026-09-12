@@ -12,11 +12,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory",
+        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory [at Vips-Native-0.6.4/t/01-basic.rakutest:2]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 0.77,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -40,35 +40,7 @@
       "cmp": "no_baseline",
       "path": "t/03-high_level.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-letterbox.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/05-decode-rgba.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory",
+        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory [at Vips-Native-0.6.4/t/03-high_level.rakutest:4]",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -80,13 +52,41 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/06-lib-resolution.rakutest",
+      "path": "t/04-letterbox.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/vips-native-resolution-2-1789162929' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory [at Vips-Native-0.6.4/t/04-letterbox.rakutest:4]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.59,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-decode-rgba.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libvips.so': libvips.so: cannot open shared object file: No such file or directory [at Vips-Native-0.6.4/t/05-decode-rgba.rakutest:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-lib-resolution.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/vips-native-resolution-2-1789248168' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,10 +99,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

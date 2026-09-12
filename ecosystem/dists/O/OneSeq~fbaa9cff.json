@@ -14,11 +14,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected right-hand expression after '=' or expression after hyper operator or '.' or digits or generic radix literal or ...",
+        "first_failure": "Confused. expected statement: expected right-hand expression after '=' or expression after hyper operator or '.' or digits or generic radix literal or ... [at OneSeq-0.0.4/t/01-basic.rakutest:51]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.06,
+        "secs": 0.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 5.59,
+        "secs": 4.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

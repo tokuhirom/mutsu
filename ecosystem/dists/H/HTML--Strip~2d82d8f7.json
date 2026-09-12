@@ -13,11 +13,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "basic tag strip",
-        "nok": 8,
-        "ok": 19,
+        "first_failure": "Invalid encoding",
+        "nok": 2,
+        "ok": 25,
         "plan": 27,
-        "secs": 0.56,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 5.54,
+        "secs": 5.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +39,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -57,7 +57,7 @@
   "totals": {
     "baseline_assertions": 27,
     "baseline_files": 1,
-    "mutsu_assertions": 19,
+    "mutsu_assertions": 25,
     "parity_files": 0,
     "regressed_files": 1
   },

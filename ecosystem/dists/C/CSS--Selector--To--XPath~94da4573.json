@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 14,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 118,
         "plan": 119,
-        "secs": 14.67,
+        "secs": 21.91,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -39,11 +39,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at CSS-Selector-To-XPath-0.0.9/t/02_html.t:22]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.05,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.35,
+        "secs": 0.59,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -62,11 +62,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at CSS-Selector-To-XPath-0.0.9/t/03_custom_pseudos.t:22]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.06,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.46,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,11 +85,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at CSS-Selector-To-XPath-0.0.9/t/04_fallback_pseudos.t:20]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.05,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.55,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

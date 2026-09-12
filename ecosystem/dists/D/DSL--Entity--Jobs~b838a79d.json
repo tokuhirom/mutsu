@@ -26,97 +26,22 @@
     "unresolved": []
   },
   "dist": "DSL::Entity::Jobs",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "mobile application development",
-        "nok": 1,
-        "ok": 7,
-        "plan": 8,
-        "secs": 5.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-Job-skills-parsing.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 80.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-Job-skills-interpretation.rakutest",
-      "raku": {
-        "first_failure": "Possible misspelling of 'java development' as 'java developmnt'.",
-        "nok": 0,
-        "ok": 5,
-        "plan": null,
-        "secs": 2.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "software architect",
-        "nok": 8,
-        "ok": 0,
-        "plan": 8,
-        "secs": 5.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/03-Job-titles-parsing.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-Job-titles-parsing.rakutest",
-      "raku": {
-        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 2.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "DSL::Entity::Jobs": "ok",
-    "DSL::Entity::Jobs::Actions::Bulgarian::Standard": "ok",
-    "DSL::Entity::Jobs::Actions::Raku::System": "ok",
-    "DSL::Entity::Jobs::Actions::WL::System": "ok",
-    "DSL::Entity::Jobs::Grammar": "ok",
+    "DSL::Entity::Jobs": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Jobs::Actions::Bulgarian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Jobs::Actions::Raku::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Jobs::Actions::WL::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Jobs::Grammar": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
     "DSL::Entity::Jobs::Grammar::EntityNames": "ok",
-    "DSL::Entity::Jobs::ResourceAccess": "ok"
+    "DSL::Entity::Jobs::ResourceAccess": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -127,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_JOBS/e078e2e60e30dcc4fd3ee4ded929903e2d553eaa.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 16,
-    "baseline_files": 2,
-    "mutsu_assertions": 7,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 2
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

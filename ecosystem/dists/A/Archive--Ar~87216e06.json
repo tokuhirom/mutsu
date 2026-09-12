@@ -12,53 +12,16 @@
     "unresolved": []
   },
   "dist": "Archive::Ar",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/00-use.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 4.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/01-ar.rakutest",
-      "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
-        "nok": 0,
-        "ok": 74,
-        "plan": 100,
-        "secs": 3.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Archive::Ar": "ok"
+    "Archive::Ar": "expected statement: expected expected statement: expected expression statement or ')' [at lib/Hash/Ordered.rakumod:46]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -69,12 +32,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RC/ARCHIVE_AR/4d72000f29ab74445f7b11a9a5658e46cab11f23.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.1.0"

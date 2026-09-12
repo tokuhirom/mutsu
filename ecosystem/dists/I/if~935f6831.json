@@ -7,40 +7,16 @@
     "unresolved": []
   },
   "dist": "if",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "a bare use still works",
-        "nok": 3,
-        "ok": 2,
-        "plan": 5,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/if.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "if": "ok"
+    "if": "Runtime error: slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +27,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/IF/26fdc417ae8a893ac61b1446ae7ad72239401612.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 5,
-    "baseline_files": 1,
-    "mutsu_assertions": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.1.5"
 }

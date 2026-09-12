@@ -26,47 +26,23 @@
     "unresolved": []
   },
   "dist": "DSL::Entity::Foods",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "chocolate chip cookie ice creams",
-        "nok": 4,
-        "ok": 0,
-        "plan": 4,
-        "secs": 1.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/Food-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 73.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "DSL::Entity::Foods": "ok",
-    "DSL::Entity::Foods::Actions::Bulgarian::Standard": "ok",
-    "DSL::Entity::Foods::Actions::Raku::System": "ok",
-    "DSL::Entity::Foods::Actions::WL::Entity": "ok",
-    "DSL::Entity::Foods::Actions::WL::System": "ok",
-    "DSL::Entity::Foods::Grammar": "ok",
-    "DSL::Entity::Foods::Grammar::EntityNames": "ok",
-    "DSL::Entity::Foods::ResourceAccess": "ok"
+    "DSL::Entity::Foods": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Actions::Bulgarian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Actions::Raku::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Actions::WL::Entity": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Actions::WL::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Grammar": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::Grammar::EntityNames": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Foods::ResourceAccess": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -77,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_FOODS/075df2c20d18c7b0cd8d09efb079ed555efff24b.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 4,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

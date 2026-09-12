@@ -10,19 +10,19 @@
   "files": [],
   "load": {
     "Polyglot::Regex::ECMA262::Actions": "ok",
-    "Polyglot::Regex::ECMA262::Actions-Mixin": "Could not find QAST in:",
+    "Polyglot::Regex::ECMA262::Actions-Mixin": "ok",
     "Polyglot::Regex::ECMA262::Classes": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on RakuAST::Regex::CharClassEnumerationElement::Character",
     "Polyglot::Regex::ECMA262::Grammar": "ok",
     "Polyglot::Regex::ECMA262::Grammar-Mixin": "ok",
     "Polyglot::Regex::ECMA262::Role": "ok",
-    "Polyglot::Regexen": "Could not find QAST in:"
+    "Polyglot::Regexen": "Runtime error: slang activation for 'Polyglot::Regexen' failed: Slang activation NYI: grammar rule override 'routine_declarator:sym<regex:ecma>' is not supported by this implementation (recognized: te"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

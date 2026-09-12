@@ -12,17 +12,41 @@
     "unresolved": []
   },
   "dist": "MoarVM::Bytecode",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::const::STAT_EXISTS",
+        "nok": 0,
+        "ok": 0,
+        "plan": 17,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 50.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "MoarVM::Bytecode": "expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ...",
+    "MoarVM::Bytecode": "ok",
     "MoarVM::Ops": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -33,13 +57,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/OA/MOARVM_BYTECODE/4f9d9acc9b58383ae67b868f9587810696f60f51.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 17,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.27"
 }

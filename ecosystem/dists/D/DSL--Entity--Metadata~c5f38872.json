@@ -26,92 +26,23 @@
     "unresolved": []
   },
   "dist": "DSL::Entity::Metadata",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/Data-format-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 73.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'word-value' for invocant of type 'Match'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 1.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/Data-type-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "u n human rights swedish",
-        "nok": 3,
-        "ok": 1,
-        "plan": 8,
-        "secs": 1.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/Metadata-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "DSL::Entity::Metadata": "ok",
-    "DSL::Entity::Metadata::Actions::Bulgarian::Standard": "ok",
-    "DSL::Entity::Metadata::Actions::Raku::System": "ok",
-    "DSL::Entity::Metadata::Actions::WL::Entity": "ok",
-    "DSL::Entity::Metadata::Actions::WL::System": "ok",
-    "DSL::Entity::Metadata::Grammar": "ok",
+    "DSL::Entity::Metadata": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Metadata::Actions::Bulgarian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Metadata::Actions::Raku::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Metadata::Actions::WL::Entity": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Metadata::Actions::WL::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::Metadata::Grammar": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
     "DSL::Entity::Metadata::Grammar::EntityNames": "ok",
-    "DSL::Entity::Metadata::ResourceAccess": "ok"
+    "DSL::Entity::Metadata::ResourceAccess": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -122,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_METADATA/be7a025dde843ed2819b9f9d635908a235c066bb.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 24,
-    "baseline_files": 3,
-    "mutsu_assertions": 9,
-    "parity_files": 1,
-    "regressed_files": 2
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

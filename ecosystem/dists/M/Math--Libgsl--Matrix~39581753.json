@@ -13,20 +13,113 @@
     "unresolved": []
   },
   "dist": "Math::Libgsl::Matrix",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "first_failure": "Math::Libgsl::Vector module can be use-d ok",
+        "nok": 24,
+        "ok": 24,
+        "plan": 48,
+        "secs": 28.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-raw-matrix.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Matrix-0.6.1/t/01-raw-matrix.rakutest:9]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-block.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Matrix-0.6.1/t/02-block.rakutest:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-vector.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-matrix.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.08,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.58,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::Libgsl::Block": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::Complex32": "Unknown function: HAS",
-    "Math::Libgsl::Block::Complex64": "Unknown function: HAS",
-    "Math::Libgsl::Block::Int16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::Int32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::Int64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::Int8": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::Num32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::UInt16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::UInt32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::UInt64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Block::UInt8": "Variable $.vector used where no 'self' is available",
+    "Math::Libgsl::Block": "ok",
+    "Math::Libgsl::Block::Complex32": "ok",
+    "Math::Libgsl::Block::Complex64": "ok",
+    "Math::Libgsl::Block::Int16": "ok",
+    "Math::Libgsl::Block::Int32": "ok",
+    "Math::Libgsl::Block::Int64": "ok",
+    "Math::Libgsl::Block::Int8": "ok",
+    "Math::Libgsl::Block::Num32": "ok",
+    "Math::Libgsl::Block::UInt16": "ok",
+    "Math::Libgsl::Block::UInt32": "ok",
+    "Math::Libgsl::Block::UInt64": "ok",
+    "Math::Libgsl::Block::UInt8": "ok",
     "Math::Libgsl::Matrix": "raku_also_fails",
     "Math::Libgsl::Matrix::Complex32": "raku_also_fails",
     "Math::Libgsl::Matrix::Complex64": "raku_also_fails",
@@ -39,18 +132,18 @@
     "Math::Libgsl::Matrix::UInt32": "raku_also_fails",
     "Math::Libgsl::Matrix::UInt64": "raku_also_fails",
     "Math::Libgsl::Matrix::UInt8": "raku_also_fails",
-    "Math::Libgsl::Raw::Matrix": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::Complex32": "Unknown function: HAS",
-    "Math::Libgsl::Raw::Matrix::Complex64": "Unknown function: HAS",
-    "Math::Libgsl::Raw::Matrix::Int16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::Int32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::Int64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::Int8": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::Num32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::UInt16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::UInt32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::UInt64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Matrix::UInt8": "Variable $.vector used where no 'self' is available",
+    "Math::Libgsl::Raw::Matrix": "ok",
+    "Math::Libgsl::Raw::Matrix::Complex32": "ok",
+    "Math::Libgsl::Raw::Matrix::Complex64": "ok",
+    "Math::Libgsl::Raw::Matrix::Int16": "ok",
+    "Math::Libgsl::Raw::Matrix::Int32": "ok",
+    "Math::Libgsl::Raw::Matrix::Int64": "ok",
+    "Math::Libgsl::Raw::Matrix::Int8": "ok",
+    "Math::Libgsl::Raw::Matrix::Num32": "ok",
+    "Math::Libgsl::Raw::Matrix::UInt16": "ok",
+    "Math::Libgsl::Raw::Matrix::UInt32": "ok",
+    "Math::Libgsl::Raw::Matrix::UInt64": "ok",
+    "Math::Libgsl::Raw::Matrix::UInt8": "ok",
     "Math::Libgsl::Vector": "raku_also_fails",
     "Math::Libgsl::Vector::Complex32": "raku_also_fails",
     "Math::Libgsl::Vector::Complex64": "raku_also_fails",
@@ -66,10 +159,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -80,12 +173,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_MATRIX/3a8ee6b003719c4c6467a32d852f2476a247df21.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.6.1"

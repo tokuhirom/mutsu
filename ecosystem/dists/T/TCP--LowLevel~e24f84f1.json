@@ -13,16 +13,16 @@
   "dist": "TCP::LowLevel",
   "files": [],
   "load": {
-    "TCP::LowLevel": "Variable $.in used where no 'self' is available",
+    "TCP::LowLevel": "Runtime error: Failed to parse module 'TCP::LowLevel': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
     "TCP::LowLevel::Socket-Connection-Linux": "ok",
-    "TCP::LowLevel::Socket-Linux": "Variable $.in used where no 'self' is available"
+    "TCP::LowLevel::Socket-Linux": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

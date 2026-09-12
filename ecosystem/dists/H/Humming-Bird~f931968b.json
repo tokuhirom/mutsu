@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.45,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,30 +66,29 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.24,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Index out of range. Is: 33, should be in 0..31",
         "nok": 0,
-        "ok": 0,
+        "ok": 22,
         "plan": 22,
-        "secs": 0.46,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-request_encoding.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.31,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,7 +100,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.44,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +110,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.22,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +123,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 6,
-        "secs": 0.47,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,30 +133,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.99,
+        "secs": 3.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Index out of range. Is: 127, should be in 0..125",
         "nok": 0,
-        "ok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.46,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-cookie.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.22,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +168,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 6,
-        "secs": 0.4,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -180,7 +178,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.16,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +191,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 3,
-        "secs": 0.33,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +201,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.18,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +214,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 6,
-        "secs": 0.37,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -226,7 +224,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.85,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -239,7 +237,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 9,
-        "secs": 0.35,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -249,7 +247,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.96,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -262,7 +260,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.37,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -272,30 +270,30 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.18,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Index out of range. Is: 47, should be in 0..45",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Is query param correct?",
+        "nok": 5,
+        "ok": 7,
         "plan": 12,
-        "secs": 0.44,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/11-advanced-query.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.0,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -307,7 +305,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.48,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -317,30 +315,30 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.87,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Does plugin register ok?",
-        "nok": 1,
-        "ok": 4,
+        "first_failure": "Plugin: Humming-Bird::Plugin::Config \u001b[32m✓\u001b[0m",
+        "nok": 0,
+        "ok": 5,
         "plan": 8,
-        "secs": 0.44,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/13-plugin.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 6.82,
+        "secs": 7.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -352,7 +350,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.49,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -362,7 +360,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.12,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -374,7 +372,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.73,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -384,7 +382,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.94,
+        "secs": 1.74,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -397,7 +395,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 9,
-        "secs": 0.71,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -407,7 +405,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.0,
+        "secs": 0.91,
         "skip": 9,
         "todo": 0,
         "verdict": "pass"
@@ -431,10 +429,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -449,9 +447,9 @@
   "totals": {
     "baseline_assertions": 114,
     "baseline_files": 16,
-    "mutsu_assertions": 33,
-    "parity_files": 4,
-    "regressed_files": 12
+    "mutsu_assertions": 68,
+    "parity_files": 6,
+    "regressed_files": 10
   },
   "version": "4.1.0"
 }

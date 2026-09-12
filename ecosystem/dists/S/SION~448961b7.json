@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.98,
+        "secs": 3.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,11 +33,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Your printf-style directives specify 0 arguments, but 1 argument was",
-        "nok": 0,
-        "ok": 22,
+        "first_failure": "number expected while parsing .Date, at character offset 6 (before \"0x0p+0)\")",
+        "nok": 1,
+        "ok": 32,
         "plan": null,
-        "secs": 0.24,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 71,
         "plan": 71,
-        "secs": 1.0,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,11 +56,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Your printf-style directives specify 0 arguments, but 1 argument was",
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "Ambiguous call to 'value(SION::Encoder\u00006: )'; these signatures all match:",
+        "nok": 4,
+        "ok": 31,
         "plan": null,
-        "secs": 0.27,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 1.28,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.49,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.08,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,10 +105,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -123,7 +123,7 @@
   "totals": {
     "baseline_assertions": 150,
     "baseline_files": 4,
-    "mutsu_assertions": 32,
+    "mutsu_assertions": 66,
     "parity_files": 1,
     "regressed_files": 3
   },

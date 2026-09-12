@@ -23,16 +23,16 @@
   "files": [],
   "load": {
     "Data::Translators": "Runtime error: Failed to parse module 'Data::Translators': X::Redeclaration: Redeclaration of symbol '$s'",
-    "Data::Translators::HTML": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?)",
-    "Data::Translators::R": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?)",
-    "Data::Translators::WL": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?)"
+    "Data::Translators::HTML": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?) [at Data/Translators/HTML.rakumod:76]",
+    "Data::Translators::R": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?) [at Data/Translators/HTML.rakumod:76]",
+    "Data::Translators::WL": "Failed to parse module 'Data::Translators::HTML': Unexpected block in infix position (missing statement control word before the expression?) [at Data/Translators/HTML.rakumod:76]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

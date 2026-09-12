@@ -15,7 +15,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 120.1,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 12.29,
+        "secs": 8.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.96,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.76,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.69,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.84,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.72,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.47,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.94,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +128,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.72,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.67,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,7 +151,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 15.21,
+        "secs": 9.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -161,7 +161,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.91,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +174,7 @@
         "nok": 3,
         "ok": 2,
         "plan": 5,
-        "secs": 2.22,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.96,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -197,7 +197,7 @@
         "nok": 7,
         "ok": 4,
         "plan": 11,
-        "secs": 2.06,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -207,7 +207,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.17,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -220,7 +220,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.69,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -230,7 +230,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.67,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -242,7 +242,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.74,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -264,7 +264,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.81,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -274,7 +274,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.31,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,7 +286,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 55.39,
+        "secs": 35.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -296,29 +296,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 7.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/22-fibonacci-numbers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.77,
+        "secs": 4.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -327,11 +305,34 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot assign to a readonly variable or a value",
+        "first_failure": "Constraint type check failed in binding to parameter '$n'; expected anonymous constraint to be met but got Int (26)",
         "nok": 0,
-        "ok": 2,
+        "ok": 1,
         "plan": null,
-        "secs": 0.85,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-fibonacci-numbers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller continued-fraction(Int:D, Int:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -341,7 +342,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.18,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -353,7 +354,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -363,7 +364,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.77,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -372,11 +373,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot assign to a readonly variable or a value",
+        "first_failure": "Calling number-expansion(Int, Str) will never work with declared signature ($x, Str:D $t, $n)",
         "nok": 0,
-        "ok": 5,
+        "ok": 2,
         "plan": 8,
-        "secs": 0.68,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -386,7 +387,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.9,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -399,7 +400,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 0.76,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -409,7 +410,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.19,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -421,7 +422,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.34,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -431,7 +432,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.06,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -448,10 +449,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -466,9 +467,9 @@
   "totals": {
     "baseline_assertions": 111,
     "baseline_files": 19,
-    "mutsu_assertions": 47,
-    "parity_files": 8,
-    "regressed_files": 11
+    "mutsu_assertions": 36,
+    "parity_files": 7,
+    "regressed_files": 12
   },
   "version": "0.1.4"
 }

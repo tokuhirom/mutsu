@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.54,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 19.95,
+        "secs": 17.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.49,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.44,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.55,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.41,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,7 +99,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 0.6,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.4,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 3,
-        "secs": 0.52,
+        "secs": 0.39,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -131,7 +131,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 3,
-        "secs": 1.35,
+        "secs": 1.08,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.49,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +153,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.4,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +165,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -175,7 +175,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.38,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -187,7 +187,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -197,7 +197,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.3,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -210,7 +210,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.55,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -220,7 +220,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.39,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -232,7 +232,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.52,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -242,7 +242,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.33,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -251,11 +251,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+        "first_failure": "Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at Pod-To-Markdown-0.2.2/t/table.rakutest:16]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -265,7 +265,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 5,
-        "secs": 1.54,
+        "secs": 1.22,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -277,10 +277,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

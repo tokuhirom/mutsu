@@ -1,3 +1,4 @@
 date	mutsu_commit	raku_version	dists	measured	blocked_dep	baseline_files	parity_files	file_parity	assertion_parity	dist_parity
 2026-09-11	1557d41	2026.07	1624	1581	43	3072	1648	53.6	62.4	41.2
 2026-09-11	7807eb5	2026.07	1625	1582	43	3225	1723	53.4	63.1	41.1
+2026-09-12	36527ea	2026.07	1625	1582	43	3476	1861	53.5	64.5	43.6

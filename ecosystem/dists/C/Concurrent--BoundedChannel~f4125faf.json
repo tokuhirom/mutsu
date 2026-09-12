@@ -9,14 +9,13 @@
   "dist": "Concurrent::BoundedChannel",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "regression",
       "mutsu": {
         "first_failure": "Invocant of method 'send' must be an object instance of type",
         "nok": 0,
         "ok": 0,
         "plan": 39,
-        "secs": 0.09,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -26,7 +25,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 7.72,
+        "secs": 8.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONCURRENT_BOUNDEDCHANNEL/9ed7e5076b4d9f5f96a3e544fb27225de9de7823.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 39,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.4.1"
 }

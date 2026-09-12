@@ -13,21 +13,159 @@
     "unresolved": []
   },
   "dist": "Terminal::LineEditor",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 21.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 23 -",
+        "nok": 1,
+        "ok": 22,
+        "plan": 174,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-single-line-text-buffer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 174,
+        "plan": 174,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 47 -",
+        "nok": 47,
+        "ok": 80,
+        "plan": 141,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-sltb-with-cursors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 141,
+        "plan": 141,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 55 -",
+        "nok": 108,
+        "ok": 139,
+        "plan": 251,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-single-line-text-input.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 251,
+        "plan": 251,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "An exception occurred while evaluating a CHECK",
+        "nok": 0,
+        "ok": 1,
+        "plan": 44,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-duospace-layout.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 44,
+        "plan": 44,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "An exception occurred while evaluating a CHECK",
+        "nok": 0,
+        "ok": 12,
+        "plan": 54,
+        "secs": 0.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-scrolling-single-line-input.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 54,
+        "plan": 54,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Terminal::LineEditor": "ok",
     "Terminal::LineEditor::Core": "ok",
     "Terminal::LineEditor::DuospaceInput": "ok",
     "Terminal::LineEditor::EditableBuffer": "ok",
     "Terminal::LineEditor::History": "ok",
-    "Terminal::LineEditor::RawTerminalInput": "Variable $.dwSize used where no 'self' is available"
+    "Terminal::LineEditor::RawTerminalInput": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -38,13 +176,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_LINEEDITOR/2799b876ac19de9e9005822e0e0512acd48f453f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 665,
+    "baseline_files": 6,
+    "mutsu_assertions": 255,
+    "parity_files": 1,
+    "regressed_files": 5
   },
   "version": "0.0.23"
 }

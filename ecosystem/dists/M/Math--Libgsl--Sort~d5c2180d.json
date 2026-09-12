@@ -15,18 +15,83 @@
     "unresolved": []
   },
   "dist": "Math::Libgsl::Sort",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "first_failure": "Math::Libgsl::Sort module can be use-d ok",
+        "nok": 10,
+        "ok": 10,
+        "plan": 20,
+        "secs": 17.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-raw-sort.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Sort-0.0.3/t/01-raw-sort.rakutest:8]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-sort.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.66,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::Libgsl::Raw::Sort": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::Int16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::Int32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::Int64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::Int8": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::Num32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::UInt16": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::UInt32": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::UInt64": "Variable $.vector used where no 'self' is available",
-    "Math::Libgsl::Raw::Sort::UInt8": "Variable $.vector used where no 'self' is available",
+    "Math::Libgsl::Raw::Sort": "ok",
+    "Math::Libgsl::Raw::Sort::Int16": "ok",
+    "Math::Libgsl::Raw::Sort::Int32": "ok",
+    "Math::Libgsl::Raw::Sort::Int64": "ok",
+    "Math::Libgsl::Raw::Sort::Int8": "ok",
+    "Math::Libgsl::Raw::Sort::Num32": "ok",
+    "Math::Libgsl::Raw::Sort::UInt16": "ok",
+    "Math::Libgsl::Raw::Sort::UInt32": "ok",
+    "Math::Libgsl::Raw::Sort::UInt64": "ok",
+    "Math::Libgsl::Raw::Sort::UInt8": "ok",
     "Math::Libgsl::Sort": "raku_also_fails",
     "Math::Libgsl::Sort::Int16": "raku_also_fails",
     "Math::Libgsl::Sort::Int32": "raku_also_fails",
@@ -40,10 +105,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,12 +119,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_SORT/0b9b315db793e51bdd9a030eb70cb7bc20019f34.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.3"

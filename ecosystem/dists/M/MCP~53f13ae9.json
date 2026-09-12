@@ -54,10 +54,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Unknown function: LATEST_PROTOCOL_VERSION",
-        "nok": 1,
-        "ok": 17,
+        "nok": 0,
+        "ok": 18,
         "plan": null,
-        "secs": 0.54,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 89,
         "plan": 89,
-        "secs": 13.23,
+        "secs": 9.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.39,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 5.21,
+        "secs": 3.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,11 +99,11 @@
       "cmp": "no_baseline",
       "path": "t/03-builders.rakutest",
       "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 10.67,
+        "secs": 7.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,11 +113,11 @@
       "cmp": "no_baseline",
       "path": "t/04-transport.rakutest",
       "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.76,
+        "secs": 10.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -130,7 +130,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.08,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 13.23,
+        "secs": 8.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +153,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.97,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 20.01,
+        "secs": 16.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -173,11 +173,11 @@
       "cmp": "no_baseline",
       "path": "t/07-mcp.rakutest",
       "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 19.83,
+        "secs": 13.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -190,7 +190,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 30.87,
+        "secs": 30.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -200,7 +200,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.47,
+        "secs": 3.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,7 +214,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 53.87,
+        "secs": 39.89,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -228,7 +228,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 43.02,
+        "secs": 30.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -241,7 +241,7 @@
         "nok": 2,
         "ok": 13,
         "plan": 15,
-        "secs": 1.35,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -251,7 +251,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 3.26,
+        "secs": 2.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -263,7 +263,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.99,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -273,7 +273,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.05,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,7 +286,7 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 1.34,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -296,7 +296,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.96,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -310,7 +310,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 17.41,
+        "secs": 11.93,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -323,7 +323,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.24,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -333,7 +333,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 3.72,
+        "secs": 3.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -346,7 +346,7 @@
         "nok": 1,
         "ok": 7,
         "plan": 8,
-        "secs": 0.37,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -356,7 +356,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.65,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -370,7 +370,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 1.94,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -396,10 +396,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -414,7 +414,7 @@
   "totals": {
     "baseline_assertions": 225,
     "baseline_files": 10,
-    "mutsu_assertions": 74,
+    "mutsu_assertions": 75,
     "parity_files": 2,
     "regressed_files": 8
   },

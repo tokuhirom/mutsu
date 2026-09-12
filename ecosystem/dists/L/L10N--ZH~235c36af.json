@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.17,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/10-block.rakutest",
       "raku": {
-        "first_failure": "Unexpected block in infix position (missing statement control word before the expression? Or did you forget a semi-colon?)",
+        "first_failure": "Unexpected block in infix position (missing statement control word before the expression? Or did you forget a semi-colon?) [at dist/L10N-ZH-0.0.3/EVAL_12:2]",
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 3.65,
+        "secs": 3.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.08,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -61,53 +61,51 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.53,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: EVAL does not yet support lowering `RakuAST::VarDeclaration::Simple`",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.09,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/12-scope.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.91,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: Package { name: Symbol(2656: \"TestModule2\"), body: [], kind: Module, is_unit: false, is_my: false }",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.09,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/13-package.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.75,
+        "secs": 5.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,11 +114,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: method with traits / private / multi / submethod",
+        "first_failure": "RakuAST: `.AST` does not yet support this construct: regex declaration without a source tree",
         "nok": 0,
-        "ok": 2,
+        "ok": 4,
         "plan": null,
-        "secs": 0.11,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -130,99 +128,95 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.47,
+        "secs": 6.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: literal Regex(ManuallyDrop { value: MaybeDangling(\"test\") })",
         "nok": 0,
-        "ok": 5,
-        "plan": null,
-        "secs": 0.11,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/15-modifier.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.86,
+        "secs": 8.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: EnumDecl { name: Symbol(2647: \"Color\"), variants: [(\"Red\", None), (\"Green\", None), (\"Blue\", None)], is_export: false, export_tags: [], is_my: false",
         "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.09,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/16-enum-subset.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.14,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: Redo(None)",
         "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.1,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/17-control-flow.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.05,
+        "secs": 7.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: literal Nil",
         "nok": 0,
-        "ok": 3,
-        "plan": null,
-        "secs": 0.1,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/19-logic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.83,
+        "secs": 5.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -235,10 +229,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "1d03ec95",
+    "date": "2026-09-12",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -253,9 +247,9 @@
   "totals": {
     "baseline_assertions": 41,
     "baseline_files": 9,
-    "mutsu_assertions": 17,
-    "parity_files": 1,
-    "regressed_files": 8
+    "mutsu_assertions": 37,
+    "parity_files": 7,
+    "regressed_files": 2
   },
   "version": "0.0.3"
 }

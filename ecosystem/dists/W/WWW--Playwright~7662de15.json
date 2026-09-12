@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 11.15,
+        "secs": 11.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -39,11 +39,11 @@
       "cmp": "no_baseline",
       "path": "t/installed-resources.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/pw-checkout-2-269963' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/pw-checkout-2-499892' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.06,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.07,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 1.23,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.1,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.29,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,11 +103,11 @@
       "cmp": "no_baseline",
       "path": "t/meta.rakutest",
       "raku": {
-        "first_failure": "Saw 1 occurrence of deprecated code.",
+        "first_failure": "================================================================================",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.68,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.18,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -131,11 +131,11 @@
       "cmp": "no_baseline",
       "path": "t/packaging.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/pw-pkg-2-807845' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/pw-pkg-2-732582' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 6,
-        "secs": 1.02,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -149,7 +149,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.22,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -159,11 +159,11 @@
       "cmp": "no_baseline",
       "path": "t/sidecar-config.rakutest",
       "raku": {
-        "first_failure": "Sidecar npm dependencies are missing under /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1f218o9q/dist/dist/resources/sidecar. Run bin/www-playwright-setup to install them.",
+        "first_failure": "Sidecar npm dependencies are missing under /home/runner/.cache/mutsu-ecosystem/run/ecosweep-3tlo8w5s/dist/dist/resources/sidecar. Run bin/www-playwright-setup to install them.",
         "nok": 0,
         "ok": 3,
         "plan": 5,
-        "secs": 1.08,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -173,11 +173,11 @@
       "cmp": "no_baseline",
       "path": "t/sidecar-exit.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/pw-exit-2-870911' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/pw-exit-2-262183' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,11 +187,11 @@
       "cmp": "no_baseline",
       "path": "t/sidecar-ping.rakutest",
       "raku": {
-        "first_failure": "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright' imported from /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1f218o9q/dist/dist/resources/sidecar/sidecar.mjs",
+        "first_failure": "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'playwright' imported from /home/runner/.cache/mutsu-ecosystem/run/ecosweep-3tlo8w5s/dist/dist/resources/sidecar/sidecar.mjs",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.14,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.16,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 7.32,
+        "secs": 7.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,11 +223,11 @@
       "cmp": "no_baseline",
       "path": "t/transport.rakutest",
       "raku": {
-        "first_failure": "Sidecar npm dependencies are missing under /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1f218o9q/dist/dist/resources/sidecar. Run bin/www-playwright-setup to install them.",
+        "first_failure": "Sidecar npm dependencies are missing under /home/runner/.cache/mutsu-ecosystem/run/ecosweep-3tlo8w5s/dist/dist/resources/sidecar. Run bin/www-playwright-setup to install them.",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.0,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -245,10 +245,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

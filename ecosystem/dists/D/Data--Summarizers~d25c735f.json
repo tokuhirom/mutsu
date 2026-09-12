@@ -29,19 +29,158 @@
     "unresolved": []
   },
   "dist": "Data::Summarizers",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::RecordsSummary::RecordsSummary(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-summarize-over-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 47.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::RecordsSummary::RecordsSummary(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 15.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-summarize-over-groups.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 5.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::RecordsSummary::RecordsSummary(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-summarize-over-iterables-of-iterables.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::ParetoPrincipleStatistic::ParetoPrincipleStatistic(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 17.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-pareto-principle-statistic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 5.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::RecordsSummary::RecordsSummary(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-summarize-over-ragged-data.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Data::Summarizers::RecordsSummary::RecordsSummary(Range:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-summarize-over-Seq-data.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Data::Summarizers": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "Data::Summarizers::ParetoPrincipleStatistic": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "Data::Summarizers": "ok",
+    "Data::Summarizers::ParetoPrincipleStatistic": "ok",
     "Data::Summarizers::Predicates": "ok",
-    "Data::Summarizers::RecordsSummary": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)"
+    "Data::Summarizers::RecordsSummary": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,13 +191,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_SUMMARIZERS/b749a53127e6cb3a78b5699a9be2708155db475e.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 38,
+    "baseline_files": 6,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 6
   },
   "version": "0.2.6"
 }

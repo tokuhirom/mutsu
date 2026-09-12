@@ -9,23 +9,22 @@
   "dist": "Acme::BaseCJK",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "base CJK is idempotent for 0x15A1DBAD",
-        "nok": 2,
-        "ok": 0,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 1.39,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.89,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +50,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/CM/ACME_BASECJK/7f6acd150ddcb0ec85435fc6dc58c604296550d4.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 2,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

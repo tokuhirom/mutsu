@@ -16,11 +16,11 @@
       "cmp": "no_baseline",
       "path": "t/00-parse-raygui.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-tczv72hx/dist/raygui-raku-0.0.7/resources/raygui.h: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-r0dj_810/dist/raygui-raku-0.0.7/resources/raygui.h: No such file or directory",
         "nok": 0,
         "ok": 2,
         "plan": 3,
-        "secs": 4.58,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 1.22,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -46,10 +46,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
