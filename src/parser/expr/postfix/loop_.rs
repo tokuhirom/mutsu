@@ -8,9 +8,9 @@ use super::adverb::{
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
-    has_ternary_else_after, is_postfix_operator_boundary, parse_bracket_indices,
-    parse_bracket_indices_inner, parse_custom_postfix_operator, parse_prefix_as_postfix,
-    parse_private_method_name, parse_quoted_method_name,
+    has_ternary_else_after, is_postfix_operator_boundary, parse_bracket_indices_inner,
+    parse_custom_postfix_operator, parse_prefix_as_postfix, parse_private_method_name,
+    parse_quoted_method_name,
 };
 use super::dot_assign::{atomic_var_name, parse_dot_assign};
 use super::helpers::{
@@ -759,6 +759,28 @@ fn brace_is_postcircumfix(expr: &Expr, term_ends_with_ws: bool) -> bool {
         && !matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
 }
 
+/// Lower a parsed DOTTED subscript (`.[...]` / `.{...}`) onto `target`.
+///
+/// A semilist of two or more dimensions becomes a `MultiDimIndex`; a single
+/// dimension becomes a plain `Expr::Index`, which is what every downstream
+/// consumer of an ordinary one-dimensional subscript expects. Same shape as the
+/// undotted bracket loop's own `ParsedBracketIndex` match, extracted so the two
+/// dotted arms cannot drift from each other (GH #8155).
+fn dotted_subscript_expr(target: Expr, parsed: ParsedBracketIndex, is_positional: bool) -> Expr {
+    match parsed {
+        ParsedBracketIndex::MultiDim(dimensions) => Expr::MultiDimIndex {
+            target: Box::new(target),
+            is_positional,
+            dimensions,
+        },
+        ParsedBracketIndex::Single(index) => Expr::Index {
+            target: Box::new(target),
+            index: Box::new(index),
+            is_positional,
+        },
+    }
+}
+
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false)
 }
@@ -1028,31 +1050,57 @@ fn postfix_expr_loop_from(
                 }
             }
             // Check for .[index] syntax: object.[expr] or .[expr1, expr2, ...]
+            //
+            // A subscript holds a SEMILIST, so `.[$i; $j]` is a
+            // multi-dimensional index exactly as the undotted `@a[$i; $j]` is.
+            // Both dotted arms therefore go through
+            // `parse_bracket_indices_inner` and build the same `MultiDimIndex`
+            // the bracket loop below builds, lowering a single remaining
+            // dimension back to a plain `Expr::Index`. They used to call the
+            // `parse_bracket_indices` WRAPPER, which flattens the dimensions
+            // into one `ArrayLiteral` for callers that cannot represent them --
+            // turning `$c.[0; 1]` into the slice `$c[(0, 1)]` and silently
+            // answering with the whole container (`([1 2] [3 4])` instead of
+            // `2`), and `%h.{"a"; "b"}` into `%h{("a", "b")}` (GH #8155).
             if let Some(r_inner) = r.strip_prefix('[') {
                 let (r_inner, _) = ws(r_inner)?;
-                let (r_inner, index) = parse_bracket_indices(r_inner)?;
+                let (r_inner, parsed) = parse_bracket_indices_inner(r_inner)?;
                 let (r_inner, _) = ws(r_inner)?;
                 let (r_inner, _) = parse_char(r_inner, ']')?;
-                expr = Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index),
-                    is_positional: true,
-                };
+                expr = dotted_subscript_expr(expr, parsed, true);
                 rest = r_inner;
                 continue;
             }
             // Check for .{index} syntax: object.{$expr}
             if let Some(r) = r.strip_prefix('{') {
                 let (r, _) = ws(r)?;
-                let (r, index) = parse_bracket_indices(r)?;
+                let (r, parsed) = parse_bracket_indices_inner(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, '}')?;
-                expr = Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index),
-                    is_positional: false,
-                };
+                expr = dotted_subscript_expr(expr, parsed, false);
                 rest = r;
+                continue;
+            }
+            // The dotted spelling of the DECONTAINERIZING zen angle subscript,
+            // `.<>`, which the undotted `$x<>` / `@a<>` arm below already
+            // handles and which lowers the same way. `Game::Entities` writes
+            // `.[COMPONENTS; $i].<>`, and without this arm the empty `<>` fell
+            // through every dotted postfix (the `.<key>` arm just below needs a
+            // non-empty key) to a bare "Confused" (GH #8155). Adverbs on the
+            // dotted form (`%h.<>:k`) are still unhandled, as they are for
+            // every other dotted subscript.
+            if let Some(r_zen) = r.strip_prefix("<>") {
+                expr = match &expr {
+                    Expr::HashVar(_) => expr.clone(),
+                    _ => Expr::MethodCall {
+                        target: Box::new(expr.clone()),
+                        name: Symbol::intern("__mutsu_zen_angle"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    },
+                };
+                rest = r_zen;
                 continue;
             }
             // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
