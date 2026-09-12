@@ -56,6 +56,28 @@ class's-own-name case in the set `validate_class_parents` returns for
 `self_named_does_roles`; it now holds both kinds and is called
 `non_inheritance_parents`.
 
+And a deferral that turns out to have been wrong must leave no trace at all.
+The class shell is published *before* the dispatch runs — the trait handler has
+to be able to see the type object — so by the time the no-candidate verdict
+comes back, `register_class_decl`'s own rollback snapshot has gone out of
+scope. It now hands that snapshot on through
+`Interpreter::deferred_trait_class_rollback`, and `exec_register_class_op`
+restores it before raising `unknown_parent_error`. Without that, a failed
+`class B is NoSuchParent { }` left `B` registered and the next genuine `class
+B` died as a redeclaration — and because merely importing `Test` puts a
+`trait_mod:<is>` in scope, that reached ordinary test files: it is exactly what
+`t/oo/class/inheritance-unsupported.t` hit on this change's first full run.
+`ClassRegSnapshot::restore` is shared with the body-failure path and
+deliberately rewinds only the registry columns that path owns, so the rollback
+also drops the two "this name is a user-declared type" markers a
+from-nothing declaration wrote.
+
+The snapshot is taken into a local immediately after registration rather than
+read off the field at the dispatch site: a nested declaration in the class's
+own body (`class Outer is Outerish { class Inner { } }`) runs its own
+`RegisterClass` op first and would otherwise have overwritten it with
+`Inner`'s.
+
 ## 3. A core type mutsu models natively could not be a parent
 
 `class ValueClass::Attribute is Attribute { }` died as an unknown parent, and
@@ -132,12 +154,14 @@ the disease.
 
 ## Pins
 
-- `t/oo/trait/uppercase-is-trait-reaches-trait-mod.t` — 9 assertions: the
+- `t/oo/trait/uppercase-is-trait-reaches-trait-mod.t` — 12 assertions: the
   uppercase trait fires its handler, the name reaches neither `^parents` nor
   `^mro`, the lowercase spelling still works and is likewise absent from the
   MRO, a name no candidate claims is still `X::Inheritance::UnknownParent`, an
-  error from inside a matching handler still propagates, and a known uppercase
-  parent is still ordinary inheritance. Passes verbatim under rakudo. The
+  error from inside a matching handler still propagates, a known uppercase
+  parent is still ordinary inheritance, a failed trait declaration frees its
+  name again, and a deferred-trait class may still declare nested types.
+  Passes verbatim under rakudo. The
   role-side mirror (`role R is Marked { }`) is still broken and is
   [#8100](https://github.com/tokuhirom/mutsu/issues/8100): `RoleParentOp` does
   not record `is` vs `does`, so widening the deferral there would change the
