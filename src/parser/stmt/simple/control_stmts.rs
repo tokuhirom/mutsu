@@ -2,6 +2,30 @@ use super::*;
 
 static TAKE_VALUE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+/// The listop invocant colon, for the listops that have a dedicated *statement*
+/// parser (`die`/`fail`/`take`/`take-rw`/`return`) instead of going through the
+/// generic no-paren listop path.
+///
+/// Raku's invocant colon makes the first argument the invocant, so `die $x:` is
+/// `$x.die` and `take $x:` is `$x.take` — exactly what
+/// `try_parse_no_paren_invocant_colon_call` already builds for every other
+/// listop. These parsers each consumed their argument with a plain `expression`
+/// call, which stops *before* the colon, so `die "boom":` did not parse at all
+/// and `return $x:` silently dropped the colon. Routing them through the same
+/// helper keeps one rule for the whole family (#8141).
+///
+/// Returns `Some(stmt)` together with the remaining input when the colon is
+/// really an invocant colon; `None` (and the input untouched) otherwise.
+fn try_invocant_colon_stmt<'a>(name: &str, arg: &Expr, rest: &'a str) -> PResult<'a, Option<Stmt>> {
+    let (rest, method_call) =
+        crate::parser::primary::ident::try_parse_no_paren_invocant_colon_call(
+            name,
+            arg.clone(),
+            rest,
+        )?;
+    Ok((rest, method_call.map(Stmt::Expr)))
+}
+
 /// Parse `return` statement.
 pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     // If "return" is a declared term symbol (e.g. sigilless variable \return),
@@ -60,24 +84,16 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
             rest
         }
     };
-    // `return $x:` is the indirect-method-call spelling `$x.return`, which
-    // returns `$x` from the enclosing routine — identical to `return $x`. Accept
-    // a bare trailing colon (no colon-args), i.e. a `:` immediately followed by a
-    // statement terminator, and consume it. A `:` that starts an adverb/pair
-    // (`:foo`, `:$x`) is left alone. (Geo::Ellipsoid::Utils writes `return $x:`.)
-    let rest = {
-        let (after_ws, _) = ws(rest)?;
-        if let Some(after_colon) = after_ws.strip_prefix(':').filter(|r| !r.starts_with(':')) {
-            let (probe, _) = ws(after_colon)?;
-            if probe.is_empty() || probe.starts_with(';') || probe.starts_with('}') {
-                after_colon
-            } else {
-                rest
-            }
-        } else {
-            rest
-        }
-    };
+    // `return $x:` is the listop invocant colon: `$x.return`, which returns `$x`
+    // from the enclosing routine. Dispatch the method rather than dropping the
+    // colon, so this spelling follows the same rule as every other listop
+    // (#8141) — `Mu.return` transfers control exactly as `return $x` does, and
+    // the return-type check still fires at the routine boundary.
+    // (Geo::Ellipsoid::Utils writes `return $x:`.)
+    let (after_invocant, invocant_stmt) = try_invocant_colon_stmt("return", &expr, rest)?;
+    if let Some(stmt) = invocant_stmt {
+        return parse_statement_modifier(after_invocant, stmt);
+    }
     let stmt = Stmt::Return(expr);
     parse_statement_modifier(rest, stmt)
 }
@@ -164,6 +180,15 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     // (or `fail` returns a Failure) with `X` and the tail is dead code. Parse the
     // argument no-word-logical and consume (discard) any trailing tail.
     let (rest, expr) = expression_no_word_logical(rest)?;
+    // `die $x:` / `fail $x:` is the listop invocant colon: `$x.die` / `$x.fail`.
+    // Neither method exists on `Str`, so Rakudo raises X::Method::NotFound —
+    // which is the whole point. Dropping the colon and dying with `$x` instead
+    // would turn a loud parse error into a quiet wrong answer.
+    let listop_name = if is_fail { "fail" } else { "die" };
+    let (after_invocant, invocant_stmt) = try_invocant_colon_stmt(listop_name, &expr, rest)?;
+    if let Some(stmt) = invocant_stmt {
+        return parse_statement_modifier(after_invocant, stmt);
+    }
     let rest = {
         let (r, _) = ws(rest)?;
         if crate::parser::expr::starts_with_loose_word_logical(r) {
@@ -202,6 +227,11 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         let (rest, expr) = parse_comma_or_expr(rest)?;
         let expr = unwrap_single_trailing_comma(expr);
+        // `take-rw $x:` is the listop invocant colon: `$x.take-rw`.
+        let (after_invocant, invocant_stmt) = try_invocant_colon_stmt("take-rw", &expr, rest)?;
+        if let Some(stmt) = invocant_stmt {
+            return parse_statement_modifier(after_invocant, stmt);
+        }
         // `take-rw`: is_rw=true. The compiler captures the source container so the
         // gathered value keeps container identity (`=:=`) with the original lvalue.
         return parse_statement_modifier(rest, Stmt::Take(expr, true));
@@ -213,6 +243,11 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     // side effects, then use that same taken value to drive the short-circuit.
     let (rest, expr) = crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical(rest)?;
     let expr = unwrap_single_trailing_comma(expr);
+    // `take $x:` is the listop invocant colon: `$x.take`.
+    let (after_invocant, invocant_stmt) = try_invocant_colon_stmt("take", &expr, rest)?;
+    if let Some(stmt) = invocant_stmt {
+        return parse_statement_modifier(after_invocant, stmt);
+    }
     let (r, _) = ws(rest)?;
     let stmt = if crate::parser::expr::starts_with_loose_word_logical(r) {
         let id = TAKE_VALUE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

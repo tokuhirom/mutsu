@@ -2517,25 +2517,7 @@ impl Compiler {
             }
             Stmt::Call { name, args } => {
                 // Check for invocant colon syntax: foo($obj:) → $obj.foo()
-                if let Some(CallArg::Invocant(_)) = args.first() {
-                    let invocant_expr = match &args[0] {
-                        CallArg::Invocant(e) => e.clone(),
-                        _ => unreachable!(),
-                    };
-                    let method_args: Vec<Expr> = args[1..]
-                        .iter()
-                        .filter_map(|arg| match arg {
-                            CallArg::Positional(e) => Some(e.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    let method_call = Expr::MethodCall {
-                        target: Box::new(invocant_expr),
-                        name: *name,
-                        args: method_args,
-                        modifier: None,
-                        quoted: false,
-                    };
+                if let Some(method_call) = Self::invocant_colon_method_call(*name, args) {
                     self.compile_expr(&method_call);
                     // Sink context: a method-call statement (`foo($obj:);`,
                     // i.e. `$obj.foo();`) sinks its value, and sinking an
