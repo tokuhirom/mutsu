@@ -236,7 +236,17 @@ impl Interpreter {
                     // whatever container it was given (#8150). A default that
                     // built its own fresh container owns its `Gc` already, so
                     // this is free on the common path.
-                    value.detach_shared_container()
+                    //
+                    // Coerce to the attribute's sigil FIRST (#8175): every
+                    // other attribute-store path runs the evaluated value
+                    // through `coerce_attr_value_by_sigil` -- the ONE
+                    // list-assignment rule -- which is why `our @.x = (1, 2,
+                    // 3)` becomes an `Array` (matching `has @.x = ...`)
+                    // instead of staying a bare `List`. Detach after
+                    // coercing, since a same-sigil `Array` source shares its
+                    // `Gc` through the coercion (the common, cheap path) and
+                    // still needs its own copy.
+                    Self::coerce_attr_value_by_sigil(value, decl.sigil).detach_shared_container()
                 }
             } else {
                 Value::NIL

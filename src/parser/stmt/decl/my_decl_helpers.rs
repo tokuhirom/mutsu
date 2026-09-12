@@ -11,6 +11,7 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::parse_assign_expr_or_comma;
+use super::parse_comma_or_expr;
 
 /// Build the statement for a sigilless bind/declaration (`my \name := expr`,
 /// `my \name ::= expr`, or `my \name = expr` — all three bind the sigilless
@@ -327,7 +328,16 @@ pub(super) fn try_dot_twigil_attr<'a>(
         {
             let r = &after_name[1..];
             let (r, _) = ws(r)?;
-            let (r, expr) = expression(r)?;
+            // An `@`/`%` sigil initializer is a LIST assignment, so it must
+            // consume the whole comma list here rather than stopping at the
+            // first comma (#8175) -- mirrors `has_decl`'s `=` branch, which
+            // the per-instance `has @.x = 1, 2, 3` spelling already goes
+            // through.
+            let (r, expr) = if is_array || is_hash {
+                parse_comma_or_expr(r)?
+            } else {
+                expression(r)?
+            };
             (r, Some(expr), false)
         } else {
             (after_name, None, false)
