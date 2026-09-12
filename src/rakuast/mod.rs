@@ -154,6 +154,10 @@ pub enum RakuAstClass {
     StatementModifierUnless,
     StatementModifierWith,
     StatementModifierWithout,
+    // The `with`/`without`/`orwith` BLOCK forms.
+    StatementWith,
+    StatementWithout,
+    StatementOrwith,
     // Phase 2 slice 19: ternary.
     Ternary,
     // Phase 2 slice 22: positional subscripts.
@@ -329,6 +333,9 @@ impl RakuAstClass {
             StatementModifierUnless => "RakuAST::StatementModifier::Unless",
             StatementModifierWith => "RakuAST::StatementModifier::With",
             StatementModifierWithout => "RakuAST::StatementModifier::Without",
+            StatementWith => "RakuAST::Statement::With",
+            StatementWithout => "RakuAST::Statement::Without",
+            StatementOrwith => "RakuAST::Statement::Orwith",
             Ternary => "RakuAST::Ternary",
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
@@ -743,6 +750,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementModifierUnless,
     RakuAstClass::StatementModifierWith,
     RakuAstClass::StatementModifierWithout,
+    RakuAstClass::StatementWith,
+    RakuAstClass::StatementWithout,
+    RakuAstClass::StatementOrwith,
     RakuAstClass::Ternary,
     RakuAstClass::SemiList,
     RakuAstClass::PostcircumfixArrayIndex,

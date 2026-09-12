@@ -194,9 +194,11 @@ impl Compiler {
                 binding_var,
                 is_statement_modifier,
                 is_unless,
+                with_kind,
             } => Stmt::If {
                 is_statement_modifier: *is_statement_modifier,
                 is_unless: *is_unless,
+                with_kind: *with_kind,
                 cond: cond.clone(),
                 then_branch: Self::rewrite_next_targets_in_stmts(
                     then_branch,
@@ -600,6 +602,7 @@ impl Compiler {
                 binding_var: None,
                 is_statement_modifier: false,
                 is_unless: false,
+                with_kind: None,
             });
         }
         // Declare temp variables for extracted ENTER phaser expressions
@@ -715,6 +718,7 @@ impl Compiler {
                 binding_var: None,
                 is_statement_modifier: false,
                 is_unless: false,
+                with_kind: None,
             });
         }
         loop_body.extend(leave_ph);
@@ -754,6 +758,7 @@ impl Compiler {
                 binding_var: None,
                 is_statement_modifier: false,
                 is_unless: false,
+                with_kind: None,
             }]
         } else {
             vec![Stmt::If {
@@ -763,6 +768,7 @@ impl Compiler {
                 binding_var: None,
                 is_statement_modifier: false,
                 is_unless: false,
+                with_kind: None,
             }]
         };
 
@@ -862,9 +868,11 @@ impl Compiler {
                 binding_var,
                 is_statement_modifier,
                 is_unless,
+                with_kind,
             } => Stmt::If {
                 is_statement_modifier: *is_statement_modifier,
                 is_unless: *is_unless,
+                with_kind: *with_kind,
                 cond: Self::rewrite_enter_phaser_expr(cond, extracted, counter),
                 then_branch: Self::rewrite_enter_phaser_stmts(then_branch, extracted, counter),
                 else_branch: Self::rewrite_enter_phaser_stmts(else_branch, extracted, counter),

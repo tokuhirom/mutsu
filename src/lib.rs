@@ -33,6 +33,7 @@ pub(crate) mod type_id;
 mod value;
 mod vm;
 pub(crate) mod whatever_curry;
+pub(crate) mod with_desugar;
 
 pub use interpreter::Interpreter;
 pub use value::{HashKey, RuntimeError, RuntimeErrorCode, Value};

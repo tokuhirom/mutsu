@@ -134,6 +134,7 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
         binding_var: None,
         is_statement_modifier: true,
         is_unless: false,
+        with_kind: None,
     };
     Some(Stmt::SyntheticBlock(vec![decl, init]))
 }
@@ -489,6 +490,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: false,
+                with_kind: None,
             },
         )));
     }
@@ -524,6 +526,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: true,
+                with_kind: None,
             },
         )));
     }
@@ -861,6 +864,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: false,
+                with_kind: None,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -888,6 +892,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: false,
+                with_kind: None,
             }],
             is_statement_modifier: true,
             with_kind: Some(GivenWithKind::With),
@@ -944,6 +949,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: false,
+                with_kind: None,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -965,6 +971,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 binding_var: None,
                 is_statement_modifier: true,
                 is_unless: false,
+                with_kind: None,
             }],
             is_statement_modifier: true,
             with_kind: Some(GivenWithKind::Without),

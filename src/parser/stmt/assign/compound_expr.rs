@@ -433,6 +433,7 @@ pub(crate) fn build_compound_assign_expr(
                 binding_var,
                 is_statement_modifier: false,
                 is_unless: false,
+                with_kind: None,
             }))
         }
         // `(cond ?? A !! B) op= rhs`: the ternary is an lvalue selecting one

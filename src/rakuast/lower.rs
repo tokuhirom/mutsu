@@ -7,7 +7,7 @@
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt};
+use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
@@ -109,6 +109,7 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     binding_var: None,
                     is_statement_modifier: true,
                     is_unless,
+                    with_kind: None,
                 });
             }
             Ok(statement)
@@ -129,12 +130,13 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         modifier: None,
         quoted: false,
     };
-    let cond = match kind {
-        GivenWithKind::With => defined,
-        GivenWithKind::Without => Expr::Unary {
+    let cond = if matches!(kind, GivenWithKind::Without) {
+        Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr: Box::new(defined),
-        },
+        }
+    } else {
+        defined
     };
     Stmt::Given {
         topic,
@@ -145,6 +147,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
             binding_var: None,
             is_statement_modifier: true,
             is_unless: false,
+            with_kind: None,
         }],
         is_statement_modifier: true,
         with_kind: Some(kind),
@@ -156,6 +159,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::StatementIf => lower_if(node),
+        // `with X { … }` / `without X { … }`. Both rebuild the conditional the
+        // parser desugars them into, tagged so a round trip renders the same
+        // node again. `without` names its block `body`, not `then`, and takes
+        // no continuation clauses.
+        RakuAstClass::StatementWith => lower_with_block(node, WithBlockKind::With),
+        RakuAstClass::StatementWithout => lower_with_block(node, WithBlockKind::Without),
         // `unless C { … }`. mutsu stores it as a negated condition plus the
         // `is_unless` flag, which is what the converter reads back, so the
         // lowerer has to re-plant both. raku's node names the block `body`
@@ -167,6 +176,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             binding_var: None,
             is_statement_modifier: false,
             is_unless: true,
+            with_kind: None,
         }),
         RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
@@ -298,39 +308,116 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let cond = lower_expr(named_child(node, "condition")?)?;
     let then_branch = lower_block(named_child(node, "then")?)?;
-    // The base `else` (the outer `else { … }` block, or empty).
+    Ok(Stmt::If {
+        cond,
+        then_branch,
+        else_branch: lower_conditional_chain(node, None)?,
+        binding_var: None,
+        is_statement_modifier: false,
+        is_unless: false,
+        with_kind: None,
+    })
+}
+
+/// Lower `with COND { … }` / `without COND { … }` to the conditional mutsu's
+/// parser desugars them into (`with_desugar`), so execution reuses the existing
+/// path and the converter renders the same node back.
+fn lower_with_block(node: &RakuAstNode, kind: WithBlockKind) -> Result<Stmt, RuntimeError> {
+    let cond_expr = lower_expr(named_child(node, "condition")?)?;
+    let tmp_name = crate::with_desugar::next_tmp_name();
+    let (body_field, else_branch) = if matches!(kind, WithBlockKind::Without) {
+        // rakudo rejects `without … else` at compile time, so a node carrying
+        // one is not a shape it could have produced.
+        if node
+            .fields
+            .iter()
+            .any(|f| f.name == Some("else") || f.name == Some("elsifs"))
+        {
+            return Err(unsupported(node));
+        }
+        ("body", Vec::new())
+    } else {
+        // The `else` of a `with` continues a topicalizing clause, so it runs
+        // under the last tested value -- the hidden temp when no `orwith`
+        // intervened.
+        (
+            "then",
+            lower_conditional_chain(node, Some(Expr::Var(tmp_name.clone())))?,
+        )
+    };
+    let body = lower_block(named_child(node, body_field)?)?;
+    Ok(crate::with_desugar::with_conditional(
+        kind,
+        &tmp_name,
+        cond_expr,
+        body,
+        else_branch,
+    ))
+}
+
+/// The `else` branch of a conditional: its `elsifs` clauses folded
+/// innermost-last into nested `if`s, with the `else` block at the bottom.
+///
+/// `topic` is the value the head clause tested when that clause topicalizes
+/// (`with`), because a trailing `else` runs under the *last* tested value --
+/// which an intervening `orwith` replaces and a plain `elsif` clears.
+fn lower_conditional_chain(
+    node: &RakuAstNode,
+    topic: Option<Expr>,
+) -> Result<Vec<Stmt>, RuntimeError> {
+    let clauses = match node.fields.iter().find(|f| f.name == Some("elsifs")) {
+        Some(field) => match &field.value {
+            RakuAstFieldValue::List(items) => items.as_slice(),
+            _ => return Err(unsupported(node)),
+        },
+        None => &[],
+    };
+    let mut lowered = Vec::with_capacity(clauses.len());
+    let mut else_topic = topic;
+    for item in clauses {
+        let ValueView::RakuAst(clause) = item.view() else {
+            return Err(unsupported(node));
+        };
+        let cond = lower_expr(named_child(clause, "condition")?)?;
+        let body = lower_block(named_child(clause, "then")?)?;
+        match clause.class {
+            RakuAstClass::StatementElsif => else_topic = None,
+            RakuAstClass::StatementOrwith => else_topic = Some(cond.clone()),
+            _ => return Err(unsupported(clause)),
+        }
+        lowered.push((clause.class, cond, body));
+    }
+
     let mut else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
-        Some(_) => lower_block(named_child(node, "else")?)?,
+        Some(_) => {
+            let body = lower_block(named_child(node, "else")?)?;
+            match else_topic {
+                Some(topic) => vec![crate::with_desugar::topic_given(topic, body)],
+                None => body,
+            }
+        }
         None => Vec::new(),
     };
-    // Fold the `elsif` clauses in reverse into nested `if`s in the `else`.
-    if let Some(field) = node.fields.iter().find(|f| f.name == Some("elsifs"))
-        && let RakuAstFieldValue::List(items) = &field.value
-    {
-        for item in items.iter().rev() {
-            let ValueView::RakuAst(clause) = item.view() else {
-                return Err(unsupported(node));
-            };
-            let econd = lower_expr(named_child(clause, "condition")?)?;
-            let ethen = lower_block(named_child(clause, "then")?)?;
-            else_branch = vec![Stmt::If {
-                cond: econd,
-                then_branch: ethen,
+    for (class, cond, body) in lowered.into_iter().rev() {
+        else_branch = if class == RakuAstClass::StatementOrwith {
+            vec![crate::with_desugar::orwith_conditional(
+                cond,
+                body,
+                else_branch,
+            )]
+        } else {
+            vec![Stmt::If {
+                cond,
+                then_branch: body,
                 else_branch,
                 binding_var: None,
                 is_statement_modifier: false,
                 is_unless: false,
-            }];
-        }
+                with_kind: None,
+            }]
+        };
     }
-    Ok(Stmt::If {
-        cond,
-        then_branch,
-        else_branch,
-        binding_var: None,
-        is_statement_modifier: false,
-        is_unless: false,
-    })
+    Ok(else_branch)
 }
 
 /// Lower `for SOURCE -> $x { … }` to `Stmt::For`. Only a single-parameter pointy

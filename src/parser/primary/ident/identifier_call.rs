@@ -685,6 +685,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         binding_var: None,
                         is_statement_modifier: false,
                         is_unless: false,
+                        with_kind: None,
                     })),
                 ));
             }
