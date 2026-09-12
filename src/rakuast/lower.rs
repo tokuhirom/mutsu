@@ -1177,6 +1177,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         sigil: sigil_char,
         where_constraint: None,
         is_alias: false,
+        is_embedded: false,
         is_our: false,
         is_my: false,
         is_default: None,

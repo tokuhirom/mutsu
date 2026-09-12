@@ -21,6 +21,7 @@ fn has_decl_list(
     input: &str,
     type_constraint: Option<String>,
     type_smiley: Option<String>,
+    is_embedded: bool,
 ) -> PResult<'_, Stmt> {
     let (mut rest, _) = parse_char(input, '(')?;
     let mut stmts = Vec::new();
@@ -63,6 +64,7 @@ fn has_decl_list(
             sigil: sigil as char,
             where_constraint: None,
             is_alias,
+            is_embedded,
             is_our: false,
             is_my: false,
             is_default: None,
@@ -198,15 +200,66 @@ fn coercion_target_type(tc: &str) -> Option<&str> {
     }
 }
 
+/// Whether a `HAS`-scoped attribute of this declared type inlines nothing.
+///
+/// `HAS` exists to store a member *by value* inside the enclosing struct, which
+/// only means something for a type C holds by value: another `CStruct`, a
+/// `CUnion`, a `CArray`. A native scalar is already stored inline by a plain
+/// `has`, so rakudo accepts the declaration and warns "Useless use of HAS scope
+/// on `<type>` typed attribute." rather than failing — and so does mutsu.
+///
+/// The declared name may be written qualified (`NativeCall::Types::bool`), so
+/// the match is on its last `::` component.
+fn is_native_scalar_type(type_constraint: &str) -> bool {
+    matches!(
+        type_constraint
+            .rsplit("::")
+            .next()
+            .unwrap_or(type_constraint),
+        "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "int"
+            | "long"
+            | "longlong"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uint"
+            | "ulong"
+            | "ulonglong"
+            | "byte"
+            | "size_t"
+            | "ssize_t"
+            | "num32"
+            | "num64"
+            | "num"
+            | "bool"
+    )
+}
+
 /// Parse `has` attribute declaration.
 pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("has", input).ok_or_else(|| PError::expected("has declaration"))?;
+    // `HAS` is NativeCall's *embedded* attribute declarator: the same
+    // declaration syntax as `has`, but the member's storage is inlined into the
+    // enclosing `is repr('CStruct')` class instead of being a pointer to it
+    // (`HAS gsl_vector $.vector` in `Math::Libgsl::Raw::Matrix`). Without it the
+    // line parsed as a call to a function named `HAS`, so the whole module
+    // failed to load.
+    let (scope_kw, is_embedded) = if keyword("has", input).is_some() {
+        ("has", false)
+    } else {
+        ("HAS", true)
+    };
+    let rest = keyword(scope_kw, input).ok_or_else(|| PError::expected("has declaration"))?;
     let (rest, _) = ws1(rest)?;
 
     // `has` cannot be used as the scope for a routine/package-style declaration.
     // `has sub`, `has package`, `has class`, etc. are X::Declaration::Scope.
     // (`has method`/`has submethod` are valid and not rejected here.)
-    if let Some(err) = scope_declaration_error("has", rest) {
+    if let Some(err) = scope_declaration_error(scope_kw, rest) {
         return Err(err);
     }
 
@@ -214,7 +267,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // type constraint such as `has Int ($a, $.b)`.
     // This desugars into a Block containing multiple HasDecl statements.
     if rest.starts_with('(') {
-        return has_decl_list(rest, None, None);
+        return has_decl_list(rest, None, None, is_embedded);
     }
 
     // Optional type constraint.
@@ -241,7 +294,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     (tc.to_string(), None)
                 };
                 if r2.starts_with('(') {
-                    return has_decl_list(r2, Some(base), smiley);
+                    return has_decl_list(r2, Some(base), smiley, is_embedded);
                 }
                 (r2, Some(base), smiley)
             } else {
@@ -271,6 +324,22 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
+
+    // Only a *scalar* `HAS` is useless: `HAS num32 @.mat[16] is CArray` is an
+    // inline array of 16 native floats, which is exactly what HAS is for, and
+    // rakudo does not warn about it either.
+    if is_embedded
+        && sigil == b'$'
+        && let Some(tc) = type_constraint.as_deref()
+        && is_native_scalar_type(tc)
+    {
+        crate::parser::add_parse_warning(
+            format!(
+                "Potential difficulties:\n    Useless use of HAS scope on {tc} typed attribute."
+            ),
+            crate::parser::primary::current_line_number(input),
+        );
+    }
 
     // Optional shaped-array declaration suffix: has @.a[3, 3]
     let (rest, shape_dims) = if sigil == b'@' && rest.starts_with('[') {
@@ -1018,6 +1087,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             sigil: sigil as char,
             where_constraint,
             is_alias,
+            is_embedded,
             is_our: false,
             is_my: false,
             is_default: is_default_trait,

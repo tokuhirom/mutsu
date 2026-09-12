@@ -60,6 +60,9 @@ impl Interpreter {
         if let Some(built) = decl.is_built {
             class_def.attribute_built.insert(attr_name.clone(), built);
         }
+        if decl.is_embedded {
+            class_def.embedded_attributes.insert(attr_name.clone());
+        }
         self.registry_mut()
             .classes
             .insert(class_name.to_string(), class_def);
@@ -297,6 +300,11 @@ impl Interpreter {
             cx.class_def
                 .attribute_built
                 .insert(attr_name_str.clone(), built);
+        }
+        if decl.is_embedded {
+            cx.class_def
+                .embedded_attributes
+                .insert(attr_name_str.clone());
         }
         if let Some(it) = &decl.is_type {
             self.registry_mut()

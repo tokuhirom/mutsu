@@ -1115,6 +1115,7 @@ impl Interpreter {
                             attribute_types: HashMap::new(),
                             attribute_smileys: HashMap::new(),
                             attribute_built: HashMap::new(),
+                            embedded_attributes: HashSet::new(),
                             alias_attributes: HashSet::new(),
                             native_methods: HashSet::new(),
                             mro: sym_mro(&[&class_name]),

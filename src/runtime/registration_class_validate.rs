@@ -390,6 +390,7 @@ impl Interpreter {
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
             attribute_built: HashMap::new(),
+            embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
             mro: [].into(),
             wildcard_handles: Vec::new(),

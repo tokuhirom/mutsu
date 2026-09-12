@@ -1200,6 +1200,7 @@ impl Interpreter {
             attribute_types,
             attribute_smileys,
             attribute_built: HashMap::new(),
+            embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
             wildcard_handles: all_wildcard_handles,

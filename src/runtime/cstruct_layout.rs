@@ -12,9 +12,10 @@
 //! attributes using the platform's C alignment rules, and reads a field out of
 //! the pointed-to memory.
 //!
-//! Reads and writes go through a pointer that C gave us. `HAS`-embedded
-//! structs/arrays and allocating a struct from Raku (`MyStruct.new`) remain
-//! follow-up work.
+//! Reads and writes go through a pointer that C gave us. A `HAS`-declared
+//! member is laid out **by value** — its own bytes live inside the enclosing
+//! struct — which is what NativeCall's `HAS` scope means; allocating a struct
+//! from Raku (`MyStruct.new`) remains follow-up work.
 
 /// The C type of one CStruct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,15 @@ pub(crate) enum FieldType {
     /// Any pointer-shaped field: `Pointer`, `CArray[T]`, or another CStruct
     /// class (C holds those by reference). Read as an address.
     Pointer,
+    /// A `HAS`-declared member of another `is repr('CStruct')` class, stored
+    /// **by value**: the member's own bytes are inlined here instead of a
+    /// pointer to them. Carries the member's padded size and its alignment,
+    /// both taken from that class's own layout — unlike every other variant,
+    /// they are not a property of the variant itself.
+    Embedded {
+        size: usize,
+        align: usize,
+    },
 }
 
 impl FieldType {
@@ -92,6 +102,7 @@ impl FieldType {
             FieldType::I32 | FieldType::U32 | FieldType::F32 => 4,
             FieldType::I64 | FieldType::U64 | FieldType::F64 => 8,
             FieldType::Str | FieldType::Pointer => std::mem::size_of::<usize>(),
+            FieldType::Embedded { size, .. } => size,
         }
     }
 
@@ -99,7 +110,13 @@ impl FieldType {
     /// size, which is what the SysV/Windows ABIs specify for scalars and
     /// pointers alike.
     pub(crate) fn align(self) -> usize {
-        self.size()
+        match self {
+            // An embedded struct aligns to its strictest member, which is not
+            // its (padded) size: a `{ int64; int32 }` is 16 bytes but aligns
+            // to 8.
+            FieldType::Embedded { align, .. } => align,
+            _ => self.size(),
+        }
     }
 }
 
@@ -111,18 +128,41 @@ pub(crate) struct FieldLayout {
     pub offset: usize,
 }
 
+/// One declared field on the way into [`layout_struct`]: the attribute name,
+/// the type it was declared with, and — for a `HAS`-declared member of another
+/// CStruct — that member's own `(size, align)`, resolved by the caller (which
+/// is the only side that can compute a nested layout).
+#[derive(Debug, Clone)]
+pub(crate) struct FieldDecl {
+    pub name: String,
+    pub type_name: String,
+    /// `Some((size, align))` for a `HAS` member stored by value; `None` for an
+    /// ordinary `has`, including a `HAS` on a type that is not a CStruct (the
+    /// "Useless use of HAS scope" case, which rakudo also lays out as a plain
+    /// field).
+    pub embedded: Option<(usize, usize)>,
+}
+
 /// Lay out `fields` (in declaration order) as a C struct, returning each
 /// field's offset. A field whose type NativeCall cannot marshal aborts the
 /// layout: continuing past it would give every later field a wrong offset, and
 /// a wrong offset is a silent wild read.
 pub(crate) fn layout_struct(
-    fields: &[(String, String)],
+    fields: &[FieldDecl],
     is_known_struct: impl Fn(&str) -> bool + Copy,
 ) -> Option<Vec<FieldLayout>> {
     let mut out = Vec::with_capacity(fields.len());
     let mut offset = 0usize;
-    for (name, type_name) in fields {
-        let ty = FieldType::from_type_name(type_name, is_known_struct)?;
+    for FieldDecl {
+        name,
+        type_name,
+        embedded,
+    } in fields
+    {
+        let ty = match *embedded {
+            Some((size, align)) => FieldType::Embedded { size, align },
+            None => FieldType::from_type_name(type_name, is_known_struct)?,
+        };
         let align = ty.align();
         offset = offset.div_ceil(align) * align;
         out.push(FieldLayout {
@@ -166,6 +206,11 @@ pub(crate) unsafe fn read_field(base: usize, field: &FieldLayout) -> crate::valu
                 }
             }
             FieldType::Pointer => Value::int(ptr.cast::<usize>().read_unaligned() as i64),
+            // An embedded member IS the bytes at this offset, so its "value"
+            // is where they start — the caller wraps that address in a handle
+            // of the declared class, and reads through it land in the
+            // enclosing struct's own storage.
+            FieldType::Embedded { .. } => Value::int(ptr as i64),
         }
     }
 }
@@ -266,7 +311,53 @@ pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate
             FieldType::Pointer => ptr
                 .cast::<usize>()
                 .write_unaligned(crate::runtime::nativecall::value_c_address(value)),
+            // Assigning to an embedded member copies the member's bytes in, the
+            // way a C `a.inner = b` does. A source that carries no address
+            // (a type object, an `Int`) has nothing to copy, so the field is
+            // left alone rather than filled with garbage.
+            FieldType::Embedded { size, .. } => {
+                let src = crate::runtime::nativecall::value_c_address(value);
+                if src != 0 && src != base + field.offset {
+                    std::ptr::copy_nonoverlapping(src as *const u8, ptr, size);
+                }
+            }
         }
+    }
+}
+
+thread_local! {
+    /// The classes whose layout is currently being computed, innermost last.
+    ///
+    /// `HAS` makes the layout recursive — a member's size comes from that
+    /// member's own layout — so a struct that (directly or through a cycle)
+    /// embeds itself would recurse until the stack ran out. C has no such type
+    /// either, so the cycle is simply refused.
+    static LAYOUT_IN_PROGRESS: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Marks `class` as in-progress for as long as the guard lives. `None` when it
+/// already is, i.e. the layout is cyclic.
+struct LayoutGuard;
+
+impl LayoutGuard {
+    fn enter(class: &str) -> Option<LayoutGuard> {
+        LAYOUT_IN_PROGRESS.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            if stack.iter().any(|c| c == class) {
+                return None;
+            }
+            stack.push(class.to_string());
+            Some(LayoutGuard)
+        })
+    }
+}
+
+impl Drop for LayoutGuard {
+    fn drop(&mut self) {
+        LAYOUT_IN_PROGRESS.with(|stack| {
+            stack.borrow_mut().pop();
+        });
     }
 }
 
@@ -351,27 +442,110 @@ impl crate::runtime::Interpreter {
     /// class is not a CStruct or declares a field NativeCall cannot marshal.
     pub(crate) fn cstruct_layout(&mut self, class_name: &str) -> Option<Vec<FieldLayout>> {
         let registered = self.cstruct_class_name(class_name)?;
+        // A struct that embeds itself has no size in C either, and following it
+        // here would recurse forever through `cstruct_size_align`.
+        let _guard = LayoutGuard::enter(&registered)?;
         let attrs = self.collect_class_attributes(&registered);
-        let fields: Vec<(String, String)> = attrs
+        let mut fields: Vec<FieldDecl> = attrs
             .iter()
             .map(|attr| {
                 let ty = self
                     .get_attr_type_constraint(&registered, &attr.name)
                     .unwrap_or_default();
-                (
-                    attr.name.clone(),
-                    self.resolve_field_type_alias(&ty, &registered),
-                )
+                FieldDecl {
+                    name: attr.name.clone(),
+                    type_name: self.resolve_field_type_alias(&ty, &registered),
+                    embedded: None,
+                }
             })
             .collect();
+        // A `HAS` member occupies its own storage inline, so its size and
+        // alignment come from the embedded type's layout — which needs
+        // `&mut self` and so is resolved here, before the layout call.
+        for (field, attr) in fields.iter_mut().zip(attrs.iter()) {
+            if !self.is_embedded_attribute(&registered, &field.name) {
+                continue;
+            }
+            field.embedded = match (attr.sigil, attr.declared_shape.as_deref()) {
+                // `HAS num32 @.mat[16] is CArray` — an inline array of 16
+                // native floats, laid out end to end with no pointer in
+                // between. `kazmath`'s `kmMat4` and `Image::Libexif`'s
+                // `ExifData` are both shaped like this.
+                ('@', Some(dims)) => {
+                    let (elem_size, elem_align) = self.cstruct_size_align(&field.type_name)?;
+                    Some((dims.iter().product::<usize>() * elem_size, elem_align))
+                }
+                // `HAS T @.x[N]` where `N` is a named constant rather than a
+                // literal: only a literal shape survives into the compiled
+                // declaration, so the element count is unknown here. Guessing
+                // would put every later field at a wrong offset, which is a
+                // silent wild read — abort the layout instead, the same way an
+                // unmarshallable field does.
+                ('@', None) => return None,
+                // `HAS gsl_vector $.vector` — the member struct's own bytes.
+                _ if self.is_cstruct_class(&field.type_name) => {
+                    Some(self.cstruct_size_align(&field.type_name)?)
+                }
+                // `HAS` on anything C does not hold by value (a native scalar,
+                // a `Str`, a `Pointer[T]`) lays out as an ordinary field;
+                // rakudo warns "Useless use of HAS scope" and does the same.
+                _ => None,
+            };
+        }
         // `is_known_struct` cannot borrow `self` here (the layout call takes it
         // by value), so resolve the pointer-shaped field types up front.
         let handle_fields: std::collections::HashSet<&str> = fields
             .iter()
-            .map(|(_, ty)| ty.as_str())
+            .map(|f| f.type_name.as_str())
             .filter(|ty| self.is_native_handle_class(ty))
             .collect();
         layout_struct(&fields, |n| handle_fields.contains(n))
+    }
+
+    /// Whether `attr_name` was declared with NativeCall's `HAS` scope on
+    /// `class_name` or on one of its ancestors. Follows the MRO for the same
+    /// reason [`Self::get_attr_type_constraint`] does: the layout of a subclass
+    /// includes its parent's fields, declared in the parent's body.
+    pub(crate) fn is_embedded_attribute(&self, class_name: &str, attr_name: &str) -> bool {
+        self.mro_readonly(class_name).iter().any(|cls| {
+            self.registry()
+                .classes
+                .get(cls)
+                .is_some_and(|cd| cd.embedded_attributes.contains(attr_name))
+        })
+    }
+
+    /// The `CArray[T]` spelling an inline `HAS T @.x[N] is CArray` member reads
+    /// back as, or `None` when `attr_name` is not a shaped `@` attribute.
+    fn embedded_array_tag(&mut self, class_name: &str, attr_name: &str) -> Option<String> {
+        let attr = self
+            .collect_class_attributes(class_name)
+            .into_iter()
+            .find(|a| a.name == attr_name)?;
+        if attr.sigil != '@' || attr.declared_shape.is_none() {
+            return None;
+        }
+        let elem = self.get_attr_type_constraint(class_name, attr_name)?;
+        Some(format!("CArray[{}]", short_base_name(&elem)))
+    }
+
+    /// The `(padded size, alignment)` a value of `type_name` occupies in C.
+    /// `None` for a type NativeCall cannot marshal.
+    pub(crate) fn cstruct_size_align(&mut self, type_name: &str) -> Option<(usize, usize)> {
+        // A CStruct is checked first: as a *field* it is one pointer, but this
+        // asks for the struct's own footprint.
+        if self.is_cstruct_class(type_name) {
+            let layout = self.cstruct_layout(type_name)?;
+            let last = layout.last()?;
+            let end = last.offset + last.ty.size();
+            // C rounds a struct up to its strictest member's alignment, so an
+            // array of them keeps every element aligned.
+            let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
+            return Some((end.div_ceil(align) * align, align));
+        }
+        let short = type_name.rsplit("::").next().unwrap_or(type_name);
+        FieldType::from_type_name(short, |n| self.is_native_handle_class(n))
+            .map(|ty| (ty.size(), ty.align()))
     }
 
     /// Read field `name` out of the C struct `target` points at, if `target` is
@@ -406,11 +580,31 @@ impl crate::runtime::Interpreter {
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds.
         let raw = unsafe { read_field(address, field) };
-        if field.ty != FieldType::Pointer {
+        // A `HAS` member reads as the address of its inline storage, so it goes
+        // through the same wrapping as a pointer field: what comes back is a
+        // handle of the declared class onto the bytes inside this struct.
+        if !matches!(field.ty, FieldType::Pointer | FieldType::Embedded { .. }) {
             return Some(raw);
         }
         let declared = self.get_attr_type_constraint(&registered, name)?;
         let addr = crate::runtime::to_int(&raw) as usize;
+        // An inline `HAS T @.x[N] is CArray` member reads back as a `CArray[T]`
+        // onto its own storage — that handle is what makes `$s.x[2]` reach the
+        // bytes inside this struct.
+        if matches!(field.ty, FieldType::Embedded { .. })
+            && let Some(tag) = self.embedded_array_tag(&registered, name)
+        {
+            return Some(crate::runtime::nativecall::make_native_handle(&tag, addr));
+        }
+        // A `CArray`-typed field is a `CArray` handle, not a bare `Pointer`:
+        // being able to index it is the whole reason a binding declares the
+        // field that way (`Compress::Zlib::Raw`'s `z_stream.next-in`).
+        if short_base_name(&declared).starts_with("CArray") {
+            return Some(crate::runtime::nativecall::make_native_handle(
+                short_base_name(&declared),
+                addr,
+            ));
+        }
         // A `Pointer`-typed field is a `Pointer` object even when it is NULL:
         // unlike a CStruct handle (where a null return is a type object, so
         // `.defined` behaves like Rakudo's), `Pointer.new(0)` is a defined value
@@ -484,19 +678,7 @@ impl crate::runtime::Interpreter {
     /// padded total size of a `is repr('CStruct')` class. `None` for a type
     /// NativeCall cannot marshal.
     pub(crate) fn native_size_of_type(&mut self, type_name: &str) -> Option<usize> {
-        // A CStruct is checked first: as a *field* it is one pointer, but
-        // `nativesizeof` asks for the struct's own size.
-        if self.is_cstruct_class(type_name) {
-            let layout = self.cstruct_layout(type_name)?;
-            let last = layout.last()?;
-            let end = last.offset + last.ty.size();
-            // C rounds a struct up to its strictest member's alignment, so an
-            // array of them keeps every element aligned.
-            let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
-            return Some(end.div_ceil(align) * align);
-        }
-        let short = type_name.rsplit("::").next().unwrap_or(type_name);
-        FieldType::from_type_name(short, |n| self.is_native_handle_class(n)).map(FieldType::size)
+        self.cstruct_size_align(type_name).map(|(size, _)| size)
     }
 
     /// Read element `index` of a `CArray[elem]` that is a **native handle** —
@@ -835,13 +1017,21 @@ mod tests {
         false
     }
 
+    fn plain(name: &str, type_name: &str) -> FieldDecl {
+        FieldDecl {
+            name: name.to_string(),
+            type_name: type_name.to_string(),
+            embedded: None,
+        }
+    }
+
     #[test]
     fn scalar_fields_are_padded_to_their_alignment() {
         let fields = [
-            ("a".to_string(), "int8".to_string()),
-            ("b".to_string(), "int32".to_string()),
-            ("c".to_string(), "int8".to_string()),
-            ("d".to_string(), "num64".to_string()),
+            plain("a", "int8"),
+            plain("b", "int32"),
+            plain("c", "int8"),
+            plain("d", "num64"),
         ];
         let layout = layout_struct(&fields, no_structs).unwrap();
         assert_eq!(layout[0].offset, 0);
@@ -853,9 +1043,9 @@ mod tests {
     #[test]
     fn a_struct_typed_field_is_a_pointer() {
         let fields = [
-            ("v".to_string(), "int32".to_string()),
-            ("m".to_string(), "OpenSSL::Method::SSL_METHOD".to_string()),
-            ("n".to_string(), "int32".to_string()),
+            plain("v", "int32"),
+            plain("m", "OpenSSL::Method::SSL_METHOD"),
+            plain("n", "int32"),
         ];
         let layout = layout_struct(&fields, |n| n == "OpenSSL::Method::SSL_METHOD").unwrap();
         assert_eq!(layout[1].ty, FieldType::Pointer);
@@ -865,10 +1055,40 @@ mod tests {
 
     #[test]
     fn an_unmarshallable_field_aborts_the_layout() {
-        let fields = [
-            ("a".to_string(), "int32".to_string()),
-            ("b".to_string(), "SomeRakuClass".to_string()),
-        ];
+        let fields = [plain("a", "int32"), plain("b", "SomeRakuClass")];
         assert!(layout_struct(&fields, no_structs).is_none());
+    }
+
+    #[test]
+    fn an_embedded_member_occupies_its_own_storage() {
+        // `class Outer { HAS Inner $.i; has int32 $.t }` where `Inner` is
+        // `{ int32; num64 }`: 16 bytes, aligned to 8. The member is laid out
+        // by value, so the tail follows it rather than following a pointer.
+        let fields = [
+            FieldDecl {
+                name: "i".to_string(),
+                type_name: "Inner".to_string(),
+                embedded: Some((16, 8)),
+            },
+            plain("t", "int32"),
+        ];
+        let layout = layout_struct(&fields, |n| n == "Inner").unwrap();
+        assert_eq!(layout[0].offset, 0);
+        assert_eq!(layout[0].ty, FieldType::Embedded { size: 16, align: 8 });
+        assert_eq!(layout[1].offset, 16, "the tail follows the whole member");
+    }
+
+    #[test]
+    fn an_embedded_member_pads_to_its_own_alignment() {
+        let fields = [
+            plain("head", "int8"),
+            FieldDecl {
+                name: "i".to_string(),
+                type_name: "Inner".to_string(),
+                embedded: Some((16, 8)),
+            },
+        ];
+        let layout = layout_struct(&fields, |n| n == "Inner").unwrap();
+        assert_eq!(layout[1].offset, 8, "aligned to 8, not to its 16-byte size");
     }
 }
