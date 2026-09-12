@@ -791,7 +791,7 @@ mod registration_class_compose;
 mod registration_class_compose_body;
 pub(crate) mod registration_class_compose_record;
 mod registration_class_decl;
-mod registration_class_validate;
+pub(crate) mod registration_class_validate;
 mod registration_role;
 mod registration_role_body;
 mod registration_role_decl;
@@ -2073,6 +2073,21 @@ pub struct Interpreter {
     /// package than the caller). See
     /// `news/2026-08/class-decl-expr-is-not-a-name-lookup.md`.
     pub(crate) last_registered_class_key: Option<String>,
+    /// Registry state from just before the class `register_class_decl` last
+    /// registered WITH a parent deferred to `trait_mod:<is>` dispatch, keyed
+    /// by that class's storage name. Set only on that path, and consumed by
+    /// `exec_register_class_op`: if the dispatch then reports that no
+    /// candidate claims the trait, the name really was an unknown parent, the
+    /// declaration must fail, and — because the class shell was already
+    /// published so the trait handler could see the type object — it has to be
+    /// rolled back here rather than by `register_class_decl`'s own snapshot,
+    /// which has already gone out of scope. Without it a failed `class B is
+    /// NoSuchParent { }` left `B` registered and the next real `class B`
+    /// declaration died as a redeclaration.
+    pub(crate) deferred_trait_class_rollback: Option<(
+        String,
+        crate::runtime::registration_class_validate::ClassRegSnapshot,
+    )>,
     /// The qualified registry key most recently installed by
     /// `exec_register_role_op`. Consumed immediately by
     /// `PushLastRegisteredRole` for a named role declaration expression.

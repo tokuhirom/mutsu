@@ -111,6 +111,60 @@ pub(crate) const BUILTIN_PARENT_TYPES: &[&str] = &[
     "Perl6::Metamodel::ParametricRoleHOW",
 ];
 
+/// Core types a user class may name as an `is` parent, but which mutsu models
+/// natively rather than as an entry in `registry.classes`. They answer to
+/// [`Interpreter::is_builtin_type`], most of them resolve as a type object
+/// through `::('Name')`, and every one of them was checked against rakudo with
+/// `class Zz is <Name> { }` — which compiles for all of them. Without this
+/// list, `class ValueClass::Attribute is Attribute { }` (the `ValueClass`
+/// distribution, and `Functional::Queue` / `Functional::Stack` through it),
+/// `class CX::Warn::Timezones::UnknownID is CX::Warn { }` (`Timezones::
+/// ZoneInfo`) and `class MetamodelX::Protocol is Metamodel::SubsetHOW { }`
+/// (`Protocol`) all died as X::Inheritance::UnknownParent.
+///
+/// Deliberately SEPARATE from [`BUILTIN_PARENT_TYPES`] rather than folded
+/// into it: that table also decides whether a `does` target is composable
+/// (`registration_class_validate.rs`) and whether a `but`-mixin may take the
+/// class-declaration path instead of the wrapper one
+/// (`types::role_mixin_class`, whose own comment names `Attribute` as the
+/// example that must keep the wrapper). Only the `is`-parent existence check
+/// consults this list, so neither of those decisions moves.
+pub(crate) const BUILTIN_INHERITABLE_TYPES: &[&str] = &[
+    "Attribute",
+    "CallFrame",
+    "CompUnit",
+    "CX::Return",
+    "CX::Warn",
+    "Cursor",
+    "Deprecation",
+    "Duration",
+    "Instant",
+    "Label",
+    "NFC",
+    "NFD",
+    "NFKC",
+    "NFKD",
+    "ObjAt",
+    "Scalar",
+    "StrDistance",
+    "Submethod",
+    "Uni",
+    // The rest of the metamodel HOW family. `Metamodel::ClassHOW`,
+    // `::GrammarHOW` and `::ParametricRoleHOW` are in `BUILTIN_PARENT_TYPES`
+    // above because a subclass of those three also needs the metamodel
+    // dispatch frame (`Interpreter::is_metamodel_class_name`); the ones here
+    // have no native metamethods to inherit yet, so naming one as a parent
+    // yields an ordinary class — but that is still much closer to rakudo than
+    // refusing the declaration outright.
+    "Metamodel::ConcreteRoleHOW",
+    "Metamodel::CurriedRoleHOW",
+    "Metamodel::EnumHOW",
+    "Metamodel::ModuleHOW",
+    "Metamodel::PackageHOW",
+    "Metamodel::ParametricRoleGroupHOW",
+    "Metamodel::SubsetHOW",
+];
+
 impl Interpreter {
     pub(crate) fn register_class_decl(
         &mut self,
@@ -191,12 +245,12 @@ impl Interpreter {
         }
         self.note_compound_declared_type(name);
 
-        let (self_named_does_roles, deferred_custom_traits) =
+        let (non_inheritance_parents, deferred_custom_traits) =
             self.validate_class_parents(name, parents, does_parents, hidden_parents)?;
         let mut class_def = self.begin_class_def(
             name,
             parents,
-            &self_named_does_roles,
+            &non_inheritance_parents,
             is_hidden,
             hidden_parents,
         );
@@ -252,6 +306,15 @@ impl Interpreter {
             &composed_roles_list,
             &direct_composed_roles,
         );
+        // A parent deferred to `trait_mod:<is>` may still turn out to be a
+        // genuine unknown parent, and the dispatch that decides that runs in
+        // `exec_register_class_op`, AFTER this function has published the
+        // class shell (the trait handler has to be able to see the type
+        // object). Hand `snapshot` on so that site can undo the declaration;
+        // see `Interpreter::deferred_trait_class_rollback`.
+        if !deferred_custom_traits.is_empty() {
+            self.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
+        }
         if self.publish_class_shell(
             name,
             trusts,

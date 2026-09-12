@@ -602,12 +602,17 @@ impl Interpreter {
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            self.rollback_deferred_trait_class_decl();
                             return Err(self.unknown_parent_error(&storage_name, trait_name));
                         }
                         Err(err) => return Err(err),
                     }
                 }
             }
+            // The deferral paid off (or there was none): the class stands, so
+            // drop the rollback snapshot rather than leaving it for whichever
+            // declaration runs next.
+            self.deferred_trait_class_rollback = None;
             // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
             // KNOWN-class parent matches a *typed* user candidate
             // (`multi trait_mod:<is>(Mu:U, SomeType:U)`, more specific than the
@@ -688,6 +693,31 @@ impl Interpreter {
             None => Value::NIL,
         };
         self.stack.push(val);
+    }
+
+    /// Undo the class declaration `register_class_decl` published before this
+    /// op dispatched its deferred `is` traits, for when that dispatch reports
+    /// that no candidate claims the trait after all — the name really was an
+    /// unknown parent, so the declaration failed and must leave no trace.
+    /// Without this a failed `class B is NoSuchParent { }` (in any scope that
+    /// declares a `trait_mod:<is>` at all, which merely importing `Test` does)
+    /// left `B` half-registered, and the next genuine `class B` died as a
+    /// redeclaration instead.
+    fn rollback_deferred_trait_class_decl(&mut self) {
+        let Some((name, snapshot)) = self.deferred_trait_class_rollback.take() else {
+            return;
+        };
+        snapshot.restore(self, &name);
+        // `restore` is shared with the body-failure path and deliberately only
+        // rewinds the registry columns that path owns. A declaration that
+        // created the class from nothing also wrote the two "this name is a
+        // user-declared type" markers, and leaving those behind is what still
+        // made `B.^name` answer `B` instead of falling through to the bareword
+        // path after the failed declaration.
+        if !snapshot.had_previous_class() {
+            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
+            self.registry_mut().compound_declared_types.remove(&name);
+        }
     }
 
     /// Whether a *typed* user `trait_mod:<is>` candidate matches `call_args`
