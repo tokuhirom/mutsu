@@ -83,41 +83,41 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0055](0055-closure-free-vars-resolve-to-their-own-binding.md) | A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores | Accepted (slice 1 implemented; slices 2-5 open) |
 | [0056](0056-nativecall-types-display-only-qualification.md) | NativeCall's `Pointer`/`CArray`/`long`/... display under `NativeCall::Types::*` — display-only, registry key stays bare | Accepted (implemented) |
 | [0057](0057-var-reflection-identity-cell-address.md) | `.VAR` reflection identity is the shared cell's address, not a per-frame cache — reusing ADR-0032's container-capture edge as the boxing trigger | Accepted (implemented) |
-| [0058](0058-map-grep-produce-a-deferred-seq.md) | `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call | Proposed (design complete; implementation not started) |
-| [0059](0059-is-rw-routines-return-a-container.md) | An `is rw` routine returns a container — retiring caller-side tail re-interpretation | Accepted (Slice 1 implemented; Slices 2-3 open) |
+| [0058](0058-map-grep-produce-a-deferred-seq.md) | `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call | Accepted — fully implemented (steps 0-4 shipped 2026-09-07) |
+| [0059](0059-is-rw-routines-return-a-container.md) | An `is rw` routine returns a container — retiring caller-side tail re-interpretation | Accepted (Slices 1-2 implemented; Slice 3 open) |
 | [0060](0060-mixin-what-is-a-composition-keyed-type-object.md) | A role-mixed value's `.WHAT` is a composition-keyed type object, not the shared base or a per-instance fork | Accepted (implemented) |
 | [0061](0061-lexical-self-has-its-own-env-key.md) | A user lexical `$self` has its own env key — `self` names only the invocant | Accepted (implemented) |
 | [0062](0062-atomic-lane-anchors-to-the-published-value.md) | A generation of the legacy atomic lane anchors to the published value, and the root store is the lane's only authority | Accepted (implemented) |
 | [0063](0063-nativecall-outbound-callback-ownership-and-reentrancy.md) | A NativeCall callback is a process-lifetime closure that re-enters the calling VM | Accepted (implemented) |
 | [0064](0064-var-descriptor-carries-the-contained-value.md) | A `.VAR` container descriptor carries the value its container holds | Accepted (implemented) |
-| [0065](0065-language-server-targets-ai-agents.md) | The language server targets AI agents, and is scoped to the protocol surface an agent actually consumes | Proposed (design only; no implementation) |
-| [0066](0066-call-dispatch-inline-cache.md) | Call dispatch resolves through a per-callsite inline cache, not a name-keyed hash map | Proposed (design only; no implementation) |
+| [0065](0065-language-server-targets-ai-agents.md) | The language server targets AI agents, and is scoped to the protocol surface an agent actually consumes | Accepted (2026-09-02); phased — see the ADR's phasing table |
+| [0066](0066-call-dispatch-inline-cache.md) | Call dispatch resolves through a per-callsite inline cache, not a name-keyed hash map | Accepted (implemented 2026-09-03) |
 | [0067](0067-a-routine-hands-back-the-container-it-was-given.md) | A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object | Accepted (all slices implemented 2026-09-05/06) |
-| [0068](0068-cross-thread-container-writes-need-a-synchronized-store.md) | A cross-thread aliased container write needs a synchronized store, not a name-keyed lane | Proposed |
+| [0068](0068-cross-thread-container-writes-need-a-synchronized-store.md) | A cross-thread aliased container write needs a synchronized store, not a name-keyed lane | Accepted (2026-09-06; §4 steps 1-3 implemented) |
 | [0069](0069-a-definiteness-constrained-type-object-is-a-named-type-object.md) | A definiteness-constrained type object is a named type object, not a new value kind | Accepted (implemented) |
-| [0070](0070-native-methods-declare-the-named-arguments-they-accept.md) | A builtin method declares the named arguments it accepts, and the arity cascade drops the rest | Proposed (slice 1 implemented) |
-| [0071](0071-native-operators-are-dispatch-candidates.md) | A natively implemented operator is a dispatch candidate, not a fallback — the increment operators rank against their core candidate set | Proposed (increment operators implemented; infix operators not started) |
+| [0070](0070-native-methods-declare-the-named-arguments-they-accept.md) | A builtin method declares the named arguments it accepts, and the arity cascade drops the rest | Proposed (slices 1-3 implemented 2026-09-09) |
+| [0071](0071-native-operators-are-dispatch-candidates.md) | A natively implemented operator is a dispatch candidate, not a fallback — the increment operators rank against their core candidate set | Accepted (increment and infix operators both implemented) |
 | [0072](0072-a-resumable-exception-runs-its-handler-at-the-throw-point.md) | A resumable exception runs its `CATCH` handler at the throw point, not after unwinding | Accepted (Slice 1 implemented; Slices 2-3 open) |
-| [0073](0073-regex-atom-candidates-are-demand-driven.md) | Regex atom candidates are produced on demand, driven by the continuation — an embedded code block runs once per candidate ENTERED | Proposed (Slices 1 and 3 implemented; Slice 2, the `<subrule>` boundary, open) |
+| [0073](0073-regex-atom-candidates-are-demand-driven.md) | Regex atom candidates are produced on demand, driven by the continuation — an embedded code block runs once per candidate ENTERED | Accepted (Slices 1-3 implemented 2026-09-07/08; the streamed path's declined cases stay on the eager arm) |
 | [0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md) | A channel-backed Supply broadcasts to its taps; the receiver is not an exclusive transfer | Accepted (implemented) |
 | [0075](0075-make-test-runs-tap-on-release-binary.md) | `make test` runs the TAP (`t/`) suite on the release binary (supersedes 0014); `gc-stress`/`jit-stress` keep the debug pass | Accepted |
 | [0076](0076-bare-block-lowering-and-block-scope-opcodes.md) | One bare-block lowering shared by both source positions; `BlockScope` and `DoBlockExpr` stay two opcodes | Accepted (shared lowering landed; opcode merge deferred — §6) |
 | [0077](0077-locals-are-a-window-into-a-contiguous-stack.md) | A call's locals are a window into one contiguous stack, not a pooled `Vec` | Accepted (Slices 0 and 2 implemented; Slice 1 withdrawn into 2; leading-parameter *fill* done, its arg-move half and Slice 3 open) |
 | [0078](0078-per-call-scope-stacks-are-windows-not-moved-vectors.md) | A call's five scope stacks are windows into shared vectors, not `mem::take`n `Vec`s | Accepted (implemented) |
 | [0079](0079-container-itemization-is-a-holder-property-tagged-on-the-containerref-word.md) | Container itemization is a property of the *holder*, tagged on the `ContainerRef` word (not on the shared cell) | Proposed |
-| [0080](0080-hash-element-containerization-is-per-value.md) | Hash element containerization is a per-value property, not a hash-wide slurpy flag | Proposed |
+| [0080](0080-hash-element-containerization-is-per-value.md) | Hash element containerization is a per-value property, not a hash-wide slurpy flag | Accepted (implemented 2026-09-09) |
 | [0081](0081-compunit-scoped-module-import-aliases.md) | A unit module's imported aliases are scoped to its compilation unit | Proposed |
 | [0082](0082-a-collecting-for-gathers-containers-not-snapshots.md) | A value-collecting `for` gathers containers, not snapshots | Superseded by 0083 |
 | [0083](0083-a-collected-for-retains-containers-past-the-loop.md) | A collected `for` retains lvalue containers past the loop | Accepted (implemented) |
 | [0084](0084-the-frame-env-is-not-the-programs-symbol-table.md) | The per-frame `Env` is not the program's symbol table — type/package names and internal markers move to side tables | Proposed (design complete; implementation not started) |
-| [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Accepted (P1 implemented; P2-P5 open — see "Implementation status") |
-| [0086](0086-builtin-dynamics-are-not-closure-capture-material.md) | The built-in dynamics are not closure-capture material — they belong in a per-interpreter never-copied tier | Proposed (design complete; implementation not started) |
+| [0085](0085-ecosystem-testsuite-parity-measurement.md) | The ecosystem KPI is per-distribution test-suite parity against rakudo | Accepted and fully implemented (P1-P5 landed by 2026-09-12) |
+| [0086](0086-builtin-dynamics-are-not-closure-capture-material.md) | The built-in dynamics are not closure-capture material — they belong in a per-interpreter never-copied tier | Accepted (implemented 2026-09-12) |
 | [0087](0087-runtime-export-hook-parse-time-approximation.md) | A `sub EXPORT` module's parse-time export set is approximated by its unit-scope routines | Accepted (implemented) |
-| [0088](0088-rakuast-regex-boundary-tree.md) | RakuAST and execution share a source-level regex tree | Proposed |
-| [0089](0089-role-mixins-own-a-separate-attribute-cell.md) | A role mixin owns an attribute cell separate from its wrapped value | Proposed (revised after design review 2026-09-12) |
+| [0088](0088-rakuast-regex-boundary-tree.md) | RakuAST and execution share a source-level regex tree | Accepted (static tree, RakuAST, lowering and provenance slices implemented 2026-09-12; dynamic contents and the full migration remain) |
+| [0089](0089-role-mixins-own-a-separate-attribute-cell.md) | A role mixin owns an attribute cell separate from its wrapped value | Accepted and implemented (2026-09-12) |
 | [0090](0090-has-embedded-cstruct-members.md) | A `HAS` member is laid out by value, and its handle points into the enclosing struct | Accepted (implemented) |
 | [0091](0091-slang-package-declarators.md) | A slang's `package_declarator:sym<...>` candidate is read as a declarator registration, not executed | Accepted (implemented) |
-| [0092](0092-closure-capture-is-a-chained-tier-not-a-merged-copy.md) | Closure capture should be a chained tier, not a per-call merged copy | Proposed |
+| [0092](0092-closure-capture-is-a-chained-tier-not-a-merged-copy.md) | Closure capture should be a chained tier, not a per-call merged copy | Accepted (implemented 2026-09-12) |
 | [0093](0093-core-only-infix-operators-are-shadowed-not-extended.md) | A core operator rakudo does not declare is *shadowed* by a user declaration, not extended | Accepted (implemented) |
 | [0094](0094-closure-capture-kept-set-is-not-narrowed.md) | The closure capture's kept set is not narrowed — its cost is the call-time merge | Accepted |
 | [0095](0095-native-mut-publish-before-wake.md) | A mutable native instance method publishes before it wakes another thread | Accepted (implemented) |
