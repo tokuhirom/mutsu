@@ -132,6 +132,45 @@ impl Compiler {
             .collect()
     }
 
+    /// If `args` opens with an invocant colon (`CallArg::Invocant`), build the
+    /// equivalent `Expr::MethodCall` dispatching `name` as a method on that
+    /// invocant: `foo($obj: @rest)` / no-paren `foo $obj: @rest` both mean
+    /// `$obj.foo(@rest)` (see `try_parse_no_paren_invocant_colon_call` in
+    /// `parser/primary/ident/listop.rs`, which builds the same shape for the
+    /// expression-position spelling). Returns `None` when there is no
+    /// invocant, so callers fall back to their normal `Stmt::Call` handling.
+    ///
+    /// Every tail-position `Stmt::Call` compiler (the sub/closure body
+    /// compilers and `compile_tail_stmt_call_value`) must consult this before
+    /// dropping to a positional-args fast path — otherwise the invocant
+    /// marker is silently discarded and `die $x:`/`warn $x:` call the
+    /// builtin instead of dispatching `$x.die`/`$x.warn`
+    /// (tokuhirom/mutsu#8141). Named/slip args after the invocant are
+    /// dropped, matching the non-tail `Stmt::Call` handling in
+    /// `compile_stmt`.
+    pub(super) fn invocant_colon_method_call(
+        name: crate::symbol::Symbol,
+        args: &[crate::ast::CallArg],
+    ) -> Option<Expr> {
+        let crate::ast::CallArg::Invocant(invocant_expr) = args.first()? else {
+            return None;
+        };
+        let method_args: Vec<Expr> = args[1..]
+            .iter()
+            .filter_map(|arg| match arg {
+                crate::ast::CallArg::Positional(e) => Some(e.clone()),
+                _ => None,
+            })
+            .collect();
+        Some(Expr::MethodCall {
+            target: Box::new(invocant_expr.clone()),
+            name,
+            args: method_args,
+            modifier: None,
+            quoted: false,
+        })
+    }
+
     /// Thread the `&`-sigiled lexicals visible at this point (own `&` locals —
     /// params like `&x1`, `my &f` — plus everything inherited from enclosing
     /// scopes) down to a child sub/closure compiler. `compute_free_vars` uses
@@ -735,13 +774,16 @@ impl Compiler {
                         continue;
                     }
                     // Stmt::Call as last statement: convert to expression-level
-                    // Expr::Call so the return value is left on the stack.
+                    // Expr::Call so the return value is left on the stack. An
+                    // invocant-colon call (`die $x:`) instead becomes the
+                    // equivalent MethodCall — see `invocant_colon_method_call`.
                     Stmt::Call { name, args } => {
-                        let expr_args: Vec<Expr> = Self::call_args_to_expr_args(args);
-                        sub_compiler.compile_expr(&Expr::Call {
-                            name: *name,
-                            args: expr_args,
-                        });
+                        let call_expr = Self::invocant_colon_method_call(*name, args)
+                            .unwrap_or_else(|| Expr::Call {
+                                name: *name,
+                                args: Self::call_args_to_expr_args(args),
+                            });
+                        sub_compiler.compile_expr(&call_expr);
                         continue;
                     }
                     Stmt::If {
@@ -1262,6 +1304,12 @@ impl Compiler {
                     continue;
                 }
                 if is_value && let Stmt::Call { name, args } = stmt {
+                    // An invocant-colon call (`die $x:`) becomes the
+                    // equivalent MethodCall — see `invocant_colon_method_call`.
+                    if let Some(method_call) = Self::invocant_colon_method_call(*name, args) {
+                        sub_compiler.compile_expr(&method_call);
+                        continue;
+                    }
                     let positional: Option<Vec<Expr>> = args
                         .iter()
                         .map(|arg| match arg {

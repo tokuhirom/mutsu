@@ -143,6 +143,16 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         (r, false)
     };
     let (rest, _) = ws(rest)?;
+    // Invocant-colon form (`die $x: "extra"` == `$x.die("extra")`,
+    // tokuhirom/mutsu#8141): the listop invocant colon dispatches a method on
+    // the first argument rather than calling `die`/`fail` itself. Neither
+    // `Stmt::Die` nor `Stmt::Fail` has a slot for that, so this becomes a
+    // plain method-call expression statement instead — same shape `say`/
+    // `print`/`put`/`note` already use for their own invocant colon.
+    let method_name = if is_fail { "fail" } else { "die" };
+    if let Ok((rest, stmt)) = super::io_stmts::parse_io_colon_invocant_stmt(rest, method_name) {
+        return parse_statement_modifier(rest, stmt);
+    }
     // `die`/`fail` with no argument: followed by `;`, end, `}`, or a statement modifier
     let no_arg = rest.starts_with(';')
         || rest.is_empty()

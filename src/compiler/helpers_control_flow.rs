@@ -1234,6 +1234,15 @@ impl Compiler {
         name: crate::symbol::Symbol,
         args: &[CallArg],
     ) {
+        // An invocant-colon call (`die $x:`) becomes the equivalent
+        // MethodCall — see `invocant_colon_method_call`. Must run before the
+        // positional/pairs split below, which has no representation for
+        // `CallArg::Invocant` and previously hit the `unreachable!()` in the
+        // pairs loop (tokuhirom/mutsu#8141).
+        if let Some(method_call) = Self::invocant_colon_method_call(name, args) {
+            self.compile_expr(&method_call);
+            return;
+        }
         let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
         let positional_only = rewritten_args
             .iter()

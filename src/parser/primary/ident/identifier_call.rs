@@ -1185,6 +1185,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 ));
             }
             let (r, arg) = expression(r)?;
+            // Invocant-colon form (`die $x: "extra"` == `$x.die("extra")`,
+            // tokuhirom/mutsu#8141) reaches this expression-position arm when
+            // `die`/`fail` is not the whole statement (e.g. `my $x = die
+            // "boom":`); the statement-position form is handled by
+            // `control_stmts.rs`'s `die_stmt` via the same helper.
+            let (r, invocant_colon_call) =
+                try_parse_no_paren_invocant_colon_call(&name, arg.clone(), r)?;
+            if let Some(method_call) = invocant_colon_call {
+                return Ok((r, method_call));
+            }
             return Ok((
                 r,
                 Expr::Call {

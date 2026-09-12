@@ -262,7 +262,16 @@ fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
     }
 }
 
-fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResult<'a, Stmt> {
+/// Parse `EXPR: [args...]` after a listop keyword's own bare form has
+/// already failed — the invocant-colon form (`say $x: "y"` == `$x.say("y")`).
+/// Shared with `die`/`fail` in `control_stmts.rs`, whose own dedicated
+/// statement parsers do not otherwise see this syntax
+/// (tokuhirom/mutsu#8141): despite the name, this is the general no-paren
+/// invocant-colon-to-MethodCall shape, not something specific to I/O.
+pub(super) fn parse_io_colon_invocant_stmt<'a>(
+    input: &'a str,
+    method_name: &str,
+) -> PResult<'a, Stmt> {
     let (rest_after_target, target) = expression(input)?;
     let (rest_after_target, _) = ws(rest_after_target)?;
     if !rest_after_target.starts_with(':') || rest_after_target.starts_with("::") {
