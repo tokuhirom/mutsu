@@ -4,7 +4,7 @@
 //! `registration_class_decl.rs` — no behavior change.
 
 use super::registration_class::is_non_composable_builtin;
-use super::registration_class_decl::BUILTIN_PARENT_TYPES;
+use super::registration_class_decl::{BUILTIN_INHERITABLE_TYPES, BUILTIN_PARENT_TYPES};
 use super::*;
 
 /// Short (unqualified) name of the class being declared, for detecting a
@@ -16,7 +16,8 @@ fn short_of(s: &str) -> &str {
 /// Snapshot of the previous registry state for this class, taken under a
 /// single read guard (all values are owned/cloned, no re-entry) so a
 /// redefinition can be rolled back if the new body fails.
-pub(super) struct ClassRegSnapshot {
+#[derive(Clone)]
+pub(crate) struct ClassRegSnapshot {
     prev_class: Option<ClassDef>,
     prev_hidden: bool,
     prev_lexical: bool,
@@ -46,9 +47,17 @@ impl ClassRegSnapshot {
         }
     }
 
+    /// Whether this class already existed when the snapshot was taken. A
+    /// rollback of a declaration that created the class from scratch has more
+    /// to undo than one that merely replaced an earlier definition — see
+    /// `Interpreter::rollback_deferred_trait_class_decl`.
+    pub(crate) fn had_previous_class(&self) -> bool {
+        self.prev_class.is_some()
+    }
+
     /// Rollback writes are purely registry mutations with no user-code
     /// re-entry, so they take a single write guard for the whole block.
-    pub(super) fn restore(&self, this: &mut Interpreter, name: &str) {
+    pub(crate) fn restore(&self, this: &mut Interpreter, name: &str) {
         let mut reg = this.registry_mut();
         if let Some(class_def) = self.prev_class.clone() {
             reg.classes.insert(name.to_string(), class_def);
@@ -121,8 +130,8 @@ impl Interpreter {
     /// `X::Inheritance::UnknownParent`: `name` (the class being declared)
     /// gave `parent_name` as an `is` parent that names no known class, role,
     /// enum, or builtin type. Shared by the immediate check below and by the
-    /// deferred-custom-trait dispatch (`vm_typedecl_ops.rs`) for when a
-    /// lowercase parent name was optimistically deferred to a user
+    /// deferred-custom-trait dispatch (`vm_typedecl_ops.rs`) for when an
+    /// unknown parent name was optimistically deferred to a user
     /// `trait_mod:<is>` candidate that turns out not to match this call's
     /// shape after all (mirrors the sibling variable-/attribute-trait
     /// no-candidate fallback).
@@ -163,14 +172,22 @@ impl Interpreter {
 
     /// Validate that all parent classes exist.
     /// Allow inheriting from built-in types that may not be in the classes HashMap.
-    /// Returns the parents that must NOT enter the C3 inheritance MRO because
-    /// they are a `does`-role whose (short) name collides with the class's own
-    /// name — e.g. `class Iterator does Iterator` (Rakudo composes the CORE
-    /// `Iterator` role, not the class itself). Such a parent is still composed
-    /// as a role by the role-composition loop; keeping it in the inheritance
-    /// parent list would make the class its own C3 ancestor (self-cycle /
-    /// self-inherit). Also returns the unknown lowercase parents deferred to
-    /// custom `trait_mod:<is>` dispatch.
+    /// Returns the parents that must NOT enter the C3 inheritance MRO, which
+    /// are of two kinds:
+    ///
+    /// - a `does`-role whose (short) name collides with the class's own name —
+    ///   e.g. `class Iterator does Iterator` (Rakudo composes the CORE
+    ///   `Iterator` role, not the class itself). Such a parent is still
+    ///   composed as a role by the role-composition loop; keeping it in the
+    ///   inheritance parent list would make the class its own C3 ancestor
+    ///   (self-cycle / self-inherit);
+    /// - an unknown name deferred to custom `trait_mod:<is>` dispatch. `is
+    ///   Marked` there is a TRAIT, not a parent, so rakudo reports
+    ///   `Alpha.^parents` as empty and `Alpha.^mro` as `Alpha, Any, Mu`;
+    ///   leaving the trait name in gave mutsu a phantom `Marked` ancestor.
+    ///
+    /// Also returns those deferred names, in source order, for the dispatch
+    /// site in `vm_typedecl_ops.rs` to call `trait_mod:<is>` with.
     pub(super) fn validate_class_parents(
         &mut self,
         name: &str,
@@ -189,7 +206,7 @@ impl Interpreter {
         // supposed to collide with.
         let name = crate::value::user_facing_type_name(name);
         let self_short = short_of(&name);
-        let mut self_named_does_roles: HashSet<String> = HashSet::new();
+        let mut non_inheritance_parents: HashSet<String> = HashSet::new();
         let mut deferred_custom_traits: Vec<String> = Vec::new();
         for parent in parents {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
@@ -213,7 +230,7 @@ impl Interpreter {
                     || resolved_parent_name == name.as_ref())
                 && self.registry().roles.contains_key(resolved_parent);
             if is_self_named_does_role {
-                self_named_does_roles.insert(parent.clone());
+                non_inheritance_parents.insert(parent.clone());
                 continue;
             }
             if resolved_parent == name.as_ref() {
@@ -244,20 +261,22 @@ impl Interpreter {
                         resolved_parent_name
                     )));
                 }
-                // If trait_mod:<is> is defined, defer unknown lowercase parents
-                // to custom trait dispatch instead of erroring.
-                if (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
-                    && resolved_parent
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_lowercase())
-                {
-                    deferred_custom_traits.push(resolved_parent_name.to_string());
+                // A plain `is` parent may also name a core type mutsu models
+                // natively instead of registering a `ClassDef` for it
+                // (`Attribute`, `CX::Warn`, `Metamodel::SubsetHOW`, ...).
+                // Consulted only here, on the `is` path, so it moves neither
+                // the `does`-composability verdict below nor the `but`-mixin
+                // fast path — see `BUILTIN_INHERITABLE_TYPES`'s own comment.
+                if BUILTIN_INHERITABLE_TYPES.contains(&base_parent) {
                     continue;
                 }
                 // A name that is declared as a `package` (or module) exists but
                 // does not support inheritance: `package A {}; class B is A {}`
                 // is X::Inheritance::Unsupported, not an unknown-parent error.
+                // Checked BEFORE the custom-trait deferral below: a declared
+                // package is not an unknown name, so rakudo passes it to
+                // `trait_mod:<is>` positionally (as the package object) rather
+                // than as the `:Name` named argument the deferral synthesises.
                 if self.chain_declared_packages.contains(base_parent)
                     || self
                         .chain_declared_packages
@@ -277,6 +296,27 @@ impl Interpreter {
                     );
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
+                }
+                // `is Foo` on a name that is NOT a known type is rakudo's
+                // spelling of the named trait argument `trait_mod:<is>($type,
+                // :Foo)` — that is how `class Foo is Static { }` reaches the
+                // `Staticish` distribution's
+                // `multi trait_mod:<is>(Mu:U $doee, :$Static!)`. Defer any such
+                // parent to custom trait dispatch whenever the program defines
+                // a `trait_mod:<is>` at all; the dispatch site
+                // (`vm_typedecl_ops.rs`) turns a no-matching-candidate result
+                // back into `unknown_parent_error`, so a genuine typo still
+                // raises X::Inheritance::UnknownParent. This used to be
+                // restricted to lowercase names, which made every uppercase
+                // trait name (the overwhelmingly common spelling) an
+                // unknown-parent error instead.
+                if self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>") {
+                    deferred_custom_traits.push(resolved_parent_name.to_string());
+                    // `is Marked` is then a trait, not inheritance: keep the
+                    // name out of the C3 parents (keyed by the source spelling,
+                    // which is what `begin_class_def` filters on).
+                    non_inheritance_parents.insert(parent.clone());
+                    continue;
                 }
                 return Err(self.unknown_parent_error(name.as_ref(), resolved_parent_name.as_str()));
             }
@@ -359,7 +399,7 @@ impl Interpreter {
                 return Err(err);
             }
         }
-        Ok((self_named_does_roles, deferred_custom_traits))
+        Ok((non_inheritance_parents, deferred_custom_traits))
     }
 
     /// Build the initial `ClassDef` for the declaration and record the
@@ -368,19 +408,21 @@ impl Interpreter {
         &mut self,
         name: &str,
         parents: &[String],
-        self_named_does_roles: &HashSet<String>,
+        non_inheritance_parents: &HashSet<String>,
         is_hidden: bool,
         hidden_parents: &[String],
     ) -> ClassDef {
-        // Drop any `does`-role that shares the class's own name from the C3
-        // inheritance parents (it is composed as a role below; leaving it here
-        // would make the class its own ancestor — see `self_named_does_roles`).
-        let inheritance_parents: Vec<String> = if self_named_does_roles.is_empty() {
+        // Drop the parents `validate_class_parents` classified as
+        // non-inheritance: a `does`-role sharing the class's own name (composed
+        // as a role below; leaving it here would make the class its own
+        // ancestor) and a name deferred to `trait_mod:<is>` (a trait, never a
+        // parent) — see `non_inheritance_parents`.
+        let inheritance_parents: Vec<String> = if non_inheritance_parents.is_empty() {
             parents.to_vec()
         } else {
             parents
                 .iter()
-                .filter(|p| !self_named_does_roles.contains(*p))
+                .filter(|p| !non_inheritance_parents.contains(*p))
                 .cloned()
                 .collect()
         };

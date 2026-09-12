@@ -358,6 +358,13 @@ impl Interpreter {
                     },
                 )
             )?;
+            // Take the rollback snapshot `register_class_decl` leaves behind
+            // for a deferred `is` trait IMMEDIATELY, into a local: a nested
+            // declaration in this class's own body runs its own
+            // `RegisterClass` op before the dispatch below and would otherwise
+            // overwrite the field with its own snapshot. See
+            // `Interpreter::deferred_trait_class_rollback`.
+            let deferred_trait_rollback = self.deferred_trait_class_rollback.take();
             // ADR-0019 Phase F box F5 shadow check: confirm this successful
             // registration bumped `Registry::method_generation` (see
             // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
@@ -602,6 +609,7 @@ impl Interpreter {
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
                             return Err(self.unknown_parent_error(&storage_name, trait_name));
                         }
                         Err(err) => return Err(err),
@@ -688,6 +696,39 @@ impl Interpreter {
             None => Value::NIL,
         };
         self.stack.push(val);
+    }
+
+    /// Undo the class declaration `register_class_decl` published before this
+    /// op dispatched its deferred `is` traits, for when that dispatch reports
+    /// that no candidate claims the trait after all — the name really was an
+    /// unknown parent, so the declaration failed and must leave no trace.
+    /// Without this a failed `class B is NoSuchParent { }` (in any scope that
+    /// declares a `trait_mod:<is>` at all, which merely importing `Test` does)
+    /// left `B` half-registered, and the next genuine `class B` died as a
+    /// redeclaration instead. `rollback` is the snapshot the caller took off
+    /// `Interpreter::deferred_trait_class_rollback` right after registering,
+    /// not a fresh read of that field — see the take site for why.
+    fn rollback_deferred_trait_class_decl(
+        &mut self,
+        rollback: Option<(
+            String,
+            crate::runtime::registration_class_validate::ClassRegSnapshot,
+        )>,
+    ) {
+        let Some((name, snapshot)) = rollback else {
+            return;
+        };
+        snapshot.restore(self, &name);
+        // `restore` is shared with the body-failure path and deliberately only
+        // rewinds the registry columns that path owns. A declaration that
+        // created the class from nothing also wrote the two "this name is a
+        // user-declared type" markers, and leaving those behind is what still
+        // made `B.^name` answer `B` instead of falling through to the bareword
+        // path after the failed declaration.
+        if !snapshot.had_previous_class() {
+            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
+            self.registry_mut().compound_declared_types.remove(&name);
+        }
     }
 
     /// Whether a *typed* user `trait_mod:<is>` candidate matches `call_args`
