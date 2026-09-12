@@ -127,9 +127,15 @@ fn collect_declared_names(
             } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
                 out.insert(name.clone(), DeclaredKind::Constant);
             }
+            // A `module`/`package`/`grammar` name resolves at parse time just
+            // like a class one: raku renders a later bareword `M` as a
+            // `Type::Simple` (measured on `module M { }; M.HOW`).
+            Stmt::Package { name, body, .. } => {
+                out.insert(name.resolve(), DeclaredKind::Type);
+                collect_declared_names(body, out);
+            }
             Stmt::Block(body)
             | Stmt::SyntheticBlock(body)
-            | Stmt::Package { body, .. }
             | Stmt::SubDecl { body, .. }
             | Stmt::MethodDecl { body, .. } => collect_declared_names(body, out),
             _ => {}
@@ -163,7 +169,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         Stmt::Last(None) => Ok(Some(statement_expression(control_call("last", &[])?))),
         Stmt::Next(None) => Ok(Some(statement_expression(control_call("next", &[])?))),
-        Stmt::Last(Some(_)) | Stmt::Next(Some(_)) => Err(unsupported("labelled last/next")),
+        Stmt::Redo(None) => Ok(Some(statement_expression(control_call("redo", &[])?))),
+        Stmt::Last(Some(_)) | Stmt::Next(Some(_)) | Stmt::Redo(Some(_)) => {
+            Err(unsupported("labelled last/next/redo"))
+        }
         // `die`/`fail EXPR` are also modelled as bare calls.
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             "die",
@@ -536,6 +545,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             class: RakuAstClass::StatementDefault,
             fields: vec![node_field(Some("body"), block_node(body)?)],
         })),
+        // `CATCH { ... }` -> Statement::Catch(body => topic Block + exception).
+        // The body topicalizes the exception, so raku marks the block both
+        // `implicit-topic`/`required-topic` (like a `given` body) and
+        // `exception => 1`, which is what distinguishes it from one.
+        Stmt::Catch(body) => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementCatch,
+            fields: vec![node_field(Some("body"), exception_block_node(body)?)],
+        })),
         Stmt::SubDecl {
             name,
             name_expr,
@@ -616,21 +633,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             custom_traits,
             ..
         } => {
-            // Plain `method NAME (params) { body }`, with return types in all
-            // three spellings (`-->` via `Signature.returns`, `returns`/`of`
-            // via `Trait::Returns`/`Trait::Of`) — a `RakuAST::Method` is a
-            // `RakuAST::Routine` just like `RakuAST::Sub`, so it carries the
-            // same `signature` / `traits` shape. Private/submethod/multi/our/
-            // my forms, user traits, and delegation carry extra shape.
+            // Plain `method NAME (params) { body }` and `submethod NAME (…) { … }`,
+            // with return types in all three spellings (`-->` via
+            // `Signature.returns`, `returns`/`of` via `Trait::Returns`/`Trait::Of`)
+            // — a `RakuAST::Method` is a `RakuAST::Routine` just like
+            // `RakuAST::Sub`, so it carries the same `signature` / `traits`
+            // shape. raku spells `submethod` as its own class carrying exactly
+            // that shape (measured: a `Submethod` and a `Method` of the same
+            // signature differ only in the class name). Private/multi/our/my
+            // forms, user traits, and delegation carry extra shape.
             let spelling = return_type_spelling(custom_traits)?;
+            // `submethod_decl` marks every submethod `is_my` as its internal
+            // "not inherited" flag, not because the source said `my` — so for a
+            // submethod that flag carries no RakuAST shape of its own.
+            let declared_my = *is_my && !*is_submethod;
             if name_expr.is_some()
                 || *multi
                 || *is_rw
                 || *is_raw
                 || *is_private
                 || *is_our
-                || *is_my
-                || *is_submethod
+                || declared_my
                 || *our_variable_form
                 || *is_default_candidate
                 || deprecated_message.is_some()
@@ -640,7 +663,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     .any(|(t, _)| !is_return_spelling_marker(t))
             {
                 return Err(unsupported(
-                    "method with traits / private / multi / submethod",
+                    "method with traits / private / multi / delegation",
                 ));
             }
             if return_type.is_none() && spelling != ReturnSpelling::Arrow {
@@ -649,7 +672,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 return Err(unsupported("method with a return trait but no return type"));
             }
             Ok(Some(statement_expression(routine_node(
-                RakuAstClass::Method,
+                if *is_submethod {
+                    RakuAstClass::Submethod
+                } else {
+                    RakuAstClass::Method
+                },
                 &name.resolve(),
                 param_defs,
                 body,
@@ -704,6 +731,74 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
+                fields,
+            })))
+        }
+        // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`.
+        // raku gives each declarator keyword its own class (there is no shared
+        // node with a `kind` field), and the body is a plain `Block` exactly as
+        // for a class. `grammar` also parses to `Stmt::Package` here, but its
+        // `RakuAST::Grammar` body holds regex declarations this layer does not
+        // model yet, so it stays the boundary. `unit` and `my` scopes carry
+        // extra RakuAST shape, deferred.
+        Stmt::Package {
+            name,
+            body,
+            kind,
+            is_unit,
+            is_my,
+        } => {
+            if *is_unit || *is_my {
+                return Err(unsupported("unit / my package declaration"));
+            }
+            let class = match kind {
+                crate::ast::PackageKind::Module => RakuAstClass::Module,
+                crate::ast::PackageKind::Package => RakuAstClass::Package,
+                crate::ast::PackageKind::Grammar => {
+                    return Err(unsupported("grammar declaration"));
+                }
+            };
+            Ok(Some(statement_expression(RakuAstNode {
+                class,
+                fields: vec![
+                    node_field(Some("name"), name_from_identifier(&name.resolve())),
+                    node_field(Some("body"), block_node(body)?),
+                ],
+            })))
+        }
+        // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
+        // type is a `Trait::Of` in the `traits` list (raku models it exactly as
+        // a routine's `of` return type), and the `where` predicate is its own
+        // named field. Export and `my` scope carry extra shape, deferred.
+        Stmt::SubsetDecl {
+            name,
+            base,
+            predicate,
+            is_export,
+            export_tags,
+            is_my,
+            ..
+        } => {
+            if *is_export || !export_tags.is_empty() || *is_my {
+                return Err(unsupported("subset with export / my scope"));
+            }
+            let mut fields = vec![node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            )];
+            // Field order matches raku: name, where, traits.
+            if let Some(pred) = predicate {
+                fields.push(node_field(Some("where"), convert_expr(pred)?));
+            }
+            fields.push(RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitOf,
+                    fields: vec![node_field(None, build_type_node(base)?)],
+                }))]),
+            });
+            Ok(Some(statement_expression(RakuAstNode {
+                class: RakuAstClass::TypeSubset,
                 fields,
             })))
         }
@@ -1214,6 +1309,13 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // raku renders, so let those arms decide.
             other => convert_expr(other),
         },
+        // `self` -> `Term::Self`, a node with no fields. mutsu's parser leaves
+        // it as a bareword, so it has to be picked off before the type-name and
+        // declared-name arms below.
+        Expr::BareWord(name) if name == "self" => Ok(RakuAstNode {
+            class: RakuAstClass::TermSelf,
+            fields: Vec::new(),
+        }),
         // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
         // A name the same compilation unit declared. raku resolves it at parse
@@ -1827,6 +1929,23 @@ fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             node_field(Some("body"), blockoid(body)?),
         ],
     })
+}
+
+/// The body of a `CATCH` block: a topic block that also carries `exception => 1`.
+fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = topic_block_node(body)?;
+    // raku renders the fields in declaration order, with `exception` after the
+    // two topic flags and before `body`.
+    let body_field = node
+        .fields
+        .pop()
+        .expect("topic_block_node pushes body last");
+    node.fields.push(RakuAstField {
+        name: Some("exception"),
+        value: RakuAstFieldValue::Node(Value::int(1)),
+    });
+    node.fields.push(body_field);
+    Ok(node)
 }
 
 /// A multi/zero-parameter pointy block (`-> $a, $b { }`, `-> { }`). An empty
@@ -2591,6 +2710,14 @@ fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
 }
 
 fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
+    // `Nil` is a type object written as a bareword, not a literal value: raku
+    // renders it `Type::Simple.new(Name.from-identifier("Nil"))`, exactly like
+    // `Int`. mutsu's parser resolves the bareword to the value eagerly, so the
+    // check has to come before the `view()` match — `Nil`'s view is not a
+    // variant this function would otherwise recognize.
+    if v.is_nil() {
+        return Ok(simple_type_node("Nil"));
+    }
     match v.view() {
         ValueView::Int(_) | ValueView::BigInt(_) => Ok(RakuAstNode {
             class: RakuAstClass::IntLiteral,

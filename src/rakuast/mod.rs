@@ -198,6 +198,20 @@ pub enum RakuAstClass {
     StatementPrefixPhaserPost,
     StatementPrefixPhaserQuit,
     StatementPrefixPhaserClose,
+    // `CATCH { ... }` — its own statement class, not a block phaser. Its body is
+    // a topic block that additionally sets `exception => 1`.
+    StatementCatch,
+    // `subset S of T where P` — raku files it under `RakuAST::Type::`, not
+    // under the declaration classes.
+    TypeSubset,
+    // `module M { }` / `package P { }` — siblings of `RakuAST::Class`, one class
+    // per declarator keyword rather than a shared node with a `kind` field.
+    Module,
+    Package,
+    // `submethod m { }` — a sibling of `RakuAST::Method`, again keyword-per-class.
+    Submethod,
+    // `self` — a term with no fields of its own.
+    TermSelf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,6 +325,12 @@ impl RakuAstClass {
             StatementPrefixPhaserPost => "RakuAST::StatementPrefix::Phaser::Post",
             StatementPrefixPhaserQuit => "RakuAST::StatementPrefix::Phaser::Quit",
             StatementPrefixPhaserClose => "RakuAST::StatementPrefix::Phaser::Close",
+            StatementCatch => "RakuAST::Statement::Catch",
+            TypeSubset => "RakuAST::Type::Subset",
+            Module => "RakuAST::Module",
+            Package => "RakuAST::Package",
+            Submethod => "RakuAST::Submethod",
+            TermSelf => "RakuAST::Term::Self",
         }
     }
 
@@ -324,6 +344,7 @@ impl RakuAstClass {
                 | RakuAstClass::TermWhatever
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
+                | RakuAstClass::TermSelf
         )
     }
 
@@ -385,7 +406,12 @@ impl RakuAstClass {
             // from the name-prefix rule in `type_object_isa` — it must be
             // listed explicitly (ADR-0033 Phase 2 §2.4). Measured MRO:
             // `Argument, Term, Termish, Expression, ..., Node`.
-            | WhateverCodeArgument => TERM,
+            | WhateverCodeArgument
+            // Measured MRO: `Self, Term, Termish, Expression, ..., Node`. The
+            // `RakuAST::Term::` name prefix already answers `~~ RakuAST::Term`
+            // for an instance, but `RakuAST::Expression` is only reachable
+            // through this list.
+            | TermSelf => TERM,
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
             _ => &[],
         }
@@ -616,6 +642,12 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixPhaserPost,
     RakuAstClass::StatementPrefixPhaserQuit,
     RakuAstClass::StatementPrefixPhaserClose,
+    RakuAstClass::StatementCatch,
+    RakuAstClass::TypeSubset,
+    RakuAstClass::Module,
+    RakuAstClass::Package,
+    RakuAstClass::Submethod,
+    RakuAstClass::TermSelf,
 ];
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.

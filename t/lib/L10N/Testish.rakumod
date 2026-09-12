@@ -19,6 +19,10 @@ role L10N::Testish {
     token scope-my { mine }
     token package-class { klass }
     token routine-sub { subby }
+    # A statement prefix: mutsu reaches `try` through the bareword-term
+    # production rather than through its keyword seam, so this pins that the
+    # replacement is honoured there too.
+    token stmt-prefix-try { tryish }
     token enum-True { yes }
     # An inert category: mutsu records word-infix translations but does not
     # consult them yet, and that must not make the whole vocabulary fail.

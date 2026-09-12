@@ -152,7 +152,13 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
         RakuAstClass::Class => lower_class(node),
         RakuAstClass::Role => lower_role(node),
-        RakuAstClass::Method => lower_method(node),
+        RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
+        RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
+        RakuAstClass::TypeSubset => lower_subset(node),
+        // `CATCH { … }` — the `exception`/topic flags on its body block are
+        // implied by the statement class, so only the block's statements are
+        // read back.
+        RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.
@@ -199,6 +205,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 )),
                 "last" => Ok(Stmt::Last(None)),
                 "next" => Ok(Stmt::Next(None)),
+                "redo" => Ok(Stmt::Redo(None)),
                 "die" => Ok(Stmt::Die(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
@@ -519,6 +526,56 @@ fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// [`lower_sub`]. The return type comes back through the same
 /// `signature.returns` / `Trait::Returns` / `Trait::Of` reading `lower_sub`
 /// uses, so all three spellings the converter renders lower back.
+/// `module M { … }` / `package P { … }` -> `Stmt::Package`. raku names the
+/// declarator with the class, so the keyword comes back from `node.class`
+/// rather than from a field. `grammar` is refused on the read side (its body
+/// holds regex declarations this layer does not model), so nothing lowered
+/// here is one.
+fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let kind = match node.class {
+        RakuAstClass::Module => crate::ast::PackageKind::Module,
+        RakuAstClass::Package => crate::ast::PackageKind::Package,
+        _ => return Err(unsupported(node)),
+    };
+    Ok(Stmt::Package {
+        name: crate::symbol::Symbol::intern(&call_name_str(node)?),
+        body: lower_block(named_child(node, "body")?)?,
+        kind,
+        is_unit: false,
+        is_my: false,
+    })
+}
+
+/// `subset S of T where P` -> `Stmt::SubsetDecl`. The base type arrives as the
+/// single `Trait::Of` entry of the `traits` list; a `subset` with no explicit
+/// `of` defaults to `Any`, which is what the converter renders, so a missing
+/// trait list is a shape it never produced.
+fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let predicate = match node.fields.iter().find(|f| f.name == Some("where")) {
+        Some(f) => Some(lower_expr(child_node(&f.value)?)?),
+        None => None,
+    };
+    let [trait_of] = list_field(node, "traits")? else {
+        return Err(unsupported(node));
+    };
+    let ValueView::RakuAst(trait_of) = trait_of.view() else {
+        return Err(unsupported(node));
+    };
+    if trait_of.class != RakuAstClass::TraitOf {
+        return Err(unsupported(node));
+    }
+    Ok(Stmt::SubsetDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        base: simple_type_name(node, named_child_or_positional(trait_of)?)?,
+        predicate,
+        version: crate::parser::current_language_version(),
+        is_export: false,
+        export_tags: Vec::new(),
+        is_my: false,
+    })
+}
+
 fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
@@ -536,7 +593,9 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_private: false,
         is_our: false,
         is_my: false,
-        is_submethod: false,
+        // raku names the declarator with the class, so `submethod` comes back
+        // from `node.class` rather than from a field.
+        is_submethod: node.class == RakuAstClass::Submethod,
         our_variable_form: false,
         return_type,
         is_default_candidate: false,
@@ -1001,12 +1060,23 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
         return lower_attribute(node);
     }
-    if node.fields.iter().any(|f| {
-        matches!(
-            f.name,
-            Some("scope") | Some("type") | Some("twigil") | Some("traits")
-        )
-    }) {
+    // The remaining scopes the converter renders are `our` and `state`; `my` is
+    // the default and carries no `scope` field at all. Anything else (a scope
+    // raku has that the converter never emits) stays the boundary.
+    let (is_our, is_state) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "our" => (true, false),
+            "state" => (false, true),
+            "my" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
+    };
+    if node
+        .fields
+        .iter()
+        .any(|f| matches!(f.name, Some("type") | Some("twigil") | Some("traits")))
+    {
         return Err(unsupported(node));
     }
     let sigil = leaf_str(node, "sigil")?;
@@ -1038,8 +1108,8 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name,
         expr,
         type_constraint: None,
-        is_state: false,
-        is_our: false,
+        is_state,
+        is_our,
         is_dynamic: false,
         is_export: false,
         export_tags: Vec::new(),
@@ -1362,6 +1432,8 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 _ => Err(unsupported(node)),
             }
         }
+        // `self` -> the bareword the parser produces for it.
+        RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
