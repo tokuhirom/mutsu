@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::CallArg;
+use crate::scan_cache::{self, FileStamp, ScanDep};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -15,6 +16,7 @@ use export_hook::{
 /// each module file is scan-parsed at most once per process — without the
 /// cache a diamond-heavy dependency graph re-parses the same file once per
 /// reachable `use` mention (Template::HAML re-read its `X.rakumod` 222 times).
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ModuleScanResult {
     exports: Vec<InlineModuleExport>,
     type_names: Vec<String>,
@@ -45,6 +47,24 @@ struct ModuleScanResult {
     /// module must execute it at parse time so its slang registration can
     /// switch parser modes for the rest of the importing unit.
     uses_slangify: bool,
+    /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
+    /// module. The nested parse registers these in the process-wide inline
+    /// export table, which — unlike the scopes — the scan does not restore, so
+    /// an `import Foo;` in the importing file finds them today purely as a
+    /// side effect of the scan having run. Captured here and replayed on every
+    /// importer so a cache hit, which runs no nested parse, behaves the same.
+    inline_module_exports: Vec<(String, Vec<InlineModuleExport>)>,
+    /// Every module this scan resolved, transitively — the invalidation input
+    /// the on-disk cache needs because the fields above carry names that came
+    /// from those modules. Not part of the serialized payload: the cache
+    /// stores it in its own metadata, where it can be checked before the
+    /// payload is decoded. See [`crate::scan_cache`].
+    #[serde(skip)]
+    deps: Vec<crate::scan_cache::ScanDep>,
+    /// This module file's own stamp, so an importer can record it as a
+    /// dependency without re-reading the file.
+    #[serde(skip)]
+    stamp: Option<crate::scan_cache::FileStamp>,
 }
 
 thread_local! {
@@ -78,6 +98,40 @@ thread_local! {
     /// installed repository, a `require`, a module absent from this
     /// environment).
     static TYPE_INDEX_INCOMPLETE: Cell<bool> = const { Cell::new(false) };
+    /// One frame per module scan currently in progress; each collects the
+    /// modules that scan resolved, so the finished scan can be cached on disk
+    /// with the dependency list its validity depends on (see
+    /// [`crate::scan_cache`]). Empty while the top-level unit is parsed —
+    /// nothing caches that, so nothing needs to record it.
+    static SCAN_DEP_FRAMES: RefCell<Vec<Vec<ScanDep>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Record that the scan currently in progress resolved `module` to `path`.
+/// A module that resolved to nothing is recorded too: it becoming resolvable
+/// later changes what the scan would find.
+fn record_scan_dep(module: &str, path: Option<&str>, stamp: Option<FileStamp>) {
+    push_scan_deps(std::iter::once(ScanDep {
+        module: module.to_string(),
+        path: path.map(str::to_string),
+        stamp,
+    }));
+}
+
+/// Merge a finished sub-scan's own dependency list into the enclosing frame,
+/// so each entry's list is the transitive closure and validating it validates
+/// the whole subtree without loading the children's entries.
+fn push_scan_deps(deps: impl IntoIterator<Item = ScanDep>) {
+    SCAN_DEP_FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        let Some(frame) = frames.last_mut() else {
+            return;
+        };
+        for dep in deps {
+            if !frame.contains(&dep) {
+                frame.push(dep);
+            }
+        }
+    });
 }
 
 /// Record that a `use`/`need`/`require` could not be resolved and scanned, so
@@ -201,6 +255,17 @@ pub(crate) fn register_module_exports(module: &str) {
 
 /// Replay a scan's declared type/enum names into the importer's current scope.
 fn apply_scan_types(scan: &ModuleScanResult) {
+    // Replay the scanned module's inline `module Foo { ... is export }` tables
+    // so a later `import Foo;` resolves them on a cache hit exactly as it does
+    // after a fresh scan.
+    if !scan.inline_module_exports.is_empty() {
+        INLINE_MODULE_EXPORTS.with(|m| {
+            let mut map = m.borrow_mut();
+            for (name, exports) in &scan.inline_module_exports {
+                map.entry(name.clone()).or_insert_with(|| exports.clone());
+            }
+        });
+    }
     // A dependency whose own type index was incomplete makes the importer's
     // incomplete too. Replayed here (not only at scan time) so a cache hit,
     // which skips the nested parse entirely, still propagates it.
@@ -372,24 +437,89 @@ pub(crate) fn register_module_type_names(module: &str) {
 }
 
 /// Resolve a module name to its source file and scan it, memoized per file
-/// path. A cache hit performs no I/O and no parse — the callers replay the
-/// stored registrations into their own scope instead.
+/// path in this process and — since GH-8095 — on disk across processes. Either
+/// cache hit performs no parse: the callers replay the stored registrations
+/// into their own scope instead.
 fn find_and_scan_module(module: &str) -> Option<Rc<ModuleScanResult>> {
-    let path = find_module_file(module)?;
+    let Some(path) = find_module_file(module) else {
+        record_scan_dep(module, None, None);
+        return None;
+    };
     if let Some(hit) = MODULE_SCAN_CACHE.with(|c| c.borrow().get(&path).cloned()) {
+        record_scan_result_as_dep(module, &path, &hit);
+        return Some(hit);
+    }
+    if let Some(hit) = load_scan_from_disk(&path) {
+        MODULE_SCAN_CACHE.with(|c| {
+            c.borrow_mut().insert(path.clone(), Rc::clone(&hit));
+        });
+        record_scan_result_as_dep(module, &path, &hit);
         return Some(hit);
     }
     let source = std::fs::read_to_string(&path).ok()?;
     let skips_before = SCAN_GUARD_SKIPS.with(|c| c.get());
-    let result = Rc::new(scan_module_source(&source, &path));
+    SCAN_DEP_FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
+    let mut result = scan_module_source(&source, &path);
+    result.deps = SCAN_DEP_FRAMES
+        .with(|frames| frames.borrow_mut().pop())
+        .unwrap_or_default();
+    result.stamp = FileStamp::of_source(std::path::Path::new(&path), &source);
+    let result = Rc::new(result);
     // Only a scan the recursion guard never truncated is complete enough to
     // cache (see SCAN_GUARD_SKIPS).
     if SCAN_GUARD_SKIPS.with(|c| c.get()) == skips_before {
         MODULE_SCAN_CACHE.with(|c| {
-            c.borrow_mut().insert(path, Rc::clone(&result));
+            c.borrow_mut().insert(path.clone(), Rc::clone(&result));
         });
+        save_scan_to_disk(&path, &source, &result);
     }
+    record_scan_result_as_dep(module, &path, &result);
     Some(result)
+}
+
+/// Record a resolved module, and everything its own scan resolved, into the
+/// enclosing scan's dependency frame.
+fn record_scan_result_as_dep(module: &str, path: &str, result: &ModuleScanResult) {
+    record_scan_dep(module, Some(path), result.stamp.clone());
+    push_scan_deps(result.deps.iter().cloned());
+}
+
+/// Whether the on-disk scan cache may be consulted for the parse in progress.
+///
+/// An EVAL preseeds the parser with names from its calling unit, and a module
+/// scanned under those names can parse differently — so its result is not the
+/// pure function of the module sources that the cache key assumes.
+fn disk_scan_cache_usable() -> bool {
+    !super::eval_preseed_active()
+}
+
+fn load_scan_from_disk(path: &str) -> Option<Rc<ModuleScanResult>> {
+    if !disk_scan_cache_usable() {
+        return None;
+    }
+    let loaded = scan_cache::load::<ModuleScanResult>(std::path::Path::new(path), &|module| {
+        find_module_file(module)
+    })?;
+    let mut result = loaded.payload;
+    result.deps = loaded.deps;
+    result.stamp = Some(loaded.stamp);
+    Some(Rc::new(result))
+}
+
+fn save_scan_to_disk(path: &str, source: &str, result: &ModuleScanResult) {
+    if !disk_scan_cache_usable() {
+        return;
+    }
+    // `no precompilation;` opts a module out of the run-time AST cache; honour
+    // it for the parse-time scan too, rather than leaving half of the caching
+    // on for a module that asked for none.
+    if crate::runtime::Interpreter::source_has_no_precompilation(source) {
+        return;
+    }
+    let Some(stamp) = result.stamp.as_ref() else {
+        return;
+    };
+    scan_cache::save(std::path::Path::new(path), result, &result.deps, stamp);
 }
 
 /// Search lib_paths and program directory for a `.rakumod` / `.pm6` / `.pm` file
@@ -496,6 +626,11 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // through `ModuleScanResult` so `apply_scan_types` replays it on every
     // importer — cache hits included.
     let saved_type_index_incomplete = take_type_index_incomplete();
+    // The inline-export table is process-wide and deliberately not restored
+    // (see `ModuleScanResult::inline_module_exports`); note what was already
+    // there so the scan's own additions can be told apart and replayed.
+    let inline_exports_before: Vec<String> =
+        INLINE_MODULE_EXPORTS.with(|m| m.borrow().keys().cloned().collect());
     let skips_before = super::super::partial_parse_skips();
     let (stmts, _) = crate::parser::parse_program_partial(source);
     // A best-effort parse silently drops every statement it cannot parse — a
@@ -615,6 +750,14 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // parsed AST for that method call. This deliberately operates on AST
     // nodes rather than source text: a comment mentioning `define_slang` must
     // not cause an arbitrary module to execute in the parse-time interpreter.
+    let inline_module_exports: Vec<(String, Vec<InlineModuleExport>)> =
+        INLINE_MODULE_EXPORTS.with(|m| {
+            m.borrow()
+                .iter()
+                .filter(|(name, _)| !inline_exports_before.contains(name))
+                .map(|(name, exports)| (name.clone(), exports.clone()))
+                .collect()
+        });
     let defines_slang = contains_define_slang(&stmts);
     let uses_slangify = defines_slang
         || stmts.iter().any(|s| {
@@ -629,6 +772,11 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         declare_keywords,
         type_index_incomplete,
         uses_slangify,
+        inline_module_exports,
+        // Filled in by `find_and_scan_module`, which owns the dependency frame
+        // and the file stamp.
+        deps: Vec::new(),
+        stamp: None,
     }
 }
 

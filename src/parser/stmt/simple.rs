@@ -175,7 +175,7 @@ struct LexicalScope {
     anon_states: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct InlineModuleExport {
     name: String,
     precedence: Option<i32>,
@@ -260,6 +260,23 @@ thread_local! {
     /// Used by `import` to register exported operators at parse time.
     static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<InlineModuleExport>>> =
         RefCell::new(HashMap::new());
+}
+
+/// Whether an EVAL is seeding the next `reset_user_subs` with names (or a
+/// language revision) from its calling unit.
+///
+/// A module scan nested inside such a parse sees those seeded names, so its
+/// result is not a pure function of the module sources — which is exactly what
+/// the on-disk scan cache ([`crate::scan_cache`]) keys on. The cache steps
+/// aside while any preseed is live rather than risk storing, or serving, a
+/// result that belongs to one particular EVAL.
+pub(crate) fn eval_preseed_active() -> bool {
+    EVAL_OPERATOR_PRESEED.with(|p| !p.borrow().is_empty())
+        || EVAL_OPERATOR_ASSOC_PRESEED.with(|p| !p.borrow().is_empty())
+        || EVAL_USER_SUB_PRESEED.with(|p| !p.borrow().is_empty())
+        || EVAL_USER_TYPE_PRESEED.with(|p| !p.borrow().is_empty())
+        || EVAL_USER_VALUE_TERM_PRESEED.with(|p| !p.borrow().is_empty())
+        || EVAL_LANGUAGE_VERSION_PRESEED.with(|p| p.borrow().is_some())
 }
 
 pub(in crate::parser) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);

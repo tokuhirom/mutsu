@@ -101,6 +101,10 @@ impl Interpreter {
     /// Enable or disable module precompilation cache.
     pub fn set_precomp_enabled(&mut self, val: bool) {
         self.precomp_enabled = val;
+        // The parser's module export scan cache runs before this interpreter
+        // is reachable, so it reads a process-wide mirror of this switch —
+        // otherwise `--no-precomp` would silently leave half the caching on.
+        crate::precomp::set_process_enabled(val);
     }
 
     /// Check if MONKEY-TYPING pragma is active.

@@ -285,7 +285,7 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    pub(super) fn source_has_no_precompilation(code: &str) -> bool {
+    pub(crate) fn source_has_no_precompilation(code: &str) -> bool {
         code.lines().any(|line| {
             let trimmed = line.trim();
             trimmed == "no precompilation;"
