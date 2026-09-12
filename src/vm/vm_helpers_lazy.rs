@@ -717,6 +717,9 @@ impl Interpreter {
             return Ok(target);
         }
         if method == "iterator" {
+            if let Some(iterator) = body.take_iterator_source()? {
+                return Ok(iterator);
+            }
             // `.iterator` builds its FINAL result (an `Iterator` instance)
             // here, in place of returning a still-`ValueView::Seq` target
             // for a LATER dispatch layer to call `.iterator` on again. Two

@@ -475,6 +475,29 @@ impl SeqBody {
         Ok((items, SeqTaken::Taken))
     }
 
+    /// Hand the original deferred iterator to `.iterator` without pulling it.
+    /// Rakudo's `Seq.new($iterator).iterator` returns the stored iterator
+    /// object itself, so an unbounded user iterator must remain lazy. Other
+    /// deferred sources still use the materialized iterator path, and a
+    /// cached/retained body must iterate its retained elements instead.
+    pub(crate) fn take_iterator_source(&self) -> Result<Option<Value>, RuntimeError> {
+        let mut state = self.core.state.lock().unwrap();
+        if state.cache_requested || state.retained {
+            return Ok(None);
+        }
+        if matches!(state.source, SeqSource::Taken) {
+            return Err(super::seq_consumed_error());
+        }
+        if !matches!(state.source, SeqSource::Iterator(_)) {
+            return Ok(None);
+        }
+        let SeqSource::Iterator(iterator) = std::mem::replace(&mut state.source, SeqSource::Taken)
+        else {
+            unreachable!("matched Iterator above")
+        };
+        Ok(Some(iterator))
+    }
+
     /// Store elements a [`SeqBody::take`] just pulled back into this body's
     /// generation graveyard WITHOUT reviving its (now `Taken`) source.
     ///

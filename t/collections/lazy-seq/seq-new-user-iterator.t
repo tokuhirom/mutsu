@@ -5,7 +5,7 @@ use Test;
 # `pull-one` (deferred reification), not read an empty backing vec or wrap the
 # iterator as a single element.
 
-plan 16;
+plan 19;
 
 class Counter does Iterator {
     has $.n = 0;
@@ -50,6 +50,19 @@ is Seq.new(Doubler.new(src => (1, 2, 3))).List, (2, 4, 6),
 
 # The built-in `.iterator` still reifies correctly (no infinite pull loop).
 is Seq.new((1, 2, 3).iterator).List, (1, 2, 3), 'Seq.new(built-in iterator).List';
+
+# `.iterator` on a deferred Seq hands the original user iterator back without
+# draining it first. This keeps an unbounded iterator usable and lazy.
+class Unbounded does Iterator {
+    has $.n = 5;
+    method pull-one() { $!n++ }
+}
+my $unbounded = Unbounded.new;
+my $unbounded-seq = Seq.new($unbounded);
+my $handed-back = $unbounded-seq.iterator;
+ok $handed-back === $unbounded, 'Seq.iterator returns the stored user iterator';
+is $handed-back.pull-one, 5, 'handed-back iterator remains lazy';
+is $handed-back.pull-one, 6, 'handed-back iterator can continue pulling';
 
 # `.sort`/`.reverse` (comparator-capable methods) also reify: chained (a rvalue
 # receiver -> CallMethod) and via a variable (an lvalue receiver -> CallMethodMut).
