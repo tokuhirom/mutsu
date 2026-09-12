@@ -9,23 +9,22 @@
   "dist": "Algorithm::LCS",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
         "nok": 0,
-        "ok": 0,
+        "ok": 17,
         "plan": 17,
-        "secs": 2.8,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.62,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "date": "2026-09-12",
+    "harness": 2,
+    "host": "linux-x86_64",
+    "mutsu_commit": "80a7bc82",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +50,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/LG/ALGORITHM_LCS/c285f92754cbd0a5dd10b9c937754d95467b6814.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 17,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 17,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }
