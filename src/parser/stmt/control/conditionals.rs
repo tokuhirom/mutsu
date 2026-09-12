@@ -138,6 +138,7 @@ fn lower_if_clause_binding(
                     topic: source_expr,
                     body: then_branch,
                     is_statement_modifier: false,
+                    with_kind: None,
                 }],
             );
         }
@@ -207,6 +208,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
                 topic: Expr::Var(source_binding.trim_start_matches('$').to_string()),
                 body: else_clause.body,
                 is_statement_modifier: false,
+                with_kind: None,
             }];
         }
         let mut body = Vec::with_capacity(else_clause.body.len() + 1);
@@ -342,6 +344,7 @@ pub(crate) fn parse_elsif_chain(
                 topic: orwith_cond_expr.clone(),
                 body: orwith_given_body,
                 is_statement_modifier: false,
+                with_kind: None,
             }];
             // orwith uses .defined as the condition
             last_orwith_cond = Some(orwith_cond_expr.clone());
@@ -410,6 +413,7 @@ pub(crate) fn parse_elsif_chain(
                 topic: orwith_expr.clone(),
                 body: given_body,
                 is_statement_modifier: false,
+                with_kind: None,
             }];
         }
         return Ok((

@@ -25,6 +25,7 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
             topic,
             body,
             is_statement_modifier: false,
+            with_kind: None,
         },
     ))
 }

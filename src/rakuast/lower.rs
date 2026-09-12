@@ -7,7 +7,7 @@
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{EnumVariantForm, Expr, ParamDef, Stmt};
+use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
@@ -65,6 +65,7 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         topic: lower_expr(named_child_or_positional(modifier)?)?,
                         body: vec![statement],
                         is_statement_modifier: true,
+                        with_kind: None,
                     });
                 }
                 return Err(unsupported(modifier));
@@ -80,6 +81,21 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 .find(|f| f.name == Some("condition-modifier"))
             {
                 let modifier = child_node(&modifier.value)?;
+                // `with`/`without` are condition modifiers too, but they
+                // topicalize: mutsu spells them as the `given` desugar the
+                // parser builds, tagged with `with_kind` so the converter can
+                // read the keyword back out.
+                if let Some(kind) = match modifier.class {
+                    RakuAstClass::StatementModifierWith => Some(GivenWithKind::With),
+                    RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
+                    _ => None,
+                } {
+                    return Ok(lower_with_modifier(
+                        kind,
+                        lower_expr(named_child_or_positional(modifier)?)?,
+                        statement,
+                    ));
+                }
                 let is_unless = match modifier.class {
                     RakuAstClass::StatementModifierIf => false,
                     RakuAstClass::StatementModifierUnless => true,
@@ -98,6 +114,40 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             Ok(statement)
         }
         _ => lower_stmt_inner(node),
+    }
+}
+
+/// Rebuild the `given TOPIC { if $_.defined { STMT } }` shape that mutsu's
+/// parser produces for `STMT with TOPIC` (condition negated for `without`),
+/// carrying the `with_kind` tag the converter reads back. Keeping the lowered
+/// form identical to the parsed one is what makes the round trip stable.
+fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stmt {
+    let defined = Expr::MethodCall {
+        target: Box::new(Expr::Var("_".to_string())),
+        name: crate::symbol::Symbol::intern("defined"),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    };
+    let cond = match kind {
+        GivenWithKind::With => defined,
+        GivenWithKind::Without => Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr: Box::new(defined),
+        },
+    };
+    Stmt::Given {
+        topic,
+        body: vec![Stmt::If {
+            cond,
+            then_branch: vec![statement],
+            else_branch: Vec::new(),
+            binding_var: None,
+            is_statement_modifier: true,
+            is_unless: false,
+        }],
+        is_statement_modifier: true,
+        with_kind: Some(kind),
     }
 }
 
@@ -188,6 +238,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             topic: lower_expr(named_child(node, "source")?)?,
             body: lower_block(named_child(node, "body")?)?,
             is_statement_modifier: false,
+            with_kind: None,
         }),
         RakuAstClass::StatementWhen => Ok(Stmt::When {
             cond: lower_expr(named_child(node, "condition")?)?,

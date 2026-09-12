@@ -254,10 +254,12 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             topic,
             body,
             is_statement_modifier,
+            with_kind,
         } => Stmt::Given {
             topic,
             body: rewrite_supply_body(body, emitter_name),
             is_statement_modifier,
+            with_kind,
         },
         Stmt::When {
             cond,

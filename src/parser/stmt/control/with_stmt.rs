@@ -256,18 +256,21 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             topic: cond_expr.clone(),
             body: given_body,
             is_statement_modifier: false,
+            with_kind: None,
         }];
     } else if route_through_given_tmp || pointy_is_topic {
         with_body = vec![Stmt::Given {
             topic: tmp_var.clone(),
             body,
             is_statement_modifier: false,
+            with_kind: None,
         }];
     } else if route_literal_through_given {
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
             body,
             is_statement_modifier: false,
+            with_kind: None,
         }];
     } else {
         with_body.extend(body);
@@ -380,6 +383,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 topic: tmp_var.clone(),
                 body: else_given_body,
                 is_statement_modifier: false,
+                with_kind: None,
             }];
             (r, else_with_topic)
         } else {

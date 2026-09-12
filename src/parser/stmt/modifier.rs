@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages};
 
-use crate::ast::{CallArg, Expr, ParamDef, Stmt};
+use crate::ast::{CallArg, Expr, GivenWithKind, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -771,6 +771,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 topic,
                 body: vec![given_stmt],
                 is_statement_modifier: true,
+                with_kind: None,
             },
         )));
     }
@@ -802,6 +803,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     is_statement_modifier: true,
                 }],
                 is_statement_modifier: true,
+                with_kind: None,
             },
         )));
     }
@@ -864,6 +866,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
                 is_statement_modifier: true,
+                with_kind: Some(GivenWithKind::With),
             };
             return Ok(Some((
                 r_tail,
@@ -887,6 +890,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 is_unless: false,
             }],
             is_statement_modifier: true,
+            with_kind: Some(GivenWithKind::With),
         };
         return Ok(Some((r_tail, given_stmt)));
     }
@@ -945,6 +949,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
                 is_statement_modifier: true,
+                with_kind: Some(GivenWithKind::Without),
             };
             return Ok(Some((
                 r_tail,
@@ -962,6 +967,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 is_unless: false,
             }],
             is_statement_modifier: true,
+            with_kind: Some(GivenWithKind::Without),
         };
         return Ok(Some((r_tail, given_stmt)));
     }

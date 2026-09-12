@@ -7,7 +7,7 @@
 //! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{AssignOp, EnumVariantForm, Expr, ForMode, ParamDef, Stmt};
+use crate::ast::{AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
@@ -149,6 +149,21 @@ fn collect_declared_names(
 fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         Stmt::SetLine(_) => Ok(None),
+        // An expression statement modified by `with`/`without` is wrapped in a
+        // `DoStmt` so it keeps expression semantics. The wrapper has no RakuAST
+        // counterpart, so convert the `Given` it carries instead of rendering a
+        // `Statement::Expression` around it.
+        Stmt::Expr(Expr::DoStmt(inner))
+            if matches!(
+                inner.as_ref(),
+                Stmt::Given {
+                    with_kind: Some(_),
+                    ..
+                }
+            ) =>
+        {
+            convert_stmt(inner)
+        }
         Stmt::Expr(e) => Ok(Some(statement_expression(convert_expr(e)?))),
         Stmt::TokenDecl {
             name,
@@ -585,7 +600,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             topic,
             body,
             is_statement_modifier,
+            with_kind,
         } => {
+            // `STMT with X` / `STMT without X` reach here as the `given` the
+            // parser desugared them into; `with_kind` is what says which
+            // keyword the source actually used (the desugared shape alone is
+            // ambiguous with a hand-written `(STMT if $_.defined) given X`).
+            // raku keeps them as a `condition-modifier`, like `if`/`unless`,
+            // not as the `loop-modifier` a real `given` gets.
+            if let Some(kind) = with_kind {
+                return with_modifier_node(*kind, topic, body).map(Some);
+            }
             if *is_statement_modifier {
                 let [modified] = body.as_slice() else {
                     return Err(unsupported("multi-statement given modifier body"));
@@ -1995,6 +2020,62 @@ fn single_if_stmt(stmts: &[Stmt]) -> Option<&Stmt> {
         return None;
     }
     matches!(first, Stmt::If { .. }).then_some(first)
+}
+
+/// `STMT with X` / `STMT without X` -> the modified statement carrying a
+/// `condition-modifier` of `StatementModifier::With` / `::Without`.
+///
+/// The parser desugars both into `given X { if $_.defined { STMT } }` (with the
+/// condition negated for `without`), optionally wrapped in a `DoStmt` when the
+/// modified statement is an expression statement. Everything but `STMT` and `X`
+/// is scaffolding raku does not model, so this unwraps back to the two pieces
+/// raku's node actually holds. Measured against rakudo 2026.07:
+/// `Q["found" with "hello"].AST`.
+fn with_modifier_node(
+    kind: GivenWithKind,
+    topic: &Expr,
+    body: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
+    let [wrapper] = body else {
+        return Err(unsupported("multi-statement with/without modifier body"));
+    };
+    // The expression-statement spelling carries the `if` inside a `DoStmt`.
+    let wrapper = match wrapper {
+        Stmt::Expr(Expr::DoStmt(inner)) => inner.as_ref(),
+        other => other,
+    };
+    let Stmt::If {
+        then_branch,
+        else_branch,
+        ..
+    } = wrapper
+    else {
+        return Err(unsupported(
+            "with/without modifier body is not a conditional",
+        ));
+    };
+    if !else_branch.is_empty() {
+        return Err(unsupported("with/without modifier with an else branch"));
+    }
+    let mut real = then_branch
+        .iter()
+        .filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (Some(modified), None) = (real.next(), real.next()) else {
+        return Err(unsupported("multi-statement with/without modifier body"));
+    };
+    let mut statement =
+        convert_stmt(modified)?.ok_or_else(|| unsupported("empty with/without modifier body"))?;
+    statement.fields.push(node_field(
+        Some("condition-modifier"),
+        RakuAstNode {
+            class: match kind {
+                GivenWithKind::With => RakuAstClass::StatementModifierWith,
+                GivenWithKind::Without => RakuAstClass::StatementModifierWithout,
+            },
+            fields: vec![node_field(None, convert_expr(topic)?)],
+        },
+    ));
+    Ok(statement)
 }
 
 /// One `elsif` clause -> `Statement::Elsif(condition, then => Block)`.
