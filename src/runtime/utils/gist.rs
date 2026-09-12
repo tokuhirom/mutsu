@@ -497,6 +497,17 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .map(crate::value::Value::to_string_value)
                 .unwrap_or_default()
         }
+        // An `is Version` subclass gists as its Version payload, just like
+        // Version (#8070).
+        ValueView::Instance { attributes, .. }
+            if attributes.contains_key("__mutsu_version_value") =>
+        {
+            attributes
+                .as_map()
+                .get("__mutsu_version_value")
+                .map(crate::value::Value::to_string_value)
+                .unwrap_or_default()
+        }
         // An `is Array` subclass instance gists as its backing array elements
         // (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic `Class.new`.
         ValueView::Instance { attributes, .. }
