@@ -205,3 +205,16 @@ territory).
   check for stray `mutsu` processes before measuring.
 - All benchmarks run with the `--release` build; raku times include ~120-170ms
   startup overhead, mutsu startup is ~4-8ms.
+- **The raku ratio does NOT normalize the CI runner's host class, and several
+  benchmarks cannot resolve a small change at all.** The bench CI runs on a
+  *bimodal* runner pool. Splitting main-push rows by `bench-startup`
+  `mutsu_median_s` (`< 6 ms` = fast host) put mean `bench-ctor` **ratio** at
+  0.62 on fast hosts against 0.88 on slow ones — the effect is in the ratio
+  column, not only in the seconds column. It is specific to the long,
+  allocation-heavy benchmarks: `hash-access` (0.14-0.19) and `fib` (0.30-0.47)
+  hold steady across the same swings. So `bench-ctor`, `method-call`,
+  `bench-class`, `time-parts`, `debug-guard`, `bench-mandelbrot` and the
+  *interpreter* rows of `bench-fib`/`bench-tak` **cannot resolve anything
+  smaller than ~30%**, and an apparent move on one of them is usually a change
+  in host-class composition between the two windows being compared. Always
+  quote the benchmark name *and its noise class* alongside any number.

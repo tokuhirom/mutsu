@@ -405,7 +405,7 @@ Slice 2 merged as `e5c260c`. Its `bench-history.tsv` rows look like a win —
 six consecutive main commits, a ~48% bimodal swing with nothing in the diffs to
 explain it, and plain `bench-fib` jumps to 0.2974 (+13%) on an unrelated commit
 too. The `runner` column reads `4c-x86_64-ubuntu24` throughout, so this is not
-the host-class effect `docs/triage.md` already corrects for — the same class
+the host-class effect PERFORMANCE.md's measurement notes correct for — the same class
 evidently spans hosts that differ by more than the change being measured.
 
 So a single-commit change of a few percent is **below this series' resolution**,

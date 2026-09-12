@@ -13,7 +13,7 @@ Where the moving parts are tracked:
 | what | where |
 |---|---|
 | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
-| which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked snapshot, regenerated periodically. It is a snapshot, not a ledger: it lags the ADRs and the issues, so verify against those before citing it (this review initially inherited a closed soundness item from it) |
+| which finding to pick up next | the `tier:*` labels on the issues themselves — `tier:S` first, then `tier:B`, `tier:N`, with `tier:icebox` out of the queue |
 | architectural decisions | [docs/adr/](docs/adr/) — 95 ADRs |
 | completed work | [news/](news/) — one file per accomplishment |
 | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
@@ -528,7 +528,7 @@ the split a completion gate on whatever campaign next opens the file.
 
 **Dangling citations are the other hygiene axis, and one of them is new and large.** The
 `todo/` directory was deleted on 2026-09-08, but its citations were not rewritten: **279
-`todo/…` path references survive in `src/`, 257 across 56 files in `docs/adr/`, and 64 in
+`todo/…` path references survive in `src/`, 257 across 56 files in `docs/adr/`, and 61 in
 `PLAN.md` and top-level `docs/`**. They resolve only indirectly, by hand, through
 `docs/todo-issue-map.md` — which is exactly the cost the migration was meant to remove, since
 its whole rationale was that a path stops resolving and an issue number does not. Rewriting

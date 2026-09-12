@@ -623,7 +623,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
   1. PLAN.md current quarter priorities
   2. BLOCKERS.md highest-impact missing features
   3. Roast tests related to in-progress features
-  4. `todo:deep` and `todo:ticket` issues, oldest-first (see "The issue-backlog parallel-agent pipeline" below) — both queues get worked in parallel, not one after the other, so neither backlog grows unchecked while the other drains. **`todo:perf` is NOT part of that pipeline**: perf work is batched into its own profiling-heavy session and its implementation agent runs solo (see below). [docs/triage.md](docs/triage.md) ranks the open backlog so a session can pick without re-reading every issue.
+  4. `todo:deep` and `todo:ticket` issues, oldest-first (see "The issue-backlog parallel-agent pipeline" below) — both queues get worked in parallel, not one after the other, so neither backlog grows unchecked while the other drains. **`todo:perf` is NOT part of that pipeline**: perf work is batched into its own profiling-heavy session and its implementation agent runs solo (see below). The issues' own `tier:*` labels rank the open backlog (`tier:S` > `tier:B` > `tier:N`; `tier:icebox` is out of the queue), so a session can pick without re-reading every issue.
 
 ### A queue request is a standing instruction — do not re-ask what is already settled
 
