@@ -16,6 +16,7 @@
 //! and goal failures persist across backtracks by design.
 
 use super::super::*;
+use std::collections::hash_map::Entry;
 
 /// Saved tail for a positional truncation (slots moved out, moved back on
 /// rewind). Boxed to keep `Undo` small.
@@ -51,8 +52,8 @@ pub(super) enum Undo {
     },
     /// Restore a `capture_alias_map` entry (None = remove).
     AliasRestore {
-        key: String,
-        prev: Option<String>,
+        key: crate::symbol::Symbol,
+        prev: Option<crate::symbol::Symbol>,
     },
     /// Restore a `regex_vars` entry (None = remove).
     RegexVarRestore {
@@ -208,29 +209,60 @@ impl CapStore {
     /// per-level metadata (from/to/match_from) are intentionally NOT merged.
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
-            self.record_named_key(k);
-            let slot = self.caps.named.entry(k).or_default();
+            // One probe of `named`, not two: the undo record wants exactly the
+            // slot state the `entry` below is about to hand out, so recording it
+            // through a separate `get` (what `record_named_key` does for callers
+            // that have no entry in hand) hashed and searched for the same key
+            // twice per merged capture.
+            let slot = match self.caps.named.entry(k) {
+                Entry::Occupied(occupied) => {
+                    let slot = occupied.into_mut();
+                    self.trail.push(Undo::NamedTrunc {
+                        key: k,
+                        len: slot.nodes.len(),
+                        present: true,
+                        quantified: slot.quantified,
+                    });
+                    slot
+                }
+                Entry::Vacant(vacant) => {
+                    self.trail.push(Undo::NamedTrunc {
+                        key: k,
+                        len: 0,
+                        present: false,
+                        quantified: false,
+                    });
+                    vacant.insert(NamedSlot::default())
+                }
+            };
             slot.nodes.extend(v.nodes);
             slot.quantified |= v.quantified;
-        }
-        for (k, v) in delta.take_capture_alias_map() {
-            self.insert_alias(k, v);
         }
         if !delta.positional.is_empty() {
             self.record_pos_lens();
             self.caps.positional.append(&mut delta.positional);
         }
-        for (k, v) in delta.take_hash_captures() {
-            self.record_hash_cap_key(&k);
-            self.caps
-                .hash_captures_mut()
-                .entry(k)
-                .or_default()
-                .extend(v);
-        }
-        for (k, v) in delta.take_regex_vars() {
-            let prev = self.caps.regex_vars_mut().insert(k.clone(), v);
-            self.trail.push(Undo::RegexVarRestore { key: k, prev });
+        // Aliases, hash captures and `:my` lexicals all live in the delta's cold
+        // payload (`RareCaps`), allocated on first write. A delta that never
+        // wrote one has nothing to merge, and the three `take_*` calls below
+        // would each build an empty map, iterate it and prune the absent payload
+        // — per merged candidate, on the hottest path in the matcher.
+        if delta.has_rare() {
+            for (k, v) in delta.take_capture_alias_map() {
+                self.insert_alias(k, v);
+            }
+            for (k, v) in delta.take_hash_captures() {
+                self.record_hash_cap_key(&k);
+                self.caps
+                    .hash_captures_mut()
+                    .entry(k)
+                    .or_default()
+                    .extend(v);
+            }
+            for (k, v) in delta.take_regex_vars() {
+                let prev = self.caps.regex_vars_mut().insert(k.clone(), v);
+                self.trail.push(Undo::RegexVarRestore { key: k, prev });
+            }
         }
         if delta.capture_start.is_some() {
             self.trail.push(Undo::CaptureStart(self.caps.capture_start));
@@ -270,8 +302,8 @@ impl CapStore {
         }
     }
 
-    pub(super) fn insert_alias(&mut self, key: String, val: String) {
-        let prev = self.caps.capture_alias_map_mut().insert(key.clone(), val);
+    pub(super) fn insert_alias(&mut self, key: crate::symbol::Symbol, val: crate::symbol::Symbol) {
+        let prev = self.caps.capture_alias_map_mut().insert(key, val);
         self.trail.push(Undo::AliasRestore { key, prev });
     }
 

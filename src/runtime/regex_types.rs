@@ -218,7 +218,7 @@ pub(crate) struct CapChildren {
     /// Capture names stay interned throughout matching and backtracking; only
     /// Match `.hash` materialization resolves them back to user-facing strings.
     pub(crate) named: NamedCaptureMap,
-    pub(crate) capture_alias_map: HashMap<String, String>,
+    pub(crate) capture_alias_map: CaptureAliasMap,
     /// Positional captures as span-bearing slots (ADR-0016 P4). Unlike the
     /// pre-P4 parallel vectors, the span survives onto the stored node — the
     /// text-only leaf fallback (fabricated `0..len` offsets) is gone.
@@ -316,7 +316,12 @@ impl RegexCaptures {
 pub(crate) type HashCaptureMap = HashMap<String, Vec<(String, Option<String>)>>;
 
 /// The capture-alias map shape (`<str=.str_escape>` → original rule name).
-pub(crate) type CaptureAliasMap = HashMap<String, String>;
+///
+/// Interned, like [`NamedCaptureMap`]: both halves of an entry are capture
+/// names the (memoized) lookup spec already holds as `Symbol`s, and the map is
+/// deep-cloned with every `RegexCaptures` the engine clones. Owned `String`s
+/// made that clone allocate two per alias per candidate.
+pub(crate) type CaptureAliasMap = HashMap<Symbol, Symbol>;
 
 /// The cold half of [`RegexCaptures`], behind one allocation that most
 /// accumulators never make.
@@ -430,6 +435,15 @@ impl RegexCaptures {
         self.rare.as_deref()
     }
 
+    /// Did this accumulator ever write a cold payload? A `false` answers every
+    /// `take_*`/`*_mut` question about [`RareCaps`] at once, so a caller that
+    /// would otherwise build, iterate and discard three empty maps can skip
+    /// them in one branch.
+    #[inline]
+    pub(crate) fn has_rare(&self) -> bool {
+        self.rare.is_some()
+    }
+
     /// The cold payload, allocating it on first use. Prefer the read-only
     /// accessors on a path that only inspects — this is what turns a
     /// few-word accumulator back into an allocating one.
@@ -514,7 +528,7 @@ impl RegexCaptures {
 
     /// Merge another accumulator's capture aliases into this one, without
     /// allocating a payload when there is nothing to merge.
-    pub(crate) fn extend_capture_alias_map<I: IntoIterator<Item = (String, String)>>(
+    pub(crate) fn extend_capture_alias_map<I: IntoIterator<Item = (Symbol, Symbol)>>(
         &mut self,
         aliases: I,
     ) {

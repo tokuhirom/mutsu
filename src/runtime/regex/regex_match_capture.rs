@@ -950,7 +950,7 @@ impl Interpreter {
                     {
                         new_caps
                             .capture_alias_map_mut()
-                            .insert(capture_name.to_string(), spec.lookup_name.clone());
+                            .insert(Symbol::intern(capture_name), spec.lookup_sym);
                         new_caps
                             .named
                             .entry(Symbol::intern(&spec.lookup_name))
