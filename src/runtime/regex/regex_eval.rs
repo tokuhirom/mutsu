@@ -243,7 +243,7 @@ impl Interpreter {
         // block wrote to them). They are lexical to the regex, so they are
         // installed here and restored with the rest of the regex bindings —
         // `:my $x = 'y'; <?{ $x eq 'y' }>` must see 'y', not an outer `$x`.
-        for (k, v) in &caps.regex_vars {
+        for (k, v) in caps.regex_vars() {
             env.push((k.clone(), v.clone()));
         }
         // The engine-scope subject: derives `$0…` texts from the live
@@ -384,7 +384,7 @@ impl Interpreter {
                 .into_iter()
                 .filter(|(name, _)| {
                     name != "made"
-                        && !caps.regex_vars.contains_key(name)
+                        && !caps.regex_vars().contains_key(name)
                         && !block_locals.contains(name)
                 })
                 .collect();
@@ -412,9 +412,9 @@ impl Interpreter {
         // interpolation or `<?{ … }>` assertion in the same match reads it, while
         // `self.env` goes back to what the enclosing scope had.
         let mut writes: HashMap<String, Value> = HashMap::new();
-        for k in caps.regex_vars.keys() {
+        for k in caps.regex_vars().keys() {
             if let Some(now) = self.env.get(k)
-                && caps.regex_vars.get(k) != Some(now)
+                && caps.regex_vars().get(k) != Some(now)
             {
                 writes.insert(k.clone(), now.clone());
             }

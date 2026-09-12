@@ -986,7 +986,7 @@ impl Interpreter {
                     self.reduce_regex_captures_made(&mut captures, Some(&starget));
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
-                    for hash_name in captures.hash_captures.keys() {
+                    for hash_name in captures.hash_captures().keys() {
                         // Don't overwrite existing named captures; an empty
                         // placeholder slot makes the builder create the key.
                         named_with_hash
@@ -1001,13 +1001,13 @@ impl Interpreter {
                         starget,
                     );
                     // Apply hash captures: set named entries to Hash values
-                    if !captures.hash_captures.is_empty()
+                    if !captures.hash_captures().is_empty()
                         && let ValueView::Instance { attributes, .. } = match_obj.view()
                     {
                         attributes.with_attr_mut("named", |named| {
                             named.with_hash_mut(|named_hash| {
                                 let named_hash = crate::gc::Gc::make_mut(named_hash);
-                                for (hash_name, entries) in &captures.hash_captures {
+                                for (hash_name, entries) in captures.hash_captures() {
                                     let mut hash_map: HashMap<String, Value> = HashMap::new();
                                     for (key, value) in entries {
                                         let val = match value {

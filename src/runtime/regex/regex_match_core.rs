@@ -314,18 +314,20 @@ impl Interpreter {
         stop_at_full: bool,
         sink: &mut MatchSink<'_>,
     ) -> bool {
-        let mut store = CapStore::new(RegexCaptures {
+        let mut base = RegexCaptures {
             match_from: start,
-            // Inline sub-patterns (lookaround/group/alternative) inherit the
-            // enclosing regex's `:my`/`:let` lexicals; a subrule does not. The
-            // seed is take-once, so only the store the arming site is about to
-            // build gets it.
-            regex_vars: super::regex_helpers::take_inline_regex_vars_seed(),
-            // Backreference read-through to the enclosing pattern level (see
-            // `OuterBackrefCaps`). Never published outward — cleared below.
-            outer_backref: super::regex_helpers::take_inline_outer_caps_seed(),
             ..Default::default()
-        });
+        };
+        // Inline sub-patterns (lookaround/group/alternative) inherit the
+        // enclosing regex's `:my`/`:let` lexicals; a subrule does not. The
+        // seed is take-once, so only the store the arming site is about to
+        // build gets it. Both of these go in the cold payload, which the
+        // seeded-empty common case therefore never allocates.
+        base.set_regex_vars_shared(super::regex_helpers::take_inline_regex_vars_seed());
+        // Backreference read-through to the enclosing pattern level (see
+        // `OuterBackrefCaps`). Never published outward — cleared below.
+        base.set_outer_backref(super::regex_helpers::take_inline_outer_caps_seed());
+        let mut store = CapStore::new(base);
         let ctx = WalkCtx {
             pattern,
             chars,
@@ -337,7 +339,7 @@ impl Interpreter {
         // must not travel out with this level's captures, so strip it from
         // every reported match on the way to the caller's sink.
         let mut strip = |interp: &mut Interpreter, end: usize, mut caps: RegexCaptures| -> bool {
-            caps.outer_backref = None;
+            caps.set_outer_backref(None);
             sink.accept(interp, end, caps)
         };
         self.walk_tokens(&ctx, 0, start, &mut store, &mut MatchSink::Cont(&mut strip))

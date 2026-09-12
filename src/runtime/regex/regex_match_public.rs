@@ -167,7 +167,7 @@ impl Interpreter {
         caps: &RegexCaptures,
         already_handled: &HashSet<String>,
     ) {
-        for (name, value) in &caps.regex_vars {
+        for (name, value) in caps.regex_vars() {
             if already_handled.contains(name)
                 || super::regex_helpers::is_dynamic_regex_var_key(name)
             {
@@ -208,7 +208,7 @@ impl Interpreter {
                         caps.from = caps.capture_start.unwrap_or(0);
                         caps.to = caps.capture_end.unwrap_or(end);
                         super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                        caps.target = Some(target.clone());
+                        caps.set_target(Some(target.clone()));
                         caps
                     });
             }
@@ -222,7 +222,7 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     return Some(caps);
                 }
             }
@@ -260,7 +260,7 @@ impl Interpreter {
                         caps.from = caps.capture_start.unwrap_or(0);
                         caps.to = end_pos;
                         super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                        caps.target = Some(target.clone());
+                        caps.set_target(Some(target.clone()));
                         Some(caps)
                     });
             }
@@ -283,7 +283,7 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = end_pos;
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     return Some(caps);
                 }
             }
@@ -297,7 +297,7 @@ impl Interpreter {
                 .map(|(end, mut caps)| {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     caps
                 });
         }
@@ -307,7 +307,7 @@ impl Interpreter {
             {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.target = Some(target.clone());
+                caps.set_target(Some(target.clone()));
                 return Some(caps);
             }
         }
@@ -391,13 +391,13 @@ impl Interpreter {
             if let Some(mut best) = best {
                 // Store the winning :sym<> variant name
                 if best_sym.is_some() {
-                    best.sym = best_sym.clone();
+                    best.set_sym(best_sym.clone());
                 }
                 // Ensure subcapture exists for the subrule so sym_variant
                 // propagates to the child Match object via make_subcap_match
                 if !spec.silent {
                     let mut subcap = best.clone();
-                    subcap.sym = best_sym;
+                    subcap.set_sym(best_sym);
                     best.named
                         .entry(Symbol::intern(&spec.lookup_name))
                         .or_default()
@@ -564,12 +564,12 @@ impl Interpreter {
                 // and deliberately leaves it installed for the action walk. Only
                 // the plain lexicals belong here.
                 if super::regex_helpers::is_dynamic_regex_var_key(name)
-                    || caps.regex_vars.contains_key(name)
+                    || caps.regex_vars().contains_key(name)
                 {
                     continue;
                 }
                 if let Some(v) = self.env.get(name).cloned() {
-                    caps.regex_vars.insert(name.clone(), v);
+                    caps.regex_vars_mut().insert(name.clone(), v);
                 }
             }
         }

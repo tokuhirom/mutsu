@@ -73,9 +73,9 @@ impl Interpreter {
         attrs.insert("str".to_string(), Value::str(captures.matched_text()));
         attrs.insert("from".to_string(), Value::int(captures.from as i64));
         attrs.insert("to".to_string(), Value::int(captures.to as i64));
-        let positional: Vec<Value> = if !captures.positional_slots.is_empty() {
+        let positional: Vec<Value> = if !captures.positional_slots().is_empty() {
             captures
-                .positional_slots
+                .positional_slots()
                 .iter()
                 .map(|slot| match slot {
                     Some((from, to)) => {
@@ -109,7 +109,7 @@ impl Interpreter {
             }
         }
         // Add hash captures from %<name>=(...) aliasing
-        for (hash_name, entries) in &captures.hash_captures {
+        for (hash_name, entries) in captures.hash_captures() {
             let mut hash_map: HashMap<String, Value> = HashMap::new();
             for (key, value) in entries {
                 let val: Value = match value {
@@ -127,14 +127,14 @@ impl Interpreter {
         // Reset stale numeric/named captures before applying new ones.
         self.reset_capture_env_vars();
 
-        for (i, slot) in captures.positional_slots.iter().enumerate() {
+        for (i, slot) in captures.positional_slots().iter().enumerate() {
             let value = match slot {
                 Some((from, to)) => make_capture_match(&captures.span_text(*from, *to), *from, *to),
                 None => Value::NIL,
             };
             self.env.insert(i.to_string(), value);
         }
-        if captures.positional_slots.is_empty() {
+        if captures.positional_slots().is_empty() {
             self.env.insert("0".to_string(), Value::NIL);
         }
         // Set named capture env vars from the match object's named hash
@@ -490,17 +490,17 @@ impl Interpreter {
         let mut out = RegexCaptures {
             from: to_char(m0.start()),
             to: to_char(m0.end()),
-            target: Some(crate::runtime::MatchTarget::new(text)),
             ..RegexCaptures::default()
         };
+        out.set_target(Some(crate::runtime::MatchTarget::new(text)));
         for idx in 1..locs.len() {
             if names.get(idx).is_some_and(Option::is_none) {
                 if let Some((start, end)) = locs.get(idx) {
                     let (cs, ce) = (to_char(start), to_char(end));
                     out.positional.push(crate::runtime::PosSlot::span(cs, ce));
-                    out.positional_slots.push(Some((cs, ce)));
+                    out.positional_slots_mut().push(Some((cs, ce)));
                 } else {
-                    out.positional_slots.push(None);
+                    out.positional_slots_mut().push(None);
                 }
                 continue;
             }
@@ -543,9 +543,9 @@ impl Interpreter {
             let mut item = RegexCaptures {
                 from: to_char(m0.start()),
                 to: to_char(m0.end()),
-                target: Some(target.clone()),
                 ..RegexCaptures::default()
             };
+            item.set_target(Some(target.clone()));
             for idx in 1..locs.len() {
                 if names.get(idx).is_some_and(Option::is_none) {
                     if let Some((c_start, c_end)) = locs.get(idx) {
@@ -554,9 +554,9 @@ impl Interpreter {
                         }
                         let (cs, ce) = (to_char(c_start), to_char(c_end));
                         item.positional.push(crate::runtime::PosSlot::span(cs, ce));
-                        item.positional_slots.push(Some((cs, ce)));
+                        item.positional_slots_mut().push(Some((cs, ce)));
                     } else {
-                        item.positional_slots.push(None);
+                        item.positional_slots_mut().push(None);
                     }
                     continue;
                 }

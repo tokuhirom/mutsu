@@ -189,7 +189,7 @@ impl Interpreter {
                 {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     found = Some((0, end, caps));
                 }
             } else {
@@ -199,7 +199,7 @@ impl Interpreter {
                     {
                         caps.from = caps.capture_start.unwrap_or(start);
                         caps.to = caps.capture_end.unwrap_or(end);
-                        caps.target = Some(target.clone());
+                        caps.set_target(Some(target.clone()));
                         found = Some((start, end, caps));
                         break;
                     }

@@ -140,30 +140,30 @@ impl CapStore {
                 }
                 Undo::HashCapTrunc { key, len, present } => {
                     if !present {
-                        caps.hash_captures.remove(&key);
-                    } else if let Some(v) = caps.hash_captures.get_mut(&key) {
+                        caps.hash_captures_mut().remove(&key);
+                    } else if let Some(v) = caps.hash_captures_mut().get_mut(&key) {
                         v.truncate(len);
                     }
                 }
                 Undo::AliasRestore { key, prev } => match prev {
                     Some(v) => {
-                        caps.capture_alias_map.insert(key, v);
+                        caps.capture_alias_map_mut().insert(key, v);
                     }
                     None => {
-                        caps.capture_alias_map.remove(&key);
+                        caps.capture_alias_map_mut().remove(&key);
                     }
                 },
                 Undo::RegexVarRestore { key, prev } => match prev {
                     Some(v) => {
-                        caps.regex_vars.insert(key, v);
+                        caps.regex_vars_mut().insert(key, v);
                     }
                     None => {
-                        caps.regex_vars.remove(&key);
+                        caps.regex_vars_mut().remove(&key);
                     }
                 },
                 Undo::CaptureStart(prev) => caps.capture_start = prev,
                 Undo::CaptureEnd(prev) => caps.capture_end = prev,
-                Undo::Sym(prev) => caps.sym = prev,
+                Undo::Sym(prev) => caps.set_sym(prev),
                 Undo::Ast(prev) => caps.ast = prev,
             }
         }
@@ -189,7 +189,7 @@ impl CapStore {
     }
 
     fn record_hash_cap_key(&mut self, key: &str) {
-        let (len, present) = match self.caps.hash_captures.get(key) {
+        let (len, present) = match self.caps.hash_captures().get(key) {
             Some(v) => (v.len(), true),
             None => (0, false),
         };
@@ -213,19 +213,23 @@ impl CapStore {
             slot.nodes.extend(v.nodes);
             slot.quantified |= v.quantified;
         }
-        for (k, v) in delta.capture_alias_map.drain() {
+        for (k, v) in delta.take_capture_alias_map() {
             self.insert_alias(k, v);
         }
         if !delta.positional.is_empty() {
             self.record_pos_lens();
             self.caps.positional.append(&mut delta.positional);
         }
-        for (k, v) in delta.hash_captures.drain() {
+        for (k, v) in delta.take_hash_captures() {
             self.record_hash_cap_key(&k);
-            self.caps.hash_captures.entry(k).or_default().extend(v);
+            self.caps
+                .hash_captures_mut()
+                .entry(k)
+                .or_default()
+                .extend(v);
         }
-        for (k, v) in delta.regex_vars.drain() {
-            let prev = self.caps.regex_vars.insert(k.clone(), v);
+        for (k, v) in delta.take_regex_vars() {
+            let prev = self.caps.regex_vars_mut().insert(k.clone(), v);
             self.trail.push(Undo::RegexVarRestore { key: k, prev });
         }
         if delta.capture_start.is_some() {
@@ -236,9 +240,9 @@ impl CapStore {
             self.trail.push(Undo::CaptureEnd(self.caps.capture_end));
             self.caps.capture_end = delta.capture_end;
         }
-        if delta.sym.is_some() {
-            self.trail.push(Undo::Sym(self.caps.sym.take()));
-            self.caps.sym = delta.sym;
+        if delta.sym().is_some() {
+            self.trail.push(Undo::Sym(self.caps.take_sym()));
+            self.caps.set_sym(delta.take_sym());
         }
         // An inline `{ make … }` in this pattern (or in a `[ … ]` group / `|`
         // branch of it, whose captures merge into this level) sets the value of
@@ -267,14 +271,14 @@ impl CapStore {
     }
 
     pub(super) fn insert_alias(&mut self, key: String, val: String) {
-        let prev = self.caps.capture_alias_map.insert(key.clone(), val);
+        let prev = self.caps.capture_alias_map_mut().insert(key.clone(), val);
         self.trail.push(Undo::AliasRestore { key, prev });
     }
 
     pub(super) fn push_hash_capture(&mut self, key: &str, entry: (String, Option<String>)) {
         self.record_hash_cap_key(key);
         self.caps
-            .hash_captures
+            .hash_captures_mut()
             .entry(key.to_string())
             .or_default()
             .push(entry);
@@ -383,7 +387,7 @@ mod tests {
         assert_eq!(store.caps().named[&x].nodes.len(), 1);
         assert!(!store.caps().named[&x].quantified);
         assert!(store.caps().capture_start.is_none());
-        assert!(store.caps().sym.is_none());
+        assert!(store.caps().sym().is_none());
     }
 
     #[test]
@@ -401,7 +405,7 @@ mod tests {
         y.merge(NamedSlot::leaf(3, 4));
         y.quantified = true;
         delta.capture_start = Some(3);
-        delta.sym = Some("s".to_string());
+        delta.set_sym(Some("s".to_string()));
         store.merge_delta(delta);
         assert_eq!(store.caps().positional.len(), 2);
         let x = Symbol::intern("x");
@@ -410,7 +414,7 @@ mod tests {
         assert_eq!(store.caps().named[&y].nodes.len(), 1);
         assert!(store.caps().named[&y].quantified);
         assert_eq!(store.caps().capture_start, Some(3));
-        assert_eq!(store.caps().sym.as_deref(), Some("s"));
+        assert_eq!(store.caps().sym().map(String::as_str), Some("s"));
         store.rewind(m);
         assert_base(&store);
         assert!(!store.caps().named.contains_key(&y));

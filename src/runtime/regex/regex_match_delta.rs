@@ -41,14 +41,10 @@ pub(super) fn group_merge_delta(mut inner_caps: RegexCaptures) -> RegexCaptures 
     for (k, v) in inner_caps.named.drain() {
         new_caps.named.entry(k).or_default().merge(v);
     }
-    for (k, v) in inner_caps.capture_alias_map.drain() {
-        new_caps.capture_alias_map.insert(k, v);
-    }
+    new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-    new_caps
-        .regex_vars
-        .extend(std::mem::take(&mut inner_caps.regex_vars));
+    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
     if inner_caps.capture_start.is_some() {
         new_caps.capture_start = inner_caps.capture_start;
     }
@@ -68,7 +64,7 @@ pub(super) fn capture_group_delta(
     let mut new_caps = RegexCaptures::default();
     let mut inner_caps = inner_caps;
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-    new_caps.regex_vars.extend(inner_caps.regex_vars.clone());
+    new_caps.extend_regex_vars(inner_caps.regex_vars().clone());
     let mut subcap = inner_caps;
     subcap.from = pos;
     subcap.to = end;
@@ -96,13 +92,9 @@ pub(super) fn alternation_branch_delta(
     for (k, v) in inner_caps.named.drain() {
         new_caps.named.entry(k).or_default().merge(v);
     }
-    for (k, v) in inner_caps.capture_alias_map.drain() {
-        new_caps.capture_alias_map.insert(k, v);
-    }
+    new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-    new_caps
-        .regex_vars
-        .extend(std::mem::take(&mut inner_caps.regex_vars));
+    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
     new_caps
 }

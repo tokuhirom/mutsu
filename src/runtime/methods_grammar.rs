@@ -722,7 +722,7 @@ impl Interpreter {
                 self.env
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
-            let alias_map = std::mem::take(&mut captures.capture_alias_map);
+            let alias_map = captures.take_capture_alias_map();
             let match_obj = Value::make_match_object_full(
                 captures.from as i64,
                 captures.to as i64,
