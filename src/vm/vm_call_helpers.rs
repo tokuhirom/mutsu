@@ -78,6 +78,36 @@ impl Interpreter {
         Self::decode_arg_slip_positions(code, arg_sources_idx).is_some()
     }
 
+    /// Does this call site contain a syntactically named argument?
+    ///
+    /// ADR-0021 makes namedness a call-site property. `FALSE` is the compact
+    /// descriptor for a named argument without an rw source; an array whose
+    /// first element is `FALSE` carries the ordinary rw-source descriptor in
+    /// its second element. This is deliberately separate from the runtime
+    /// Pair flavour, which cannot distinguish `f(:x)` from a positional Pair
+    /// by the time the positional-light binder sees the value.
+    #[inline]
+    pub(super) fn stack_args_have_named(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+        let Some(idx) = arg_sources_idx else {
+            return false;
+        };
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+            return false;
+        };
+        items.iter().any(Self::arg_source_entry_is_named)
+    }
+
+    #[inline]
+    fn arg_source_entry_is_named(item: &Value) -> bool {
+        match item.view() {
+            ValueView::Bool(false) => true,
+            ValueView::Array(items, ..) => items
+                .first()
+                .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))),
+            _ => false,
+        }
+    }
+
     /// Spread a call's raw arguments by call-site syntax (ADR-0054 S1/S2),
     /// not by a value's runtime Slip-shape: only a position the compiler
     /// recorded as `|EXPR` (`decode_arg_slip_positions`) spreads. Every other
@@ -217,25 +247,43 @@ impl Interpreter {
         let mut slots: Vec<(String, u32)> = Vec::new();
         let names: Vec<Option<String>> = items
             .iter()
-            .map(|item| match item.view() {
-                ValueView::Str(name) => Some(name.to_string()),
-                // A slotted source is `Pair(name, Int(slot))`; extract the name here
-                // (byte-identical for name-only consumers) and record the slot.
-                ValueView::Pair(name, val) => {
-                    if let ValueView::Int(slot) = val.view()
-                        && slot >= 0
-                    {
-                        slots.push((name.clone(), slot as u32));
+            .map(|item| {
+                Self::decode_arg_source_entry(item).map(|(name, slot)| {
+                    if let Some(slot) = slot {
+                        slots.push((name.clone(), slot));
                     }
-                    Some(name.clone())
-                }
-                _ => None,
+                    name
+                })
             })
             .collect();
         for (name, slot) in slots {
             self.pending_call_arg_source_slots.insert(name, slot);
         }
         Some(names)
+    }
+
+    /// Decode the source half of an argument descriptor. Named arguments use
+    /// `[FALSE, source]` so this helper keeps their source name/slot visible
+    /// to rw writeback and container-sharing checks.
+    fn decode_arg_source_entry(item: &Value) -> Option<(String, Option<u32>)> {
+        match item.view() {
+            ValueView::Str(name) => Some((name.to_string(), None)),
+            ValueView::Pair(name, val) => {
+                let slot = match val.view() {
+                    ValueView::Int(slot) if slot >= 0 => Some(slot as u32),
+                    _ => None,
+                };
+                Some((name.clone(), slot))
+            }
+            ValueView::Array(items, ..)
+                if items
+                    .first()
+                    .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))) =>
+            {
+                items.get(1).and_then(Self::decode_arg_source_entry)
+            }
+            _ => None,
+        }
     }
 
     /// Positions this call wrote as `|EXPR` (ADR-0054 S1/S2), decoded from the

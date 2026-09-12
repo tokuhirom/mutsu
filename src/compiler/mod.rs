@@ -2813,7 +2813,7 @@ impl Compiler {
                     self.declare_local(name);
                 }
             }
-            entries.push(if let Some(name) = Self::positional_arg_source_name(arg) {
+            let source = if let Some(name) = Self::positional_arg_source_name(arg) {
                 // §1.4/§1.5: bake the caller's local slot for a plain source var
                 // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
                 // the LIVE (inner shadow) slot instead of the by-name `position`
@@ -2828,6 +2828,21 @@ impl Compiler {
                 }
             } else {
                 Value::NIL
+            };
+            // ADR-0021: the namedness of an argument belongs to the call site,
+            // not to the runtime Pair flavour. Preserve that fact alongside
+            // the existing source descriptor so positional-light dispatch can
+            // refuse a named argument without losing rw-source tracking. A
+            // bare `FALSE` means named-without-a-source; an array beginning
+            // with `FALSE` carries the ordinary source descriptor in slot 1.
+            entries.push(if Self::is_named_arg_expr(arg) {
+                if source.is_nil() {
+                    Value::FALSE
+                } else {
+                    Value::array(vec![Value::FALSE, source])
+                }
+            } else {
+                source
             });
         }
         if entries.iter().all(|v| v.is_nil()) {
