@@ -50,12 +50,15 @@ pub(crate) fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
     crate::value::make_big_rat_arith(NumBigInt::from(n), NumBigInt::from(d))
 }
 
-/// Check if BigRat arithmetic is needed: at least one operand requires BigInt precision
-/// (BigRat or BigInt) AND at least one operand is rational (Rat/FatRat/BigRat).
-/// Plain Rat-vs-Rat operations use the i128-based overflow-to-Num path instead.
+/// Check if arbitrary-precision rational arithmetic is needed: at least one
+/// operand requires BigInt precision (BigRat, BigInt, or FatRat) AND at least
+/// one operand is rational (Rat/FatRat/BigRat). Plain Rat-vs-Rat operations use
+/// the i128-based overflow-to-Num path instead.
 pub(crate) fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
     let has_big = matches!(l.view(), ValueView::BigRat(_, _) | ValueView::BigInt(_))
         || matches!(r.view(), ValueView::BigRat(_, _) | ValueView::BigInt(_));
+    let has_fat_rat =
+        matches!(l.view(), ValueView::FatRat(_, _)) || matches!(r.view(), ValueView::FatRat(_, _));
     let has_rat = matches!(
         l.view(),
         ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
@@ -63,7 +66,7 @@ pub(crate) fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
         r.view(),
         ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
     );
-    has_big && has_rat
+    (has_big || has_fat_rat) && has_rat
 }
 
 /// Check if a value should be treated as FatRat for arithmetic.
