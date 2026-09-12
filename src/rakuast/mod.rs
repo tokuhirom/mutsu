@@ -122,6 +122,8 @@ pub enum RakuAstClass {
     ApplyListInfix,
     // Phase 2 slice 10: scoped/typed variable declarations.
     TypeSimple,
+    // `enum Color <Red Green>` -> `Type::Enum(name, term)`.
+    TypeEnum,
     // Phase 2 slice 20: definite types (`Int:D` / `Int:U`).
     TypeDefinedness,
     // Phase 2 slice 27: attribute build-time defaults.
@@ -302,6 +304,7 @@ impl RakuAstClass {
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
             ApplyListInfix => "RakuAST::ApplyListInfix",
             TypeSimple => "RakuAST::Type::Simple",
+            TypeEnum => "RakuAST::Type::Enum",
             TypeDefinedness => "RakuAST::Type::Definedness",
             TraitWillBuild => "RakuAST::Trait::WillBuild",
             TraitReturns => "RakuAST::Trait::Returns",
@@ -433,6 +436,7 @@ impl RakuAstClass {
             | StrLiteral
             | QuotedString
             | QuotedRegex
+            | TypeEnum
             | VarLexical
             | TermReduce
             | Sub
@@ -558,6 +562,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::RatLiteral"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
+        | "RakuAST::Type::Enum"
         | "RakuAST::Var::Lexical"
         | "RakuAST::Term::Reduce"
         | "RakuAST::Sub"
@@ -708,6 +713,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLoopRepeatWhile,
     RakuAstClass::ApplyListInfix,
     RakuAstClass::TypeSimple,
+    RakuAstClass::TypeEnum,
     RakuAstClass::TypeDefinedness,
     RakuAstClass::TraitWillBuild,
     RakuAstClass::TraitReturns,
@@ -833,6 +839,77 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if class_name == "RakuAST::QuotedString" && method == "new" {
+        let segments = named_arg(args, "segments")
+            .ok_or_else(|| RuntimeError::new("RakuAST::QuotedString.new requires `segments`"))?
+            .as_list_items()
+            .map(<[Value]>::to_vec)
+            .ok_or_else(|| {
+                RuntimeError::new("RakuAST::QuotedString.new expects `segments` to be a list")
+            })?;
+        for segment in &segments {
+            require_any_rakuast(segment, "RakuAST::QuotedString.new", "segments")?;
+        }
+        let processors = named_arg(args, "processors")
+            .map(|value| {
+                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
+                    RuntimeError::new("RakuAST::QuotedString.new expects `processors` to be a list")
+                })
+            })
+            .transpose()?;
+        if let Some(processors) = &processors
+            && processors
+                .iter()
+                .any(|processor| !matches!(processor.view(), ValueView::Str(_)))
+        {
+            return Err(RuntimeError::new(
+                "RakuAST::QuotedString.new expects `processors` to contain strings",
+            ));
+        }
+        let mut fields = Vec::with_capacity(2);
+        if let Some(processors) = processors {
+            fields.push(RakuAstField {
+                name: Some("processors"),
+                value: RakuAstFieldValue::List(processors),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("segments"),
+            value: RakuAstFieldValue::List(segments),
+        });
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::QuotedString,
+            fields,
+        }))));
+    }
+    if class_name == "RakuAST::Type::Enum" && method == "new" {
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `name`"))?;
+        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        let term = named_arg(args, "term")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `term`"))?;
+        require_rakuast_class(&term, RakuAstClass::QuotedString, "RakuAST::Type::Enum.new")
+            .or_else(|_| {
+                require_rakuast_class(
+                    &term,
+                    RakuAstClass::CircumfixParentheses,
+                    "RakuAST::Type::Enum.new",
+                )
+            })?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TypeEnum,
+            fields: vec![
+                RakuAstField {
+                    name: Some("name"),
+                    value: RakuAstFieldValue::Node(name),
+                },
+                RakuAstField {
+                    name: Some("term"),
+                    value: RakuAstFieldValue::Node(term),
+                },
+            ],
+        }))));
+    }
     if class_name == "RakuAST::StatementList" && method == "new" {
         if !args.is_empty() {
             return Err(RuntimeError::new(
@@ -1417,6 +1494,7 @@ fn require_rakuast_type(value: &Value, constructor: &str) -> Result<(), RuntimeE
             if matches!(
                 node.class,
                 RakuAstClass::TypeSimple
+                    | RakuAstClass::TypeEnum
                     | RakuAstClass::TypeSetting
                     | RakuAstClass::TypeDefinedness
                     | RakuAstClass::TypeParameterized
@@ -1687,6 +1765,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
             | RakuAstClass::TypeSimple
+            | RakuAstClass::TypeEnum
             | RakuAstClass::TypeSetting
             | RakuAstClass::TypeCapture
             | RakuAstClass::QuotedRegex
@@ -1743,6 +1822,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
         InitializerAssign => &["expression"],
         TypeSimple | TypeSetting | TypeCapture => &["name"],
+        TypeEnum => &["name", "term"],
         QuotedRegex => &["match-immediately", "body", "adverbs"],
         RegexSequence | RegexAlternation => &["terms"],
         RegexLiteral => &["text"],

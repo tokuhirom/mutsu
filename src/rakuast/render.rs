@@ -108,11 +108,32 @@ fn render_inline_field(f: &RakuAstField) -> String {
 }
 
 fn render_field_line(f: &RakuAstField, indent: usize, width: usize) -> String {
-    let val = render_field_value(&f.value, indent);
+    let val = if f.name == Some("processors") {
+        render_processors(&f.value, indent)
+    } else {
+        render_field_value(&f.value, indent)
+    };
     match f.name {
         Some(key) => format!("{key:width$} => {val}"),
         None => val,
     }
+}
+
+/// Rakudo renders a QuotedString's processor names as a word list (`<words
+/// val>`), rather than the ordinary parenthesized list form used by other
+/// RakuAST list-valued fields.
+fn render_processors(fv: &RakuAstFieldValue, indent: usize) -> String {
+    let RakuAstFieldValue::List(items) = fv else {
+        return render_field_value(fv, indent);
+    };
+    let values = items
+        .iter()
+        .map(|item| match item.view() {
+            ValueView::Str(value) => value.to_string(),
+            _ => render_leaf(item),
+        })
+        .collect::<Vec<_>>();
+    format!("<{}>", values.join(" "))
 }
 
 fn render_field_value(fv: &RakuAstFieldValue, indent: usize) -> String {

@@ -1088,6 +1088,23 @@ pub(crate) enum PackageKind {
     Grammar,
 }
 
+/// The source spelling of an enum's variant body, retained for RakuAST.
+///
+/// Runtime enum registration only needs the normalized `(name, value)` pairs,
+/// but Rakudo's AST preserves whether the source used a word quote or a
+/// parenthesized pair list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum EnumVariantForm {
+    Words,
+    QuoteWords,
+    PairList,
+    Computed,
+}
+
+fn default_enum_variant_form() -> EnumVariantForm {
+    EnumVariantForm::Words
+}
+
 impl PackageKind {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -1435,6 +1452,9 @@ pub(crate) enum Stmt {
     EnumDecl {
         name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
+        /// The original variant-body spelling for the RakuAST boundary.
+        #[serde(default = "default_enum_variant_form")]
+        variant_form: EnumVariantForm,
         is_export: bool,
         /// Export tags declared by `is export`, or empty for an untagged enum.
         #[serde(default)]

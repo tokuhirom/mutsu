@@ -7,10 +7,12 @@
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{EnumVariantForm, Expr, ParamDef, Stmt};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
+
+type LoweredEnumVariants = (Vec<(String, Option<Expr>)>, EnumVariantForm);
 
 fn unsupported(node: &RakuAstNode) -> RuntimeError {
     RuntimeError::new(format!(
@@ -160,6 +162,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::Role => lower_role(node),
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
         RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
+        RakuAstClass::TypeEnum => lower_enum(node),
         RakuAstClass::TypeSubset => lower_subset(node),
         // `CATCH { … }` — the `exception`/topic flags on its body block are
         // implied by the statement class, so only the block's statements are
@@ -628,6 +631,96 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_unit: false,
         is_my: false,
     })
+}
+
+/// `RakuAST::Type::Enum(name, term)` -> the existing enum declaration path.
+/// The source form is recovered from the term node because the internal AST
+/// stores only normalized variants for execution.
+fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let term = named_child(node, "term")?;
+    let (variants, variant_form) = match term.class {
+        RakuAstClass::QuotedString => lower_enum_word_term(term)?,
+        RakuAstClass::CircumfixParentheses => lower_enum_pair_term(term)?,
+        _ => return Err(unsupported(node)),
+    };
+    Ok(Stmt::EnumDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        variants,
+        variant_form,
+        is_export: false,
+        export_tags: Vec::new(),
+        is_my: false,
+        base_type: None,
+        roles: Vec::new(),
+        language_version: crate::parser::current_language_version(),
+    })
+}
+
+fn lower_enum_word_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, RuntimeError> {
+    let processors = list_field(term, "processors")?;
+    let processor_names = processors
+        .iter()
+        .map(|processor| match processor.view() {
+            ValueView::Str(value) => Ok(value.to_string()),
+            _ => Err(unsupported(term)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let variant_form = match processor_names.as_slice() {
+        [processor, val] if val == "val" && processor == "words" => EnumVariantForm::Words,
+        [processor, val] if val == "val" && processor == "quotewords" => {
+            EnumVariantForm::QuoteWords
+        }
+        _ => return Err(unsupported(term)),
+    };
+    let segments = list_field(term, "segments")?;
+    let [segment] = segments else {
+        return Err(unsupported(term));
+    };
+    let ValueView::RakuAst(segment) = segment.view() else {
+        return Err(unsupported(term));
+    };
+    if segment.class != RakuAstClass::StrLiteral {
+        return Err(unsupported(term));
+    }
+    let segment_value = positional_leaf(segment)?;
+    let ValueView::Str(text) = segment_value.view() else {
+        return Err(unsupported(term));
+    };
+    Ok((
+        text.split_whitespace()
+            .map(|name| (name.to_string(), None))
+            .collect(),
+        variant_form,
+    ))
+}
+
+fn lower_enum_pair_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, RuntimeError> {
+    let semilist = named_child_or_positional(term)?;
+    let statement = named_child_or_positional(semilist)?;
+    let body = match lower_expr(statement)? {
+        Expr::ArrayLiteral(items) => items,
+        item => vec![item],
+    };
+    let mut variants = Vec::with_capacity(body.len());
+    for item in body {
+        let Expr::Binary { left, op, right } = item else {
+            return Err(unsupported(term));
+        };
+        if op != crate::token_kind::TokenKind::FatArrow {
+            return Err(unsupported(term));
+        }
+        let name = match *left {
+            Expr::Literal(value) | Expr::LiteralSrc(value, _)
+                if matches!(value.view(), ValueView::Str(_)) =>
+            {
+                value.to_string_value()
+            }
+            _ => return Err(unsupported(term)),
+        };
+        variants.push((name, Some(*right)));
+    }
+    Ok((variants, EnumVariantForm::PairList))
 }
 
 /// `subset S of T where P` -> `Stmt::SubsetDecl`. An explicit base type arrives

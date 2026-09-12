@@ -4,7 +4,7 @@ use super::super::super::parse_result::{PError, PResult, parse_char, take_while1
 use super::super::{ident, keyword, qualified_ident};
 use super::helpers::{has_export_tag_argument, parse_export_trait_tags};
 use super::take_while_opt;
-use crate::ast::{Expr, Stmt};
+use crate::ast::{EnumVariantForm, Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::ValueView;
@@ -120,8 +120,9 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse anonymous enum body (after `enum` keyword with no name).
 fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
-    let (rest, variants) = if input.starts_with("<<") || input.starts_with('\u{ab}') {
-        parse_double_angle_enum_variants(input)?
+    let (rest, variants, variant_form) = if input.starts_with("<<") || input.starts_with('\u{ab}') {
+        let (rest, variants) = parse_double_angle_enum_variants(input)?;
+        (rest, variants, EnumVariantForm::QuoteWords)
     } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
         let mut variants = Vec::new();
@@ -139,12 +140,12 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             variants.push((word.to_string(), None));
             r = r2;
         }
-        (r, variants)
+        (r, variants, EnumVariantForm::Words)
     } else if input.starts_with('(') {
         let (r, body) = parse_paren_enum_body(input)?;
         let variants = enum_variants_from_body(&body)
             .ok_or_else(|| PError::expected("anonymous enum variants"))?;
-        (r, variants)
+        (r, variants, EnumVariantForm::PairList)
     } else {
         return Err(PError::expected("anonymous enum variants"));
     };
@@ -161,6 +162,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         Stmt::EnumDecl {
             name: Symbol::intern(""),
             variants,
+            variant_form,
             is_export: false,
             export_tags: Vec::new(),
             is_my: false,
@@ -408,8 +410,9 @@ pub(super) fn parse_enum_decl_body_with_type(
     }
 
     // Enum variants in << >>, « », <> or ()
-    let (rest, variants) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
-        parse_double_angle_enum_variants(rest)?
+    let (rest, variants, variant_form) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
+        let (rest, variants) = parse_double_angle_enum_variants(rest)?;
+        (rest, variants, EnumVariantForm::QuoteWords)
     } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
         let mut variants = Vec::new();
@@ -427,7 +430,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             variants.push((word.to_string(), None));
             r = r2;
         }
-        (r, variants)
+        (r, variants, EnumVariantForm::Words)
     } else if rest.starts_with('(') {
         // The body is an ordinary parenthesized term (see `parse_paren_enum_body`).
         // A failure here is a real syntax error in a construct we are already
@@ -443,7 +446,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             }
         })?;
         match enum_variants_from_body(&body) {
-            Some(variants) => (r, variants),
+            Some(variants) => (r, variants, EnumVariantForm::PairList),
             None => {
                 // Computed body (operators like `X~`, `Z=>`, `|`, a `%hash`, …):
                 // keep the whole expression and let the runtime build the enum.
@@ -453,6 +456,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                     Stmt::EnumDecl {
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(body))],
+                        variant_form: EnumVariantForm::Computed,
                         is_export,
                         export_tags,
                         is_my,
@@ -464,7 +468,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             }
         }
     } else {
-        (rest, Vec::new())
+        (rest, Vec::new(), EnumVariantForm::Words)
     };
 
     let (rest, _) = ws(rest)?;
@@ -476,6 +480,7 @@ pub(super) fn parse_enum_decl_body_with_type(
         Stmt::EnumDecl {
             name,
             variants,
+            variant_form,
             is_export,
             export_tags,
             is_my,
