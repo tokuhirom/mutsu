@@ -3,7 +3,10 @@ use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast::{AssignOp, Expr, ParamDef, ReadonlyKind, Stmt, collect_placeholders_shallow};
+use crate::ast::{
+    AssignOp, Expr, GivenWithKind, ParamDef, ReadonlyKind, Stmt, WithBlockKind,
+    collect_placeholders_shallow,
+};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;

@@ -26,9 +26,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // This is important for expressions like `Failure.new` where evaluating
     // twice would create two distinct objects, and the `.defined` call on the
     // condition would not mark the same instance that `$_` receives.
-    static WITH_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let with_id = WITH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp_name = format!("__with_tmp_{}", with_id);
+    let tmp_name = crate::with_desugar::next_tmp_name();
     let tmp_var = Expr::Var(tmp_name.clone());
 
     // The body uses $_ which was set in the condition block.
@@ -239,6 +237,16 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             });
         }
     }
+    // Tag the scaffold `given` so the RakuAST converter can tell it from a
+    // source-level one. A pointy body prepends its own binding to the same
+    // `given`, a shape raku spells as a `PointyBlock` rather than an
+    // implicit-topic `Block`, so it gets the distinct tag that makes the
+    // converter report the boundary instead of swallowing the parameter.
+    let block_topic = Some(if param_name.is_none() {
+        GivenWithKind::BlockTopic
+    } else {
+        GivenWithKind::BlockTopicPointy
+    });
     if use_given_alias {
         let mut given_body = body;
         // For a container/scalar pointy param, prepend the alias/copy bind
@@ -256,21 +264,21 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             topic: cond_expr.clone(),
             body: given_body,
             is_statement_modifier: false,
-            with_kind: None,
+            with_kind: block_topic,
         }];
     } else if route_through_given_tmp || pointy_is_topic {
         with_body = vec![Stmt::Given {
             topic: tmp_var.clone(),
             body,
             is_statement_modifier: false,
-            with_kind: None,
+            with_kind: block_topic,
         }];
     } else if route_literal_through_given {
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
             body,
             is_statement_modifier: false,
-            with_kind: None,
+            with_kind: block_topic,
         }];
     } else {
         with_body.extend(body);
@@ -281,33 +289,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // evaluates cond_expr once, declares $tmp in the current scope, and
     // returns the value. Then .defined() checks it. The body uses $tmp
     // for topicalization instead of re-evaluating cond_expr.
-    let var_decl_expr = Expr::DoStmt(Box::new(Stmt::VarDecl {
-        name: tmp_name.clone(),
-        expr: cond_expr.clone(),
-        type_constraint: None,
-        is_state: false,
-        is_our: false,
-        is_dynamic: false,
-        is_export: false,
-        export_tags: Vec::new(),
-        custom_traits: Vec::new(),
-        where_constraint: None,
-    }));
-    let defined_check = Expr::MethodCall {
-        target: Box::new(var_decl_expr),
-        name: Symbol::intern("defined"),
-        args: Vec::new(),
-        modifier: None,
-        quoted: false,
-    };
-    let cond = if is_without {
-        Expr::Unary {
-            op: TokenKind::Bang,
-            expr: Box::new(defined_check),
-        }
-    } else {
-        defined_check
-    };
+    let cond = crate::with_desugar::defined_condition(is_without, &tmp_name, cond_expr.clone());
     // Parse orwith / else chains
     let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
@@ -383,7 +365,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 topic: tmp_var.clone(),
                 body: else_given_body,
                 is_statement_modifier: false,
-                with_kind: None,
+                with_kind: Some(if else_param.is_none() {
+                    GivenWithKind::BlockTopic
+                } else {
+                    GivenWithKind::BlockTopicPointy
+                }),
             }];
             (r, else_with_topic)
         } else {
@@ -402,6 +388,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             binding_var: None,
             is_statement_modifier: false,
             is_unless: false,
+            with_kind: Some(if is_without {
+                WithBlockKind::Without
+            } else {
+                WithBlockKind::With
+            }),
         },
     ))
 }

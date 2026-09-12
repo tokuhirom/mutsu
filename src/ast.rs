@@ -1143,7 +1143,7 @@ pub(crate) enum ReadonlyKind {
     ImmutableValue,
 }
 
-/// Which `with`-family keyword the parser desugared into a [`Stmt::Given`].
+/// What role a [`Stmt::Given`] plays in a `with`-family desugar.
 ///
 /// The desugar is lossy on its own: `STMT with X` becomes
 /// `given X { if $_.defined { STMT } }`, which a hand-written
@@ -1156,6 +1156,34 @@ pub(crate) enum GivenWithKind {
     With,
     /// `STMT without EXPR` -- run `STMT` when the topic is NOT defined.
     Without,
+    /// Not a keyword: the topicalizing `given` the `with`-family BLOCK forms
+    /// wrap a `{ ... }` body in, so `$_` is established by the `given` opcode.
+    /// raku does not model it as a `given` at all -- it is the
+    /// `implicit-topic` `Block` of `Statement::With` / `::Without` /
+    /// `::Orwith`.
+    BlockTopic,
+    /// The same scaffold, for a body written with an explicit signature
+    /// (`with X -> $a { }`), which additionally binds the parameter inside the
+    /// `given`. raku spells that as a `PointyBlock`, a shape the converter does
+    /// not build yet -- so it is tagged distinctly, to report the boundary
+    /// rather than render an implicit-topic block that has swallowed the
+    /// binding.
+    BlockTopicPointy,
+}
+
+/// Which `with`-family BLOCK keyword the parser desugared into a [`Stmt::If`].
+///
+/// Like [`GivenWithKind`] this exists because the desugar cannot be read back
+/// off the resulting shape -- see `Stmt::If`'s `with_kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum WithBlockKind {
+    /// `with EXPR { ... }` -- run the block, topicalized, when `EXPR` is defined.
+    With,
+    /// `without EXPR { ... }` -- run the block when `EXPR` is NOT defined.
+    Without,
+    /// `orwith EXPR { ... }` -- a `with` continuation clause, nested in the
+    /// preceding conditional's else branch.
+    Orwith,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -1367,6 +1395,17 @@ pub(crate) enum Stmt {
         /// (`RakuAST::Statement::Unless` vs `::If`), so the RakuAST converter
         /// needs the source keyword back. Mirrors `Stmt::While::is_until`.
         is_unless: bool,
+        /// Set when this `If` is the lowering of a `with` / `without` /
+        /// `orwith` BLOCK form rather than a source `if`. The desugar is lossy:
+        /// `with X { BODY }` becomes
+        /// `if (my $tmp = X).defined { given X { BODY } }`, which a
+        /// hand-written conditional of the same shape also produces, and the
+        /// synthetic temp's *name* is not a sound discriminator (a program may
+        /// declare one). Carries no execution meaning; only the RakuAST
+        /// converter reads it, to render `Statement::With` / `::Without` /
+        /// `::Orwith`. Sibling of `is_unless`.
+        #[serde(default)]
+        with_kind: Option<WithBlockKind>,
     },
     While {
         cond: Expr,
@@ -3651,6 +3690,7 @@ mod env_only_decl_tests {
             binding_var: None,
             is_statement_modifier: false,
             is_unless: false,
+            with_kind: None,
         };
         // Wrapped in a gather-shaped Block([While { body: [...] }]).
         let body = vec![Stmt::Block(vec![Stmt::While {

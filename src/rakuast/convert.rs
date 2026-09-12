@@ -7,7 +7,9 @@
 //! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt};
+use crate::ast::{
+    AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
+};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
@@ -363,9 +365,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             binding_var,
             is_statement_modifier,
             is_unless,
+            with_kind,
         } => {
             if binding_var.is_some() {
                 return Err(unsupported("`if EXPR -> $var` topic binding"));
+            }
+            // `with X { }` / `without X { }` reach here as the conditional the
+            // parser desugared them into; `with_kind` records which keyword the
+            // source wrote, because neither the shape nor the synthetic temp's
+            // name can be trusted to say so (see `Stmt::If`'s `with_kind`).
+            if let Some(kind) = with_kind {
+                return with_block_node(*kind, cond, then_branch, else_branch).map(Some);
             }
             // mutsu stores `unless X` as `if !X` PLUS an `is_unless` flag, so the
             // source keyword is recoverable: raku has `Statement::Unless` (and
@@ -422,34 +432,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 node_field(Some("condition"), convert_expr(cond)?),
                 node_field(Some("then"), block_node(then_branch)?),
             ];
-            // mutsu nests each `elsif` as a single `if` inside the else-branch.
-            // Flatten that chain into raku's `elsifs` list; whatever remains
-            // after the last `elsif` is the final `else` block.
-            let mut elsifs: Vec<Value> = Vec::new();
-            let mut tail: &[Stmt] = else_branch;
-            while let Some(Stmt::If {
-                cond,
-                then_branch,
-                else_branch,
-                binding_var,
-                ..
-            }) = single_if_stmt(tail)
-            {
-                if binding_var.is_some() {
-                    return Err(unsupported("`elsif EXPR -> $var` topic binding"));
-                }
-                elsifs.push(Value::rakuast(Box::new(elsif_node(cond, then_branch)?)));
-                tail = else_branch;
-            }
-            if !elsifs.is_empty() {
-                fields.push(RakuAstField {
-                    name: Some("elsifs"),
-                    value: RakuAstFieldValue::List(elsifs),
-                });
-            }
-            if tail.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
-                fields.push(node_field(Some("else"), block_node(tail)?));
-            }
+            fields.extend(conditional_chain_fields(else_branch)?);
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementIf,
                 fields,
@@ -608,8 +591,18 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // ambiguous with a hand-written `(STMT if $_.defined) given X`).
             // raku keeps them as a `condition-modifier`, like `if`/`unless`,
             // not as the `loop-modifier` a real `given` gets.
-            if let Some(kind) = with_kind {
-                return with_modifier_node(*kind, topic, body).map(Some);
+            match with_kind {
+                Some(kind @ (GivenWithKind::With | GivenWithKind::Without)) => {
+                    return with_modifier_node(*kind, topic, body).map(Some);
+                }
+                // The scaffold of a block form, reached on its own: the
+                // conditional that owns it renders the parameterless spelling
+                // itself, so arriving here means the block had a signature raku
+                // would spell as a `PointyBlock`.
+                Some(GivenWithKind::BlockTopic | GivenWithKind::BlockTopicPointy) => {
+                    return Err(unsupported("with/without block with an explicit signature"));
+                }
+                None => {}
             }
             if *is_statement_modifier {
                 let [modified] = body.as_slice() else {
@@ -2071,11 +2064,190 @@ fn with_modifier_node(
             class: match kind {
                 GivenWithKind::With => RakuAstClass::StatementModifierWith,
                 GivenWithKind::Without => RakuAstClass::StatementModifierWithout,
+                // The block scaffold never reaches the modifier path: the
+                // conditional that owns it is handled by `with_block_node`, and
+                // the `Given` arm rejects a stray one before calling this.
+                GivenWithKind::BlockTopic | GivenWithKind::BlockTopicPointy => {
+                    return Err(unsupported("with/without block scaffold"));
+                }
             },
             fields: vec![node_field(None, convert_expr(topic)?)],
         },
     ));
     Ok(statement)
+}
+
+/// `with X { ... }` / `without X { ... }` -> `Statement::With` / `::Without`.
+///
+/// The parser desugars the block forms into
+/// `if (my $tmp = X).defined { given X { ... } }` (condition negated for
+/// `without`), so everything raku models is wrapped in scaffolding: the once-
+/// evaluated temp around the condition, and the topicalizing `given` around the
+/// body, which raku spells as the block's own `implicit-topic` flag. `kind`
+/// says which keyword the source wrote -- see `Stmt::If`'s `with_kind`.
+/// Measured against rakudo 2026.07: `Q[with 1 { say 2 }].AST`.
+fn with_block_node(
+    kind: WithBlockKind,
+    cond: &Expr,
+    then_branch: &[Stmt],
+    else_branch: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
+    let condition = node_field(
+        Some("condition"),
+        convert_expr(with_block_condition(kind, cond)?)?,
+    );
+    let Some(body) = topic_given_body(then_branch) else {
+        // A pointy body (`with X -> $a { }`) binds its parameter inside the same
+        // `given`, which raku spells as a `PointyBlock` rather than an
+        // implicit-topic `Block`; report the boundary rather than drop it.
+        return Err(unsupported("with/without block with an explicit signature"));
+    };
+    match kind {
+        // `without` takes no `else`/`orwith`/`elsif` (rakudo rejects them at
+        // compile time), so its node is condition + `body` -- the same naming
+        // difference `Statement::Unless` has against `::If`.
+        WithBlockKind::Without => {
+            if !else_branch.is_empty() {
+                return Err(unsupported("`without` with an else branch"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementWithout,
+                fields: vec![condition, node_field(Some("body"), topic_block_node(body)?)],
+            })
+        }
+        WithBlockKind::With => {
+            let mut fields = vec![condition, node_field(Some("then"), topic_block_node(body)?)];
+            fields.extend(conditional_chain_fields(else_branch)?);
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementWith,
+                fields,
+            })
+        }
+        // An `orwith` clause is only ever reached through the chain walk of the
+        // conditional it continues.
+        WithBlockKind::Orwith => Err(unsupported("`orwith` outside a conditional chain")),
+    }
+}
+
+/// One `orwith` clause -> `Statement::Orwith(condition, then => topic Block)`.
+fn orwith_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let Some(body) = topic_given_body(then_branch) else {
+        return Err(unsupported("`orwith` block with an explicit signature"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::StatementOrwith,
+        fields: vec![
+            node_field(
+                Some("condition"),
+                convert_expr(with_block_condition(WithBlockKind::Orwith, cond)?)?,
+            ),
+            node_field(Some("then"), topic_block_node(body)?),
+        ],
+    })
+}
+
+/// The condition a `with`-family conditional was written with, recovered from
+/// the `.defined` test the parser built around it.
+fn with_block_condition(kind: WithBlockKind, cond: &Expr) -> Result<&Expr, RuntimeError> {
+    let tested = match kind {
+        WithBlockKind::Without => match cond {
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::Bang,
+                expr,
+            } => expr.as_ref(),
+            _ => return Err(unsupported("`without` condition")),
+        },
+        WithBlockKind::With | WithBlockKind::Orwith => cond,
+    };
+    let Expr::MethodCall { target, name, .. } = tested else {
+        return Err(unsupported("with/without condition"));
+    };
+    if name.as_str() != "defined" {
+        return Err(unsupported("with/without condition"));
+    }
+    Ok(match target.as_ref() {
+        // The block forms evaluate the condition once into a hidden temp; an
+        // `orwith` clause tests its expression directly.
+        Expr::DoStmt(inner) => match inner.as_ref() {
+            Stmt::VarDecl { expr, .. } => expr,
+            _ => return Err(unsupported("with/without condition")),
+        },
+        other => other,
+    })
+}
+
+/// The body of the topicalizing `given` the `with`-family block forms wrap a
+/// `{ ... }` in, when `stmts` is exactly that scaffold. `None` for anything
+/// else, including the untagged `given` a pointy body produces and a
+/// hand-written `given` that happens to sit in the same position.
+fn topic_given_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
+    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (Some(first), None) = (real.next(), real.next()) else {
+        return None;
+    };
+    match first {
+        Stmt::Given {
+            body,
+            with_kind: Some(GivenWithKind::BlockTopic),
+            ..
+        } => Some(body),
+        _ => None,
+    }
+}
+
+/// The `elsifs` and `else` fields of a conditional chain. mutsu nests every
+/// continuation clause as a single `if` inside the else branch; raku flattens
+/// them into one `elsifs` list, with whatever remains as the `else` block.
+/// Shared by `Statement::If` and `Statement::With`, both of which accept
+/// `elsif` and `orwith` clauses.
+fn conditional_chain_fields(else_branch: &[Stmt]) -> Result<Vec<RakuAstField>, RuntimeError> {
+    let mut fields = Vec::new();
+    let mut elsifs: Vec<Value> = Vec::new();
+    let mut tail: &[Stmt] = else_branch;
+    while let Some(Stmt::If {
+        cond,
+        then_branch,
+        else_branch,
+        binding_var,
+        with_kind,
+        ..
+    }) = single_if_stmt(tail)
+    {
+        // A `with`/`without` BLOCK statement written inside an `else` is a
+        // statement of its own, not a continuation clause: stop and let it be
+        // converted as part of the else block.
+        if matches!(
+            with_kind,
+            Some(WithBlockKind::With | WithBlockKind::Without)
+        ) {
+            break;
+        }
+        if binding_var.is_some() {
+            return Err(unsupported("`elsif EXPR -> $var` topic binding"));
+        }
+        let node = match with_kind {
+            Some(WithBlockKind::Orwith) => orwith_node(cond, then_branch)?,
+            _ => elsif_node(cond, then_branch)?,
+        };
+        elsifs.push(Value::rakuast(Box::new(node)));
+        tail = else_branch;
+    }
+    if !elsifs.is_empty() {
+        fields.push(RakuAstField {
+            name: Some("elsifs"),
+            value: RakuAstFieldValue::List(elsifs),
+        });
+    }
+    if tail.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
+        // An `else` continuing a `with`/`orwith` topicalizes on the last tested
+        // value, which raku records on the block itself.
+        let block = match topic_given_body(tail) {
+            Some(body) => topic_block_node(body)?,
+            None => block_node(tail)?,
+        };
+        fields.push(node_field(Some("else"), block));
+    }
+    Ok(fields)
 }
 
 /// One `elsif` clause -> `Statement::Elsif(condition, then => Block)`.

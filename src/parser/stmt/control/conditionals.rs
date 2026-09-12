@@ -7,6 +7,10 @@ pub(crate) struct IfChainClause {
     cond: Expr,
     then_branch: Vec<Stmt>,
     binding_var: Option<String>,
+    /// `Some(WithBlockKind::Orwith)` for an `orwith` clause, which desugars
+    /// into the same `.defined` conditional an `elsif` would but which raku
+    /// models as its own `Statement::Orwith`. See `Stmt::If`'s `with_kind`.
+    with_kind: Option<WithBlockKind>,
 }
 
 pub(crate) struct ElseClause {
@@ -45,6 +49,7 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
         cond,
         then_branch,
         binding_var,
+        with_kind: None,
     }];
     let (rest, (mut elsif_clauses, else_clause)) = parse_elsif_chain(rest)?;
     clauses.append(&mut elsif_clauses);
@@ -284,6 +289,7 @@ pub(crate) fn parse_elsif_chain(
                 cond,
                 then_branch,
                 binding_var,
+                with_kind: None,
             });
             last_orwith_cond = None;
             rest = r;
@@ -344,7 +350,13 @@ pub(crate) fn parse_elsif_chain(
                 topic: orwith_cond_expr.clone(),
                 body: orwith_given_body,
                 is_statement_modifier: false,
-                with_kind: None,
+                // Tagged distinctly for the pointy spelling, as in
+                // `with_stmt`: a pointy body is a `PointyBlock` in raku.
+                with_kind: Some(if orwith_param_name.is_none() {
+                    GivenWithKind::BlockTopic
+                } else {
+                    GivenWithKind::BlockTopicPointy
+                }),
             }];
             // orwith uses .defined as the condition
             last_orwith_cond = Some(orwith_cond_expr.clone());
@@ -360,6 +372,7 @@ pub(crate) fn parse_elsif_chain(
                 cond: orwith_cond,
                 then_branch: orwith_then,
                 binding_var: None,
+                with_kind: Some(WithBlockKind::Orwith),
             });
             rest = r;
             continue;
@@ -388,6 +401,9 @@ pub(crate) fn parse_elsif_chain(
             // pointy param explicitly to the orwith value and drop `binding_params`
             // so `lower_else_clause` does not re-bind it to the Bool.
             let mut given_body = Vec::new();
+            // Whether this `else` binds anything of its own decides the tag
+            // below, so record it before `binding_params` is consumed.
+            let had_binding = binding_params.is_some();
             if let Some(ref params) = binding_params {
                 for pd in params {
                     if pd.name.is_empty() {
@@ -413,7 +429,13 @@ pub(crate) fn parse_elsif_chain(
                 topic: orwith_expr.clone(),
                 body: given_body,
                 is_statement_modifier: false,
-                with_kind: None,
+                // As above: a pointy `else -> $p` prepends its own binding to
+                // this block, so raku spells it as a `PointyBlock`.
+                with_kind: Some(if had_binding {
+                    GivenWithKind::BlockTopicPointy
+                } else {
+                    GivenWithKind::BlockTopic
+                }),
             }];
         }
         return Ok((
@@ -455,6 +477,7 @@ pub(crate) fn lower_if_chain(
             binding_var: clause.binding_var,
             is_statement_modifier: false,
             is_unless: false,
+            with_kind: clause.with_kind,
         }];
     }
 
@@ -506,6 +529,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             cond,
             then_branch: Vec::new(),
             binding_var: None,
+            with_kind: None,
         }];
         let else_clause = ElseClause {
             binding_params: Some(params),
@@ -525,6 +549,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             binding_var: None,
             is_statement_modifier: false,
             is_unless: true,
+            with_kind: None,
         },
     ))
 }

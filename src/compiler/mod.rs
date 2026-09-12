@@ -3244,6 +3244,7 @@ impl Compiler {
                     binding_var: None,
                     is_statement_modifier: false,
                     is_unless: false,
+                    with_kind: None,
                 });
             }
         }
