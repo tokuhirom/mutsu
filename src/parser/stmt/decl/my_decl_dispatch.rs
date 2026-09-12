@@ -121,6 +121,9 @@ pub(super) fn try_keyword_dispatch(
                 Stmt::SubsetDecl {
                     name: Symbol::intern(&name),
                     base: routine_type,
+                    // `my Str subset MyStr` writes the base type as a prefix,
+                    // so it is explicit just as `subset MyStr of Str` is.
+                    base_is_explicit: true,
                     predicate,
                     version: super::super::simple::current_language_version(),
                     is_export: false,

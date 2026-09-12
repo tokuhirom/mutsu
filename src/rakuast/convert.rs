@@ -769,10 +769,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
         // type is a `Trait::Of` in the `traits` list (raku models it exactly as
         // a routine's `of` return type), and the `where` predicate is its own
-        // named field. Export and `my` scope carry extra shape, deferred.
+        // named field. A subset that does not write a base type gets NO
+        // `traits` field at all — measured: `subset S where *> 0` and
+        // `subset S of Any where * > 0` are different nodes even though the
+        // implied base *is* `Any`, which is what `base_is_explicit` preserves.
+        // Export and `my` scope carry extra shape, deferred.
         Stmt::SubsetDecl {
             name,
             base,
+            base_is_explicit,
             predicate,
             is_export,
             export_tags,
@@ -790,13 +795,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some(pred) = predicate {
                 fields.push(node_field(Some("where"), convert_expr(pred)?));
             }
-            fields.push(RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
-                    class: RakuAstClass::TraitOf,
-                    fields: vec![node_field(None, build_type_node(base)?)],
-                }))]),
-            });
+            if *base_is_explicit {
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                        class: RakuAstClass::TraitOf,
+                        fields: vec![node_field(None, build_type_node(base)?)],
+                    }))]),
+                });
+            }
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::TypeSubset,
                 fields,

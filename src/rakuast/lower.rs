@@ -546,28 +546,38 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// `subset S of T where P` -> `Stmt::SubsetDecl`. The base type arrives as the
-/// single `Trait::Of` entry of the `traits` list; a `subset` with no explicit
-/// `of` defaults to `Any`, which is what the converter renders, so a missing
-/// trait list is a shape it never produced.
+/// `subset S of T where P` -> `Stmt::SubsetDecl`. An explicit base type arrives
+/// as the single `Trait::Of` entry of the `traits` list; a `subset` that writes
+/// no `of` carries no `traits` field at all and takes the implied `Any`. Any
+/// other trait is a shape the converter never produced.
 fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let predicate = match node.fields.iter().find(|f| f.name == Some("where")) {
         Some(f) => Some(lower_expr(child_node(&f.value)?)?),
         None => None,
     };
-    let [trait_of] = list_field(node, "traits")? else {
-        return Err(unsupported(node));
+    let (base, base_is_explicit) = match node.fields.iter().find(|f| f.name == Some("traits")) {
+        None => ("Any".to_string(), false),
+        Some(_) => {
+            let [trait_of] = list_field(node, "traits")? else {
+                return Err(unsupported(node));
+            };
+            let ValueView::RakuAst(trait_of) = trait_of.view() else {
+                return Err(unsupported(node));
+            };
+            if trait_of.class != RakuAstClass::TraitOf {
+                return Err(unsupported(node));
+            }
+            (
+                simple_type_name(node, named_child_or_positional(trait_of)?)?,
+                true,
+            )
+        }
     };
-    let ValueView::RakuAst(trait_of) = trait_of.view() else {
-        return Err(unsupported(node));
-    };
-    if trait_of.class != RakuAstClass::TraitOf {
-        return Err(unsupported(node));
-    }
     Ok(Stmt::SubsetDecl {
         name: crate::symbol::Symbol::intern(&name),
-        base: simple_type_name(node, named_child_or_positional(trait_of)?)?,
+        base,
+        base_is_explicit,
         predicate,
         version: crate::parser::current_language_version(),
         is_export: false,

@@ -24,7 +24,7 @@ use Test;
 #
 # Passes under BOTH mutsu and raku.
 
-plan 24;
+plan 27;
 
 # --- `Nil` is a Type::Simple, not a literal ---------------------------------
 is Q[Nil].AST.gist, q:to/END/.chomp, 'Nil -> Type::Simple';
@@ -130,7 +130,30 @@ is Q[subset P1 of Int where * > 0].AST.gist, q:to/END/.chomp, 'subset -> Type::S
     )
     END
 
+# A subset that writes no `of` carries no `traits` field at all -- even though
+# its base type *is* `Any`, an explicit `of Any` is a different node. mutsu's
+# parser defaults the base to "Any" either way, so `Stmt::SubsetDecl` records
+# whether the source wrote it rather than letting the converter guess.
+is Q[subset P1a where * > 0].AST.gist, q:to/END/.chomp, 'an implied base renders no traits field';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Type::Subset.new(
+          name  => RakuAST::Name.from-identifier("P1a"),
+          where => RakuAST::ApplyInfix.new(
+            left  => RakuAST::WhateverCode::Argument.new,
+            infix => RakuAST::Infix.new(">"),
+            right => RakuAST::IntLiteral.new(0)
+          )
+        )
+      )
+    )
+    END
+
+is Q[subset P1b of Any where * > 0].AST.gist.lines.grep(*.contains('traits')).elems, 1,
+    'but an explicit `of Any` still renders its Trait::Of';
+
 is EVAL(Q[subset P2 of Int where * > 0; P2.^name].AST), 'P2', 'subset lowers to a live type';
+ok EVAL(Q[subset P2a where * > 0; 5 ~~ P2a].AST), 'a subset with an implied base lowers and matches';
 ok EVAL(Q[subset P3 of Int where * > 0; 5 ~~ P3].AST), 'a lowered subset accepts a matching value';
 nok EVAL(Q[subset P4 of Int where * > 0; -5 ~~ P4].AST), 'a lowered subset rejects a non-matching value';
 

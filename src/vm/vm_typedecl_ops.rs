@@ -1017,6 +1017,9 @@ impl Interpreter {
             is_export,
             export_tags,
             is_my,
+            // Only the RakuAST converter cares whether the base type was
+            // written out; execution treats an implied `Any` as an `Any`.
+            base_is_explicit: _,
         } = stmt
         {
             let resolved_name = name.resolve();

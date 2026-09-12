@@ -1560,6 +1560,15 @@ pub(crate) enum Stmt {
     SubsetDecl {
         name: Symbol,
         base: String,
+        /// Whether the source wrote the base type (`subset S of Int`, `my Int
+        /// subset S`) or left it out, in which case `base` holds the implied
+        /// `Any`. Semantically the two are the same, but they are *different
+        /// declarations* to raku's own model layer: `.AST` renders an explicit
+        /// base as a `Trait::Of` entry and an implied one as no `traits` field
+        /// at all, so collapsing them here would make the RakuAST converter
+        /// invent a trait the source never wrote.
+        #[serde(default)]
+        base_is_explicit: bool,
         predicate: Option<Expr>,
         version: String,
         is_export: bool,

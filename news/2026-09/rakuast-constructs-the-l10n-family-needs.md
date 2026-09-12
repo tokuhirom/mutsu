@@ -31,7 +31,13 @@ directions:
   from a `given` body.
 - **`subset S of T where P`** is `RakuAST::Type::Subset`: the base type is a
   `Trait::Of` entry in `traits`, not a field of its own, exactly as a routine's
-  `of` return type is.
+  `of` return type is. A subset that writes no `of` renders **no `traits` field
+  at all** — `subset S where * > 0` and `subset S of Any where * > 0` are
+  different nodes to rakudo even though the implied base *is* `Any`. mutsu's
+  parser defaulted both to `base: "Any"`, so `Stmt::SubsetDecl` grew a
+  `base_is_explicit` flag; inventing a `Trait::Of(Any)` the source never wrote
+  would have been exactly the kind of reconstruction the RakuAST workflow
+  forbids.
 - **`module` / `package`** are `RakuAST::Module` / `RakuAST::Package`. rakudo
   gives each declarator keyword its own class rather than one node with a
   `kind` field, and a later bareword naming the package resolves at parse time
