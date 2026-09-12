@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -37,7 +37,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-value-wall check-flaky-list check-t-layout check-magic-keys
+test: check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -70,6 +70,14 @@ check-t-layout:
 # sites with: scripts/check-magic-keys.sh --update
 check-magic-keys:
 	scripts/check-magic-keys.sh
+
+# Ratchet on the panic-family (unwrap/expect/panic!/unreachable!/todo!/
+# unimplemented!) and #[allow( surface in src/ (issue #8186). Both counts may
+# go down, never up. Re-cut after a change that shifts either number:
+#   scripts/check-panic-surface.py --update
+check-panic-surface:
+	python3 scripts/check-panic-surface.py --self-test
+	python3 scripts/check-panic-surface.py
 
 roast:
 	@mkdir -p tmp
