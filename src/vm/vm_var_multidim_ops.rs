@@ -113,22 +113,22 @@ impl Interpreter {
             self.stack.push(slot);
             return Ok(());
         }
-        // A subscript containing a slice dimension (`*` or an index list) over
-        // ALREADY-EXISTING leaves selects several leaves that cannot collapse to
-        // one cell. Promote each selected leaf to a shared `ContainerRef` cell
-        // and hand back a plain list of those cells — the array analogue of the
+        // A subscript containing a slice dimension (`*`, an index list, or a
+        // WhateverCode/block `Sub`) over ALREADY-EXISTING leaves selects one or
+        // more leaves that read back as a List rather than a bare scalar (a
+        // `Sub` dimension always classifies this way even when it resolves to
+        // a single index — `dim_is_multi` is the same rule the plain-read path
+        // and multi-dim assignment use, so a call argument like `f(@m[*-1;
+        // 0])` agrees with the `say @m[*-1; 0]` statement form, #8188).
+        // Promote each selected leaf to a shared `ContainerRef` cell and hand
+        // back a plain list of those cells — the array analogue of the
         // `@slice := @array[1,2]` bound-slice (see `array_slot_ref` /
         // `slice_bind_indices`). A `\raw` / `is rw` parameter bound to this list
         // then distributes a `target = values` assignment element-wise through
         // the cells (see the sigilless bound-slice write-through in the assign
         // ops), while a read decontainerizes each cell transparently. Missing
         // leaves and hash roots fall back to the plain (non-aliasing) read.
-        let is_slice = dims.iter().any(|d| {
-            matches!(
-                Self::normalize_multidim_dim(d).view(),
-                ValueView::Whatever | ValueView::Array(..)
-            )
-        });
+        let is_slice = dims.iter().any(Self::dim_is_multi);
         if is_slice {
             let deref_target = match target.view() {
                 ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
@@ -372,15 +372,12 @@ impl Interpreter {
         if dims.is_empty() {
             return Ok(None);
         }
-        // A slice dimension (`*`, a list, or a range) selects multiple leaves and
-        // cannot collapse to a single cell.
-        for d in dims {
-            if matches!(
-                Self::normalize_multidim_dim(d).view(),
-                ValueView::Whatever | ValueView::Array(..)
-            ) {
-                return Ok(None);
-            }
+        // A slice dimension (`*`, a list, a range, or a WhateverCode/block
+        // `Sub` — `dim_is_multi`, #8188) reads back as a List even when it
+        // selects only one leaf, so it cannot collapse to a single bare cell
+        // here; the caller's `is_slice` branch handles it instead.
+        if dims.iter().any(Self::dim_is_multi) {
+            return Ok(None);
         }
 
         // Read through a `ContainerRef` / `Scalar` wrapper while keeping the
@@ -700,7 +697,26 @@ impl Interpreter {
                 Ok(Value::array(out))
             }
             _ => {
-                // Scalar index — resolve WhateverCode / block first
+                // Scalar index — resolve WhateverCode / block first. A
+                // WhateverCode/block dimension (`Sub`) is a slice dimension
+                // even when it resolves to a single index: rakudo hands back
+                // a one-element List for it (`@m[*-1; 0]` is `(4)`, not `4`),
+                // the same classification `dim_is_multi` already uses for
+                // multi-dim ASSIGNMENT. A plain scalar dimension (Int, a
+                // numeric-coercible Str/Rat/Num) stays single-element.
+                let wraps_as_slice = matches!(dim.view(), ValueView::Sub(..));
+                // Whether a REMAINING dimension also wraps its own result --
+                // if so, the recursive read below already comes back as an
+                // Array, and wrapping it again here would double-nest instead
+                // of producing one flat slice (mirrors the `has_more_multi`
+                // flatten the Whatever/Array-dimension branches above use).
+                let has_more_multi = wraps_as_slice
+                    && rest.iter().any(|v| {
+                        matches!(
+                            Self::normalize_multidim_dim(v).view(),
+                            ValueView::Whatever | ValueView::Array(..) | ValueView::Sub(..)
+                        )
+                    });
                 let resolved = self.resolve_whatever_code_index(dim, target);
                 // A block subscript may return a Range or a list of indices
                 // (e.g. `{0,1}` returns the List `(0,1)`). Re-dispatch such a
@@ -715,20 +731,20 @@ impl Interpreter {
                     }
                 }
                 let idx = resolved.as_ref().unwrap_or(dim);
-                if let Some(i) = Self::index_to_usize(idx) {
+                let scalar = if let Some(i) = Self::index_to_usize(idx) {
                     let (items, is_real) = match target.view() {
                         ValueView::Array(items, kind) => (items, kind.is_real_array()),
                         _ => return Ok(Value::NIL),
                     };
                     if i < items.len() {
-                        self.multi_dim_index_read(&items[i], rest)
+                        self.multi_dim_index_read(&items[i], rest)?
                     } else if is_real {
                         // Out of bounds on a real Array: the element default
                         // (Any), like a single-dim OOB read; a List stays Nil.
-                        Ok(Value::package(crate::symbol::wk::any()))
+                        Value::package(crate::symbol::wk::any())
                     } else {
                         // Out of bounds — return Nil for scalar index
-                        Ok(Value::NIL)
+                        Value::NIL
                     }
                 } else {
                     // Non-numeric index (e.g., string "0")
@@ -739,16 +755,25 @@ impl Interpreter {
                             _ => return Ok(Value::NIL),
                         };
                         if i < items.len() {
-                            self.multi_dim_index_read(&items[i], rest)
+                            self.multi_dim_index_read(&items[i], rest)?
                         } else if is_real {
-                            Ok(Value::package(crate::symbol::wk::any()))
+                            Value::package(crate::symbol::wk::any())
                         } else {
-                            Ok(Value::NIL)
+                            Value::NIL
                         }
                     } else {
-                        Ok(Value::NIL)
+                        Value::NIL
                     }
-                }
+                };
+                Ok(if wraps_as_slice {
+                    if has_more_multi && let ValueView::Array(inner, ..) = scalar.view() {
+                        Value::array(inner.to_vec())
+                    } else {
+                        Value::array(vec![scalar])
+                    }
+                } else {
+                    scalar
+                })
             }
         }
     }
