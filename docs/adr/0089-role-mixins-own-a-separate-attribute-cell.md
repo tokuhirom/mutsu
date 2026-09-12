@@ -98,6 +98,13 @@ accessors (`override`, `overrides`, and their mutation counterparts) must be
 named separately from role-cell accessors so a caller cannot accidentally treat
 the construction seed map as live attribute storage.
 
+The role cell is state, not composition metadata. It is excluded from the
+composition key and from the existing `MixinOverrides` projection used by
+`==`, `eqv`, `===`, `.WHAT`, `.^name`, and `.^set_name`. Those operations retain
+their current semantics based on the wrapped value and the visible
+override/marker map; mutable role-attribute contents are observed through role
+methods and accessors, not by changing the mixin's type identity or equality.
+
 ### 2.2 Two-store attribute resolution
 
 For a method whose invocant is a role mixin, attribute resolution is ordered by
