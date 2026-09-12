@@ -122,7 +122,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);
         let val = match interp.eval_block_value(&stmts) {
@@ -621,7 +621,7 @@ impl Interpreter {
         let mut scratch = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut scratch);
         for (k, child) in named.iter() {
@@ -745,7 +745,7 @@ impl Interpreter {
         let mut scratch = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut scratch);
         // Seed the scratch's `$*` vars from the overlay (latest delimiters etc.).

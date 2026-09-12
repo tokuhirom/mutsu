@@ -51,6 +51,36 @@ impl Interpreter {
         interp
     }
 
+    /// [`Self::new_regex_scratch`], sharing the caller's open IO handle table.
+    ///
+    /// Use this at every scratch construction site. The `env` a scratch is
+    /// handed is the caller's, so every IO handle value it can see carries the
+    /// *caller's* handle id, and a handle op resolves that id in whichever
+    /// table the running interpreter owns ([`Self::with_handle_mut`]). A
+    /// scratch built by `new_regex_scratch` alone owns its own table, so the
+    /// ids only agreed because [`Self::new`] seeded every fresh table with the
+    /// same four handles (`$*OUT`/`$*ERR`/`$*IN`/`$*ARGFILES`) in the same
+    /// order, putting them on ids 1-4 on both sides; nothing made an id past
+    /// those four agree. No case is known where a scratch actually performed a
+    /// handle op that missed — code blocks reach their handles through the
+    /// caller's own VM frame — but the agreement was a coincidence, not an
+    /// invariant, and skipping the seeding (the `is_building_scratch` guard on
+    /// `init_io_environment` in [`Self::new`]) removes even that. Sharing the
+    /// `Arc` replaces the coincidence with the real table.
+    ///
+    /// Sharing is sound within a thread — the only place a scratch interpreter
+    /// is ever built, synchronously inside the caller's own regex evaluation:
+    /// `io_handles` is an `Arc<RwLock<_>>` precisely so the VM and the
+    /// Interpreter can reach one table as peers (see the `io_handles` module
+    /// docs). The lock discipline is unchanged: no guard is held across a
+    /// re-entrant handle operation. Pinned by
+    /// `t/io/code-block-io-handle-table.t`.
+    pub(crate) fn new_regex_scratch_sharing_io(&self) -> Self {
+        let mut interp = Self::new_regex_scratch();
+        interp.io_handles = Arc::clone(&self.io_handles);
+        interp
+    }
+
     /// Take any pending regex security error from the thread-local store.
     pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
         // Delegate to the regex_parse module's thread-local error store
@@ -2951,7 +2981,7 @@ impl Interpreter {
             current_unit: crate::runtime::main_unit(),
             closures_created: 0,
             lib_paths: Default::default(),
-            bundled_lib_paths: std::sync::Arc::new(Self::resolve_bundled_lib_paths()),
+            bundled_lib_paths: Self::bundled_lib_paths_shared(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
                 map: HashMap::new(),
                 next_id: 1,
@@ -3298,7 +3328,18 @@ impl Interpreter {
             lazy_pull_entry_call_depth: None,
             rw_map_topic_capture: None,
         };
-        interpreter.init_io_environment();
+        // A scratch interpreter (regex/grammar sub-interpreter) has its `env`
+        // replaced wholesale by the caller's, so every `$*OUT`/`$*CWD`/
+        // `$*TMPDIR`/`$*HOME`/`$*EXECUTABLE`/`$*SPEC` entry seeded here is
+        // dropped unread, and the four IO handles created for them are left
+        // unreferenced — the caller's env carries the CALLER's handle ids, and
+        // `new_regex_scratch_sharing_io` is what makes those resolve. On a
+        // 60-row `benchmarks/bench-yaml-parse.raku` document that was 3,109
+        // rebuilds of the process IO environment, 4.8% of the whole program's
+        // instructions (#7576 round 12).
+        if !Self::is_building_scratch() {
+            interpreter.init_io_environment();
+        }
         interpreter.env.insert("Any".to_string(), Value::NIL);
         // A scratch interpreter (regex/grammar sub-interpreter) inherits the
         // caller's env and has its registry replaced by `copy_decl_registry_into`,
