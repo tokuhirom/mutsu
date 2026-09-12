@@ -13,6 +13,31 @@ impl Interpreter {
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Apply `use variables :D/:U` pragma to the constraint
         let effective_constraint = loan_env!(self, apply_variables_pragma(raw_constraint));
+        // A `constant` type alias stands for the type it names, so resolve it
+        // to that target once, here, before anything below reads the
+        // constraint. Everything downstream then sees `Int` rather than
+        // `MyInt`: the native/known-type check runs, and the type-check error
+        // names the target, which is what rakudo reports ("expected Int but got
+        // Str"). Without this the alias reached the unknown-type arm and, since
+        // env holds a `Package` under the alias, was reported as a package
+        // "insufficiently type-like to qualify a variable" (#8131).
+        //
+        // Gated on the constraint not already being a known type, so the
+        // overwhelmingly common `my Int $x` pays a static `matches!` here
+        // rather than an env lookup per typed declaration.
+        let effective_constraint = {
+            let (base, smiley) = crate::runtime::types::strip_type_smiley(&effective_constraint);
+            let resolved = if runtime::is_known_type_constraint(base) || is_core_raku_type(base) {
+                None
+            } else {
+                self.resolve_type_alias_chain(base)
+                    .map(|target| format!("{}{}", target, smiley.unwrap_or("")))
+            };
+            match resolved {
+                Some(target) => std::borrow::Cow::Owned(target),
+                None => effective_constraint,
+            }
+        };
         let constraint: &str = &effective_constraint;
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let declared_constraint = base_constraint
