@@ -798,12 +798,6 @@ impl Interpreter {
             // so OTF compilation can resolve $?DISTRIBUTION later.
             crate::runtime::cow_table_mut(&mut self.package_distributions)
                 .insert(module.to_string(), dist.clone());
-            // Also record under the current runtime package (typically GLOBAL
-            // for unit modules) since the interpreter's current_package may not
-            // match the module name during function body evaluation.
-            let cur_pkg = self.current_package();
-            crate::runtime::cow_table_mut(&mut self.package_distributions)
-                .insert(cur_pkg, dist.clone());
         }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
@@ -825,6 +819,29 @@ impl Interpreter {
         // (#7797) so the package-visibility bookkeeping after that branch can
         // read it too, for a use-only module that skips the branch entirely.
         let unit_name = Self::detect_unit_package_name(&stmts);
+        if let Some(dist) = &module_dist {
+            // Also record the distribution under the package this module's OWN
+            // top-level subs actually register under: `unit_name` if it declares
+            // one, else "GLOBAL" (every module body runs under "GLOBAL" per the
+            // `set_current_package` below, unless its own `unit module`/`unit
+            // class` statement changes it once execution reaches that
+            // statement). This is a static fact of the file being loaded, NOT
+            // `self.current_package()` read here: at this point that reflects
+            // whatever the *importer* left it as when this is a nested `use`
+            // reached from within another module's still-executing mainline
+            // (e.g. that importer's own `unit module Foo` statement already
+            // ran) -- reading it here inserted THIS dependency's distribution
+            // under the IMPORTER's own package key, clobbering the importer's
+            // correct entry the moment it made a second `use` (#8004: any
+            // module with `unit module Foo; use A; use B;` lost `%?RESOURCES`
+            // the moment it gained a second `use`, because loading B stamped
+            // `package_distributions["Foo"]` with B's own distribution).
+            let effective_pkg = unit_name.clone().unwrap_or_else(|| "GLOBAL".to_string());
+            if effective_pkg != *module {
+                crate::runtime::cow_table_mut(&mut self.package_distributions)
+                    .insert(effective_pkg, dist.clone());
+            }
+        }
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler

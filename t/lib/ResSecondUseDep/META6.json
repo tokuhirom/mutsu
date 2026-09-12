@@ -1,0 +1,13 @@
+{
+  "name": "ResSecondUseDep",
+  "description": "Fixture distribution with no resources of its own, used only to be `use`d as a second dependency by ResSecondUse",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResSecondUseDep": "lib/ResSecondUseDep.rakumod"
+  },
+  "resources": [],
+  "depends": [],
+  "license": "Artistic-2.0"
+}
