@@ -116,6 +116,29 @@ fn element_needs_method_dispatch_seen(
     {
         return false;
     }
+    // A container is transparent to rendering, exactly as the top-level
+    // `needs_method_dispatch` arm says — but an ELEMENT cell must be looked
+    // THROUGH rather than answered `true` outright, so an ordinary cell of
+    // Ints keeps the pure fast path. Without these two arms every element
+    // producer that hands out live cells (`.values`, `.pairs`, `.kv`, `.Seq`,
+    // `.sort` — `Value::seq_element_containers` in `vm_element_producers.rs`)
+    // reported "no dispatch needed" for a collection of objects, and the
+    // whole collection rendered through the pure path: `say @a.values` printed
+    // `(F() F())` instead of running the class's own `method gist`, while the
+    // same elements gisted correctly through `@a` itself or through an
+    // explicit `.gist`. The `.raku` twin named above already looks through
+    // both (GH #8134).
+    if let ValueView::Scalar(inner) = v.view() {
+        return element_needs_method_dispatch_seen(inner, seen, depth + 1);
+    }
+    if let ValueView::ContainerRef(cell) = v.view() {
+        let inner = cell.lock().unwrap().clone();
+        return element_needs_method_dispatch_seen(&inner, seen, depth + 1);
+    }
+    if let ValueView::ContainerView(_) = v.view() {
+        let inner = v.deref_container();
+        return element_needs_method_dispatch_seen(&inner, seen, depth + 1);
+    }
     let mut probe = |e: &Value| element_needs_method_dispatch_seen(e, seen, depth + 1);
     match v.view() {
         ValueView::Array(items, _) => items.iter().any(&mut probe),

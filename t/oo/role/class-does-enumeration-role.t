@@ -53,6 +53,15 @@ is $t.raku,         'Tern::yes', '.raku is Name::key';
 
 # The documented example: the composing class reads the role's attribute as
 # `$!key` from inside its own method, and may override `gist`.
+#
+# That override is also the pin on the role's methods being `multi`s with an
+# explicit `::?CLASS:D:` invocant, as rakudo's are (they arrive as candidates on
+# `Mu`'s/`Any`'s dispatchers, not as `only` methods of the role). Declared
+# `only`, rakudo rejects the class's `multi method gist` outright ("Cannot have
+# a multi candidate for 'gist' when an only method is also in the package"), and
+# mutsu reports `Ambiguous call to 'gist(DNA: )'` -- which is what this assertion
+# caught when #8119 stopped a class multi from displacing a role candidate with
+# the same invocant smiley.
 {
     class DNA does Enumeration {
         my %pairings = %( A => 'T', T => 'A', C => 'G', G => 'C' );
