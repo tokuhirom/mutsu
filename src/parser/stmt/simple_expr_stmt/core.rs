@@ -1618,7 +1618,28 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // pass pre-whitespace rest so parse_statement_modifier can detect
     // newline separation and avoid treating the next line's `if`/`for`
     // as a statement modifier.
-    if separated_by_newline && matches!(expr, Expr::Try { .. } | Expr::Gather(_)) {
+    // Only the BLOCK forms (`try { ... }`, `gather { ... }`) end their statement
+    // at the closing brace, so a following line's `if`/`for` starts a new
+    // statement rather than modifying them. The statement-prefix forms
+    // (`try foo($x)`, `gather take $_`) end like any other expression, and a
+    // statement modifier may continue on the next line:
+    //
+    //     try windows-close-handle($h)
+    //         if $h.defined && $h.Int != 0;
+    //
+    // Deciding on the variant alone sent that through the block path, where
+    // `parse_statement_modifier` saw only the newline, declined the modifier,
+    // and left the bare `if` to be parsed as an `if` statement — reported as
+    // `Missing block`. `do` and `quietly` never had the problem because they
+    // are not in this match. From `Selkie::App::Internal::ErrorLog`, which
+    // `Selkie` and `App::Moneymoor` both fail to load on ([#7993]).
+    //
+    // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
+    let consumed = &input[..input.len() - rest_before_ws.len()];
+    if separated_by_newline
+        && matches!(expr, Expr::Try { .. } | Expr::Gather(_))
+        && consumed.trim_end().ends_with('}')
+    {
         return parse_statement_modifier(rest_before_ws, stmt);
     }
     parse_statement_modifier(rest, stmt)

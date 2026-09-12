@@ -1123,6 +1123,40 @@ impl Interpreter {
         if self.has_enum_type(base) {
             return true;
         }
+        // A `subset` name is a type name like any other, so it belongs in this
+        // answer. It was missing, and the gap only showed for a COMPOUND name:
+        // the role-method validator's short-name fallback
+        // (`type_known_by_short_name`, which does consult `subsets`) is gated on
+        // the constraint being unqualified, and the sub pre-pass skips anything
+        // containing `::` outright. So `subset A::B::C` declared at file scope
+        // and named by a role method (`role R { method m(A::B::C $x) }`) was
+        // reported as an invalid typename while the identical sub or class
+        // method compiled — `License::Software`'s `unit role
+        // License::Software::Abstract`, whose `multi method new` takes a
+        // `License::Software::Year` ([#7993]).
+        //
+        // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
+        if self.registry().subsets.contains_key(base) {
+            return true;
+        }
+        // A lexically-scoped `my class` / `my role` registers under a MANGLED
+        // storage key (ADR-0047 P1: `Name\0<decl-id>`) while `env` binds the
+        // bare name to it, so none of the registry probes above see it under
+        // the spelling a signature uses. `resolve_bare_type_name` follows
+        // exactly the alias that type-object position follows, and it already
+        // confirms the target is a class or role before handing back a name.
+        //
+        // `Protocol::MQTT` is `my class EncodeBuffer { ... }` at file scope,
+        // named by `our role Packet[...]`'s `method !encode-body(EncodeBuffer
+        // $buffer --> Nil)` ([#7993]). Only the role-method validator noticed:
+        // the sub pre-pass accepts the name from `declared_types`, the unit's
+        // statically gathered declarations, which a role body has no equivalent
+        // of.
+        //
+        // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
+        if self.resolve_bare_type_name(base).is_some() {
+            return true;
+        }
         // Check if it starts with uppercase (heuristic for type names)
         // This handles cases like user-defined enum types that may not be registered as classes
         false

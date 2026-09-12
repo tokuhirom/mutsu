@@ -7,11 +7,518 @@
     "unresolved": []
   },
   "dist": "Test::Async",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "bundle's HOW is BundleHOW",
+        "nok": 3,
+        "ok": 3,
+        "plan": 6,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/003-declaration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 11.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/004-jobmgr.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 6.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/005-bootstrap.rakutest",
+      "raku": {
+        "first_failure": "we can use is-run",
+        "nok": 2,
+        "ok": 10,
+        "plan": 12,
+        "secs": 30.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "subtests start in parallel",
+        "nok": 3,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/006-parallel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 9.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/010-basics.rakutest",
+      "raku": {
+        "first_failure": "simple pass test, plan is output at the end",
+        "nok": 14,
+        "ok": 0,
+        "plan": 7,
+        "secs": 27.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/020-is.rakutest",
+      "raku": {
+        "first_failure": "is \"a\", \"a\", \"Str match\";",
+        "nok": 30,
+        "ok": 0,
+        "plan": 15,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/030-is-run.rakutest",
+      "raku": {
+        "first_failure": "timing out code",
+        "nok": 4,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/040-skip.rakutest",
+      "raku": {
+        "first_failure": "plan skip counted",
+        "nok": 14,
+        "ok": 0,
+        "plan": 7,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/050-todo.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 6,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/060-subtest.rakutest",
+      "raku": {
+        "first_failure": "basic subtest",
+        "nok": 14,
+        "ok": 11,
+        "plan": 19,
+        "secs": 4.48,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/070-test-flunks.rakutest",
+      "raku": {
+        "first_failure": "With false-positives",
+        "nok": 1,
+        "ok": 6,
+        "plan": 7,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/080-is-approx.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/080-local-bundle.rakutest",
+      "raku": {
+        "first_failure": "test-bundle doesn't break role declaration",
+        "nok": 2,
+        "ok": 1,
+        "plan": 2,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/090-is-deeply.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/091-cmp-deeply.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/100-isa-does-ok.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/110-can-ok.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/120-like-unlike.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/130-use-ok.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/140-dies-lives-ok.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/150-throws-fails.rakutest",
+      "raku": {
+        "first_failure": "throws-like basics",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 2.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/160-when.rakutest",
+      "raku": {
+        "first_failure": "Top suite 'when'",
+        "nok": 1,
+        "ok": 4,
+        "plan": 5,
+        "secs": 3.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/170-heavily-concurrent.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/180-dying-subtest.rakutest",
+      "raku": {
+        "first_failure": "exception in an immediate subtest is caught and reported",
+        "nok": 4,
+        "ok": 0,
+        "plan": 2,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/190-non-job-threads.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4001,
+        "plan": 4001,
+        "secs": 5.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: plan",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/200-exports.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/210-exit.rakutest",
+      "raku": {
+        "first_failure": "exit() within a subtest doesn't freeze but results in a non-pass",
+        "nok": 2,
+        "ok": 0,
+        "plan": 1,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/220-test-assert.rakutest",
+      "raku": {
+        "first_failure": "test-assertion trait turns a sub into a test tool",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "Test::Async": "Unsupported nqp:: op: nqp::defined",
+    "Test::Async": "ok",
     "Test::Async::Aggregator": "ok",
-    "Test::Async::Base": "Invalid typename 'Event::Test:U' in parameter declaration.",
+    "Test::Async::Base": "ok",
     "Test::Async::Decl": "ok",
     "Test::Async::Event": "ok",
     "Test::Async::Hub": "ok",
@@ -22,7 +529,7 @@
     "Test::Async::Metamodel::HubHOW": "ok",
     "Test::Async::Metamodel::ReporterHOW": "ok",
     "Test::Async::Reporter": "ok",
-    "Test::Async::Reporter::TAP": "Invalid typename 'Event::Ok:D' in parameter declaration.",
+    "Test::Async::Reporter::TAP": "ok",
     "Test::Async::Result": "ok",
     "Test::Async::TestTool": "ok",
     "Test::Async::Utils": "ok",
@@ -34,7 +541,7 @@
     "date": "2026-09-12",
     "harness": 2,
     "host": "linux-x86_64",
-    "mutsu_commit": "a3e5e8af",
+    "mutsu_commit": "0f9ee5e50",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -45,13 +552,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_ASYNC/46fb5e650e1f1103b7c409a707d033ff14a04c95.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 4049,
+    "baseline_files": 13,
+    "mutsu_assertions": 13,
+    "parity_files": 1,
+    "regressed_files": 12
   },
   "version": "0.1.17"
 }
