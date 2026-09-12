@@ -293,7 +293,7 @@ impl Interpreter {
     }
 
     pub(crate) fn atomic_array_entry_exists(&self, arr_name: &str) -> bool {
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
+        let atomic_key = atomic_lane_str_key(arr_name, false);
         matches!(
             self.shared_vars
                 .atomic_lane_scope(arr_name)
@@ -320,7 +320,7 @@ impl Interpreter {
         arr_name: &str,
         f: impl FnOnce(&mut crate::value::ArrayData, &mut crate::value::ArrayKind) -> R,
     ) -> (R, Value) {
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
+        let atomic_key = atomic_lane_str_key(arr_name, false);
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
             // Drop this thread's env copy so the atomic entry's Gc stays
@@ -437,7 +437,7 @@ impl Interpreter {
         idx: usize,
         value: Value,
     ) -> Value {
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
+        let atomic_key = atomic_lane_str_key(arr_name, false);
         // Track B cell fast path: an already-celled slot is assigned through
         // its cell in place — every snapshot holder sees it, no COW, no
         // republish.
@@ -516,7 +516,7 @@ impl Interpreter {
         elem_key: String,
         value: Value,
     ) -> Value {
-        let atomic_key = atomic_lane_str_key(&hash_name, true);
+        let atomic_key = atomic_lane_str_key(hash_name, true);
         // Track B cell fast path — see `shared_array_elem_set`.
         {
             let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
