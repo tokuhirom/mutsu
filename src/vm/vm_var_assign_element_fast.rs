@@ -29,6 +29,124 @@
 use super::*;
 
 impl Interpreter {
+    /// [`Self::try_fast_array_element_assign`], consulted *before* the element
+    /// store's shared preamble rather than after it.
+    ///
+    /// The lane below deletes the store's own cost, but it used to sit at the
+    /// bottom of `exec_index_assign_expr_named_op`'s dispatch chain, so a plain
+    /// `@a[$i] = $v` still paid the whole preamble on the way down: a `Range`
+    /// receiver probe against both the local slot and env, a deferred
+    /// vivification-token probe (which allocated the variable name as a
+    /// `String` and scanned `code.locals` by name), the ADR-0039 unit-lexical
+    /// cell seed/restore, a lazy-array reify probe, the rvalue itemization
+    /// hook, and a `Seq`/`Proxy` destination resolve that clones the target and
+    /// the addressed element. Measured on a `--profile profiling` build
+    /// (#8069), that residue was **3,097 instructions and one heap allocation**
+    /// per store after the lane itself had been reduced to a `Vec` slot write;
+    /// running the lane first brings it to 1,210 instructions and none.
+    ///
+    /// Every one of those probes asks about a shape this lane has *already
+    /// refused* -- a `Range`, a token, a unit lexical, a `LazyList`, a `Seq`, a
+    /// `Proxy`, an aggregate rvalue. So the honest order is to ask the cheap,
+    /// container-answered questions first and only run the preamble for the
+    /// stores that actually need it. This function is that reordering: it adds
+    /// the handful of guards that the preamble would otherwise have
+    /// established, then defers to the same lane.
+    ///
+    /// It touches nothing -- not the stack, not env, not a local slot -- unless
+    /// the lane it calls commits, so declining is free and the full path
+    /// downstream runs exactly as it did before.
+    pub(crate) fn try_fast_array_element_assign_early(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        is_positional: bool,
+        target_slot: Option<u32>,
+    ) -> Option<Result<(), RuntimeError>> {
+        if !is_positional {
+            return None;
+        }
+        // Slice 2b's `=`-element share is captured in the preamble and consumed
+        // by the lane's caller; the early call site is above that capture, so
+        // the only safe answer while one is pending is to decline (and, above
+        // all, NOT to clear the flag).
+        if self.element_share_pending {
+            return None;
+        }
+        // The two name-keyed cross-thread lanes (`try_shared_hash_element_assign`
+        // / `try_shared_array_element_assign`) are skipped by running here, and
+        // they own the store whenever a thread shares this env. Their own gate
+        // is this exact flag.
+        if self.shared_vars_active {
+            return None;
+        }
+        let stack_len = self.stack.len();
+        if stack_len < 2 {
+            return None;
+        }
+        // The preamble's `Whatever` refusal, the `Seq` element-cell store and
+        // the slice paths all need a subscript this lane would reject anyway;
+        // check it up front so the guards below are only paid for the shape the
+        // lane can actually serve.
+        if !matches!(self.stack[stack_len - 1].view(), ValueView::Int(n) if n >= 0) {
+            return None;
+        }
+        // `itemize_for_element_store` (the preamble's ADR-0040 rvalue hook) and
+        // `fetch_proxy_for_store` are both the IDENTITY on a plain scalar
+        // rvalue, which is what lets this call site skip them. An aggregate
+        // rvalue itemizes, can BE the target (`@a[0] = @a` stores a genuinely
+        // circular structure), and a `Proxy` rvalue must FETCH -- all three are
+        // the preamble's business. Deliberately an allow-list: a variant this
+        // lane has not reasoned about falls through to the unchanged full path.
+        if !matches!(
+            self.stack[stack_len - 2].view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Enum { .. }
+                | ValueView::Instance { .. }
+                | ValueView::Version { .. }
+        ) {
+            return None;
+        }
+        let var_name = Self::const_str(code, name_idx);
+        // Checked here as well as in the lane: every guard below is keyed on
+        // the name, and only an `@` name can reach the lane at all.
+        if !var_name.as_bytes().starts_with(b"@") {
+            return None;
+        }
+        // ADR-0039 slice 1: a compunit's own file-scope `@` is stored in the
+        // `unit_lexicals` cell, and the preamble seeds env from it around the
+        // store. The lane reads env directly, so it must not run for a name the
+        // seed would have redirected. (`unit_lexical_slot`, which the lane
+        // already probes, does not see the MAINLINE bucket this cell lookup
+        // checks first, so the two are not interchangeable.) Opens with the
+        // same `unit_lexicals.is_empty()` gate, so a program with no captured
+        // file-scope lexicals pays one `is_empty`.
+        if self.unit_lexical_container_cell(var_name).is_some() {
+            return None;
+        }
+        // A variable still holding a deferred vivification token is resolved by
+        // `try_deferred_token_index_assign`, which finds its slot BY NAME. The
+        // lane's own dual-store coherence check uses the compiler-baked
+        // `target_slot` and would catch the token there -- except when the
+        // baked slot is out of range for this frame, where the lane skips the
+        // check entirely and the by-name search would still find one. Close
+        // that gap explicitly; in the common case it is one comparison.
+        if target_slot.is_some_and(|slot| (slot as usize) >= self.locals.len())
+            && self.find_local_slot(code, var_name).is_some()
+        {
+            return None;
+        }
+        self.try_fast_array_element_assign(code, name_idx, is_positional, target_slot, false)
+    }
+
     /// Fast path for a simple positional element store: `@a[$i] = $v`.
     ///
     /// Returns `Some(Ok(()))` when it handled the store, `None` when the caller

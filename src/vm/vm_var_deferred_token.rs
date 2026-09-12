@@ -46,8 +46,12 @@ impl Interpreter {
         if depth == 0 || self.stack.len() < depth + 1 {
             return None;
         }
-        let var_name = Self::const_str(code, name_idx).to_string();
-        let slot = self.find_local_slot(code, &var_name)?;
+        // Borrowed from the constant pool, not copied: `code` outlives the op
+        // and is a distinct borrow from `&mut self`. This probe runs on EVERY
+        // element store and delete, and the owned copy was the last remaining
+        // per-store heap allocation #8069 measured.
+        let var_name = Self::const_str(code, name_idx);
+        let slot = self.find_local_slot(code, var_name)?;
         let token = self.locals.get(slot)?.clone();
         let ValueView::HashEntryRef { eager, .. } = token.view() else {
             return None;

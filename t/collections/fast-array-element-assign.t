@@ -1,4 +1,6 @@
+use lib 't/lib';
 use Test;
+use FastElemUnitLexical;
 
 # `@a[$i] = $v` on a plain, untyped, unbound array with an in-range Int index
 # is served by `try_fast_array_element_assign` (#8069 §2), which bypasses the
@@ -7,7 +9,7 @@ use Test;
 # lane (and must still be right) or makes it decline (and must still reach the
 # path that handles it).
 
-plan 34;
+plan 44;
 
 # --- the fast lane itself -----------------------------------------------
 
@@ -149,3 +151,57 @@ my @ident = 0 xx 2;
 my $before = @ident.WHICH;
 @ident[0] = 1;
 is @ident.WHICH, $before, 'the array keeps its identity across an element store';
+
+# --- shapes the EARLY call site must decline -----------------------------
+#
+# The lane is consulted before the element store's shared preamble (#8069
+# S4.1 follow-up), so it now has to refuse, on its own, every shape that
+# preamble used to resolve first. One pin per skipped step.
+
+# A compunit's own file-scope `@` is authoritatively the `unit_lexicals` cell;
+# the bare env key of the same name belongs to whatever scope LOADED the
+# module. The preamble seeds env from that cell around the store, so the lane
+# must not run for such a name.
+my @roster = 'script' xx 3;
+set-slot(1, 'module');
+is read-slot(1), 'module', "a module routine's store reaches its own file-scope array";
+is @roster[1], 'script', "and leaves the loading script's same-named array alone";
+
+# A `Range` receiver is immutable; the refusal lives in the preamble.
+my $range-recv = 1..5;
+dies-ok { $range-recv[0] = 9 }, 'a Range receiver still refuses an element store';
+
+# A variable still holding a DEFERRED vivification token has no container yet:
+# the store has to walk-create the path and promote the binding to a cell.
+my %deferred;
+my $tok := %deferred<g>;
+$tok[0] = 'x';
+is %deferred<g>.raku, '$["x"]', 'a deferred vivification token still walk-creates its path';
+
+# A lazy array reifies a bounded prefix around the store and must NOT collapse
+# into a finite Array.
+my @lz = lazy (1, 2, 3, 4).Seq;
+@lz[0] = 9;
+is @lz[0], 9, 'an element store on a lazy array lands';
+is @lz[3], 4, 'and the lazy tail survives it';
+
+# A `Seq` receiver writes THROUGH the producer's element cells.
+my @seq-base = 1, 2, 3;
+my \seq-view = @seq-base.values;
+seq-view[0] = 'x';
+is @seq-base.raku, '["x", 2, 3]', 'a Seq receiver still writes through its element cells';
+
+# Slice 2b: `@aoa[i] = @row` is compiled as a `:=` bind plus an element-share
+# mark, which the preamble captures. The lane cannot honour a pending share.
+my @aoa = [0, 0];
+my @row = 7, 8;
+@aoa[0] = @row;
+is @aoa.raku, '[[7, 8], 0]', 'an aggregate rvalue still stores as one element';
+@row[0] = 100;
+is @aoa[0][0], 100, 'and the marked element still shares with its source';
+
+# Once a second mutator thread exists the store belongs to the name-keyed
+# cross-thread lanes, whose gate the early call site checks before the lane.
+my @shared = 0 xx 4;
+await (^4).map: -> $i { start { @shared[$i] = $i + 1 } };
+is @shared.raku, '[1, 2, 3, 4]', 'every concurrent element store lands';
