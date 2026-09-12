@@ -1770,8 +1770,31 @@ impl Interpreter {
                 if self.has_user_method(&class_name.resolve(), "Str"));
             let is_numeric_coercion = matches!(method, "Numeric" | "Real" | "Bridge");
             let is_own_stringify = has_user_str && matches!(method, "Str" | "Stringy");
+            // A class that merely DECLARES a method named `Numeric` (without
+            // `does Real`/`does Numeric`) still gets numeric-context coercion
+            // bridged to it -- `P.new + 1` is 8 in rakudo too, with no role
+            // composition at all -- but stringification is NOT part of that
+            // deal: `Mu.Str` is the fallback there, and a `Numeric` method has
+            // no bearing on it (#8153). Gate the two kinds of coercion
+            // separately: numeric ops may ride the bare-method exception
+            // (`has_user_method(..., "Numeric"/"Bridge")` alone, checked by the
+            // outer `if` above), but `.Str`/`.Stringy` bridge to the number
+            // only when the object genuinely composes Real/Numeric.
+            let is_stringify_method = matches!(method, "Str" | "Stringy");
+            // `does_check` is a `Value`-only check (no interpreter access), so
+            // it sees a *mixin* role composition (`$x but Real`) but not a
+            // plain class's static `does Real` -- that lives in the class
+            // registry, reached through `class_does_role`. Check both: a
+            // class-composed role must count too (`class P does Real { ... }`
+            // is the exact case this branch's own comment documents keeping).
+            let genuinely_numeric = target.does_check("Real")
+                || target.does_check("Numeric")
+                || matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if self.class_does_role(&class_name.resolve(), "Real")
+                        || self.class_does_role(&class_name.resolve(), "Numeric"));
             if !is_numeric_coercion
                 && !is_own_stringify
+                && (!is_stringify_method || genuinely_numeric)
                 && let Ok(coerced) = self
                     .call_method_with_values(target.clone(), "Numeric", vec![])
                     .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
