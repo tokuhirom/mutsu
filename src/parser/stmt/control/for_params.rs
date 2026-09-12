@@ -40,6 +40,24 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
         if r.starts_with('{') {
             return Ok((r, (None, None, Vec::new(), Vec::new(), rw_block, true)));
         }
+        // An anonymous destructuring pattern may carry a type constraint:
+        // `for @pairs -> Pair (:key($k), :value($v))` (Config::BINDish, Red).
+        // Consume it here so the bracket branches below still see their opener;
+        // only the *named* spelling `-> Pair $p (:$key)` had a path, because
+        // `parse_for_pointy_param` keeps a type constraint only when a sigil
+        // follows it, so the anonymous one reached no branch at all and the
+        // whole `for` header failed to parse.
+        let (r, unpack_type) = match super::super::sub_param::parse_type_constraint_expr(r) {
+            Some((after_tc, tc)) => {
+                let (after_ws, _) = ws(after_tc)?;
+                if after_ws.starts_with(['(', '[']) {
+                    (after_ws, Some(tc))
+                } else {
+                    (r, None)
+                }
+            }
+            None => (r, None),
+        };
         // Parenthesized destructuring pointy param:
         //   -> ($a, $b) { ... }
         //   -> (:key($k), :value($v)) { ... }
@@ -67,55 +85,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 named_alias: false,
                 slurpy: false,
                 sigilless: false,
-                type_constraint: None,
-                literal_value: None,
-                sub_signature: Some(sub_params),
-                where_constraint: None,
-                traits: Vec::new(),
-                double_slurpy: false,
-                onearg: false,
-                optional_marker: false,
-                outer_sub_signature: None,
-                code_signature: None,
-                is_invocant: false,
-                shape_constraints: None,
-                block_param: true,
-            };
-            return Ok((
-                r,
-                (
-                    Some(unpack_name),
-                    Some(unpack_def),
-                    Vec::new(),
-                    Vec::new(),
-                    rw_block,
-                    false,
-                ),
-            ));
-        }
-        // Parenthesized pointy parameter list: -> ($a, $b) { ... }
-        if r.starts_with('(') {
-            let (r, _) = parse_char(r, '(')?;
-            let (r, _) = ws(r)?;
-            let (r, sub_params) = super::super::parse_param_list_pub(r)?;
-            let (r, _) = ws(r)?;
-            let (r, _) = parse_char(r, ')')?;
-            let (r, _) = skip_pointy_return_type(r)?;
-            if sub_params.is_empty() {
-                return Ok((r, (None, None, Vec::new(), Vec::new(), rw_block, false)));
-            }
-            let unpack_name = "__for_unpack".to_string();
-            let unpack_def = ParamDef {
-                type_capture: None,
-                name: unpack_name.clone(),
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                named_alias: false,
-                slurpy: false,
-                sigilless: false,
-                type_constraint: None,
+                type_constraint: unpack_type,
                 literal_value: None,
                 sub_signature: Some(sub_params),
                 where_constraint: None,
@@ -181,7 +151,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 named_alias: false,
                 slurpy: false,
                 sigilless: false,
-                type_constraint: None,
+                type_constraint: unpack_type,
                 literal_value: None,
                 sub_signature: Some(sub_params),
                 where_constraint: None,
@@ -352,12 +322,30 @@ fn parse_multi_destructuring_params(input: &str, rw_block: bool) -> PResult<'_, 
 /// pattern (returned with an empty name for the caller to fill in) or an
 /// ordinary parameter.
 fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
-    let (open, close) = match input.as_bytes().first() {
+    // An anonymous destructuring pattern may carry a type constraint:
+    // `for @pairs -> Pair (:key($k), :value($v))` (Config::BINDish, Red).
+    // Only the *named* spelling `-> Pair $p (:$key)` had a path, because
+    // `parse_for_pointy_param` keeps a type constraint only when a sigil
+    // follows it; the anonymous one reached no branch at all and the whole
+    // `for` failed to parse.
+    let (after_tc, type_constraint) =
+        match super::super::sub_param::parse_type_constraint_expr(input) {
+            Some((r, tc)) => {
+                let (r2, _) = ws(r)?;
+                if r2.starts_with(['[', '(']) {
+                    (r2, Some(tc))
+                } else {
+                    (input, None)
+                }
+            }
+            None => (input, None),
+        };
+    let (open, close) = match after_tc.as_bytes().first() {
         Some(b'[') => ('[', ']'),
         Some(b'(') => ('(', ')'),
         _ => return parse_for_pointy_param(input),
     };
-    let (r, _) = parse_char(input, open)?;
+    let (r, _) = parse_char(after_tc, open)?;
     let (r, _) = ws(r)?;
     let (r, sub_params) = super::super::parse_param_list_pub(r)?;
     let (r, _) = ws(r)?;
@@ -374,7 +362,7 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
             named_alias: false,
             slurpy: false,
             sigilless: false,
-            type_constraint: None,
+            type_constraint,
             literal_value: None,
             sub_signature: Some(sub_params),
             where_constraint: None,

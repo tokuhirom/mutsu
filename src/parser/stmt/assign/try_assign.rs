@@ -279,11 +279,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         if (r_after.starts_with('=') && !r_after.starts_with("==") && !r_after.starts_with("=>"))
             || r_after.starts_with("⚛=")
         {
-            let r3 = if let Some(stripped) = r_after.strip_prefix("⚛=") {
-                stripped
-            } else {
-                &r_after[1..]
-            };
+            let r3 = super::strip_atomic_store_assign(r_after).unwrap_or_else(|| &r_after[1..]);
             let (rest, _) = ws(r3)?;
             // The loose word-logicals bind looser than item assignment, so in an
             // expression / parenthesized context `(@a[0] = 8 andthen 0)` is
@@ -616,12 +612,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     if (r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>"))
         || r2.starts_with("⚛=")
     {
-        let is_atomic = r2.starts_with("⚛=");
-        let r3 = if is_atomic {
-            &r2["⚛=".len()..]
-        } else {
-            &r2[1..]
-        };
+        let atomic_rest = super::strip_atomic_store_assign(r2);
+        let is_atomic = atomic_rest.is_some();
+        let r3 = atomic_rest.unwrap_or_else(|| &r2[1..]);
         let (rest, _) = ws(r3)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,

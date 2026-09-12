@@ -416,6 +416,28 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
 
+    // Atomic store in EXPRESSION position: `return unless $!stale ⚛== 1`
+    // (Selkie). `⚛=` was recognised only by the statement-level and
+    // parenthesized assignment parsers, so a bare `$x ⚛= 1` as a statement
+    // modifier's condition — or anywhere else an expression is wanted — did
+    // not parse at all. It is an item assignment like `=`, so its right-hand
+    // side stops before the comma. `strip_atomic_store_assign` also accepts
+    // the `⚛==` metaoperator spelling.
+    if let Some(after_atomic) = crate::parser::stmt::assign::strip_atomic_store_assign(r) {
+        let (r2, _) = ws(after_atomic)?;
+        let (r2, rhs) = item_expr(r2, mode)?;
+        return match unwrap_grouped_lvalue(expr) {
+            Expr::Var(name) => Ok((
+                r2,
+                Expr::Call {
+                    name: Symbol::intern("__mutsu_atomic_store_var"),
+                    args: vec![Expr::Literal(Value::str(name)), rhs],
+                },
+            )),
+            _ => Err(PError::expected_at("atomic assignment target", r)),
+        };
+    }
+
     if !(r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>")) {
         return Ok((rest, expr));
     }

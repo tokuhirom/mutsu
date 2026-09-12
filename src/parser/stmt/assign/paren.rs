@@ -225,12 +225,9 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     {
         return Err(PError::expected("assignment expression"));
     }
-    let is_atomic = rest.starts_with("⚛=");
-    let rest = if is_atomic {
-        &rest["⚛=".len()..]
-    } else {
-        &rest[1..]
-    };
+    let atomic_rest = super::strip_atomic_store_assign(rest);
+    let is_atomic = atomic_rest.is_some();
+    let rest = atomic_rest.unwrap_or_else(|| &rest[1..]);
     let (rest, _) = ws(rest)?;
     // `$(EXPR) = a, b` forces ITEM assignment: `$(...)` names the same container
     // as EXPR but in item context, so the comma is NOT part of the RHS

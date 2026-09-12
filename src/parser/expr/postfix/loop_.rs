@@ -759,28 +759,6 @@ fn brace_is_postcircumfix(expr: &Expr, term_ends_with_ws: bool) -> bool {
         && !matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
 }
 
-/// Lower a parsed DOTTED subscript (`.[...]` / `.{...}`) onto `target`.
-///
-/// A semilist of two or more dimensions becomes a `MultiDimIndex`; a single
-/// dimension becomes a plain `Expr::Index`, which is what every downstream
-/// consumer of an ordinary one-dimensional subscript expects. Same shape as the
-/// undotted bracket loop's own `ParsedBracketIndex` match, extracted so the two
-/// dotted arms cannot drift from each other (GH #8155).
-fn dotted_subscript_expr(target: Expr, parsed: ParsedBracketIndex, is_positional: bool) -> Expr {
-    match parsed {
-        ParsedBracketIndex::MultiDim(dimensions) => Expr::MultiDimIndex {
-            target: Box::new(target),
-            is_positional,
-            dimensions,
-        },
-        ParsedBracketIndex::Single(index) => Expr::Index {
-            target: Box::new(target),
-            index: Box::new(index),
-            is_positional,
-        },
-    }
-}
-
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false)
 }
@@ -798,7 +776,13 @@ fn postfix_expr_loop_from(
     // `brace_final` below as each postfix op moves the term along.
     let mut term_ends_with_ws = ends_with_ws;
     let mut last_iter_start: Option<&str> = None;
+    // Set when the previous iteration consumed a `.` and rewound to a
+    // subscript opener. `Type{...}` is the object-constructor shorthand but
+    // `Type.{...}` is a postcircumfix call on the type object (roast's
+    // `Mu.{'a'}`), so the dot has to reach the branch that tells them apart.
+    let mut dotted_subscript = false;
     loop {
+        let came_from_dot = std::mem::take(&mut dotted_subscript);
         // A postfix op consumed in the previous iteration moves the
         // "does the expression end in `}` at end of line" state along:
         // `.map({...})` ends in `)` (keeps chaining), `.map: {...}` ends in
@@ -1027,121 +1011,21 @@ fn postfix_expr_loop_from(
                 rest = r;
                 continue;
             }
-            // The dotted spelling of the ZEN SLICE: `.[]` / `.{}` select the
-            // whole container, exactly as the undotted `@a[]` / `%h{}` do
-            // (`%h.{}` prints `{a => 1}` under raku). Without these two arms the
-            // empty subscript had no `parse_bracket_indices` to fall back on and
-            // the whole expression collapsed to "Confused" — which is what hid
-            // the real diagnosis in `{*.{}}()`.
-            if let Some(r_inner) = r.strip_prefix('[') {
-                let (r_empty, _) = ws(r_inner)?;
-                if let Some(r_empty) = r_empty.strip_prefix(']') {
-                    expr = Expr::ZenSlice(Box::new(expr));
-                    rest = r_empty;
-                    continue;
-                }
-            }
-            if let Some(r_inner) = r.strip_prefix('{') {
-                let (r_empty, _) = ws(r_inner)?;
-                if let Some(r_empty) = r_empty.strip_prefix('}') {
-                    expr = Expr::ZenSlice(Box::new(expr));
-                    rest = r_empty;
-                    continue;
-                }
-            }
-            // Check for .[index] syntax: object.[expr] or .[expr1, expr2, ...]
-            //
-            // A subscript holds a SEMILIST, so `.[$i; $j]` is a
-            // multi-dimensional index exactly as the undotted `@a[$i; $j]` is.
-            // Both dotted arms therefore go through
-            // `parse_bracket_indices_inner` and build the same `MultiDimIndex`
-            // the bracket loop below builds, lowering a single remaining
-            // dimension back to a plain `Expr::Index`. They used to call the
-            // `parse_bracket_indices` WRAPPER, which flattens the dimensions
-            // into one `ArrayLiteral` for callers that cannot represent them --
-            // turning `$c.[0; 1]` into the slice `$c[(0, 1)]` and silently
-            // answering with the whole container (`([1 2] [3 4])` instead of
-            // `2`), and `%h.{"a"; "b"}` into `%h{("a", "b")}` (GH #8155).
-            if let Some(r_inner) = r.strip_prefix('[') {
-                let (r_inner, _) = ws(r_inner)?;
-                let (r_inner, parsed) = parse_bracket_indices_inner(r_inner)?;
-                let (r_inner, _) = ws(r_inner)?;
-                let (r_inner, _) = parse_char(r_inner, ']')?;
-                expr = dotted_subscript_expr(expr, parsed, true);
-                rest = r_inner;
-                continue;
-            }
-            // Check for .{index} syntax: object.{$expr}
-            if let Some(r) = r.strip_prefix('{') {
-                let (r, _) = ws(r)?;
-                let (r, parsed) = parse_bracket_indices_inner(r)?;
-                let (r, _) = ws(r)?;
-                let (r, _) = parse_char(r, '}')?;
-                expr = dotted_subscript_expr(expr, parsed, false);
+            // `.[...]`, `.{...}`, `.<...>`, `.<<...>>` and `.«...»` are the
+            // DOTTED SPELLING of the very same postcircumfix subscripts, so
+            // rewind to the opener and let the undotted branches below parse
+            // them. They used to be restated here as weaker copies, and every
+            // capability the copies lacked was silently missing after a dot:
+            // semicolon dimensions (`$c.[0; 1]` flattened to one list index),
+            // the zen slice `.<>`, nested-angle keys (`%h.<a<b>>`) and the
+            // interpolating `<<...>>` / `«...»` spellings. The `.` just
+            // consumed is part of the span the loop measures, so the term no
+            // longer "ends with whitespace" and `.{...}` still reads as a
+            // subscript rather than a block.
+            if r.starts_with(['[', '{', '<', '\u{00AB}']) {
+                dotted_subscript = true;
                 rest = r;
                 continue;
-            }
-            // The dotted spelling of the DECONTAINERIZING zen angle subscript,
-            // `.<>`, which the undotted `$x<>` / `@a<>` arm below already
-            // handles and which lowers the same way. `Game::Entities` writes
-            // `.[COMPONENTS; $i].<>`, and without this arm the empty `<>` fell
-            // through every dotted postfix (the `.<key>` arm just below needs a
-            // non-empty key) to a bare "Confused" (GH #8155). Adverbs on the
-            // dotted form (`%h.<>:k`) are still unhandled, as they are for
-            // every other dotted subscript.
-            if let Some(r_zen) = r.strip_prefix("<>") {
-                expr = match &expr {
-                    Expr::HashVar(_) => expr.clone(),
-                    _ => Expr::MethodCall {
-                        target: Box::new(expr.clone()),
-                        name: Symbol::intern("__mutsu_zen_angle"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    },
-                };
-                rest = r_zen;
-                continue;
-            }
-            // Check for .<key> angle-bracket hash access: %h.<foo>, $obj.<bar>
-            if r.starts_with('<')
-                && !r.starts_with("<=")
-                && !r.starts_with("<<")
-                && !r.starts_with("<=>")
-            {
-                let r2 = &r[1..];
-                if let Some(end) = r2.find('>') {
-                    let content = &r2[..end];
-                    let keys = split_angle_words(content);
-                    if !keys.is_empty()
-                        && keys
-                            .iter()
-                            .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
-                    {
-                        let r2 = &r2[end + 1..];
-                        // Angle-word subscript keys are val()-allomorphic like
-                        // standalone `<...>` words: `%h<42>` looks up with an
-                        // IntStr, which an object hash keys distinctly from
-                        // both `Int 42` and `Str "42"`. Plain hashes stringify
-                        // the key, so they are unaffected.
-                        let index_expr = if keys.len() == 1 {
-                            Expr::Literal(crate::parser::angle_word_value(keys[0]))
-                        } else {
-                            Expr::ArrayLiteral(
-                                keys.into_iter()
-                                    .map(|k| Expr::Literal(crate::parser::angle_word_value(k)))
-                                    .collect(),
-                            )
-                        };
-                        expr = Expr::Index {
-                            target: Box::new(expr),
-                            index: Box::new(index_expr),
-                            is_positional: false,
-                        };
-                        rest = r2;
-                        continue;
-                    }
-                }
             }
             // Check for call-on syntax: .(args)
             if r.starts_with('(') {
@@ -2138,6 +2022,7 @@ fn postfix_expr_loop_from(
         // call result (raku binds a no-whitespace `{` as postcircumfix), so a
         // declared or imported sub falls through to the Index arm below.
         if rest.starts_with('{')
+            && !came_from_dot
             && matches!(&expr, Expr::BareWord(name) if {
                 name != "self"
                 && crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()

@@ -1415,8 +1415,21 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     // Quoted method name on the topic: ."$method"() / .'method'() — equivalent to
     // $_."$method"(). Mirrors the explicit-invocant path; quoted method names
     // require parenthesized arguments.
-    if (r.starts_with('"') || r.starts_with('\''))
-        && let Some((r, qname)) = crate::parser::expr::parse_quoted_method_name(r)
+    //
+    // The `?` / `^` modifier may precede the quote (`.?"$name"()`, Red's
+    // inflator), exactly as it may on an explicit invocant (`$x.?"$name"()`,
+    // which has always parsed). This branch used to run before the modifier
+    // was consumed, so the two spellings could not be combined on the topic and
+    // the whole enclosing block failed to parse.
+    let (r_quote, quoted_modifier) = if let Some(stripped) = r.strip_prefix('^') {
+        (stripped, Some('^'))
+    } else if let Some(stripped) = r.strip_prefix('?') {
+        (stripped, Some('?'))
+    } else {
+        (r, None)
+    };
+    if (r_quote.starts_with('"') || r_quote.starts_with('\''))
+        && let Some((r, qname)) = crate::parser::expr::parse_quoted_method_name(r_quote)
     {
         if !r.starts_with('(') {
             return Err(PError::expected_at(
@@ -1437,7 +1450,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                     target: topic,
                     name: Symbol::intern(&name),
                     args,
-                    modifier: None,
+                    modifier: quoted_modifier,
                     quoted: true,
                 },
                 crate::parser::expr::QuotedMethodName::Dynamic(name_expr) => {
@@ -1445,7 +1458,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                         target: topic,
                         name_expr: Box::new(name_expr),
                         args,
-                        modifier: None,
+                        modifier: quoted_modifier,
                         quoted: true,
                     }
                 }

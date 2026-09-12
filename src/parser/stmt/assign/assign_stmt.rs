@@ -14,12 +14,9 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             if (after_ws.starts_with('=') && !after_ws.starts_with("=="))
                 || after_ws.starts_with("⚛=")
             {
-                let is_atomic = after_ws.starts_with("⚛=");
-                let rest = if is_atomic {
-                    &after_ws["⚛=".len()..]
-                } else {
-                    &after_ws[1..]
-                };
+                let atomic_rest = super::strip_atomic_store_assign(after_ws);
+                let is_atomic = atomic_rest.is_some();
+                let rest = atomic_rest.unwrap_or_else(|| &after_ws[1..]);
                 let (rest, _) = ws(rest)?;
                 let (rest, expr) = parse_assign_expr_or_comma(rest)?;
                 if is_atomic {
@@ -503,12 +500,9 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if (rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>"))
         || rest.starts_with("⚛=")
     {
-        let is_atomic = rest.starts_with("⚛=");
-        let rest = if is_atomic {
-            &rest["⚛=".len()..]
-        } else {
-            &rest[1..]
-        };
+        let atomic_rest = super::strip_atomic_store_assign(rest);
+        let is_atomic = atomic_rest.is_some();
+        let rest = atomic_rest.unwrap_or_else(|| &rest[1..]);
         let (rest, _) = ws(rest)?;
 
         // Item assignment (`=`) to a scalar variable binds TIGHTER than the comma

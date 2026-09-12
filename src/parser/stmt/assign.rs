@@ -45,6 +45,24 @@ pub(crate) fn strip_atomic_compound_assign(rest: &str) -> Option<(&str, bool)> {
     None
 }
 
+/// Strip a leading atomic STORE operator, returning the rest of the input.
+///
+/// Both spellings rakudo accepts are consumed: `⚛=` itself, and `⚛==`, which is
+/// `infix:<⚛=>` under the assignment metaoperator (`&infix:«⚛==».name` answers
+/// `infix:<⚛=> + {assigning}`). The metaoperator form assigns the base
+/// operator's result back to the target, and `⚛=`'s result *is* the value it
+/// just stored, so the two spellings are the same store and lower to the same
+/// `__mutsu_atomic_store_var` call.
+///
+/// Selkie writes the metaoperator form (`$!mouse-capture-stale ⚛== 1`), which
+/// no site recognised at all.
+pub(crate) fn strip_atomic_store_assign(rest: &str) -> Option<&str> {
+    let after = rest.strip_prefix("⚛=")?;
+    // The metaoperator's own `=`. `⚛=>` is not one of ours, and a `⚛=` followed
+    // by a further `=` after that (`⚛===`) is the error rakudo reports too.
+    Some(after.strip_prefix('=').unwrap_or(after))
+}
+
 /// Wrap an atomic compound assignment's right-hand side in unary minus when the
 /// operator was a subtract form. See [`strip_atomic_compound_assign`].
 pub(crate) fn atomic_delta_expr(rhs: Expr, negate: bool) -> Expr {
