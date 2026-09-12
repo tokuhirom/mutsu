@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -627,9 +628,9 @@ impl Interpreter {
             });
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.
-            let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
+            let callable_key = MetaNs::CallableId.key_pair(def.package, def.name);
             let mut registration_id: Option<u64> = None;
-            if let Some(id_val) = self.env.get(&callable_key).cloned()
+            if let Some(id_val) = self.env.get_sym(callable_key).cloned()
                 && let ValueView::Int(id) = id_val.view()
             {
                 if id != 0 {
@@ -737,7 +738,7 @@ impl Interpreter {
                 && e.return_value.is_some()
                 && e.return_target_callable_id().is_some()
             {
-                let my_id = self.env.get(&callable_key).and_then(|v| match v.view() {
+                let my_id = self.env.get_sym(callable_key).and_then(|v| match v.view() {
                     ValueView::Int(i) => Some(i as u64),
                     _ => None,
                 });

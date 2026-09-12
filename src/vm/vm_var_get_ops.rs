@@ -666,10 +666,10 @@ impl Interpreter {
     /// markers the binding emits.
     fn has_sigilless_binding(&self, name: &str) -> bool {
         self.env()
-            .contains_key(&crate::runtime::utils::sigilless_readonly_key(name))
+            .contains_key_sym(crate::runtime::utils::sigilless_readonly_key(name))
             || self
                 .env()
-                .contains_key(&crate::runtime::utils::sigilless_alias_key(name))
+                .contains_key_sym(crate::runtime::utils::sigilless_alias_key(name))
     }
 
     /// Resolve a qualified name `Prefix::variant` where `Prefix` is a symbol

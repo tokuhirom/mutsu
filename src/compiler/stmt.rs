@@ -1083,8 +1083,8 @@ impl Compiler {
                         // `\x = ...` binds the value itself — no Scalar
                         // container, so SetLocal must not itemize it).
                         self.sigilless_locals.insert(name.clone());
-                        let key = format!("__mutsu_sigilless_readonly::{}", name);
-                        let key_idx = self.code.add_constant(Value::str(key));
+                        let key = crate::runtime::sigilless_readonly_key(name);
+                        let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                         let false_idx = self.code.add_constant(Value::FALSE);
                         self.code.emit(OpCode::LoadConst(false_idx));
                         self.code.emit(OpCode::SetGlobal(key_idx));
@@ -1112,8 +1112,8 @@ impl Compiler {
                 // Record `__mutsu_bound::NAME` = true in env so the whole-var
                 // readonly check (`CheckReadOnly`) can tell a `:=`-bound
                 // container (writable) apart from a `constant` one (immutable).
-                let key = format!("__mutsu_bound::{}", name);
-                let key_idx = self.code.add_constant(Value::str(key));
+                let key = crate::runtime::meta_ns::MetaNs::Bound.key_for_str(name);
+                let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                 let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));
                 self.code.emit(OpCode::SetGlobal(key_idx));
@@ -1142,8 +1142,8 @@ impl Compiler {
                 // distinguish them from `$`-sigiled variables.
                 self.sigilless_locals.insert(name.clone());
                 // Set __mutsu_sigilless_readonly::NAME = true in env
-                let key = format!("__mutsu_sigilless_readonly::{}", name);
-                let key_idx = self.code.add_constant(Value::str(key));
+                let key = crate::runtime::sigilless_readonly_key(name);
+                let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                 let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));
                 self.code.emit(OpCode::SetGlobal(key_idx));

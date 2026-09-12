@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
     /// Load the live scalar container denoted by `take-rw $var`.
@@ -225,15 +226,15 @@ impl Interpreter {
         if skip_name_keyed_store || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the local/env read
         } else if name.starts_with('@') {
-            let atomic_key = format!("__mutsu_atomic_arr::{name}");
-            if let Some(shared_val) = self.get_shared_var(&atomic_key) {
+            let atomic_key = atomic_lane_str_key(name, false);
+            if let Some(shared_val) = self.get_shared_var(atomic_key) {
                 self.locals[idx] = shared_val.clone();
                 self.stack.push(shared_val);
                 return Ok(());
             }
         } else if name.starts_with('%') {
-            let atomic_key = format!("__mutsu_atomic_hash::{name}");
-            if let Some(shared_val) = self.get_shared_var(&atomic_key) {
+            let atomic_key = atomic_lane_str_key(name, true);
+            if let Some(shared_val) = self.get_shared_var(atomic_key) {
                 self.locals[idx] = shared_val.clone();
                 self.stack.push(shared_val);
                 return Ok(());

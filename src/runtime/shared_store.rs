@@ -62,38 +62,16 @@ fn atomic_lane_base_name(key: &str) -> Option<&str> {
 /// pushes to a shared array arms it, so any concurrent program pays it: this
 /// key and the `^<name>` placeholder key built beside it were together ~1.5%
 /// of the RIPEMD profile in `format!` machinery alone (#7571). The
-/// `name -> key` mapping never changes, so it is memoized exactly like
-/// `Interpreter::type_meta_key_for_sym`.
+/// `name -> key` mapping never changes, so it is memoized — by
+/// [`MetaNs`](crate::runtime::meta_ns::MetaNs), the one constructor for these
+/// keys (#8087); this is a named shorthand for its two atomic namespaces.
 pub(crate) fn atomic_lane_key(name: &str, hash_lane: bool) -> crate::symbol::Symbol {
-    use crate::symbol::Symbol;
-    thread_local! {
-        static ARR_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-            const {
-                std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
-                    rustc_hash::FxBuildHasher,
-                ))
-            };
-        static HASH_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-            const {
-                std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
-                    rustc_hash::FxBuildHasher,
-                ))
-            };
-    }
-    let name_sym = Symbol::intern(name);
-    let cache = if hash_lane { &HASH_KEYS } else { &ARR_KEYS };
-    if let Some(sym) = cache.with(|c| c.borrow().get(&name_sym).copied()) {
-        return sym;
-    }
-    let sym = if hash_lane {
-        Symbol::intern(&format!("__mutsu_atomic_hash::{name}"))
-    } else {
-        Symbol::intern(&format!("__mutsu_atomic_arr::{name}"))
-    };
-    cache.with(|c| {
-        c.borrow_mut().insert(name_sym, sym);
-    });
-    sym
+    crate::runtime::meta_ns::MetaNs::atomic_lane(hash_lane).key_for_str(name)
+}
+
+/// [`atomic_lane_key`] as a `&'static str`, for the by-name shared-store API.
+pub(crate) fn atomic_lane_str_key(name: &str, hash_lane: bool) -> &'static str {
+    crate::runtime::meta_ns::MetaNs::atomic_lane(hash_lane).str_key_for_str(name)
 }
 
 /// Set once any atomic array/hash lane entry has been created anywhere in the
@@ -112,8 +90,8 @@ fn note_inserted_key(key: &str) {
 /// Whether any `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::` lane entry has
 /// ever been created.
 ///
-/// Every `@`/`%` variable READ used to build a `format!("__mutsu_atomic_arr::{name}")`
-/// String and walk the store chain for it, to see whether a concurrent CAS/push
+/// Every `@`/`%` variable READ used to build an `__mutsu_atomic_arr::<name>`
+/// String from scratch and walk the store chain for it, to see whether a concurrent CAS/push
 /// had published an authoritative copy. In a program that never runs an atomic
 /// array/hash op — which is nearly every program, and every iteration of
 /// bench-ctor — that is one heap allocation plus a hash lookup per read, for a

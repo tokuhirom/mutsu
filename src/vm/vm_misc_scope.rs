@@ -388,11 +388,11 @@ impl Interpreter {
         // Store metadata mapping variable name to its state storage key.
         // Closures that capture this variable can use this to update state
         // storage when they modify the variable.
-        let meta_key = format!("__mutsu_state_key::{}", name);
+        let meta_key = Self::state_meta_key_for_sym(crate::symbol::Symbol::intern(&name));
         let scoped_key_val = Value::str(Self::state_key_display(scoped_key));
-        let needs_meta_insert = self.env().get(&meta_key) != Some(&scoped_key_val);
+        let needs_meta_insert = self.env().get_sym(meta_key) != Some(&scoped_key_val);
         if needs_meta_insert {
-            self.env_mut().insert(meta_key, scoped_key_val);
+            self.env_mut().insert_sym_noting(meta_key, scoped_key_val);
         }
     }
 
@@ -904,10 +904,10 @@ impl Interpreter {
         // sigilless alias (e.g. `my $a := $_`), propagate the local's
         // current value to the alias target in env so they stay in sync.
         for (idx, name) in code.locals.iter().enumerate() {
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+            let alias_key = crate::runtime::sigilless_alias_key(name);
             if let Some(ValueView::Str(target)) = self
                 .env()
-                .get(&alias_key)
+                .get_sym(alias_key)
                 .cloned()
                 .as_ref()
                 .map(Value::view)

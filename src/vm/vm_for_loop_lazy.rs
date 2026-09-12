@@ -141,8 +141,8 @@ impl Interpreter {
             // into the params, so they must not stay read-only from an outer scope.
             for mp_name in &spec.multi_param_names {
                 self.unmark_readonly(mp_name);
-                let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
-                self.env_mut().insert(key, Value::FALSE);
+                let key = crate::runtime::sigilless_readonly_key(mp_name);
+                self.env_mut().insert_sym_noting(key, Value::FALSE);
             }
             'body_redo: loop {
                 let run_start = nested_entry.take().unwrap_or(body_start);

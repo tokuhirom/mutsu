@@ -298,8 +298,8 @@ impl Interpreter {
                     if !crate::env::shaped_array_dims_possible() {
                         return None;
                     }
-                    let key = format!("__mutsu_shaped_array_dims::{}", name);
-                    self.env().get(&key).and_then(|v| {
+                    let key = crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&name);
+                    self.env().get_sym(key).and_then(|v| {
                         if let ValueView::Array(dims, ..) = v.view() {
                             Some(
                                 dims.iter()
@@ -691,8 +691,8 @@ impl Interpreter {
             }
             self.update_local_if_exists(code, &current_alias, &val);
             self.env_mut().insert(current_alias.clone(), val.clone());
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.env().get(&next_key).and_then(|v| {
+            let next_key = crate::runtime::sigilless_alias_key(&current_alias);
+            alias_name = self.env().get_sym(next_key).and_then(|v| {
                 if let ValueView::Str(name) = v.view() {
                     Some(name.to_string())
                 } else {

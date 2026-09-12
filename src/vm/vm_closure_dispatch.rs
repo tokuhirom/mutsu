@@ -1716,7 +1716,7 @@ impl Interpreter {
         // Only run the state-variable sync and cleanup when the closure
         // references captured variables that may be state vars.  This avoids the
         // per-call overhead for simple closures in hot loops.  The `meta_possible`
-        // gate skips the per-free-var `format!("__mutsu_state_key::...")` lookups
+        // gate skips the per-free-var `__mutsu_state_key::<name>` lookups
         // entirely for programs with no state variables.
         if meta_possible && !cc.free_var_syms.is_empty() {
             // Update state variable storage when closures modify captured

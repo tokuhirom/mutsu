@@ -7,6 +7,7 @@
 //! fails).
 
 use super::*;
+use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
     /// The element-type constraint a CAS write into `name`'s celled atomic
@@ -19,11 +20,8 @@ impl Interpreter {
         }
         let node = {
             self.shared_vars
-                .get(&format!("__mutsu_atomic_arr::{name}"))
-                .or_else(|| {
-                    self.shared_vars
-                        .get(&format!("__mutsu_atomic_hash::{name}"))
-                })
+                .get(atomic_lane_str_key(name, false))
+                .or_else(|| self.shared_vars.get(atomic_lane_str_key(name, true)))
                 .or_else(|| self.shared_vars.get(name))
         }
         .or_else(|| self.env.get(name).cloned())?;
@@ -118,9 +116,9 @@ impl Interpreter {
             _ => args[1].to_string_value().parse::<i64>().unwrap_or(0),
         };
         let code = args[2].clone();
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
-        self.init_celled_atomic_store(&atomic_key, &arr_name);
-        let cell = self.celled_array_elem(&atomic_key, &arr_name, index);
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
+        self.init_celled_atomic_store(atomic_key, &arr_name);
+        let cell = self.celled_array_elem(atomic_key, &arr_name, index);
         let r = self.cas_cell_code_loop(&arr_name, &cell, &code);
         if r.is_ok()
             && let Ok(mut dirty) = self.shared_vars_dirty.write()
@@ -156,10 +154,10 @@ impl Interpreter {
             _ => vec![0],
         };
         let code = args[2].clone();
-        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
-        self.init_celled_atomic_store(&atomic_key, &arr_name);
+        let atomic_key = atomic_lane_str_key(&arr_name, false);
+        self.init_celled_atomic_store(atomic_key, &arr_name);
         let cell =
-            self.celled_array_elem(&atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
+            self.celled_array_elem(atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
         let inner_dims: &[i64] = if dims.len() > 1 { &dims[1..] } else { &[] };
         if inner_dims.is_empty() {
             let r = self.cas_cell_code_loop(&arr_name, &cell, &code);

@@ -35,19 +35,23 @@ pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 pub(crate) const MAX_LAZY_RANGE_PREFIX: i64 = 100_000;
 
 /// The env key recording the `:=` alias target of the sigilless/aliased variable
-/// `name` (`my $b := $a` stores `a` under the key for `b`). The single definition
-/// of the key shape, so a hot path can pre-intern it instead of rebuilding it per
-/// store — see `CompiledCode::locals_alias_sym`.
-pub(crate) fn sigilless_alias_key(name: &str) -> String {
-    format!("__mutsu_sigilless_alias::{name}")
+/// `name` (`my $b := $a` stores `a` under the key for `b`), pre-interned.
+///
+/// Returns a `Symbol` rather than a `String` because the key is built on paths
+/// that run per store and per closure call: the caller probes the env with
+/// `get_sym` / `contains_key_sym` / `remove_sym` and writes with
+/// `insert_sym_noting`, so neither the key string nor its hash is rebuilt
+/// (#8087). [`MetaNs`](crate::runtime::meta_ns::MetaNs) memoizes the mapping.
+pub(crate) fn sigilless_alias_key(name: &str) -> crate::symbol::Symbol {
+    crate::runtime::meta_ns::MetaNs::SigillessAlias.key_for_str(name)
 }
 
 /// The env key marking the sigilless variable `name` as readonly (`my \x = 42`).
 /// Companion of [`sigilless_alias_key`]; both are only ever present once the
 /// program creates a sigilless/`:=` binding, which `closure_meta_keys_possible`
 /// reports.
-pub(crate) fn sigilless_readonly_key(name: &str) -> String {
-    format!("__mutsu_sigilless_readonly::{name}")
+pub(crate) fn sigilless_readonly_key(name: &str) -> crate::symbol::Symbol {
+    crate::runtime::meta_ns::MetaNs::SigillessReadonly.key_for_str(name)
 }
 
 /// The env key tracking which indices of `name` were `:delete`d. A `my`

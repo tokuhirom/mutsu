@@ -524,9 +524,9 @@ impl Interpreter {
         if name.is_empty() {
             return data.id;
         }
-        let key = format!("__mutsu_callable_id::{}::{}", data.package.resolve(), name);
+        let key = crate::runtime::Interpreter::callable_id_key_for_syms(data.package, data.name);
         self.env()
-            .get(&key)
+            .get_sym(key)
             .and_then(|v| v.as_int())
             .filter(|i| *i != 0)
             .map_or(data.id, |i| i as u64)

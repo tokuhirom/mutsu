@@ -379,8 +379,8 @@ impl Interpreter {
         name: &str,
         new_val: &Value,
     ) {
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
+        let alias_key = crate::runtime::sigilless_alias_key(name);
+        let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
             if let ValueView::Str(n) = v.view() {
                 Some(n.to_string())
             } else {
@@ -394,8 +394,8 @@ impl Interpreter {
             }
             self.set_env_with_main_alias(&current_alias, new_val.clone());
             self.update_local_if_exists(code, &current_alias, new_val);
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.env().get(&next_key).and_then(|v| {
+            let next_key = crate::runtime::sigilless_alias_key(&current_alias);
+            alias_name = self.env().get_sym(next_key).and_then(|v| {
                 if let ValueView::Str(n) = v.view() {
                     Some(n.to_string())
                 } else {

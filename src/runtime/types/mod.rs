@@ -494,7 +494,7 @@ impl Interpreter {
         crate::env::sigilless_readonly_keys_possible()
             && matches!(
                 self.env()
-                    .get(&crate::runtime::utils::sigilless_readonly_key(name))
+                    .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
                     .map(Value::view),
                 Some(ValueView::Bool(true))
             )

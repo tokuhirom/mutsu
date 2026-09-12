@@ -199,8 +199,8 @@ impl Interpreter {
         let mut current = name.to_string();
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
-            let key = format!("__mutsu_sigilless_alias::{}", current);
-            if let Some(ValueView::Str(next)) = self.env().get(&key).map(Value::view) {
+            let key = crate::runtime::sigilless_alias_key(&current);
+            if let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) {
                 current = next.to_string();
             } else {
                 break;

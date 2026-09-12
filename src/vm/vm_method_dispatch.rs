@@ -636,9 +636,9 @@ impl Interpreter {
                 {
                     let key = crate::runtime::sigilless_readonly_key(param_name);
                     if bound_to_container {
-                        self.env_mut().remove(&key);
+                        self.env_mut().remove_sym(key);
                     } else {
-                        self.env_mut().insert(key, Value::TRUE);
+                        self.env_mut().insert_sym_noting(key, Value::TRUE);
                     }
                 }
                 continue;
@@ -675,21 +675,22 @@ impl Interpreter {
                     self.sigilless_attrs_active = true;
                     crate::vm::vm_jit::note_local_read_spoiler();
                     // Set up bidirectional alias: !x ↔ alias_name
-                    self.env_mut().insert(
-                        format!("__mutsu_sigilless_alias::!{}", actual_attr),
+                    let attr_var = format!("!{actual_attr}");
+                    self.env_mut().insert_sym_noting(
+                        crate::runtime::sigilless_alias_key(&attr_var),
                         Value::str(source_name.to_string()),
                     );
-                    self.env_mut().insert(
-                        format!("__mutsu_sigilless_readonly::!{}", actual_attr),
+                    self.env_mut().insert_sym_noting(
+                        crate::runtime::sigilless_readonly_key(&attr_var),
                         Value::FALSE,
                     );
                     // Reverse alias: alias_name → !attr so writing to $x updates $!x
-                    self.env_mut().insert(
-                        format!("__mutsu_sigilless_alias::{}", *source_name),
-                        Value::str(format!("!{}", actual_attr)),
+                    self.env_mut().insert_sym_noting(
+                        crate::runtime::sigilless_alias_key(&source_name),
+                        Value::str(attr_var),
                     );
-                    self.env_mut().insert(
-                        format!("__mutsu_sigilless_readonly::{}", *source_name),
+                    self.env_mut().insert_sym_noting(
+                        crate::runtime::sigilless_readonly_key(&source_name),
                         Value::FALSE,
                     );
                     // Also set up the alias name with the current attribute value
@@ -1816,9 +1817,9 @@ impl Interpreter {
         if let Some((name, readonly)) = raw_invocant_readonly {
             let key = crate::runtime::sigilless_readonly_key(name);
             if readonly {
-                self.env_mut().insert(key, Value::TRUE);
+                self.env_mut().insert_sym_noting(key, Value::TRUE);
             } else {
-                self.env_mut().remove(&key);
+                self.env_mut().remove_sym(key);
             }
         }
 

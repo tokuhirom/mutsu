@@ -1763,7 +1763,7 @@ impl Interpreter {
             }
             if crate::env::sigilless_readonly_keys_possible() {
                 let readonly_key = runtime::sigilless_readonly_key(name);
-                self.env_mut().remove(&readonly_key);
+                self.env_mut().remove_sym(readonly_key);
             }
             self.local_bind_pairs.retain(|&(source, _)| source != idx);
             // Also remove env-based aliases that point TO this variable,
@@ -1802,14 +1802,14 @@ impl Interpreter {
                 resolved_source.clone()
             };
             self.env_mut()
-                .insert(alias_key.clone(), Value::str(alias_target));
+                .insert_sym_noting(alias_key, Value::str(alias_target));
             // Binding aliases the source, so the target inherits its readonly-ness:
             // `sub f($ro) { my $c := $ro; $c = 3 }` is an assignment to a readonly
             // variable, exactly as `$ro = 3` would be. Writing an unconditional
             // `False` here made the alias writable and silently dropped the store.
             // (The SetGlobal bind path already propagates this.)
             let source_kind = self.readonly_kind(&resolved_source);
-            self.env_mut().insert(
+            self.env_mut().insert_sym_noting(
                 runtime::sigilless_readonly_key(name),
                 Value::truth(source_kind.is_some()),
             );
@@ -1914,7 +1914,7 @@ impl Interpreter {
             // cell rather than autovivifying a fresh, detached container.
             if scalar_source.is_some() {
                 self.env_mut()
-                    .insert(alias_key.clone(), Value::str(effective_source.clone()));
+                    .insert_sym_noting(alias_key, Value::str(effective_source.clone()));
                 self.mark_sigilless_alias_seen();
             }
             // Whole-container `:=` bind (`my @b := @a`, `my %h2 := %h`,
@@ -2155,10 +2155,10 @@ impl Interpreter {
                 }
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
-                let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
+                let alias_key_for_target = runtime::sigilless_alias_key(name);
                 if let Some(alias_target) =
                     self.env()
-                        .get(&alias_key_for_target)
+                        .get_sym(alias_key_for_target)
                         .and_then(|v| match v.view() {
                             ValueView::Str(s) => Some(s.clone()),
                             _ => None,
@@ -2571,8 +2571,8 @@ impl Interpreter {
             // caller's local slot (without relying on the reverse pull).
             self.pending_rw_writeback_sources
                 .push(current_alias.clone());
-            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-            alias_name = self.env().get(&next_key).and_then(|v| {
+            let next_key = runtime::sigilless_alias_key(&current_alias);
+            alias_name = self.env().get_sym(next_key).and_then(|v| {
                 if let ValueView::Str(name) = v.view() {
                     Some(name.to_string())
                 } else {

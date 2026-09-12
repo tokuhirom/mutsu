@@ -1214,8 +1214,8 @@ impl Interpreter {
                         if pd.sigilless {
                             self.sigilless_alias_seen = true;
                             self.env
-                                .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
-                            self.env.remove(&sigilless_alias_key(&pd.name));
+                                .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
+                            self.env.remove_sym(sigilless_alias_key(&pd.name));
                             self.bind_param_value_sym(&pd.name, pd_name_sym(), lazy_value.clone());
                         } else {
                             let key = if pd.name.starts_with('@') {
@@ -1329,8 +1329,8 @@ impl Interpreter {
                     if !pd.name.is_empty() {
                         self.sigilless_alias_seen = true;
                         self.env
-                            .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
-                        self.env.remove(&sigilless_alias_key(&pd.name));
+                            .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
+                        self.env.remove_sym(sigilless_alias_key(&pd.name));
                         self.bind_param_value_sym(&pd.name, pd_name_sym(), slurpy_value.clone());
                     }
                 } else if !pd.name.is_empty() {
@@ -2259,8 +2259,9 @@ impl Interpreter {
                             // bindings (e.g. `$a := $arg`) can transitively
                             // resolve through the `is rw` parameter to the
                             // caller's variable.
-                            let alias_key = format!("__mutsu_sigilless_alias::{}", pd.name);
-                            self.env.insert(alias_key, Value::str(source_name));
+                            let alias_key = sigilless_alias_key(&pd.name);
+                            self.env
+                                .insert_sym_noting(alias_key, Value::str(source_name));
                             self.sigilless_alias_seen = true;
                         } else if matches!(args[positional_idx].view(), ValueView::ContainerRef(_))
                         {
@@ -2417,9 +2418,9 @@ impl Interpreter {
                         // parameter of every call.
                         if self.sigilless_alias_seen {
                             self.env
-                                .remove(&crate::runtime::sigilless_alias_key(&pd.name));
+                                .remove_sym(crate::runtime::sigilless_alias_key(&pd.name));
                             self.env
-                                .remove(&crate::runtime::sigilless_readonly_key(&pd.name));
+                                .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
                         }
                         value = value.detach_shared_container();
                         // The copy is a fresh container: its descriptor name is
@@ -2470,8 +2471,8 @@ impl Interpreter {
                             // anonymous alias so a later `target = v` writes through
                             // to the underlying container (distributing element-wise
                             // for the slice case) and is visible immediately.
-                            self.env.remove(&alias_key);
-                            self.env.insert(readonly_key, Value::FALSE);
+                            self.env.remove_sym(alias_key);
+                            self.env.insert_sym_noting(readonly_key, Value::FALSE);
                             // Mark a genuine multi-dim slice lvalue so the assign
                             // ops know to distribute a whole-value assignment
                             // through its cells. "Elements are all cells" alone is
@@ -2489,8 +2490,9 @@ impl Interpreter {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
                             value = inner;
-                            self.env.insert(alias_key, Value::str(resolved_source));
-                            self.env.insert(readonly_key, Value::FALSE);
+                            self.env
+                                .insert_sym_noting(alias_key, Value::str(resolved_source));
+                            self.env.insert_sym_noting(readonly_key, Value::FALSE);
                             self.sigilless_alias_seen = true;
                         } else if let Some(source_name) = arg_sources
                             .as_ref()
@@ -2526,19 +2528,20 @@ impl Interpreter {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
                             if is_compile_time_pseudo || is_routine_reset_magic {
-                                self.env.remove(&alias_key);
-                                self.env.insert(readonly_key, Value::TRUE);
+                                self.env.remove_sym(alias_key);
+                                self.env.insert_sym_noting(readonly_key, Value::TRUE);
                             } else if self.env.get(&resolved_source).is_some() {
-                                self.env.insert(alias_key, Value::str(resolved_source));
-                                self.env.insert(readonly_key, Value::FALSE);
+                                self.env
+                                    .insert_sym_noting(alias_key, Value::str(resolved_source));
+                                self.env.insert_sym_noting(readonly_key, Value::FALSE);
                                 self.sigilless_alias_seen = true;
                             } else {
-                                self.env.remove(&alias_key);
-                                self.env.insert(readonly_key, Value::TRUE);
+                                self.env.remove_sym(alias_key);
+                                self.env.insert_sym_noting(readonly_key, Value::TRUE);
                             }
                         } else {
-                            self.env.remove(&alias_key);
-                            self.env.insert(readonly_key, Value::TRUE);
+                            self.env.remove_sym(alias_key);
+                            self.env.insert_sym_noting(readonly_key, Value::TRUE);
                         }
                     }
                     value = self.check_and_coerce_param_type(

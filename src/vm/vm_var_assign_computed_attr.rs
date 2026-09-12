@@ -466,8 +466,8 @@ impl Interpreter {
         let mut current = name.to_string();
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {
-            let key = format!("__mutsu_sigilless_alias::{}", current);
-            match self.env().get(&key).map(Value::view) {
+            let key = crate::runtime::sigilless_alias_key(&current);
+            match self.env().get_sym(key).map(Value::view) {
                 Some(ValueView::Str(next)) => {
                     let next = next.to_string();
                     if Self::attr_twigil_base(&next).is_some() {

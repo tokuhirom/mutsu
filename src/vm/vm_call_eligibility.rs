@@ -58,10 +58,11 @@ impl Interpreter {
         if cf.code.state_locals.is_empty() || fn_name.is_empty() {
             return None;
         }
-        let key = format!("__mutsu_callable_id::{}::{}", cf.package, fn_name);
+        let key =
+            crate::runtime::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
         let id = self
             .env()
-            .get(&key)
+            .get_sym(key)
             .and_then(|v| v.as_int())
             .filter(|i| *i != 0)
             .map(|i| i as u64);
