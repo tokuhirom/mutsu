@@ -698,6 +698,56 @@ impl Interpreter {
         v
     }
 
+    /// The value of `stmts` when it is a single constant expression, `None`
+    /// otherwise.
+    ///
+    /// `parse_regex_code_cached` wraps the source in `(...)`, so a literal
+    /// argument arrives as `[SetLine(n), Expr(Grouped(Literal(v)))]`. The
+    /// compiler turns exactly that shape into one `LoadConst` (`Grouped` is a
+    /// transparent wrapper), so returning `v` here is what running it would
+    /// produce — with no env, no package and no interpreter to build.
+    ///
+    /// Deliberately narrow: only the scalar value kinds a literal token can
+    /// produce. The one `Expr::Literal` the compiler does *not* treat as a
+    /// constant is a code-bearing regex, which loads as a closure over its
+    /// enclosing scope ([`crate::opcode::OpCode::LoadRegexClosure`]); keeping
+    /// the list positive means a new `Value` kind has to be admitted here
+    /// explicitly rather than inherited by accident.
+    fn constant_stmt_value(stmts: &[crate::ast::Stmt]) -> Option<Value> {
+        let mut found: Option<&Value> = None;
+        for stmt in stmts {
+            match stmt {
+                crate::ast::Stmt::SetLine(_) => {}
+                crate::ast::Stmt::Expr(expr) if found.is_none() => {
+                    let mut inner = expr;
+                    while let crate::ast::Expr::Grouped(g) = inner {
+                        inner = g;
+                    }
+                    match inner {
+                        crate::ast::Expr::Literal(v) => found = Some(v),
+                        _ => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+        let v = found?;
+        matches!(
+            v.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Nil
+        )
+        .then(|| v.clone())
+    }
+
     pub(in crate::runtime) fn eval_regex_expr_value(
         &mut self,
         expr_src: &str,
@@ -728,15 +778,44 @@ impl Interpreter {
                 ok
             }
         {
-            let env = self.make_regex_eval_env(caps);
-            return env
-                .get(name)
-                .cloned()
-                .or_else(|| env.get(trimmed).cloned())
+            // Read the two candidate keys directly instead of materializing the
+            // whole evaluation env for them. `make_regex_eval_env` clones the
+            // caller's env and then layers the positional captures (all-digit
+            // keys), `/`, the named captures (`<...>`-wrapped keys) and the
+            // in-regex lexicals on top. `name` is an identifier here — the guard
+            // above admits nothing else — so it can collide with none of the
+            // first three shapes, which leaves exactly the two sources this
+            // reads, in the same precedence (`regex_vars` last-inserted, so
+            // first). `trimmed` is `$name`, kept as the second probe because an
+            // in-regex `:my $x` is filed under its sigil-ful spelling.
+            let lookup = |k: &str| {
+                caps.regex_vars()
+                    .get(k)
+                    .or_else(|| self.env.get(k))
+                    .cloned()
+            };
+            super::regex_arg_purity::note_named_read(name);
+            return lookup(name)
+                .or_else(|| lookup(trimmed))
                 .or(Some(Value::NIL));
         }
         let source = format!("({expr_src});");
         let stmts = self.parse_regex_code_cached(&source)?;
+        // A constant argument (`<element($indent, 0)>`'s `0`, an
+        // `<.indent-panic: …, "map">` message) is its own value: nothing in it
+        // can read the env, the captures or the package, so it needs neither an
+        // evaluation env nor a scratch interpreter. Those two together are
+        // ~107k instructions per call, and a YAMLish parse takes this path 811
+        // times for arguments that are all literals
+        // ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+        if let Some(v) = Self::constant_stmt_value(&stmts) {
+            return Some(v);
+        }
+        // Anything else runs arbitrary Raku against the caller's env and the
+        // live captures; its reads cannot be attributed, so a
+        // parameterized-subrule resolution that reaches here is not a function
+        // of its memo key.
+        super::regex_arg_purity::note_opaque_read();
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
             current_package: Arc::new(RwLock::new(self.current_package())),

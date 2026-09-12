@@ -371,6 +371,9 @@ impl Interpreter {
     /// not a function of its key.
     pub(super) fn note_regex_parse_ambient_read() {
         crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+        // The parameterized-subrule memo stores PARSED candidates, so a parse
+        // that is not a function of its own key makes that entry impure too.
+        crate::runtime::regex::regex_arg_purity::note_opaque_read();
     }
 
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up

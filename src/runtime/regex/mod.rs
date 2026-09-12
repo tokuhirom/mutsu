@@ -1,3 +1,4 @@
+pub(crate) mod regex_arg_purity;
 mod regex_call_graph;
 mod regex_casefold;
 pub(crate) mod regex_cursor;

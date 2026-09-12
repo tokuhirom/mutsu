@@ -401,6 +401,12 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                     {
+                        // The env this reads is the caller's, with the subrule's
+                        // bound parameters layered on top, so a substitution
+                        // that is not one of them is what makes a
+                        // parameterized-subrule resolution depend on the
+                        // caller's lexical scope rather than on its arguments.
+                        super::regex_arg_purity::note_named_read(&name);
                         // ADR-0046 Decision 2 item 2: a substitution made here is
                         // a *runtime* interpolation, exactly like the general-case
                         // `interpolate_regex_scalars` ones, so it must terminate
