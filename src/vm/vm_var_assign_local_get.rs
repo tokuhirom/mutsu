@@ -334,6 +334,24 @@ impl Interpreter {
             self.stack.push(cell_val);
             return Ok(());
         }
+        // A CStruct handle keeps no Raku attributes at all -- the C struct its
+        // `address` points at is the only storage there is -- so the cell
+        // lookup above (which only ever finds something in an *instance's*
+        // attribute map) cannot see a private field. Read it the same way the
+        // public accessor already does (`vm_call_method_ops.rs`'s
+        // `cstruct_field_value` call for `$obj.field`): a `$.field` read
+        // compiles to a method call and already goes through that path, but
+        // `$!field` (this op) does not, so it stayed stuck reading `Nil` (#8030).
+        if !self.locals[idx].is_container_ref()
+            && let Some((bare, true)) = code.local_attr_key(idx)
+            && let Some(self_val) = self.get_env_self()
+            && let Some(field_val) =
+                self.cstruct_field_value(&self_val.deref_container(), bare.as_str())
+        {
+            self.locals[idx] = field_val.clone();
+            self.stack.push(field_val);
+            return Ok(());
+        }
         // Method frames seed attribute locals from their declarations. On a
         // type-object invocant those defaults are metadata, not instance
         // storage: reading `$!attr` must fail before the seeded local can make
