@@ -143,10 +143,15 @@ impl MatchNode {
         }
         let kids = cap.kids();
 
+        // One memo for the whole materialization, so two slots that share a
+        // capture node share the child `Match` built for it. See
+        // [`SharedNodeValues`].
+        let mut shared = SharedNodeValues::new();
+
         let pos_vals: Vec<Value> = kids
             .positional
             .iter()
-            .map(|slot| Value::pos_slot_value(slot, &self.target))
+            .map(|slot| Value::pos_slot_value_shared(slot, &self.target, &mut shared))
             .collect();
 
         // Silent-action captures: hidden `<.foo>` subrule matches (stored
@@ -161,7 +166,10 @@ impl MatchNode {
                 }
                 continue;
             }
-            sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
+            sub_named.insert(
+                key.resolve(),
+                Value::named_slot_value_shared(slot, &self.target, &mut shared),
+            );
         }
 
         let mut attrs = AttrMap::new();
@@ -243,6 +251,36 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     Value::make_instance(match_class_symbol(), attrs)
 }
 
+/// Memo of the lazy child `Match` already built for a given capture node,
+/// keyed by `Arc` identity.
+///
+/// Two capture slots of the SAME parent can share one `Arc<CapNode>`: a
+/// non-suppressing alias `<val=word>` files a single capture under both names
+/// (`build_named_candidates_from_inner`'s `shared_under_original`, #7576 round
+/// 10). Rakudo hands out one `Match` object for both, so `$m<val> === $m<word>`
+/// is `True` there; building the child per SLOT minted two `MatchNode`s with
+/// two instance ids and made it `False` on the action-less path, while the
+/// action-driven path -- which builds its Matches through the reduce walk --
+/// kept the sharing. Memoizing per node makes both paths agree (GH #8167).
+///
+/// The key is only ever compared while every `Arc` it came from is alive in the
+/// parent's `CapChildren`, so no freed-address collision is possible; the memo
+/// is per materialization and never outlives it.
+type SharedNodeValues = std::collections::HashMap<usize, Value>;
+
+/// The lazy child `Match` for `sc`, reusing the one already built for that same
+/// capture node. See [`SharedNodeValues`].
+fn shared_node_value(
+    shared: &mut SharedNodeValues,
+    sc: &Arc<CapNode>,
+    target: &MatchTarget,
+) -> Value {
+    shared
+        .entry(Arc::as_ptr(sc) as usize)
+        .or_insert_with(|| Value::lazy_match(Arc::clone(sc), target.clone()))
+        .clone()
+}
+
 impl Value {
     /// Render one positional capture slot exactly as a Match's `.list` exposes
     /// it: `Nil` for an unmatched optional, an Array for a quantified group,
@@ -255,6 +293,16 @@ impl Value {
     /// the bare string). Building the slot's value directly keeps the parent
     /// cursor lazy — the block may never look at `$/` at all.
     pub(crate) fn pos_slot_value(slot: &PosSlot, target: &MatchTarget) -> Value {
+        Value::pos_slot_value_shared(slot, target, &mut SharedNodeValues::new())
+    }
+
+    /// [`Self::pos_slot_value`] sharing one child `Match` per capture node with
+    /// the rest of a materialization. See [`SharedNodeValues`].
+    fn pos_slot_value_shared(
+        slot: &PosSlot,
+        target: &MatchTarget,
+        shared: &mut SharedNodeValues,
+    ) -> Value {
         // An unmatched optional capture (`(x)?` zero match) renders as Nil.
         if slot.nil {
             return Value::Nil;
@@ -263,14 +311,14 @@ impl Value {
             let arr: Vec<Value> = qlist
                 .iter()
                 .map(|(qfrom, qto, subcap)| match subcap {
-                    Some(sc) => Value::lazy_match(Arc::clone(sc), target.clone()),
+                    Some(sc) => shared_node_value(shared, sc, target),
                     None => span_leaf_match(*qfrom, *qto, target),
                 })
                 .collect();
             return Value::array(arr);
         }
         if let Some(subcap) = &slot.subcap {
-            return Value::lazy_match(Arc::clone(subcap), target.clone());
+            return shared_node_value(shared, subcap, target);
         }
         // ADR-0016 P4: every slot carries its span, so a subcap-less leaf
         // renders with its REAL offsets (pre-P4 this was the text-only
@@ -282,10 +330,20 @@ impl Value {
     /// a single Match, or an Array when the name was quantified or captured
     /// more than once. Companion of [`Self::pos_slot_value`].
     pub(crate) fn named_slot_value(slot: &NamedSlot, target: &MatchTarget) -> Value {
+        Value::named_slot_value_shared(slot, target, &mut SharedNodeValues::new())
+    }
+
+    /// [`Self::named_slot_value`] sharing one child `Match` per capture node
+    /// with the rest of a materialization. See [`SharedNodeValues`].
+    fn named_slot_value_shared(
+        slot: &NamedSlot,
+        target: &MatchTarget,
+        shared: &mut SharedNodeValues,
+    ) -> Value {
         let vals: Vec<Value> = slot
             .nodes
             .iter()
-            .map(|sc| Value::lazy_match(Arc::clone(sc), target.clone()))
+            .map(|sc| shared_node_value(shared, sc, target))
             .collect();
         if vals.len() == 1 && !slot.quantified {
             vals.into_iter().next().unwrap()
