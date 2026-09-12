@@ -218,6 +218,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 tree,
             )?)))
         }
+        // Raku keeps an argument-less core pragma as a `Pragma` directly in
+        // the statement list. Ordinary modules use `Statement::Use` instead;
+        // do not reconstruct that distinction from every `Stmt::Use`.
+        Stmt::Use {
+            module,
+            arg: None,
+            tags,
+            condition: None,
+        } if tags.is_empty() && is_pragma_name(module) => Ok(Some(pragma_node(module))),
         // `say 42` / `put`/`print`/`note` as listops (no parens) parse to a
         // dedicated statement; raku models them as a call in WithoutParentheses
         // form.
@@ -1076,6 +1085,36 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Ok(Some(node))
         }
         other => Err(unsupported(&format!("{other:?}"))),
+    }
+}
+
+/// The argument-less pragmas that Rakudo represents as `RakuAST::Pragma`.
+/// Language-version pragmas and `use lib` have distinct parser contracts, and
+/// ordinary modules remain `RakuAST::Statement::Use`, so neither belongs here.
+fn is_pragma_name(name: &str) -> bool {
+    matches!(
+        name,
+        "strict"
+            | "fatal"
+            | "nqp"
+            | "soft"
+            | "MONKEY"
+            | "MONKEY-GUTS"
+            | "MONKEY-TYPING"
+            | "MONKEY-SEE-NO-EVAL"
+            | "dynamic-scope"
+            | "isms"
+            | "precompilation"
+            | "worries"
+            | "trace"
+            | "internals"
+    )
+}
+
+fn pragma_node(name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::Pragma,
+        fields: vec![leaf_field(Some("name"), Value::str(name.to_string()))],
     }
 }
 

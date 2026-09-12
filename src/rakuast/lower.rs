@@ -168,6 +168,15 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // implied by the statement class, so only the block's statements are
         // read back.
         RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
+        // An argument-less `RakuAST::Pragma` is the model form of `use strict`,
+        // `use fatal`, and the other core pragmas handled by the parser and
+        // compiler's existing `Stmt::Use` path.
+        RakuAstClass::Pragma => Ok(Stmt::Use {
+            module: leaf_str(node, "name")?,
+            arg: None,
+            tags: Vec::new(),
+            condition: None,
+        }),
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.

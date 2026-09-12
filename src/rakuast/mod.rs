@@ -231,6 +231,8 @@ pub enum RakuAstClass {
     Submethod,
     // `self` — a term with no fields of its own.
     TermSelf,
+    // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
+    Pragma,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,6 +370,7 @@ impl RakuAstClass {
             Package => "RakuAST::Package",
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
+            Pragma => "RakuAST::Pragma",
         }
     }
 
@@ -479,6 +482,7 @@ impl RakuAstClass {
                 "RakuAST::Expression",
             ],
             ColonPairTrue => &["RakuAST::Term", "RakuAST::Expression"],
+            Pragma => &["RakuAST::Statement"],
             _ => &[],
         }
     }
@@ -605,6 +609,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Regex",
         ],
         "RakuAST::ColonPair::True" => &["RakuAST::Term", "RakuAST::Expression"],
+        "RakuAST::Pragma" => &["RakuAST::Statement"],
         "RakuAST::RegexDeclaration"
         | "RakuAST::TokenDeclaration"
         | "RakuAST::RuleDeclaration" => &[
@@ -777,6 +782,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Package,
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
+    RakuAstClass::Pragma,
 ];
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
@@ -919,6 +925,27 @@ pub fn construct(
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::StatementList,
             fields: Vec::new(),
+        }))));
+    }
+    if class_name == "RakuAST::Pragma" && method == "new" {
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Pragma.new requires `name`"))?;
+        let ValueView::Str(name) = name.view() else {
+            return Err(RuntimeError::new(
+                "RakuAST::Pragma.new expects `name` to be a Str",
+            ));
+        };
+        if named_arg(args, "argument").is_some() || named_arg(args, "off").is_some() {
+            return Err(RuntimeError::new(
+                "RakuAST::Pragma.new only supports argument-less pragmas",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Pragma,
+            fields: vec![RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(Value::str(name.to_string())),
+            }],
         }))));
     }
     if class_name == "RakuAST::Blockoid" && method == "new" {
@@ -1630,6 +1657,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if node.class == RakuAstClass::MetaInfixHyper && matches!(method, "dwim-left" | "dwim-right") {
         return Some(Value::truth(false));
     }
+    if node.class == RakuAstClass::Pragma {
+        match method {
+            // Rakudo declares both fields but omits their false/empty values
+            // from `.gist` for the argument-less form.
+            "argument" => return Some(Value::NIL),
+            "off" => return Some(Value::truth(false)),
+            _ => {}
+        }
+    }
     if method == "statements" && matches!(node.class, RakuAstClass::StatementList) {
         let items = node
             .fields
@@ -1785,6 +1821,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TokenDeclaration
             | RakuAstClass::RuleDeclaration
             | RakuAstClass::Grammar
+            | RakuAstClass::Pragma
     )
 }
 
@@ -1831,6 +1868,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         RegexQuantifiedAtom => &["atom", "quantifier", "separator", "trailing-separator"],
         RegexDeclaration | TokenDeclaration | RuleDeclaration => &["name", "body"],
         Grammar => &["name", "body"],
+        Pragma => &["name", "argument", "off"],
         _ => &[],
     }
 }
