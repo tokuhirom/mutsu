@@ -30,6 +30,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         arg_sources: &Option<Vec<Option<String>>>,
+        call_has_named: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         // Skip auto-threading for internal functions and junction constructors
@@ -181,6 +182,7 @@ impl Interpreter {
                 name,
                 &threaded_args,
                 arg_sources,
+                call_has_named,
                 compiled_fns,
             )? {
                 results.push(recursive_result);
@@ -192,6 +194,7 @@ impl Interpreter {
                     name,
                     threaded_args,
                     arg_sources.clone(),
+                    call_has_named,
                     call_me_override,
                     compiled_fns,
                 )?;

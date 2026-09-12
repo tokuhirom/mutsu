@@ -381,7 +381,7 @@ impl Interpreter {
         // `_inner`, not the wrapper: this frame's mask is already published by
         // `exec_call_func_named_op`, and re-entering the wrapper would
         // overwrite it with a zero it was never given.
-        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns)
+        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, true, compiled_fns)
     }
 
     /// Publish the call site's literal-argument mask for the duration of the
@@ -400,7 +400,15 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
-        let r = self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns);
+        let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
+        let r = self.exec_call_func_op_inner(
+            code,
+            name_idx,
+            arity,
+            arg_sources_idx,
+            call_has_named,
+            compiled_fns,
+        );
         self.literal_native_args = saved;
         r
     }
@@ -411,6 +419,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        call_has_named: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
@@ -670,6 +679,7 @@ impl Interpreter {
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
                         if !has_junction
                             && !call_has_slip
+                            && !call_has_named
                             && !share_into_scalar
                             // This cache is keyed by NAME, so one entry serves
                             // every arity the call sites use. A routine the
@@ -927,6 +937,7 @@ impl Interpreter {
                         } else if !share_into_scalar
                             && !named_share
                             && !mainline_capture_blocked
+                            && !call_has_named
                             && Self::is_positional_light_call_eligible(
                                 &cf,
                                 name_str,
@@ -1212,9 +1223,14 @@ impl Interpreter {
         // Junction auto-threading for function call arguments:
         // If any positional arg is a Junction and the function parameter doesn't accept
         // Junction (i.e., not typed as Mu or Junction), auto-thread over the junction.
-        if let Some(autothread_result) =
-            self.maybe_autothread_func_call(code, &name, &args, &arg_sources, compiled_fns)?
-        {
+        if let Some(autothread_result) = self.maybe_autothread_func_call(
+            code,
+            &name,
+            &args,
+            &arg_sources,
+            call_has_named,
+            compiled_fns,
+        )? {
             self.stack.push(autothread_result);
             // Slice F: the threaded eigenstate calls may have mutated captured-outer
             // variables (`sub j($x) { $count++ }`); write their accumulated final
@@ -1326,6 +1342,7 @@ impl Interpreter {
             &name,
             args,
             arg_sources,
+            call_has_named,
             call_me_override,
             compiled_fns,
         ) {
@@ -1546,12 +1563,14 @@ impl Interpreter {
 
     /// Inner dispatch for function calls. Handles CALL-ME override, compiled functions,
     /// native functions, and interpreter fallback. Returns the result value.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn dispatch_func_call_inner(
         &mut self,
         code: &CompiledCode,
         name: &str,
         args: Vec<Value>,
         arg_sources: Option<Vec<Option<String>>>,
+        call_has_named: bool,
         call_me_override: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
@@ -1620,12 +1639,14 @@ impl Interpreter {
             if let Some(cf) = compiled {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
-                if Self::is_positional_light_call_eligible(
-                    cf,
-                    name,
-                    Self::positional_light_argc(&args),
-                    &args,
-                ) && !Self::call_shares_container_into_scalar_param(cf, &args)
+                if !call_has_named
+                    && Self::is_positional_light_call_eligible(
+                        cf,
+                        name,
+                        Self::positional_light_argc(&args),
+                        &args,
+                    )
+                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !self.has_multi_candidates_cached(name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()

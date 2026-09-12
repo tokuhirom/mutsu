@@ -1759,7 +1759,23 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt_inner(declaration)?)));
             }
-            lower_expr(inner)
+            let lowered = lower_expr(inner)?;
+            // A parenthesized bareword fat-arrow is a positional Pair at the
+            // call site (`f((a => 1))`), even though RakuAST represents the
+            // pair itself with the same `FatArrow` node as an unparenthesized
+            // named argument. Preserve the parser's `PositionalPair` marker
+            // across the RakuAST round trip so call-site namedness remains
+            // observable to the compiler.
+            if matches!(
+                &lowered,
+                Expr::Binary {
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                }
+            ) {
+                return Ok(Expr::PositionalPair(Box::new(lowered)));
+            }
+            Ok(lowered)
         }
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
         // single `Statement::Expression` (a comma list, or a lone element).
