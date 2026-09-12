@@ -4,16 +4,17 @@
 distributions under one failure line — `Invalid typename 'X' in parameter
 declaration.` — and asked, before any fix, how many gaps those 14 distinct
 typenames really are. [#8066](https://github.com/tokuhirom/mutsu/pull/8066)
-answered the first half of that by minimising one case per group: they do not
-collapse. It fixed two of the four root causes (an exported `subset` declared in
-a role body, and a role method parameter naming a sibling type relatively) and
-filed [#8061](https://github.com/tokuhirom/mutsu/issues/8061) and
+answered the first half by minimising one case per group: they do not collapse.
+It fixed two of the four root causes (an exported `subset` declared in a role
+body, and a role method parameter naming a sibling type relatively) and filed
+[#8061](https://github.com/tokuhirom/mutsu/issues/8061) and
 [#8062](https://github.com/tokuhirom/mutsu/issues/8062) for the other two.
 
 Eight of the fourteen names were left unsettled: each sat behind a dependency a
 bare checkout cannot resolve, so the ticket asked for one thing rather than more
 guessing — re-run the sweep over the 21 and re-group from what it says. This is
-that run, plus the two gaps it turned up that were small enough to fix in place.
+that run, plus the three gaps it turned up that were small enough to fix in
+place.
 
 ## A `subset` was not a resolvable type
 
@@ -42,9 +43,32 @@ Pinned by `t/oo/role/role-method-param-compound-subset.t`, which also keeps the
 real subset rather than being waved through) and keeps an undeclared compound
 name reported as `X::Parameter::InvalidType`.
 
+## A lexically-scoped `my class` was not either
+
+The same validator, the same question, a different reason. A `my class` / `my
+role` registers under a **mangled** storage key (ADR-0047 P1, `Name\0<decl-id>`)
+while `env` binds the bare name to it, so none of `is_resolvable_type`'s
+registry probes saw it under the spelling a signature writes. Again only the
+role-method path noticed: the sub pre-pass accepts such a name out of
+`declared_types`, the unit's statically gathered declarations, which a role body
+has no equivalent of.
+
+```raku
+my class EB { }
+role R { method m(EB $x) { 1 } }   # Invalid typename 'EB'
+```
+
+`Protocol::MQTT` is exactly this: `my class EncodeBuffer { ... }` at file scope,
+named by `our role Packet[...]`'s
+`method !encode-body(Packet:D: EncodeBuffer $buffer --> Nil)`.
+`is_resolvable_type` now follows the same alias that type-object position
+follows, via `resolve_bare_type_name`, which already confirms the target is a
+class or role before handing back a name. Pinned by
+`t/oo/role/role-method-param-lexical-class.t`.
+
 ## `try EXPR` is a statement prefix, not a block
 
-The second gap is not a typename gap at all — it is what `Selkie` and
+The third gap is not a typename gap at all — it is what `Selkie` and
 `App::Moneymoor` fail on once their typename errors are out of the way:
 
 ```raku
@@ -63,18 +87,29 @@ never had the problem because they are not in that match.
 
 The decision now also requires the consumed text to end with `}`, which is what
 distinguishes the two forms. Pinned by
-`t/control/try-prefix-statement-modifier-next-line.t`, whose last two assertions
-are the guard in the other direction: a block-form `try`/`gather` followed by an
-`if` *statement* still works.
+`t/exceptions/try-prefix-statement-modifier-next-line.t`, whose last two
+assertions are the guard in the other direction: a block-form `try`/`gather`
+followed by an `if` *statement* still works.
 
 ## What the re-measure says about the cluster
 
 Re-running `scripts/ecosystem-sweep.py` over all 21 distributions with those
 fixes in place, the single cluster has fragmented into unrelated root causes,
-which is the answer #7993 was after. The new grouping and the ledger records are
-in `ecosystem/dists/`; the surviving typename failures belong to #8061, and the
-distributions that now get past their typename error land on
-[#8062](https://github.com/tokuhirom/mutsu/issues/8062) and
-[#8115](https://github.com/tokuhirom/mutsu/issues/8115) (the core `Enumeration`
-role is not composable, which is what `Logic::Ternary`'s entry in the cluster
-always was).
+which is the answer #7993 was after. The updated records are in
+`ecosystem/dists/`.
+
+The typename failures that survive belong to tickets of their own:
+[#8061](https://github.com/tokuhirom/mutsu/issues/8061) (`my role A::B` does not
+install `B` into package `A` — `TAP`, `App::Mi6`, `Mi6::Helper`),
+[#8115](https://github.com/tokuhirom/mutsu/issues/8115) (`Enumeration` is the one
+core role that is not composable, which is what `Logic::Ternary`'s entry in the
+cluster always was) and
+[#8131](https://github.com/tokuhirom/mutsu/issues/8131) (an imported `constant`
+type alias is not accepted as a type — `Gnome::N`'s `GType`).
+
+The distributions that now get past their typename error land on blockers that
+were never about typenames at all:
+[#8062](https://github.com/tokuhirom/mutsu/issues/8062) (`class Foo is Attribute`
+— the PDF family) and
+[#8121](https://github.com/tokuhirom/mutsu/issues/8121) (a re-exported
+`&trait_mod:<is>` is invisible to the importer — `Ddt` through `JSON::Class`).
