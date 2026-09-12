@@ -25,7 +25,10 @@
 //! `ParseEffects` too, or it becomes the next cache-state-dependent bug. A
 //! deliberate non-entry: inline `module Foo { ... is export }` registrations
 //! (`INLINE_MODULE_EXPORTS`) were measured to behave identically cold and warm,
-//! because the importer's own uncached parse-time export scan registers them.
+//! because the importer's own parse-time export scan registers them. That scan
+//! now has a disk cache of its own ([`crate::scan_cache`]), so it carries the
+//! registrations in its entry and replays them on a hit — the guarantee holds,
+//! but it is no longer free.
 //!
 //! ## Cache layout
 //!
@@ -91,7 +94,7 @@ const CACHE_MAGIC: &[u8; 4] = b"MTS2";
 /// AST could survive the prelude-injection fix and resurface as an undeclared
 /// `Pointer`. Stamping the exe mtime invalidates the cache on every rebuild,
 /// removing the need to manually `rm` the cache after parser/compiler changes.
-fn interpreter_version() -> String {
+pub(crate) fn interpreter_version() -> String {
     // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change,
     // or when `CacheMetadata` / `ParseEffects` gain or lose a field.
     // 9: `Value` gained `BufStorage` (ADR-0015 P2), which also shifted the
@@ -156,8 +159,14 @@ pub(crate) fn enabled_by_default() -> bool {
 
 /// Compute a deterministic hash of a canonical file path for use as cache filename.
 fn path_hash(path: &Path) -> String {
+    path_hash_hex(&path.to_string_lossy())
+}
+
+/// The same path hash, for callers holding the path as a string (the module
+/// scan cache, which names its entries exactly the way this one does).
+pub(crate) fn path_hash_hex(path: &str) -> String {
     let mut hasher = DefaultHasher::new();
-    path.to_string_lossy().hash(&mut hasher);
+    path.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
 }
 
@@ -183,6 +192,45 @@ fn cache_dir() -> io::Result<PathBuf> {
     let dir = base.join("mutsu").join("precomp");
     fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+/// A cache directory next to the precompilation cache, for the other caches
+/// keyed the same way (currently [`crate::scan_cache`]). Sharing the root
+/// means one `~/.cache/mutsu` to clear and one test override to set.
+pub(crate) fn sibling_cache_dir(name: &str) -> io::Result<PathBuf> {
+    let precomp_dir = cache_dir()?;
+    let root = precomp_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or(precomp_dir);
+    let dir = root.join(name);
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Set (or clear) the cache root used by tests, so a test never writes into
+/// the developer's real `~/.cache/mutsu`.
+#[cfg(test)]
+pub(crate) fn set_test_cache_dir(dir: Option<PathBuf>) {
+    TEST_CACHE_DIR.with(|cell| *cell.borrow_mut() = dir);
+}
+
+/// Cleared by `--no-precomp` (via `Interpreter::set_precomp_enabled`), which
+/// otherwise only reaches the interpreter it was passed to. The parser's
+/// module export scan runs with no interpreter in scope, so its cache needs a
+/// process-wide switch of its own to read.
+static PROCESS_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Mirror an interpreter's precompilation setting into the process-wide switch
+/// the parser-side caches read.
+pub(crate) fn set_process_enabled(enabled: bool) {
+    PROCESS_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether on-disk caching is permitted at all in this process — the
+/// `MUTSU_PRECOMP=0` environment switch and the `--no-precomp` flag combined.
+pub(crate) fn enabled_for_process() -> bool {
+    PROCESS_ENABLED.load(std::sync::atomic::Ordering::Relaxed) && enabled_by_default()
 }
 
 fn warn_cache_unavailable(err: &dyn std::fmt::Display) {
@@ -253,7 +301,7 @@ fn temp_cache_path(cache_file: &Path) -> PathBuf {
 /// itself imposes.
 const MAX_DECODE_ALLOC: usize = 256 * 1024 * 1024;
 
-fn decode_config() -> impl bincode::config::Config {
+pub(crate) fn decode_config() -> impl bincode::config::Config {
     bincode::config::standard().with_limit::<MAX_DECODE_ALLOC>()
 }
 
@@ -361,7 +409,8 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     let Some(source_mtime) = source_mtime_nanos(source_path) else {
         return;
     };
-    prune_cache_once(&dir);
+    static PRUNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    prune_cache_once(&dir, &PRUNED);
 
     let hash = path_hash(&canonical);
     let cache_file = dir.join(format!("{}.bin", hash));
@@ -431,10 +480,10 @@ const MAX_CACHE_ENTRIES: usize = 4096;
 /// dropped once they are old enough that no live writer could still own them.
 ///
 /// Runs at most once per process, and only from the save path, so a warm run
-/// that never writes never pays for the scan.
-fn prune_cache_once(dir: &Path) {
-    static PRUNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    if PRUNED.set(()).is_err() {
+/// that never writes never pays for the scan. The `once` guard is the caller's,
+/// so each cache directory (this one and the module scan cache's) gets its own.
+pub(crate) fn prune_cache_once(dir: &Path, once: &std::sync::OnceLock<()>) {
+    if once.set(()).is_err() {
         return;
     }
     let Ok(entries) = fs::read_dir(dir) else {
@@ -477,21 +526,21 @@ fn prune_cache_once(dir: &Path) {
 }
 
 /// Get the modification time of a file as seconds since UNIX epoch.
-fn source_mtime_nanos(path: &Path) -> Option<u128> {
+pub(crate) fn source_mtime_nanos(path: &Path) -> Option<u128> {
     let metadata = fs::metadata(path).ok()?;
     let modified = metadata.modified().ok()?;
     let duration = modified.duration_since(SystemTime::UNIX_EPOCH).ok()?;
     Some(duration.as_nanos())
 }
 
-fn source_content_hash(path: &Path) -> Option<u64> {
+pub(crate) fn source_content_hash(path: &Path) -> Option<u64> {
     let bytes = fs::read(path).ok()?;
     Some(content_hash(&bytes))
 }
 
 /// Hash source bytes the same way `source_content_hash` does, so an in-memory
 /// hash validates against an entry written from a disk read (and vice versa).
-fn content_hash(bytes: &[u8]) -> u64 {
+pub(crate) fn content_hash(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);
     hasher.finish()

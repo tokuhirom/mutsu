@@ -26,6 +26,7 @@ pub(crate) mod regex_tree;
 pub mod repl;
 pub(crate) mod repl_core;
 mod runtime;
+pub(crate) mod scan_cache;
 pub mod symbol;
 mod token_kind;
 mod trace;
