@@ -147,6 +147,11 @@ impl Interpreter {
     }
 
     pub(crate) fn apply_set_union(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash), so fold the value
+        // underneath it.
+        let left = crate::runtime::utils::strip_quanthash_mixin(left);
+        let right = crate::runtime::utils::strip_quanthash_mixin(right);
         if matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
         {
@@ -202,6 +207,11 @@ impl Interpreter {
     }
 
     pub(crate) fn apply_set_equality(left: &Value, right: &Value) -> Result<bool, RuntimeError> {
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash), so fold the value
+        // underneath it.
+        let left = crate::runtime::utils::strip_quanthash_mixin(left);
+        let right = crate::runtime::utils::strip_quanthash_mixin(right);
         if matches!(left.view(), ValueView::Mix(_, _))
             || matches!(right.view(), ValueView::Mix(_, _))
         {
@@ -487,14 +497,11 @@ impl Interpreter {
     }
 
     pub(crate) fn apply_set_multiply(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
-        let left = match left.view() {
-            ValueView::Scalar(inner) => inner,
-            _ => left,
-        };
-        let right = match right.view() {
-            ValueView::Scalar(inner) => inner,
-            _ => right,
-        };
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash) and a `Scalar` container is
+        // transparent to a set operator, so fold the value underneath both.
+        let left = crate::runtime::utils::quanthash_operand(left);
+        let right = crate::runtime::utils::quanthash_operand(right);
         if matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
         {
@@ -734,14 +741,11 @@ impl Interpreter {
     }
 
     pub(crate) fn apply_set_addition(left: &Value, right: &Value) -> Result<Value, RuntimeError> {
-        let left = match left.view() {
-            ValueView::Scalar(inner) => inner,
-            _ => left,
-        };
-        let right = match right.view() {
-            ValueView::Scalar(inner) => inner,
-            _ => right,
-        };
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash) and a `Scalar` container is
+        // transparent to a set operator, so fold the value underneath both.
+        let left = crate::runtime::utils::quanthash_operand(left);
+        let right = crate::runtime::utils::quanthash_operand(right);
         if matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
             || matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
         {

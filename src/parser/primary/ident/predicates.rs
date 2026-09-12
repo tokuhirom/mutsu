@@ -61,17 +61,14 @@ pub(crate) fn starts_with_quote_construct(input: &str) -> bool {
     }
 }
 
-/// Check if input starts with a term keyword (like `i`, `e`, `pi`, etc.)
-/// that can appear as a listop argument without parentheses.
-pub(crate) fn starts_with_term_keyword(input: &str) -> bool {
-    let first = input.chars().next().unwrap_or('\0');
-    if first == '\u{03C0}' || first == '\u{03C4}' || first == '\u{1D452}' {
-        return true;
-    }
-    let word_end = input
-        .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .unwrap_or(input.len());
-    let word = &input[..word_end];
+/// Is `word` a nullary term keyword — a word that is a complete term on its
+/// own, so it can neither take listop arguments nor be called?
+///
+/// These are rakudo's `term:sym<...>` tokens (`self`, `now`, `time`, `pi`, ...).
+/// Because they are terms, what follows them is an *operator* position: rakudo
+/// parses `self (-) %allowed` as set-difference and rejects `now (1)` as "two
+/// terms in a row" rather than reading the parentheses as an argument list.
+pub(crate) fn is_term_keyword(word: &str) -> bool {
     matches!(
         word,
         "i" | "e"
@@ -89,6 +86,19 @@ pub(crate) fn starts_with_term_keyword(input: &str) -> bool {
             | "time"
             | "rand"
     )
+}
+
+/// Check if input starts with a term keyword (like `i`, `e`, `pi`, etc.)
+/// that can appear as a listop argument without parentheses.
+pub(crate) fn starts_with_term_keyword(input: &str) -> bool {
+    let first = input.chars().next().unwrap_or('\0');
+    if first == '\u{03C0}' || first == '\u{03C4}' || first == '\u{1D452}' {
+        return true;
+    }
+    let word_end = input
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(input.len());
+    is_term_keyword(&input[..word_end])
 }
 
 /// Check if a name is a Raku keyword (not a function call).

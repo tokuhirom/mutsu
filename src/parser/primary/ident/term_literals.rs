@@ -466,8 +466,12 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     {
         let after = input[3..].trim_start();
         // `now` is a term, not a routine: the call form `now(...)` is a
-        // compile-time "Undeclared routine" in rakudo.
-        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now") {
+        // compile-time "Undeclared routine" in rakudo. Only an *adjacent* paren
+        // is that call form — after whitespace the parenthesis belongs to the
+        // operator position (`now (-) $set` is set-difference, `now (1)` is
+        // rakudo's "two terms in a row"), so it must not be claimed here.
+        if input[3..].starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now")
+        {
             return Err(PError::fatal_at(
                 format!(
                     "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
@@ -514,8 +518,12 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     {
         let after = input[4..].trim_start();
         // `time` is a term, not a routine: the call form `time(...)` is a
-        // compile-time "Undeclared routine" in rakudo.
-        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time") {
+        // compile-time "Undeclared routine" in rakudo. Only an *adjacent* paren
+        // is that call form — after whitespace the parenthesis belongs to the
+        // operator position (`time (-) $set` is set-difference, `time (1)` is
+        // rakudo's "two terms in a row"), so it must not be claimed here.
+        if input[4..].starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time")
+        {
             return Err(PError::fatal_at(
                 format!(
                     "X::Undeclared::Symbols: Undeclared routine:\n    time used at line {}",

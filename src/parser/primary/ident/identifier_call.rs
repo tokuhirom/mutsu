@@ -1876,8 +1876,21 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         name.as_str(),
         "method" | "submethod" | "multi" | "proto" | "macro" | "regex" | "token" | "rule"
     );
+    // A nullary term keyword (`self`, `Mu`, `now`, `time`, ...) is a complete
+    // term, so it is never a listop head: rakudo's `term:sym<self>` leaves what
+    // follows to the OPERATOR position, which is why `self (-) %allowed` is
+    // set-difference (Hash::Restricted's `STORE` method) and `now (1)` is "two
+    // terms in a row" rather than a call with a parenthesized argument list.
+    // Without this, the `next == '('` term-start test below read the `(-)` as
+    // `self((-) %allowed)` and died with "Unknown prefix operator: (-)".
+    // A user-declared or imported routine of the same name wins, as it does
+    // everywhere else in this branch.
+    let is_nullary_term_keyword = crate::parser::primary::ident::predicates::is_term_keyword(&name)
+        && !crate::parser::stmt::simple::is_user_declared_sub(&name)
+        && !crate::parser::stmt::simple::is_imported_function(&name);
     if !is_keyword(&name)
         && !is_declarator_head
+        && !is_nullary_term_keyword
         // An infix word (`before`, `eq`, `and`, ...) is refused as a listop
         // head UNLESS a `sub` of that exact name is declared and in scope —
         // this is term position (a fresh term is being parsed), so a

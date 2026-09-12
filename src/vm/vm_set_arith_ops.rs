@@ -10,7 +10,7 @@ impl Interpreter {
     /// Determine the set type level, including Package type objects.
     /// 0 = Set/SetHash, 1 = Bag/BagHash, 2 = Mix/MixHash
     fn set_type_level_full(val: &Value) -> u8 {
-        match val.view() {
+        match crate::runtime::utils::strip_quanthash_mixin(val).view() {
             ValueView::Mix(_, _) => 2,
             ValueView::Bag(_, _) => 1,
             ValueView::Package(sym) => {
@@ -187,6 +187,9 @@ impl Interpreter {
         originals: &mut HashMap<String, Value>,
     ) -> HashMap<String, NumBigInt> {
         use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
+        // A role mixin wraps the operand without replacing it (`%h does R` is a
+        // `Hash+{R}`, still a Hash), so fold the value underneath it.
+        let val = crate::runtime::utils::strip_quanthash_mixin(val);
         match val.view() {
             // A Bag/Set/Mix subclass instance (`class Foo is Bag`) carries its real
             // quantified collection in `__baggy_data__`; unwrap it so a set/baggy op
@@ -263,6 +266,9 @@ impl Interpreter {
     /// Coerce a value to a Mix (HashMap<String, f64>)
     fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, f64> {
         use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
+        // A role mixin wraps the operand without replacing it (`%h does R` is a
+        // `Hash+{R}`, still a Hash), so fold the value underneath it.
+        let val = crate::runtime::utils::strip_quanthash_mixin(val);
         match val.view() {
             ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
                 match attributes.as_map().get("__baggy_data__") {

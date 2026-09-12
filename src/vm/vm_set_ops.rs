@@ -158,6 +158,14 @@ impl Interpreter {
         } else {
             container.clone()
         };
+        // A role mixin wraps the container without replacing it, so `%h does R`
+        // is a `Hash+{R}` whose membership test is still over the hash's keys.
+        // Gated on the tag probe so the common non-mixin container pays nothing.
+        let container = if container.is_mixin_value() {
+            crate::runtime::utils::strip_quanthash_mixin(&container).clone()
+        } else {
+            container
+        };
         // Set/Bag/Mix stores are `.WHICH`-keyed: membership is element
         // identity (`===`), so `<1> ∈ (1,).Set` is False (IntStr vs Int)
         // and `"1" ∈ (1,).Set` is False (Str vs Int) — matching Rakudo.
@@ -261,6 +269,7 @@ impl Interpreter {
             record_quanthash_original, str_elem_key,
         };
         let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
+        let value = crate::runtime::utils::strip_quanthash_mixin_elem(value);
         match value.view() {
             ValueView::Set(items, _) => {
                 extend_quanthash_originals(originals, &items.original_keys);
@@ -338,6 +347,10 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash), so fold the value
+        // underneath it.
+        let value = crate::runtime::utils::strip_quanthash_mixin(value);
         match value.view() {
             ValueView::Set(s, _) => {
                 extend_quanthash_originals(originals, &s.original_keys);
@@ -404,6 +417,10 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash), so fold the value
+        // underneath it.
+        let value = crate::runtime::utils::strip_quanthash_mixin(value);
         match value.view() {
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
@@ -439,6 +456,10 @@ impl Interpreter {
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
+        // A role mixin wraps the operand without replacing it (rakudo's
+        // `%h does R` is a `Hash+{R}`, still a Hash), so fold the value
+        // underneath it.
+        let value = crate::runtime::utils::strip_quanthash_mixin(value);
         match value.view() {
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
