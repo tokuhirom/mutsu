@@ -107,6 +107,55 @@ impl Interpreter {
                 Ok(Value::array(parts))
             }
 
+            // nqp::defined($v) / nqp::isconcrete($v) — int 0/1: false for a
+            // type object or the VM null, true for everything else. nqp draws
+            // a finer HLL-vs-REPR distinction between the two upstream, but
+            // both collapse to the same test here, matching the raku-observed
+            // behavior driving this op (Test::Async's `HubHOW` bundle
+            // registry, #8024).
+            "defined" | "isconcrete" => Ok(Value::int(i64::from(
+                crate::runtime::types::value_is_defined(args.first().unwrap_or(&Value::NIL)),
+            ))),
+
+            // nqp::list(...) — an untyped VM list; mutsu represents one as an
+            // ordinary array, same as the typed `list_s`/`list_i`/`list_n`.
+            "list" => Ok(Value::array(args.to_vec())),
+
+            // nqp::unshift(@l, $v) — the positional peer of
+            // `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the
+            // front of an nqp list / native array in place, returning the
+            // list.
+            "unshift" => {
+                let target = args.first().cloned().unwrap_or(Value::NIL);
+                let val = args.get(1).cloned().unwrap_or(Value::NIL);
+                match target.view() {
+                    ValueView::Array(items, _) => {
+                        // SAFETY: audited aliased in-place container write
+                        // (see value::aliased_mut) — the same pattern
+                        // `push_elem` uses; no borrow into the node is live.
+                        let data = unsafe { crate::value::gc_contents_mut(&items) };
+                        data.items_mut().insert(0, val);
+                        Ok(target)
+                    }
+                    ValueView::Instance { attributes, .. } => {
+                        let stored = val.clone();
+                        let done =
+                            crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
+                                elems.insert(0, stored)
+                            });
+                        match done {
+                            Some(()) => Ok(target),
+                            None => Err(RuntimeError::new(
+                                "nqp::unshift: expected a Buf/Blob or array".to_string(),
+                            )),
+                        }
+                    }
+                    _ => Err(RuntimeError::new(
+                        "nqp::unshift: expected a Buf/Blob or array".to_string(),
+                    )),
+                }
+            }
+
             _ => return self.call_nqp_op_text(op, args),
         })
     }
