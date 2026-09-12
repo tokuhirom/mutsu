@@ -31,6 +31,70 @@ pub(crate) fn quanthash_operand_list(v: &Value) -> Vec<Value> {
     }
 }
 
+/// The value a QuantHash coercion should actually fold: the operand with its
+/// `Scalar` container and any role mixin stripped.
+///
+/// A mixin WRAPS a value without replacing it — rakudo's `%h does R` is a
+/// `Hash+{R}`, still a Hash, and `@a but R` is still an Array — so `.Set` /
+/// `.Bag` / `.Mix` and every set operator must fold the inner value's elements.
+/// Without the strip a mixin fell through to the "unknown scalar" arm and
+/// contributed the WHOLE hash as one element, which is why `self (-) %allowed`
+/// inside a role's `STORE` never cancelled anything (Hash::Restricted).
+pub(crate) fn quanthash_operand(val: &Value) -> &Value {
+    strip_quanthash_mixin(val.descalarize())
+}
+
+/// The mixin-only half of [`quanthash_operand`], for positions where stripping
+/// the `Scalar` container would change the flattening rule (an itemized
+/// `$(...)` element is taken whole) but the mixin wrapper must still be seen
+/// through.
+///
+/// Only a ROLE mixin is stripped. An **allomorph** is a `Mixin` too (`<1>` is
+/// `Mixin(Int(1), {Str => "1"})`, see
+/// `parser::primary::container::allomorph::make_allomorphic_value`) and its
+/// whole point is to be a distinct element from the value it wraps:
+/// `(1, "1", 1.0, <1>).Set` has four elements. A role mixin carries a
+/// `__mutsu_role__<name>` marker, which is what tells the two apart — the same
+/// discriminator `dispatch_mixin_method_call`'s `.clone` arm uses.
+pub(crate) fn strip_quanthash_mixin(val: &Value) -> &Value {
+    let mut val = val;
+    while let ValueView::Mixin(inner, mixins) = val.view() {
+        if !mixins.keys().any(|k| k.starts_with("__mutsu_role__")) {
+            break;
+        }
+        val = inner.as_ref().descalarize();
+    }
+    val
+}
+
+/// The nested-element form of [`strip_quanthash_mixin`].
+///
+/// A role-mixed AGGREGATE flattens its contents in list context, exactly as the
+/// bare aggregate would (`(1, %h).Set` is `Set(1, "a")` in rakudo for a
+/// `%h does R` holding `a => 1`). A role-mixed SCALAR keeps its own identity
+/// instead: `(5, 5 but R).Set` has two elements, keyed `Int` and `Int+{R}`. So
+/// the strip applies only when what it uncovers is something the surrounding
+/// flattening arms would spill anyway.
+pub(crate) fn strip_quanthash_mixin_elem(val: &Value) -> &Value {
+    let stripped = strip_quanthash_mixin(val);
+    if std::ptr::eq(stripped, val) {
+        return val;
+    }
+    let spills = matches!(
+        stripped.view(),
+        ValueView::Hash(_)
+            | ValueView::Array(_, _)
+            | ValueView::Seq(_)
+            | ValueView::Slip(_)
+            | ValueView::Set(_, _)
+            | ValueView::Bag(_, _)
+            | ValueView::Mix(_, _)
+            | ValueView::Pair(_, _)
+            | ValueView::ValuePair(_, _)
+    ) || stripped.is_range();
+    if spills { stripped } else { val }
+}
+
 pub(crate) fn coerce_to_set(
     val: &Value,
     originals: &mut HashMap<String, Value>,
@@ -41,6 +105,7 @@ pub(crate) fn coerce_to_set(
         value: &Value,
     ) {
         let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
+        let value = strip_quanthash_mixin_elem(value);
         match value.view() {
             ValueView::Set(items, _) => {
                 extend_quanthash_originals(originals, &items.original_keys);
@@ -103,7 +168,7 @@ pub(crate) fn coerce_to_set(
         }
     }
 
-    let val = val.descalarize();
+    let val = quanthash_operand(val);
     match val.view() {
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
@@ -166,7 +231,7 @@ pub(crate) fn coerce_to_set(
 /// - Pair with falsy value → empty Set
 /// - Other scalars → Set with one element
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
-    let val = val.descalarize();
+    let val = quanthash_operand(val);
     match val.view() {
         ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => val.clone(),
         ValueView::Hash(h) => {
@@ -277,7 +342,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
 
 /// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
 pub(crate) fn set_type_level(v: &Value) -> u8 {
-    match v.view() {
+    match strip_quanthash_mixin(v).view() {
         ValueView::Mix(_, _) => 2,
         ValueView::Bag(_, _) => 1,
         _ => 0,
@@ -289,6 +354,7 @@ pub(crate) fn to_mix_map(
     v: &Value,
     originals: &mut HashMap<String, Value>,
 ) -> HashMap<String, f64> {
+    let v = strip_quanthash_mixin(v);
     match v.view() {
         ValueView::Mix(m, _) => {
             extend_quanthash_originals(originals, &m.original_keys);
@@ -391,6 +457,7 @@ pub(crate) fn to_bag_map(
     v: &Value,
     originals: &mut HashMap<String, Value>,
 ) -> HashMap<String, BigInt> {
+    let v = strip_quanthash_mixin(v);
     match v.view() {
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);

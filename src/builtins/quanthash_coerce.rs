@@ -32,6 +32,13 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     if Interpreter::is_lazy_for_coerce(&target) {
         return Err(RuntimeError::cannot_lazy_what(what));
     }
+    // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
+    // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
+    // elements rather than taking the whole mixin as one element.
+    if let ValueView::Mixin(inner, _) = target.view() {
+        let inner = inner.as_ref().clone();
+        return to_set(inner, what);
+    }
     let mut elems = HashSet::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
     // `flatten` is true when this item sits in a list-context-flattening
@@ -45,6 +52,7 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         item: &Value,
         flatten: bool,
     ) {
+        let item = crate::runtime::utils::strip_quanthash_mixin_elem(item);
         match item.view() {
             ValueView::Pair(k, v) => {
                 if v.truthy() {
@@ -223,6 +231,13 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     if Interpreter::is_lazy_for_coerce(&target) {
         return Err(RuntimeError::cannot_lazy_what(what));
     }
+    // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
+    // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
+    // elements rather than taking the whole mixin as one element.
+    if let ValueView::Mixin(inner, _) = target.view() {
+        let inner = inner.as_ref().clone();
+        return to_bag(inner, what);
+    }
     let mut counts: HashMap<String, BigInt> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
 
@@ -231,6 +246,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         original_keys: &mut HashMap<String, Value>,
         item: &Value,
     ) -> Result<(), RuntimeError> {
+        let item = crate::runtime::utils::strip_quanthash_mixin_elem(item);
         match item.view() {
             ValueView::Pair(k, v) => {
                 let weight = pair_weight(v)?;
@@ -543,6 +559,7 @@ fn mix_add_item_with_keys(
     item: &Value,
     flatten: bool,
 ) -> Result<(), RuntimeError> {
+    let item = crate::runtime::utils::strip_quanthash_mixin_elem(item);
     match item.view() {
         ValueView::Pair(k, v) => {
             mix_accum(weights, str_elem_key(k), mix_pair_weight_value(v)?)?;
@@ -629,6 +646,13 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 .collect::<crate::value::AttrMap>(),
         )));
         return Err(err);
+    }
+    // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
+    // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
+    // elements rather than taking the whole mixin as one element.
+    if let ValueView::Mixin(inner, _) = target.view() {
+        let inner = inner.as_ref().clone();
+        return to_mix(inner, what);
     }
     // Weights are folded as exact `Value`s (so `0.1 + 0.02` stays `0.12`) and
     // lowered to the stored `f64` representation only at the return boundary.

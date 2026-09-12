@@ -380,6 +380,10 @@ impl Interpreter {
                 // `push @.order, ...`) are visible after the call returns. This
                 // updates every binding in scope that holds the same instance
                 // (including the one wrapped inside this Mixin).
+                //
+                // A role's OWN attributes on a mixin over a non-Instance value
+                // (`%h does R`) have no store to come back to at all — see
+                // tokuhirom/mutsu#8026.
                 if let Some(cell) = &inner_cell {
                     cell.commit_attrs(updated);
                 }
