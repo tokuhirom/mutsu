@@ -35,6 +35,22 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Anonymous parameter carrying BOTH a type constraint and an unpacking
+    // sub-signature: `-> Pair (:key($k), :value($v)) { ... }`, and its bracket
+    // spelling `-> List [$a, $b]`. Only the *named* form (`-> Pair $p (:$key)`)
+    // had a branch here, because the type-constraint branch below insists on a
+    // sigil after the type; the anonymous one reached no branch at all and the
+    // whole block failed to parse. Same delegation as `:(` above — the sub
+    // parameter parser already builds this shape for `sub f(Pair (:key($k)))`.
+    if let Some((after_tc, _)) = super::super::sub_param::parse_type_constraint_expr(input)
+        && let Ok((after_ws, _)) = ws(after_tc)
+        && after_ws.starts_with(['(', '['])
+    {
+        let (r, mut p) = crate::parser::stmt::sub_param::parse_single_param(input)?;
+        p.block_param = true;
+        return Ok((r, p));
+    }
+
     // Optional type constraint before the variable
     // Use parse_type_constraint_expr to handle coercion types (e.g., Numeric(Cool)),
     // qualified names (Int::Odd), definedness markers (:D/:U), etc.
