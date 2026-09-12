@@ -417,6 +417,26 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Run [ip+1..body_end) with a lexical import scope saved and restored.
+    /// use is runtime-executed in callable bodies, but its registry effects
+    /// are lexical to that body. Restore the scope on both success and error so
+    /// an escaping return or exception cannot leak imported routines.
+    pub(super) fn exec_import_scope_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let end = body_end as usize;
+        self.push_import_scope();
+        let result = self.run_range(code, *ip + 1, end, compiled_fns);
+        self.pop_import_scope();
+        result?;
+        *ip = end;
+        Ok(())
+    }
+
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,

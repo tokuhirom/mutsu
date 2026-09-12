@@ -52,6 +52,9 @@ impl Interpreter {
                 classes: reg.classes.keys().cloned().collect(),
                 proto_subs: reg.proto_subs_snapshot().iter().cloned().collect(),
                 proto_functions: reg.proto_functions.keys().copied().collect(),
+                shadowed_functions: HashMap::new(),
+                shadowed_proto_functions: HashMap::new(),
+                shadowed_proto_names: HashSet::new(),
                 imported_env_keys: HashSet::new(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
@@ -83,6 +86,9 @@ impl Interpreter {
                 classes: class_snapshot,
                 proto_subs: proto_sub_snapshot,
                 proto_functions: proto_fn_snapshot,
+                shadowed_functions,
+                shadowed_proto_functions,
+                shadowed_proto_names: _,
                 imported_env_keys,
                 newline_mode,
                 strict_mode,
@@ -118,6 +124,13 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
+            // An imported proto/multi family has lexical shadowing semantics,
+            // but its candidates share the importing package's flat registry
+            // keys. Restore any enclosing definitions that the first import in
+            // this scope hid before leaving the scope.
+            self.registry_mut()
+                .functions_mut()
+                .extend(shadowed_functions);
             self.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
@@ -150,6 +163,9 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
+            self.registry_mut()
+                .proto_functions_mut()
+                .extend(shadowed_proto_functions);
             // The `env` half of the same distinction: `import_module` writes
             // an imported symbol's aliased name straight into `env` too (a
             // bare `&ok`/`$CONST`, or the `GLOBAL::name`-qualified form under

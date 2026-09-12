@@ -2474,6 +2474,14 @@ pub(crate) enum OpCode {
         body_end: u32,
     },
 
+    /// Bracket a callable body with a lexical import scope. A use inside a
+    /// routine or closure is executed at call time in mutsu, so the registry
+    /// changes must be restored when the body returns, including a non-local
+    /// return or exception.
+    ImportScope {
+        body_end: u32,
+    },
+
     /// Push an anonymous block callframe onto the routine stack. Emitted around a
     /// genuine bare block `{ ... }` that the compiler *inlines* (tail-position
     /// blocks have no `BlockScope`/`TryCatch` boundary to carry the
@@ -8209,6 +8217,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::RoutineScope { body_end } => *body_end = target,
             _ => panic!("patch_routine_scope_end on non-RoutineScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_import_scope_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::ImportScope { body_end } => *body_end = target,
+            _ => panic!("patch_import_scope_end on non-ImportScope opcode"),
         }
     }
 

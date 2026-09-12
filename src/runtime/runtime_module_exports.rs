@@ -42,6 +42,68 @@ impl Interpreter {
         }
     }
 
+    /// Hide the candidate family already visible at target_single before an
+    /// imported proto is installed. Raku treats the imported proto as a new
+    /// lexical family, while the flat registry otherwise merges its candidates
+    /// with an enclosing my sub and lets the older declaration win. Keep the
+    /// hidden definitions on the import-scope snapshot so the enclosing family
+    /// is restored when the block exits. Further imports in the same scope are
+    /// allowed to merge with the first imported family.
+    fn shadow_imported_proto_family(&mut self, target_single: &str) {
+        let should_shadow = match self.import_scope_stack.last_mut() {
+            Some(snapshot) => snapshot
+                .shadowed_proto_names
+                .insert(target_single.to_string()),
+            None => false,
+        };
+        if !should_shadow {
+            return;
+        }
+        let prefix = format!("{target_single}/");
+        let visible_keys: HashSet<Symbol> = self
+            .import_scope_stack
+            .last()
+            .map(|snapshot| {
+                snapshot
+                    .functions
+                    .iter()
+                    .filter(|key| **key == *target_single || key.resolve().starts_with(&prefix))
+                    .copied()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let keys: Vec<Symbol> = self
+            .registry()
+            .functions
+            .keys()
+            .filter(|key| visible_keys.contains(key))
+            .copied()
+            .collect();
+        let mut shadowed_functions = HashMap::new();
+        for key in keys {
+            if let Some(def) = self.registry_mut().functions_mut().remove(&key) {
+                shadowed_functions.insert(key, def);
+            }
+        }
+        let proto_key = Symbol::intern(target_single);
+        let proto_was_visible = self
+            .import_scope_stack
+            .last()
+            .is_some_and(|snapshot| snapshot.proto_functions.contains(&proto_key));
+        let shadowed_proto = self
+            .registry_mut()
+            .proto_functions_mut()
+            .remove(&proto_key)
+            .filter(|_| proto_was_visible);
+        if let Some(snapshot) = self.import_scope_stack.last_mut() {
+            snapshot.shadowed_functions.extend(shadowed_functions);
+            if let Some(def) = shadowed_proto {
+                snapshot.shadowed_proto_functions.insert(proto_key, def);
+            }
+        }
+        self.fn_resolve_gen += 1;
+    }
+
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
         crate::runtime::cow_table_mut(&mut self.exported_sub_values)
             .entry(package)
@@ -391,6 +453,18 @@ impl Interpreter {
             let source_prefix = format!("{module}::{name}/");
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
+            let imported_proto = self
+                .registry()
+                .proto_functions
+                .contains_key(&Symbol::intern(&source_single))
+                || (unit_global_subs.contains_key(&name)
+                    && self
+                        .registry()
+                        .proto_functions
+                        .contains_key(&Symbol::intern(&format!("GLOBAL::{name}"))));
+            if imported_proto {
+                self.shadow_imported_proto_family(&target_single);
+            }
 
             let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
@@ -458,14 +532,16 @@ impl Interpreter {
                 .proto_functions
                 .iter()
                 .filter_map(|(k, v)| {
-                    if *k == *source_single {
+                    if *k == *source_single
+                        || (unit_global_subs.contains_key(&name)
+                            && *k == Symbol::intern(&format!("GLOBAL::{name}")))
+                    {
                         Some((Symbol::intern(&target_single), v.clone()))
                     } else {
                         None
                     }
                 })
                 .collect();
-            let imported_proto = !proto_entries.is_empty();
             for (k, v) in proto_entries {
                 self.registry_mut().proto_functions_mut().insert(k, v);
             }

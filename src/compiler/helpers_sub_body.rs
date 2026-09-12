@@ -307,6 +307,8 @@ impl Compiler {
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
+        let import_scope_idx = Self::has_use_stmt(body)
+            .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
         // Hoist sub declarations within the sub body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
@@ -473,6 +475,9 @@ impl Compiler {
             Self::compile_routine_body_stmts(&mut sub_compiler, body, true);
         } else {
             Self::compile_routine_body_stmts(&mut sub_compiler, body, false);
+        }
+        if let Some(idx) = import_scope_idx {
+            sub_compiler.code.patch_import_scope_end(idx);
         }
 
         let fingerprint = crate::ast::function_body_fingerprint(params, param_defs, body);
@@ -1143,6 +1148,12 @@ impl Compiler {
         } else {
             None
         };
+        // A callable body executes use at runtime in mutsu. Bracket the body
+        // with an import scope so an imported routine family shadows the
+        // enclosing lexical family only for this invocation and is restored on
+        // return or exception.
+        let import_scope_idx = Self::has_use_stmt(body)
+            .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
         // Hoist sub declarations within the closure body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
@@ -1541,6 +1552,9 @@ impl Compiler {
         }
         if let Some(idx) = routine_scope_idx {
             sub_compiler.code.patch_routine_scope_end(idx);
+        }
+        if let Some(idx) = import_scope_idx {
+            sub_compiler.code.patch_import_scope_end(idx);
         }
         // Transfer any compiled functions from the closure to the parent while
         // preserving the declaration-plan references into the imported table.
