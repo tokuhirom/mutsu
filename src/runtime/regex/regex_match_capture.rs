@@ -36,9 +36,9 @@ impl Interpreter {
     ) {
         let inline = Self::atom_is_inline_subpattern(atom);
         let vars = if inline {
-            super::regex_helpers::InlineVarsSeed::arm(&current_caps.regex_vars)
+            super::regex_helpers::InlineVarsSeed::arm(current_caps.regex_vars_shared())
         } else {
-            super::regex_helpers::InlineVarsSeed::arm(&Default::default())
+            super::regex_helpers::InlineVarsSeed::arm(None)
         };
         (vars, Self::arm_outer_caps_seed(atom, current_caps))
     }
@@ -94,7 +94,7 @@ impl Interpreter {
         OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
             named: current_caps.named.clone(),
             positional: current_caps.positional.clone(),
-            parent: current_caps.outer_backref.clone(),
+            parent: current_caps.outer_backref().cloned(),
         })))
     }
 
@@ -186,10 +186,8 @@ impl Interpreter {
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
                         }
-                        for (k, v) in inner_caps.capture_alias_map.drain() {
-                            new_caps.capture_alias_map.insert(k, v);
-                        }
-                        new_caps.positional.extend(inner_caps.positional);
+                        new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
+                        new_caps.positional.append(&mut inner_caps.positional);
                         // Propagate a `<(` / `)>` capture marker set inside the group.
                         if inner_caps.capture_start.is_some() {
                             new_caps.capture_start = inner_caps.capture_start;
@@ -200,7 +198,7 @@ impl Interpreter {
                         // Writes an inline `{ … }` made to the regex's `:my`
                         // lexicals are part of the same lexical scope as the
                         // enclosing pattern, so they leave the group with it.
-                        new_caps.regex_vars.extend(inner_caps.regex_vars);
+                        new_caps.extend_regex_vars(inner_caps.take_regex_vars());
                         (next, new_caps)
                     });
             }
@@ -261,12 +259,10 @@ impl Interpreter {
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
                         }
-                        for (k, v) in inner_caps.capture_alias_map.drain() {
-                            new_caps.capture_alias_map.insert(k, v);
-                        }
+                        new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                         new_caps.positional.append(&mut inner_caps.positional);
                         super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                        new_caps.regex_vars.extend(inner_caps.regex_vars);
+                        new_caps.extend_regex_vars(inner_caps.take_regex_vars());
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
                             .as_ref()
@@ -318,12 +314,10 @@ impl Interpreter {
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
                         }
-                        for (k, v) in inner_caps.capture_alias_map.drain() {
-                            new_caps.capture_alias_map.insert(k, v);
-                        }
+                        new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                         new_caps.positional.append(&mut inner_caps.positional);
                         super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                        new_caps.regex_vars.extend(inner_caps.regex_vars);
+                        new_caps.extend_regex_vars(inner_caps.take_regex_vars());
                         return Some((next, new_caps));
                     }
                 }
@@ -355,11 +349,11 @@ impl Interpreter {
                 let matched = if *is_behind {
                     let mut found = false;
                     for start in 0..=pos {
-                        if let Some((end, inner)) =
+                        if let Some((end, mut inner)) =
                             self.regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
                             && end == pos
                         {
-                            inner_vars = inner.regex_vars;
+                            inner_vars = inner.take_regex_vars();
                             found = true;
                             break;
                         }
@@ -367,8 +361,8 @@ impl Interpreter {
                     found
                 } else {
                     match self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg) {
-                        Some((_, inner)) => {
-                            inner_vars = inner.regex_vars;
+                        Some((_, mut inner)) => {
+                            inner_vars = inner.take_regex_vars();
                             true
                         }
                         None => false,
@@ -382,7 +376,7 @@ impl Interpreter {
                     // measures the indent in a `<?before … { … } >` and matches it
                     // afterwards).
                     let mut new_caps = RegexCaptures::default();
-                    new_caps.regex_vars.extend(inner_vars);
+                    new_caps.extend_regex_vars(inner_vars);
                     Some((pos, new_caps))
                 } else {
                     None
@@ -459,7 +453,7 @@ impl Interpreter {
                     let pass = if *negated { !result } else { result };
                     if pass {
                         let mut new_caps = RegexCaptures::default();
-                        new_caps.regex_vars.extend(outcome.writes);
+                        new_caps.extend_regex_vars(outcome.writes);
                         new_caps.ast = outcome.made;
                         return Some((pos, new_caps));
                     } else {
@@ -490,7 +484,7 @@ impl Interpreter {
                     return None;
                 }
                 let mut new_caps = RegexCaptures::default();
-                new_caps.regex_vars.extend(outcome.writes);
+                new_caps.extend_regex_vars(outcome.writes);
                 // The `make` belongs to the rule node being matched: it rides
                 // the capture delta so the trail undoes it if this branch is
                 // abandoned, and `build_named_candidates_from_inner` commits it
@@ -553,7 +547,7 @@ impl Interpreter {
                 let slot = match current_caps.positional.get(*idx) {
                     Some(slot) => slot,
                     None => current_caps
-                        .outer_backref
+                        .outer_backref()
                         .as_ref()
                         .and_then(|outer| outer.lookup_positional(*idx))?,
                 };
@@ -594,7 +588,7 @@ impl Interpreter {
                     // `Backref` arm above (`/ $<x>=(\w) [ $<x> ] /`).
                     .or_else(|| {
                         current_caps
-                            .outer_backref
+                            .outer_backref()
                             .as_ref()
                             .and_then(|outer| outer.lookup_named(&sym))
                     });
@@ -615,9 +609,9 @@ impl Interpreter {
                 // undefined value matches nothing (zero-width, like an empty
                 // literal) rather than failing.
                 let val = current_caps
-                    .regex_vars
+                    .regex_vars()
                     .get(name.as_str())
-                    .or_else(|| current_caps.regex_vars.get(&format!("${name}")))
+                    .or_else(|| current_caps.regex_vars().get(&format!("${name}")))
                     .cloned()
                     .or_else(|| self.env.get(name).cloned())
                     .or_else(|| self.env.get(&format!("${name}")).cloned());
@@ -678,7 +672,11 @@ impl Interpreter {
                             continue;
                         }
                         let mut saved: Vec<(String, Option<Value>)> = Vec::new();
-                        for (k, v) in current_caps.regex_vars.iter().chain(&new_caps.regex_vars) {
+                        for (k, v) in current_caps
+                            .regex_vars()
+                            .iter()
+                            .chain(new_caps.regex_vars())
+                        {
                             saved.push((k.clone(), self.env.get(k).cloned()));
                             self.env.insert(k.clone(), v.clone());
                         }
@@ -710,7 +708,7 @@ impl Interpreter {
                                 None => self.env.remove(&k),
                             };
                         }
-                        new_caps.regex_vars.insert(name.clone(), v);
+                        new_caps.regex_vars_mut().insert(name.clone(), v);
                     }
                     if scratch_stmts.is_empty() {
                         for (k, orig) in capture_saved {
@@ -727,7 +725,11 @@ impl Interpreter {
                         ..self.new_regex_scratch_sharing_io()
                     };
                     self.copy_decl_registry_into(&mut interp);
-                    for (k, v) in current_caps.regex_vars.iter().chain(&new_caps.regex_vars) {
+                    for (k, v) in current_caps
+                        .regex_vars()
+                        .iter()
+                        .chain(new_caps.regex_vars())
+                    {
                         interp.env.insert(k.clone(), v.clone());
                     }
                     let _ = interp.eval_block_value(&scratch_stmts);
@@ -741,7 +743,7 @@ impl Interpreter {
                             continue;
                         }
                         if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
-                            new_caps.regex_vars.insert(k.resolve(), v.clone());
+                            new_caps.regex_vars_mut().insert(k.resolve(), v.clone());
                         }
                     }
                     // The env diff above only sees a *change*. The scratch env is
@@ -756,11 +758,11 @@ impl Interpreter {
                         let Stmt::VarDecl { name, .. } = stmt else {
                             continue;
                         };
-                        if name == "_" || new_caps.regex_vars.contains_key(name) {
+                        if name == "_" || new_caps.regex_vars().contains_key(name) {
                             continue;
                         }
                         if let Some(v) = interp.env.get(name) {
-                            new_caps.regex_vars.insert(name.clone(), v.clone());
+                            new_caps.regex_vars_mut().insert(name.clone(), v.clone());
                         }
                     }
                     for (k, orig) in capture_saved {
@@ -838,7 +840,7 @@ impl Interpreter {
                 // action channel behave identically on both paths.
                 if let Some((inner_end, mut inner_caps)) = best {
                     if best_sym.is_some() {
-                        inner_caps.sym = best_sym;
+                        inner_caps.set_sym(best_sym);
                     }
                     return Self::build_named_candidates_from_inner(
                         vec![(inner_end, inner_caps)],
@@ -940,7 +942,7 @@ impl Interpreter {
                         && !spec.alias_replaces_original
                     {
                         new_caps
-                            .capture_alias_map
+                            .capture_alias_map_mut()
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
                         new_caps
                             .named

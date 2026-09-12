@@ -366,8 +366,8 @@ impl Interpreter {
         match caps {
             Some(caps) => {
                 let target = caps
-                    .target
-                    .clone()
+                    .target()
+                    .cloned()
                     .unwrap_or_else(|| MatchTarget::new(orig));
                 Value::make_match_object_full(
                     caps.from as i64,

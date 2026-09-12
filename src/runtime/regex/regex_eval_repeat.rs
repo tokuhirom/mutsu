@@ -312,7 +312,7 @@ impl Interpreter {
         // The binding for THIS match, installed before the subtree reduces so a
         // child's *action* accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
-        let recorded = caps.regex_vars.clone();
+        let recorded = caps.regex_vars().clone();
         let declared_keys = self.install_fresh_rule_dynvars(rule_name, &recorded);
         self.reduce_child_axes(&mut caps.named, &mut caps.positional, target);
         // A declaring match whose value had to be re-derived must record what its
@@ -466,7 +466,7 @@ impl Interpreter {
     fn record_rule_dynvars(&mut self, caps: &mut RegexCaptures, keys: &[String]) {
         for key in keys {
             if let Some(v) = self.env.get(key).cloned() {
-                caps.regex_vars.insert(key.clone(), v);
+                caps.regex_vars_mut().insert(key.clone(), v);
             }
         }
     }

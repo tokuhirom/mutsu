@@ -88,7 +88,7 @@ thread_local! {
     /// block indent in a `{ … }` inside a `<?before …>` and reads it back after).
     /// A *subrule* is a different regex and must NOT inherit them, so every other
     /// atom arms this *empty* for the duration of its match.
-    pub(crate) static INLINE_REGEX_VARS_SEED: RefCell<Option<HashMap<String, Value>>> = const { RefCell::new(None) };
+    pub(crate) static INLINE_REGEX_VARS_SEED: RefCell<Option<std::sync::Arc<crate::runtime::RegexVarMap>>> = const { RefCell::new(None) };
     /// Whether [`INLINE_REGEX_VARS_SEED`] currently holds anything. Read once per
     /// atom match to skip the `RefCell` entirely on the overwhelmingly common path
     /// where no regex in flight declares a `:my`/`:let` lexical.
@@ -194,14 +194,17 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
 /// reference above all — arms it *empty*, which is what stops a `:my` lexical
 /// from leaking into a different regex.
 pub(crate) struct InlineVarsSeed {
-    prev: Option<HashMap<String, Value>>,
+    prev: Option<std::sync::Arc<crate::runtime::RegexVarMap>>,
     armed: bool,
 }
 
 impl InlineVarsSeed {
-    pub(crate) fn arm(vars: &HashMap<String, Value>) -> Self {
+    /// Publish `vars` (already a shared handle — `None` means "publish
+    /// nothing", which is what a subrule reference arms) for the duration of
+    /// one atom match.
+    pub(crate) fn arm(vars: Option<&std::sync::Arc<crate::runtime::RegexVarMap>>) -> Self {
         let active = INLINE_REGEX_VARS_ACTIVE.with(Cell::get);
-        if vars.is_empty() && !active {
+        if vars.is_none() && !active {
             // Nothing to publish and nothing published: the atom cannot change
             // what any nested store would see, so leave the slot untouched.
             return InlineVarsSeed {
@@ -209,11 +212,7 @@ impl InlineVarsSeed {
                 armed: false,
             };
         }
-        let next = if vars.is_empty() {
-            None
-        } else {
-            Some(vars.clone())
-        };
+        let next = vars.cloned();
         INLINE_REGEX_VARS_ACTIVE.with(|f| f.set(next.is_some()));
         let prev = INLINE_REGEX_VARS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
         InlineVarsSeed { prev, armed: true }
@@ -233,13 +232,11 @@ impl Drop for InlineVarsSeed {
 
 /// The in-regex lexicals a freshly built capture store should start from (see
 /// [`INLINE_REGEX_VARS_SEED`]).
-pub(crate) fn take_inline_regex_vars_seed() -> HashMap<String, Value> {
+pub(crate) fn take_inline_regex_vars_seed() -> Option<std::sync::Arc<crate::runtime::RegexVarMap>> {
     if !INLINE_REGEX_VARS_ACTIVE.with(Cell::get) {
-        return HashMap::default();
+        return None;
     }
-    INLINE_REGEX_VARS_SEED
-        .with(|s| s.borrow().clone())
-        .unwrap_or_default()
+    INLINE_REGEX_VARS_SEED.with(|s| s.borrow().clone())
 }
 
 thread_local! {
@@ -784,9 +781,11 @@ pub(super) fn remap_caps_spans_offset(
         caps.from = m(caps.from);
         caps.to = m(caps.to);
     }
-    for slot in caps.positional_slots.iter_mut().flatten() {
-        slot.0 = m(slot.0);
-        slot.1 = m(slot.1);
+    if !caps.positional_slots().is_empty() {
+        for slot in caps.positional_slots_mut().iter_mut().flatten() {
+            slot.0 = m(slot.0);
+            slot.1 = m(slot.1);
+        }
     }
     for sc in caps
         .named
@@ -985,21 +984,15 @@ pub(super) fn merge_regex_captures(
     for (k, v) in src.named.drain() {
         dst.named.entry(k).or_default().merge(v);
     }
-    for (k, v) in src.capture_alias_map.drain() {
-        dst.capture_alias_map.insert(k, v);
-    }
+    dst.extend_capture_alias_map(src.take_capture_alias_map());
     dst.positional.append(&mut src.positional);
     // Writes an inline `{ … }` made to the regex's own `:my`/`:let` lexicals are
     // in the same lexical scope as the level being merged into (this helper only
     // folds inline sub-patterns — a conjunction branch, a `~` goal), so they come
     // with it. Without this a `[ … { $x = … } … ]` inside one of those shapes
     // silently lost the write.
-    for (k, v) in src.regex_vars.drain() {
-        dst.regex_vars.insert(k, v);
-    }
-    for (k, v) in src.hash_captures.drain() {
-        dst.hash_captures.entry(k).or_default().extend(v);
-    }
+    dst.extend_regex_vars(src.take_regex_vars());
+    dst.merge_hash_captures(src.take_hash_captures());
     // Propagate `<(` / `)>` capture-marker positions from the merged-in side so a
     // sub-pattern that sets the match boundaries is not lost when its captures are
     // folded into an outer result — e.g. `'<' ~ '>' [<( \w+ )>]`, where the

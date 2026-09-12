@@ -141,7 +141,7 @@ impl Interpreter {
         let Some((end, mut caps)) = matches.into_iter().next() else {
             return Ok(Value::NIL);
         };
-        caps.target = Some(target.clone());
+        caps.set_target(Some(target.clone()));
         let m = Value::make_match_object_full(
             pos as i64,
             end as i64,
@@ -278,7 +278,7 @@ impl Interpreter {
                 ..RegexCaptures::default()
             },
         };
-        let sym = inner_caps.sym.clone();
+        let sym = inner_caps.sym().cloned();
         Some(Self::build_named_candidates_from_inner(
             vec![(to_abs, inner_caps)],
             pos,

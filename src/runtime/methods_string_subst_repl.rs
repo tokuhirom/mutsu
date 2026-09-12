@@ -68,7 +68,7 @@ impl Interpreter {
             self.env.insert("$_".to_string(), match_obj.clone());
             self.env.insert("_".to_string(), match_obj.clone());
             let positional_len = captures
-                .positional_slots
+                .positional_slots()
                 .len()
                 .max(captures.positional.len());
             for i in 0..positional_len {
@@ -88,7 +88,7 @@ impl Interpreter {
                             .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
                             .collect(),
                     )
-                } else if let Some(Some((a, b))) = captures.positional_slots.get(i) {
+                } else if let Some(Some((a, b))) = captures.positional_slots().get(i) {
                     let t = captures.target_or_new(orig_text.unwrap_or_default());
                     Value::str(t.span_str(*a, *b))
                 } else if let Some(slot) = captures.positional.get(i) {

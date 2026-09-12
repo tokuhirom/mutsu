@@ -247,8 +247,8 @@ impl RegexCaptures {
     /// The subject this capture tree was published with (set by the engine
     /// entry point), else one built fresh from `text` (ADR-0016 P3).
     pub(crate) fn target_or_new(&self, text: &str) -> crate::runtime::MatchTarget {
-        self.target
-            .clone()
+        self.target()
+            .cloned()
             .unwrap_or_else(|| crate::runtime::MatchTarget::new(text))
     }
 
@@ -261,8 +261,7 @@ impl RegexCaptures {
 
     /// The text of an arbitrary recorded span through the published subject.
     pub(crate) fn span_text(&self, from: usize, to: usize) -> String {
-        self.target
-            .as_ref()
+        self.target()
             .map(|t| t.span_str(from, to))
             .unwrap_or_default()
     }
@@ -277,27 +276,119 @@ impl RegexCaptures {
     /// fields nothing reads through a stored node (`hash_captures`,
     /// `positional_slots`, `capture_start`/`capture_end`, `match_from`). The
     /// child payload is allocated only when something would go in it.
-    pub(crate) fn into_cap_node(self) -> CapNode {
+    pub(crate) fn into_cap_node(mut self) -> CapNode {
+        // Take the cold payload whole: a leaf (the common case) never had one,
+        // so the conversion neither allocates nor touches the fields below.
+        let rare = self.rare.take().map(|rare| *rare);
+        let (capture_alias_map, regex_vars, sym, action_name) = match rare {
+            Some(rare) => (
+                rare.capture_alias_map,
+                rare.regex_vars,
+                rare.sym,
+                rare.action_name,
+            ),
+            None => Default::default(),
+        };
         let has_children = !self.named.is_empty()
-            || !self.capture_alias_map.is_empty()
+            || !capture_alias_map.is_empty()
             || !self.positional.is_empty()
-            || !self.regex_vars.is_empty();
+            || regex_vars.as_ref().is_some_and(|vars| !vars.is_empty());
         let children = has_children.then(|| {
             Box::new(CapChildren {
                 named: self.named,
-                capture_alias_map: self.capture_alias_map,
+                capture_alias_map,
                 positional: self.positional,
-                regex_vars: self.regex_vars,
+                regex_vars: regex_vars.map(Arc::unwrap_or_clone).unwrap_or_default(),
             })
         });
         CapNode {
             from: self.from,
             to: self.to,
-            sym: self.sym,
-            action_name: self.action_name,
+            sym,
+            action_name,
             ast: self.ast,
             children,
         }
+    }
+}
+
+/// The hash-capture map shape (`%<name>=(...)` aliasing in regex).
+pub(crate) type HashCaptureMap = HashMap<String, Vec<(String, Option<String>)>>;
+
+/// The capture-alias map shape (`<str=.str_escape>` → original rule name).
+pub(crate) type CaptureAliasMap = HashMap<String, String>;
+
+/// The cold half of [`RegexCaptures`], behind one allocation that most
+/// accumulators never make.
+///
+/// The engine constructs, moves, clones and drops a `RegexCaptures` **per
+/// match candidate** — millions of times over one grammar parse — while every
+/// field in here is written by a minority of patterns: `:my` declarators,
+/// capture aliases, `%<name>=` hash captures, the pcre2/`:P5` slot axis, a
+/// protoregex `:sym<>` win, and the two engine-entry-point links (`target`,
+/// `outer_backref`). Keeping them inline made the accumulator 336 bytes, so
+/// the per-candidate `memcpy` traffic and three `HashMap` drops were paid by
+/// every candidate to carry state almost none of them had
+/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576) item 4). This is
+/// the ADR-0016 P2 [`CapNode`]/[`CapChildren`] split applied one level up, to
+/// the accumulator instead of the stored node.
+///
+/// Reach it through the accessors on [`RegexCaptures`]: the `_mut` ones
+/// materialize the payload, the read-only ones hand back a shared empty value
+/// when it was never allocated.
+#[derive(Clone, Default)]
+pub(crate) struct RareCaps {
+    /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
+    /// spans, where `None` represents an unmatched capture. A separate
+    /// numbering axis from `positional` (it has `None` holes where
+    /// `positional` has no entry at all); written only by the pcre2/`:P5`
+    /// path.
+    pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
+    /// Variables declared via `:my $var = expr;` inside regex.
+    /// These are made available to `<{ code }>` closures.
+    ///
+    /// Shared rather than owned: every inline sub-pattern (a group, an
+    /// alternative, a lookaround body) publishes the lexicals in scope to the
+    /// store it is about to build, and doing that by value cloned the whole
+    /// map per atom match — 1.25% of a YAML parse in `arm_inline_vars_seed`
+    /// alone. An `Arc` makes arming and seeding refcount bumps; the copy is
+    /// paid only by a level that actually writes a lexical, through
+    /// `Arc::make_mut`.
+    pub(crate) regex_vars: Option<Arc<RegexVarMap>>,
+    /// The winning :sym<> variant name, if this match was from a protoregex.
+    pub(crate) sym: Option<String>,
+    /// For aliased captures like `<str=.str_escape>`, maps capture name to
+    /// original rule name for grammar action dispatch.
+    pub(crate) capture_alias_map: CaptureAliasMap,
+    /// The original rule name when this capture was stored under an alias.
+    pub(crate) action_name: Option<String>,
+    /// Hash captures from `%<name>=(...)` aliasing in regex.
+    pub(crate) hash_captures: HashCaptureMap,
+    /// The shared subject this match ran against (ADR-0016 P3). Set once by
+    /// the engine entry point on the returned top-level accumulator — the
+    /// engine itself never touches it. Consumers derive captured text from
+    /// recorded spans through it instead of a stored `matched` string.
+    pub(crate) target: Option<crate::runtime::MatchTarget>,
+    /// The enclosing pattern level's captures, for backreference READS only
+    /// (see [`OuterBackrefCaps`]). Set once on a nested walk's base store and
+    /// never merged, propagated, or published — it is a read-through link to
+    /// the parent walk, not a capture of this level.
+    pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
+}
+
+impl RareCaps {
+    /// True when nothing is left worth keeping the allocation for. Checked
+    /// after a drain/take so a payload that has been emptied out again does
+    /// not make every later clone copy an empty one.
+    fn is_empty(&self) -> bool {
+        self.positional_slots.is_empty()
+            && self.regex_vars.as_ref().is_none_or(|vars| vars.is_empty())
+            && self.sym.is_none()
+            && self.capture_alias_map.is_empty()
+            && self.action_name.is_none()
+            && self.hash_captures.is_empty()
+            && self.target.is_none()
+            && self.outer_backref.is_none()
     }
 }
 
@@ -309,12 +400,6 @@ pub(crate) struct RegexCaptures {
     /// Positional captures as span-bearing slots (ADR-0016 P4): span, nested
     /// subcaptures, quantified iteration lists, and the Nil marker in one axis.
     pub(crate) positional: Vec<PosSlot>,
-    /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
-    /// spans, where `None` represents an unmatched capture. A separate
-    /// numbering axis from `positional` (it has `None` holes where
-    /// `positional` has no entry at all); written only by the pcre2/`:P5`
-    /// path.
-    pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) capture_start: Option<usize>,
@@ -323,34 +408,238 @@ pub(crate) struct RegexCaptures {
     /// Set at the beginning of regex matching to allow code blocks to compute
     /// the matched-so-far text.
     pub(crate) match_from: usize,
-    /// Variables declared via `:my $var = expr;` inside regex.
-    /// These are made available to `<{ code }>` closures.
-    pub(crate) regex_vars: HashMap<String, Value>,
-    /// The winning :sym<> variant name, if this match was from a protoregex.
-    pub(crate) sym: Option<String>,
-    /// For aliased captures like `<str=.str_escape>`, maps capture name to
-    /// original rule name for grammar action dispatch.
-    pub(crate) capture_alias_map: HashMap<String, String>,
-    /// The original rule name when this capture was stored under an alias.
-    pub(crate) action_name: Option<String>,
-    /// Hash captures from `%<name>=(...)` aliasing in regex.
-    pub(crate) hash_captures: HashMap<String, Vec<(String, Option<String>)>>,
     /// The AST value produced by this node's inline `{ make … }` code block(s),
     /// computed at reduce time (`reduce_regex_captures_made`). Carried into the
     /// Match object built by `make_match_object_full_q` so `$<sub>.made` /
     /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
     /// when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
-    /// The shared subject this match ran against (ADR-0016 P3). Set once by
-    /// the engine entry point on the returned top-level accumulator — the
-    /// engine itself never touches it. Consumers derive captured text from
-    /// recorded spans through it instead of a stored `matched` string.
-    pub(crate) target: Option<crate::runtime::MatchTarget>,
-    /// The enclosing pattern level's captures, for backreference READS only
-    /// (see [`OuterBackrefCaps`]). Set once on a nested walk's base store and
-    /// never merged, propagated, or published — it is a read-through link to
-    /// the parent walk, not a capture of this level.
-    pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
+    /// The cold fields, allocated on first write (see [`RareCaps`]).
+    pub(crate) rare: Option<Box<RareCaps>>,
+}
+
+static EMPTY_REGEX_VARS: std::sync::LazyLock<RegexVarMap> =
+    std::sync::LazyLock::new(RegexVarMap::default);
+static EMPTY_HASH_CAPTURES: std::sync::LazyLock<HashCaptureMap> =
+    std::sync::LazyLock::new(HashCaptureMap::default);
+
+impl RegexCaptures {
+    /// The cold payload, if this accumulator ever wrote one.
+    #[inline]
+    pub(crate) fn rare(&self) -> Option<&RareCaps> {
+        self.rare.as_deref()
+    }
+
+    /// The cold payload, allocating it on first use. Prefer the read-only
+    /// accessors on a path that only inspects — this is what turns a
+    /// few-word accumulator back into an allocating one.
+    #[inline]
+    pub(crate) fn rare_mut(&mut self) -> &mut RareCaps {
+        self.rare.get_or_insert_with(Default::default)
+    }
+
+    /// Drop the payload again if a drain/take emptied it.
+    #[inline]
+    pub(crate) fn prune_rare(&mut self) {
+        if self.rare.as_deref().is_some_and(RareCaps::is_empty) {
+            self.rare = None;
+        }
+    }
+
+    #[inline]
+    pub(crate) fn regex_vars(&self) -> &RegexVarMap {
+        self.rare()
+            .and_then(|rare| rare.regex_vars.as_deref())
+            .unwrap_or(&EMPTY_REGEX_VARS)
+    }
+
+    /// The shared handle, for publishing these lexicals to an inline
+    /// sub-pattern without copying them.
+    #[inline]
+    pub(crate) fn regex_vars_shared(&self) -> Option<&Arc<RegexVarMap>> {
+        self.rare()
+            .and_then(|rare| rare.regex_vars.as_ref())
+            .filter(|vars| !vars.is_empty())
+    }
+
+    /// Adopt an already-shared lexical map wholesale (the inline-sub-pattern
+    /// seed). Replaces whatever this accumulator held.
+    pub(crate) fn set_regex_vars_shared(&mut self, vars: Option<Arc<RegexVarMap>>) {
+        match vars {
+            Some(vars) if !vars.is_empty() => self.rare_mut().regex_vars = Some(vars),
+            _ => {
+                if let Some(rare) = self.rare.as_deref_mut() {
+                    rare.regex_vars = None;
+                }
+                self.prune_rare();
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn regex_vars_mut(&mut self) -> &mut RegexVarMap {
+        Arc::make_mut(
+            self.rare_mut()
+                .regex_vars
+                .get_or_insert_with(Default::default),
+        )
+    }
+
+    /// Move the `:my` variable map out, leaving an empty one behind.
+    pub(crate) fn take_regex_vars(&mut self) -> RegexVarMap {
+        let taken = self
+            .rare
+            .as_deref_mut()
+            .and_then(|rare| rare.regex_vars.take());
+        self.prune_rare();
+        // Free while this level owned the only handle, which is the usual case
+        // — a shared one means an inline sub-pattern is reading it right now.
+        taken.map(Arc::unwrap_or_clone).unwrap_or_default()
+    }
+
+    /// Merge another accumulator's `:my` variables into this one, without
+    /// allocating a payload when there is nothing to merge.
+    pub(crate) fn extend_regex_vars<I: IntoIterator<Item = (String, Value)>>(&mut self, vars: I) {
+        let mut it = vars.into_iter();
+        let Some(first) = it.next() else { return };
+        let dst = self.regex_vars_mut();
+        dst.insert(first.0, first.1);
+        dst.extend(it);
+    }
+
+    #[inline]
+    pub(crate) fn capture_alias_map_mut(&mut self) -> &mut CaptureAliasMap {
+        &mut self.rare_mut().capture_alias_map
+    }
+
+    /// Merge another accumulator's capture aliases into this one, without
+    /// allocating a payload when there is nothing to merge.
+    pub(crate) fn extend_capture_alias_map<I: IntoIterator<Item = (String, String)>>(
+        &mut self,
+        aliases: I,
+    ) {
+        let mut it = aliases.into_iter();
+        let Some(first) = it.next() else { return };
+        let dst = self.capture_alias_map_mut();
+        dst.insert(first.0, first.1);
+        dst.extend(it);
+    }
+
+    /// Move the capture-alias map out, leaving an empty one behind.
+    pub(crate) fn take_capture_alias_map(&mut self) -> CaptureAliasMap {
+        let taken = self
+            .rare
+            .as_deref_mut()
+            .map(|rare| std::mem::take(&mut rare.capture_alias_map))
+            .unwrap_or_default();
+        self.prune_rare();
+        taken
+    }
+
+    #[inline]
+    pub(crate) fn hash_captures(&self) -> &HashCaptureMap {
+        self.rare()
+            .map_or(&EMPTY_HASH_CAPTURES, |rare| &rare.hash_captures)
+    }
+
+    #[inline]
+    pub(crate) fn hash_captures_mut(&mut self) -> &mut HashCaptureMap {
+        &mut self.rare_mut().hash_captures
+    }
+
+    /// Move the hash-capture map out, leaving an empty one behind.
+    pub(crate) fn take_hash_captures(&mut self) -> HashCaptureMap {
+        let taken = self
+            .rare
+            .as_deref_mut()
+            .map(|rare| std::mem::take(&mut rare.hash_captures))
+            .unwrap_or_default();
+        self.prune_rare();
+        taken
+    }
+
+    /// Fold another accumulator's hash captures into this one (per-name append),
+    /// without allocating a payload when there is nothing to fold.
+    pub(crate) fn merge_hash_captures(&mut self, other: HashCaptureMap) {
+        if other.is_empty() {
+            return;
+        }
+        let dst = self.hash_captures_mut();
+        for (k, v) in other {
+            dst.entry(k).or_default().extend(v);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn positional_slots(&self) -> &[Option<(usize, usize)>] {
+        self.rare().map_or(&[], |rare| &rare.positional_slots)
+    }
+
+    #[inline]
+    pub(crate) fn positional_slots_mut(&mut self) -> &mut Vec<Option<(usize, usize)>> {
+        &mut self.rare_mut().positional_slots
+    }
+
+    #[inline]
+    pub(crate) fn sym(&self) -> Option<&String> {
+        self.rare().and_then(|rare| rare.sym.as_ref())
+    }
+
+    /// Set (or clear) the winning `:sym<>` variant name. Clearing an
+    /// accumulator that never had a payload does not allocate one.
+    pub(crate) fn set_sym(&mut self, sym: Option<String>) {
+        if sym.is_none() && self.rare.is_none() {
+            return;
+        }
+        self.rare_mut().sym = sym;
+        self.prune_rare();
+    }
+
+    /// Move the `:sym<>` variant name out.
+    pub(crate) fn take_sym(&mut self) -> Option<String> {
+        let taken = self.rare.as_deref_mut().and_then(|rare| rare.sym.take());
+        self.prune_rare();
+        taken
+    }
+
+    /// Set (or clear) the aliased-capture rule name. Clearing an accumulator
+    /// that never had a payload does not allocate one.
+    pub(crate) fn set_action_name(&mut self, action_name: Option<String>) {
+        if action_name.is_none() && self.rare.is_none() {
+            return;
+        }
+        self.rare_mut().action_name = action_name;
+        self.prune_rare();
+    }
+
+    #[inline]
+    pub(crate) fn target(&self) -> Option<&crate::runtime::MatchTarget> {
+        self.rare().and_then(|rare| rare.target.as_ref())
+    }
+
+    /// Publish the shared subject on this accumulator (ADR-0016 P3).
+    pub(crate) fn set_target(&mut self, target: Option<crate::runtime::MatchTarget>) {
+        if target.is_none() && self.rare.is_none() {
+            return;
+        }
+        self.rare_mut().target = target;
+        self.prune_rare();
+    }
+
+    #[inline]
+    pub(crate) fn outer_backref(&self) -> Option<&Arc<OuterBackrefCaps>> {
+        self.rare().and_then(|rare| rare.outer_backref.as_ref())
+    }
+
+    /// Link this level's base store to the enclosing pattern level, for
+    /// backreference reads only.
+    pub(crate) fn set_outer_backref(&mut self, outer: Option<Arc<OuterBackrefCaps>>) {
+        if outer.is_none() && self.rare.is_none() {
+            return;
+        }
+        self.rare_mut().outer_backref = outer;
+        self.prune_rare();
+    }
 }
 
 #[cfg(test)]
@@ -383,6 +672,62 @@ mod cap_node_tests {
         let node = caps.into_cap_node();
         assert!(node.children.is_none());
         assert_eq!((node.from, node.to), (3, 4));
+    }
+
+    /// #7576 item 4: the engine constructs, moves, clones and drops one of
+    /// these per match candidate — millions of times over a grammar parse — so
+    /// its size is the per-candidate `memcpy` bill. It was 336 bytes with the
+    /// cold fields inline. If a change pushes it past this, the new field
+    /// almost certainly belongs in [`RareCaps`].
+    #[test]
+    fn regex_captures_size_guard() {
+        assert!(
+            std::mem::size_of::<RegexCaptures>() <= 128,
+            "RegexCaptures grew to {} bytes",
+            std::mem::size_of::<RegexCaptures>()
+        );
+    }
+
+    /// The point of the split: an accumulator that took no cold-field write
+    /// never allocates the payload, and reading one back gives the empty
+    /// value rather than allocating one to look at.
+    #[test]
+    fn plain_accumulator_allocates_no_rare_payload() {
+        let mut caps = RegexCaptures::default();
+        assert!(caps.rare().is_none());
+        assert!(caps.regex_vars().is_empty());
+        assert!(caps.hash_captures().is_empty());
+        assert!(caps.positional_slots().is_empty());
+        assert!(caps.sym().is_none());
+        assert!(caps.target().is_none());
+        assert!(caps.outer_backref().is_none());
+        // Clearing an absent field, and merging in nothing, stay allocation-free.
+        caps.set_sym(None);
+        caps.set_target(None);
+        caps.set_outer_backref(None);
+        caps.extend_regex_vars(RegexVarMap::default());
+        caps.extend_capture_alias_map(CaptureAliasMap::default());
+        caps.merge_hash_captures(HashCaptureMap::default());
+        assert!(caps.rare().is_none());
+        assert!(caps.take_regex_vars().is_empty());
+        assert!(caps.rare().is_none());
+    }
+
+    /// A write materializes the payload; emptying it again drops it, so a
+    /// drained accumulator does not make every later clone copy an empty one.
+    #[test]
+    fn rare_payload_is_dropped_once_emptied() {
+        let mut caps = RegexCaptures::default();
+        caps.regex_vars_mut()
+            .insert("$x".to_string(), Value::int(1));
+        assert!(caps.rare().is_some());
+        assert_eq!(caps.take_regex_vars().len(), 1);
+        assert!(caps.rare().is_none());
+
+        caps.set_sym(Some("foo".to_string()));
+        assert_eq!(caps.sym().map(String::as_str), Some("foo"));
+        caps.set_sym(None);
+        assert!(caps.rare().is_none());
     }
 }
 

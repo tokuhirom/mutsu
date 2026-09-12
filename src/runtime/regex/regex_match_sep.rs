@@ -460,8 +460,8 @@ impl Interpreter {
                 slot.merge(v.clone());
                 slot.quantified = true;
             }
-            for (k, v) in &src.hash_captures {
-                caps.hash_captures
+            for (k, v) in src.hash_captures() {
+                caps.hash_captures_mut()
                     .entry(k.clone())
                     .or_default()
                     .extend(v.clone());

@@ -56,7 +56,7 @@ impl Interpreter {
             caps.from = caps.capture_start.unwrap_or(0);
             caps.to = caps.capture_end.unwrap_or(end);
             super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-            caps.target = Some(target);
+            caps.set_target(Some(target));
             return Some(caps);
         }
 
@@ -76,7 +76,7 @@ impl Interpreter {
                 let (end, mut caps) = matches.swap_remove(0);
                 caps.from = caps.capture_start.unwrap_or(0);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.target = Some(target);
+                caps.set_target(Some(target));
                 *partial = Some(caps);
             }
             return None;
@@ -84,7 +84,7 @@ impl Interpreter {
         let (end, mut caps) = matches.swap_remove(full_idx);
         caps.from = caps.capture_start.unwrap_or(0);
         caps.to = caps.capture_end.unwrap_or(end);
-        caps.target = Some(target);
+        caps.set_target(Some(target));
         Some(caps)
     }
 
@@ -130,7 +130,7 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(stripped_pos);
                     caps.to = caps.capture_end.unwrap_or(end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     caps
                 });
         }
@@ -138,7 +138,7 @@ impl Interpreter {
             .map(|(end, mut caps)| {
                 caps.from = caps.capture_start.unwrap_or(pos);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.target = Some(target.clone());
+                caps.set_target(Some(target.clone()));
                 caps
             })
     }
@@ -187,7 +187,7 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     return Some(caps);
                 }
             }
@@ -200,7 +200,7 @@ impl Interpreter {
             {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.target = Some(target.clone());
+                caps.set_target(Some(target.clone()));
                 return Some(caps);
             }
         }
@@ -300,7 +300,7 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.target = Some(target.clone());
+                    caps.set_target(Some(target.clone()));
                     if skip_covered {
                         if caps.from < last_end {
                             break;
@@ -341,7 +341,7 @@ impl Interpreter {
             for (end, mut caps) in ends {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.target = Some(target.clone());
+                caps.set_target(Some(target.clone()));
                 // A capture group can report a span starting BEFORE this start
                 // position (`caps.capture_start`), so the barrier is re-tested
                 // against the reported span, not against `start`.

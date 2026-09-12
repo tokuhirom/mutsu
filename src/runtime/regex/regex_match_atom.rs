@@ -50,14 +50,10 @@ impl Interpreter {
             for (k, v) in inner_caps.named.drain() {
                 new_caps.named.entry(k).or_default().merge(v);
             }
-            for (k, v) in inner_caps.capture_alias_map.drain() {
-                new_caps.capture_alias_map.insert(k, v);
-            }
+            new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
             new_caps.positional.append(&mut inner_caps.positional);
             super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-            new_caps
-                .regex_vars
-                .extend(std::mem::take(&mut inner_caps.regex_vars));
+            new_caps.extend_regex_vars(inner_caps.take_regex_vars());
             group.push((next, new_caps));
         }
         group.reverse();
@@ -133,14 +129,10 @@ impl Interpreter {
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);
                     }
-                    for (k, v) in inner_caps.capture_alias_map.drain() {
-                        new_caps.capture_alias_map.insert(k, v);
-                    }
+                    new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                     new_caps.positional.append(&mut inner_caps.positional);
                     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                    new_caps
-                        .regex_vars
-                        .extend(std::mem::take(&mut inner_caps.regex_vars));
+                    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
                     (end, new_caps)
                 })
                 .collect();
@@ -482,14 +474,10 @@ impl Interpreter {
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);
                     }
-                    for (k, v) in inner_caps.capture_alias_map.drain() {
-                        new_caps.capture_alias_map.insert(k, v);
-                    }
+                    new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
                     new_caps.positional.append(&mut inner_caps.positional);
                     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                    new_caps
-                        .regex_vars
-                        .extend(std::mem::take(&mut inner_caps.regex_vars));
+                    new_caps.extend_regex_vars(inner_caps.take_regex_vars());
                     out.push((end, new_caps));
                 }
             }
@@ -690,7 +678,7 @@ impl Interpreter {
                             };
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.sym = sym_key.clone();
+                                    caps.set_sym(sym_key.clone());
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -710,7 +698,7 @@ impl Interpreter {
                             // can set subcap.sym correctly for action method dispatch.
                             for (end, mut caps) in matches_to_use {
                                 if sym_key.is_some() {
-                                    caps.sym = sym_key.clone();
+                                    caps.set_sym(sym_key.clone());
                                 }
                                 raw_out.push((end, caps));
                             }
@@ -1030,8 +1018,8 @@ impl Interpreter {
                 subcap.to = ce;
                 // sym is already set on subcap from raw_out collection loop.
                 // Fall back to sym_key parameter for the is_active (seed) path.
-                if subcap.sym.is_none() && sym_key.is_some() {
-                    subcap.sym = sym_key.cloned();
+                if subcap.sym().is_none() && sym_key.is_some() {
+                    subcap.set_sym(sym_key.cloned());
                 }
                 // The subrule's own inline `{ … }` code blocks stay ON the subcap
                 // (a queryable Match node) rather than bubbling into the parent, so
@@ -1057,7 +1045,7 @@ impl Interpreter {
                 let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
                 let mut subcap = subcap;
                 if is_alias {
-                    subcap.action_name = Some(spec.lookup_name.clone());
+                    subcap.set_action_name(Some(spec.lookup_name.clone()));
                 }
                 let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 // This subrule has just REDUCED. Log it so a parse that fails
@@ -1082,7 +1070,7 @@ impl Interpreter {
                     .push(subcap);
                 if is_alias {
                     new_caps
-                        .capture_alias_map
+                        .capture_alias_map_mut()
                         .insert(capture_name.to_string(), spec.lookup_name.clone());
                 }
                 if let Some(orig_subcap) = shared_under_original {
@@ -1111,10 +1099,10 @@ impl Interpreter {
                 let mut subcap = inner_caps;
                 subcap.from = cs;
                 subcap.to = ce;
-                if subcap.sym.is_none() && sym_key.is_some() {
-                    subcap.sym = sym_key.cloned();
+                if subcap.sym().is_none() && sym_key.is_some() {
+                    subcap.set_sym(sym_key.cloned());
                 }
-                subcap.action_name = Some(spec.lookup_name.clone());
+                subcap.set_action_name(Some(spec.lookup_name.clone()));
                 // Keep the silent subrule's inline blocks on its own (marker) node
                 // for the reduce-time walk to run once — see the non-silent branch.
                 let marker = format!(
