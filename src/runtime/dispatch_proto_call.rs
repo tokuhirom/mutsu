@@ -175,45 +175,7 @@ impl Interpreter {
             if let Some(err) = self.take_pending_dispatch_error() {
                 return Err(err);
             }
-            // Build call profile: name(Type1, Type2, ...)
-            let arg_types: Vec<String> = args
-                .iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-                .map(|a| {
-                    let tn = super::value_type_name(a);
-                    if !a.is_nil() {
-                        format!("{}:D", tn)
-                    } else {
-                        tn.to_string()
-                    }
-                })
-                .collect();
-            let call_profile = format!("{}({})", proto_name, arg_types.join(", "));
-
-            // Collect candidate signatures from all multi candidates
-            let sig_lines = self.collect_multi_candidate_signatures(&proto_name, args.len());
-
-            let sig_list = if sig_lines.is_empty() {
-                String::new()
-            } else {
-                format!(":\n{}", sig_lines.join("\n"))
-            };
-
-            let message = format!(
-                "Cannot resolve caller {}; none of these signatures matches{}",
-                call_profile, sig_list
-            );
-            let mut err = RuntimeError::new(format!(
-                "No matching candidates for proto sub: {}",
-                proto_name
-            ));
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(message));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Multi::NoMatch"),
-                attrs,
-            )));
-            return Err(err);
+            return Err(self.multi_no_match_error(&proto_name, &args));
         };
         // Set up multi dispatch stack so nextsame/nextwith can walk through
         // remaining candidates when called inside a proto-dispatched multi sub.
@@ -373,8 +335,53 @@ impl Interpreter {
             .map(|a| (*a).clone())
     }
 
+    /// The `X::Multi::NoMatch` a call that reached a routine's candidate set
+    /// without matching any of it raises:
+    ///
+    /// ```text
+    /// Cannot resolve caller infix:<cross>(List:D, List:D); none of these signatures matches:
+    ///     (Q $a, Q $b)
+    /// ```
+    ///
+    /// `name` is the routine as the call named it (`"infix:<cross>"`) and is
+    /// what the candidate lines are collected under. Named arguments are left
+    /// out of the call profile, as rakudo does.
+    pub(crate) fn multi_no_match_error(&self, name: &str, args: &[Value]) -> RuntimeError {
+        let arg_types: Vec<String> = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .map(|a| {
+                let tn = super::value_type_name(a);
+                if !a.is_nil() {
+                    format!("{}:D", tn)
+                } else {
+                    tn.to_string()
+                }
+            })
+            .collect();
+        let call_profile = format!("{}({})", name, arg_types.join(", "));
+        let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
+        let sig_list = if sig_lines.is_empty() {
+            String::new()
+        } else {
+            format!(":\n{}", sig_lines.join("\n"))
+        };
+        let message = format!(
+            "Cannot resolve caller {}; none of these signatures matches{}",
+            call_profile, sig_list
+        );
+        let mut err = RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Multi::NoMatch"),
+            attrs,
+        )));
+        err
+    }
+
     /// Collect formatted signature lines from multi dispatch candidates.
-    pub(super) fn collect_multi_candidate_signatures(
+    pub(crate) fn collect_multi_candidate_signatures(
         &self,
         name: &str,
         _arity: usize,

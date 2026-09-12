@@ -383,6 +383,35 @@ impl Interpreter {
         {
             return Ok(v);
         }
+        // Everything below reaches a core routine of the operator's *bare*
+        // name — the core `sub cross`, not a core `&infix:<cross>`, which
+        // rakudo does not have. A user declaration of such a name is a fresh
+        // lexical routine that SHADOWS the operator outright (ADR-0093), so
+        // once the user's own candidates have declined the call there is
+        // nothing left to fall through to: the answer is X::Multi::NoMatch
+        // naming only their signatures, exactly as rakudo reports it.
+        // Operators rakudo really does declare (`+`, `minmax`, ...) classify as
+        // `Modelled`/`Unmodelled` and keep their core candidate, per ADR-0071.
+        // `has_multi_function_cached` is the same gate ADR-0071 rule 5 uses: a
+        // plain `sub infix:<op>` is a lexical shadow rather than a candidate,
+        // so it either resolved above and replaced the operator outright, or it
+        // is not visible here at all. Only a `multi` can reach this point
+        // having declined the call — and requiring one is also what keeps a
+        // module-private `sub infix:<notthere>` (roast
+        // S06-operator-overloading/imported-subs.t, declared but never
+        // exported) falling through to rakudo's own answer for it,
+        // "Two terms in a row", instead of being reported as a candidate set
+        // the caller cannot see.
+        if let Some(op_name) = infix_name
+            && matches!(
+                crate::runtime::native_infix_dispatch::core_infix_candidates(op_name),
+                crate::runtime::native_infix_dispatch::CoreInfixCandidates::Shadowing
+            )
+            && self.user_infix_override(op_name)
+            && self.has_multi_function_cached(op_name)
+        {
+            return Err(self.multi_no_match_error(op_name, &call_args));
+        }
         match self.call_function_compiled_first(name, call_args.clone(), compiled_fns) {
             Ok(v) => Ok(v),
             Err(err) => {

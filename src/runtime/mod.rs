@@ -603,6 +603,7 @@ mod decl_types;
 pub(crate) mod enum_bare_names;
 pub(crate) mod nativecall_fnptr;
 pub(crate) use self::decl_types::*;
+pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;

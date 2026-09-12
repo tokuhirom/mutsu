@@ -95,21 +95,69 @@ const CMP_EXTRA: &[CoreSig] = &[
 ];
 
 /// The core candidate set of one natively-implemented infix operator.
-struct CoreInfixShape {
+pub(crate) struct CoreInfixShape {
     /// The typed two-positional candidates, as groups so operator families can
     /// share them.
-    sigs: &'static [&'static [CoreSig]],
+    pub(crate) sigs: &'static [&'static [CoreSig]],
     /// The constraint of the operator's two-positional catch-all candidate
     /// (rakudo's `(\a, \b)` is `Mu`), or `None` when the operator has none —
     /// `infix:<~>`'s widest candidate is a slurpy, which any two-positional
     /// user candidate out-narrows.
-    catch_all: Option<CoreParam>,
+    pub(crate) catch_all: Option<CoreParam>,
 }
 
-/// The core candidate set for `name` (`"infix:<+>"`), or `None` when mutsu has
-/// no model for the operator. `None` keeps the pre-ADR-0071 behaviour — the
-/// user candidate simply wins — which is always right for an operator that has
-/// no core implementation at all (a purely user-defined `infix:<@@>`).
+/// Does `infix:<op>` have a core candidate set at all, and does mutsu model it?
+///
+/// One notion, three answers — the classification
+/// [#8006](https://github.com/tokuhirom/mutsu/issues/8006) asked for. Before
+/// it, two separate answers disagreed: [`core_infix_shape`] returning `None`
+/// meant "no core candidate to rank", which the ranking read as "the user
+/// candidate wins", while `call_infix_fallback` went on running the builtin
+/// anyway when no user candidate matched. For [`Self::Shadowing`] those two
+/// readings are now the same one: there is no core candidate, in either
+/// direction.
+pub(crate) enum CoreInfixCandidates {
+    /// rakudo declares `&infix:<op>` and mutsu models the type constraints of
+    /// its two-positional candidates. A user candidate joins the set and has to
+    /// out-narrow the core one to take the call.
+    Modelled(CoreInfixShape),
+    /// rakudo declares `&infix:<op>`, but mutsu does not model its candidate
+    /// types. A matching user candidate takes the call; when none matches, the
+    /// native implementation still answers — which is what rakudo's own core
+    /// candidates do.
+    Unmodelled,
+    /// rakudo has **no** `&infix:<op>` routine: mutsu's infix spelling of the
+    /// name is a convenience over a core *list-op sub* of the same bare name
+    /// (`cross`, `zip`, `roundrobin`, ...), or the operator is purely
+    /// user-defined (`infix:<@@>`). Declaring a routine of this name therefore
+    /// installs a fresh lexical routine that SHADOWS whatever mutsu answered
+    /// before: a call its candidates do not accept is `X::Multi::NoMatch`, not
+    /// a fall-through to the builtin.
+    Shadowing,
+}
+
+/// Classify `name` (`"infix:<+>"`). The bare-name form is not accepted — every
+/// caller holds the `infix:<...>` spelling the dispatcher keys on.
+pub(crate) fn core_infix_candidates(name: &str) -> CoreInfixCandidates {
+    let Some(op) = name
+        .strip_prefix("infix:<")
+        .and_then(|s| s.strip_suffix('>'))
+    else {
+        return CoreInfixCandidates::Shadowing;
+    };
+    match core_infix_shape(name) {
+        Some(shape) => CoreInfixCandidates::Modelled(shape),
+        None if crate::runtime::core_infix_names::rakudo_declares_infix(op) => {
+            CoreInfixCandidates::Unmodelled
+        }
+        None => CoreInfixCandidates::Shadowing,
+    }
+}
+
+/// The modelled core candidate set for `name` (`"infix:<+>"`), or `None` when
+/// mutsu has no type table for the operator — which is both of the other two
+/// [`CoreInfixCandidates`] answers, so prefer that function unless the shape
+/// itself is what is wanted.
 fn core_infix_shape(name: &str) -> Option<CoreInfixShape> {
     let op = name.strip_prefix("infix:<")?.strip_suffix('>')?;
     let (sigs, catch_all): (&'static [&'static [CoreSig]], Option<CoreParam>) = match op {
@@ -183,7 +231,11 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> bool {
-        let Some(shape) = core_infix_shape(name) else {
+        let CoreInfixCandidates::Modelled(shape) = core_infix_candidates(name) else {
+            // Neither an unmodelled core operator nor a shadowing declaration
+            // has a core candidate to rank against, so the user's takes the
+            // call. What differs between the two is what happens when NO user
+            // candidate matches, and that is `call_infix_fallback`'s question.
             return false;
         };
         if !self.has_multi_function_cached(name) {

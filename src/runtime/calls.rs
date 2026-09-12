@@ -209,43 +209,7 @@ impl Interpreter {
                 } else if let Some(err) = self.take_pending_dispatch_error() {
                     return Err(err);
                 } else if self.has_proto(name) {
-                    // Build a detailed error with call profile and candidate signatures
-                    let arg_types: Vec<String> = args
-                        .iter()
-                        .filter(|a| {
-                            !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
-                        })
-                        .map(|a| {
-                            let tn = super::value_type_name(a);
-                            if !matches!(a.view(), ValueView::Nil) {
-                                format!("{}:D", tn)
-                            } else {
-                                tn.to_string()
-                            }
-                        })
-                        .collect();
-                    let call_profile = format!("{}({})", name, arg_types.join(", "));
-                    let sig_lines = self.collect_multi_candidate_signatures(name, args.len());
-                    let sig_list = if sig_lines.is_empty() {
-                        String::new()
-                    } else {
-                        format!(":\n{}", sig_lines.join("\n"))
-                    };
-                    let message = format!(
-                        "Cannot resolve caller {}; none of these signatures matches{}",
-                        call_profile, sig_list
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "No matching candidates for proto sub: {}",
-                        name
-                    ));
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(message));
-                    err.exception = Some(Box::new(Value::make_instance(
-                        Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    )));
-                    return Err(err);
+                    return Err(self.multi_no_match_error(name, &args));
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
                     // JSON::Fast/JSON::Tiny to-json/from-json in STATEMENT
                     // position with named args (`from-json($t, :$immutable);`
