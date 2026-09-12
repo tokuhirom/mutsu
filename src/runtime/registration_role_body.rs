@@ -418,6 +418,18 @@ impl Interpreter {
                 cx.role_def.attributes.push(attr.clone());
             }
         }
+        // Carry the parent role's own deferred param-type checks (#8083)
+        // forward so a bogus type in ONE of its methods is still caught once
+        // THIS role is eventually composed into a class -- `role.methods`
+        // below is merged into `cx.role_def.methods` verbatim, but the
+        // pending-check list living alongside it on the parent `RoleDef`
+        // would otherwise be left behind, and no later composition would
+        // ever revalidate it.
+        if !role.pending_param_type_checks.is_empty() {
+            cx.role_def
+                .pending_param_type_checks
+                .extend(role.pending_param_type_checks.iter().cloned());
+        }
         for (mname, overloads) in role.methods {
             // Skip methods declared with `my` scope -- role-private
             // Submethods (is_submethod=true) ARE composed even though

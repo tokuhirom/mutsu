@@ -521,6 +521,15 @@ impl Interpreter {
                 run?;
             }
         }
+        // #8083: re-validate every param-type check deferred at role
+        // registration because the role body's `use` had not loaded yet.
+        // By now that `use` has run -- either just above (a fresh
+        // composition) or during an earlier composition of the same role
+        // (the `composed_role_bodies` memo skipped re-running it, but the
+        // module it loaded is still loaded) -- so a name that still does
+        // not resolve is a genuine typo, not a type some `use`d module
+        // just hadn't supplied yet.
+        self.revalidate_pending_role_param_type_checks(&role.pending_param_type_checks)?;
         self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
         Ok(())
     }

@@ -2647,6 +2647,7 @@ impl Interpreter {
                     deferred_body: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
+                    pending_param_type_checks: Vec::new(),
                 },
             );
             roles.insert(
@@ -2665,6 +2666,7 @@ impl Interpreter {
                     deferred_body: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
+                    pending_param_type_checks: Vec::new(),
                 },
             );
             roles.insert(
@@ -2683,6 +2685,7 @@ impl Interpreter {
                     deferred_body: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
+                    pending_param_type_checks: Vec::new(),
                 },
             );
             roles.insert(
@@ -2701,6 +2704,7 @@ impl Interpreter {
                     deferred_body: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
+                    pending_param_type_checks: Vec::new(),
                 },
             );
             roles.insert(
@@ -2719,6 +2723,7 @@ impl Interpreter {
                     deferred_body: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
+                    pending_param_type_checks: Vec::new(),
                 },
             );
             // ADR-0029: role-shaped `X::` exception "namespaces".
@@ -2789,6 +2794,7 @@ impl Interpreter {
                         deferred_body: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
+                        pending_param_type_checks: Vec::new(),
                     },
                 );
             }
@@ -2844,6 +2850,7 @@ impl Interpreter {
                         deferred_body: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
+                        pending_param_type_checks: Vec::new(),
                     },
                 );
             }
@@ -2901,6 +2908,7 @@ impl Interpreter {
                         deferred_body: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
+                        pending_param_type_checks: Vec::new(),
                     },
                 );
             }

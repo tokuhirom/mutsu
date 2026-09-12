@@ -93,7 +93,7 @@ impl Interpreter {
                 // the registry while its methods validate, so accept its
                 // own name (full or short) explicitly.
                 let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
-                let resolvable = tc_base == name
+                let resolvable_without_deferred = tc_base == name
                     || tc_base == self_short
                     // A role type parameter carrying a definiteness
                     // smiley (`role R[::T] { method f(T:D $x) }`,
@@ -132,12 +132,13 @@ impl Interpreter {
                     // short-name match still finds it, mirroring how the
                     // sub pre-pass accepts any type declared in the unit.
                     || (!tc.contains("::")
-                        && self.type_known_by_short_name(tc_base))
+                        && self.type_known_by_short_name(tc_base));
+                if !resolvable_without_deferred {
                     // A type supplied by a module `use`d within this role
                     // body is not yet loaded at registration time (the
                     // body's `use` runs after this validation), so accept
-                    // the constraint if a body import could still provide
-                    // it. Applies equally to a qualified name
+                    // the constraint optimistically if a body import could
+                    // still provide it. Applies equally to a qualified name
                     // (`Event::Test`) and a bare one (`Event`): nothing
                     // about either spelling predicts which `use`d module
                     // supplies it (`unit package Outer; class Event is
@@ -146,24 +147,41 @@ impl Interpreter {
                     // `Types1` that exports it, #8023), so a name-based match
                     // against the module name is unsound either way. Only a
                     // body `use` of a module that has NOT been loaded yet
-                    // defers — once every module this body names is loaded,
-                    // an unresolvable name really is a typo and still
-                    // reports X::Parameter::InvalidType.
-                    || cx
+                    // defers.
+                    //
+                    // The optimism is not unconditional, though (#8083): a
+                    // GENUINELY mistyped name is never supplied by any
+                    // module, and used to be accepted forever with no
+                    // re-check, silently dropping the method that named it
+                    // once the role composed. Record the pending check so
+                    // `compose_role_into_class` can re-run it once this
+                    // role's own deferred body -- which runs its `use`
+                    // statements -- has actually executed, and reject it
+                    // then if the name still does not resolve.
+                    if cx
                         .body_used_modules
                         .iter()
-                        .any(|m| !self.is_module_loaded(m));
-                if !resolvable {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("type".to_string(), Value::str(tc.to_string()));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Invalid typename '{}' in parameter declaration.",
-                            tc
-                        )),
-                    );
-                    return Err(RuntimeError::typed("X::Parameter::InvalidType", attrs));
+                        .any(|m| !self.is_module_loaded(m))
+                    {
+                        cx.role_def
+                            .pending_param_type_checks
+                            .push(PendingRoleParamTypeCheck {
+                                tc: tc.to_string(),
+                                tc_base: tc_base.to_string(),
+                                enclosing_prefixes: enclosing_prefixes.clone(),
+                            });
+                    } else {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("type".to_string(), Value::str(tc.to_string()));
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Invalid typename '{}' in parameter declaration.",
+                                tc
+                            )),
+                        );
+                        return Err(RuntimeError::typed("X::Parameter::InvalidType", attrs));
+                    }
                 }
             }
         }
@@ -334,6 +352,51 @@ impl Interpreter {
                     }
                     HandleSpec::Type(_) => {}
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Re-run every param-type check `role_body_method_decl` deferred for
+    /// this role (#8083), once its deferred body -- and therefore its `use`
+    /// statements -- has actually executed. A name that still does not
+    /// resolve is a genuine typo, not a type some `use`d module just hadn't
+    /// loaded yet, and is reported the same way an immediately-unresolvable
+    /// one already was.
+    pub(super) fn revalidate_pending_role_param_type_checks(
+        &self,
+        pending: &[PendingRoleParamTypeCheck],
+    ) -> Result<(), RuntimeError> {
+        for check in pending {
+            // The role body's own `use` (which has now run) typically
+            // leaves its exports bound in `self.env` rather than registering
+            // the exact qualified spelling written in the parameter --
+            // `Event::Test` resolves through the freshly-bound `Event` ->
+            // `Outer::Event` and a package-stash lookup for `Test`, not
+            // through a literal `Event::Test` registry entry. This is
+            // exactly the indirect lookup `resolve_declared_type_name`
+            // already performs for a real reference to the type; reuse it
+            // here instead of re-deriving the same resolution.
+            let resolved_indirect = self.resolve_declared_type_name(&check.tc_base);
+            let resolvable = self.is_resolvable_type(&check.tc)
+                || check
+                    .enclosing_prefixes
+                    .iter()
+                    .any(|pfx| self.is_resolvable_type(&format!("{pfx}::{}", check.tc_base)))
+                || (!check.tc.contains("::") && self.type_known_by_short_name(&check.tc_base))
+                || (resolved_indirect != check.tc_base
+                    && self.is_resolvable_type(&resolved_indirect));
+            if !resolvable {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("type".to_string(), Value::str(check.tc.clone()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!(
+                        "Invalid typename '{}' in parameter declaration.",
+                        check.tc
+                    )),
+                );
+                return Err(RuntimeError::typed("X::Parameter::InvalidType", attrs));
             }
         }
         Ok(())

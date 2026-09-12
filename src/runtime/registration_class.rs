@@ -56,6 +56,7 @@ pub(super) fn builtin_role_def() -> RoleDef {
         deferred_body: Vec::new(),
         decl_file: None,
         deferred_custom_traits: Vec::new(),
+        pending_param_type_checks: Vec::new(),
     }
 }
 
