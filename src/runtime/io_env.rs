@@ -529,7 +529,18 @@ impl Interpreter {
         match result {
             Ok(result) => Ok(result.to_string_value()),
             Err(e) if e.return_value.is_some() => Err(RuntimeError::controlflow_return(true)),
-            Err(e) if e.is_method_not_found() || e.is_multi_no_match() => {
+            // A `LazyList` always has a `.gist` route (either the lazy
+            // placeholder or force-and-redispatch onto the resulting `Seq`,
+            // which always has one) -- so a `X::Method::NotFound`/no-match
+            // error surfacing here did NOT come from ".gist itself has no
+            // candidate"; it came from running the gather body during the
+            // force, e.g. `say gather { "u".nosuchmethod }`. Swallowing it
+            // as "no .gist" printed an empty line instead of propagating
+            // the user's own exception (#8159).
+            Err(e)
+                if (e.is_method_not_found() || e.is_multi_no_match())
+                    && !matches!(value.view(), ValueView::LazyList(_)) =>
+            {
                 Ok(crate::runtime::gist_value(value))
             }
             Err(e) => Err(e),
