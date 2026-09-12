@@ -807,17 +807,18 @@ impl Interpreter {
         // Drop any cached compiled predicate for this name so a redeclaration
         // recompiles against the new predicate (see `subset_predicate_cache`).
         self.subset_predicate_cache.remove(name);
-        let def = SubsetDef {
-            base: base.to_string(),
-            predicate,
-            version: version.to_string(),
-        };
         // A subset defaults to `our` scope: declared inside a package/class/
         // module it is also reachable by its qualified name (`URI::Scheme`),
         // so register that alias too — smartmatch resolves the constraint by
         // the exact name it was referenced with. A `my subset` is lexical and
         // must NOT get the package-qualified alias (S12-subset/type-subset.t).
         let pkg = self.current_package();
+        let def = SubsetDef {
+            base: base.to_string(),
+            predicate,
+            version: version.to_string(),
+            decl_package: pkg.clone(),
+        };
         // The qualified name is the subset's *identity* (raku reports `Foo::RM`
         // from `.^name` and in every type-check message), so the short name is
         // registered as an alias pointing at it — the same shape `class`/`role`

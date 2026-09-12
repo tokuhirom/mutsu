@@ -104,6 +104,14 @@ pub(crate) struct SubsetDef {
     pub(crate) base: String,
     pub(crate) predicate: Option<Expr>,
     pub(crate) version: String,
+    /// The package the `subset` was declared in (e.g. `"C"` for a `subset`
+    /// inside `class C { ... }`). Raku closes a `where` predicate over its
+    /// declaration scope, so the predicate must be compiled and run as if
+    /// still lexically inside this package — otherwise a class-nested symbol
+    /// the predicate references (a grammar/class declared alongside it) is
+    /// only visible when the predicate happens to run from a method already
+    /// on that class (see #8003).
+    pub(crate) decl_package: String,
 }
 
 #[derive(Debug, Clone)]
