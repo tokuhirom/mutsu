@@ -140,6 +140,31 @@ impl Interpreter {
             && required.is_private == candidate.is_private
     }
 
+    /// The invocant parameter's type constraint (`::?CLASS:U`, `Foo:D`, ...),
+    /// already resolved to a concrete class name by composition time. `None`
+    /// when the method declares no explicit invocant type (the common case).
+    fn invocant_type_constraint(def: &MethodDef) -> Option<&str> {
+        def.param_defs
+            .iter()
+            .find(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+            .and_then(|pd| pd.type_constraint.as_deref())
+    }
+
+    /// [`Self::method_signatures_match`], but ALSO requires the invocant's own
+    /// type constraint to match. Used only to decide whether a class's own
+    /// multi candidate genuinely re-declares (and so should replace) a
+    /// same-named multi candidate composed from a role — unlike stub
+    /// satisfaction, where an invocant type marker is deliberately ignored,
+    /// two multi candidates that differ only in an invocant definedness
+    /// smiley (`::?CLASS:U:` vs `::?CLASS:D:`) are distinct dispatch
+    /// candidates, not the same one under a different spelling (#8119): a
+    /// role's `:U:`-invocant candidate and a composing class's own
+    /// `:D:`-invocant candidate must both survive composition.
+    fn method_signatures_match_with_invocant(required: &MethodDef, candidate: &MethodDef) -> bool {
+        Self::method_signatures_match(required, candidate)
+            && Self::invocant_type_constraint(required) == Self::invocant_type_constraint(candidate)
+    }
+
     fn stub_is_nullary(def: &MethodDef) -> bool {
         def.param_defs.iter().all(|pd| pd.named || pd.slurpy)
     }
@@ -367,10 +392,13 @@ impl Interpreter {
                     if m.role_origin.is_none() {
                         return true; // keep class methods
                     }
-                    // Keep role method only if no class method has matching signature
+                    // Keep role method only if no class method has matching
+                    // signature -- including the invocant's own type, so a
+                    // role's `:U:`-invocant candidate is not mistaken for a
+                    // duplicate of the class's `:D:`-invocant one (#8119).
                     !class_methods
                         .iter()
-                        .any(|cm| Self::method_signatures_match(m, cm))
+                        .any(|cm| Self::method_signatures_match_with_invocant(m, cm))
                 });
             }
             // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
