@@ -433,17 +433,12 @@ impl Interpreter {
     /// X::Parameter::BadType in Raku ("insufficiently type-like") — treating it
     /// as an alias here would swallow that error.
     pub(crate) fn is_type_alias_constant(&self, name: &str) -> bool {
-        let Some(value) = self.get_env_with_main_alias(name) else {
+        let Some(target) = self.resolve_type_alias_chain(name) else {
             return false;
         };
-        let ValueView::Package(target) = value.view() else {
-            return false;
-        };
-        let target = target.resolve();
-        target != name
-            && (self.is_resolvable_type(&target)
-                || self.has_type(&target)
-                || crate::runtime::nativecall::CType::from_type_name(&target).is_some())
+        self.is_resolvable_type(&target)
+            || self.has_type(&target)
+            || crate::runtime::nativecall::CType::from_type_name(&target).is_some()
     }
 
     /// Reject a sub return type (`--> NoSuchType` / `returns NoSuchType`) that

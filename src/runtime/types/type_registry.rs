@@ -1157,9 +1157,67 @@ impl Interpreter {
         if self.resolve_bare_type_name(base).is_some() {
             return true;
         }
+        // A `constant` type alias stands for the type it names, wherever a type
+        // name goes. Answering for the alias's TARGET is what makes an imported
+        // alias usable in a role method's signature: the caller's own probes
+        // above all miss it, because the registry holds `Int`/`uint64`, not
+        // `MyInt`. `Gnome::N`'s `constant \GType is export = uint64` is the
+        // shape ([#8131]).
+        //
+        // [#8131]: https://github.com/tokuhirom/mutsu/issues/8131
+        if let Some(target) = self.resolve_type_alias_chain(base) {
+            return self.is_resolvable_type(&target)
+                || self.has_type(&target)
+                || crate::runtime::nativecall::CType::from_type_name(&target).is_some();
+        }
         // Check if it starts with uppercase (heuristic for type names)
         // This handles cases like user-defined enum types that may not be registered as classes
         false
+    }
+
+    /// Follow a `constant` type-alias binding from `name` to the type it
+    /// ultimately names, or `None` when `name` is not such an alias.
+    ///
+    /// `constant MyInt = Int;` / `constant \GType = uint64;` binds a *type
+    /// object* into the lexical scope, and Raku accepts the alias anywhere a
+    /// type name goes. The binding is held as a `Package` value, so a plain env
+    /// lookup identifies it — an ordinary `constant TAU = 6.28` holds its value
+    /// instead. A `package`/`module` binds its own name to itself and is
+    /// therefore NOT an alias: `my package A {}; my A $x` is
+    /// X::Syntax::Variable::BadType in Raku, and treating it as an alias here
+    /// would swallow that error.
+    ///
+    /// The walk is bounded, so a pathological cycle cannot spin; a chain that
+    /// has not settled within the bound is reported as "not an alias" rather
+    /// than followed further.
+    pub(crate) fn resolve_type_alias_chain(&self, name: &str) -> Option<String> {
+        // A type name is an identifier starting with a letter. Requiring that
+        // keeps the walk away from every magic env key that is not one -- the
+        // TOPIC above all, which is stored under the bare key `_` and usually
+        // holds a type object: without this, `my _ $x = 3` would take `_` for
+        // an alias of `Any` and be accepted, where rakudo (and
+        // `t/lang/eval-parse-failure-propagates-through-block-call.t`) requires
+        // it to die.
+        if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            return None;
+        }
+        let mut current = name.to_string();
+        for _ in 0..16 {
+            let next =
+                self.get_env_with_main_alias(&current)
+                    .and_then(|value| match value.view() {
+                        crate::value::ValueView::Package(target) => Some(target.resolve()),
+                        _ => None,
+                    });
+            match next {
+                Some(target) if target != current => current = target,
+                // Settled: either the name is not bound to a type object at
+                // all, or it names itself (a package). Only report a chain that
+                // actually moved.
+                _ => return (current != name).then_some(current),
+            }
+        }
+        None
     }
 
     /// Resolve the ultimate base type of a constraint, following subset chains.

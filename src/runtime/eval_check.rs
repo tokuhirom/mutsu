@@ -69,6 +69,94 @@ fn collect_use_declared_type_names(
         }
         i = (i + kw.len()).max(j);
     }
+    collect_source_constant_type_aliases(interp, &bytes, out);
+}
+
+/// Record the `constant NAME = TypeName;` *type aliases* a used module's source
+/// declares.
+///
+/// A `constant` bound to a bare type name aliases that type and is usable
+/// wherever a type name is — `Gnome::N`'s `constant \GType is export = uint64`,
+/// named by `sub g_value_init(N-GValue $value, GType $g_type)`. A `constant`
+/// bound to a *value* (`constant TAU = 6.28`) is not a type and must keep being
+/// rejected in a parameter declaration, so only a single-identifier right-hand
+/// side the interpreter already recognises as a type is recorded — the same
+/// line the in-unit collector draws for a `Stmt::VarDecl` alias.
+///
+/// This cannot ride the declarator loop above: the alias-ness is decided by the
+/// right-hand side, not by the keyword, and the name may be spelled sigillessly
+/// (`\GType`) with traits (`is export`) in between.
+fn collect_source_constant_type_aliases(
+    interp: &Interpreter,
+    bytes: &[char],
+    out: &mut std::collections::HashSet<String>,
+) {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if (i > 0 && is_ident(bytes[i - 1]))
+            || !bytes[i..].starts_with(&['c', 'o', 'n', 's', 't', 'a', 'n', 't'])
+            || bytes.get(i + 8).is_some_and(|c| is_ident(*c))
+        {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 8;
+        while bytes.get(j).is_some_and(|c| c.is_whitespace()) {
+            j += 1;
+        }
+        // A sigilless `constant \GType` names the same thing as `constant GType`.
+        if bytes.get(j) == Some(&'\\') {
+            j += 1;
+        }
+        let start = j;
+        while bytes.get(j).is_some_and(|c| is_ident(*c)) {
+            j += 1;
+        }
+        let name: String = bytes[start..j].iter().collect();
+        // Everything between the name and `=` is traits (`is export`); stop at
+        // the end of the statement so a runaway scan cannot pair a `constant`
+        // with a later statement's `=`.
+        while bytes
+            .get(j)
+            .is_some_and(|c| !matches!(c, '=' | ';' | '\n' | '{'))
+        {
+            j += 1;
+        }
+        if bytes.get(j) != Some(&'=') || bytes.get(j + 1) == Some(&'=') {
+            i = (i + 8).max(j);
+            continue;
+        }
+        j += 1;
+        while bytes.get(j).is_some_and(|c| c.is_whitespace()) {
+            j += 1;
+        }
+        let rhs_start = j;
+        while bytes.get(j).is_some_and(|c| is_ident(*c)) {
+            j += 1;
+        }
+        let target: String = bytes[rhs_start..j].iter().collect();
+        // The right-hand side must be the WHOLE initializer, or it is an
+        // expression (`constant K = Int.new`) rather than an alias.
+        let trailing_is_terminator = bytes[j..]
+            .iter()
+            .find(|c| !c.is_whitespace())
+            .is_none_or(|c| *c == ';');
+        if !name.is_empty()
+            && !target.is_empty()
+            && trailing_is_terminator
+            && (interp.is_resolvable_type(&target)
+                || interp.has_type(&target)
+                // A type the SAME module declares is not registered yet either
+                // -- the declarator scan above has just collected it into
+                // `out`, and that is the only record of it at this point.
+                || out.contains(&target)
+                || crate::runtime::nativecall::CType::from_type_name(&target).is_some())
+        {
+            out.insert(name);
+        }
+        i = (i + 8).max(j);
+    }
 }
 
 /// Locate `module`'s source under one of `dirs` (or its `lib/` subdirectory).
