@@ -35,18 +35,19 @@ distinction is kept rather than reconstructed:
 - `Stmt::If` grows `with_kind: Option<WithBlockKind>` (`With` / `Without` /
   `Orwith`), set by `parser::stmt::control::with_stmt` and by the `orwith` arm
   of `parse_elsif_chain`;
-- `Stmt::Given`'s existing `with_kind` grows a `BlockTopic` variant marking the
-  scaffold `given` a block body runs under — which raku does not model as a
-  `given` at all, but as the `implicit-topic => True` / `required-topic => 1`
-  flags on the `Block` itself.
+- `Stmt::Given`'s existing `with_kind` grows `BlockTopic` / `BlockTopicPointy`,
+  marking the scaffold `given` a block body runs under — which raku does not
+  model as a `given` at all, but as the `implicit-topic => True` /
+  `required-topic => 1` flags on the `Block` itself.
 
 Execution ignores both markers; only the RakuAST converter reads them.
 
-Only the *parameterless* spelling is marked. A pointy body (`with X -> $a { … }`)
-binds its parameter inside the same scaffold `given`, which raku spells as a
-`PointyBlock` rather than an implicit-topic `Block`, so it is deliberately left
-unmarked and `.AST` reports the boundary instead of silently dropping the
-parameter.
+The pointy spellings (`with X -> $a { … }`, `else -> $p { … }`,
+`orwith X -> $q { … }`) bind their parameter inside that same scaffold, which
+raku spells as a `PointyBlock` rather than an implicit-topic `Block`. They carry
+the distinct tag, so `.AST` reports the boundary instead of rendering a block
+that has swallowed the binding — which is what an untagged scaffold would have
+produced for a pointy `else` after an `orwith`.
 
 ## Both directions
 
@@ -68,6 +69,11 @@ parameter.
 A `with` block written *inside* an `else` stays a statement rather than being
 absorbed as a continuation clause, which the shared chain walk checks for
 explicitly.
+
+`t/rakuast/rakuast-desugar-boundary.t` is updated too: `with` was listed there
+as a construct that throws rather than leak its `__with_tmp_N` temporary, and
+that point survives as the stronger assertion — it renders, and the temporary
+does not appear anywhere in the output — alongside the two pointy boundaries.
 
 ## Verification
 
