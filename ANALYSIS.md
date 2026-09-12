@@ -25,7 +25,7 @@ stopped resolving the moment a finding was fixed and `git mv`d into `news/` (108
 `todo/` paths cited from `src/` were already dangling at migration time), whereas an issue
 number keeps resolving after the issue closes.
 [docs/todo-issue-map.md](docs/todo-issue-map.md) is the frozen path→issue map for the 57
-files that moved. The migration is not finished, though: the citations were left behind (§6).
+files that moved, and citations of the old paths are left as they are (§6 says why).
 
 ---
 
@@ -526,15 +526,18 @@ from ~2,500 lines to 430, and `resolve_sequence` moved into its own module. That
 that works. A standalone line-moving campaign is not proposed; what is proposed (§7) is making
 the split a completion gate on whatever campaign next opens the file.
 
-**Dangling citations are the other hygiene axis, and one of them is new and large.** The
-`todo/` directory was deleted on 2026-09-08, but its citations were not rewritten: **279
-`todo/…` path references survive in `src/`, 257 across 56 files in `docs/adr/`, and 61 in
-`PLAN.md` and top-level `docs/`**. They resolve only indirectly, by hand, through
-`docs/todo-issue-map.md` — which is exactly the cost the migration was meant to remove, since
-its whole rationale was that a path stops resolving and an issue number does not. Rewriting
-them to issue links is mechanical and should be done in bulk rather than opportunistically;
-until it is, the ADR corpus cites a directory that does not exist. A smaller, older instance of
-the same thing: comment references to the retired `MUTSU_SHADOW_SLOTS` opt-in gate.
+**Citations of the deleted `todo/` directory survive — and are deliberately left alone.**
+There are 279 `todo/…` path references in `src/`, 257 across 56 files in `docs/adr/`, and 61 in
+`PLAN.md` and top-level `docs/`. They are not dangling in the sense the migration was about:
+`docs/todo-issue-map.md` is frozen, so each resolves in one lookup, and the rot the migration
+ended was prospective — a path breaking when its finding is fixed and moved into `news/`.
+Rewriting them in bulk would edit 56 decision documents to change how they cite their own
+history, churn `git blame` across hundreds of files, and conflict with everything in flight,
+for one saved indirection. The exception is a **live** pointer that reads as current state —
+ADR-0073's Status line names a remaining case as "tracked in
+`todo/deep/ordered-alternation-eager-candidate-enumeration.md`" — which is ride-along cleanup
+for whoever next edits that ADR, not a campaign. A smaller, older instance of the same shape:
+comment references to the retired `MUTSU_SHADOW_SLOTS` opt-in gate.
 
 ---
 
@@ -557,7 +560,7 @@ Ordering rule, stated so it can be argued with:
 | 1b | **Retire the JSON `use`-time interception** (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
-| 4 | **Pay hygiene debt through the work above, and finish the issue migration** (§6, [#8187](https://github.com/tokuhirom/mutsu/issues/8187)) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review — split when a campaign opens the file and the ownership boundary is visible. The one piece worth doing standalone is mechanical: ~600 surviving `todo/…` path citations in `src/`, `docs/adr/` and `PLAN.md` point at a deleted directory and should be rewritten to issue links in bulk. |
+| 4 | **Pay hygiene debt through the work above** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review. Split when a campaign opens the file and the ownership boundary is visible; a standalone line-moving campaign is not proposed, and neither is a bulk rewrite of the surviving `todo/` citations (§6 says why). This row is therefore a discipline, not a queue item — deliberately the one row with no issue behind it. |
 | 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros still have no consumer. |
 
 Explicitly **not** ranked as current architecture work: the completed ADR-0013/0015-P3b/0016/
