@@ -773,7 +773,7 @@ impl Interpreter {
                 if !alias_map.is_empty() {
                     let alias_hash: HashMap<String, Value> = alias_map
                         .iter()
-                        .map(|(k, v)| (k.clone(), Value::str(v.clone())))
+                        .map(|(k, v)| (k.as_str().to_string(), Value::str(v.as_str().to_string())))
                         .collect();
                     updates.push(("capture_alias_map", Value::hash_bare_values(alias_hash)));
                 }

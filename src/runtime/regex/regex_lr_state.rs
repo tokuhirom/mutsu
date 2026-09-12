@@ -108,6 +108,41 @@ pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
     })
 }
 
+/// What a `<subrule>` call found when it asked to start an activation.
+pub(super) enum LrBegin {
+    /// The key is already under evaluation further up the stack: this call is
+    /// a left-recursive re-entry and gets the seed grown so far (highest
+    /// priority first, raw inner matches at absolute positions) instead of
+    /// recursing. Asking for it is what records the key as genuinely
+    /// left-recursive, so the owner keeps growing the seed.
+    Reentry(Vec<(usize, RegexCaptures)>),
+    /// The activation was started; the payload is the enclosing activation's
+    /// "seed was consulted" flag for [`lr_end_activation`] to restore.
+    Began(bool),
+}
+
+/// [`lr_key_is_active`] + the seed read / [`lr_begin_activation`] as ONE map
+/// operation.
+///
+/// Every `<subrule>` call asks both questions back to back and acts on exactly
+/// one of them, so asking them separately hashed and probed the same key twice
+/// per call — 87k redundant probes on a 60-row YAMLish parse, none of whose
+/// rules are left-recursive at all. The two spellings are otherwise identical:
+/// the separate `lr_key_is_active` declined to create a vacant entry, but the
+/// `lr_begin_activation` that always followed it created one anyway.
+pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
+    LR_STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        let entry = s.entry(key.clone()).or_default();
+        if let Some(seed) = entry.seed.as_ref() {
+            entry.seed_read = true;
+            return LrBegin::Reentry(seed.clone());
+        }
+        entry.seed = Some(Vec::new());
+        LrBegin::Began(std::mem::take(&mut entry.seed_read))
+    })
+}
+
 /// Undo [`lr_begin_activation`], reporting whether anything re-entered `key`
 /// and read its seed while it was active.
 pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
@@ -134,17 +169,6 @@ pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
                 false
             }
         }
-    })
-}
-
-/// Read the seed grown so far for an active `key`, recording that it was
-/// consulted (which is what makes this key genuinely left-recursive).
-pub(super) fn lr_read_seed(key: &LrKey) -> Vec<(usize, RegexCaptures)> {
-    LR_STATE.with(|s| {
-        let mut s = s.borrow_mut();
-        let entry = s.entry(key.clone()).or_default();
-        entry.seed_read = true;
-        entry.seed.clone().unwrap_or_default()
     })
 }
 
@@ -186,7 +210,7 @@ mod tests {
         let k = key("lr_seed_read", 3);
         // Outer activation, re-entered and consulted.
         let outer = lr_begin_activation(&k);
-        assert!(lr_read_seed(&k).is_empty());
+        assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Reentry(seed) if seed.is_empty()));
         assert!(lr_seed_was_consulted(&k));
         // A nested activation of the same key starts un-consulted, and hands
         // the outer flag back on the way out.
@@ -207,12 +231,16 @@ mod tests {
         let k = key("lr_stored_seed", 5);
         let outer = lr_begin_activation(&k);
         lr_store_seed(&k, vec![(9, RegexCaptures::default())]);
-        let seed = lr_read_seed(&k);
+        let LrBegin::Reentry(seed) = lr_begin_or_reenter(&k) else {
+            panic!("an active key re-enters rather than beginning again");
+        };
         assert_eq!(seed.len(), 1);
         assert_eq!(seed[0].0, 9);
         lr_end_activation(&k, outer);
-        // The seed dies with the activation.
-        assert!(lr_read_seed(&k).is_empty());
+        // The seed dies with the activation: the next call BEGINS one rather
+        // than re-entering, and what it then hands a re-entry is empty again.
+        assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Began(_)));
+        assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Reentry(seed) if seed.is_empty()));
         lr_end_activation(&k, false);
         LR_STATE.with(|s| assert!(!s.borrow().contains_key(&k)));
     }

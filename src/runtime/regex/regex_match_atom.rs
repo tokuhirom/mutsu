@@ -3,10 +3,7 @@ use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, alternation_capture_slots,
     merge_regex_captures,
 };
-use super::regex_lr_state::{
-    LrKey, lr_begin_activation, lr_end_activation, lr_read_seed, lr_seed_was_consulted,
-    lr_store_seed,
-};
+use super::regex_lr_state::{LrKey, lr_end_activation, lr_seed_was_consulted, lr_store_seed};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 /// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
@@ -569,37 +566,33 @@ impl Interpreter {
                 });
                 let lr_key = LrKey::new(spec.lookup_sym, lr_args, chars.len() - pos);
 
-                // Check if this call is currently active (left recursion detected).
-                let is_active = super::regex_lr_state::lr_key_is_active(&lr_key);
-                if is_active {
-                    // Genuine left recursion: this key's evaluation depends on
-                    // its own seed, so the owner must keep growing it. Reading
-                    // the seed is what records that.
-                    // The seed is stored in HIGHEST FIRST order (raw inner
-                    // matches, absolute positions).
-                    let seed = lr_read_seed(&lr_key);
-                    // Wrap seed into outer captures. build_named_candidates_from_inner
-                    // returns items in the same order as input (HIGHEST FIRST).
-                    // Caller expects LOWEST FIRST, so reverse.
-                    let mut result = Self::build_named_candidates_from_inner(
-                        seed, pos, &spec, None, // no sym_key for seed
-                    );
-                    result.reverse();
-                    return result;
-                }
-
-                // Not currently active: run the growing-seed algorithm.
+                // Is this call already active (left recursion), and if not,
+                // start its activation — one map operation for both, since
+                // exactly one of the two answers is acted on.
                 //
-                // Seed storage: raw (un-wrapped) inner matches in HIGHEST FIRST
-                // order, with absolute positions.
-                // When is_active branch reads the seed, it passes them to
-                // build_named_candidates_from_inner which adds the outer wrapping.
+                // Active: genuine left recursion. This key's evaluation depends
+                // on its own seed, so the owner must keep growing it; asking for
+                // the seed is what records that. The seed is stored in HIGHEST
+                // FIRST order (raw inner matches, absolute positions).
                 //
-                // Initialize with empty seed (= no match yet). This key starts
-                // out un-consulted for THIS activation; a stale entry from an
-                // earlier activation at the same key must not be read as
-                // "left-recursive" here.
-                let outer_seed_read = lr_begin_activation(&lr_key);
+                // Not active: run the growing-seed algorithm from an empty seed
+                // (= no match yet). This key starts out un-consulted for THIS
+                // activation; a stale entry from an earlier activation at the
+                // same key must not be read as "left-recursive" here.
+                let outer_seed_read = match super::regex_lr_state::lr_begin_or_reenter(&lr_key) {
+                    super::regex_lr_state::LrBegin::Reentry(seed) => {
+                        // Wrap seed into outer captures.
+                        // build_named_candidates_from_inner returns items in the
+                        // same order as input (HIGHEST FIRST). Caller expects
+                        // LOWEST FIRST, so reverse.
+                        let mut result = Self::build_named_candidates_from_inner(
+                            seed, pos, &spec, None, // no sym_key for seed
+                        );
+                        result.reverse();
+                        return result;
+                    }
+                    super::regex_lr_state::LrBegin::Began(outer_seed_read) => outer_seed_read,
+                };
 
                 // best_inner_max: max inner_end seen so far (None = nothing matched yet).
                 let mut best_inner_max: Option<usize> = None;
@@ -1075,7 +1068,7 @@ impl Interpreter {
                 if is_alias {
                     new_caps
                         .capture_alias_map_mut()
-                        .insert(capture_name.to_string(), spec.lookup_name.clone());
+                        .insert(capture_sym, spec.lookup_sym);
                 }
                 if let Some(orig_subcap) = shared_under_original {
                     new_caps

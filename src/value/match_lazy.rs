@@ -210,7 +210,7 @@ impl MatchNode {
             let alias_hash: HashMap<String, Value> = kids
                 .capture_alias_map
                 .iter()
-                .map(|(k, v)| (k.clone(), Value::str(v.clone())))
+                .map(|(k, v)| (k.as_str().to_string(), Value::str(v.as_str().to_string())))
                 .collect();
             attrs.insert("capture_alias_map", Value::hash_bare_values(alias_hash));
         }

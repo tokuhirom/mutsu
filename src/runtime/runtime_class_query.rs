@@ -206,6 +206,17 @@ impl Interpreter {
         if let Some(cd) = reg.classes.get(name) {
             return Some((name.to_string(), cd.parents.clone()));
         }
+        // The fallback below compares `name` against a registry key's `::`-tail,
+        // which is by construction everything after the LAST `::` and so never
+        // contains one itself. A qualified `name` therefore cannot match any
+        // key, and scanning the whole class table to discover that is provably
+        // futile — it was measured at 1.0% of a YAMLish parse (148 scans of
+        // ~220 entries, each one a `rsplit_once` substring search), because a
+        // role name like `YAMLish::Single` reaches here on every `.new` of a
+        // class that composes it (`seed_quanthash_storage`).
+        if name.contains("::") {
+            return None;
+        }
         reg.classes
             .iter()
             .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
