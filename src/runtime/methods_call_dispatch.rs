@@ -280,6 +280,16 @@ impl Interpreter {
         } else {
             (target, true)
         };
+        // A deferred `Seq.new($iterator).iterator` hands its original user
+        // iterator directly to the caller. It is already the result of the
+        // requested method; dispatching `iterator` on it again would treat the
+        // user iterator as an ordinary one-element value. Materialized Seq
+        // iterators also arrive here as an `Iterator` instance, so the same
+        // short-circuit preserves both forms.
+        if pre_reify && method == "iterator" && matches!(target.view(), ValueView::Instance { .. })
+        {
+            return Ok(target);
+        }
         match self.call_method_with_values_inner(target.clone(), method, args, reify_seq) {
             Err(err) if Self::is_method_not_found_for(&err, method) => {
                 self.call_method_with_values_inner(target, method, positional, reify_seq)
@@ -295,6 +305,7 @@ impl Interpreter {
         args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
+        let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything
         // that is not a property of the container itself is answered by the
@@ -921,6 +932,12 @@ impl Interpreter {
         } else {
             target
         };
+        if target_was_seq
+            && method == "iterator"
+            && matches!(target.view(), ValueView::Instance { .. })
+        {
+            return Ok(target);
+        }
         if is_seq_sink {
             return Ok(Value::NIL);
         }
