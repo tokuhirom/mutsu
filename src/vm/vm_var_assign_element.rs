@@ -595,6 +595,16 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // #8069 §4.1: a plain `@a[$i] = $v` is a `Vec` slot write, and every
+        // probe below asks about a shape that store has already been refused
+        // for. Consulted FIRST so the common store pays none of them; it
+        // touches nothing unless it commits, so a decline leaves the rest of
+        // this function running exactly as it did before.
+        if let Some(result) =
+            self.try_fast_array_element_assign_early(code, name_idx, is_positional, target_slot)
+        {
+            return result;
+        }
         // The VM local slot is authoritative for a lexical scalar between env
         // synchronization points.  A Range receiver is immutable even when the
         // scalar wrapper came from ordinary `my $r = ...` assignment.
