@@ -1,0 +1,5 @@
+# Ratchet baseline for scripts/check-panic-surface.py (issue #8186).
+# These counts may go down (or stay flat), never up. Regenerate with:
+#   scripts/check-panic-surface.py --update
+panic_surface=1906
+allow_surface=238

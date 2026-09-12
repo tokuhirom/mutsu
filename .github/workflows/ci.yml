@@ -274,6 +274,19 @@ jobs:
         # been the profiling finding in five separate perf campaigns (#8087).
         run: make check-magic-keys
 
+      - name: Panic-family / #[allow( surface did not grow
+        # A ratchet, not a ban: PLAN.md's "mutsu must never Rust-panic on any
+        # input" had no enforcement, and the count of
+        # unwrap/expect/panic!/unreachable!/todo!/unimplemented! (and of
+        # #[allow() sites) rose at every architecture review. Both counts may
+        # go down but never up (#8186). scripts/check-panic-surface.py
+        # excludes #[cfg(test)] scaffolding by scanning comments/strings/braces
+        # itself rather than a plain grep, so `make check-panic-surface` runs
+        # its own `--self-test` against synthetic snippets first -- a bug in
+        # the masker could otherwise make the ratchet silently report 0 no
+        # matter what src/ contains.
+        run: make check-panic-surface
+
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           components: clippy, rustfmt

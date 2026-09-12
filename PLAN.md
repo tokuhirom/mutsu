@@ -239,9 +239,10 @@ levers — [#7571](https://github.com/tokuhirom/mutsu/issues/7571), actively wor
       ownership boundary is visible.
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
-      deep-recursion `fatal runtime error: stack overflow` process abort for crashes. Nothing
-      currently stops the panic surface from growing in the meantime
-      ([#8186](https://github.com/tokuhirom/mutsu/issues/8186)).
+      deep-recursion `fatal runtime error: stack overflow` process abort for crashes. The panic
+      surface itself is now ratcheted (`make check-panic-surface`,
+      `scripts/check-panic-surface.py`), so it can only shrink from here — this item is the
+      actual shrinking work.
 - Individual concurrency bugs are individual `todo:ticket` / `todo:deep` issues.
 
 ---
@@ -268,10 +269,11 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 - [ ] **Per-type method-coverage matrix** — harness landed (`scripts/method-coverage.raku`); run the
       full-corpus triage and fold the per-type hole list into the backlog.
 - [ ] **Panic-zero sweep** — mutsu must never Rust-panic or process-abort on any input. Extend with
-      parser fuzzing driven through the same harness with a "did it panic?" oracle. The goal has no
-      enforcement mechanism today and the surface grows at every measurement (2,440 `unwrap` /
-      `expect` / `panic!` / `unreachable!` in `src/`): [#8186](https://github.com/tokuhirom/mutsu/issues/8186)
-      is either the ratchet or the decision to reword this goal into something enforceable.
+      parser fuzzing driven through the same harness with a "did it panic?" oracle. The panic-family
+      surface (`unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in `src/`, test
+      scaffolding excluded) is now ratcheted at 1,906 sites by `make check-panic-surface`
+      ([#8186](https://github.com/tokuhirom/mutsu/issues/8186)) — it can only go down from here, so
+      this item is the remaining work of actually driving it toward zero.
 - [ ] **Error / exception parity** — differential-test that mutsu throws the right `X::` type with a
       matching message and payload, not merely that it fails. Corpus: `Type/X*.rakudoc`.
 
