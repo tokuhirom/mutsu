@@ -4720,6 +4720,41 @@ impl Interpreter {
             _ => (raw_val, None, false),
         };
 
+        // A `CArray[T]` *native handle* produced by an expression -- a sub
+        // call, a method call, an attribute accessor -- rather than bound to
+        // a variable (`get()[2] = 7`, `$b.c[1] = 5`). `target` here is
+        // already the evaluated handle value, so this is the computed-target
+        // mirror of the by-name arm further down this file: element
+        // assignment writes into native memory instead of a throwaway Raku
+        // container the generic auto-vivify path below would otherwise
+        // silently replace the handle with (#8031).
+        if is_positional
+            && let ValueView::Instance {
+                attributes,
+                class_name,
+                ..
+            } = target.descalarize().view()
+            && attributes.contains_key("address")
+            && let Some(elem) = class_name
+                .resolve()
+                .strip_prefix("CArray[")
+                .and_then(|s| s.strip_suffix(']'))
+            && let Some(pos) = Self::index_to_usize(&idx)
+        {
+            let base = attributes
+                .as_map()
+                .get("address")
+                .map(|v| crate::runtime::to_int(v) as usize)
+                .unwrap_or(0);
+            if self
+                .native_carray_element_assign(elem, base, pos, &val)
+                .is_some()
+            {
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
+
         // A positional subscript of a mutable collection producer keeps the
         // producer's element cells alive; assign through the cell (see
         // `try_seq_element_cell_assign`, shared with the named-receiver op).

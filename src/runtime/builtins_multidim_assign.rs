@@ -183,6 +183,38 @@ impl Interpreter {
             }
         }
 
+        // The accessor returned a `CArray[T]` *native handle*
+        // (`$b.c[1] = 5`, `.c` an attribute accessor): element assignment
+        // writes into native memory, not a throwaway Raku container --
+        // the accessor-lvalue mirror of the computed-target arm in
+        // `vm_var_assign_index_named.rs`'s `exec_index_assign_generic_op`
+        // (#8031). Checked before the ASSIGN-POS/ASSIGN-KEY dispatch below:
+        // a CArray handle never carries a user-defined one.
+        if let ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } = current.view()
+            && attributes.contains_key("address")
+            && let Some(elem) = class_name
+                .resolve()
+                .strip_prefix("CArray[")
+                .and_then(|s| s.strip_suffix(']'))
+            && let Ok(pos) = index.to_string_value().parse::<usize>()
+        {
+            let base = attributes
+                .as_map()
+                .get("address")
+                .map(|v| crate::runtime::to_int(v) as usize)
+                .unwrap_or(0);
+            if self
+                .native_carray_element_assign(elem, base, pos, &value)
+                .is_some()
+            {
+                return Ok(value);
+            }
+        }
+
         // The accessor returned an Associative/Positional OBJECT (URI's
         // `$u.query<foo> = v` — `.query` yields a URI::Query instance):
         // dispatch the raku subscript protocol on it instead of treating it
