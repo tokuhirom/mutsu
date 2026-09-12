@@ -337,8 +337,16 @@ impl Interpreter {
         // same sub without the default won. Resolution happens through the normal
         // registry lookup, so a name with no user routine costs one miss and
         // reaches the native table exactly as before.
-        let user_shadows_builtin = Self::is_builtin_function(name)
-            && self.resolve_function_with_alias(name, args).is_some();
+        //
+        // `BUILTIN_FUNCTION_NAMES` is not the whole native surface: the arity
+        // tables behind `builtins::native_function` answer names it never
+        // lists (`pick` among them), so the shadow test also asks whether a
+        // user `only` sub is what this call resolves to at all (GH #8064 —
+        // without it `sub pick(Int, Int)` lost `pick(1, "two")` to the native
+        // `pick`, turning a binding failure into a silent success).
+        let user_shadows_builtin = (Self::is_builtin_function(name)
+            && self.resolve_function_with_alias(name, args).is_some())
+            || self.user_only_sub_hides_builtin(name, args);
         if !user_shadows_builtin {
             // ADR-0044 D1: `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/
             // `splice` as native function-form routines, reached here

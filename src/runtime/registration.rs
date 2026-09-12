@@ -1070,6 +1070,40 @@ impl Interpreter {
         }
     }
 
+    /// Whether a user-declared **`only`** sub with this name hides a same-named
+    /// builtin for the code running right now, even though the call's arguments
+    /// do not fit its signature.
+    ///
+    /// [`Self::user_function_matches_call`] answers "does the user sub accept
+    /// THESE arguments", and every dispatch chain treats a `false` there as
+    /// "use the builtin". For a `multi` that is right — rakudo merges the
+    /// setting's candidates into the same candidate list, so a call no user
+    /// candidate accepts legitimately reaches the builtin one. For an `only`
+    /// sub it is not: a lexical/package `sub pick` hides `&CORE::pick`
+    /// *entirely*, so `sub pick(Int $x, Int $y) {...}; pick(1, "two")` is a
+    /// binding failure in rakudo, never a call to the setting's `pick`.
+    /// Falling back turned that failure into a silent success (GH #8064: a
+    /// `dies-ok` around such a call reported the block as having lived).
+    ///
+    /// Only ever consulted for a name that IS a builtin, and only after the
+    /// matching test above has already failed, so the extra resolution is off
+    /// every hot path.
+    pub(crate) fn user_only_sub_hides_builtin(&mut self, name: &str, args: &[Value]) -> bool {
+        // Two cached lookups first: this runs on the dispatch chain, and for a
+        // program that declared no sub under this name at all it must cost
+        // nothing more than they do. (`is_builtin_function` is deliberately NOT
+        // the gate: the native function tables are much wider than
+        // `BUILTIN_FUNCTION_NAMES` -- `pick`, the name in #8064, is dispatched
+        // by `builtins::native_function` without appearing there at all.)
+        if !self.has_declared_function_cached(name) || self.has_multi_function_cached(name) {
+            return false;
+        }
+        // Resolution, not mere registration: the registry is flat, so this is
+        // what decides whether the declaration is reachable from the running
+        // package at all.
+        self.resolve_function_with_types(name, args).is_some()
+    }
+
     /// A routine whose signature already pins the return value (`--> Nil`,
     /// `--> 42`, `--> "foo"`) may not also `return` an argument. Raku rejects
     /// this at compile time with an X::Comp::AdHoc carrying the offending value
