@@ -140,6 +140,11 @@ impl Interpreter {
         if class_name == role {
             return true;
         }
+        if role == "Awaitable"
+            && crate::builtins::builtin_type_catalog::builtin_type_has_role(class_name, role)
+        {
+            return true;
+        }
         self.collect_roles_for_class(class_name, false, false, false)
             .iter()
             .any(|r| r.split_once('[').map(|(b, _)| b).unwrap_or(r) == role)
@@ -281,10 +286,17 @@ impl Interpreter {
             return result;
         }
         if local_only {
-            if let Some(roles) = self.registry().class_composed_roles.get(class_name) {
+            let roles = self
+                .registry()
+                .class_composed_roles
+                .get(class_name)
+                .cloned()
+                .filter(|roles| !roles.is_empty())
+                .unwrap_or_else(|| self.catalog_roles(class_name));
+            if !roles.is_empty() {
                 for r in roles {
                     if seen.insert(r.clone()) {
-                        result.push(r.clone());
+                        result.push(r);
                     }
                 }
             }
@@ -303,8 +315,14 @@ impl Interpreter {
                 // Clone out before the recursive call so no registry read guard is
                 // held across `collect_transitive_roles` (avoids a same-thread
                 // recursive read lock).
-                let roles = self.registry().class_composed_roles.get(cn).cloned();
-                if let Some(roles) = roles {
+                let roles = self
+                    .registry()
+                    .class_composed_roles
+                    .get(cn)
+                    .cloned()
+                    .filter(|roles| !roles.is_empty())
+                    .unwrap_or_else(|| self.catalog_roles(cn));
+                if !roles.is_empty() {
                     for r in &roles {
                         if seen.insert(r.clone()) {
                             result.push(r.clone());
@@ -327,7 +345,9 @@ impl Interpreter {
     /// `Rat`'s direct list kept `Real`. Otherwise directness is derived, by
     /// dropping every entry reachable from another entry's own `does`.
     fn direct_composed_roles(&self, class_name: &str) -> Vec<String> {
-        if let Some(direct) = self.registry().class_direct_composed_roles.get(class_name) {
+        if let Some(direct) = self.registry().class_direct_composed_roles.get(class_name)
+            && !direct.is_empty()
+        {
             return direct.clone();
         }
         let Some(all) = self
@@ -336,8 +356,11 @@ impl Interpreter {
             .get(class_name)
             .cloned()
         else {
-            return Vec::new();
+            return self.catalog_roles(class_name);
         };
+        if all.is_empty() {
+            return self.catalog_roles(class_name);
+        }
         let mut transitive = std::collections::HashSet::new();
         for r in &all {
             let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
@@ -349,6 +372,19 @@ impl Interpreter {
         all.into_iter()
             .filter(|r| !transitive.contains(r))
             .collect()
+    }
+
+    fn catalog_roles(&self, class_name: &str) -> Vec<String> {
+        let base = class_name
+            .split_once('[')
+            .map(|(base, _)| base)
+            .unwrap_or(class_name);
+        if !matches!(base, "Promise" | "Channel") {
+            return Vec::new();
+        }
+        crate::builtins::builtin_type_catalog::builtin_type_info(base)
+            .map(|info| info.roles.iter().map(|role| (*role).to_string()).collect())
+            .unwrap_or_default()
     }
 
     /// Collect all transitively reachable roles into a set (for filtering).

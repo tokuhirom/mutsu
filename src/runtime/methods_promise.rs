@@ -132,6 +132,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         shared.mark_observed();
         match method {
+            // Promise and Channel are the native Awaitable handles themselves.
+            // Exposing the protocol method lets user-defined Awaitable classes
+            // delegate to a native handle just as they do on Rakudo.
+            "get-await-handle" => Ok(Value::promise(shared.clone())),
             "result" => {
                 // Wait for the promise to resolve (blocks if Planned)
                 let (result, _, _) = shared.wait();
@@ -357,6 +361,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "get-await-handle" => Ok(Value::channel(ch.clone())),
             "send" => {
                 if !ch.can_send() {
                     return Err(Self::channel_send_closed_error());

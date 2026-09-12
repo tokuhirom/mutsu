@@ -255,13 +255,23 @@ impl Interpreter {
 
     /// Normalize a single `await` target. A `Supply` is awaited via its
     /// `.Promise` (kept with the last emitted value when the supply completes,
-    /// broken if it quits) — `await $supply` ≡ `await $supply.Promise`. All other
-    /// values pass through unchanged (Promises and Channels are handled inline).
+    /// broken if it quits) — `await $supply` ≡ `await $supply.Promise`. Other
+    /// `Awaitable` objects hand back the native Promise/Channel handle from
+    /// `get-await-handle`; native Promise and Channel values remain leaves for
+    /// the specialized wait/receive paths below.
     fn await_normalize(&mut self, v: Value) -> Result<Value, RuntimeError> {
         if let ValueView::Instance { class_name, .. } = v.view()
             && class_name == "Supply"
         {
             return self.call_method_with_values(v, "Promise", vec![]);
+        }
+        let native_await_target = matches!(v.view(), ValueView::Promise(_) | ValueView::Channel(_))
+            || matches!(
+                v.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Promise"
+            );
+        if !native_await_target && self.type_matches_value("Awaitable", &v) {
+            return self.call_method_with_values(v, "get-await-handle", vec![]);
         }
         Ok(v)
     }
