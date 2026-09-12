@@ -269,8 +269,8 @@ impl Interpreter {
         }
     }
 
-    /// True when at least one key of `captured` names a live (non-frozen) entry
-    /// of some END phaser's captured env — i.e. when
+    /// True when at least one of `keys` names a live (non-frozen) entry of some
+    /// END phaser's captured env — i.e. when
     /// [`Self::update_end_phaser_envs_for_keys`] has anything at all to do.
     ///
     /// This is the cheap half of that update: it asks the same two membership
@@ -280,19 +280,18 @@ impl Interpreter {
     /// phaser — the overwhelmingly common case, and every case at all once a
     /// module with a wide export list has widened the capture — then costs two
     /// integer-keyed lookups per captured name instead of a whole-env flatten.
-    pub(crate) fn end_phasers_watch_any(&self, captured: &Env) -> bool {
+    pub(crate) fn end_phasers_watch_any(&self, keys: &[Symbol]) -> bool {
         self.end_phasers.iter().any(|phaser| {
-            captured
-                .keys()
+            keys.iter()
                 .any(|k| !phaser.dead_keys.contains(k) && phaser.env.contains_key_sym(*k))
         })
     }
 
-    /// Update captured envs of ALL END phasers, but only for the names
-    /// `captured` holds.  Used after closure calls to propagate changes to
-    /// captured variables without overwriting unrelated variables.
+    /// Update captured envs of ALL END phasers, but only for `keys`.  Used
+    /// after closure calls to propagate changes to captured variables without
+    /// overwriting unrelated variables.
     ///
-    /// `captured` is the *calling closure's* own captured env, whose names only
+    /// `keys` are names of the *calling closure's* own captured env, which only
     /// coincidentally share a name with a phaser's captured entry — they
     /// are not necessarily the same binding (a same-named `my` in a sibling
     /// scope is a common case: `{ my $a = 42; END { say $a } }; my $a = 0;
@@ -303,23 +302,35 @@ impl Interpreter {
     /// binding for that name and must never be overwritten by an unrelated
     /// same-named capture from elsewhere.
     ///
-    /// The names are taken as interned [`Symbol`]s straight off `captured`'s
-    /// own overlay, never resolved back to strings. This runs on EVERY closure
-    /// return once any END phaser exists, over a capture whose width is set by
-    /// the *creating scope* rather than by the closure — so a program that
-    /// `use`s a module with a wide export list, or one the reflective latch has
-    /// widened to a whole-env snapshot, walks hundreds of names here per call.
-    /// Resolving each to a `String` and re-interning it three times over
+    /// The names are interned [`Symbol`]s, never resolved back to strings. This
+    /// runs on EVERY closure return once any END phaser exists, so both the
+    /// size of `keys` and the per-key cost are on the hot path of any program
+    /// that loaded a module registering an `END` — which `use Test` does.
+    /// Resolving each name to a `String` and re-interning it three times over
     /// (`dead_keys`, the phaser env, the live env) made this ~30% of the hot
-    /// loop of a program that merely had `use Test` at the top (#7565).
-    pub(crate) fn update_end_phaser_envs_for_keys(&mut self, captured: &Env, current_env: &Env) {
+    /// loop of a program that merely had `use Test` at the top (#7565). The
+    /// caller is what keeps `keys` small: it passes the names the call could
+    /// actually have CHANGED, not the whole capture — see the collection of
+    /// `end_refresh_keys` in `call_compiled_closure_in_unit`.
+    ///
+    /// **A write whose value is already there is skipped**, by binding identity
+    /// rather than by `==`: re-storing the very `Value` the phaser env already
+    /// holds cannot change what the phaser reads, and a capture widened by an
+    /// import list is dominated by names (`$*IN`, `$*OUT`, `Any`, `?FILE`, the
+    /// built-in dynamics) that no call ever rebinds. `same_binding` is the
+    /// right test and `==` is not: it is O(1) where a deep `==` walks container
+    /// contents, and a container mutated in place keeps its binding — which is
+    /// exactly the case where the phaser's own entry is that same container and
+    /// so already sees the mutation.
+    pub(crate) fn update_end_phaser_envs_for_keys(&mut self, keys: &[Symbol], current_env: &Env) {
         for phaser in self.end_phasers.iter_mut() {
-            for k in captured.keys() {
+            for k in keys {
                 if phaser.dead_keys.contains(k) {
                     continue;
                 }
-                if phaser.env.contains_key_sym(*k)
+                if let Some(old) = phaser.env.get_sym(*k)
                     && let Some(v) = current_env.get_sym(*k)
+                    && !old.same_binding(v)
                 {
                     let v = v.clone();
                     phaser.env.insert_sym(*k, v);
