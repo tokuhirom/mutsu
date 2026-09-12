@@ -1,6 +1,6 @@
-# ADR-0088: A role mixin owns an attribute cell separate from its wrapped value
+# ADR-0089: A role mixin owns an attribute cell separate from its wrapped value
 
-- **Status**: Proposed
+- **Status**: Proposed (revised after design review on 2026-09-12)
 - **Date**: 2026-09-12
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) (one
   authoritative interior-mutable cell),
@@ -80,13 +80,45 @@ Cloning has two distinct meanings and must preserve them:
 
 The state object must trace the role cell in addition to tracing values in the
 override map. Its deep clone must detach promoted `ContainerRef` values in the
-same way as `InstanceAttrs::clone`. Serialization writes the existing visible
-override map and reconstructs a fresh role cell from the attribute seeds.
+same way as `InstanceAttrs::clone`. The role cell is storage only: it is never
+wrapped in a `Value::Instance`, never used as a Raku object identity, and is
+constructed with `queue_destroy = false`. Its `class_name`, `id`, `WHICH`
+memo, and `DESTROY` fields are implementation details of the reused storage
+type, not observable properties of the mixin.
+
+Serialization MUST encode the current role-attribute cell separately from the
+composition/override map. On decode, the serialized live cell is authoritative;
+the `__mutsu_attr__*` entries are fallback seeds only for older serialized
+values that have no live-cell payload. Aggregate values and promoted
+`ContainerRef` values use the same recursive value serialization rules as
+ordinary instance attributes.
+
+The state object must not implement `Deref<Target = HashMap<...>>`. Map-only
+accessors (`override`, `overrides`, and their mutation counterparts) must be
+named separately from role-cell accessors so a caller cannot accidentally treat
+the construction seed map as live attribute storage.
 
 ### 2.2 Two-store attribute resolution
 
 For a method whose invocant is a role mixin, attribute resolution is ordered by
-the method owner:
+the method owner. The implementation exposes one selector contract for every
+path that reads, writes, promotes, or reconciles an attribute:
+
+```text
+select_attr_store(MethodOwner, invocant, AttrKey)
+    -> RoleCell | InnerCell | ClassLevel
+```
+
+`MethodOwner` carries the resolved owner kind and stable role declaration
+identity. It must not be reconstructed from the display name
+`Base+{Role,...}`. For a role owner, the selector uses the role declaration id
+already recorded by `__mutsu_role_id__<name>` together with the role's
+attribute key; if the language later permits two live applications of one
+declaration that need independent state, the composition/application id is
+also part of that key. A role's short display name is never the sole storage
+identity.
+
+The selector applies these rules:
 
 1. if the current method belongs to a role composed on the invocant, consult
    the mixin's role-attribute cell;
@@ -106,11 +138,16 @@ wrapped instance wholesale. Each store receives only the keys it owns. This
 also applies to `nextsame`/`callsame`: a base-class method reached from a role
 method writes the wrapped class cell, not the role cell.
 
-Role attributes with the same name in different role declarations use the
-existing owner-qualified attribute-key convention (extended with the role's
-declaration identity where necessary). Public role accessors resolve through
-the role composition and read the role cell, so they cannot resurrect a stale
-`__mutsu_attr__` seed.
+Role attributes with the same name in different role declarations use a stable
+owner-qualified key based on that identity. Public role accessors resolve
+through the role composition and read the role cell, so they cannot resurrect a
+stale `__mutsu_attr__` seed.
+
+The selector and its commit protocol are shared by ordinary role dispatch,
+qualified role dispatch, generic method fallback, accessor lvalues, and
+`nextsame`/`callsame`. A method exit produces per-store deltas; it never commits
+one merged map to whichever cell happens to be found by unwrapping the
+invocant.
 
 ### 2.3 Construction and mutation
 
@@ -129,7 +166,11 @@ change rather than retaining seed-specific exceptions:
 - `run_resolved_method_compiled_or_treewalk`'s final reconciliation;
 - `methods_mut_method_lvalue` and computed/container attribute assignment;
 - mixin `clone`, multidimensional delegated attribute mutation, and
-  `BUILD`/`TWEAK` initialization.
+  `BUILD`/`TWEAK` initialization;
+- qualified dispatch in `methods_qualified.rs` and generic fallback in
+  `methods_call_dispatch.rs`; and
+- serialization/deserialization and the `Trace`/GC-edge-severing path for the
+  new role cell.
 
 No new VM-side interpreter or method-call fallback is introduced. The change
 stays in the parser/compiler/VM attribute-cell and dispatch machinery already
@@ -164,6 +205,33 @@ consumers grew a second filtering convention. A typed state object makes the
 ownership boundary explicit and keeps composition markers distinct from
 attribute storage.
 
+### 3.5 Expose the new state object as a `HashMap` via `Deref`
+
+Rejected because it would make the old map-only call sites compile while
+concealing the new ownership boundary. Those sites would continue to read
+seeds, compare live state as composition metadata, or copy the map without
+copying the role cell. Named map and cell APIs make each migration site
+explicit.
+
+### 3.6 Treat the role cell as a second Raku object
+
+Rejected because reusing `InstanceAttrs` does not make the storage a user
+visible instance. Giving it an object id, `.WHICH`, or `DESTROY` lifecycle would
+create a third identity inside one mixin and would make GC finalization
+observable. The cell is a private storage node only; if the implementation
+cannot maintain that invariant with `InstanceAttrs`, it must first extract a
+smaller GC-traceable attribute-store type rather than expose the cell as an
+instance.
+
+### 3.7 Copy the wrapped instance as part of this fix
+
+Rejected as an unbounded scope expansion. This ADR defines that a new `but`
+composition receives an independent **role** cell, while the wrapped value's
+existing copy policy is unchanged. The known distinction between a Raku
+`.clone`, a value-level alias, `but`, and in-place `does` for the wrapped
+`Instance` is recorded and tested as a separate behavior question; it is not
+silently changed by the role-cell implementation.
+
 ## 4. Acceptance criteria
 
 The implementation slice is complete when all of the following are pinned by
@@ -176,11 +244,24 @@ focused tests and the existing full suites remain green:
 3. Scalar, array, and hash role attributes retain writes across separate method
    calls and through public accessors; `Hash::Restricted`'s `allowed` set is
    visible to both `STORE` and `AT-KEY`.
-4. Aliases of one mixin share the role cell, while a copied `but` composition
-   gets an independent cell. `.clone`, `does`, and `but` preserve this rule.
-5. A self-referential role attribute is traced and reclaimed correctly under
-   the existing GC tests.
-6. Existing mixin type identity and `.WHAT`/`.^name` behavior from ADR-0060 is
+4. Rust-level `Value` cloning aliases the mixin GC node; Raku `.clone` creates
+   an independent role cell; aliases of one mixin share the role cell; and a
+   copied `but` composition gets an independent role cell. In-place `does` on
+   a real `Instance` keeps its existing object-cell rule. The wrapped
+   instance's separate `but` copy policy is explicitly pinned as out of scope.
+5. Role attributes survive serialize/deserialize after scalar, array, hash,
+   and promoted-`ContainerRef` mutation; legacy seed-only serialized values
+   still decode through the compatibility fallback.
+6. Normal, qualified, private, `nextsame`, `callsame`, `is rw`, `:=`,
+   multidimensional, and delegated-container paths all select and commit the
+   correct store.
+7. Same-name class/role attributes, different role declarations with the same
+   display name, and sequentially applied roles do not collide. The role cell
+   does not affect `==`, `eqv`, `===`, `.WHAT`, `.^name`, or `.^set_name` beyond
+   the existing documented mixin semantics.
+8. A self-referential role attribute is traced and its GC edges are severed
+   correctly under the existing GC tests.
+9. Existing mixin type identity and `.WHAT`/`.^name` behavior from ADR-0060 is
    unchanged.
 
 ## 5. Implementation plan
@@ -188,13 +269,17 @@ focused tests and the existing full suites remain green:
 The code PR should land these as one behaviorally complete slice, with a
 focused regression test and a `news/` entry:
 
-1. Introduce the `MixinOverrides` state object, constructors, deep clone,
-   serialization, and GC tracing tests.
-2. Add owner-aware role/inner cell selection and migrate compiled reads,
-   writes, and method-exit reconciliation.
-3. Migrate role accessors, lvalues, delegated container mutation,
-   `BUILD`/`TWEAK`, and `clone`; remove seed-as-store fallbacks.
-4. Add the #8026 and `Hash::Restricted` regressions, then run the full local
+1. Introduce the `MixinOverrides` state object, named map/cell APIs, stable
+   role-attribute keys, deep clone, live-cell serialization, and GC tracing /
+   edge-severing tests.
+2. Add the `MethodOwner`/`select_attr_store` contract and migrate compiled
+   reads, writes, lvalue promotion, and method-exit reconciliation.
+3. Route ordinary, qualified, and generic fallback dispatch through the same
+   selector; migrate role accessors, delegated container mutation,
+   `BUILD`/`TWEAK`, and Raku `.clone`; remove seed-as-store fallbacks.
+4. Pin the `but`/`does`/`.clone` copy boundary and equality/type-identity
+   invariants.
+5. Add the #8026 and `Hash::Restricted` regressions, then run the full local
    test and roast gates.
 
 The issue stays open while this Proposed ADR is reviewed. Once the design is

@@ -114,3 +114,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0086](0086-builtin-dynamics-are-not-closure-capture-material.md) | The built-in dynamics are not closure-capture material — they belong in a per-interpreter never-copied tier | Proposed (design complete; implementation not started) |
 | [0087](0087-runtime-export-hook-parse-time-approximation.md) | A `sub EXPORT` module's parse-time export set is approximated by its unit-scope routines | Accepted (implemented) |
 | [0088](0088-rakuast-regex-boundary-tree.md) | RakuAST and execution share a source-level regex tree | Proposed |
+| [0089](0089-role-mixins-own-a-separate-attribute-cell.md) | A role mixin owns an attribute cell separate from its wrapped value | Proposed (revised after design review 2026-09-12) |
