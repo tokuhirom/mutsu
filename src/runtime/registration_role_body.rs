@@ -289,13 +289,31 @@ impl Interpreter {
         {
             Some(r) => r,
             None => {
-                // If trait_mod:<is> is defined and this is a lowercase name,
-                // defer to custom trait dispatch instead of erroring.
+                // `is Foo` on a name that is NOT a known type is rakudo's
+                // spelling of the named trait argument `trait_mod:<is>($type,
+                // :Foo)`, exactly as on the class side
+                // (`validate_class_parents`). Raku decides that from whether
+                // `Foo` names a known type, never from its capitalisation, so
+                // every unknown `is` parent is deferred to custom trait
+                // dispatch when the program defines a `trait_mod:<is>` at all;
+                // the dispatch site (`vm_typedecl_ops.rs`) turns a
+                // no-matching-candidate result back into
+                // `X::Inheritance::UnknownParent`, so a genuine `is` typo still
+                // raises. This used to be restricted to lowercase names, which
+                // made `role R is Marked { }` -- the overwhelmingly common
+                // spelling of a trait -- an `Unknown role: Marked` error
+                // (#8100).
+                //
+                // A `does` parent keeps the narrower lowercase rule: `does
+                // NoSuchRole` is a typo, not a trait, and must stay the
+                // `Unknown role:` error below rather than becoming an
+                // unknown-*parent* one.
                 if (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
-                    && role_name_str
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_lowercase())
+                    && (op.from_is
+                        || role_name_str
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_lowercase()))
                 {
                     cx.role_def
                         .deferred_custom_traits

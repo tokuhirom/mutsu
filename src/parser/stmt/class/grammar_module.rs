@@ -20,6 +20,7 @@ pub(crate) fn does_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::DoesDecl {
             name: Symbol::intern(&name),
             args: None,
+            from_is: false,
         },
     ))
 }

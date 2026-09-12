@@ -3937,6 +3937,11 @@ pub(crate) struct RoleParentOp {
     /// consumer falls back to the string path exactly as the class-header
     /// site (D4-3) does.
     pub(crate) args: Option<Vec<DeclTraitArg>>,
+    /// This parent came from `is Parent` on the role header, not from `does
+    /// Parent`. An unknown `is` name is a custom `trait_mod:<is>` trait and is
+    /// deferred to trait dispatch; an unknown `does` name stays the
+    /// `Unknown role:` error it has always been (#8100).
+    pub(crate) from_is: bool,
 }
 
 /// One role-body statement, typed (ADR-0019 D7-4) — the role-side twin of

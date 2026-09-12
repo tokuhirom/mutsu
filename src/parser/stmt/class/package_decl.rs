@@ -387,7 +387,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
         // Optional parent/trait clauses in any order (mirrors block-form roles).
-        let mut parent_roles: Vec<(String, Option<Vec<crate::ast::Expr>>)> = Vec::new();
+        // (name, bracket args, came-from-`is`) — see the block-form role
+        // parser for why the declarator has to survive into the body (#8100).
+        let mut parent_roles: Vec<(String, Option<Vec<crate::ast::Expr>>, bool)> = Vec::new();
         let mut is_export = false;
         let mut export_tags: Vec<String> = Vec::new();
         let mut role_is_rw = false;
@@ -400,7 +402,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let (r2, _) = ws(r2)?;
                 let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
-                parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
+                parent_roles.push((format!("{}{}", role_name, bracket_suffix), args, false));
                 r = r2;
                 continue;
             }
@@ -438,7 +440,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     let has_parens = r2.starts_with('(');
                     let r2 = skip_balanced_parens(r2);
                     if !has_parens && trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
-                        parent_roles.push((trait_name, None));
+                        parent_roles.push((trait_name, None, true));
                     } else {
                         custom_traits.push((trait_name, None));
                     }
@@ -454,12 +456,13 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // body, so make the declaration visible before that parsing starts.
         super::super::simple::register_user_type(&name);
         let mut body: Vec<Stmt> = Vec::new();
-        for (role_name, args) in parent_roles.into_iter().rev() {
+        for (role_name, args, from_is) in parent_roles.into_iter().rev() {
             body.insert(
                 0,
                 Stmt::DoesDecl {
                     name: Symbol::intern(&role_name),
                     args,
+                    from_is,
                 },
             );
         }

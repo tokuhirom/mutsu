@@ -1703,6 +1703,15 @@ pub(crate) enum Stmt {
         /// purely additive, no consumer yet (D4-2/D4-3/D7-3).
         #[serde(default)]
         args: Option<Vec<Expr>>,
+        /// This synthetic statement came from an `is Parent` clause on a role
+        /// header rather than from `does Parent`. Raku decides `is Foo` from
+        /// whether `Foo` names a known type, never from its capitalisation, so
+        /// an unknown `is` name is a custom `trait_mod:<is>` trait; an unknown
+        /// `does` name is a typo. The two spellings are otherwise folded into
+        /// the same statement, so without this flag the role path cannot tell
+        /// them apart (#8100).
+        #[serde(default)]
+        from_is: bool,
     },
     TrustsDecl {
         name: Symbol,

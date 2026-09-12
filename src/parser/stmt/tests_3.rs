@@ -223,11 +223,37 @@ fn parse_role_decl_does_clause_captures_bracket_exprs() {
     let Stmt::RoleDecl { body, .. } = &stmts[0] else {
         panic!("expected RoleDecl");
     };
-    let Stmt::DoesDecl { name, args } = &body[0] else {
+    let Stmt::DoesDecl {
+        name,
+        args,
+        from_is,
+    } = &body[0]
+    else {
         panic!("expected DoesDecl as the first body statement");
     };
     assert_eq!(name.as_str(), "R1[Int]");
     assert_eq!(args.as_ref().map(Vec::len), Some(1));
+    assert!(!from_is, "a `does` clause is not an `is` clause");
+}
+
+/// #8100: `is Parent` and `does Parent` on a role header are folded into the
+/// same synthetic `DoesDecl`, so the declarator has to survive on the
+/// statement — an unknown `is` name is a `trait_mod:<is>` trait, an unknown
+/// `does` name is a typo.
+#[test]
+fn parse_role_decl_records_whether_a_parent_came_from_is() {
+    for (src, expected) in [("role R2 is R1 { }", true), ("role R2 does R1 { }", false)] {
+        let (rest, stmts) = program(src).unwrap();
+        assert_eq!(rest, "");
+        let Stmt::RoleDecl { body, .. } = &stmts[0] else {
+            panic!("expected RoleDecl for {src}");
+        };
+        let Stmt::DoesDecl { name, from_is, .. } = &body[0] else {
+            panic!("expected DoesDecl as the first body statement of {src}");
+        };
+        assert_eq!(name.as_str(), "R1");
+        assert_eq!(*from_is, expected, "declarator flag for {src}");
+    }
 }
 
 #[test]
