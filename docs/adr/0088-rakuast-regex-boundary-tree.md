@@ -1,6 +1,7 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
-- Status: Proposed
+- Status: Accepted (static source-tree and RakuAST slices implemented 2026-09-12;
+  dynamic contents and execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -240,8 +241,9 @@ The implementation must preserve these invariants:
 
 ## 4. Phasing and acceptance
 
-This ADR is a design deliverable. It does not claim that #8033 is implemented;
-the issue remains a deep implementation item until the slices below land.
+The initial implementation covers the static source-tree and RakuAST slices
+below. The issue remains open for dynamic regex contents and for replacing the
+runtime string-to-`RegexPattern` boundary.
 
 1. **Shared tree model.** Add the `RegexTree` node family and the expression and
    declaration plumbing that can carry it without changing execution. Parser
@@ -336,6 +338,15 @@ from creating a second, divergent regex engine.
 
 ## 7. Implementation status
 
-Not started. This ADR is Proposed and records the design handoff for #8033;
-the follow-up implementation work should claim the issue again after the ADR
-decision is accepted.
+Implemented for the static slice on 2026-09-12. The parser now retains a
+`RegexTree` for static regex expressions and declarations, including the
+`match-immediately` bit and boolean adverbs needed by `m:i` / `m:g`. The read
+direction emits `QuotedRegex`, the static `Regex::*` family, declaration nodes,
+and `Grammar`; the write direction lowers those nodes back through the current
+compiler and VM. The focused dual-oracle coverage is in
+`t/rakuast/rakuast-regex.t`.
+
+The following remain intentionally open: dynamic assertions and interpolation,
+captures and subrules, adverbs with runtime arguments, and migration of the
+matcher's internal `RegexPattern` construction to a full execution lowering
+from `RegexTree`.

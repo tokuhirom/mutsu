@@ -20,6 +20,7 @@ mod parser;
 mod placeholder_order;
 pub(crate) mod precomp;
 mod rakuast;
+pub(crate) mod regex_tree;
 #[cfg(feature = "native")]
 pub mod repl;
 pub(crate) mod repl_core;

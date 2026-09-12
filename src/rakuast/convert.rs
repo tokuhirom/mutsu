@@ -9,6 +9,7 @@
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{AssignOp, Expr, ForMode, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
+use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -149,6 +150,74 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         Stmt::SetLine(_) => Ok(None),
         Stmt::Expr(e) => Ok(Some(statement_expression(convert_expr(e)?))),
+        Stmt::TokenDecl {
+            name,
+            params,
+            param_defs,
+            source_regex,
+            regex_kind,
+            multi,
+            is_my,
+            is_our,
+            is_export,
+            export_tags,
+            ..
+        } => {
+            if *multi
+                || *is_my
+                || *is_our
+                || *is_export
+                || !export_tags.is_empty()
+                || !params.is_empty()
+                || !param_defs.is_empty()
+            {
+                return Err(unsupported(
+                    "regex declaration with scope / params / traits",
+                ));
+            }
+            let Some(tree) = source_regex else {
+                return Err(unsupported("regex declaration without a source tree"));
+            };
+            let class = match regex_kind {
+                crate::regex_tree::RegexDeclKind::Token => RakuAstClass::TokenDeclaration,
+                crate::regex_tree::RegexDeclKind::Regex => RakuAstClass::RegexDeclaration,
+                crate::regex_tree::RegexDeclKind::Rule => {
+                    return Err(unsupported("rule declaration in TokenDecl"));
+                }
+            };
+            Ok(Some(statement_expression(regex_declaration(
+                class,
+                &name.resolve(),
+                tree,
+            )?)))
+        }
+        Stmt::RuleDecl {
+            name,
+            params,
+            param_defs,
+            source_regex,
+            multi,
+            is_export,
+            export_tags,
+            ..
+        } => {
+            if *multi
+                || *is_export
+                || !export_tags.is_empty()
+                || !params.is_empty()
+                || !param_defs.is_empty()
+            {
+                return Err(unsupported("rule declaration with params / traits"));
+            }
+            let Some(tree) = source_regex else {
+                return Err(unsupported("rule declaration without a source tree"));
+            };
+            Ok(Some(statement_expression(regex_declaration(
+                RakuAstClass::RuleDeclaration,
+                &name.resolve(),
+                tree,
+            )?)))
+        }
         // `say 42` / `put`/`print`/`note` as listops (no parens) parse to a
         // dedicated statement; raku models them as a call in WithoutParentheses
         // form.
@@ -696,8 +765,33 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             custom_traits,
             is_unit,
+            implicit_grammar_parent,
+            is_grammar,
             ..
         } => {
+            if *is_grammar {
+                if name_expr.is_some()
+                    || *class_is_rw
+                    || *is_hidden
+                    || *is_lexical
+                    || !hidden_parents.is_empty()
+                    || !does_parents.is_empty()
+                    || repr.is_some()
+                    || !custom_traits.is_empty()
+                    || *is_unit
+                    || !*implicit_grammar_parent
+                    || parents != &["Grammar".to_string()]
+                {
+                    return Err(unsupported("grammar with inheritance / scope / traits"));
+                }
+                return Ok(Some(statement_expression(RakuAstNode {
+                    class: RakuAstClass::Grammar,
+                    fields: vec![
+                        node_field(Some("name"), name_from_identifier(&name.resolve())),
+                        node_field(Some("body"), block_node(body)?),
+                    ],
+                })));
+            }
             // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
             // Inheritance and `rw` are `traits`, the repr is its own leaf field.
             // `my`/unit scope, `hides`, computed names and user traits carry
@@ -1201,6 +1295,9 @@ fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
+        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
+            quoted_regex_node(tree)
+        }
         Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
@@ -1846,6 +1943,119 @@ fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
+    })
+}
+
+/// Convert the source-level regex tree to the corresponding RakuAST regex
+/// node. The tree is deliberately separate from `RegexPattern`: the latter is
+/// an execution plan and has already lost source-level declaration and
+/// whitespace information by the time matching begins.
+fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
+    let (class, fields) = match node {
+        RegexNode::Literal(text) => (
+            RakuAstClass::RegexLiteral,
+            vec![leaf_field(None, Value::str(text.clone()))],
+        ),
+        RegexNode::Quote(text) => (
+            RakuAstClass::RegexQuote,
+            vec![node_field(None, quoted_string(Value::str(text.clone())))],
+        ),
+        RegexNode::Sequence(nodes) => (
+            RakuAstClass::RegexSequence,
+            nodes
+                .iter()
+                .map(|child| regex_node(child).map(|node| node_field(None, node)))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        RegexNode::Alternation(nodes) => (
+            RakuAstClass::RegexAlternation,
+            nodes
+                .iter()
+                .map(|child| regex_node(child).map(|node| node_field(None, node)))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        RegexNode::Group(child) => (
+            RakuAstClass::RegexGroup,
+            vec![node_field(None, regex_node(child)?)],
+        ),
+        RegexNode::Quantified { atom, quantifier } => {
+            let quantifier = match quantifier {
+                RegexQuantifier::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
+                RegexQuantifier::OneOrMore => RakuAstClass::RegexQuantifierOneOrMore,
+                RegexQuantifier::ZeroOrOne => RakuAstClass::RegexQuantifierZeroOrOne,
+            };
+            (
+                RakuAstClass::RegexQuantifiedAtom,
+                vec![
+                    node_field(Some("atom"), regex_node(atom)?),
+                    node_field(
+                        Some("quantifier"),
+                        RakuAstNode {
+                            class: quantifier,
+                            fields: Vec::new(),
+                        },
+                    ),
+                ],
+            )
+        }
+        RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
+        RegexNode::WithWhitespace(child) => (
+            RakuAstClass::RegexWithWhitespace,
+            vec![node_field(None, regex_node(child)?)],
+        ),
+    };
+    Ok(RakuAstNode { class, fields })
+}
+
+fn regex_declaration(
+    class: RakuAstClass,
+    name: &str,
+    tree: &RegexTree,
+) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class,
+        fields: vec![
+            node_field(Some("name"), name_from_identifier(name)),
+            node_field(Some("body"), regex_node(&tree.body)?),
+        ],
+    })
+}
+
+fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = Vec::new();
+    if tree.match_immediately {
+        fields.push(leaf_field(Some("match-immediately"), Value::truth(true)));
+    }
+    fields.push(node_field(Some("body"), regex_node(&tree.body)?));
+    if !tree.adverbs.is_empty() {
+        let adverbs = tree
+            .adverbs
+            .iter()
+            .map(regex_adverb_node)
+            .collect::<Result<Vec<_>, _>>()?;
+        fields.push(RakuAstField {
+            name: Some("adverbs"),
+            value: RakuAstFieldValue::List(
+                adverbs
+                    .into_iter()
+                    .map(|node| Value::rakuast(Box::new(node)))
+                    .collect(),
+            ),
+        });
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::QuotedRegex,
+        fields,
+    })
+}
+
+fn regex_adverb_node(adverb: &crate::regex_tree::RegexAdverb) -> Result<RakuAstNode, RuntimeError> {
+    if adverb.argument.is_some() {
+        return Err(unsupported("regex adverb with an argument"));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ColonPairTrue,
+        fields: vec![leaf_field(None, Value::str(adverb.name.clone()))],
     })
 }
 

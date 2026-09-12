@@ -391,6 +391,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         custom_traits: Vec::new(),
         is_unit: false,
         implicit_grammar_parent: false,
+        is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
     };
@@ -673,6 +674,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         custom_traits,
         is_unit: false,
         implicit_grammar_parent: false,
+        is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
     };

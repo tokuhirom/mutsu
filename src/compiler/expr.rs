@@ -100,6 +100,9 @@ impl Compiler {
             Expr::LiteralSrc(v, _) => {
                 self.compile_expr(&Expr::Literal(v.clone()));
             }
+            Expr::RegexLiteral { value, .. } => {
+                self.compile_expr(&Expr::Literal(value.clone()));
+            }
             Expr::Literal(v) => match v.view() {
                 ValueView::Nil => {
                     self.code.emit(OpCode::LoadNil);
@@ -148,6 +151,9 @@ impl Compiler {
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_
             Expr::MatchRegex(v) => {
                 self.compile_match_regex(v);
+            }
+            Expr::MatchRegexTree { value, .. } => {
+                self.compile_match_regex(value);
             }
             Expr::Var(name) => {
                 let name = self.resolve_self_lexical(name);

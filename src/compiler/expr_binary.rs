@@ -15,6 +15,8 @@ impl Compiler {
     pub(super) fn rhs_is_plain_regex_literal(expr: &Expr) -> bool {
         match expr {
             Expr::Literal(v) | Expr::MatchRegex(v) => matches!(v.view(), ValueView::Regex(_)),
+            Expr::RegexLiteral { value, .. } => matches!(value.view(), ValueView::Regex(_)),
+            Expr::MatchRegexTree { value, .. } => matches!(value.view(), ValueView::Regex(_)),
             _ => false,
         }
     }
@@ -482,7 +484,8 @@ impl Compiler {
                 return;
             }
             TokenKind::SmartMatch | TokenKind::BangTilde => {
-                let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
+                let rhs_is_match_regex =
+                    matches!(right, Expr::MatchRegex(_) | Expr::MatchRegexTree { .. });
                 // Only a *destructive* `s///` / `tr///` against a literal LHS is an
                 // X::Assignment::RO. Non-destructive `S///` / `TR///` return a copy
                 // and never write back, so `1 ~~ TR/\#//` must not throw.
@@ -557,7 +560,8 @@ impl Compiler {
                     },
                     _ => None,
                 };
-                let lhs_is_literal = rhs_is_destructive && matches!(left, Expr::Literal(_));
+                let lhs_is_literal = rhs_is_destructive
+                    && matches!(left, Expr::Literal(_) | Expr::RegexLiteral { .. });
                 let rhs_pure_regex = Self::rhs_is_plain_regex_literal(right);
                 // A BARE `$_` RHS reads the ENCLOSING topic, not the LHS the
                 // op is about to topicalize. See the opcode field's doc: the
@@ -579,6 +583,10 @@ impl Compiler {
                 match right {
                     Expr::MatchRegex(v) => {
                         let idx = self.code.add_constant(v.clone());
+                        self.code.emit(OpCode::LoadConst(idx));
+                    }
+                    Expr::MatchRegexTree { value, .. } => {
+                        let idx = self.code.add_constant(value.clone());
                         self.code.emit(OpCode::LoadConst(idx));
                     }
                     _ => self.compile_expr(right),

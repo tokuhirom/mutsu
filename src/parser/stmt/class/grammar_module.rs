@@ -94,7 +94,9 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     if pattern.trim().is_empty() {
         return Err(null_regex_error());
     }
-    pattern = normalize_token_pattern(&pattern);
+    let source_pattern = normalize_token_pattern(&pattern);
+    let source_regex = crate::regex_tree::RegexTree::parse_static(&source_pattern, true);
+    pattern = source_pattern;
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
         pattern = inject_separator_ws(&pattern);
@@ -118,6 +120,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 params,
                 param_defs,
                 body,
+                source_regex,
                 multi: is_multi,
                 is_export,
                 export_tags,
@@ -131,6 +134,12 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 params,
                 param_defs,
                 body,
+                source_regex,
+                regex_kind: if is_regex {
+                    crate::regex_tree::RegexDeclKind::Regex
+                } else {
+                    crate::regex_tree::RegexDeclKind::Token
+                },
                 multi: is_multi,
                 is_my: false,
                 is_our: false,
@@ -267,6 +276,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             custom_traits: Vec::new(),
             is_unit: false,
             implicit_grammar_parent,
+            is_grammar: true,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args,
         },

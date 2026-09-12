@@ -182,6 +182,7 @@ impl Interpreter {
                 | Expr::NonDestructiveSubst { .. }
                 | Expr::Transliterate { .. }
                 | Expr::MatchRegex(_)
+                | Expr::MatchRegexTree { .. }
                 | Expr::Literal(_)
                 | Expr::Whatever
                 | Expr::HyperWhatever
@@ -411,8 +412,12 @@ impl Interpreter {
             }
             ValueView::Str(s) => {
                 if let Some(ValueView::Sub(data)) = args.first().map(Value::view)
-                    && let Some(Stmt::Expr(Expr::Literal(lit))) = data.body.last()
-                    && matches!(lit.view(), ValueView::Regex(_))
+                    && let Some(Stmt::Expr(expr)) = data.body.last()
+                    && matches!(
+                        expr,
+                        Expr::Literal(lit) | Expr::RegexLiteral { value: lit, .. }
+                            if matches!(lit.view(), ValueView::Regex(_))
+                    )
                 {
                     return self.eval_grep_with_adverb(
                         args.first().cloned(),

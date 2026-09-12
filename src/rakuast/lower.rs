@@ -8,7 +8,9 @@
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, ParamDef, Stmt};
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
+use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
+use std::sync::Arc;
 
 fn unsupported(node: &RakuAstNode) -> RuntimeError {
     RuntimeError::new(format!(
@@ -151,6 +153,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
         RakuAstClass::Class => lower_class(node),
+        RakuAstClass::Grammar => lower_grammar(node),
+        RakuAstClass::RegexDeclaration
+        | RakuAstClass::TokenDeclaration
+        | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
         RakuAstClass::Role => lower_role(node),
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
         RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
@@ -491,11 +497,89 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         custom_traits: Vec::new(),
         is_unit: false,
         implicit_grammar_parent: false,
+        is_grammar: false,
         // A hand-built or lowered declaration has no parse-time site, which is
         // exactly what `decl_id: 0` means.
         decl_id: 0,
         parent_args: Vec::new(),
     })
+}
+
+fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let body = lower_block(named_child(node, "body")?)?;
+    Ok(Stmt::ClassDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        name_expr: None,
+        parents: vec!["Grammar".to_string()],
+        class_is_rw: false,
+        is_hidden: false,
+        is_lexical: false,
+        hidden_parents: Vec::new(),
+        does_parents: Vec::new(),
+        repr: None,
+        body,
+        language_version: crate::parser::current_language_version(),
+        custom_traits: Vec::new(),
+        is_unit: false,
+        implicit_grammar_parent: true,
+        is_grammar: true,
+        decl_id: 0,
+        parent_args: Vec::new(),
+    })
+}
+
+fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let body = named_child(node, "body")?;
+    let tree = RegexTree {
+        body: lower_regex_node(body)?,
+        match_immediately: false,
+        adverbs: Vec::new(),
+    };
+    let source = tree.to_source();
+    let execution_pattern = match node.class {
+        RakuAstClass::RegexDeclaration => source.clone(),
+        RakuAstClass::TokenDeclaration => format!(":ratchet {source}"),
+        RakuAstClass::RuleDeclaration => {
+            let pattern = crate::parser::inject_implicit_rule_ws(&source);
+            let pattern = crate::parser::inject_separator_ws(&pattern);
+            format!(":ratchet {pattern}")
+        }
+        _ => return Err(unsupported(node)),
+    };
+    let body = vec![Stmt::Expr(Expr::Literal(Value::regex(execution_pattern)))];
+    let source_regex = Some(tree);
+    match node.class {
+        RakuAstClass::RegexDeclaration | RakuAstClass::TokenDeclaration => Ok(Stmt::TokenDecl {
+            name: crate::symbol::Symbol::intern(&name),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body,
+            source_regex,
+            regex_kind: if node.class == RakuAstClass::RegexDeclaration {
+                crate::regex_tree::RegexDeclKind::Regex
+            } else {
+                crate::regex_tree::RegexDeclKind::Token
+            },
+            multi: false,
+            is_my: false,
+            is_our: false,
+            is_export: false,
+            export_tags: Vec::new(),
+        }),
+        RakuAstClass::RuleDeclaration => Ok(Stmt::RuleDecl {
+            name: crate::symbol::Symbol::intern(&name),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body,
+            source_regex,
+            multi: false,
+            is_export: false,
+            export_tags: Vec::new(),
+        }),
+        _ => Err(unsupported(node)),
+    }
 }
 
 /// `role NAME { … }` -> `Stmt::RoleDecl`. A role's body is a `RoleBody` (not a
@@ -1212,6 +1296,153 @@ fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, Runtime
     }
 }
 
+fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
+    match node.class {
+        RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
+            ValueView::Str(text) => Ok(RegexNode::Literal(text.to_string())),
+            _ => Err(unsupported(node)),
+        },
+        RakuAstClass::RegexQuote => {
+            let quoted = named_child_or_positional(node)?;
+            if quoted.class != RakuAstClass::QuotedString {
+                return Err(unsupported(node));
+            }
+            let segments = list_field(quoted, "segments")?;
+            let [segment] = segments else {
+                return Err(unsupported(node));
+            };
+            let ValueView::RakuAst(segment) = segment.view() else {
+                return Err(unsupported(node));
+            };
+            if segment.class != RakuAstClass::StrLiteral {
+                return Err(unsupported(node));
+            }
+            match positional_leaf(segment)?.view() {
+                ValueView::Str(text) => Ok(RegexNode::Quote(text.to_string())),
+                _ => Err(unsupported(node)),
+            }
+        }
+        RakuAstClass::RegexSequence | RakuAstClass::RegexAlternation => {
+            let mut children = Vec::with_capacity(node.fields.len());
+            for field in &node.fields {
+                if field.name.is_some() {
+                    return Err(unsupported(node));
+                }
+                children.push(lower_regex_node(child_node(&field.value)?)?);
+            }
+            if node.class == RakuAstClass::RegexSequence {
+                Ok(RegexNode::Sequence(children))
+            } else {
+                Ok(RegexNode::Alternation(children))
+            }
+        }
+        RakuAstClass::RegexGroup => Ok(RegexNode::Group(Box::new(lower_regex_node(
+            named_child_or_positional(node)?,
+        )?))),
+        RakuAstClass::RegexWithWhitespace => Ok(RegexNode::WithWhitespace(Box::new(
+            lower_regex_node(named_child_or_positional(node)?)?,
+        ))),
+        RakuAstClass::RegexQuantifiedAtom => {
+            let atom = lower_regex_node(named_child(node, "atom")?)?;
+            let quantifier = named_child(node, "quantifier")?;
+            let quantifier = match quantifier.class {
+                RakuAstClass::RegexQuantifierZeroOrMore => RegexQuantifier::ZeroOrMore,
+                RakuAstClass::RegexQuantifierOneOrMore => RegexQuantifier::OneOrMore,
+                RakuAstClass::RegexQuantifierZeroOrOne => RegexQuantifier::ZeroOrOne,
+                _ => return Err(unsupported(node)),
+            };
+            Ok(RegexNode::Quantified {
+                atom: Box::new(atom),
+                quantifier,
+            })
+        }
+        RakuAstClass::RegexCharClassDigit => Ok(RegexNode::CharClassDigit),
+        _ => Err(unsupported(node)),
+    }
+}
+
+fn lower_regex_adverb(node: &RakuAstNode) -> Result<crate::regex_tree::RegexAdverb, RuntimeError> {
+    if node.class != RakuAstClass::ColonPairTrue {
+        return Err(unsupported(node));
+    }
+    let value = positional_leaf(node)?;
+    let ValueView::Str(name) = value.view() else {
+        return Err(unsupported(node));
+    };
+    Ok(crate::regex_tree::RegexAdverb {
+        name: name.to_string(),
+        argument: None,
+    })
+}
+
+/// Build the legacy execution value from source-level adverbs. This is a
+/// compatibility bridge; the shared tree remains the source of truth for
+/// RakuAST and the compiler still emits the existing match opcode.
+fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
+    if tree.adverbs.is_empty() {
+        return Ok(Value::regex(tree.to_source()));
+    }
+    let mut pattern = tree.to_source();
+    let mut value = RegexAdverbs {
+        pattern: Arc::new(String::new()),
+        global: false,
+        exhaustive: false,
+        overlap: false,
+        repeat: None,
+        nth: None,
+        perl5: false,
+        pos: false,
+        pos_value: None,
+        continue_: false,
+        continue_value: None,
+        ignore_case: false,
+        sigspace: false,
+        samecase: false,
+        samespace: false,
+        captured: None,
+    };
+    for adverb in &tree.adverbs {
+        if adverb.argument.is_some() {
+            return Err(RuntimeError::new(format!(
+                "RakuAST: EVAL does not yet support regex adverb argument `{}`",
+                adverb.name
+            )));
+        }
+        match adverb.name.as_str() {
+            "g" | "global" => value.global = true,
+            "ex" | "exhaustive" => value.exhaustive = true,
+            "ov" | "overlap" => value.overlap = true,
+            "i" | "ignorecase" => {
+                value.ignore_case = true;
+                pattern = format!(":i {pattern}");
+            }
+            "ii" | "samecase" => {
+                value.samecase = true;
+                value.ignore_case = true;
+                pattern = format!(":i {pattern}");
+            }
+            "s" | "sigspace" => {
+                value.sigspace = true;
+                pattern = format!(":s {pattern}");
+            }
+            "ss" | "samespace" => {
+                value.samespace = true;
+                value.sigspace = true;
+                pattern = format!(":s {pattern}");
+            }
+            "r" | "ratchet" => pattern = format!(":ratchet {pattern}"),
+            "m" | "ignoremark" => pattern = format!(":m {pattern}"),
+            other => {
+                return Err(RuntimeError::new(format!(
+                    "RakuAST: EVAL does not yet support regex adverb `{other}`"
+                )));
+            }
+        }
+    }
+    value.pattern = Arc::new(pattern);
+    Ok(Value::regex_with_adverbs(value))
+}
+
 fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
         RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
@@ -1246,6 +1477,40 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 parts.push(lower_expr(seg)?);
             }
             Ok(Expr::StringInterpolation(parts))
+        }
+        RakuAstClass::QuotedRegex => {
+            let body = named_child(node, "body")?;
+            let match_immediately = bool_field(node, "match-immediately")?;
+            let adverbs = match node
+                .fields
+                .iter()
+                .find(|field| field.name == Some("adverbs"))
+            {
+                Some(field) => match &field.value {
+                    RakuAstFieldValue::List(items) => items
+                        .iter()
+                        .map(|item| {
+                            let ValueView::RakuAst(adverb) = item.view() else {
+                                return Err(unsupported(node));
+                            };
+                            lower_regex_adverb(adverb)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    _ => return Err(unsupported(node)),
+                },
+                None => Vec::new(),
+            };
+            let tree = RegexTree {
+                body: lower_regex_node(body)?,
+                match_immediately,
+                adverbs,
+            };
+            let value = regex_execution_value(&tree)?;
+            if tree.match_immediately {
+                Ok(Expr::MatchRegexTree { value, tree })
+            } else {
+                Ok(Expr::RegexLiteral { value, tree })
+            }
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
         // A `Block` in expression position (e.g. the `{ … }` argument to `.map`) is
