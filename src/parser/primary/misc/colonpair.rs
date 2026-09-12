@@ -13,6 +13,28 @@ use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 use std::collections::HashMap;
 
 /// Parse colonpair expressions: :$var, :@var, :%var, :name(expr), :name, :!name
+/// A colonpair's parenthesized value may carry a statement modifier, exactly as
+/// a plain parenthesized group may: `:title( S/(' ')$// given @e[0] ~ @e[1] )`
+/// (Data::Dump::Tree, #7954), `:t(1, 2 if 0)`. Statement modifiers are looser
+/// than the comma, so the modifier applies to the whole value -- the list form
+/// included, which is why this runs after the separated-list loop rather than
+/// per element. Without it the modifier keyword sat where the closing `)` was
+/// expected and the entire argument list failed to parse.
+///
+/// `value` is the value parsed so far; the returned expression is either it
+/// unchanged (no modifier follows) or it wrapped in the modifier.
+fn colonpair_paren_value_tail(input: &str, value: Expr) -> PResult<'_, Expr> {
+    let (rest, _) = ws(input)?;
+    match crate::parser::primary::container::try_inline_modifier(rest, value.clone()) {
+        Some(result) => {
+            let (rest, modified) = result?;
+            let (rest, _) = ws(rest)?;
+            Ok((rest, modified))
+        }
+        None => Ok((input, value)),
+    }
+}
+
 pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     let r = input
         .strip_prefix(':')
@@ -504,23 +526,25 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 items.push(next);
                 r = r2;
             }
+            let (r, value) = colonpair_paren_value_tail(r, Expr::ArrayLiteral(items))?;
             let (r, _) = parse_char(r, ')')?;
             return Ok((
                 r,
                 Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(Expr::ArrayLiteral(items)),
+                    right: Box::new(value),
                 },
             ));
         }
+        let (r, value) = colonpair_paren_value_tail(r, first)?;
         let (r, _) = parse_char(r, ')')?;
         return Ok((
             r,
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(first),
+                right: Box::new(value),
             },
         ));
     }

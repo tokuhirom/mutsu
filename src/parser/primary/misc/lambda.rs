@@ -645,6 +645,16 @@ fn is_implicit_topic_call(bytes: &[u8], at: usize) -> bool {
     if !starts_call {
         return false;
     }
+    // `$.attr` / `@.attr` / `%.attr` / `&.attr` is the ATTRIBUTE twigil, a term
+    // whose invocant is `self` -- not an implicit-topic call, so rakudo keeps
+    // `{ a => $.g }` a Hash (checked for all four sigils). The sigil has to be
+    // glued to the dot: an infix `%` or `&` before a real topic call is
+    // separated from it by whitespace (`{a => 2 % .elems}` is a Block), and
+    // that spelling falls through to the general rules below. Tested before the
+    // whitespace-skip for exactly that reason.
+    if at > 0 && matches!(bytes[at - 1], b'$' | b'@' | b'%' | b'&') {
+        return false;
+    }
     let mut p = at;
     while p > 0 && bytes[p - 1].is_ascii_whitespace() {
         p -= 1;

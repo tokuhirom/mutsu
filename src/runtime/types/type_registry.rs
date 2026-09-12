@@ -193,7 +193,7 @@ impl Interpreter {
     /// builds their `Value`s for the global base tier) and
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
-    fn endian_enum_variants() -> Vec<(String, EnumValue)> {
+    pub(in crate::runtime) fn endian_enum_variants() -> Vec<(String, EnumValue)> {
         vec![
             ("NativeEndian".to_string(), EnumValue::Int(0)),
             ("LittleEndian".to_string(), EnumValue::Int(1)),
@@ -204,7 +204,7 @@ impl Interpreter {
     /// builds their `Value`s for the global base tier) and
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
-    fn protocol_family_enum_variants() -> Vec<(String, EnumValue)> {
+    pub(in crate::runtime) fn protocol_family_enum_variants() -> Vec<(String, EnumValue)> {
         vec![
             ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
             ("PF_INET".to_string(), EnumValue::Int(1)),
@@ -218,7 +218,7 @@ impl Interpreter {
     /// builds their `Value`s for the global base tier) and
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
-    fn order_enum_variants() -> Vec<(String, EnumValue)> {
+    pub(in crate::runtime) fn order_enum_variants() -> Vec<(String, EnumValue)> {
         vec![
             ("Less".to_string(), EnumValue::Int(-1)),
             ("Same".to_string(), EnumValue::Int(0)),
@@ -229,7 +229,7 @@ impl Interpreter {
     /// builds their `Value`s for the global base tier) and
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
-    fn seek_type_enum_variants() -> Vec<(String, EnumValue)> {
+    pub(in crate::runtime) fn seek_type_enum_variants() -> Vec<(String, EnumValue)> {
         vec![
             ("SeekFromBeginning".to_string(), EnumValue::Int(0)),
             ("SeekFromCurrent".to_string(), EnumValue::Int(1)),
@@ -240,7 +240,7 @@ impl Interpreter {
     /// builds their `Value`s for the global base tier) and
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
-    fn signal_enum_variants() -> Vec<(String, EnumValue)> {
+    pub(in crate::runtime) fn signal_enum_variants() -> Vec<(String, EnumValue)> {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
         vec![
             // Signals that share value 0 on this platform (Rakudo lists them so

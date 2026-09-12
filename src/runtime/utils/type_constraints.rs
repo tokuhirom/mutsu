@@ -218,20 +218,45 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
 }
 
 /// Check if a bare identifier names a value of a built-in enum (`Order`,
-/// `Endian`, `Bool`). These are nullary value terms, not type names, so they are
-/// complete expressions on their own (e.g. the then-branch of `1 ?? More !! Less`).
+/// `Endian`, `SeekType`, `Signal`, `ProtocolFamily`). These are nullary value
+/// terms, not type names, so they are complete expressions on their own (the
+/// then-branch of `1 ?? More !! Less`, the matcher of `when SeekFromBeginning
+/// { ... }`).
+///
+/// The names come from the type registry's OWN variant lists
+/// ([`crate::runtime::Interpreter::seed_builtin_enum_types`]), not from a
+/// second hand-written copy. That copy had drifted: `SeekType` and `Signal` were
+/// registered as real enums but absent from it, so `given $whence { when
+/// SeekFromBeginning { ... } }` read the bareword as a listop call that
+/// gobbled the block, and the whole compilation unit failed with "Function
+/// 'SeekFromBeginning' needs arguments" (IO::String, #7954).
 pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
-    matches!(
-        name,
-        // Order
-        "Less" | "Same" | "More"
-        // Endian
-        | "LittleEndian" | "BigEndian" | "NativeEndian"
-        // PromiseStatus (mutsu represents Promise.status as a bare string, not
-        // a registered enum type — see roast/packages/Test-Helpers/lib/Test/Util.rakumod's
-        // `given $promise.status { when Kept { ... } }`)
-        | "Planned" | "Kept" | "Broken"
-    )
+    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            let mut names: std::collections::HashSet<String> = [
+                crate::runtime::Interpreter::endian_enum_variants(),
+                crate::runtime::Interpreter::protocol_family_enum_variants(),
+                crate::runtime::Interpreter::order_enum_variants(),
+                crate::runtime::Interpreter::seek_type_enum_variants(),
+                crate::runtime::Interpreter::signal_enum_variants(),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|(key, _)| key)
+            .collect();
+            // PromiseStatus is the one built-in enum that is NOT in the
+            // registry: mutsu represents `Promise.status` as a bare string
+            // (see roast/packages/Test-Helpers/lib/Test/Util.rakumod's
+            // `given $promise.status { when Kept { ... } }`), so its value
+            // names have to be listed here.
+            for extra in ["Planned", "Kept", "Broken"] {
+                names.insert(extra.to_string());
+            }
+            names
+        })
+        .contains(name)
 }
 
 /// Well-known nullary value terms that resolve as a bareword — e.g.

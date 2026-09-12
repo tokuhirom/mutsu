@@ -17,7 +17,7 @@ mod tests_postfix;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::PResult;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::ast::{Expr, Stmt};
@@ -53,29 +53,6 @@ use whatever_wrap::{try_wrap_whatevercode_call_chain, wrap_composition_operands}
 thread_local! {
     static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
     static EXPR_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
-    /// A sigilless declaration's initializer permits an assignment in the
-    /// else branch of its ternary (`my \\x = cond ?? a !! %h<k> //= b`).
-    /// This is a parser-context distinction, so expression memoization must
-    /// not reuse results across the boundary.
-    static ALLOW_TERNARY_ELSE_ASSIGNMENT: Cell<bool> = const { Cell::new(false) };
-}
-
-pub(in crate::parser) fn allow_ternary_else_assignment() -> bool {
-    ALLOW_TERNARY_ELSE_ASSIGNMENT.with(Cell::get)
-}
-
-pub(in crate::parser) fn with_ternary_else_assignment<T>(f: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
-
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            ALLOW_TERNARY_ELSE_ASSIGNMENT.with(|enabled| enabled.set(self.0));
-        }
-    }
-
-    let previous = ALLOW_TERNARY_ELSE_ASSIGNMENT.with(|enabled| enabled.replace(true));
-    let _restore = Restore(previous);
-    f()
 }
 
 static EXPR_MEMO: ParseMemo<Expr> = ParseMemo::new(&EXPR_MEMO_TLS, &EXPR_MEMO_STATS_TLS);
@@ -89,12 +66,7 @@ pub(super) fn expression_memo_stats() -> (usize, usize, usize) {
 }
 
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
-    // The sigilless-declaration initializer grammar has one context-sensitive
-    // exception for assignments in a ternary's else branch. Do not reuse an
-    // expression parsed outside that context (or cache this context's result
-    // for an ordinary expression).
-    let use_memo = !allow_ternary_else_assignment();
-    if use_memo && let Some(cached) = EXPR_MEMO.get(input) {
+    if let Some(cached) = EXPR_MEMO.get(input) {
         return cached;
     }
     let result = (|| {
@@ -177,9 +149,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         }
         Ok((rest, expr))
     })();
-    if use_memo {
-        EXPR_MEMO.store(input, &result);
-    }
+    EXPR_MEMO.store(input, &result);
     result
 }
 
