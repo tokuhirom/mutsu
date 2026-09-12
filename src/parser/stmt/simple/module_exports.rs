@@ -1,4 +1,5 @@
 use super::*;
+use crate::ast::CallArg;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -182,7 +183,12 @@ pub(crate) fn register_module_exports(module: &str) {
         m.borrow_mut().remove(module);
     });
     if let Some(scan) = scan {
-        record_use_scan_outcome(module, scan.uses_slangify);
+        // Slangify is the activation helper, not a slang to activate by
+        // itself. Its EXPORT implementation contains the same
+        // `$*LANG.define_slang` call that L10N modules use, but running it as
+        // a zero-argument slang activation would call its four-argument
+        // EXPORT with no arguments and fail every Slangify-based module.
+        record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
         apply_scan_types(&scan);
         apply_module_exports(&scan.exports);
         for (keyword, how_type) in &scan.declare_keywords {
@@ -604,10 +610,17 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     result.sort_by(|a, b| a.name.cmp(&b.name));
     let mut declare_keywords = Vec::new();
     collect_exporthow_declare(&stmts, &mut declare_keywords);
-    let uses_slangify = stmts.iter().any(|s| {
-        matches!(s, Stmt::Use { module, .. }
+    // L10N distributions do not `use Slangify` themselves. Their generated
+    // EXPORT hook calls `$*LANG.define_slang(...)` instead, so inspect the
+    // parsed AST for that method call. This deliberately operates on AST
+    // nodes rather than source text: a comment mentioning `define_slang` must
+    // not cause an arbitrary module to execute in the parse-time interpreter.
+    let defines_slang = contains_define_slang(&stmts);
+    let uses_slangify = defines_slang
+        || stmts.iter().any(|s| {
+            matches!(s, Stmt::Use { module, .. }
             if module == "Slangify" || module.starts_with("Slangify:"))
-    });
+        });
     ModuleScanResult {
         exports: result,
         type_names,
@@ -616,6 +629,268 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         declare_keywords,
         type_index_incomplete,
         uses_slangify,
+    }
+}
+
+fn contains_define_slang(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(contains_define_slang_stmt)
+}
+
+fn contains_define_slang_stmt(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::VarDecl {
+            expr,
+            where_constraint,
+            custom_traits,
+            ..
+        } => {
+            contains_define_slang_expr(expr)
+                || where_constraint
+                    .as_deref()
+                    .is_some_and(contains_define_slang_expr)
+                || custom_traits
+                    .iter()
+                    .filter_map(|(_, arg)| arg.as_ref())
+                    .any(contains_define_slang_expr)
+        }
+        Stmt::Assign { expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Die(expr)
+        | Stmt::Fail(expr)
+        | Stmt::Goto(expr) => contains_define_slang_expr(expr),
+        Stmt::Take(expr, _) => contains_define_slang_expr(expr),
+        Stmt::SubDecl {
+            body,
+            signature_alternates,
+            ..
+        } => {
+            contains_define_slang(body)
+                || signature_alternates
+                    .iter()
+                    .flat_map(|(_, defs)| defs)
+                    .any(|def| {
+                        def.default.as_ref().is_some_and(contains_define_slang_expr)
+                            || def
+                                .where_constraint
+                                .as_deref()
+                                .is_some_and(contains_define_slang_expr)
+                    })
+        }
+        Stmt::MethodDecl { body, .. }
+        | Stmt::TokenDecl { body, .. }
+        | Stmt::RuleDecl { body, .. }
+        | Stmt::ProtoDecl { body, .. }
+        | Stmt::Package { body, .. }
+        | Stmt::ClassDecl { body, .. }
+        | Stmt::AugmentClass { body, .. }
+        | Stmt::RoleDecl { body, .. }
+        | Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Default(body)
+        | Stmt::Catch(body)
+        | Stmt::Control(body)
+        | Stmt::React { body }
+        | Stmt::Phaser { body, .. } => contains_define_slang(body),
+        Stmt::EnumDecl { variants, .. } => variants
+            .iter()
+            .filter_map(|(_, expr)| expr.as_ref())
+            .any(contains_define_slang_expr),
+        Stmt::SubsetDecl { predicate, .. } => {
+            predicate.as_ref().is_some_and(contains_define_slang_expr)
+        }
+        Stmt::HasDecl { default, .. } => default.as_ref().is_some_and(contains_define_slang_expr),
+        Stmt::Expr(expr) => contains_define_slang_expr(expr),
+        Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
+            exprs.iter().any(contains_define_slang_expr)
+        }
+        Stmt::Call { args, .. } => args.iter().any(contains_define_slang_call_arg),
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            contains_define_slang_expr(cond)
+                || contains_define_slang(then_branch)
+                || contains_define_slang(else_branch)
+        }
+        Stmt::While { cond, body, .. } => {
+            contains_define_slang_expr(cond) || contains_define_slang(body)
+        }
+        Stmt::Loop {
+            init,
+            cond,
+            step,
+            body,
+            ..
+        } => {
+            init.as_deref().is_some_and(contains_define_slang_stmt)
+                || cond.as_ref().is_some_and(contains_define_slang_expr)
+                || step.as_ref().is_some_and(contains_define_slang_expr)
+                || contains_define_slang(body)
+        }
+        Stmt::For { iterable, body, .. } => {
+            contains_define_slang_expr(iterable) || contains_define_slang(body)
+        }
+        Stmt::Given { topic, body, .. }
+        | Stmt::When {
+            cond: topic, body, ..
+        } => contains_define_slang_expr(topic) || contains_define_slang(body),
+        Stmt::Whenever { supply, body, .. } => {
+            contains_define_slang_expr(supply) || contains_define_slang(body)
+        }
+        Stmt::Label { stmt, .. } => contains_define_slang_stmt(stmt),
+        Stmt::Let { index, value, .. } => {
+            index.as_deref().is_some_and(contains_define_slang_expr)
+                || value.as_deref().is_some_and(contains_define_slang_expr)
+        }
+        Stmt::TempMethodAssign {
+            method_args, value, ..
+        } => {
+            method_args.iter().any(contains_define_slang_expr) || contains_define_slang_expr(value)
+        }
+        _ => false,
+    }
+}
+
+fn contains_define_slang_call_arg(arg: &CallArg) -> bool {
+    match arg {
+        CallArg::Positional(expr) | CallArg::Slip(expr) | CallArg::Invocant(expr) => {
+            contains_define_slang_expr(expr)
+        }
+        CallArg::Named { value, .. } => value.as_ref().is_some_and(contains_define_slang_expr),
+    }
+}
+
+fn contains_define_slang_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+            args.iter().any(contains_define_slang_expr)
+        }
+        Expr::AssignExpr { expr, .. }
+        | Expr::Grouped(expr)
+        | Expr::ZenSlice(expr)
+        | Expr::Eager(expr)
+        | Expr::Itemize(expr)
+        | Expr::DeitemizeForBind(expr)
+        | Expr::PositionalPair(expr)
+        | Expr::IndirectTypeLookup(expr)
+        | Expr::Unary { expr, .. }
+        | Expr::PostfixOp { expr, .. }
+        | Expr::Reduction { expr, .. }
+        | Expr::WhateverCurry(expr) => contains_define_slang_expr(expr),
+        Expr::Binary { left, right, .. }
+        | Expr::HyperOp { left, right, .. }
+        | Expr::HyperFuncOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
+            contains_define_slang_expr(left) || contains_define_slang_expr(right)
+        }
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_define_slang_expr),
+        Expr::InfixFunc { left, right, .. } => {
+            contains_define_slang_expr(left) || right.iter().any(contains_define_slang_expr)
+        }
+        Expr::Feed { source, sink, .. } => {
+            contains_define_slang_expr(source) || contains_define_slang_expr(sink)
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            contains_define_slang_expr(cond)
+                || contains_define_slang_expr(then_expr)
+                || contains_define_slang_expr(else_expr)
+        }
+        Expr::MethodCall {
+            target, args, name, ..
+        }
+        | Expr::HyperMethodCall {
+            target, args, name, ..
+        } => {
+            name.resolve() == "define_slang"
+                || contains_define_slang_expr(target)
+                || args.iter().any(contains_define_slang_expr)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            ..
+        }
+        | Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            contains_define_slang_expr(target)
+                || contains_define_slang_expr(name_expr)
+                || args.iter().any(contains_define_slang_expr)
+        }
+        Expr::CallOn { target, args } => {
+            contains_define_slang_expr(target) || args.iter().any(contains_define_slang_expr)
+        }
+        Expr::Index { target, index, .. } => {
+            contains_define_slang_expr(target) || contains_define_slang_expr(index)
+        }
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
+            contains_define_slang_expr(target) || dimensions.iter().any(contains_define_slang_expr)
+        }
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+            ..
+        } => {
+            contains_define_slang_expr(target)
+                || dimensions.iter().any(contains_define_slang_expr)
+                || contains_define_slang_expr(value)
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            contains_define_slang_expr(target)
+                || contains_define_slang_expr(index)
+                || contains_define_slang_expr(value)
+        }
+        Expr::Exists { target, arg, .. } => {
+            contains_define_slang_expr(target)
+                || arg.as_deref().is_some_and(contains_define_slang_expr)
+        }
+        Expr::SymbolicDeref { expr, .. } => contains_define_slang_expr(expr),
+        Expr::SymbolicDerefAssign { expr, value, .. }
+        | Expr::IndirectTypeLookupAssign { expr, value } => {
+            contains_define_slang_expr(expr) || contains_define_slang_expr(value)
+        }
+        Expr::IndirectCodeLookup { package, .. }
+        | Expr::HyperSlice {
+            target: package, ..
+        } => contains_define_slang_expr(package),
+        Expr::ArrayLiteral(items)
+        | Expr::BracketArray(items, _)
+        | Expr::CaptureLiteral(items)
+        | Expr::StringInterpolation(items) => items.iter().any(contains_define_slang_expr),
+        Expr::Hash(pairs) => pairs
+            .iter()
+            .filter_map(|(_, value)| value.as_ref())
+            .any(contains_define_slang_expr),
+        Expr::Block(body)
+        | Expr::Gather(body)
+        | Expr::DoBlock { body, .. }
+        | Expr::Once { body }
+        | Expr::PhaserExpr { body, .. }
+        | Expr::AnonSub { body, .. } => contains_define_slang(body),
+        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => contains_define_slang(body),
+        Expr::Try { body, catch } => {
+            contains_define_slang(body) || catch.as_deref().is_some_and(contains_define_slang)
+        }
+        Expr::DoStmt(stmt) => contains_define_slang_stmt(stmt),
+        _ => false,
     }
 }
 
@@ -1061,5 +1336,20 @@ mod test_exports_tests {
             declared, scanned,
             "TEST_EXPORTS has drifted from modules/Rakudo-Core/lib/Test.rakumod"
         );
+    }
+
+    #[test]
+    fn slang_activation_scan_uses_ast_not_source_comments() {
+        let commented = super::scan_module_source(
+            "# $*LANG.define_slang(\"MAIN\", $grammar)\nmy sub exported() { 1 }",
+            "<test>",
+        );
+        assert!(!commented.uses_slangify);
+
+        let registered = super::scan_module_source(
+            "my sub EXPORT() { $*LANG.define_slang(\"MAIN\", $grammar) }",
+            "<test>",
+        );
+        assert!(registered.uses_slangify);
     }
 }

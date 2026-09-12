@@ -1,6 +1,16 @@
 use super::*;
 
 pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
+    // L10N infix entries are aliases of the canonical operator name. The
+    // dedicated precedence parsers consume built-ins first; this fallback is
+    // for list-level operators such as `minmax` and set-style names that do
+    // not have a tighter hand-written parser.
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
+        if crate::parser::primary::ident::is_infix_word_op(&canonical) {
+            return None;
+        }
+        return Some((canonical, len));
+    }
     let mut word_match: Option<(String, usize)> = None;
 
     // Try word-like operators (alphabetic/underscore start)
@@ -63,6 +73,14 @@ pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
 }
 
 pub(crate) fn parse_flipflop_infix(input: &str) -> Option<(String, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input)
+        && matches!(
+            canonical.as_str(),
+            "ff" | "ff^" | "fff" | "fff^" | "^ff" | "^ff^" | "^fff" | "^fff^"
+        )
+    {
+        return Some((canonical, len));
+    }
     const OPS: &[&str] = &["^fff^", "^fff", "fff^", "fff", "^ff^", "^ff", "ff^", "ff"];
     for op in OPS {
         if let Some(rest) = input.strip_prefix(op)

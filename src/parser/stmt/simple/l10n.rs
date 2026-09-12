@@ -20,13 +20,13 @@
 //! - **Alias** (`core-say` → `言う`): the localized spelling is an *additional*
 //!   name for a core routine. Both `say 42` and `言う 42` parse.
 //!
-//! Only the categories whose parser production mutsu consults here are wired
-//! up; the rest (`infix-`, `named-`, `adverb-`, `meta-`, `quote-lang-`) are
-//! accepted and recorded as inert. An inert entry means source written with
-//! that localized spelling fails to *parse*, loudly — it can never make
-//! existing syntax silently mean something else, which is the failure mode
-//! ADR-0026's hard-error rule exists to prevent. The residue is tracked in
-//! <https://github.com/tokuhirom/mutsu/issues/7990>.
+//! The parser reaches the remaining categories through their natural seams:
+//! infix operators through the precedence parsers, named arguments through
+//! colonpairs, and quote/regex/postcircumfix adverbs through their respective
+//! adverb parsers. The metaoperator and quote-language categories remain
+//! inert: source written with one of those spellings still fails loudly rather
+//! than silently acquiring the wrong meaning. The remaining residue is
+//! tracked in <https://github.com/tokuhirom/mutsu/issues/7990>.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -64,16 +64,19 @@ const REPLACEMENT_CATEGORIES: &[&str] = &[
 const ALIAS_CATEGORIES: &[&str] = &["core-", "enum-", "term-", "system-", "pragma-", "trait-is-"];
 
 /// Categories that belong to the L10N schema but whose grammatical position
-/// mutsu's parser does not consult yet: word infix operators, metaoperators,
-/// quote-language names, named arguments and adverbs. Recognized so a role
-/// declaring them is still a valid vocabulary — see the module docs on why
-/// inert is safe where an unknown *production* override is not.
-const INERT_CATEGORIES: &[&str] = &["infix-", "meta-", "quote-lang-", "named-", "adverb-"];
+/// mutsu's parser does not consult yet: metaoperators and quote-language
+/// names. Recognized so a role declaring them is still a valid vocabulary —
+/// see the module docs on why inert is safe where an unknown *production*
+/// override is not.
+const INERT_CATEGORIES: &[&str] = &["meta-", "quote-lang-"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Category {
     Replacement,
     Alias,
+    Infix,
+    Named,
+    Adverb,
     Inert,
 }
 
@@ -99,6 +102,13 @@ pub(crate) struct L10nVocabulary {
     keywords: HashMap<String, KeywordSpellings>,
     /// Localized bareword → the canonical routine/term/enum name.
     aliases: HashMap<String, String>,
+    /// Localized word/symbol infix spelling → canonical operator spelling.
+    infix_aliases: HashMap<String, String>,
+    /// Localized named-argument spelling → canonical named parameter.
+    named_aliases: HashMap<String, String>,
+    /// Localized adverb spelling → canonical adverb, separated by the
+    /// grammar position whose generated L10N method supplied the map.
+    adverb_aliases: HashMap<String, HashMap<String, String>>,
     /// Every localized spelling → the canonical keyword it stands for, the
     /// reverse of `keywords`. Answers "is this word reserved?".
     canonical: HashMap<String, String>,
@@ -145,6 +155,15 @@ impl L10nVocabulary {
             Category::Alias => {
                 self.insert_alias(literal, canonical);
             }
+            Category::Infix => {
+                self.insert_infix_alias(literal, canonical);
+            }
+            Category::Named => {
+                self.insert_named_alias(literal, canonical);
+            }
+            Category::Adverb => {
+                self.insert_adverb_alias("pc", literal, canonical);
+            }
             Category::Inert => unreachable!("handled above"),
         }
         true
@@ -165,6 +184,31 @@ impl L10nVocabulary {
         }
     }
 
+    /// Add a generated `<category>2str` map. These methods are used for the
+    /// grammatical positions whose localized spellings cannot be represented
+    /// by a `token <category>-<name>` declaration.
+    pub(crate) fn insert_position_aliases<'a>(
+        &mut self,
+        method_name: &str,
+        pairs: impl Iterator<Item = (&'a str, &'a str)>,
+    ) {
+        let Some(category) = method_name.strip_suffix("2str") else {
+            return;
+        };
+        for (localized, canonical) in pairs {
+            if localized.is_empty() || canonical.is_empty() || localized == canonical {
+                continue;
+            }
+            match category {
+                "named" => self.insert_named_alias(localized, canonical),
+                "adverb-pc" | "adverb-q" | "adverb-rx" => {
+                    self.insert_adverb_alias(category, localized, canonical)
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn insert_alias(&mut self, localized: &str, canonical: &str) {
         self.aliases
             .insert(localized.to_string(), canonical.to_string());
@@ -177,8 +221,38 @@ impl L10nVocabulary {
             .insert(localized.to_string(), canonical.to_string());
     }
 
+    fn insert_infix_alias(&mut self, localized: &str, canonical: &str) {
+        let canonical = canonical_infix_name(canonical);
+        // Native spellings already have a parser path. Keeping an identity
+        // entry here would make position checks recurse forever (`and` →
+        // `and`), while also serving no localization purpose.
+        if localized == canonical {
+            return;
+        }
+        self.infix_aliases
+            .insert(localized.to_string(), canonical.to_string());
+        self.canonical
+            .insert(localized.to_string(), canonical.to_string());
+    }
+
+    fn insert_named_alias(&mut self, localized: &str, canonical: &str) {
+        self.named_aliases
+            .insert(localized.to_string(), canonical.to_string());
+    }
+
+    fn insert_adverb_alias(&mut self, category: &str, localized: &str, canonical: &str) {
+        self.adverb_aliases
+            .entry(category.to_string())
+            .or_default()
+            .insert(localized.to_string(), canonical.to_string());
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
-        self.keywords.is_empty() && self.aliases.is_empty()
+        self.keywords.is_empty()
+            && self.aliases.is_empty()
+            && self.infix_aliases.is_empty()
+            && self.named_aliases.is_empty()
+            && self.adverb_aliases.is_empty()
     }
 
     /// Token keys this implementation recorded but does not consult.
@@ -204,6 +278,15 @@ fn categorize(key: &str) -> Option<(Category, &str)> {
         .iter()
         .map(|c| (Category::Replacement, *c))
         .chain(ALIAS_CATEGORIES.iter().map(|c| (Category::Alias, *c)))
+        .chain(
+            [
+                ("infix-", Category::Infix),
+                ("named-", Category::Named),
+                ("adverb-", Category::Adverb),
+            ]
+            .into_iter()
+            .map(|(prefix, category)| (category, prefix)),
+        )
         .chain(INERT_CATEGORIES.iter().map(|c| (Category::Inert, *c)));
     for (category, prefix) in candidates {
         let Some(rest) = key.strip_prefix(prefix) else {
@@ -217,6 +300,23 @@ fn categorize(key: &str) -> Option<(Category, &str)> {
         }
     }
     best.map(|(category, rest, _)| (category, rest))
+}
+
+/// The generated L10N names for the endpoint-excluding flip-flops use the
+/// same short names as Rakudo's grammar tokens, while the parser's operator
+/// spelling includes the caret markers.
+fn canonical_infix_name(name: &str) -> &str {
+    match name {
+        "pcontp" => "(cont)",
+        "pelemp" => "(elem)",
+        "cff" => "^ff",
+        "cffc" => "^ff^",
+        "cfff" => "^fff",
+        "cfffc" => "^fff^",
+        "ffc" => "ff^",
+        "fffc" => "fff^",
+        _ => name,
+    }
 }
 
 /// Reduce a token body to the literal spelling it matches, or `None` when the
@@ -352,6 +452,72 @@ pub(crate) fn l10n_alias(name: &str) -> Option<String> {
     L10N_VOCABULARY.with(|v| v.borrow().as_ref()?.aliases.get(name).cloned())
 }
 
+pub(crate) fn l10n_named_alias(name: &str) -> Option<String> {
+    if !L10N_ACTIVE.with(Cell::get) {
+        return None;
+    }
+    L10N_VOCABULARY.with(|v| v.borrow().as_ref()?.named_aliases.get(name).cloned())
+}
+
+pub(crate) fn l10n_adverb_alias(category: &str, name: &str) -> Option<String> {
+    if !L10N_ACTIVE.with(Cell::get) {
+        return None;
+    }
+    L10N_VOCABULARY.with(|v| {
+        v.borrow()
+            .as_ref()?
+            .adverb_aliases
+            .get(category)?
+            .get(name)
+            .cloned()
+    })
+}
+
+/// Match a localized colon-adverb name, returning `(canonical, negated,
+/// remainder)`. The caller owns the canonical name because it is translated
+/// out of a thread-local vocabulary; the source remainder remains borrowed.
+pub(crate) fn l10n_match_adverb<'a>(
+    category: &str,
+    input: &'a str,
+) -> Option<(String, bool, &'a str)> {
+    if !L10N_ACTIVE.with(Cell::get) {
+        return None;
+    }
+    let after_colon = input.strip_prefix(':')?;
+    let (negated, after_bang) = after_colon
+        .strip_prefix('!')
+        .map_or((false, after_colon), |rest| (true, rest));
+    let end = after_bang
+        .char_indices()
+        .find(|(_, c)| !c.is_alphanumeric() && *c != '_' && *c != '-')
+        .map_or(after_bang.len(), |(idx, _)| idx);
+    if end == 0 {
+        return None;
+    }
+    let name = &after_bang[..end];
+    let canonical = l10n_adverb_alias(category, name)?;
+    Some((canonical, negated, &after_bang[end..]))
+}
+
+/// Match the longest localized infix spelling at the start of `input`,
+/// returning its canonical spelling and the bytes consumed from the source.
+pub(crate) fn l10n_match_infix(input: &str) -> Option<(String, usize)> {
+    if !L10N_ACTIVE.with(Cell::get) {
+        return None;
+    }
+    L10N_VOCABULARY.with(|v| {
+        let borrowed = v.borrow();
+        let vocabulary = borrowed.as_ref()?;
+        vocabulary
+            .infix_aliases
+            .iter()
+            .filter_map(|(localized, canonical)| {
+                match_spelling(localized, input).map(|_| (canonical.clone(), localized.len()))
+            })
+            .max_by_key(|(_, len)| *len)
+    })
+}
+
 /// The canonical Raku keyword a localized spelling stands for, for the checks
 /// that ask "is this word reserved?" rather than "does this word appear here?".
 ///
@@ -478,9 +644,9 @@ mod tests {
     }
 
     #[test]
-    fn unwired_categories_are_recorded_inert_not_rejected() {
+    fn only_unwired_categories_are_recorded_inert_not_rejected() {
         let vocabulary = ja();
-        assert_eq!(vocabulary.inert(), ["infix-pcontp"]);
+        assert!(vocabulary.inert().is_empty());
     }
 
     #[test]
@@ -494,7 +660,23 @@ mod tests {
             categorize("traitmod-is"),
             Some((Category::Replacement, "is"))
         );
-        assert_eq!(categorize("infix-and"), Some((Category::Inert, "and")));
+        assert_eq!(categorize("infix-and"), Some((Category::Infix, "and")));
         assert_eq!(categorize("methodop"), None);
+    }
+
+    #[test]
+    fn position_maps_are_kept_separate_from_identifier_aliases() {
+        let mut vocabulary = L10nVocabulary::default();
+        vocabulary.insert_position_aliases("adverb-rx2str", [("グローバル", "global")].into_iter());
+        vocabulary.insert_position_aliases("named2str", [("インチ", "in")].into_iter());
+        assert_eq!(
+            vocabulary.adverb_aliases["adverb-rx"].get("グローバル"),
+            Some(&"global".to_string())
+        );
+        assert_eq!(
+            vocabulary.named_aliases.get("インチ"),
+            Some(&"in".to_string())
+        );
+        assert_eq!(vocabulary.aliases.get("グローバル"), None);
     }
 }

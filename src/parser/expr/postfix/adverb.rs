@@ -8,6 +8,22 @@ use crate::value::Value;
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
 pub(crate) fn parse_exists_secondary_adverb(input: &str) -> (&str, ExistsAdverb) {
+    if let Some((canonical, negated, rest)) =
+        crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", input)
+    {
+        let adverb = match (canonical.as_str(), negated) {
+            ("kv", false) => ExistsAdverb::Kv,
+            ("kv", true) => ExistsAdverb::NotKv,
+            ("p", false) => ExistsAdverb::P,
+            ("p", true) => ExistsAdverb::NotP,
+            ("v", false) => ExistsAdverb::InvalidV,
+            ("v", true) => ExistsAdverb::NotV,
+            ("k", false) => ExistsAdverb::InvalidK,
+            ("k", true) => ExistsAdverb::InvalidNotK,
+            _ => return (input, ExistsAdverb::None),
+        };
+        return (rest, adverb);
+    }
     if input.starts_with(":!kv") && !is_ident_char(input.as_bytes().get(4).copied()) {
         return (&input[4..], ExistsAdverb::NotKv);
     }
@@ -50,8 +66,10 @@ pub(crate) fn parse_dynamic_subscript_adverb(input: &str) -> Option<&str> {
         return None;
     }
     let name = &r[..end];
+    let name = crate::parser::stmt::simple::l10n_adverb_alias("adverb-pc", name)
+        .unwrap_or_else(|| name.to_string());
     // Only recognize known subscript adverb names
-    match name {
+    match name.as_str() {
         "delete" | "exists" => Some(&r[end..]),
         _ => None,
     }
@@ -64,6 +82,47 @@ pub(crate) fn parse_dynamic_subscript_adverb(input: &str) -> Option<&str> {
 pub(crate) fn parse_subscript_adverb_with_expr(
     input: &str,
 ) -> Option<(&str, &'static str, Option<Expr>)> {
+    if let Some((canonical, negated, rest)) =
+        crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", input)
+    {
+        let mode = match (canonical.as_str(), negated) {
+            ("kv", true) => "not-kv",
+            ("kv", false) => "kv",
+            ("p", true) => "not-p",
+            ("p", false) => "p",
+            ("k", true) => "not-k",
+            ("k", false) => "k",
+            ("v", true) => "not-v",
+            ("v", false) => "v",
+            _ => return None,
+        };
+        if let Some(rest) = rest.strip_prefix("(0)") {
+            return Some((
+                rest,
+                match mode {
+                    "kv" => "kv0",
+                    "p" => "p0",
+                    "k" => "k0",
+                    "v" => "v0",
+                    _ => mode,
+                },
+                None,
+            ));
+        }
+        if let Some(rest) = rest.strip_prefix("(1)") {
+            return Some((rest, mode, None));
+        }
+        if !negated
+            && rest.starts_with('(')
+            && let Some((after, expr)) = try_parse_adverb_expr(rest)
+        {
+            return Some((after, mode, Some(expr)));
+        }
+        if rest.starts_with('(') {
+            return None;
+        }
+        return Some((rest, mode, None));
+    }
     if input.starts_with(":!kv") && !is_ident_char(input.as_bytes().get(4).copied()) {
         return Some((&input[4..], "not-kv", None));
     }
@@ -420,6 +479,26 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
 }
 
 pub(crate) fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
+    if let Some((canonical, negated, rest)) =
+        crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", input)
+        && canonical == "delete"
+    {
+        if negated {
+            return Some((rest, DeleteAdverb::NoDelete));
+        }
+        if let Some(r_stripped) = rest.strip_prefix('(')
+            && let Ok((r2, _)) = ws(r_stripped)
+            && let Ok((r2, cond)) = expression(r2)
+            && let Ok((r2, _)) = ws(r2)
+            && let Ok((r2, _)) = parse_char(r2, ')')
+        {
+            return Some((r2, DeleteAdverb::Delete(Some(cond))));
+        }
+        if rest.starts_with('(') {
+            return None;
+        }
+        return Some((rest, DeleteAdverb::Delete(None)));
+    }
     if input.starts_with(":!delete") && !is_ident_char(input.as_bytes().get(8).copied()) {
         return Some((&input[8..], DeleteAdverb::NoDelete));
     }
@@ -537,8 +616,12 @@ pub(crate) fn subscript_adverb_expr_with_cond(
 /// Returns (remaining_input, exists_expr) or None if no adverb found.
 pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
     let r = input;
-    let (r, negated) = if r.starts_with(":!exists") && !is_ident_char(r.as_bytes().get(8).copied())
+    let (r, negated) = if let Some((canonical, negated, rest)) =
+        crate::parser::stmt::simple::l10n_match_adverb("adverb-pc", r)
+        && canonical == "exists"
     {
+        (rest, negated)
+    } else if r.starts_with(":!exists") && !is_ident_char(r.as_bytes().get(8).copied()) {
         (&r[8..], true)
     } else if r.starts_with(":exists") && !is_ident_char(r.as_bytes().get(7).copied()) {
         (&r[7..], false)

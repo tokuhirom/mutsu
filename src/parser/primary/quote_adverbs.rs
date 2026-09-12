@@ -171,6 +171,9 @@ pub(super) fn parse_colon_adverbs<'a>(mut input: &'a str, flags: &mut QuoteFlags
             break;
         }
         let adverb_name = &r[..end];
+        let localized_name =
+            crate::parser::stmt::simple::l10n_adverb_alias("adverb-q", adverb_name);
+        let adverb_name = localized_name.as_deref().unwrap_or(adverb_name);
         if negated {
             // When negating in qq mode, expand qq_mode into individual flags first
             // so that selective negation works (e.g. qq:!a:!c disables array+closure

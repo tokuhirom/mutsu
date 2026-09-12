@@ -201,6 +201,14 @@ pub(super) fn parse_pure_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
 
 /// Parse replication operators (x, xx, o) — higher precedence than ~.
 pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(r) {
+        return match canonical.as_str() {
+            "x" => Some((ConcatOp::Repeat, len)),
+            "xx" => Some((ConcatOp::ListRepeat, len)),
+            "o" => Some((ConcatOp::Compose, len)),
+            _ => None,
+        };
+    }
     if r.starts_with("xx")
         && !is_ident_char(r.as_bytes().get(2).copied())
         && r.as_bytes().get(2).copied() != Some(b'=')
@@ -273,6 +281,15 @@ fn word_infix_at(r: &str, kw: &str) -> bool {
 }
 
 pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(r) {
+        return match canonical.as_str() {
+            "div" => Some((MultiplicativeOp::IntDiv, len)),
+            "mod" => Some((MultiplicativeOp::IntMod, len)),
+            "gcd" => Some((MultiplicativeOp::Gcd, len)),
+            "lcm" => Some((MultiplicativeOp::Lcm, len)),
+            _ => None,
+        };
+    }
     // Unicode: multiply (U+00D7) -- skip if user-defined infix exists (the caller
     // then parses it as a multiplicative-precedence `infix:<×>` call so the user
     // candidate dispatches), and (like the ASCII `*` below) leave `×=` for the
@@ -643,6 +660,13 @@ fn starts_with_caret_flipflop(input: &str) -> bool {
 }
 
 pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
+        return match canonical.as_str() {
+            "min" => Some((LogicalOp::Min, len)),
+            "max" => Some((LogicalOp::Max, len)),
+            _ => None,
+        };
+    }
     if input.starts_with("||") && !input.starts_with("||=") {
         Some((LogicalOp::OrOr, 2))
     } else if input.starts_with("^^") && !input.starts_with("^^=") {
@@ -692,6 +716,17 @@ pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)
 }
 
 pub(in crate::parser) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+    if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
+        return match canonical.as_str() {
+            "or" => Some((LogicalOp::Or, len)),
+            "xor" => Some((LogicalOp::XorXor, len)),
+            "orelse" => Some((LogicalOp::OrElse, len)),
+            "and" => Some((LogicalOp::And, len)),
+            "andthen" => Some((LogicalOp::AndThen, len)),
+            "notandthen" => Some((LogicalOp::NotAndThen, len)),
+            _ => None,
+        };
+    }
     // Helper: check that the keyword is followed by a word boundary AND is not
     // immediately followed by `=` (which would make it a compound assignment
     // like `or=`, `and=`, `orelse=`, etc.).

@@ -380,7 +380,23 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             return Ok(r);
         }
     }
-    // rand — generates a random number (term)
+    // rand — generates a random number (term). `term-rand` is a generated
+    // L10N alias, but this term has a hand-rolled parser rather than going
+    // through `keyword_literal`, so consult the vocabulary before the ASCII
+    // fast path.
+    if let Some(rest) = crate::parser::stmt::simple::l10n_match_keyword("rand", input).flatten() {
+        let after = rest.trim_start();
+        if after.starts_with('(') {
+            return Err(PError::obsolete("rand()", "rand"));
+        }
+        return Ok((
+            rest,
+            Expr::Call {
+                name: Symbol::intern("rand"),
+                args: vec![],
+            },
+        ));
+    }
     if input.starts_with("rand")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
@@ -424,6 +440,27 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     }
 
     // now — returns current time as Instant (term)
+    if let Some(rest) = crate::parser::stmt::simple::l10n_match_keyword("now", input).flatten() {
+        let after = rest.trim_start();
+        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now") {
+            return Err(PError::fatal_at(
+                format!(
+                    "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
+                    current_line_number(input)
+                ),
+                input,
+            ));
+        }
+        if !after.starts_with("=>") || after.starts_with("==>") {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: Symbol::intern("now"),
+                    args: vec![],
+                },
+            ));
+        }
+    }
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
@@ -451,6 +488,27 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         }
     }
     // time — returns current epoch time as Int (term)
+    if let Some(rest) = crate::parser::stmt::simple::l10n_match_keyword("time", input).flatten() {
+        let after = rest.trim_start();
+        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time") {
+            return Err(PError::fatal_at(
+                format!(
+                    "X::Undeclared::Symbols: Undeclared routine:\n    time used at line {}",
+                    current_line_number(input)
+                ),
+                input,
+            ));
+        }
+        if !after.starts_with("=>") || after.starts_with("==>") {
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: Symbol::intern("time"),
+                    args: vec![],
+                },
+            ));
+        }
+    }
     if input.starts_with("time")
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
