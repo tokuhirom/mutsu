@@ -1,0 +1,17 @@
+{
+  "name": "ResSecondUse",
+  "description": "Fixture distribution declared as `unit module` that `use`s a second distribution before its own BEGIN-time %?RESOURCES read",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResSecondUse": "lib/ResSecondUse.rakumod"
+  },
+  "resources": [
+    "greeting.txt"
+  ],
+  "depends": [
+    "ResSecondUseDep"
+  ],
+  "license": "Artistic-2.0"
+}
