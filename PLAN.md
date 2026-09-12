@@ -38,7 +38,10 @@ mutsu's unique position. Four components:
   A' → B (value representation + GC) → C (JIT). A, B and C have all landed; read the ADR before
   touching GC, Track B, NaN-boxing, or JIT.
 - **Bundling policy is [BATTERIES.md](BATTERIES.md)**: adopt the upstream module verbatim and grow
-  mutsu until it runs. Providing a module "natively" is banned going forward.
+  mutsu until it runs. Providing a module "natively" is banned going forward, and a performance
+  measurement does not buy an exemption — speed justifies a transparent optimization, never a
+  substitution under the real module's name. The policy is not yet an ADR:
+  [#8184](https://github.com/tokuhirom/mutsu/issues/8184).
 
 ---
 
@@ -125,12 +128,16 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       full-corpus sample, not a specific open ticket. Per bug: minimal repro → general fix → `t/`
       pin → PR. **Standing rule when reading a sweep**: verify any non-`missing_dep` bucket against
       `raku -I lib` before treating it as a mutsu bug — most turn out not to be.
-- [ ] **Do NOT build an `nqp::` op layer** (measured 2026-07-26 — `news/2026-07/nqp-op-layer-measured-and-rejected.md`).
-      The reverse-dependency weight is dominated by modules mutsu already bundles, and per dist the
-      op set is a threshold function. Implement an individual op when a real dist needs it (as
-      `nqp::sha1` was for zef).
-- [ ] **NativeCall**: `nativecall-cannot-be-vendored.md` (measured non-vendorable, stays a justified
-      rung-3 provider — [#7560](https://github.com/tokuhirom/mutsu/issues/7560));
+- [ ] **`nqp::` ops are added on demand, never as a porting campaign** (measured 2026-07-26 —
+      `news/2026-07/nqp-op-layer-measured-and-rejected.md`). The durable finding is that per dist the
+      op set is a **threshold function**, so a large module is not reached by adding ops one at a
+      time; the reverse-dependency weight is also dominated by modules mutsu already bundles. What
+      that measurement does *not* say is "mutsu has no `nqp::` ops" — it has **111**
+      (`src/runtime/nqp_ops*.rs`, `src/vm/vm_call_nqp.rs`), each added because a real dist needed it,
+      starting with `nqp::sha1` for zef. Do not cite the 2026-07 record as a blanket ban.
+- [ ] **NativeCall**: measured non-vendorable, stays a justified rung-3 provider
+      ([#7560](https://github.com/tokuhirom/mutsu/issues/7560)) — the blockers are structural
+      (`use QAST:from<NQP>`, MoarVM dispatch programs), so they do not move as the op set grows;
       native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
       pick up only when a real consumer needs it).
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
@@ -141,7 +148,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 
 | layer | status |
 |---|---|
-| 3a — cycle collector on `Arc`, type-filtered | ✅ default on (ADR-0003) |
+| 3a — cycle collector on the container-kind `Gc<T>` variants | ✅ default on (ADR-0003) |
 | 3b — NaN-boxing (`Value` 48→8B) | ✅ done |
 | 4 — JIT (Cranelift) | ✅ default on (ADR-0004 closed) |
 | 3c — biased refcount | 🧊 frozen; measured-trigger only |
@@ -156,7 +163,7 @@ OTF compilation-gate leftovers ticket is retired — both were stale entries her
 
 ## 3. roast — at its ceiling; no cluster left to attack
 
-The whitelist stands at **1436 / 1464**. `integration/` — the real-Raku-program files closest to the
+The whitelist stands at **1437 / 1465**. `integration/` — the real-Raku-program files closest to the
 project goal — is **fully whitelisted**. Per
 [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md), nearly every remaining file is *non-goal* (rakudo
 itself fails), *no oracle* (local raku SORRYs), or *awaiting infrastructure* (6.e generics).
@@ -178,19 +185,24 @@ bench CI, never a local run.
 
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
-      [#7573](https://github.com/tokuhirom/mutsu/issues/7573).
-      Its consumer is retiring the native `Test` provider
-      ([#7554](https://github.com/tokuhirom/mutsu/issues/7554)), a
-      BATTERIES.md rung-3 retirement and therefore a §1 goal item, not polish. **Read that ticket's
-      numbers first** — the `&`-sigil signature gate this file long blamed is closed, and five
-      callgrind passes took the per-assertion cost 492k -> 235k instructions, so the cost is now
-      inside the roast budget (`make roast` 1.24x, `t/` 2.0x). Perf is **no longer what blocks the
-      flip**: it was attempted 2026-09-07/08 and withdrawn on four bundled-library regressions
-      ([#7555](https://github.com/tokuhirom/mutsu/issues/7555)),
-      which are ordinary interpreter gaps, not assertion cost.
+      [#7573](https://github.com/tokuhirom/mutsu/issues/7573). **Read that ticket's re-diagnosis
+      first**; everything this file used to say about the blocker is closed. The `&`-sigil signature
+      gate, the `nqp::` by-name resolve and the 83% `interpreter_fallbacks` figure are all fixed, and
+      the per-assertion cost is down an order of magnitude. Its consumer changed too: the vendored
+      `Test` flip it was meant to unblock **landed 2026-09-10**, so this is no longer a rung-3
+      retirement blocker but the standing CI cost of running Raku's own `Test` as Raku code
+      (`t/` 2.0x, `make roast` 1.24x) — paid on every run from now on. Two concrete levers remain,
+      per the ticket: collapse the double `multi` resolution per call, and reduce the flat
+      interpretation cost of a module body (allocation traffic and env lookups), which is what the
+      remaining ~16x against raku on an assertion actually is.
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
-      [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome.
+      [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome. **This one
+      has a goal-item consumer**, so it is not polish: it is the measured reason the JSON
+      `to-json`/`from-json` fast path still shadows the vendored module by name
+      ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)) — the real grammar decodes 200
+      META-shaped documents in ~600s against 0.49s native, on a path zef walks for every metadata
+      read.
 - [ ] Opcode leftovers: [docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6.
 - [ ] Biased reference counting (ADR-0001 layer 3c) — frozen; start only on a measured trigger and an
       updated ADR.
@@ -199,24 +211,24 @@ bench CI, never a local run.
 
 ## 5. Concurrency and structural refactoring
 
-The [shared worker pool](docs/adr/0020-shared-worker-pool.md) is done (Accepted, all slices landed
-2026-08-05) — do not re-plan it. Its only open follow-up: the pool alone recovered only ~10% of
-per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
-levers, tracked in
-[#7571](https://github.com/tokuhirom/mutsu/issues/7571)
-(actively worked, see its own status log). The whole-`locals` clone/restore in `BlockScope` is also
-already gone under the default shadow-slots path (`exec_block_scope_op`, `vm/vm_misc_scope.rs`,
-closed via [ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md)) —
-`docs/lexical-scope-slot-campaign.md` is kept only as a historical record now. `.^methods`/`.can`
-deriving from the real dispatch table is also done (ADR-0019 F1/F2, closed 2026-08-20).
+Do not re-plan these — they are done: the
+[shared worker pool](docs/adr/0020-shared-worker-pool.md) (ADR-0020), the whole-`locals`
+clone/restore in `BlockScope` ([ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md);
+`docs/lexical-scope-slot-campaign.md` is a historical record now), and `.^methods`/`.can` deriving
+from the real dispatch table (ADR-0019 F1/F2). The pool's one open follow-up: it recovered only ~10%
+of per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
+levers — [#7571](https://github.com/tokuhirom/mutsu/issues/7571), actively worked.
 
 - [ ] Semaphore / non-blocking await / lock contention (S17; hard; separate axis).
-- [ ] Propagate Supply detached-worker panics to QUIT (currently swallowed).
-- [ ] Split out the roast fudge logic; split files over 500 lines (336 files now, still growing —
-      `ANALYSIS.md` §6).
+- [ ] Propagate Supply detached-worker panics to QUIT (currently swallowed) — [#8185](https://github.com/tokuhirom/mutsu/issues/8185).
+- [ ] Split out the roast fudge logic. File size (376 over 500 lines, 138 over 1000, still growing —
+      `ANALYSIS.md` §6) is **not** a standalone campaign: split when a campaign opens the file and the
+      ownership boundary is visible.
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
-      deep-recursion `fatal runtime error: stack overflow` process abort for crashes.
+      deep-recursion `fatal runtime error: stack overflow` process abort for crashes. Nothing
+      currently stops the panic surface from growing in the meantime
+      ([#8186](https://github.com/tokuhirom/mutsu/issues/8186)).
 - Individual concurrency bugs are individual `todo:ticket` / `todo:deep` issues.
 
 ---
@@ -243,7 +255,10 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 - [ ] **Per-type method-coverage matrix** — harness landed (`scripts/method-coverage.raku`); run the
       full-corpus triage and fold the per-type hole list into the backlog.
 - [ ] **Panic-zero sweep** — mutsu must never Rust-panic or process-abort on any input. Extend with
-      parser fuzzing driven through the same harness with a "did it panic?" oracle.
+      parser fuzzing driven through the same harness with a "did it panic?" oracle. The goal has no
+      enforcement mechanism today and the surface grows at every measurement (2,440 `unwrap` /
+      `expect` / `panic!` / `unreachable!` in `src/`): [#8186](https://github.com/tokuhirom/mutsu/issues/8186)
+      is either the ratchet or the decision to reword this goal into something enforceable.
 - [ ] **Error / exception parity** — differential-test that mutsu throws the right `X::` type with a
       matching message and payload, not merely that it fails. Corpus: `Type/X*.rakudoc`.
 
@@ -253,10 +268,10 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 
 | Metric | Current | Target |
 |---|---|---|
-| Bundled libraries | **36 vendored**, upstream suites gated at release | 10+ bundled, all documented |
+| Bundled libraries | **40 vendored**, upstream suites gated at release | 10+ bundled, all documented |
 | mzef | install / fetch / resolution / test phase all work E2E | Full pipeline on the real fez index |
 | Binary distribution | 4 release targets + GHCR image + mise ✅ | Achieved |
-| roast whitelist | **1436 / 1464** | Achieved; remainder is mostly non-goal |
+| roast whitelist | **1437 / 1465** | Achieved; remainder is mostly non-goal |
 | GC / JIT | **default on** ✅ | Achieved |
 | Startup vs raku | **0.04×** | maintain |
 | fib / method-call / bench-class vs raku | all under target (bench CI) | maintain |
