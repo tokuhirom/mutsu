@@ -83,6 +83,193 @@ impl RegexTree {
     pub(crate) fn to_source(&self) -> String {
         self.body.to_source()
     }
+
+    /// Lower the static source tree into the execution matcher plan.
+    ///
+    /// The runtime parser still owns every construct that needs package state,
+    /// interpolation, or code evaluation.  This deliberately small bridge is
+    /// for the source forms that `parse_static` can prove are structural only;
+    /// returning `None` keeps those forms on the established parser path.
+    pub(crate) fn lower_execution(
+        &self,
+        ratchet: bool,
+        ignore_case: bool,
+        ignore_mark: bool,
+    ) -> Option<crate::runtime::RegexPattern> {
+        fn token(
+            atom: crate::runtime::RegexAtom,
+            quant: crate::runtime::RegexQuant,
+            ratchet: bool,
+        ) -> crate::runtime::RegexToken {
+            crate::runtime::RegexToken {
+                atom,
+                quant,
+                named_capture: None,
+                secondary_named_capture: None,
+                hash_capture: None,
+                force_list_capture: false,
+                ratchet,
+                frugal: false,
+                separator: None,
+                from_runtime_interpolation: false,
+            }
+        }
+
+        fn pattern(
+            tokens: Vec<crate::runtime::RegexToken>,
+            ignore_case: bool,
+            ignore_mark: bool,
+        ) -> crate::runtime::RegexPattern {
+            crate::runtime::RegexPattern {
+                tokens,
+                anchor_start: false,
+                anchor_end: false,
+                ignore_case,
+                ignore_mark,
+            }
+        }
+
+        fn lower_node(
+            node: &RegexNode,
+            ratchet: bool,
+            ignore_case: bool,
+            ignore_mark: bool,
+        ) -> Option<Vec<crate::runtime::RegexToken>> {
+            match node {
+                RegexNode::Literal(text) => {
+                    // These characters are syntax in an unquoted runtime
+                    // pattern. An escaped spelling is intentionally left to
+                    // the established parser because the source tree does
+                    // not yet retain whether a literal character was escaped.
+                    if text.chars().any(|ch| {
+                        matches!(
+                            ch,
+                            '\u{1}'
+                                | '\\'
+                                | '#'
+                                | '&'
+                                | ':'
+                                | ';'
+                                | '='
+                                | '%'
+                                | '~'
+                                | '{'
+                                | '}'
+                                | '.'
+                                | '^'
+                                | '$'
+                                | '<'
+                                | '>'
+                                | '!'
+                                | '\''
+                                | '"'
+                                | '\u{2018}'
+                                | '\u{2019}'
+                                | '\u{201a}'
+                                | '\u{201c}'
+                                | '\u{201d}'
+                                | '\u{201e}'
+                                | '\u{ff62}'
+                                | '\u{ff63}'
+                                | '\u{00ab}'
+                                | '\u{00bb}'
+                        )
+                    }) {
+                        return None;
+                    }
+                    Some(
+                        text.chars()
+                            .map(|ch| {
+                                token(
+                                    crate::runtime::RegexAtom::Literal(ch),
+                                    crate::runtime::RegexQuant::One,
+                                    ratchet,
+                                )
+                            })
+                            .collect(),
+                    )
+                }
+                RegexNode::Quote(text) => Some(
+                    text.chars()
+                        .map(|ch| {
+                            token(
+                                crate::runtime::RegexAtom::Literal(ch),
+                                crate::runtime::RegexQuant::One,
+                                ratchet,
+                            )
+                        })
+                        .collect(),
+                ),
+                RegexNode::CharClassDigit => Some(vec![token(
+                    crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
+                        negated: false,
+                        items: vec![crate::runtime::ClassItem::Digit],
+                    }),
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::Sequence(nodes) => {
+                    let mut tokens = Vec::new();
+                    for child in nodes {
+                        tokens.extend(lower_node(child, ratchet, ignore_case, ignore_mark)?);
+                    }
+                    Some(tokens)
+                }
+                RegexNode::Alternation(branches) => {
+                    let alternatives = branches
+                        .iter()
+                        .map(|branch| {
+                            lower_node(branch, ratchet, ignore_case, ignore_mark)
+                                .map(|tokens| pattern(tokens, ignore_case, ignore_mark))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::Alternation(alternatives),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::Group(child) => {
+                    let tokens = lower_node(child, ratchet, ignore_case, ignore_mark)?;
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::Group(pattern(tokens, ignore_case, ignore_mark)),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::Quantified { atom, quantifier } => {
+                    let quant = match quantifier {
+                        RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
+                        RegexQuantifier::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
+                        RegexQuantifier::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
+                    };
+                    let mut tokens = lower_node(atom, ratchet, ignore_case, ignore_mark)?;
+                    if tokens.len() == 1 {
+                        tokens[0].quant = quant;
+                        return Some(tokens);
+                    }
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::Group(pattern(tokens, ignore_case, ignore_mark)),
+                        quant,
+                        ratchet,
+                    )])
+                }
+                // `WithWhitespace` is a RakuAST semantic wrapper. Written
+                // regex whitespace is insignificant unless the runtime
+                // `:sigspace` policy is active, which this static bridge does
+                // not claim to lower.
+                RegexNode::WithWhitespace(child) => {
+                    lower_node(child, ratchet, ignore_case, ignore_mark)
+                }
+            }
+        }
+
+        Some(pattern(
+            lower_node(&self.body, ratchet, ignore_case, ignore_mark)?,
+            ignore_case,
+            ignore_mark,
+        ))
+    }
 }
 
 impl RegexNode {
@@ -160,10 +347,30 @@ impl Parser {
             }
             let mut atom = self.parse_atom(stops)?;
             if let Some(quantifier) = self.parse_quantifier() {
-                atom = RegexNode::Quantified {
-                    atom: Box::new(atom),
-                    quantifier,
-                };
+                // A quantifier binds to the final atom, not to a run of
+                // adjacent literal characters (`ab+` means `a` then `b+`).
+                // Keep the measured RakuAST shape and let execution lowering
+                // preserve the same boundary.
+                if let RegexNode::Literal(text) = &mut atom
+                    && text.chars().count() > 1
+                {
+                    let last = text.pop().expect("literal has more than one character");
+                    let prefix = std::mem::take(text);
+                    atom = RegexNode::Sequence(vec![
+                        RegexNode::Literal(prefix),
+                        RegexNode::Quantified {
+                            atom: Box::new(RegexNode::Literal(last.to_string())),
+                            quantifier,
+                        },
+                    ]);
+                    // The quantifier has already been attached to the final
+                    // literal in the sequence.
+                } else {
+                    atom = RegexNode::Quantified {
+                        atom: Box::new(atom),
+                        quantifier,
+                    };
+                }
             }
 
             if self.declaration || saw_whitespace && !nodes.is_empty() {
@@ -202,14 +409,11 @@ impl Parser {
                 }
                 Some(RegexNode::Group(Box::new(inner)))
             }
-            '(' => {
-                self.pos += 1;
-                let inner = self.parse_alternation(&[')'])?;
-                if !self.consume_if(')') {
-                    return None;
-                }
-                Some(RegexNode::Group(Box::new(inner)))
-            }
+            // Parentheses are capture groups in regex slang.  Captures need
+            // runtime slot metadata, which this source tree does not retain;
+            // leave them on the established execution parser instead of
+            // silently turning them into a non-capturing `RegexGroup`.
+            '(' => None,
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '$' | '<' | '>' => None,
             _ => self.parse_literal(),
@@ -223,11 +427,11 @@ impl Parser {
             self.pos += 1;
             match ch {
                 c if c == quote => return Some(RegexNode::Quote(text)),
-                '\\' => {
-                    let escaped = self.chars.get(self.pos).copied()?;
-                    self.pos += 1;
-                    text.push(escaped);
-                }
+                // Quoted escapes can decode codepoints (`\\x20`) or alter
+                // quoting (`\\"`).  The current Quote node stores only the
+                // decoded-looking text, so it cannot preserve that source
+                // distinction for execution lowering.
+                '\\' => return None,
                 _ => text.push(ch),
             }
         }

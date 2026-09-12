@@ -1,6 +1,58 @@
 use super::regex_parse::*;
 use super::*;
+use crate::regex_tree::RegexTree;
 use ::regex::Regex;
+
+/// Lower the static subset of the shared source tree directly to the matcher
+/// plan.  Prefixes are the execution spelling produced by the existing parser;
+/// anything outside this small flag set stays on `parse_regex_structural`,
+/// because it may carry sigspace, captures, interpolation, or package state.
+fn lower_static_execution_pattern(pattern: &str) -> Option<RegexPattern> {
+    fn strip_flag<'a>(source: &'a str, flag: &str) -> Option<&'a str> {
+        let rest = source.strip_prefix(flag)?;
+        if rest.is_empty()
+            || rest.starts_with(char::is_whitespace)
+            || rest.starts_with(':')
+            || rest.starts_with('/')
+        {
+            Some(rest.trim_start())
+        } else {
+            None
+        }
+    }
+
+    let mut source = pattern.trim_start();
+    let mut ratchet = false;
+    let mut ignore_case = false;
+    let mut ignore_mark = false;
+    loop {
+        if let Some(rest) = strip_flag(source, ":ratchet") {
+            ratchet = true;
+            source = rest;
+        } else if let Some(rest) = strip_flag(source, ":i") {
+            ignore_case = true;
+            source = rest;
+        } else if let Some(rest) = strip_flag(source, ":ignorecase") {
+            ignore_case = true;
+            source = rest;
+        } else if let Some(rest) = strip_flag(source, ":m") {
+            ignore_mark = true;
+            source = rest;
+        } else if let Some(rest) = strip_flag(source, ":ignoremark") {
+            ignore_mark = true;
+            source = rest;
+        } else if source.starts_with(":s") || source.starts_with(":sigspace") {
+            // `WithWhitespace` is a source/model wrapper, but sigspace changes
+            // matching and requires the runtime's WsRule policy.
+            return None;
+        } else {
+            break;
+        }
+    }
+
+    let tree = RegexTree::parse_static(source, false)?;
+    tree.lower_execution(ratchet, ignore_case, ignore_mark)
+}
 
 /// If the iterator is positioned right after a `<` that opens a code
 /// assertion (`<?{ ... }>`, `<!{ ... }>`) or closure interpolation
@@ -1446,8 +1498,8 @@ impl Interpreter {
             }) {
                 return Some(cached);
             }
-            let parsed = self
-                .parse_regex_uncached(pattern, RegexParseMode::Match)
+            let parsed = lower_static_execution_pattern(pattern)
+                .or_else(|| self.parse_regex_uncached(pattern, RegexParseMode::Match))
                 .map(std::sync::Arc::new);
             if let Some(ref p) = parsed {
                 REGEX_PARSE_CACHE.with(|c| {
@@ -1459,5 +1511,47 @@ impl Interpreter {
         }
         self.parse_regex_uncached(pattern, RegexParseMode::Match)
             .map(std::sync::Arc::new)
+    }
+}
+
+#[cfg(test)]
+mod static_execution_tests {
+    use super::*;
+
+    #[test]
+    fn lowers_literal_sequence_without_runtime_reparse() {
+        let pattern = lower_static_execution_pattern("test").expect("static pattern");
+        assert_eq!(pattern.tokens.len(), 4);
+        assert!(
+            pattern
+                .tokens
+                .iter()
+                .all(|token| matches!(token.atom, RegexAtom::Literal(_)))
+        );
+    }
+
+    #[test]
+    fn lowers_flags_and_quantifiers() {
+        let pattern = lower_static_execution_pattern(":ratchet :i \\d+").expect("static pattern");
+        assert!(pattern.ignore_case);
+        assert!(matches!(
+            pattern.tokens.as_slice(),
+            [RegexToken {
+                atom: RegexAtom::CharClass(_),
+                quant: RegexQuant::OneOrMore,
+                ratchet: true,
+                ..
+            }]
+        ));
+    }
+
+    #[test]
+    fn leaves_sigspace_and_unsupported_syntax_on_the_parser_path() {
+        assert!(lower_static_execution_pattern(":s a b").is_none());
+        assert!(lower_static_execution_pattern("a.b").is_none());
+        assert!(lower_static_execution_pattern("[ab]+ %% ','").is_none());
+        assert!(lower_static_execution_pattern("(a)").is_none());
+        assert!(lower_static_execution_pattern(r#""\x20""#).is_none());
+        assert!(lower_static_execution_pattern("\u{1}42\u{1}").is_none());
     }
 }

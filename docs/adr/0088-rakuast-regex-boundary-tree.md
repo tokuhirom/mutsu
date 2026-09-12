@@ -1,7 +1,8 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
-- Status: Accepted (static source-tree and RakuAST slices implemented 2026-09-12;
-  dynamic contents and execution-tree migration remain)
+- Status: Accepted (static source-tree, RakuAST, and execution-lowering slices
+  implemented 2026-09-12; dynamic contents and the complete execution-tree
+  migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -338,7 +339,7 @@ from creating a second, divergent regex engine.
 
 ## 7. Implementation status
 
-Implemented for the static slice on 2026-09-12. The parser now retains a
+Implemented for the static source and RakuAST slices on 2026-09-12. The parser now retains a
 `RegexTree` for static regex expressions and declarations, including the
 `match-immediately` bit and boolean adverbs needed by `m:i` / `m:g`. The read
 direction emits `QuotedRegex`, the static `Regex::*` family, declaration nodes,
@@ -346,7 +347,34 @@ and `Grammar`; the write direction lowers those nodes back through the current
 compiler and VM. The focused dual-oracle coverage is in
 `t/rakuast/rakuast-regex.t`.
 
+The static execution bridge was added in the next slice. The runtime parser
+lowers source trees containing literals, quotes, groups, alternation, digit
+classes, and the simple quantifiers directly to `RegexPattern`, carrying the
+`ratchet`, `ignorecase`, and `ignoremark` policies. Sigspace and constructs
+whose meaning depends on captures, interpolation, code, or package state keep
+using the established structural parser. The bridge is intentionally a
+fallback-compatible step: the compiled `Value::Regex` still carries its
+execution spelling, so the parser-bound tree must remain the next migration
+target rather than being rediscovered from normalized declaration text.
+
 The following remain intentionally open: dynamic assertions and interpolation,
-captures and subrules, adverbs with runtime arguments, and migration of the
-matcher's internal `RegexPattern` construction to a full execution lowering
-from `RegexTree`.
+captures and subrules, adverbs with runtime arguments, and replacing the
+string-carried regex value with parser-produced tree provenance throughout the
+remaining matcher entry points.
+
+## 8. Static execution-lowering slice (2026-09-12)
+
+The static subset now has one execution lowering function shared with the
+RakuAST tree. `Interpreter::parse_regex` tries this lowering before the legacy
+structural parser for patterns that contain no runtime interpolation. The
+lowerer emits the existing `RegexPattern` and `RegexAtom` types; it does not
+add a matcher or a VM fallback. Unsupported syntax, sigspace, and any literal
+containing a metacharacter whose escaped/source spelling is not retained fall
+back to the old parser, preserving execution semantics during migration.
+
+The regression pin is `t/regex/regex-tree-static-execution.t`: it exercises
+literal and quantified-class `EVAL` results twice, plus a ratcheted token
+declaration twice, and checks rejection cases. The Rust lowering tests pin the
+plan shape and the fallback boundary. This slice establishes only the static
+plan conversion; captures, subrules, dynamic values, and the parser-produced
+tree transport remain separate slices.
