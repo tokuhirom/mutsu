@@ -620,6 +620,31 @@ pub(crate) fn builtin_type_info(name: &str) -> Option<&'static BuiltinTypeInfo> 
     interned_catalog().get(name).map(|row| row.info)
 }
 
+/// Whether a catalog type composes `role`, including roles inherited through
+/// the catalog MRO. Keeping this query beside the catalog lets type matching
+/// and runtime introspection share the Rakudo-adjudicated role data.
+pub(crate) fn builtin_type_has_role(type_name: &str, role: &str) -> bool {
+    let base_type = type_name
+        .split_once('[')
+        .map(|(base, _)| base)
+        .unwrap_or(type_name);
+    let role_base = role.split_once('[').map(|(base, _)| base).unwrap_or(role);
+    let Some(info) = builtin_type_info(base_type) else {
+        return false;
+    };
+    info.mro.iter().any(|ancestor| {
+        builtin_type_info(ancestor).is_some_and(|ancestor_info| {
+            ancestor_info.roles.iter().any(|candidate| {
+                candidate
+                    .split_once('[')
+                    .map(|(base, _)| base)
+                    .unwrap_or(candidate)
+                    == role_base
+            })
+        })
+    })
+}
+
 /// `builtin_type_info(name).mro`, interned to `Symbol`s once per process.
 ///
 /// The `Arc` is cloned, not rebuilt: a caller that hands the chain straight back

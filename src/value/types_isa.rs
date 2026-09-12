@@ -424,6 +424,22 @@ impl Value {
     /// wrapper views (Scalar, ContainerRef, forced LazyThunk, HashEntryRef,
     /// VarRef), so these arms match `self.view()` directly.
     fn does_role_hierarchy(&self, role_name: &str) -> bool {
+        let catalog_type = match self.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            ValueView::Promise(_) => Some("Promise".to_string()),
+            ValueView::Channel(_) => Some("Channel".to_string()),
+            _ => None,
+        };
+        if role_name == "Awaitable"
+            && let Some(catalog_type) = catalog_type
+            && crate::builtins::builtin_type_catalog::builtin_type_has_role(
+                &catalog_type,
+                role_name,
+            )
+        {
+            return true;
+        }
         match role_name {
             "Numeric" => matches!(
                 self.view(),

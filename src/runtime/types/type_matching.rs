@@ -1193,6 +1193,13 @@ impl Interpreter {
         if resolved_constraint.is_some() && value.does_check(effective_constraint) {
             return true;
         }
+        // Builtin roles such as Awaitable are represented by the builtin type
+        // catalog rather than a registered RoleDef. Let the value-level role
+        // check consume that same catalog for builtin type objects and native
+        // Promise/Channel values.
+        if effective_constraint == "Awaitable" && value.does_check(effective_constraint) {
+            return true;
+        }
         // Type-object checks: Package values should respect declared class/role ancestry.
         if let ValueView::Package(package_name) = value.view() {
             if Self::type_matches(constraint, &package_name.resolve()) {
