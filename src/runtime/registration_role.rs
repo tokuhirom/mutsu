@@ -416,6 +416,7 @@ impl Interpreter {
             // `RoleDef::decl_file`.
             decl_file: self.current_source_file(),
             deferred_custom_traits: Vec::new(),
+            pending_param_type_checks: Vec::new(),
         };
         let mut cx = RoleDeclCx {
             name,

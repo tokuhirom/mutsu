@@ -86,6 +86,37 @@ pub(crate) struct RoleDef {
     pub(crate) decl_file: Option<String>,
     /// Unknown lowercase trait names deferred for custom `trait_mod:<is>` dispatch.
     pub(crate) deferred_custom_traits: Vec<String>,
+    /// Role-method parameter type constraints that `role_body_method_decl`
+    /// accepted optimistically at registration time because the role body
+    /// has a `use` of a module not yet loaded (the module MIGHT supply the
+    /// type) -- see the long comment on that check in
+    /// `registration_role_method.rs`. Re-validated by
+    /// `compose_role_into_class` once this role's own deferred body (which
+    /// runs its `use` statements) has actually executed: a name that still
+    /// does not resolve is a genuine typo, not a not-yet-loaded type, and is
+    /// reported as `X::Parameter::InvalidType` instead of silently
+    /// vanishing along with the method that named it (#8083).
+    pub(crate) pending_param_type_checks: Vec<PendingRoleParamTypeCheck>,
+}
+
+/// One entry of [`RoleDef::pending_param_type_checks`]: a role-method
+/// parameter type constraint whose resolvability could not be decided at
+/// role-registration time because a module the role body `use`s had not
+/// loaded yet.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingRoleParamTypeCheck {
+    /// The constraint exactly as written (e.g. `TotallyBogusTypeName:U`),
+    /// used verbatim in the `X::Parameter::InvalidType` message if the
+    /// re-check still fails.
+    pub(crate) tc: String,
+    /// `tc` with any definedness smiley, coercion, and parameterization
+    /// stripped -- the name actually looked up in the type registry.
+    pub(crate) tc_base: String,
+    /// Enclosing-package prefixes of the declaring role, tried against
+    /// `tc_base` the same way `role_body_method_decl` tries them the first
+    /// time (a sibling type declared in an enclosing package may only now
+    /// be visible too).
+    pub(crate) enclosing_prefixes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
