@@ -126,8 +126,8 @@ impl Interpreter {
     pub(super) fn try_resolve_named_to_pattern(
         &mut self,
         atom: &RegexAtom,
-        pkg: &str,
-    ) -> Option<(std::sync::Arc<RegexPattern>, String)> {
+        pkg: Symbol,
+    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol)> {
         let RegexAtom::Named(name) = atom else {
             return None;
         };
@@ -143,7 +143,7 @@ impl Interpreter {
             return None;
         }
         let (parsed, sub_pkg, _sym_key) = &candidates[0];
-        Some((std::sync::Arc::clone(parsed), sub_pkg.clone()))
+        Some((std::sync::Arc::clone(parsed), *sub_pkg))
     }
 
     /// A regex `:my $var = EXPR;` — wherever it appears in the pattern, not
@@ -229,7 +229,7 @@ impl Interpreter {
         parsed: &RegexPattern,
         text: &str,
     ) -> Option<RegexCaptures> {
-        let pkg = self.current_package();
+        let pkg = self.current_package_sym();
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
@@ -244,7 +244,7 @@ impl Interpreter {
             let orig_len = orig_chars.len();
             if stripped_parsed.anchor_start {
                 return self
-                    .regex_match_end_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, &pkg)
+                    .regex_match_end_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, pkg)
                     .map(|(end, mut caps)| {
                         caps.from = caps.capture_start.unwrap_or(0);
                         caps.to = caps.capture_end.unwrap_or(end);
@@ -258,7 +258,7 @@ impl Interpreter {
                     &stripped_parsed,
                     &stripped_chars,
                     start,
-                    &pkg,
+                    pkg,
                 ) {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
@@ -292,7 +292,7 @@ impl Interpreter {
 
             if folded_parsed.anchor_start {
                 return self
-                    .regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, 0, &pkg)
+                    .regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, 0, pkg)
                     .and_then(|(end, mut caps)| {
                         let end_pos = caps.capture_end.unwrap_or(end);
                         if !is_fold_boundary(end_pos) {
@@ -310,12 +310,9 @@ impl Interpreter {
                 if !is_fold_boundary(start) {
                     continue;
                 }
-                if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
-                    &folded_parsed,
-                    &folded_chars,
-                    start,
-                    &pkg,
-                ) {
+                if let Some((end, mut caps)) =
+                    self.regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, start, pkg)
+                {
                     let end_pos = caps.capture_end.unwrap_or(end);
                     // Only accept matches that end at fold boundaries
                     if !is_fold_boundary(end_pos) {
@@ -334,7 +331,7 @@ impl Interpreter {
         let chars = orig_chars;
         if parsed.anchor_start {
             return self
-                .regex_match_end_from_caps_in_pkg(parsed, chars, 0, &pkg)
+                .regex_match_end_from_caps_in_pkg(parsed, chars, 0, pkg)
                 .map(|(end, mut caps)| {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
@@ -344,7 +341,7 @@ impl Interpreter {
         }
         for start in 0..=chars.len() {
             if let Some((end, mut caps)) =
-                self.regex_match_end_from_caps_in_pkg(parsed, chars, start, &pkg)
+                self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
@@ -384,11 +381,11 @@ impl Interpreter {
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(
                 &spec,
-                &self.current_package(),
+                self.current_package_sym(),
                 &arg_values,
             );
             // Use LTM: compute declarative prefix match length for each candidate
-            let filtered: Vec<(String, String, Option<String>)> = candidates
+            let filtered: Vec<(String, Symbol, Option<String>)> = candidates
                 .into_iter()
                 .filter(|(sub_pat, _, _)| *sub_pat != pattern)
                 .collect();
@@ -403,7 +400,7 @@ impl Interpreter {
                 // package, not the caller's (`URI::Query` invoking
                 // `<IETF::RFC_Grammar::URI::query>`).
                 let saved_pkg = self.current_package();
-                self.set_current_package(sub_pkg);
+                self.set_current_package(sub_pkg.as_str().to_owned());
                 // Ordering only — this loop already runs the real match below and
                 // filters on its result, so a `None` length just ranks last.
                 let prefix_match_len = self

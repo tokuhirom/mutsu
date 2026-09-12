@@ -77,7 +77,7 @@ impl Interpreter {
         token: &RegexToken,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
         pattern: &RegexPattern,
         store: &mut CapStore,
         on: &mut AtomCandidateCont<'_>,
@@ -173,7 +173,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         cur: usize,
-        pkg: &str,
+        pkg: Symbol,
         store: &mut CapStore,
         on: &mut AtomCandidateCont<'_>,
     ) -> bool {
@@ -237,7 +237,7 @@ impl Interpreter {
         token: &RegexToken,
         chars: &[char],
         cur: usize,
-        pkg: &str,
+        pkg: Symbol,
         store: &mut CapStore,
         on: &mut AtomCandidateCont<'_>,
     ) -> bool {

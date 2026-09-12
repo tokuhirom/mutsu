@@ -615,7 +615,8 @@ impl Interpreter {
         if pkg.is_empty() {
             return None;
         }
-        let candidates = self.resolve_token_patterns_static_in_pkg(name, &pkg);
+        let candidates =
+            self.resolve_token_patterns_static_in_pkg(name, crate::symbol::Symbol::intern(&pkg));
         if candidates.is_empty() {
             return None;
         }
@@ -1108,7 +1109,14 @@ impl Interpreter {
         };
         let mut interp = Interpreter {
             env: self.env.clone(),
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);

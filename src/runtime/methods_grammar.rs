@@ -538,8 +538,11 @@ impl Interpreter {
         // in. They must be in the dynamic scope before the rule's own pattern is
         // built, because that pattern may interpolate them — and they stay there
         // for the whole parse, so every subrule sees them.
-        let saved_start_rule_dynvars =
-            self.install_subrule_dynamic_params(&start_rule, package_name, &rule_args);
+        let saved_start_rule_dynvars = self.install_subrule_dynamic_params(
+            &start_rule,
+            crate::symbol::Symbol::intern(package_name),
+            &rule_args,
+        );
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
             let candidates =
@@ -1750,8 +1753,8 @@ impl Interpreter {
             ..(*parsed).clone()
         };
         let chars: Vec<char> = text.chars().collect();
-        let pkg = self.current_package();
-        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, &pkg)
+        let pkg = self.current_package_sym();
+        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, pkg)
             .into_iter()
             .map(|(end, _)| end)
             .max()

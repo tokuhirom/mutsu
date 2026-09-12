@@ -121,7 +121,14 @@ impl Interpreter {
         let stmts = self.parse_regex_code_cached(code)?;
         let mut interp = Interpreter {
             env,
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);
@@ -486,7 +493,7 @@ impl Interpreter {
         // `in_regex_code_block` redirects the write itself back onto the bare
         // lexical in `env` — strip the package so the two names agree (the same
         // adjustment the deferred class/role body drain in `run.rs` makes).
-        let pkg = self.current_package();
+        let pkg = self.current_package_sym();
         let pkg_prefix = if pkg == "GLOBAL" {
             String::new()
         } else {
@@ -620,7 +627,14 @@ impl Interpreter {
         };
         let mut scratch = Interpreter {
             env: self.env.clone(),
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut scratch);
@@ -744,7 +758,14 @@ impl Interpreter {
         );
         let mut scratch = Interpreter {
             env: self.env.clone(),
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut scratch);

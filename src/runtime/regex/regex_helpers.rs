@@ -897,6 +897,13 @@ pub(super) struct NamedRegexLookupSpec {
     /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
     pub(super) lookup_sym: crate::symbol::Symbol,
     pub(super) capture_name: Option<String>,
+    /// [`Self::capture_name`] interned, `None` when the atom carries no alias.
+    /// Interned with the spec (once per distinct `<subrule>` atom) rather than
+    /// per candidate: `build_named_candidates_from_inner` files every matched
+    /// subrule under this name, so interning it there re-hashed the same string
+    /// once per capture -- 37,012 interns on a 60-row YAML parse
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    pub(super) capture_sym: Option<crate::symbol::Symbol>,
     pub(super) arg_exprs: Vec<String>,
     /// When true, the alias replaces the original capture name (dot-call alias).
     /// `<foo=.alpha>` sets this to true; `<foo=alpha>` leaves it false.

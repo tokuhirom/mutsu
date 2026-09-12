@@ -54,7 +54,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         store: &mut CapStore,
-        pkg: &str,
+        pkg: Symbol,
         ratchet: bool,
         on: &mut AtomCandidateCont<'_>,
     ) -> Option<bool> {
@@ -97,7 +97,7 @@ impl Interpreter {
             return decline(StreamDecline::IgnoreMark);
         }
         let parsed = std::sync::Arc::clone(parsed);
-        let sub_pkg = sub_pkg.clone();
+        let sub_pkg = *sub_pkg;
 
         let outer_seed_read = super::regex_lr_state::lr_begin_activation(&lr_key);
         // Ends are deduplicated the way the eager arm does it: the first (=
@@ -152,7 +152,7 @@ impl Interpreter {
                 &parsed,
                 chars,
                 pos,
-                &sub_pkg,
+                sub_pkg,
                 false,
                 false,
                 &mut MatchSink::Cont(&mut cont),

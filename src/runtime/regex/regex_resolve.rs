@@ -265,7 +265,7 @@ impl Interpreter {
         &self,
         scope: &str,
         name: &str,
-        out: &mut Vec<(String, String, Option<String>)>,
+        out: &mut Vec<(String, Symbol, Option<String>)>,
         seen: &mut std::collections::HashSet<Option<String>>,
     ) {
         // Dedupe against ancestors only: multi candidates within ONE scope
@@ -290,13 +290,13 @@ impl Interpreter {
         &self,
         scope: &str,
         name: &str,
-        out: &mut Vec<(String, String, Option<String>)>,
+        out: &mut Vec<(String, Symbol, Option<String>)>,
     ) {
         let exact_key = format!("{scope}::{name}");
         if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
-                    out.push((p, def.package.resolve(), None));
+                    out.push((p, def.package, None));
                 }
             }
         }
@@ -305,7 +305,7 @@ impl Interpreter {
             if let Some(defs) = self.registry().token_defs.get(&key) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
-                        out.push((p, def.package.resolve(), sym_val.clone()));
+                        out.push((p, def.package, sym_val.clone()));
                     }
                 }
             }
@@ -317,7 +317,7 @@ impl Interpreter {
     /// `YAMLish::Schema::Core::element`, so the name as written has to be tried
     /// under the matching package and the current package (and their enclosing
     /// scopes) before it counts as unresolvable.
-    pub(super) fn qualified_name_scopes(&self, pkg: &str) -> Vec<String> {
+    pub(super) fn qualified_name_scopes(&self, pkg: Symbol) -> Vec<String> {
         let mut scopes: Vec<String> = Vec::new();
         for base in [pkg.to_string(), self.current_package()] {
             let mut scope = base;
@@ -337,8 +337,8 @@ impl Interpreter {
     pub(crate) fn resolve_token_patterns_static_in_pkg(
         &self,
         name: &str,
-        pkg: &str,
-    ) -> Vec<(String, String, Option<String>)> {
+        pkg: Symbol,
+    ) -> Vec<(String, Symbol, Option<String>)> {
         if name.contains("::") {
             let mut out = self.collect_qualified_token_patterns(name);
             for scope in self.qualified_name_scopes(pkg) {
@@ -356,7 +356,7 @@ impl Interpreter {
     fn collect_qualified_token_patterns(
         &self,
         name: &str,
-    ) -> Vec<(String, String, Option<String>)> {
+    ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
         self.collect_token_patterns_for_scope(
             &name[..name.rfind("::").unwrap()],
@@ -383,7 +383,7 @@ impl Interpreter {
             // qualified package so nested subrule lookups dispatch
             // virtually through the receiver's MRO (Liskov substitution).
             for entry in out.iter_mut().skip(own) {
-                entry.1 = qual_pkg.to_string();
+                entry.1 = Symbol::intern(qual_pkg);
             }
         }
         out
@@ -392,8 +392,8 @@ impl Interpreter {
     fn resolve_unqualified_token_patterns_in_pkg(
         &self,
         name: &str,
-        pkg: &str,
-    ) -> Vec<(String, String, Option<String>)> {
+        pkg: Symbol,
+    ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
         if !pkg.is_empty() {
             // Walk the MRO of pkg, merging proto candidates from every class:
@@ -402,8 +402,8 @@ impl Interpreter {
             let mut seen: std::collections::HashSet<Option<String>> =
                 std::collections::HashSet::new();
             let mut own = None;
-            for scope in self.mro_readonly(pkg) {
-                if scope != pkg && own.is_none() {
+            for scope in self.mro_readonly(pkg.as_str()) {
+                if scope.as_str() != pkg.as_str() && own.is_none() {
                     own = Some(out.len());
                 }
                 self.collect_token_patterns_for_scope_dedup(&scope, name, &mut out, &mut seen);
@@ -411,7 +411,7 @@ impl Interpreter {
             // Ancestor entries dispatch virtually through the receiver package.
             let own = own.unwrap_or(out.len());
             for entry in out.iter_mut().skip(own) {
-                entry.1 = pkg.to_string();
+                entry.1 = pkg;
             }
             if !out.is_empty() {
                 return out;
@@ -613,6 +613,7 @@ impl Interpreter {
             token_lookup,
             lookup_name,
             lookup_sym,
+            capture_sym: capture_name.as_deref().map(crate::symbol::Symbol::intern),
             capture_name,
             arg_exprs,
             alias_replaces_original,
@@ -818,7 +819,14 @@ impl Interpreter {
         super::regex_arg_purity::note_opaque_read();
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);

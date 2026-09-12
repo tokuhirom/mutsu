@@ -149,7 +149,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> (Option<usize>, bool) {
         let saved_mode = LTM_DECLARATIVE_MODE.with(|f| f.replace(true));
         let saved_terminated = LTM_PREFIX_TERMINATED.with(|f| f.replace(false));
@@ -185,7 +185,7 @@ impl Interpreter {
         alternatives: &[RegexPattern],
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
         LTM_SEQALT_EPSILON.with(|f| f.set(true));
         let mut out = vec![(pos, RegexCaptures::default())];
@@ -223,7 +223,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
         seen: &mut HashSet<String>,
         depth: usize,
     ) -> usize {
@@ -242,7 +242,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
         seen: &mut HashSet<String>,
         depth: usize,
     ) -> (usize, bool) {
@@ -343,7 +343,7 @@ impl Interpreter {
                             cand_pattern,
                             chars,
                             pos + acc,
-                            cand_pkg,
+                            *cand_pkg,
                             seen,
                             depth + 1,
                         );
@@ -378,7 +378,7 @@ impl Interpreter {
         alt: &RegexPattern,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> (usize, usize) {
         let (plen, _stopped) = self.ltm_prefix_len_at(alt, chars, pos, pkg);
         let mut seen = HashSet::new();
@@ -412,13 +412,13 @@ impl Interpreter {
             return (plen.map(|p| (p, 0)), stopped);
         };
         let chars: Vec<char> = text.chars().collect();
-        let pkg = self.current_package();
-        let (plen, stopped) = self.ltm_prefix_len_at(&parsed, &chars, 0, &pkg);
+        let pkg = self.current_package_sym();
+        let (plen, stopped) = self.ltm_prefix_len_at(&parsed, &chars, 0, pkg);
         let Some(plen) = plen else {
             return (None, stopped);
         };
         let mut seen = HashSet::new();
-        let litlen = self.ltm_litlen_at(&parsed, &chars, 0, &pkg, &mut seen, 0);
+        let litlen = self.ltm_litlen_at(&parsed, &chars, 0, pkg, &mut seen, 0);
         (Some((plen, litlen)), stopped)
     }
 
@@ -431,7 +431,7 @@ impl Interpreter {
         alternatives: &[RegexPattern],
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> (usize, RegexCaptures) {
         LTM_SEQALT_EPSILON.with(|f| f.set(true));
         let mut best: (usize, RegexCaptures) = (pos, RegexCaptures::default());
@@ -468,7 +468,7 @@ mod tests {
             .parse_regex_with_mode(pattern, RegexParseMode::Match)
             .expect("pattern should parse");
         let chars: Vec<char> = text.chars().collect();
-        interp.ltm_prefix_len_at(&parsed, &chars, 0, "")
+        interp.ltm_prefix_len_at(&parsed, &chars, 0, Symbol::intern(""))
     }
 
     #[test]
@@ -647,7 +647,7 @@ mod tests {
             .parse_regex_with_mode("<item>", RegexParseMode::Match)
             .expect("outer pattern should parse");
         let chars: Vec<char> = "a   b".chars().collect();
-        let (len, stopped) = interp.ltm_prefix_len_at(&outer, &chars, 0, "G");
+        let (len, stopped) = interp.ltm_prefix_len_at(&outer, &chars, 0, Symbol::intern("G"));
         assert!(stopped);
         assert_eq!(len, Some(1));
     }
@@ -661,7 +661,7 @@ mod tests {
             .expect("pattern should parse");
         let chars: Vec<char> = text.chars().collect();
         let mut seen = HashSet::new();
-        interp.ltm_litlen_at(&parsed, &chars, 0, "", &mut seen, 0)
+        interp.ltm_litlen_at(&parsed, &chars, 0, Symbol::intern(""), &mut seen, 0)
     }
 
     #[test]
@@ -743,7 +743,7 @@ mod tests {
         ci_pattern.ignore_case = true;
         let chars: Vec<char> = "ABC".chars().collect();
         let mut seen = HashSet::new();
-        let len = interp.ltm_litlen_at(&ci_pattern, &chars, 0, "", &mut seen, 0);
+        let len = interp.ltm_litlen_at(&ci_pattern, &chars, 0, Symbol::intern(""), &mut seen, 0);
         assert_eq!(len, 3);
     }
 
@@ -758,7 +758,7 @@ mod tests {
             .expect("pattern should parse");
         let chars: Vec<char> = "abb".chars().collect();
         let mut seen = HashSet::new();
-        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, Symbol::intern("G"), &mut seen, 0);
         assert_eq!(len, 3);
     }
 
@@ -773,7 +773,7 @@ mod tests {
             .expect("pattern should parse");
         let chars: Vec<char> = "ab".chars().collect();
         let mut seen = HashSet::new();
-        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, Symbol::intern("G"), &mut seen, 0);
         assert_eq!(len, 1);
     }
 
@@ -793,7 +793,7 @@ mod tests {
         // Must terminate (not stack-overflow / infinite-loop) and return SOME
         // bounded length; the exact value is an implementation detail of
         // where the cycle guard cuts in, so only assert boundedness.
-        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, Symbol::intern("G"), &mut seen, 0);
         assert!(len <= chars.len());
     }
 }

@@ -35,7 +35,7 @@ impl Interpreter {
         capture_slots: usize,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
         // HIGHEST FIRST from the walk; reverse to LOWEST FIRST below.
         let inner_matches = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
@@ -83,7 +83,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         target_end: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<RegexCaptures> {
         for (end, caps) in self.regex_match_ends_from_caps_in_pkg(branch, chars, pos, pkg) {
             if end == target_end {
@@ -109,7 +109,7 @@ impl Interpreter {
         capture_slots: usize,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<RankedAlternationBranch> {
         let mut out = Vec::new();
         for alt in alts {
@@ -154,7 +154,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         self.regex_match_atom_all_with_capture_opts(
@@ -181,7 +181,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
@@ -209,7 +209,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
         subrule_first_only: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
@@ -642,7 +642,7 @@ impl Interpreter {
                         let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
                         for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
                             let (plen, stopped) =
-                                self.ltm_prefix_len_at(parsed, chars, pos, sub_pkg);
+                                self.ltm_prefix_len_at(parsed, chars, pos, *sub_pkg);
                             // ADR-0022 §4.1's contract: `(None, false)` is a sound
                             // "this candidate cannot match here" verdict and may
                             // filter; `(None, true)` only means the measurement was
@@ -652,7 +652,7 @@ impl Interpreter {
                             }
                             let mut seen = std::collections::HashSet::new();
                             let litlen =
-                                self.ltm_litlen_at(parsed, chars, pos, sub_pkg, &mut seen, 0);
+                                self.ltm_litlen_at(parsed, chars, pos, *sub_pkg, &mut seen, 0);
                             ranked.push((idx, (plen.unwrap_or(0), litlen)));
                         }
                         ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
@@ -665,7 +665,7 @@ impl Interpreter {
                             let (parsed, sub_pkg, sym_key) = &candidates[idx];
                             let sym_key = sym_key.clone();
                             let all_matches = self
-                                .subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+                                .subrule_candidate_ends(parsed, chars, pos, *sub_pkg, first_only);
                             if all_matches.is_empty() {
                                 continue;
                             }
@@ -687,7 +687,7 @@ impl Interpreter {
                     } else {
                         for (parsed, sub_pkg, sym_key) in candidates.iter() {
                             let all_matches = self
-                                .subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+                                .subrule_candidate_ends(parsed, chars, pos, *sub_pkg, first_only);
                             // all_matches: HIGHEST FIRST.
                             let matches_to_use: Vec<_> = if sym_key.is_some() {
                                 all_matches.into_iter().take(1).collect()
@@ -840,7 +840,7 @@ impl Interpreter {
         parsed: &RegexPattern,
         chars: &[char],
         pos: usize,
-        sub_pkg: &str,
+        sub_pkg: Symbol,
         first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         if first_only {
@@ -865,7 +865,7 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         // Only plain, argument-less identifier subrules dispatched against a real
         // grammar package. `<::>` indirection, char-class specs, and builtin
@@ -887,7 +887,7 @@ impl Interpreter {
         // already cover).
         let is_user_method = self
             .registry()
-            .user_method_overloads(pkg, &spec.lookup_name)
+            .user_method_overloads(pkg.as_str(), &spec.lookup_name)
             .is_some();
         if !is_user_method {
             return None;
@@ -909,7 +909,7 @@ impl Interpreter {
         cursor_attrs.insert("from", Value::int(pos as i64));
         cursor_attrs.insert("pos", Value::int(pos as i64));
         cursor_attrs.insert("to", Value::int(pos as i64));
-        let invocant = Value::make_instance(crate::symbol::Symbol::intern(pkg), cursor_attrs);
+        let invocant = Value::make_instance(pkg, cursor_attrs);
         let mut interp = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(pkg.to_string())),
@@ -1002,11 +1002,15 @@ impl Interpreter {
         let mut out = Vec::new();
         for (end, inner_caps) in inner_matches {
             let mut new_caps = RegexCaptures::default();
-            let capture_name = spec
-                .capture_name
-                .as_deref()
-                .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
-            if let Some(capture_name) = capture_name {
+            // The name this subrule's match is filed under, with its interned
+            // twin. Both come from the (memoized) spec, so filing a capture
+            // costs no intern -- see `NamedRegexLookupSpec::capture_sym`.
+            let capture = match (spec.capture_name.as_deref(), spec.capture_sym) {
+                (Some(name), Some(sym)) => Some((name, sym)),
+                _ if !spec.silent => Some((spec.lookup_name.as_str(), spec.lookup_sym)),
+                _ => None,
+            };
+            if let Some((capture_name, capture_sym)) = capture {
                 // Apply the subrule's own capture markers (`<(` / `)>`): a token
                 // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
                 // submatch to `67890`. They are already absolute, and `None` when
@@ -1064,7 +1068,7 @@ impl Interpreter {
                     also_under_original.then(|| std::sync::Arc::clone(&subcap));
                 new_caps
                     .named
-                    .entry(Symbol::intern(capture_name))
+                    .entry(capture_sym)
                     .or_default()
                     .nodes
                     .push(subcap);
@@ -1076,7 +1080,7 @@ impl Interpreter {
                 if let Some(orig_subcap) = shared_under_original {
                     new_caps
                         .named
-                        .entry(Symbol::intern(&spec.lookup_name))
+                        .entry(spec.lookup_sym)
                         .or_default()
                         .nodes
                         .push(orig_subcap);
