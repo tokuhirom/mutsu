@@ -494,6 +494,15 @@ pub(crate) fn stmt_list_with_mode(
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;
                 let context: String = r.chars().take(80).collect();
+                // Keep the *furthest* position any alternative reached, not
+                // this statement's start. `remaining_len` counts the
+                // unconsumed tail, so the deeper failure is the smaller one.
+                // Without this, a failure inside a block body was reported at
+                // the opening line of the enclosing `class`/`sub` — every
+                // nesting level overwrote the position with its own start, so
+                // a 1200-line module reported "at line 1" and named no
+                // construct at all (issue #7988).
+                let deepest = e.remaining_len.map_or(r.len(), |inner| inner.min(r.len()));
                 return Err(PError::raw(
                     format!(
                         "expected statement at line {} (after {} stmts): {} — near: {:?}",
@@ -502,7 +511,7 @@ pub(crate) fn stmt_list_with_mode(
                         e,
                         context
                     ),
-                    Some(r.len()),
+                    Some(deepest),
                 ));
             }
         }
