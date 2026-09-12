@@ -95,6 +95,10 @@ impl Interpreter {
                 let right_val = right_vals.first().cloned().unwrap_or(Value::NIL);
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
+                } else if let Some(result) =
+                    self.core_unicode_arith_alias_infix(&name, &left_val, &right_val)?
+                {
+                    result
                 } else {
                     self.call_infix_fallback(
                         lookup_name.as_ref(),
@@ -288,6 +292,44 @@ impl Interpreter {
         self.stack.push(value);
         *ip = rhs_end;
         Ok(())
+    }
+
+    /// The CORE candidate of `×` (U+00D7) / `÷` (U+00F7): the very arithmetic
+    /// `infix:<*>` / `infix:</>` performs, strict numeric coercion included.
+    ///
+    /// rakudo makes the Unicode spellings aliases of the ASCII routines
+    /// (`&infix:<×> === &infix:<*>`), so a user `multi infix:<×>` adds a
+    /// candidate in front of that shared core set rather than replacing it:
+    /// when the user candidate declines (a `where` clause that does not hold,
+    /// as in Math::Vector's 3-dimensions-only `×`), the core candidate runs and
+    /// an operand with no numeric coercion throws `Cannot resolve caller
+    /// Numeric(...)`. mutsu diverts `×` off `OpCode::Mul` as soon as any user
+    /// `infix:<×>` is declared (`parse_multiplicative_op`), so the generic
+    /// `call_infix_fallback` reduction answered for it instead — and that runs
+    /// the *lenient* `builtins::arith_*`, which read an object as 0 and turned
+    /// a `dies-ok` into a silent `Int`.
+    ///
+    /// `Some` means this was one of those two spellings and the core candidate
+    /// has answered (or thrown); `None` leaves every other operator to the
+    /// generic fallback.
+    fn core_unicode_arith_alias_infix(
+        &mut self,
+        name: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let multiply = match name {
+            "\u{00D7}" => true,
+            "\u{00F7}" => false,
+            _ => return Ok(None),
+        };
+        let (l, r) = self.coerce_numeric_bridge_pair_strict(left.clone(), right.clone())?;
+        let result = if multiply {
+            crate::builtins::arith_mul(l, r)
+        } else {
+            crate::builtins::arith_div(l, r)?
+        };
+        Ok(Some(result))
     }
 
     fn call_infix_fallback(

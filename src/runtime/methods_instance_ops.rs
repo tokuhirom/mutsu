@@ -177,6 +177,24 @@ impl Interpreter {
         if !((method == "raku" || method == "perl" || gist_default) && args.is_empty()) {
             return None;
         }
+        // `.perl` is rakudo's deprecated spelling of `.raku` on `Mu`, and it is
+        // implemented by *calling* `self.raku` — so a class that overrides only
+        // `raku` still renders through that override under either name. mutsu
+        // resolves the two names independently, so reaching this default
+        // renderer under `perl` while the class has its own `raku` would render
+        // the attribute-dump form instead of the user's text (Math::Vector's
+        // `multi method raku()` renders nested vectors via `@.components.map({.perl})`,
+        // which round-trips through `EVAL` in rakudo and did not here).
+        // Gated on the class NOT declaring `perl` itself, because
+        // `native_any_base_next_candidate` reaches this default deliberately when
+        // a `callsame` inside a user override exhausts the MRO; an explicit
+        // `perl` override's `callsame` must still get the default rendering.
+        if method == "perl"
+            && self.has_user_method(&class_name.resolve(), "raku")
+            && !self.has_user_method(&class_name.resolve(), "perl")
+        {
+            return Some(self.call_method_with_values(target.clone(), "raku", vec![]));
+        }
         // An `is Str` subclass delegates `.raku`/`.gist` to its string payload,
         // so `class Foo is Str {}; Foo.new(:value("hi")).raku` is `"hi"` —
         // mirrors the `is Array`/`is Hash` backing-storage delegation below.

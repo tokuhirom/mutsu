@@ -492,11 +492,20 @@ pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAss
     // the ASCII ops: `×=` (U+00D7) == `*=`, `÷=` (U+00F7) == `/=`. Raku accepts
     // these; the multiplicative parser leaves `×`/`÷` before `=` alone so the
     // lvalue reaches here (mirroring the `*=` guard).
-    for (sym, op) in [
-        ("\u{00D7}=", CompoundAssignOp::Mul),
-        ("\u{00F7}=", CompoundAssignOp::Div),
+    //
+    // A user-declared `infix:<×>`/`infix:<÷>` takes the alias back, exactly as
+    // it does for the bare operator in `parse_multiplicative_op`: rakudo makes
+    // `×=` the assignment metaop over `infix:<×>` *as spelled*, so it reaches
+    // the user's candidate while `*=` (a different name) does not. Declining
+    // here hands the spelling to `parse_custom_compound_assign_op`, which
+    // already builds that metaop for any user symbol infix (`⋅=`).
+    for (sym, op, bare) in [
+        ("\u{00D7}=", CompoundAssignOp::Mul, "\u{00D7}"),
+        ("\u{00F7}=", CompoundAssignOp::Div, "\u{00F7}"),
     ] {
-        if let Some(stripped) = input.strip_prefix(sym) {
+        if let Some(stripped) = input.strip_prefix(sym)
+            && !crate::parser::stmt::simple::is_user_defined_infix(bare)
+        {
             return Some((stripped, op));
         }
     }

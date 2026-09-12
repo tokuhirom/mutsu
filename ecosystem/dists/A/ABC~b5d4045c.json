@@ -18,7 +18,7 @@
         "nok": 37,
         "ok": 238,
         "plan": 275,
-        "secs": 0.83,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 275,
         "plan": 275,
-        "secs": 2.13,
+        "secs": 4.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 0.24,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.78,
+        "secs": 7.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.28,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.67,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.15,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 1.4,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 15,
         "plan": null,
-        "secs": 0.29,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 148,
         "plan": 148,
-        "secs": 9.37,
+        "secs": 8.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +130,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.11,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,6 +140,29 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$duration'; expected ABC::Duration but got Nil (Nil)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-stringify.t",
+      "raku": {
+        "nok": 0,
+        "ok": 126,
+        "plan": 126,
         "secs": 0.71,
         "skip": 0,
         "todo": 0,
@@ -153,30 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/07-stringify.t",
-      "raku": {
-        "nok": 0,
-        "ok": 126,
-        "plan": 126,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$duration'; expected ABC::Duration but got Nil (Nil)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.42,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -186,7 +186,7 @@
         "nok": 0,
         "ok": 79,
         "plan": 79,
-        "secs": 1.62,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -199,7 +199,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.33,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,30 +209,30 @@
         "nok": 0,
         "ok": 82,
         "plan": 82,
-        "secs": 1.02,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Runtime error: Unsupported use of -> as postfix. In Raku please use: either . to call a method, or whitespace to delimit a pointy block.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.06,
+        "first_failure": "Middle C is correct",
+        "nok": 10,
+        "ok": 109,
+        "plan": 119,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/10-utils.t",
       "raku": {
         "nok": 0,
         "ok": 119,
         "plan": 119,
-        "secs": 0.75,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -267,8 +267,8 @@
     "attempts": 3,
     "date": "2026-09-11",
     "harness": 1,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "host": "linux-x86_64",
+    "mutsu_commit": "7807eb50",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -283,7 +283,7 @@
   "totals": {
     "baseline_assertions": 904,
     "baseline_files": 10,
-    "mutsu_assertions": 320,
+    "mutsu_assertions": 429,
     "parity_files": 3,
     "regressed_files": 7
   },

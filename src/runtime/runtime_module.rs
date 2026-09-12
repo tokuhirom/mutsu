@@ -700,7 +700,13 @@ impl Interpreter {
                     }
                     let ks = k.resolve();
                     if let Some(name) = ks.strip_prefix("GLOBAL::") {
-                        let base = name.split('/').next().unwrap_or(name);
+                        // The arity suffix, NOT the first `/`: `infix:</>` carries
+                        // a `/` of its own, and splitting at it spelled the name
+                        // `infix:<`, which no `exported_op_names` entry can match —
+                        // so an exported `multi infix:</>` was reaped here right
+                        // after declaring it (Math::Vector's `$vector / $scalar`).
+                        let base =
+                            crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(name);
                         // Only remove operator subs (infix:<...>, prefix:<...>, etc.)
                         base.contains(":<") && !exported_op_names.contains(base)
                     } else {
@@ -754,7 +760,8 @@ impl Interpreter {
                         let Some(name) = ks.strip_prefix("GLOBAL::") else {
                             return false;
                         };
-                        let base = name.split('/').next().unwrap_or(name);
+                        let base =
+                            crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(name);
                         !exported_names.contains(base) && Self::is_builtin_function(base)
                     })
                     .copied()

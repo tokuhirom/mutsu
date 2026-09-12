@@ -1630,6 +1630,38 @@ impl Interpreter {
                     result
                 }
             }
+            // A Range subscript on an instance is a SLICE of `AT-POS` reads, one
+            // per index the range names: `$vec[1..2]` is `($vec[1], $vec[2])`.
+            // The index list is fully determined by the range, so — unlike the
+            // Whatever arms below — this needs nothing from the class beyond the
+            // `AT-POS` the single-index arm already calls, and therefore applies
+            // to every `does Positional` class (Math::Vector's
+            // `has @.components handles <AT-POS>`, whose `$v[1..2]` answered Nil
+            // because only the comma-list index arm below knew how to slice).
+            // An unbounded end (`$v[1..*]`) would need `.elems`, so it is left to
+            // the arms below.
+            (ValueView::Instance { .. }, _)
+                if is_positional
+                    && let Some((start, end, _, excl_end)) = range_params(&index)
+                    && !Self::range_end_is_unbounded(end) =>
+            {
+                let last = if excl_end { end - 1 } else { end };
+                let mut results = Vec::new();
+                for i in start.max(0)..=last {
+                    results.push(
+                        self.try_compiled_method_or_interpret(
+                            target.clone(),
+                            "AT-POS",
+                            vec![Value::int(i)],
+                        )
+                        .unwrap_or(Value::NIL),
+                    );
+                }
+                Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                    crate::value::ArrayKind::List,
+                )
+            }
             // Whatever slice on an `is Array` / `is List` subclass instance
             // (`class MA is Array {}; $m[*]`, `Cro::HTTP::MultiValue is List`).
             // Its elements live in the backing `__mutsu_array_storage`, and `*`
