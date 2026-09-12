@@ -62,14 +62,25 @@ correct expression of "consult my fallback once the chain has missed" puts work
 tier. Measured at **+1 591 instructions per iteration**, against the 2 926 that
 dropping `contains_key_sym` had just saved.
 
-Spelling the chain walk out as an explicit loop, and moving the fallback onto
-its own `#[cold]` pass gated by a `chain_has_fallback` latch, keeps the chain
-cost exactly what it was. The latch is a one-way flag maintained by
-`scoped_child` (inherits the parent's) and `set_capture_fallback` (sets it);
-every env built flat has it false, because `flattened` and the `filtered_flat*`
-family fold any fallback into the map they return.
+Spelling the chain walk out as an explicit loop fixes that, and a
+`chain_has_fallback` latch keeps the question "is there a capture below me?"
+free: it is a one-way flag maintained by `scoped_child` (inherits the parent's)
+and `set_capture_fallback` (sets it), and every env built flat has it false,
+because `flattened` and the `filtered_flat*` family fold any fallback into the
+map they return.
 
-The same lesson applied a second time: gating `flattened` and `filtered_flat*`
+**Where the fallback pass goes then costs more than the fallback does.** Putting
+it behind that latch as a `#[cold]` *second* walk of the chain, entered once the
+main walk has missed, is the obvious shape — a capture is rare, so keep it off
+the fast path — and it cost **+426 on the floor**, worse than the merge it
+replaces. The reason is that inside a closure body the latch is *always* on, and
+a **miss** is the common outcome there: every speculative metadata probe walked
+the chain twice for it. What ships collects the fallbacks during the same walk,
+in a separate copy of the loop selected by the latch at the top — so the common
+path still pays no per-tier test, and only a closure frame runs the second copy.
+That brings the floor to +108.
+
+The same lesson applied a third time: gating `flattened` and `filtered_flat*`
 on a chain *walk* rather than the latch cost **0.8% of
 `benchmarks/bench-ctor.raku`** on its own — those run per closure creation, and
 a walk that finds nothing is pure loss.
@@ -125,17 +136,6 @@ was a per-call probe loop that provably did nothing, and ADR-0092 §2 is the
 shape it should have had. An earlier revision of this change measured -2.0% on
 the floor against `main` at `e552c505`; that number is gone, taken by #8079, not
 by anything here.
-
-### The one-walk lesson
-
-A first version put the fallback on its own `#[cold]` second pass over the
-chain, entered behind the `chain_has_fallback` latch after the main walk missed.
-That cost **+426 on the floor** — worse than the merge it replaced — because
-inside a closure body the latch is always on and a *miss* is the common outcome
-(every speculative metadata probe walks the chain twice). Collecting the
-fallbacks during the same walk, in a separate copy of the loop selected by the
-latch at the top, brings it to +108. The common path still pays no per-tier
-test; only the closure frame runs the second copy.
 
 ## What is left at this site
 
