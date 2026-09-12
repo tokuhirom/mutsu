@@ -590,6 +590,7 @@ impl Compiler {
             param_itemize_on_bind: Vec::new(),
             param_const_fills: Vec::new(),
             light_required_positionals: None,
+            light_full_arity_only: false,
             return_fast_type: None,
             // The declaring package, matching the package component of this
             // function's `compiled_fns` key (built from `key_package` above).

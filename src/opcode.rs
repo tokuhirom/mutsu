@@ -9189,6 +9189,26 @@ pub(crate) struct CompiledFunction {
     /// stay off the routine entirely, exactly as they did before defaults were
     /// admitted at all.
     pub(crate) light_required_positionals: Option<usize>,
+    /// True when the light paths may serve this routine, but **only for a call
+    /// that supplies every positional**.
+    ///
+    /// [`Self::light_required_positionals`] answers `None` for a signature with
+    /// an optional parameter the const-fill table cannot represent — a
+    /// non-constant default (`$y = $x + 1`), a container literal (`$y = []`),
+    /// an arbitrary expression. That verdict is entirely about what the light
+    /// bind would have to *produce for an omitted parameter*, yet it forfeited
+    /// the routine on **every** call: `f(1, 2)` re-resolved `f` by name and ran
+    /// the whole general bind for a default it never evaluated (#7581).
+    ///
+    /// A call that supplies every positional consults no default, so none of
+    /// that verdict applies to it. This flag says so. It is paired at each
+    /// dispatch site with an exact arity test against
+    /// [`Self::param_local_slots`]; a call short of full arity still falls
+    /// through to the general binder, which is the only thing that can evaluate
+    /// the default. The flag is set only where the precompute actually ran, so
+    /// a hand-built chunk (whose `light_required_positionals` is `None` because
+    /// nothing computed it) is not admitted by it.
+    pub(crate) light_full_arity_only: bool,
     /// The declared return type's precomputed plan (see [`FastParamCheck`]).
     /// `None` when there is no return type, or when it is not one the light
     /// return check handles by tag.
@@ -9557,6 +9577,11 @@ impl CompiledFunction {
             .collect();
         self.light_required_positionals =
             Self::compute_light_required_positionals(&self.param_defs, &self.param_const_fills);
+        // Set here, not at construction, so it means "the precompute ran and
+        // could not reduce every optional to a constant" rather than the
+        // weaker "nobody computed it" — see the field's doc comment.
+        self.light_full_arity_only =
+            self.light_required_positionals.is_none() && !self.param_defs.is_empty();
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -9659,6 +9684,7 @@ mod compiled_fns_identity {
             param_itemize_on_bind: Vec::new(),
             param_const_fills: Vec::new(),
             light_required_positionals: None,
+            light_full_arity_only: false,
             return_fast_type: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,
