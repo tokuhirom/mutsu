@@ -295,6 +295,9 @@ impl Interpreter {
                 .and_then(|v| v.with_deref(crate::runtime::utils::shaped_array_shape))
                 .or_else(|| {
                     // Also check declared shape metadata for multi-dim
+                    if !crate::env::shaped_array_dims_possible() {
+                        return None;
+                    }
                     let key = format!("__mutsu_shaped_array_dims::{}", name);
                     self.env().get(&key).and_then(|v| {
                         if let ValueView::Array(dims, ..) = v.view() {

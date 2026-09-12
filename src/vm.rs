@@ -258,6 +258,7 @@ mod vm_value_helpers;
 mod vm_var_assign_coerce;
 mod vm_var_assign_computed_attr;
 mod vm_var_assign_element;
+mod vm_var_assign_element_fast;
 mod vm_var_assign_index_named;
 mod vm_var_assign_local;
 mod vm_var_assign_local_get;

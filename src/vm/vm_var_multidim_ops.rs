@@ -943,8 +943,12 @@ impl Interpreter {
         }
 
         // Check if target is a shaped array - use bounds-checked assignment
-        let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
-        let has_declared_shape = self.env().contains_key(&declared_shape_key);
+        // See the element-store twin: gated on the monotonic latch so a program
+        // with no shaped-array declaration never builds the key.
+        let has_declared_shape = crate::env::shaped_array_dims_possible() && {
+            let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
+            self.env().contains_key(&declared_shape_key)
+        };
         let is_shaped = has_declared_shape
             || self
                 .env()
