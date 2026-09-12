@@ -475,12 +475,15 @@ impl crate::runtime::Interpreter {
                     let (elem_size, elem_align) = self.cstruct_size_align(&field.type_name)?;
                     Some((dims.iter().product::<usize>() * elem_size, elem_align))
                 }
-                // `HAS T @.x[N]` where `N` is a named constant rather than a
-                // literal: only a literal shape survives into the compiled
-                // declaration, so the element count is unknown here. Guessing
-                // would put every later field at a wrong offset, which is a
-                // silent wild read — abort the layout instead, the same way an
-                // unmarshallable field does.
+                // `HAS T @.x[N]` where `N` could not be resolved to a
+                // dimension at all — attribute registration already tried a
+                // literal extraction and, for a named `constant`/enum `N`, a
+                // registration-time evaluation of the shape default too
+                // (#8032); this is left only for a shape that depends on
+                // instance state (`self`) or otherwise fails to evaluate.
+                // Guessing the element count would put every later field at
+                // a wrong offset, which is a silent wild read — abort the
+                // layout instead, the same way an unmarshallable field does.
                 ('@', None) => return None,
                 // `HAS gsl_vector $.vector` — the member struct's own bytes.
                 _ if self.is_cstruct_class(&field.type_name) => {

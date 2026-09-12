@@ -572,9 +572,13 @@ impl Interpreter {
                     } else {
                         format!("!{}", attr_name_str)
                     };
-                    // Resolve handles before taking mutable borrow on class_def
+                    // Resolve handles/shape before taking mutable borrow on class_def
                     let resolved =
                         self.resolve_handle_specs_to_names(&decl.handles, &attr_var_name);
+                    let declared_shape = decl
+                        .declared_shape
+                        .clone()
+                        .or_else(|| self.resolve_dynamic_attr_shape(&decl));
                     if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
                         class_def.attributes.push(ClassAttributeDef {
                             name: attr_name_str.clone(),
@@ -585,7 +589,7 @@ impl Interpreter {
                             sigil: decl.sigil,
                             type_constraint: decl.type_constraint.clone(),
                             where_constraint: decl.where_constraint.clone(),
-                            declared_shape: decl.declared_shape.clone(),
+                            declared_shape,
                         });
                         if decl.is_alias {
                             class_def.alias_attributes.insert(attr_name_str.clone());

@@ -130,6 +130,10 @@ impl Interpreter {
         // `is readonly` on individual attributes overrides `is rw` on the role
         let effective_is_rw =
             !decl.is_readonly && (decl.is_rw || (cx.role_is_rw && decl.is_public));
+        let declared_shape = decl
+            .declared_shape
+            .clone()
+            .or_else(|| self.resolve_dynamic_attr_shape(&decl));
         cx.role_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
@@ -139,7 +143,7 @@ impl Interpreter {
             sigil: decl.sigil,
             type_constraint: decl.type_constraint.clone(),
             where_constraint: decl.where_constraint.clone(),
-            declared_shape: decl.declared_shape.clone(),
+            declared_shape,
         });
         let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)

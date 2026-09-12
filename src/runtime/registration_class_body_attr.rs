@@ -7,6 +7,30 @@ use super::registration_class_body::{ClassBodyCx, ClassBodyFlow};
 use super::*;
 
 impl Interpreter {
+    /// Resolve `has @.a[N]`'s declared shape when `N` is not a literal
+    /// integer (`declared_shape` is `None`, `dynamic_shape` is `true`) — a
+    /// named `constant`, an enum, or any other expression a normal read
+    /// would resolve through the current env (#8032). `default` is exactly
+    /// the compiler-generated `Array.new(:shape(N))`, so evaluating it here
+    /// — at registration time, with the declaring scope's env still current
+    /// — runs nothing beyond what building the attribute's own default value
+    /// already runs, and reads back the shape the same way an instance's own
+    /// `.shape` already does. Returns `None` (same as before this fallback
+    /// existed) when `default` fails to evaluate, e.g. because a dimension
+    /// referenced instance state (`self`) that class-registration time has
+    /// no way to supply.
+    pub(crate) fn resolve_dynamic_attr_shape(
+        &mut self,
+        decl: &crate::opcode::CompiledAttrDecl,
+    ) -> Option<Vec<usize>> {
+        if !decl.dynamic_shape {
+            return None;
+        }
+        let default = decl.default.as_ref()?;
+        let value = self.eval_decl_trait_arg(default).ok()?;
+        crate::runtime::utils::shaped_array_shape(&value)
+    }
+
     /// Register an attribute onto a class whose body is still being defined,
     /// driven by a `has`-declaration that reached the VM at runtime (mainline /
     /// EVAL'd source: `class Foo { BEGIN EVAL q[has $.x] }`). This mirrors the
@@ -51,6 +75,10 @@ impl Interpreter {
             decl.type_smiley.as_deref(),
         )?;
         let effective_is_rw = !decl.is_readonly && decl.is_rw;
+        let declared_shape = decl
+            .declared_shape
+            .clone()
+            .or_else(|| self.resolve_dynamic_attr_shape(decl));
         class_def.attributes.push(ClassAttributeDef {
             name: attr_name.clone(),
             is_public: decl.is_public,
@@ -63,7 +91,7 @@ impl Interpreter {
                 .as_ref()
                 .map(|tc| tc.replace("::?CLASS", class_name)),
             where_constraint: None,
-            declared_shape: decl.declared_shape.clone(),
+            declared_shape,
         });
         if let Some(tc) = &decl.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
@@ -234,6 +262,10 @@ impl Interpreter {
         }
         let effective_is_rw =
             !decl.is_readonly && (decl.is_rw || (cx.class_is_rw && decl.is_public));
+        let declared_shape = decl
+            .declared_shape
+            .clone()
+            .or_else(|| self.resolve_dynamic_attr_shape(&decl));
         cx.class_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
@@ -246,7 +278,7 @@ impl Interpreter {
                 .as_ref()
                 .map(|tc| tc.replace("::?CLASS", cx.name)),
             where_constraint: decl.where_constraint.clone(),
-            declared_shape: decl.declared_shape.clone(),
+            declared_shape,
         });
         // Store `is default(...)` trait value for this attribute.
         // When is_default is set, the evaluated value is stored for
