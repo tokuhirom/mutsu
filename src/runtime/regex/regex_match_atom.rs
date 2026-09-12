@@ -1,82 +1,17 @@
-use std::cell::RefCell;
-// The left-recursion bookkeeping tables below are probed several times per
-// `<subrule>` call at every position, so they are Fx-hashed rather than
-// SipHash-hashed — a grammar rule name is not adversarial input, and the
-// hashing showed up as a measurable share of a YAML-parse profile
-// (<https://github.com/tokuhirom/mutsu/issues/7576>).
-use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
-
 use super::super::*;
 use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, alternation_capture_slots,
     merge_regex_captures,
 };
+use super::regex_lr_state::{
+    LrKey, lr_begin_activation, lr_end_activation, lr_read_seed, lr_seed_was_consulted,
+    lr_store_seed,
+};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
-
-thread_local! {
-    /// Memoization cache for left-recursive named regex calls.
-    /// Key: (rule_name, remaining_chars_count) where remaining = chars.len() - pos.
-    /// This uniquely identifies "matching rule at this position in the string"
-    /// regardless of how deeply the chars slice has been sliced.
-    /// Value: current seed matches (in HIGHEST PRIORITY FIRST order, as returned by
-    /// regex_match_ends_from_caps_in_pkg). Empty vec means "no match yet" (initial seed).
-    #[allow(clippy::type_complexity)]
-    static LR_MEMO: RefCell<HashMap<(String, usize), Vec<(usize, RegexCaptures)>>>
-        = RefCell::new(HashMap::default());
-
-    /// Set of (rule_name, remaining_chars_count) pairs currently being evaluated.
-    /// When a recursive call sees its key here, it returns the current seed.
-    static LR_ACTIVE: RefCell<HashMap<(String, usize), ()>>
-        = RefCell::new(HashMap::default());
-
-    /// Keys whose seed was actually CONSULTED (read by a recursive re-entry)
-    /// while they were active — i.e. the keys that are genuinely
-    /// left-recursive at this position. Only those need the seed-growing
-    /// loop's second iteration; see the `seed_was_consulted` check below.
-    static LR_SEED_READ: RefCell<HashSet<(String, usize)>>
-        = RefCell::new(HashSet::default());
-}
 
 /// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
 /// with its PLURAL ends (highest-priority-first).
 type RankedAlternationBranch = ((usize, usize), Vec<(usize, RegexCaptures)>);
-
-/// The left-recursion key a `<subrule>` call at `pos` is evaluated under:
-/// `(written rule name, chars remaining)`. It carries no package, so two
-/// grammars that define the same rule name share it — see
-/// `regex_call_graph::subrule_cannot_reenter_itself`.
-pub(super) type LrKey = (String, usize);
-
-/// `true` when this key is already being evaluated further up the stack, i.e.
-/// entering it again would be a left-recursive re-entry.
-pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
-    LR_ACTIVE.with(|a| a.borrow().contains_key(key))
-}
-
-/// Mark `key` as under evaluation with an empty seed, returning the enclosing
-/// activation's "seed was consulted" flag for [`lr_end_activation`] to restore.
-pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
-    LR_MEMO.with(|m| m.borrow_mut().insert(key.clone(), Vec::new()));
-    LR_ACTIVE.with(|a| a.borrow_mut().insert(key.clone(), ()));
-    LR_SEED_READ.with(|s| s.borrow_mut().remove(key))
-}
-
-/// Undo [`lr_begin_activation`], reporting whether anything re-entered `key`
-/// and read its seed while it was active.
-pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
-    LR_ACTIVE.with(|a| a.borrow_mut().remove(key));
-    LR_MEMO.with(|m| m.borrow_mut().remove(key));
-    LR_SEED_READ.with(|s| {
-        let mut s = s.borrow_mut();
-        let consulted = s.contains(key);
-        if outer_seed_read {
-            s.insert(key.clone());
-        } else {
-            s.remove(key);
-        }
-        consulted
-    })
-}
 
 impl Interpreter {
     /// An alternation alternative that is a lone plain `{ … }` code block
@@ -636,29 +571,25 @@ impl Interpreter {
                 // identity: `multi rule expr($p)` calling `<expr($p-1)>` at the same
                 // position is ordinary recursion toward a base case, NOT left
                 // recursion (99problems-41-to-50.t P47).
-                let lr_name = if arg_values.is_empty() {
-                    spec.lookup_name.clone()
-                } else {
-                    let mut n = spec.lookup_name.clone();
+                let lr_args = (!arg_values.is_empty()).then(|| {
+                    let mut n = String::new();
                     for v in &arg_values {
                         n.push('\u{0}');
                         n.push_str(&Self::format_named_regex_arg_value(v));
                     }
-                    n
-                };
-                let lr_key = (lr_name, chars.len() - pos);
+                    n.into_boxed_str()
+                });
+                let lr_key = LrKey::new(spec.lookup_sym, lr_args, chars.len() - pos);
 
                 // Check if this call is currently active (left recursion detected).
-                let is_active = LR_ACTIVE.with(|a| a.borrow().contains_key(&lr_key));
+                let is_active = super::regex_lr_state::lr_key_is_active(&lr_key);
                 if is_active {
                     // Genuine left recursion: this key's evaluation depends on
-                    // its own seed, so the owner must keep growing it.
-                    LR_SEED_READ.with(|s| s.borrow_mut().insert(lr_key.clone()));
-                    // Return the current seed for this (name, position).
+                    // its own seed, so the owner must keep growing it. Reading
+                    // the seed is what records that.
                     // The seed is stored in HIGHEST FIRST order (raw inner
                     // matches, absolute positions).
-                    let seed =
-                        LR_MEMO.with(|m| m.borrow().get(&lr_key).cloned().unwrap_or_default());
+                    let seed = lr_read_seed(&lr_key);
                     // Wrap seed into outer captures. build_named_candidates_from_inner
                     // returns items in the same order as input (HIGHEST FIRST).
                     // Caller expects LOWEST FIRST, so reverse.
@@ -676,13 +607,11 @@ impl Interpreter {
                 // When is_active branch reads the seed, it passes them to
                 // build_named_candidates_from_inner which adds the outer wrapping.
                 //
-                // Initialize with empty seed (= no match yet).
-                LR_MEMO.with(|m| m.borrow_mut().insert(lr_key.clone(), Vec::new()));
-                LR_ACTIVE.with(|a| a.borrow_mut().insert(lr_key.clone(), ()));
-                // This key starts out un-consulted for THIS activation; a stale
-                // entry from an earlier activation at the same key must not be
-                // read as "left-recursive" here.
-                let outer_seed_read = LR_SEED_READ.with(|s| s.borrow_mut().remove(&lr_key));
+                // Initialize with empty seed (= no match yet). This key starts
+                // out un-consulted for THIS activation; a stale entry from an
+                // earlier activation at the same key must not be read as
+                // "left-recursive" here.
+                let outer_seed_read = lr_begin_activation(&lr_key);
 
                 // best_inner_max: max inner_end seen so far (None = nothing matched yet).
                 let mut best_inner_max: Option<usize> = None;
@@ -830,7 +759,7 @@ impl Interpreter {
                     // identical set — and since every nested subrule did the same,
                     // that redundant second pass compounded to 2^depth over a
                     // precedence-climbing grammar (99problems-41-to-50.t P47).
-                    let seed_was_consulted = LR_SEED_READ.with(|s| s.borrow().contains(&lr_key));
+                    let seed_was_consulted = lr_seed_was_consulted(&lr_key);
                     if !seed_was_consulted {
                         best_raw = deduped_raw;
                         break;
@@ -862,26 +791,17 @@ impl Interpreter {
                         // Seed grew: store the raw matches (HIGHEST FIRST) as the seed.
                         best_inner_max = new_max;
                         best_raw = deduped_raw.clone();
-                        LR_MEMO.with(|m| m.borrow_mut().insert(lr_key.clone(), deduped_raw));
+                        lr_store_seed(&lr_key, deduped_raw);
                     } else {
                         // No growth: done.
                         break;
                     }
                 }
 
-                // Clean up active/memo state.
-                LR_ACTIVE.with(|a| a.borrow_mut().remove(&lr_key));
-                LR_MEMO.with(|m| m.borrow_mut().remove(&lr_key));
-                // Restore the enclosing activation's consulted flag: an inner
-                // activation of the same key must not mask the outer one's.
-                LR_SEED_READ.with(|s| {
-                    let mut s = s.borrow_mut();
-                    if outer_seed_read {
-                        s.insert(lr_key.clone());
-                    } else {
-                        s.remove(&lr_key);
-                    }
-                });
+                // Clean up this activation, restoring the enclosing one's
+                // consulted flag: an inner activation of the same key must not
+                // mask the outer one's.
+                lr_end_activation(&lr_key, outer_seed_read);
 
                 // Wrap best_raw into outer captures and return.
                 // best_raw is HIGHEST FIRST; build_named_candidates_from_inner returns in

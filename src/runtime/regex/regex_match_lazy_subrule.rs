@@ -79,8 +79,8 @@ impl Interpreter {
             return decline(reason);
         }
         let spec = Self::parse_named_regex_lookup_spec(name);
-        let lr_key = (spec.lookup_name.clone(), chars.len() - pos);
-        if super::regex_match_atom::lr_key_is_active(&lr_key) {
+        let lr_key = super::regex_lr_state::LrKey::new(spec.lookup_sym, None, chars.len() - pos);
+        if super::regex_lr_state::lr_key_is_active(&lr_key) {
             return decline(StreamDecline::LrKeyActive);
         }
         // Same resolution the eager arm performs (memoized for a static body,
@@ -99,7 +99,7 @@ impl Interpreter {
         let parsed = std::sync::Arc::clone(parsed);
         let sub_pkg = sub_pkg.clone();
 
-        let outer_seed_read = super::regex_match_atom::lr_begin_activation(&lr_key);
+        let outer_seed_read = super::regex_lr_state::lr_begin_activation(&lr_key);
         // Ends are deduplicated the way the eager arm does it: the first (=
         // highest-priority) path to reach an end wins, later ones are dropped.
         let mut seen_ends: Vec<usize> = Vec::new();
@@ -136,9 +136,9 @@ impl Interpreter {
                 // body walk; the code-block re-entry the activation exists to
                 // catch happens inside the body, which is still covered.
                 *seed_consulted_in_cont |=
-                    super::regex_match_atom::lr_end_activation(&lr_key, outer_seed_read);
+                    super::regex_lr_state::lr_end_activation(&lr_key, outer_seed_read);
                 let stop = on(interp, store, end, delta);
-                super::regex_match_atom::lr_begin_activation(&lr_key);
+                super::regex_lr_state::lr_begin_activation(&lr_key);
                 if stop {
                     *unwind = true;
                     return true;
@@ -158,7 +158,7 @@ impl Interpreter {
                 &mut MatchSink::Cont(&mut cont),
             );
         }
-        let seed_consulted = super::regex_match_atom::lr_end_activation(&lr_key, outer_seed_read)
+        let seed_consulted = super::regex_lr_state::lr_end_activation(&lr_key, outer_seed_read)
             || seed_consulted_in_cont;
         if seed_consulted && !unwind {
             // A `{ ... }` block re-entered this key after all, so the single
