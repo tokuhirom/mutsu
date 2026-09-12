@@ -995,11 +995,30 @@ impl Env {
     /// The base tier (`GLOBAL_BASE`) is — as in `flattened()` — never
     /// materialized; it stays reachable through the flat env's tail lookup.
     pub(crate) fn filtered_flat(&self, keep: &dyn Fn(Symbol, &Value) -> bool) -> Env {
-        fn collect(env: &Env, out: &mut SymMap, keep: &dyn Fn(Symbol, &Value) -> bool) {
-            if let Some(parent) = &env.parent {
-                collect(parent, out, keep);
-            }
-            if let Some(tomb) = &env.tombstones {
+        /// `outermost` is true for the base of the chain -- the tier processed
+        /// first, while `out` still holds nothing. A rejected or tombstoned key
+        /// there cannot be shadowing an outer tier's kept entry (there is no
+        /// outer tier, and a map yields each of its own keys once), so the
+        /// suppressing `out.remove` is a guaranteed miss: a hash and a probe per
+        /// rejected key, on the widest tier of the chain. A closure created in a
+        /// sub after a bare `use Test` walks 95 visible keys and keeps 31, and
+        /// all 62 of its removes landed on that one tier (#7565).
+        fn collect(
+            env: &Env,
+            out: &mut SymMap,
+            keep: &dyn Fn(Symbol, &Value) -> bool,
+            outermost: bool,
+        ) {
+            let outermost = match &env.parent {
+                Some(parent) => {
+                    collect(parent, out, keep, outermost);
+                    false
+                }
+                None => outermost,
+            };
+            if let Some(tomb) = &env.tombstones
+                && !outermost
+            {
                 for k in tomb {
                     out.remove(k);
                 }
@@ -1007,7 +1026,7 @@ impl Env {
             for (k, v) in env.inner.iter() {
                 if keep(*k, v) {
                     out.insert(*k, v.clone());
-                } else {
+                } else if !outermost {
                     out.remove(k);
                 }
             }
@@ -1031,7 +1050,7 @@ impl Env {
             }
         }
         let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
-        collect(self, &mut out, keep);
+        collect(self, &mut out, keep, true);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         Self {
@@ -1966,6 +1985,40 @@ mod tests {
         let child2 = Env::scoped_child(tomb);
         assert_eq!(child2.depth, 2);
         assert!(child2.get_sym(s("a")).is_none());
+    }
+
+    #[test]
+    fn filtered_flat_outermost_tier_rejections_do_not_leak() {
+        // The outermost tier is walked into a still-empty `out`, so its rejected
+        // keys take the no-remove fast path (#7565): a rejection there cannot be
+        // suppressing an outer tier's kept entry, because there is no outer
+        // tier. Pin that the result is exactly what a remove-on-every-rejection
+        // walk gives -- a rejected key absent either way, and a nearer tier's
+        // kept entry of a name the outermost tier rejected still present.
+        let mut root = Env::new();
+        root.insert("keep".into(), Value::int(1));
+        root.insert("outer-drop".into(), Value::int(2));
+        root.insert("shadowed".into(), Value::int(3));
+        let mut leaf = Env::scoped_child(root);
+        leaf.insert("shadowed".into(), Value::int(4));
+        leaf.insert("leaf-drop".into(), Value::int(5));
+
+        let merged = leaf
+            .filtered_flat(&|k, _v| k.with_str(|name| name != "outer-drop" && name != "leaf-drop"));
+        assert_eq!(merged.get_sym(s("keep")), Some(&Value::int(1)));
+        assert!(
+            merged.get_sym(s("outer-drop")).is_none(),
+            "a key the outermost tier rejects must not survive"
+        );
+        assert!(
+            merged.get_sym(s("leaf-drop")).is_none(),
+            "a key a nearer tier rejects must not survive"
+        );
+        assert_eq!(
+            merged.get_sym(s("shadowed")),
+            Some(&Value::int(4)),
+            "the nearer tier's entry must still shadow the outermost one"
+        );
     }
 
     #[test]

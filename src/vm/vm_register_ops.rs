@@ -1115,32 +1115,47 @@ impl Interpreter {
                 k = subject;
                 flags = subject.flags();
             }
+            // Two unconditional rejects, fused into one mask test because both
+            // are pure string properties of the key and neither needs a set
+            // probe. Most of what this filter walks is answered here:
+            //
+            // * Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
+            //   materializations of `self`'s attributes, not lexicals: the
+            //   closure must read them through its captured `self` at RUN time.
+            //   A creation-time snapshot goes stale the moment the instance
+            //   mutates — a `start` block reading `@!before` inside
+            //   Cro::CompositeConnector.connect saw an empty pre-mutation copy.
+            // * `__mutsu_callable_id::<pkg>::<name>` is a routine-registration
+            //   marker, one per named routine visible in the creating scope —
+            //   after a bare `use Test` that is 49 of the 95 keys this filter
+            //   walks, none of which any closure body can name. Every consumer
+            //   reads it from the LIVE env at call time, where it is still
+            //   visible through the frame chain; the single case that is not (an
+            //   escaping closure whose `use`-inside-`EVAL` scope has been
+            //   popped) is pinned by name in `capture_bare_callees`.
+            const DROP: u16 =
+                crate::symbol::flags::ATTR_TWIGIL_ENV_KEY | crate::symbol::flags::CALLABLE_ID_META;
+            if flags & DROP != 0 {
+                return false;
+            }
             if k == callable_type_sym {
                 return false;
             }
-            // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
-            // materializations of `self`'s attributes, not lexicals: the
-            // closure must read them through its captured `self` at RUN time.
-            // A creation-time snapshot goes stale the moment the instance
-            // mutates — a `start` block reading `@!before` inside
-            // Cro::CompositeConnector.connect saw an empty pre-mutation copy.
-            if flags & crate::symbol::flags::ATTR_TWIGIL_ENV_KEY != 0 {
-                return false;
+            // A plain user lexical is inherited only as an upvalue, so the
+            // `own_locals` probe cannot change its verdict — and for the
+            // overwhelming majority of closure literals `free` is empty, which
+            // settles it with no probe at all. Split out rather than left to
+            // the fused expression below because this is the *other* half of
+            // what a wide import list puts in the creating scope (every
+            // imported `&name`), and it is reached once per key per closure
+            // creation.
+            if flags & crate::symbol::flags::PLAIN_USER_LEXICAL != 0 {
+                return !free.is_empty() && free.contains(&k);
             }
-            // `__mutsu_callable_id::<pkg>::<name>` is a routine-registration
-            // marker, one per named routine visible in the creating scope —
-            // after a bare `use Test` that is 55 of the 90 entries this filter
-            // used to keep, none of which any closure body can name. Every
-            // consumer reads it from the LIVE env at call time, where it is
-            // still visible through the frame chain; the single case that is
-            // not (an escaping closure whose `use`-inside-`EVAL` scope has been
-            // popped) is pinned by name in `capture_bare_callees`.
-            if flags & crate::symbol::flags::CALLABLE_ID_META != 0 {
-                return false;
-            }
-            free.contains(&k)
-                || (!own_locals.contains(&k)
-                    && flags & crate::symbol::flags::PLAIN_USER_LEXICAL == 0)
+            // A system name is inherited unless this closure declares it
+            // itself; `own_locals` is empty for every closure with no
+            // parameters or `my` of its own.
+            own_locals.is_empty() || !own_locals.contains(&k) || free.contains(&k)
         });
         let tiers = self
             .capture_cache
