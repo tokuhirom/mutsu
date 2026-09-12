@@ -796,7 +796,11 @@ impl Compiler {
                 other => vec![other],
             })
             .filter_map(|stmt| match stmt {
-                Stmt::DoesDecl { name, args } => {
+                Stmt::DoesDecl {
+                    name,
+                    args,
+                    from_is,
+                } => {
                     let name_str = name.resolve();
                     if name_str == "__mutsu_role_hidden__" {
                         return Some(crate::opcode::RoleParentOp {
@@ -804,6 +808,7 @@ impl Compiler {
                             hides: false,
                             hidden: true,
                             args: None,
+                            from_is: false,
                         });
                     }
                     if let Some(hidden_name) = name_str.strip_prefix("__mutsu_role_hides__") {
@@ -812,6 +817,7 @@ impl Compiler {
                             hides: true,
                             hidden: false,
                             args: None,
+                            from_is: false,
                         });
                     }
                     Some(crate::opcode::RoleParentOp {
@@ -824,6 +830,7 @@ impl Compiler {
                                 .map(|e| self.compile_decl_trait_arg(e))
                                 .collect()
                         }),
+                        from_is: *from_is,
                     })
                 }
                 _ => None,

@@ -296,7 +296,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         type_param_defs = tpd;
         rest = rest2;
     }
-    let mut parent_roles: Vec<(String, Option<Vec<Expr>>)> = Vec::new();
+    // (name, bracket args, came-from-`is`). The third element keeps the
+    // declarator: `role R is Unknown` is a custom `trait_mod:<is>` trait,
+    // `role R does Unknown` is a typo, and the runtime cannot tell them apart
+    // once both are folded into the same synthetic `DoesDecl` (#8100).
+    let mut parent_roles: Vec<(String, Option<Vec<Expr>>, bool)> = Vec::new();
     let mut is_hidden_role = false;
     let mut role_is_rw = false;
     let mut is_export = false;
@@ -318,7 +322,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
             let (r, _) = ws(r)?;
             let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
-            parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
+            parent_roles.push((format!("{}{}", role_name, bracket_suffix), args, false));
             rest = r;
             continue;
         }
@@ -401,7 +405,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
                     // No parens — treat as parent role. If it's actually
                     // a custom trait, the runtime will handle it via
                     // trait_mod:<is> when the role name is not found.
-                    parent_roles.push((trait_name, None));
+                    parent_roles.push((trait_name, None, true));
                     let (r, _) = ws(r)?;
                     rest = r;
                 }
@@ -413,9 +417,9 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             let (r, hidden_name) = qualified_ident(r)?;
             let (r, _) = ws(r)?;
             // Track as a parent relationship
-            parent_roles.push((hidden_name.clone(), None));
+            parent_roles.push((hidden_name.clone(), None, false));
             // Also mark the hidden relationship with a special marker
-            parent_roles.push((format!("__mutsu_role_hides__{}", hidden_name), None));
+            parent_roles.push((format!("__mutsu_role_hides__{}", hidden_name), None, false));
             rest = r;
             continue;
         }
@@ -451,15 +455,17 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             Stmt::DoesDecl {
                 name: Symbol::intern("__mutsu_role_hidden__"),
                 args: None,
+                from_is: false,
             },
         );
     }
-    for (role_name, args) in parent_roles.into_iter().rev() {
+    for (role_name, args, from_is) in parent_roles.into_iter().rev() {
         body.insert(
             0,
             Stmt::DoesDecl {
                 name: Symbol::intern(&role_name),
                 args,
+                from_is,
             },
         );
     }
