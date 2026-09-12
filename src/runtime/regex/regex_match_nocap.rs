@@ -34,7 +34,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<usize> {
         let mut stack = Vec::new();
         stack.push((0usize, start));

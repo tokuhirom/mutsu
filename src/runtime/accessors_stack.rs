@@ -701,12 +701,15 @@ impl Interpreter {
     /// stored behind a RwLock, so a temporary switch (e.g. into a cross-package
     /// grammar subrule's defining package while parsing its body) does not need
     /// `&mut self`.
-    pub(crate) fn set_current_package_shared(&self, pkg: String) {
-        self.current_package_sym.store(
-            Symbol::intern(&pkg).id(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        *self.current_package.write().unwrap() = pkg;
+    ///
+    /// Takes the package as an interned `Symbol`: the matcher threads one
+    /// (rather than a `&str`) down its whole call chain, and this switch is the
+    /// one place on that chain that has to materialize the text
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    pub(crate) fn set_current_package_shared_sym(&self, sym: Symbol) {
+        self.current_package_sym
+            .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
+        *self.current_package.write().unwrap() = sym.as_str().to_owned();
     }
 }
 
@@ -715,7 +718,7 @@ impl Interpreter {
 ///
 /// `current_package`/`current_package_sym` are already interior-mutable
 /// (`Arc<RwLock<String>>` / `Arc<AtomicU32>`, the same handles
-/// [`Interpreter::set_current_package_shared`] uses), so this guard just
+/// [`Interpreter::set_current_package_shared_sym`] uses), so this guard just
 /// holds cloned `Arc` handles and writes through them directly on drop -- no
 /// `&mut Interpreter` borrow is needed, so it stays fully safe (no raw
 /// pointers) even though it is typically constructed deep inside a large

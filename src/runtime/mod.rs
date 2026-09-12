@@ -686,6 +686,7 @@ mod methods_enum_roles;
 mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
+mod methods_grammar_action_env;
 mod methods_instance_ops;
 mod methods_introspect;
 mod methods_io_dispatch;

@@ -538,8 +538,11 @@ impl Interpreter {
         // in. They must be in the dynamic scope before the rule's own pattern is
         // built, because that pattern may interpolate them — and they stay there
         // for the whole parse, so every subrule sees them.
-        let saved_start_rule_dynvars =
-            self.install_subrule_dynamic_params(&start_rule, package_name, &rule_args);
+        let saved_start_rule_dynvars = self.install_subrule_dynamic_params(
+            &start_rule,
+            crate::symbol::Symbol::intern(package_name),
+            &rule_args,
+        );
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
             let candidates =
@@ -1045,19 +1048,8 @@ impl Interpreter {
         self.env.remove("made");
         self.action_made = None;
         // Hide the parent's named/positional captures from the leaf's action.
-        let saved_named_captures: Vec<(Symbol, Value)> = self
-            .env
-            .iter()
-            .filter(|(k, _)| k.starts_with("<") && k.ends_with(">"))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        for (k, _) in &saved_named_captures {
-            self.env.remove_sym(*k);
-        }
-        let mut saved_positional: Vec<(usize, Option<Value>)> = Vec::new();
-        for i in 0..10 {
-            saved_positional.push((i, self.env.remove(&i.to_string())));
-        }
+        let saved_named_captures = self.take_action_named_captures();
+        let saved_positional = self.take_action_positional_captures();
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), match_obj.clone());
 
@@ -1159,28 +1151,8 @@ impl Interpreter {
                 }
             }
         }
-        {
-            let current_angle_keys: Vec<Symbol> = self
-                .env
-                .keys()
-                .filter(|k| k.starts_with("<") && k.ends_with(">"))
-                .copied()
-                .collect();
-            for k in current_angle_keys {
-                self.env.remove_sym(k);
-            }
-            for (k, v) in saved_named_captures {
-                self.env.insert_sym(k, v);
-            }
-        }
-        for i in 0..10 {
-            self.env.remove(&i.to_string());
-        }
-        for (i, val) in saved_positional {
-            if let Some(v) = val {
-                self.env.insert(i.to_string(), v);
-            }
-        }
+        self.restore_action_named_captures(saved_named_captures);
+        self.restore_action_positional_captures(saved_positional);
 
         match method_result {
             Ok(_) => {}
@@ -1546,15 +1518,7 @@ impl Interpreter {
         self.env.remove("made");
         self.action_made = None;
         // Save old named capture env vars so parent captures don't leak into child actions
-        let saved_named_captures: Vec<(Symbol, Value)> = self
-            .env
-            .iter()
-            .filter(|(k, _)| k.starts_with("<") && k.ends_with(">"))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
-        for (k, _) in &saved_named_captures {
-            self.env.remove_sym(*k);
-        }
+        let saved_named_captures = self.take_action_named_captures();
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
         if let Some(ValueView::Hash(named_hash)) =
             updated_attrs.as_map().get("named").map(Value::view)
@@ -1566,16 +1530,15 @@ impl Interpreter {
         // Set positional capture env vars ($0, $1, ...) so they work inside action methods.
         // First, save and clear any existing positional captures from parent/sibling action
         // calls so they don't leak into this action method's scope.
-        let mut saved_positional: Vec<(usize, Option<Value>)> = Vec::new();
-        for i in 0..10 {
-            let key = i.to_string();
-            saved_positional.push((i, self.env.remove(&key)));
-        }
+        let saved_positional = self.take_action_positional_captures();
         if let Some(ValueView::Array(pos_arr, _)) =
             updated_attrs.as_map().get("list").map(Value::view)
         {
             for (i, v) in pos_arr.iter().enumerate() {
-                self.env.insert(i.to_string(), v.clone());
+                self.env.insert_sym(
+                    super::methods_grammar_action_env::positional_key_sym(i),
+                    v.clone(),
+                );
             }
         }
         // Also set $_ to the match (for `.make:` syntax)
@@ -1714,31 +1677,9 @@ impl Interpreter {
                 }
             }
         }
-        // Restore named capture env vars from parent scope
-        {
-            let current_angle_keys: Vec<Symbol> = self
-                .env
-                .keys()
-                .filter(|k| k.starts_with("<") && k.ends_with(">"))
-                .copied()
-                .collect();
-            for k in current_angle_keys {
-                self.env.remove_sym(k);
-            }
-            for (k, v) in saved_named_captures {
-                self.env.insert_sym(k, v);
-            }
-        }
-
-        // Restore positional capture env vars from parent scope
-        for i in 0..10 {
-            self.env.remove(&i.to_string());
-        }
-        for (i, val) in saved_positional {
-            if let Some(v) = val {
-                self.env.insert(i.to_string(), v);
-            }
-        }
+        // Restore named and positional capture env vars from parent scope
+        self.restore_action_named_captures(saved_named_captures);
+        self.restore_action_positional_captures(saved_positional);
 
         match method_result {
             Ok(_) => {}
@@ -1812,8 +1753,8 @@ impl Interpreter {
             ..(*parsed).clone()
         };
         let chars: Vec<char> = text.chars().collect();
-        let pkg = self.current_package();
-        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, &pkg)
+        let pkg = self.current_package_sym();
+        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, pkg)
             .into_iter()
             .map(|(end, _)| end)
             .max()

@@ -111,7 +111,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
@@ -137,7 +137,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         current_caps: &RegexCaptures,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Option<(usize, RegexCaptures)> {
@@ -507,9 +507,9 @@ impl Interpreter {
                 if let Some(pat_str) = pattern_str
                     && let Some(parsed) = self.parse_regex(&pat_str)
                 {
-                    let pkg = self.current_package();
+                    let pkg = self.current_package_sym();
                     if let Some((end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, &pkg)
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
                     {
                         let mut new_caps = RegexCaptures::default();
                         new_caps
@@ -721,7 +721,14 @@ impl Interpreter {
                     }
                     let mut interp = Interpreter {
                         env: self.env.clone(),
+                        // The scratch runs in this package. Both the string and its interned
+                        // mirror are set: `current_package_sym()` reads the mirror, and a
+                        // scratch that overrode only the string answered for the wrong
+                        // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
                         current_package: Arc::new(RwLock::new(self.current_package())),
+                        current_package_sym: std::sync::Arc::new(
+                            std::sync::atomic::AtomicU32::new(self.current_package_sym().id()),
+                        ),
                         ..self.new_regex_scratch_sharing_io()
                     };
                     self.copy_decl_registry_into(&mut interp);
@@ -819,7 +826,7 @@ impl Interpreter {
                 let mut best_sym: Option<String> = None;
                 for (parsed, sub_pkg, sym_key) in candidates.iter() {
                     if let Some((inner_end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, *sub_pkg)
                     {
                         let better = best
                             .as_ref()

@@ -43,8 +43,11 @@ use std::collections::VecDeque;
 use super::super::*;
 use crate::runtime::regex_types::{RegexAtom, RegexPattern};
 
-/// A `(package, rule name)` node of the call graph.
-type RuleNode = (String, String);
+/// A `(package, rule name)` node of the call graph, interned: the walk hashes,
+/// compares and stores these by the thousand, and a `(String, String)` node
+/// allocated twice per edge just to be compared once
+/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+type RuleNode = (Symbol, Symbol);
 
 /// Ceiling on the reachable set. A grammar with more rules than this in one
 /// call cone is answered "not proven" rather than walked further — the
@@ -152,7 +155,7 @@ thread_local! {
     /// so the memoized answer still feeds the per-call histogram
     /// ([`crate::vm::vm_stats::record_subrule_stream`]) without recomputing.
     #[allow(clippy::type_complexity)]
-    static STREAMABLE: RefCell<(u64, HashMap<String, HashMap<String, Option<StreamDecline>>>)> =
+    static STREAMABLE: RefCell<(u64, HashMap<Symbol, HashMap<String, Option<StreamDecline>>>)> =
         RefCell::new((0, HashMap::default()));
 }
 
@@ -166,26 +169,27 @@ impl Interpreter {
     /// reason the walk gave up, which is not the same question -- a real cycle
     /// and an unresolvable edge both mean "may re-enter" but cost entirely
     /// different work to clear.
-    fn reenter_decline(&mut self, name: &str, pkg: &str) -> Option<StreamDecline> {
-        let start: RuleNode = (pkg.to_string(), name.to_string());
-        let mut seen: HashSet<RuleNode> = HashSet::from_iter([start.clone()]);
+    fn reenter_decline(&mut self, name: &str, pkg: Symbol) -> Option<StreamDecline> {
+        let name_sym = Symbol::intern(name);
+        let start: RuleNode = (pkg, name_sym);
+        let mut seen: HashSet<RuleNode> = HashSet::from_iter([start]);
         let mut queue: VecDeque<RuleNode> = VecDeque::from([start]);
         while let Some((cur_pkg, cur_name)) = queue.pop_front() {
-            let calls = match self.direct_rule_calls(&cur_name, &cur_pkg) {
+            let calls = match self.direct_rule_calls(cur_name.as_str(), cur_pkg) {
                 Ok(calls) => calls,
                 Err(reason) => return Some(reason),
             };
             for callee in calls.iter() {
                 // Reaching the starting NAME again closes the loop the
                 // growing-seed algorithm exists for.
-                if callee.1 == name {
+                if callee.1 == name_sym {
                     return Some(StreamDecline::ReentersOwnName);
                 }
                 if seen.len() >= MAX_REACHABLE_RULES {
                     return Some(StreamDecline::ReachableSetTooLarge);
                 }
-                if seen.insert(callee.clone()) {
-                    queue.push_back(callee.clone());
+                if seen.insert(*callee) {
+                    queue.push_back(*callee);
                 }
             }
         }
@@ -202,10 +206,10 @@ impl Interpreter {
     fn direct_rule_calls(
         &mut self,
         name: &str,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
         let generation = token_defs_gen();
-        let key = (pkg.to_string(), name.to_string());
+        let key: RuleNode = (pkg, Symbol::intern(name));
         if let Some(hit) = DIRECT_CALLS.with(|c| {
             let c = c.borrow();
             (c.0 == generation)
@@ -249,7 +253,7 @@ impl Interpreter {
     fn rule_calls_of(
         &mut self,
         name: &str,
-        pkg: &str,
+        pkg: Symbol,
         candidates: &[super::regex_token_resolve::ParsedTokenCandidate],
         raw_empty: bool,
     ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
@@ -258,7 +262,7 @@ impl Interpreter {
             // builtin assertion or character class (`<alpha>`, `<ws>` with no
             // grammar override, `<sym>`), which cannot dispatch to a user rule,
             // or a plain grammar METHOD — arbitrary user code, so unknowable.
-            return match self.registry().user_method_overloads(pkg, name) {
+            return match self.registry().user_method_overloads(pkg.as_str(), name) {
                 None => Ok(std::sync::Arc::new(Vec::new())),
                 Some(_) => Err(StreamDecline::CalleeIsMethod),
             };
@@ -268,11 +272,14 @@ impl Interpreter {
             // A candidate's own body resolves its unqualified subrule
             // references against the package that DEFINED it, not against the
             // caller's — the same rule `subrule_candidate_ends` matches under.
-            if !collect_pattern_calls(parsed, sub_pkg, &mut out) {
+            if !collect_pattern_calls(parsed, *sub_pkg, &mut out) {
                 return Err(StreamDecline::CalleeEdgeUnresolvable);
             }
         }
-        out.sort();
+        // Sorted by interned id, not lexicographically: the order is only a
+        // means to `dedup`, and comparing two `u32`s beats resolving four
+        // strings.
+        out.sort_by_key(|(pkg, name)| (pkg.id(), name.id()));
         out.dedup();
         Ok(std::sync::Arc::new(out))
     }
@@ -289,13 +296,13 @@ impl Interpreter {
     pub(super) fn subrule_call_stream_decline(
         &mut self,
         atom_text: &str,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<StreamDecline> {
         let generation = token_defs_gen();
         if let Some(hit) = STREAMABLE.with(|c| {
             let c = c.borrow();
             (c.0 == generation)
-                .then(|| c.1.get(pkg).and_then(|m| m.get(atom_text)).copied())
+                .then(|| c.1.get(&pkg).and_then(|m| m.get(atom_text)).copied())
                 .flatten()
         }) {
             return hit;
@@ -307,14 +314,14 @@ impl Interpreter {
                 c.0 = generation;
                 c.1.clear();
             }
-            c.1.entry(pkg.to_string())
+            c.1.entry(pkg)
                 .or_default()
                 .insert(atom_text.to_string(), verdict);
         });
         verdict
     }
 
-    fn compute_stream_decline(&mut self, atom_text: &str, pkg: &str) -> Option<StreamDecline> {
+    fn compute_stream_decline(&mut self, atom_text: &str, pkg: Symbol) -> Option<StreamDecline> {
         let spec = Self::parse_named_regex_lookup_spec(atom_text);
         // A rule call with arguments, and `<::(EXPR)>` symbolic indirection,
         // both resolve per call; neither is a shape this path handles.
@@ -356,7 +363,7 @@ impl Interpreter {
     /// an embedded `{ ... }` code block as opaque, so a sigil that only appears
     /// inside one — `token part { \w+ { $n++ } }`, the overwhelmingly common
     /// case — does not make the parse value-dependent at all.
-    fn rule_body_edges_are_generation_stable(&mut self, name: &str, pkg: &str) -> bool {
+    fn rule_body_edges_are_generation_stable(&mut self, name: &str, pkg: Symbol) -> bool {
         self.resolve_token_patterns_static_in_pkg(name, pkg)
             .iter()
             .all(|(pattern, _, _)| pattern_text_is_static_outside_code_blocks(pattern))
@@ -412,7 +419,7 @@ fn pattern_text_is_static_outside_code_blocks(pattern: &str) -> bool {
 /// Append every rule `pattern` (matched in `pkg`) can dispatch to. Returns
 /// `false` when it contains a construct whose target is not statically known,
 /// in which case `out` is meaningless.
-fn collect_pattern_calls(pattern: &RegexPattern, pkg: &str, out: &mut Vec<RuleNode>) -> bool {
+fn collect_pattern_calls(pattern: &RegexPattern, pkg: Symbol, out: &mut Vec<RuleNode>) -> bool {
     pattern.tokens.iter().all(|token| {
         collect_atom_calls(&token.atom, pkg, out)
             && token
@@ -422,7 +429,7 @@ fn collect_pattern_calls(pattern: &RegexPattern, pkg: &str, out: &mut Vec<RuleNo
     })
 }
 
-fn collect_atom_calls(atom: &RegexAtom, pkg: &str, out: &mut Vec<RuleNode>) -> bool {
+fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) -> bool {
     match atom {
         // Matches text or asserts on its own; reaches no dispatcher.
         RegexAtom::Literal(_)
@@ -468,7 +475,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: &str, out: &mut Vec<RuleNode>) -> b
         }
         RegexAtom::WsRule => {
             // `<.ws>` dispatches to whatever `ws` the grammar resolves to.
-            out.push((pkg.to_string(), "ws".to_string()));
+            out.push((pkg, Symbol::intern("ws")));
             true
         }
         RegexAtom::Named(name) => {
@@ -492,7 +499,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: &str, out: &mut Vec<RuleNode>) -> b
             {
                 return false;
             }
-            out.push((pkg.to_string(), spec.lookup_name.clone()));
+            out.push((pkg, spec.lookup_sym));
             true
         }
         // `<{ ... }>` matches whatever regex the code returns; `<~~>` re-enters

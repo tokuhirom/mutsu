@@ -174,7 +174,7 @@ impl Interpreter {
             Some(p) => p,
             None => return Vec::new(),
         };
-        let pkg = self.current_package();
+        let pkg = self.current_package_sym();
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let chars = target.chars();
@@ -185,7 +185,7 @@ impl Interpreter {
             if parsed.anchor_start {
                 if pos == 0
                     && let Some((end, mut caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, 0, &pkg)
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, 0, pkg)
                 {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
@@ -195,7 +195,7 @@ impl Interpreter {
             } else {
                 for start in pos..=chars.len() {
                     if let Some((end, mut caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, &pkg)
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, pkg)
                     {
                         caps.from = caps.capture_start.unwrap_or(start);
                         caps.to = caps.capture_end.unwrap_or(end);
@@ -225,7 +225,7 @@ impl Interpreter {
             Some(p) => p,
             None => return Vec::new(),
         };
-        let pkg = self.current_package();
+        let pkg = self.current_package_sym();
         let chars: Vec<char> = text.chars().collect();
         let mut results = Vec::new();
         let mut pos = 0;
@@ -234,14 +234,13 @@ impl Interpreter {
             let mut found = None;
             if parsed.anchor_start {
                 if pos == 0
-                    && let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, 0, &pkg)
+                    && let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, 0, pkg)
                 {
                     found = Some((0, end));
                 }
             } else {
                 for start in search_start..=chars.len() {
-                    if let Some(end) =
-                        self.regex_match_end_from_in_pkg(&parsed, &chars, start, &pkg)
+                    if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, start, pkg)
                     {
                         found = Some((start, end));
                         break;

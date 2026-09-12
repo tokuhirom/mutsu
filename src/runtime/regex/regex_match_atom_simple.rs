@@ -14,7 +14,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> bool {
         let mut stack = Vec::new();
         stack.push((0usize, start));
@@ -174,7 +174,7 @@ impl Interpreter {
         source: &str,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<usize> {
         use crate::runtime::regex_parse::RECURSE_SELF_STACK;
         let already_active = RECURSE_SELF_STACK.with(|s| {
@@ -205,7 +205,7 @@ impl Interpreter {
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
     ) -> Option<usize> {
         let mut dyn_saved = None;
@@ -222,7 +222,7 @@ impl Interpreter {
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
         ignore_case: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Option<usize> {
@@ -526,7 +526,7 @@ impl Interpreter {
                 let mut best_len: Option<usize> = None;
                 for (sub_pat, sub_pkg, _sym_key) in candidates {
                     if let Some(len) =
-                        self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, &sub_pkg)
+                        self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, sub_pkg)
                     {
                         let better = best_len.map(|current| len > current).unwrap_or(true);
                         if better {
@@ -766,7 +766,7 @@ impl Interpreter {
                                         .parse_regex_uncached(sub_pat, RegexParseMode::Match)
                                         .and_then(|pattern| {
                                             self.regex_match_end_from_caps_in_pkg(
-                                                &pattern, chars, pos, sub_pkg,
+                                                &pattern, chars, pos, *sub_pkg,
                                             )
                                         })
                                         .is_some_and(|(end, _)| end > pos)

@@ -39,7 +39,7 @@ impl Interpreter {
     /// no match.
     pub(crate) fn try_call_token_method_value(
         &mut self,
-        pkg: &str,
+        pkg: Symbol,
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -83,7 +83,7 @@ impl Interpreter {
     /// itself.
     fn run_token_method_scanning(
         &mut self,
-        pkg: &str,
+        pkg: Symbol,
         name: &str,
         extra_args: &[Value],
         text: &str,
@@ -96,7 +96,7 @@ impl Interpreter {
                 return Ok(m);
             }
         }
-        Ok(Self::cursor_failure(pkg, text, start))
+        Ok(Self::cursor_failure(pkg.as_str(), text, start))
     }
 
     /// Run token `pkg::name` anchored at char position `pos` of `text` and
@@ -104,7 +104,7 @@ impl Interpreter {
     /// to the thread-local side channel for the custom-HOW subrule hook.
     fn run_token_method_at(
         &mut self,
-        pkg: &str,
+        pkg: Symbol,
         name: &str,
         extra_args: &[Value],
         text: &str,
@@ -180,10 +180,14 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
-        pkg: &str,
+        pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        let how = self.registry().grammar_custom_how.get(pkg).cloned()?;
+        let how = self
+            .registry()
+            .grammar_custom_how
+            .get(pkg.as_str())
+            .cloned()?;
         if spec.lookup_name.is_empty()
             || spec.lookup_name.contains("::")
             || !spec
@@ -199,7 +203,12 @@ impl Interpreter {
         // keep mutations visible to the parent.
         let mut interp = Interpreter {
             env: self.env.clone(),
-            current_package: Arc::new(RwLock::new(pkg.to_string())),
+            // The scratch runs in this package. Both the string and its interned
+            // mirror are set: `current_package_sym()` reads the mirror, and a
+            // scratch that overrode only the string answered for the wrong
+            // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+            current_package: Arc::new(RwLock::new(pkg.as_str().to_owned())),
+            current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(pkg.id())),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut interp);
@@ -207,7 +216,7 @@ impl Interpreter {
             interp.loaded_modules = self.loaded_modules.clone();
             interp.tap.ensure_state();
         }
-        let typeobj = Value::package(crate::symbol::Symbol::intern(pkg));
+        let typeobj = Value::package(pkg);
         let meth = match interp.call_method_with_values(
             how,
             "find_method",
@@ -265,7 +274,7 @@ impl Interpreter {
         // the parse by its extent (with a plain-text capture).
         let inner_caps = match side {
             Some(t)
-                if t.pkg == pkg
+                if t.pkg.as_str() == pkg.as_str()
                     && t.name == spec.lookup_name
                     && t.from == pos
                     && t.to == to_abs =>

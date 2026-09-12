@@ -78,7 +78,7 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
 }
 
 impl Interpreter {
-    fn subrule_dynamic_params(&mut self, name: &str, pkg: &str) -> Arc<Vec<DynParam>> {
+    fn subrule_dynamic_params(&mut self, name: &str, pkg: Symbol) -> Arc<Vec<DynParam>> {
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         let key = (pkg.to_string(), name.to_string());
@@ -123,7 +123,7 @@ impl Interpreter {
     pub(crate) fn install_subrule_dynamic_params(
         &mut self,
         name: &str,
-        pkg: &str,
+        pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<SavedDynParams> {
         if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) {

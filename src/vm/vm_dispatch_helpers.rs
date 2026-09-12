@@ -907,7 +907,12 @@ impl Interpreter {
             // A token/rule method value called with a cursor (`$meth($c)`,
             // e.g. from a custom grammar HOW's `find_method` wrapper) runs
             // the token at the cursor position and returns a Match.
-            if is_regex && let Some(res) = self.try_call_token_method_value(&pkg, &name_str, &args)
+            if is_regex
+                && let Some(res) = self.try_call_token_method_value(
+                    crate::symbol::Symbol::intern(&pkg),
+                    &name_str,
+                    &args,
+                )
             {
                 return res;
             }

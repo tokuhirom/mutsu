@@ -20,7 +20,7 @@ use std::collections::HashSet;
 struct WalkCtx<'a> {
     pattern: &'a RegexPattern,
     chars: &'a [char],
-    pkg: &'a str,
+    pkg: Symbol,
     first_only: bool,
     /// Stop the walk as soon as a match covers the WHOLE subject, while still
     /// collecting the shorter prefix matches found on the way (`Grammar.parse`
@@ -200,7 +200,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
         // Only the first (highest-priority / greedy) complete match is needed
         // here, and the depth-first walk discovers it first, so stop as soon as
@@ -215,7 +215,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
         self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
     }
@@ -232,7 +232,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
         self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, true)
     }
@@ -245,7 +245,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
         first_only: bool,
         stop_at_full: bool,
     ) -> Vec<(usize, RegexCaptures)> {
@@ -309,7 +309,7 @@ impl Interpreter {
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
-        pkg: &str,
+        pkg: Symbol,
         first_only: bool,
         stop_at_full: bool,
         sink: &mut MatchSink<'_>,
@@ -1093,7 +1093,7 @@ impl Interpreter {
             let mut count = 0usize;
             while current < ctx.chars.len() {
                 if let Some(end) =
-                    self.regex_match_end_from_in_pkg(&resolved, ctx.chars, current, &resolved_pkg)
+                    self.regex_match_end_from_in_pkg(&resolved, ctx.chars, current, resolved_pkg)
                 {
                     if end == current {
                         break;
@@ -1132,7 +1132,7 @@ impl Interpreter {
                     &resolved,
                     ctx.chars,
                     current,
-                    &resolved_pkg,
+                    resolved_pkg,
                 ) else {
                     break;
                 };

@@ -4,7 +4,11 @@ use crate::symbol::Symbol;
 
 /// A resolved-and-parsed subrule candidate: (parsed pattern, dispatch package,
 /// `:sym<...>` key for proto candidates).
-pub(super) type ParsedTokenCandidate = (std::sync::Arc<RegexPattern>, String, Option<String>);
+/// The dispatch package is interned: a candidate is resolved once and then
+/// carried to every match position, where the old `String` was cloned per use
+/// and re-interned to be compared
+/// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+pub(super) type ParsedTokenCandidate = (std::sync::Arc<RegexPattern>, Symbol, Option<String>);
 
 /// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
 type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
@@ -62,12 +66,12 @@ impl Interpreter {
         &mut self,
         name: &str,
         name_sym: Symbol,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
         debug_assert_eq!(name_sym, Symbol::intern(name));
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let cache_key = (Symbol::intern(pkg), name_sym);
+        let cache_key = (pkg, name_sym);
         if let Some(hit) = PARSED_TOKEN_CANDIDATES.with(|c| {
             c.borrow()
                 .get(&cache_key)
@@ -82,7 +86,7 @@ impl Interpreter {
             if !crate::runtime::regex_parse::regex_pattern_is_static(&sub_pat) {
                 return None;
             }
-            let parsed = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg)?;
+            let parsed = self.parse_candidate_in_pkg(&sub_pat, sub_pkg)?;
             parsed_list.push((parsed, sub_pkg, sym_key));
         }
         let arc = std::sync::Arc::new(parsed_list);
@@ -99,12 +103,12 @@ impl Interpreter {
     fn parse_candidate_in_pkg(
         &mut self,
         sub_pat: &str,
-        sub_pkg: &str,
+        sub_pkg: Symbol,
     ) -> Option<std::sync::Arc<RegexPattern>> {
-        let saved_pkg = self.current_package();
-        let switch_pkg = saved_pkg.as_str() != sub_pkg;
+        let saved_pkg = self.current_package_sym();
+        let switch_pkg = saved_pkg != sub_pkg;
         if switch_pkg {
-            self.set_current_package_shared(sub_pkg.to_string());
+            self.set_current_package_shared_sym(sub_pkg);
         }
         // A token/rule body may reference a `my` variable declared in its own
         // grammar body (`grammar G { my @opts = ...; token t:sym<x> { ...
@@ -118,10 +122,10 @@ impl Interpreter {
         // silently resolves to Nil during interpolation and the array
         // vanishes from the compiled pattern instead of becoming its declared
         // alternation.
-        self.inject_class_body_statics(sub_pkg);
+        self.inject_class_body_statics(sub_pkg.as_str());
         let parsed = self.parse_regex(sub_pat);
         if switch_pkg {
-            self.set_current_package_shared(saved_pkg);
+            self.set_current_package_shared_sym(saved_pkg);
         }
         parsed
     }
@@ -134,7 +138,7 @@ impl Interpreter {
     pub(super) fn parsed_subrule_candidates(
         &mut self,
         spec: &NamedRegexLookupSpec,
-        pkg: &str,
+        pkg: Symbol,
         arg_values: &[Value],
     ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
         if arg_values.is_empty()
@@ -179,7 +183,7 @@ impl Interpreter {
                 let raw_empty = raw.is_empty();
                 let mut parsed_list = Vec::with_capacity(raw.len());
                 for (sub_pat, sub_pkg, sym_key) in raw {
-                    if let Some(parsed) = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg) {
+                    if let Some(parsed) = self.parse_candidate_in_pkg(&sub_pat, sub_pkg) {
                         parsed_list.push((parsed, sub_pkg, sym_key));
                     }
                 }
@@ -209,7 +213,11 @@ impl Interpreter {
         (arc, raw_empty)
     }
 
-    pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<Arc<FunctionDef>> {
+    pub(super) fn resolve_token_defs_in_pkg(
+        &self,
+        name: &str,
+        pkg: Symbol,
+    ) -> Vec<Arc<FunctionDef>> {
         if name.contains("::") {
             // A qualified subrule (`<Schema::Core::element>`) is written relative
             // to the package it appears in, so `Schema::Core` inside `module
@@ -262,7 +270,7 @@ impl Interpreter {
     fn resolve_unqualified_token_defs_in_pkg(
         &self,
         name: &str,
-        pkg: &str,
+        pkg: Symbol,
     ) -> Vec<Arc<FunctionDef>> {
         let mut out = Vec::new();
         if !pkg.is_empty() {
@@ -270,7 +278,7 @@ impl Interpreter {
             // a derived grammar adding `rule statement:sym<repeat>` keeps the
             // base grammar's candidates (advent2009-day24).
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-            for scope in self.mro_readonly(pkg) {
+            for scope in self.mro_readonly(pkg.as_str()) {
                 self.collect_token_defs_for_scope_dedup(&scope, name, &mut out, &mut seen);
             }
             if !out.is_empty() {
@@ -284,9 +292,9 @@ impl Interpreter {
     pub(super) fn resolve_token_patterns_with_args_in_pkg(
         &mut self,
         name: &str,
-        pkg: &str,
+        pkg: Symbol,
         arg_values: &[Value],
-    ) -> Vec<(String, String, Option<String>)> {
+    ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
         let defs = self.resolve_token_defs_in_pkg(name, pkg);
         // Rakudo multi semantics: a candidate whose literal parameter values
@@ -375,12 +383,19 @@ impl Interpreter {
         &mut self,
         def: &Arc<FunctionDef>,
         arg_values: &[Value],
-    ) -> Vec<(String, String, Option<String>)> {
+    ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
         {
             let mut interp = Interpreter {
                 env: self.env.clone(),
+                // The scratch runs in this package. Both the string and its interned
+                // mirror are set: `current_package_sym()` reads the mirror, and a
+                // scratch that overrode only the string answered for the wrong
+                // package ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
                 current_package: Arc::new(RwLock::new(def.package.resolve())),
+                current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+                    def.package.id(),
+                )),
                 ..self.new_regex_scratch_sharing_io()
             };
             self.copy_decl_registry_into(&mut interp);
@@ -435,7 +450,7 @@ impl Interpreter {
                     let pattern = interp.interpolate_bound_regex_scalars(&pattern);
                     if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
                         let sym_val = Self::extract_sym_adverb(&def.name.resolve());
-                        out.push((instantiated, def.package.resolve(), sym_val));
+                        out.push((instantiated, def.package, sym_val));
                     }
                 }
             }
@@ -447,9 +462,9 @@ impl Interpreter {
     pub(super) fn resolve_named_regex_candidates_in_pkg(
         &mut self,
         spec: &NamedRegexLookupSpec,
-        pkg: &str,
+        pkg: Symbol,
         arg_values: &[Value],
-    ) -> Vec<(String, String, Option<String>)> {
+    ) -> Vec<(String, Symbol, Option<String>)> {
         if arg_values.is_empty() {
             self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
         } else {
