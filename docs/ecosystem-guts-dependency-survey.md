@@ -77,16 +77,22 @@ concrete evidence for the `deep_guts` classification above:
   the MoarVM compiler-guts layer mutsu deliberately lacks. That single remaining
   root cause is tracked as
   [#8005](https://github.com/tokuhirom/mutsu/issues/8005).
-- So the only viable route is **(b) a narrow per-declarator shim**: parse
-  `test-bundle` / `test-hub` / `test-reporter` as built-in role declarations with
-  native bundle wiring, ignoring the NQP `EXPORT` grammar. It is still
-  multi-session work.
-- **Start trigger**, if a bundle-candidate module ever hard-depends on
-  Test::Async: start from the (b) shim; do **not** attempt the general
-  NQP/QAST/slang machinery. Note that (b) is a per-distribution dialect inside
-  mutsu, which `BATTERIES.md` §1 and the `ecosystem-dist-fix` skill otherwise
-  forbid — so picking it is a user decision that wants an ADR, not something a
-  session may start on its own. #8005 records both routes.
+- **Resolved 2026-09-12 by a third route neither (a) nor (b) had considered**
+  ([ADR-0091](adr/0091-slang-package-declarators.md), #8005): the candidate is
+  **read** rather than executed. Everything in a
+  `token package_declarator:sym<...>` that decides what the declarator means is
+  declarative — the keyword is its `:sym<...>`, the package kind its
+  `$*PKGDECL`, the metaclass its `$*LANG.set_how` — so `define_slang` lifts
+  those three facts out and registers a declarator keyword through the
+  `EXPORTHOW::DECLARE` machinery mutsu already had. No NQP/QAST/World layer,
+  and no per-distribution dialect: the mechanism keys on what the candidate
+  declares, so any module using the same NQP idiom gets it.
+  `Test::Async::Hub` and `Test::Async::When` load; the remaining three modules
+  are blocked by unrelated gaps ([#8023](https://github.com/tokuhirom/mutsu/issues/8023),
+  [#8024](https://github.com/tokuhirom/mutsu/issues/8024)).
+- That narrows the `deep_guts` classification above: a dist that *adds a
+  package declarator* is no longer blocked by it. What still is: executing a
+  candidate body's match, building real `QAST`, and driving the `$*W` World.
 - Prerequisite groundwork that already landed: the `::?CLASS` parameter fixes
   (#4669). Error text and history:
   [`mzef-install-pipeline.md`](mzef-install-pipeline.md) "Test-phase frontier".

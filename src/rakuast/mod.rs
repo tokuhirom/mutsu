@@ -677,7 +677,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
         return str_dot_ast(source);
     };
     let module = format!("L10N::{slang}");
-    let overrides = crate::runtime::slang_activation::run_slang_activation(
+    let activation = crate::runtime::slang_activation::run_slang_activation(
         module.clone(),
         crate::parser::parser_lib_paths_for_slang(),
     )
@@ -686,7 +686,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
     let saved_modes = crate::parser::slang_modes();
     let saved_vocabulary = crate::parser::l10n_vocabulary_for_restore();
     let result = (|| {
-        crate::parser::apply_slang_overrides(&overrides).map_err(RuntimeError::new)?;
+        crate::parser::apply_slang_overrides(&activation.rules).map_err(RuntimeError::new)?;
         crate::parser::set_l10n_preseed(crate::parser::l10n_vocabulary_for_restore());
         str_dot_ast(source)
     })();

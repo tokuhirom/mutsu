@@ -553,8 +553,9 @@ impl Interpreter {
                 .and_then(crate::opcode::DeclTraitArg::literal)
             {
                 let keyword = kw.to_string_value();
-                let how_type =
-                    self.get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{}", keyword));
+                let how_type = self
+                    .get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{}", keyword))
+                    .or_else(|| self.slang_declarator_how(&keyword));
                 if let Some(how_type) = how_type {
                     let has_user_compose =
                         self.install_custom_class_how(&storage_name, how_type)?;

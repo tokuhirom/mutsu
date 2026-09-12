@@ -273,7 +273,18 @@ pub(crate) fn parse_optional_role_type_params(
 
 /// Parse `role` declaration.
 pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
-    let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;
+    role_decl_with_keyword(input, "role")
+}
+
+/// Parse a role declaration introduced by `kw` instead of the literal `role`.
+///
+/// A slang can add a package declarator that builds a role (`$*PKGDECL` is
+/// `'role'`) under its own keyword — `test-bundle`, from Test::Async
+/// (ADR-0091). Such a declarator is a peer of `role`, so it accepts exactly
+/// the same syntax; only the marker trait naming the keyword differs, which
+/// is what tells registration which metaclass to attach.
+pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a, Stmt> {
+    let rest = keyword(kw, input).ok_or_else(|| PError::expected("role declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     check_pseudo_package_in_decl(&name)?;
@@ -459,6 +470,12 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     // `role R { ... }.^name` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
 
+    if kw != "role" {
+        custom_traits.push((
+            "__mutsu_declare_how".to_string(),
+            Some(Expr::Literal(Value::str(kw.to_string()))),
+        ));
+    }
     let role_stmt = Stmt::RoleDecl {
         name: Symbol::intern(&name),
         type_params,

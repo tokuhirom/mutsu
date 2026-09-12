@@ -1,31 +1,49 @@
-//! Parse-time slang activation (ADR-0026 §2.1/§2.2).
+//! Parse-time slang activation (ADR-0026 §2.1/§2.2, extended by ADR-0091).
 //!
-//! When the parser meets `use X` where module X activates a slang (its source
-//! directly `use`s Slangify), it runs X's whole load — mainline plus the
-//! Slangify-generated inner `&EXPORT` — in a fresh [`Interpreter`] on a fresh
-//! thread, with a compile-time `$*LANG` object bound. Slangify's inner EXPORT
-//! calls `$*LANG.define_slang('MAIN', $*LANG.slang_grammar('MAIN').^mixin($role),
-//! ...)`; `define_slang` maps the roles' overridden grammar-rule names onto
-//! parser modes (`apply_slang_rule_override`), erroring hard on an unknown
-//! rule. The rule names travel back to the parser via the thread's return
-//! value; the fresh thread means the in-progress outer parse's thread-local
-//! state is untouched — no save/restore of parser state is needed at all.
+//! When the parser meets `use X` where module X activates a slang — its source
+//! either directly `use`s Slangify or calls `$*LANG.define_slang` itself — it
+//! runs X's whole load, mainline plus `sub EXPORT` (or the Slangify-generated
+//! inner `&EXPORT`), in a fresh [`Interpreter`] on a fresh thread with a
+//! compile-time `$*LANG` object bound. Slangify's inner EXPORT calls
+//! `$*LANG.define_slang('MAIN', $*LANG.slang_grammar('MAIN').^mixin($role),
+//! ...)`; `define_slang` then does two things with the roles' declared rules:
+//!
+//! - a rule that **overrides** an existing grammar rule maps onto a parser
+//!   mode or an L10N vocabulary entry (`apply_slang_overrides`), erroring hard
+//!   on an unknown rule;
+//! - a `package_declarator:sym<name>` candidate **adds** a package declarator,
+//!   read out of the candidate by [`super::slang_declarator`] (ADR-0091).
+//!
+//! Both travel back to the parser via the thread's return value
+//! ([`SlangActivation`]); the fresh thread means the in-progress outer parse's
+//! thread-local state is untouched — no save/restore of parser state is
+//! needed at all.
 //!
 //! The `$*LANG` object graph is deliberately minimal (ADR-0026 §4 rejects
-//! executing the Rakudo-internal token bodies): `Mutsu::Slang::CompLang` is
-//! the language handle, and `slang_grammar`/`slang_actions` return opaque
+//! executing the Rakudo-internal token bodies, and ADR-0091 keeps the
+//! refusal): `Mutsu::Slang::CompLang` is the language handle, and
+//! `slang_grammar`/`slang_actions`/`actions`/`WHAT` return opaque
 //! `Mutsu::Slang::Grammar`/`Mutsu::Slang::Actions` handles whose `.^mixin`
 //! only *records* the role composition.
 
 use super::*;
+use crate::runtime::slang_declarator::{SlangDeclarator, declarator_keyword};
 use crate::value::ValueView;
+
+/// What one slang activation run learned: the grammar-rule overrides the
+/// module's roles declare, and the package declarators they add (ADR-0091).
+#[derive(Default)]
+pub(crate) struct SlangActivation {
+    pub(crate) rules: Vec<SlangRuleOverride>,
+    pub(crate) declarators: Vec<SlangDeclarator>,
+}
 
 /// Classes of the compile-time `$*LANG` object graph. `.^name` on these must
 /// not start with `Raku::` — Slangify keys its legacy-grammar selection on
 /// that prefix, and mutsu deliberately selects the legacy (NQP-named) roles;
 /// either role set maps to the same rule names (ADR-0026 §2.2).
 pub(crate) const COMP_LANG_CLASS: &str = "Mutsu::Slang::CompLang";
-const GRAMMAR_HANDLE_CLASS: &str = "Mutsu::Slang::Grammar";
+pub(crate) const GRAMMAR_HANDLE_CLASS: &str = "Mutsu::Slang::Grammar";
 const ACTIONS_HANDLE_CLASS: &str = "Mutsu::Slang::Actions";
 
 /// The thread name marks the activation sub-interpreter, so the parser hook
@@ -82,10 +100,10 @@ fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
 pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
-) -> Result<Vec<SlangRuleOverride>, String> {
+) -> Result<SlangActivation, String> {
     let handle = crate::runtime::builtins_system::spawn_user_thread(
         ACTIVATION_THREAD_NAME,
-        move || -> Result<Vec<SlangRuleOverride>, String> {
+        move || -> Result<SlangActivation, String> {
             let mut interp = Interpreter::new();
             for path in lib_paths {
                 interp.add_lib_path(path);
@@ -94,7 +112,10 @@ pub(crate) fn run_slang_activation(
             interp
                 .use_module(&module)
                 .map_err(|e| e.message.to_string())?;
-            Ok(std::mem::take(&mut interp.defined_slang_rules))
+            Ok(SlangActivation {
+                rules: std::mem::take(&mut interp.defined_slang_rules),
+                declarators: std::mem::take(&mut interp.defined_slang_declarators),
+            })
         },
     );
     crate::gc::block_quiescent(|| handle.join())
@@ -148,6 +169,32 @@ impl Interpreter {
                 Some(Ok(handle_instance(ACTIONS_HANDLE_CLASS, &kind, Vec::new())))
             }
             (COMP_LANG_CLASS, "define_slang") => Some(self.slang_define_slang(args)),
+            // `$*LANG.actions` is the host actions object; mutsu never runs a
+            // slang's actions methods (they build QAST), so the handle only
+            // has to accept `.^mixin`.
+            (COMP_LANG_CLASS, "actions") => Some(Ok(handle_instance(
+                ACTIONS_HANDLE_CLASS,
+                "MAIN",
+                Vec::new(),
+            ))),
+            // `$*LANG.HOW.mixin($*LANG.WHAT, $role)` is how a module mixes a
+            // grammar role into the language itself rather than into a named
+            // slang. `.WHAT` therefore has to be the same kind of grammar
+            // handle `slang_grammar('MAIN')` returns, so the mixin records the
+            // role the same way and `define_slang` finds it.
+            (COMP_LANG_CLASS, "WHAT") => Some(Ok(handle_instance(
+                GRAMMAR_HANDLE_CLASS,
+                "MAIN",
+                Vec::new(),
+            ))),
+            // `$*LANG.set_how($pkgdecl, $HOW)` swaps the metaclass a package
+            // declaration of that kind is built with. Record it: a declarator
+            // candidate that names no HOW of its own inherits this one.
+            (COMP_LANG_CLASS, "set_how") if args.len() >= 2 => {
+                self.slang_declarator_hows
+                    .insert(args[0].to_string_value(), args[1].clone());
+                Some(Ok(Value::NIL))
+            }
             _ => None,
         }
     }
@@ -162,12 +209,47 @@ impl Interpreter {
             return Err(RuntimeError::new("define_slang requires a grammar handle"));
         };
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
+        let mut declarators: Vec<SlangDeclarator> = Vec::new();
         for role in Self::slang_handle_roles(grammar) {
-            rules.extend(self.slang_role_rule_names(&role)?);
+            for over in self.slang_role_rule_names(&role)? {
+                // A `package_declarator:sym<name>` candidate *adds* a keyword
+                // rather than overriding an existing rule (ADR-0091), so it is
+                // read as a declarator registration instead of being mapped
+                // onto a parser mode.
+                if let Some(keyword) = declarator_keyword(&over.name) {
+                    declarators
+                        .push(self.slang_declarator_from_candidate(keyword, over.body.as_deref()));
+                    continue;
+                }
+                rules.push(over);
+            }
         }
         crate::parser::apply_slang_overrides(&rules).map_err(RuntimeError::new)?;
         self.defined_slang_rules.extend(rules);
+        // `sub EXPORT` runs once per import, so a module `use`d from several
+        // compunits registers its declarators again each time; keep one entry
+        // per keyword rather than growing the list without bound.
+        for decl in declarators {
+            self.defined_slang_declarators
+                .retain(|d| d.keyword != decl.keyword);
+            self.defined_slang_declarators.push(decl);
+        }
         Ok(Value::NIL)
+    }
+
+    /// The metaclass a slang declarator keyword builds its package with, if
+    /// this interpreter has seen the slang register it.
+    ///
+    /// An `EXPORTHOW::DECLARE` declarator finds its HOW through an ordinary
+    /// env lookup, because the `constant` that names it is declared in the
+    /// module's mainline and outlives the load. A slang declarator is
+    /// registered from `sub EXPORT`, whose env is restored the moment the call
+    /// returns, so the record lives on the interpreter instead.
+    pub(crate) fn slang_declarator_how(&self, keyword: &str) -> Option<Value> {
+        self.defined_slang_declarators
+            .iter()
+            .find(|d| d.keyword == keyword && !d.how_type.is_empty())
+            .map(|d| Value::package(crate::symbol::Symbol::intern(&d.how_type)))
     }
 
     /// The roles recorded on a `Mutsu::Slang::Grammar`/`Actions` handle.

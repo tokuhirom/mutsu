@@ -1,11 +1,13 @@
 //! The parse-time side of slang activation (ADR-0026 §2.1).
 //!
 //! `use_stmt` calls [`maybe_activate_slang_use`] after the ordinary module
-//! scan. When the used module's source directly `use`s Slangify, the module
-//! is executed at parse time in a fresh interpreter on a fresh thread
-//! (`runtime::slang_activation`), its `$*LANG.define_slang` registrations are
-//! mapped onto parser mode flags, and the rest of the current compilation
-//! unit parses in the changed mode. Slang state is lexically scoped to the
+//! scan. When the used module activates a slang — its source directly `use`s
+//! Slangify, or it calls `$*LANG.define_slang` from its own no-argument
+//! `sub EXPORT` (ADR-0091) — the module is executed at parse time in a fresh
+//! interpreter on a fresh thread (`runtime::slang_activation`), its
+//! `$*LANG.define_slang` registrations are mapped onto parser mode flags and
+//! package declarator keywords, and the rest of the current compilation unit
+//! parses in the changed mode. Slang state is lexically scoped to the
 //! unit: `reset_user_subs` clears it at parse start, and nested module scans
 //! snapshot/restore it.
 
@@ -83,12 +85,24 @@ pub(in crate::parser) fn maybe_activate_slang_use(module: &str) -> Result<(), St
     {
         return Ok(());
     }
-    let rules = crate::runtime::slang_activation::run_slang_activation(
+    let activation = crate::runtime::slang_activation::run_slang_activation(
         module.to_string(),
         parser_lib_paths(),
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
+    // Package declarators the slang added (ADR-0091): each keyword parses
+    // like `class`/`role` for the rest of this unit, with the declarator's
+    // metaclass attached at registration time.
+    for decl in &activation.declarators {
+        register_declare_keyword(&decl.keyword, decl.is_role());
+    }
+    if !activation.declarators.is_empty() {
+        // A memoized parse from before the keyword existed must not be
+        // replayed now that it is a declarator.
+        crate::parser::invalidate_all_memos();
+    }
     // `define_slang` already validated these on the activation thread; this
     // only re-reports if the two maps ever drift apart.
-    apply_slang_overrides(&rules).map_err(|e| format!("slang activation for '{module}': {e}"))
+    apply_slang_overrides(&activation.rules)
+        .map_err(|e| format!("slang activation for '{module}': {e}"))
 }

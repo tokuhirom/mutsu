@@ -831,6 +831,7 @@ mod sequence;
 pub(crate) mod shared_store;
 pub(crate) mod signal_watcher;
 pub(crate) mod slang_activation;
+pub(crate) mod slang_declarator;
 mod source_code_text;
 pub(super) mod sprintf;
 mod sprintf_helpers;
@@ -2280,6 +2281,16 @@ pub struct Interpreter {
     /// activation run (ADR-0026). Only ever populated in the dedicated
     /// activation sub-interpreter; read once by its thread runner.
     pub(crate) defined_slang_rules: Vec<crate::runtime::slang_activation::SlangRuleOverride>,
+    /// Package declarators a slang grammar role registered via
+    /// `token package_declarator:sym<name>` (ADR-0091). Populated by
+    /// `$*LANG.define_slang` in both the activation sub-interpreter (where the
+    /// parser reads them back to learn the keyword) and the ordinary
+    /// interpreter (where the declaration protocol looks the HOW up in it).
+    pub(crate) defined_slang_declarators: Vec<crate::runtime::slang_declarator::SlangDeclarator>,
+    /// `$*LANG.set_how($pkgdecl, $HOW)`: the metaclass a package declaration
+    /// of each kind is currently built with. Keyed by the `$*PKGDECL` name
+    /// (`'role'`, `'test-hub'`, ...).
+    pub(crate) slang_declarator_hows: HashMap<String, Value>,
     /// Registered END phasers, in registration order (they run in reverse).
     end_phasers: Vec<EndPhaser>,
     /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one

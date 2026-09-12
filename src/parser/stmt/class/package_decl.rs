@@ -197,6 +197,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let declare_kw = || {
         super::super::simple::declare_keyword_names()
             .into_iter()
+            // Role-kind slang declarators belong to the `unit role` arm below.
+            .filter(|kw| !super::super::simple::declare_keyword_is_role(kw))
             .find_map(|kw| keyword(&kw, rest).map(|r| (r, Some(kw))))
     };
     if let Some((r, declare_how)) = class_kw.or_else(declare_kw) {
@@ -348,7 +350,21 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     // unit role Name;  — declare a role at the file scope.
     // unit role Name is export does OtherRole;  — traits and composition too.
-    if let Some(r) = keyword("role", rest) {
+    //
+    // A slang declarator whose `$*PKGDECL` is `role` (ADR-0091) is a peer of
+    // `role` and takes the same file-scope form: Test::Async's own bundles are
+    // written `unit test-bundle Test::Async::Base;`. It differs only by the
+    // `__mutsu_declare_how` marker trait naming the keyword, so both share
+    // this arm.
+    let role_kw = keyword("role", rest)
+        .map(|r| (r, "role".to_string()))
+        .or_else(|| {
+            super::super::simple::declare_keyword_names()
+                .into_iter()
+                .filter(|kw| super::super::simple::declare_keyword_is_role(kw))
+                .find_map(|kw| keyword(&kw, rest).map(|r| (r, kw)))
+        });
+    if let Some((r, role_kw)) = role_kw {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
@@ -444,6 +460,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     args,
                 },
             );
+        }
+        if role_kw != "role" {
+            custom_traits.push((
+                "__mutsu_declare_how".to_string(),
+                Some(crate::ast::Expr::Literal(Value::str(role_kw))),
+            ));
         }
         return Ok((
             r,
