@@ -1754,9 +1754,17 @@ impl Interpreter {
             loan_env!(self, reset_atomic_var_key(name));
         }
         // When rebinding a variable (`$x := expr`), remove any existing
-        // bind pairs where this slot was the source.  Rebinding replaces
-        // the container, so previously bound targets must stop tracking.
+        // bind pairs where this slot was the source. Rebinding replaces the
+        // binding, so previously derived readonly state must stop tracking it
+        // too; the new source's readonly state is installed below.
         if is_rebind {
+            if !self.no_readonly_vars() {
+                self.unmark_readonly(name);
+            }
+            if crate::env::sigilless_readonly_keys_possible() {
+                let readonly_key = runtime::sigilless_readonly_key(name);
+                self.env_mut().remove(&readonly_key);
+            }
             self.local_bind_pairs.retain(|&(source, _)| source != idx);
             // Also remove env-based aliases that point TO this variable,
             // so GetLocal alias-following doesn't read the new value.
