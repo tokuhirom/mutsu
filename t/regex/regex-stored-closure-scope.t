@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 18;
+plan 20;
 
 # --- Bug 1: a stored regex keeps its defining scope ---------------------------
 
@@ -37,6 +37,18 @@ ok ("xaby" ~~ mk5()).defined, '<$var> assertion form survives the frame';
     $pat = 'zzz';
     nok ("abc" ~~ $re).defined, 'interpolation sees the mutated value, not a snapshot (1)';
     ok  ("zzz" ~~ $re).defined, 'interpolation sees the mutated value, not a snapshot (2)';
+}
+
+# Like bare `$var` interpolation above (and verified against real rakudo,
+# which surprised the author of issue #8040's fix): a stored `<@var>`
+# assertion re-reads the array on every match, so a reassignment made AFTER
+# construction but BEFORE a later match is visible to that match.
+{
+    my @alts = <cat dog>;
+    my $re = rx/ ^ <@alts> $ /;
+    @alts = <emu>;
+    nok ("cat" ~~ $re).defined, '<@var> follows a reassignment made before a match';
+    ok  ("emu" ~~ $re).defined, 'and matches the reassigned value';
 }
 
 # The code-bearing capture must be a live cell, not a stale snapshot (W5/W6).

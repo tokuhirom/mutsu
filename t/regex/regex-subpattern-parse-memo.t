@@ -1,6 +1,6 @@
 use Test;
 
-plan 18;
+plan 20;
 
 # The regex parser is recursive: a group, a lookaround body, an alternation
 # branch, a conjunction part and a `%`-separator atom each re-enter the parse
@@ -59,15 +59,27 @@ plan 18;
     nok 'aa' ~~ / ^ <$var> $ /, 'rather than reusing the first parse';
 }
 
-# `<@var>` reads the array's elements at parse time, the same way. (The
-# matching "follows a reassignment" case is NOT pinned here: a `<@var>` regex
-# literal evaluated before the array is reassigned later in the same scope
-# already sees the later value on `main`, independently of this memo — see
-# issue #8040.)
+# `<@var>` reads the array's elements at parse time, the same way.
 {
     my @alts = <cat dog>;
     ok 'cat' ~~ / ^ <@alts> $ /, 'a <@var> assertion matches an element';
     nok 'emu' ~~ / ^ <@alts> $ /, 'and only an element';
+}
+
+# A `<@var>` match BEFORE a later reassignment in the same scope must see the
+# array's value as it stood at that point, not the array's eventual final
+# content (issue #8040): `self.env.get` returns a lexical the compiler boxed
+# into a shared `ContainerRef` cell because of the later reassignment, and
+# that cell was read without dereferencing it first — so the whole cell
+# stringified as ONE alternation element instead of iterating the array's
+# actual elements. A single-element array happened to stringify the same way
+# either way, which is why only the *first* of a pair of matches around a
+# reassignment ever showed the bug.
+{
+    my @later = <cat dog>;
+    ok 'cat' ~~ / ^ <@later> $ /, 'a <@var> match before a later reassignment sees the current value';
+    @later = <emu>;
+    ok 'emu' ~~ / ^ <@later> $ /, 'and a later match sees the reassigned value';
 }
 
 # --- the current package is part of the key ---------------------------------
