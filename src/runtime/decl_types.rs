@@ -23,6 +23,11 @@ pub(crate) struct ClassDef {
     pub(crate) attribute_types: HashMap<String, String>, // attr_name -> type constraint
     pub(crate) attribute_smileys: HashMap<String, String>, // attr_name -> smiley ("D", "U", "_")
     pub(crate) attribute_built: HashMap<String, bool>,
+    /// Attributes declared with NativeCall's `HAS` scope — stored *by value*
+    /// inside the enclosing `is repr('CStruct')` class instead of as a pointer
+    /// to the member (`runtime::cstruct_layout`). Empty for every ordinary
+    /// class.
+    pub(crate) embedded_attributes: HashSet<String>,
     /// Attributes declared with `has $x` (no twigil) — the bare name is an alias
     /// for `$!x` inside class methods.
     pub(crate) alias_attributes: HashSet<String>,

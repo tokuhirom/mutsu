@@ -344,6 +344,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             sigil: sigil as char,
             where_constraint: None,
             is_alias: false,
+            is_embedded: false,
             is_our,
             is_my: !is_our && !is_state,
             is_default: None,

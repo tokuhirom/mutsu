@@ -401,6 +401,9 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) sigil: char,
     pub(crate) where_constraint: Option<DeclTraitArg>,
     pub(crate) is_alias: bool,
+    /// `HAS Type $.x` — NativeCall's embedded attribute declarator (the member
+    /// is stored by value inside the enclosing CStruct).
+    pub(crate) is_embedded: bool,
     pub(crate) is_our: bool,
     pub(crate) is_my: bool,
     /// The `is default(...)` trait argument (ADR-0019 D2c). `Ast` unless a
@@ -446,6 +449,7 @@ impl CompiledAttrDecl {
             sigil,
             where_constraint,
             is_alias,
+            is_embedded,
             is_our,
             is_my,
             is_default,
@@ -478,6 +482,7 @@ impl CompiledAttrDecl {
                     .map(|e| DeclTraitArg::Ast(Box::new(e)))
             }),
             is_alias: *is_alias,
+            is_embedded: *is_embedded,
             is_our: *is_our,
             is_my: *is_my,
             is_default: chunks
