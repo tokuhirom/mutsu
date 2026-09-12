@@ -381,9 +381,19 @@ impl Interpreter {
     /// lookahead forms.
     fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> Option<RegexAtom> {
         // Reads the array's VALUE at parse time; the tree is not a function of
-        // the pattern text alone.
+        // the pattern text alone. `.deref_container()` mirrors the `<$var>`
+        // form's `.into_deref()` a few match arms below: a lexical the
+        // compiler boxed into a shared `ContainerRef` cell because it is
+        // reassigned later in the same scope must be dereferenced before its
+        // elements are read, or the whole cell falls through to the `_` arm
+        // below as a single element (issue #8040).
         Self::note_regex_parse_ambient_read();
-        let value = self.env.get(env_key).cloned().unwrap_or(Value::NIL);
+        let value = self
+            .env
+            .get(env_key)
+            .cloned()
+            .unwrap_or(Value::NIL)
+            .deref_container();
         let elements = match value.view() {
             ValueView::Array(arr, _) => arr.as_ref().clone(),
             ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
