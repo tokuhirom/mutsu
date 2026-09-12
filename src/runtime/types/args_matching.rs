@@ -323,10 +323,10 @@ impl Interpreter {
                 // the matcher did not.
                 let mut arg_for_checks = arg_for_checks.map(|v| v.deref_container());
                 // Whether an actual argument was passed for this param (vs. an
-                // unsupplied optional filled with its type object below). An
-                // unsupplied optional's `where` must NOT reject the candidate
-                // during dispatch — raku checks it at bind time against the
-                // default value, not the bare type object.
+                // unsupplied optional filled with its type object below). It
+                // decides which value a `where` post-constraint is tested
+                // against: the argument, the evaluated default, or the nominal
+                // type object an omitted optional binds.
                 let arg_was_supplied = arg_for_checks.is_some();
                 if arg_for_checks.is_none()
                     && !pd.required
@@ -593,13 +593,16 @@ impl Interpreter {
                         return false;
                     }
                 }
-                // An unsupplied parameter that HAS a default is checked
-                // against the *default value* -- raku evaluates the default and
-                // then applies the `where`, which is how a multi can select a
-                // candidate purely on its defaulted parameter
-                // (`multi method message(Str:D $c where { $_ eq 'INTM' } = $.classifier)`).
-                // Skipping the check made every such candidate match, so the
-                // first one declared always won.
+                // An unsupplied parameter is checked against the value it
+                // would actually bind, exactly as the binder does: the
+                // evaluated *default* when it has one -- which is how a multi
+                // can select a candidate purely on its defaulted parameter
+                // (`multi method message(Str:D $c where { $_ eq 'INTM' } = $.classifier)`)
+                // -- and otherwise the nominal type object an omitted optional
+                // binds. Skipping either made every such candidate match, so the
+                // first one declared always won (#8089). Dispatch and binding
+                // have to agree here, or a candidate is selected and then dies
+                // binding the very call it was selected for.
                 let where_default =
                     if !arg_was_supplied && let Some(default_expr) = pd.default.as_ref() {
                         self.eval_block_value(&[Stmt::Expr(default_expr.clone())])
@@ -607,11 +610,7 @@ impl Interpreter {
                     } else {
                         None
                     };
-                if let Some(where_expr) = &pd.where_constraint
-                    && (arg_was_supplied
-                        || where_default.is_some()
-                        || !(pd.default.is_some() || pd.optional_marker))
-                {
+                if let Some(where_expr) = &pd.where_constraint {
                     let Some(arg) = where_default.as_ref().or(arg_for_checks.as_ref()) else {
                         return false;
                     };
