@@ -3617,6 +3617,12 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) is_lexical: bool,
     pub(crate) hidden_parents: Vec<String>,
     pub(crate) does_parents: Vec<String>,
+    /// The subset of `parents` contributed by an `also is Parent` statement in
+    /// the class body rather than by the declaration header (see
+    /// `ast::Stmt::ClassDecl::body_parents`). Registration may defer resolving
+    /// such a parent until after the body has run, since the body itself can be
+    /// what brings it into scope.
+    pub(crate) body_parents: Vec<String>,
     pub(crate) repr: Option<String>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
@@ -8646,6 +8652,7 @@ impl CompiledCode {
             language_version,
             custom_traits,
             decl_id,
+            body_parents,
             ..
         } = stmt
         else {
@@ -8681,6 +8688,7 @@ impl CompiledCode {
             is_lexical: *is_lexical,
             hidden_parents: hidden_parents.clone(),
             does_parents: does_parents.clone(),
+            body_parents: body_parents.clone(),
             repr: repr.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,

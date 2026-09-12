@@ -343,6 +343,7 @@ pub(crate) fn stmt_list_with_mode(
                 Stmt::ClassDecl {
                     body,
                     parents,
+                    body_parents,
                     class_is_rw,
                     implicit_grammar_parent,
                     ..
@@ -368,6 +369,7 @@ pub(crate) fn stmt_list_with_mode(
                         } else if let Some(parent_name) = class::stmt_also_is_parent(stmt) {
                             class::push_also_is_parent(
                                 parents,
+                                body_parents,
                                 implicit_grammar_parent,
                                 parent_name,
                             );

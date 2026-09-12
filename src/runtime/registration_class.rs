@@ -192,6 +192,17 @@ pub(crate) struct ClassDeclModifiers<'a> {
     pub(crate) is_lexical: bool,
     pub(crate) hidden_parents: &'a [String],
     pub(crate) does_parents: &'a [String],
+    /// The subset of the `parents` argument contributed by an `also is Parent`
+    /// statement in the class *body* rather than by the declaration header
+    /// (`ast::Stmt::ClassDecl::body_parents`). Rakudo applies `also is` at its
+    /// position in the body, so a parent named there may only become
+    /// resolvable once the body has run -- brought in by a `use` inside the
+    /// body, or declared by the body itself. Such a parent is therefore not an
+    /// immediate X::Inheritance::UnknownParent: it is dropped from the header
+    /// phase and re-resolved after `run_class_body`, before the MRO is
+    /// computed. Empty for registration paths with no compiled plan available
+    /// (role-pun/mixin synthesis, `augment class`).
+    pub(crate) body_parents: &'a [String],
     /// Language version of the class being declared (e.g. "6.c", "6.d", "6.e").
     /// Used to determine whether submethods from composed roles should be included.
     pub(crate) language_version: &'a str,

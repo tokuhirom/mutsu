@@ -19,6 +19,8 @@
 
 use super::registration_class::language_revision_letter;
 use super::registration_class_compose::{RoleCompositionCx, RoleCompositionOutcome};
+use super::registration_class_deferred_parents::DeferredParentCx;
+use super::registration_class_parents::ParentValidation;
 use super::registration_class_validate::ClassRegSnapshot;
 use super::*;
 
@@ -182,6 +184,7 @@ impl Interpreter {
             is_lexical,
             hidden_parents,
             does_parents,
+            body_parents,
             language_version: class_language_version,
             is_stub: is_stub_body,
             trusts,
@@ -245,8 +248,45 @@ impl Interpreter {
         }
         self.note_compound_declared_type(name);
 
-        let (non_inheritance_parents, deferred_custom_traits) =
-            self.validate_class_parents(name, parents, does_parents, hidden_parents)?;
+        let ParentValidation {
+            non_inheritance_parents,
+            mut deferred_custom_traits,
+            deferred_body_parents,
+        } =
+            self.validate_class_parents(name, parents, does_parents, hidden_parents, body_parents)?;
+        // A deferred `also is` parent takes no part in the header phase (issue
+        // #8099): it is re-resolved after the body has run. Drop it -- together
+        // with its position-aligned bracket-argument chunks, so the two stay in
+        // lockstep the way the auto-`Grammar` filter at the VM call site keeps
+        // them -- and hand the rest to the header phase unchanged.
+        let (held_parents, held_pre_args);
+        let (parents, parent_pre_args) = if deferred_body_parents.is_empty() {
+            (parents, parent_pre_args)
+        } else {
+            let keep: Vec<bool> = parents
+                .iter()
+                .map(|p| !deferred_body_parents.contains(p))
+                .collect();
+            held_parents = parents
+                .iter()
+                .zip(&keep)
+                .filter(|(_, k)| **k)
+                .map(|(p, _)| p.clone())
+                .collect::<Vec<String>>();
+            // `parent_pre_args` is empty for registration paths with no
+            // compiled plan; only filter it when it is actually aligned.
+            held_pre_args = if parent_pre_args.len() == keep.len() {
+                parent_pre_args
+                    .iter()
+                    .zip(&keep)
+                    .filter(|(_, k)| **k)
+                    .map(|(a, _)| *a)
+                    .collect::<Vec<_>>()
+            } else {
+                parent_pre_args.to_vec()
+            };
+            (held_parents.as_slice(), held_pre_args.as_slice())
+        };
         let mut class_def = self.begin_class_def(
             name,
             parents,
@@ -271,8 +311,8 @@ impl Interpreter {
             .clear_user_methods_for_owner(crate::symbol::Symbol::intern(name));
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let RoleCompositionOutcome {
-            composed_roles_list,
-            direct_composed_roles,
+            mut composed_roles_list,
+            mut direct_composed_roles,
             punned_roles,
             hidden_punned_role_bases,
             class_role_param_bindings,
@@ -325,7 +365,7 @@ impl Interpreter {
         )? {
             return Ok(deferred_custom_traits);
         }
-        let class_def = self.run_class_body(
+        let mut class_def = self.run_class_body(
             name,
             class_def,
             is_hidden,
@@ -340,7 +380,43 @@ impl Interpreter {
             body_plan,
             is_hoisted_shell,
         )?;
-        self.finalize_class_registration(name, parents, class_def, &snapshot)?;
+        // `also is Parent` applies at its position in the BODY, so its parent
+        // is resolved here -- after the body has had its chance to introduce
+        // it, and still before `finalize_class_registration` computes the C3
+        // MRO (issue #8099).
+        let final_parents: Vec<String> = if deferred_body_parents.is_empty() {
+            parents.to_vec()
+        } else {
+            let outcome = match self.apply_deferred_body_parents(
+                name,
+                &mut class_def,
+                &deferred_body_parents,
+                DeferredParentCx {
+                    class_lang_rev: &class_lang_rev,
+                    is_hoisted_shell,
+                    composed_roles_list: &mut composed_roles_list,
+                    direct_composed_roles: &mut direct_composed_roles,
+                },
+            ) {
+                Ok(outcome) => outcome,
+                Err(err) => {
+                    snapshot.restore(self, name);
+                    return Err(err);
+                }
+            };
+            // A name the body never introduced is not this pass's to reject:
+            // it falls through to the same custom `trait_mod:<is>` dispatch an
+            // unknown HEADER parent takes, which raises
+            // X::Inheritance::UnknownParent itself when no candidate claims
+            // it. The shell is already published by now, so arm the rollback
+            // the dispatch site needs here too.
+            if !outcome.unclaimed.is_empty() {
+                deferred_custom_traits.extend(outcome.unclaimed);
+                self.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
+            }
+            parents.iter().cloned().chain(outcome.parents).collect()
+        };
+        self.finalize_class_registration(name, &final_parents, class_def, &snapshot)?;
         // Construction-time attribute defaults and BUILD parameter defaults
         // execute after this declaration, often from another compunit. Keep
         // the declaring unit so those evaluations can still see this file's
@@ -348,7 +424,7 @@ impl Interpreter {
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
         crate::runtime::cow_table_mut(&mut self.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
-        self.install_class_exporthow(name, parents)?;
+        self.install_class_exporthow(name, &final_parents)?;
         Ok(deferred_custom_traits)
     }
 }

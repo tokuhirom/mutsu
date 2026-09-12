@@ -394,6 +394,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args: Vec::new(),
+        body_parents: Vec::new(),
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
@@ -617,12 +618,18 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // `class`/`role` bodies never carry an implicit `Grammar` parent; the flag
     // exists so the shared helper can serve the grammar path too.
     let mut implicit_grammar_parent = false;
+    let mut body_parents: Vec<String> = Vec::new();
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
             false
         } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
-            push_also_is_parent(&mut parents, &mut implicit_grammar_parent, parent_name);
+            push_also_is_parent(
+                &mut parents,
+                &mut body_parents,
+                &mut implicit_grammar_parent,
+                parent_name,
+            );
             false
         } else {
             true
@@ -677,6 +684,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         is_grammar: false,
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
+        body_parents,
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
