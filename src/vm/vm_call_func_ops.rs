@@ -1903,6 +1903,22 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
+                } else if loan_env!(self, user_only_sub_hides_builtin(name, &args)) {
+                    // An `only` sub the user declared under this name hides the
+                    // same-named builtin completely (rakudo: `sub pick(Int, Int)`
+                    // makes `pick(1, "two")` a binding failure, never a call to
+                    // `&CORE::pick`). The matching test above said the arguments
+                    // do NOT fit that signature, so without this arm the native
+                    // arm below would answer the call and the binding failure
+                    // would vanish (GH #8064). Hand it to the interpreter, which
+                    // raises the X::TypeCheck::Binding::Parameter / arity error
+                    // the declared signature calls for.
+                    crate::vm::vm_stats::record_function_fallback(name);
+                    self.set_pending_call_arg_sources(arg_sources);
+                    let result = self.vm_call_function_fallback(name, &args);
+                    self.set_pending_call_arg_sources(None);
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if let Some(native_result) =
                     self.try_native_function(Symbol::intern(name), &args)
                 {
