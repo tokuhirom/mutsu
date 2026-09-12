@@ -607,10 +607,12 @@ impl Interpreter {
         }
 
         let (lookup_name, arg_exprs) = Self::parse_regex_lookup_target(raw);
+        let lookup_sym = crate::symbol::Symbol::intern(&lookup_name);
         NamedRegexLookupSpec {
             silent,
             token_lookup,
             lookup_name,
+            lookup_sym,
             capture_name,
             arg_exprs,
             alias_replaces_original,

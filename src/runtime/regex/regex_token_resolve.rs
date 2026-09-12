@@ -95,14 +95,23 @@ impl Interpreter {
     /// (pkg, name). Returns `None` when any candidate's pattern is non-static
     /// (its parse depends on runtime variable interpolation) or fails to
     /// parse — callers fall back to the uncached per-call path.
+    ///
+    /// `name_sym` is `name` interned. Callers that already hold it (every
+    /// `<subrule>` reference does — the memoized [`NamedRegexLookupSpec`]
+    /// carries it) pass it in rather than re-interning: this function is
+    /// probed once per subrule reference at every position, and interning is a
+    /// thread-local hash-map probe of the string, not a free operation
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
     pub(super) fn resolve_parsed_token_candidates_in_pkg(
         &mut self,
         name: &str,
+        name_sym: Symbol,
         pkg: &str,
     ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
+        debug_assert_eq!(name_sym, Symbol::intern(name));
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let cache_key = (Symbol::intern(pkg), Symbol::intern(name));
+        let cache_key = (Symbol::intern(pkg), name_sym);
         if let Some(hit) = PARSED_TOKEN_CANDIDATES.with(|c| {
             c.borrow()
                 .get(&cache_key)
@@ -173,7 +182,8 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
         if arg_values.is_empty()
-            && let Some(hit) = self.resolve_parsed_token_candidates_in_pkg(&spec.lookup_name, pkg)
+            && let Some(hit) =
+                self.resolve_parsed_token_candidates_in_pkg(&spec.lookup_name, spec.lookup_sym, pkg)
         {
             let raw_empty = hit.is_empty();
             return (hit, raw_empty);

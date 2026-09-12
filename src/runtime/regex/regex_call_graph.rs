@@ -221,18 +221,19 @@ impl Interpreter {
         // non-static lives inside a code block, because parse-time interpolation
         // treats those as opaque (`interpolate_bound_regex_scalars`). A body
         // that really does splice a value in is answered `None`.
-        let computed = match self.resolve_parsed_token_candidates_in_pkg(name, pkg) {
-            Some(candidates) => {
-                let raw_empty = candidates.is_empty();
-                self.rule_calls_of(name, pkg, &candidates, raw_empty)
-            }
-            None if self.rule_body_edges_are_generation_stable(name, pkg) => {
-                let spec = Self::parse_named_regex_lookup_spec(name);
-                let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
-                self.rule_calls_of(name, pkg, &candidates, raw_empty)
-            }
-            None => Err(StreamDecline::CalleeInterpolates),
-        };
+        let computed =
+            match self.resolve_parsed_token_candidates_in_pkg(name, Symbol::intern(name), pkg) {
+                Some(candidates) => {
+                    let raw_empty = candidates.is_empty();
+                    self.rule_calls_of(name, pkg, &candidates, raw_empty)
+                }
+                None if self.rule_body_edges_are_generation_stable(name, pkg) => {
+                    let spec = Self::parse_named_regex_lookup_spec(name);
+                    let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
+                    self.rule_calls_of(name, pkg, &candidates, raw_empty)
+                }
+                None => Err(StreamDecline::CalleeInterpolates),
+            };
         DIRECT_CALLS.with(|c| {
             let mut c = c.borrow_mut();
             if c.0 != generation {

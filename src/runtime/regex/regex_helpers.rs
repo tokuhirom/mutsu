@@ -891,6 +891,12 @@ pub(super) struct NamedRegexLookupSpec {
     pub(super) silent: bool,
     pub(super) token_lookup: bool,
     pub(super) lookup_name: String,
+    /// [`Self::lookup_name`] interned. The spec itself is memoized per atom
+    /// text, so this interns once per distinct `<subrule>` atom in the program
+    /// rather than once per call — the left-recursion key is built from it on
+    /// every subrule call at every position
+    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
+    pub(super) lookup_sym: crate::symbol::Symbol,
     pub(super) capture_name: Option<String>,
     pub(super) arg_exprs: Vec<String>,
     /// When true, the alias replaces the original capture name (dot-call alias).
