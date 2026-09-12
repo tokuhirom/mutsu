@@ -476,9 +476,15 @@ impl Interpreter {
         let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
-        let has_declared_shape = self
-            .env()
-            .contains_key_sym(MetaNs::ShapedArrayDims.key(var_sym));
+        // Gated on the monotonic latch: a program that never declares a shaped
+        // array (`my @a[2;3]`) can hold no such key, and this probe runs on
+        // EVERY element store. `MetaNs::key` memoizes the key symbol per
+        // (namespace, name), but the latch skips even that lookup and the env
+        // probe behind it.
+        let has_declared_shape = crate::env::shaped_array_dims_possible()
+            && self
+                .env()
+                .contains_key_sym(MetaNs::ShapedArrayDims.key(var_sym));
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
         // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).

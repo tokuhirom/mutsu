@@ -311,6 +311,18 @@ static SCALAR_NO_CONTAINER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// over-set only makes the (correct) probe run.
 static ELEM_INDEX_META_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for `__mutsu_shaped_array_dims::*` keys (the
+/// declared-shape markers of `my @a[2;3]`).
+///
+/// The probe runs on *every* element write (`@a[i] = x`) -- both fast paths and
+/// the full store -- and each miss costs a `format!` plus a `Symbol::intern`ing
+/// env lookup for a key a program without a single shaped-array declaration can
+/// never hold. Same soundness argument as [`ELEM_INDEX_META_SEEN`]: the only
+/// creation sites are String-keyed [`Env::insert`]s (so [`note_env_key`] catches
+/// them all), the flag is monotonic, and an over-set only makes the (correct)
+/// probe run.
+static SHAPED_ARRAY_DIMS_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// Monotonic, process-global flag for `^name` placeholder-parameter keys (`$^a`
 /// & co, bound under their careted name). Every by-name env *write* and *read*
 /// (`set_env_with_main_alias` / `get_env_with_main_alias` — i.e. every mirrored
@@ -386,6 +398,13 @@ pub(crate) fn elem_index_meta_possible() -> bool {
     ELEM_INDEX_META_SEEN.load(Ordering::Relaxed)
 }
 
+/// True if any `__mutsu_shaped_array_dims::*` marker may exist in some env. See
+/// [`SHAPED_ARRAY_DIMS_SEEN`].
+#[inline]
+pub(crate) fn shaped_array_dims_possible() -> bool {
+    SHAPED_ARRAY_DIMS_SEEN.load(Ordering::Relaxed)
+}
+
 /// True if any `^name` placeholder-parameter key may exist in some env. See
 /// [`PLACEHOLDER_KEY_SEEN`].
 #[inline]
@@ -430,6 +449,8 @@ pub(crate) fn note_env_key(key: &str) {
             BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_scalar_bind_no_container::") {
             SCALAR_NO_CONTAINER_KEY_SEEN.store(true, Ordering::Relaxed);
+        } else if key.starts_with("__mutsu_shaped_array_dims::") {
+            SHAPED_ARRAY_DIMS_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_index::")
             || key.starts_with("__mutsu_elem_share::")
             || key.starts_with("__mutsu_deleted_index::")

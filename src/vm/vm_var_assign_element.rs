@@ -169,9 +169,11 @@ impl Interpreter {
             }
         }
         {
-            let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
-            if self.env().contains_key(&shaped_key) {
-                return None;
+            if crate::env::shaped_array_dims_possible() {
+                let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
+                if self.env().contains_key(&shaped_key) {
+                    return None;
+                }
             }
             // See the hash twin above for why the bound-index probe is gated.
             if crate::env::elem_index_meta_possible() {
@@ -937,6 +939,21 @@ impl Interpreter {
         if let Some(result) =
             self.try_fast_hash_element_assign(code, name_idx, is_positional, target_slot)
         {
+            return result;
+        }
+        // --- Fast path for simple positional array element assignment ---
+        // The Positional twin of the hash lane above: `@a[$i] = $v` on a plain,
+        // untyped, unbound array with an in-range Int index is a `Vec` slot
+        // write, not a re-derivation of the variable's declaration (#8069 §2).
+        // `elem_share_mark` is passed through because this lane cannot honour a
+        // pending `=`-element share and must decline when one is set.
+        if let Some(result) = self.try_fast_array_element_assign(
+            code,
+            name_idx,
+            is_positional,
+            target_slot,
+            elem_share_mark.is_some(),
+        ) {
             return result;
         }
         // Save type metadata and container default by pointer BEFORE the
