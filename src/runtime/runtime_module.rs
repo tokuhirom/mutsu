@@ -5,6 +5,15 @@ impl Interpreter {
         !self.module_load_stack.is_empty()
     }
 
+    /// Whether `use <module>` has already been executed in this process.
+    ///
+    /// Read by declaration-time pre-passes that validate names a module is
+    /// expected to supply: a module still unloaded cannot be asked what it
+    /// exports, so the pre-pass must defer rather than reject.
+    pub(crate) fn is_module_loaded(&self, module: &str) -> bool {
+        self.loaded_modules.contains(module)
+    }
+
     /// True once `use JSON::Fast` / `use JSON::Tiny` has been seen, gating the
     /// native `to-json` / `from-json` dispatch (see `vm/vm_native_json.rs`).
     pub(crate) fn json_module_loaded(&self) -> bool {

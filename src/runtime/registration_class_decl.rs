@@ -107,6 +107,8 @@ pub(crate) const BUILTIN_PARENT_TYPES: &[&str] = &[
     "Perl6::Metamodel::ClassHOW",
     "Metamodel::GrammarHOW",
     "Perl6::Metamodel::GrammarHOW",
+    "Metamodel::ParametricRoleHOW",
+    "Perl6::Metamodel::ParametricRoleHOW",
 ];
 
 impl Interpreter {

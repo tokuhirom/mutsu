@@ -245,7 +245,7 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (_depth, _receiver, method_name, orig_args) =
+        let (_depth, receiver, method_name, orig_args) =
             self.metamodel_dispatch_stack.last().cloned()?;
         // Only fire when the innermost method dispatch is the metamodel method
         // itself (not some helper method it called).
@@ -272,7 +272,19 @@ impl Interpreter {
             // native part of `new_type` — creating and registering the type —
             // has already run, so the base candidate simply returns the type
             // object under registration.
-            "new_type" => self.pending_declare_new_type.clone().map(Ok),
+            "new_type" => Some(match self.pending_declare_new_type.clone() {
+                Some(type_obj) => Ok(type_obj),
+                // No DECLARE in flight: this is a plain
+                // `MyHOW.new_type(:name<X>)` on a user subclass of a builtin
+                // metamodel HOW, so the base candidate is the native
+                // `new_type` itself — minting the type is what the override
+                // delegated for. Returning `None` here left the whole chain
+                // with no candidate and `callsame` answered `Nil`, so every
+                // such override produced a typeless `Nil`
+                // (Test::Async's `BundleHOW`/`ReporterHOW`, and
+                // `HubHOW.construct-suite`'s `::?CLASS.new_type(:$name)`).
+                None => self.metamodel_new_type(&receiver, &args),
+            }),
             // Any other native ClassHOW metamethod (`add_method`, `compose`,
             // `add_attribute`, `attributes`, ...) is the final base candidate
             // when the user MRO is exhausted — same routing as the direct

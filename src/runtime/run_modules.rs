@@ -1180,8 +1180,31 @@ impl Interpreter {
             // this module's own package (the nested load recorded that), not to
             // the package that imported this module. Only the declarations
             // owned by this compunit may be visible in the importer's scope.
+            // A type declared `is export` is importable by its bare name even
+            // when it does NOT sit under the compunit's own file name: rakudo's
+            // `is export` publishes into the COMPUNIT's `UNIT::EXPORT`, not into
+            // the surrounding package's stash, so `unit package Test::Async;
+            // class Event is export {...}` in `Test/Async/Event.rakumod` exports
+            // `Event` (registered here as `Test::Async::Event`) although the
+            // module is `Test::Async::Event` only by coincidence of file name —
+            // `Foo/Ev.rakumod` with the same body exports `Event` just as well.
+            // The prefix rule below cannot see those, so the compunit's own
+            // `is export`-ed type names are admitted alongside it, restricted to
+            // the `unit` package the declarations actually live in so a
+            // transitively loaded dependency's same-named export cannot claim
+            // the alias.
+            let exported_here = Self::collect_exported_type_names(&stmts);
+            let unit_prefix = unit_name.as_deref().map(|n| format!("{n}::"));
             let owned_types = new_types.iter().filter(|qualified| {
-                *qualified == module || qualified.starts_with(&format!("{module}::"))
+                if *qualified == module || qualified.starts_with(&format!("{module}::")) {
+                    return true;
+                }
+                let Some(prefix) = unit_prefix.as_deref() else {
+                    return false;
+                };
+                qualified
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| !rest.contains("::") && exported_here.contains(rest))
             });
             let aliases: Vec<(String, String)> = owned_types
                 .filter_map(|qualified| {
@@ -1313,6 +1336,44 @@ impl Interpreter {
             }
         }
         names
+    }
+
+    /// The bare type names a compunit declared `is export`.
+    ///
+    /// `class C is export` / `grammar G is export` desugars to the declaration
+    /// followed by a `__MUTSU_EXPORT_TYPE__("C", <tags>)` marker call (see
+    /// `parser::stmt::class::class_decl::export_type_stmt`), so reading the
+    /// markers back out of the parsed compunit is the same answer the runtime
+    /// export table gets — without having to guess which package the runtime
+    /// filed it under. Only unqualified names are returned: a `class A::B is
+    /// export` publishes the compound name `A::B`, which the bare-short-name
+    /// alias table this feeds cannot express.
+    fn collect_exported_type_names(stmts: &[crate::ast::Stmt]) -> HashSet<String> {
+        fn walk(stmts: &[crate::ast::Stmt], out: &mut HashSet<String>) {
+            for s in stmts {
+                match s {
+                    // The parser wraps a type declaration and its export marker
+                    // in one `Block`, so the markers are never at file level.
+                    crate::ast::Stmt::Block(inner) | crate::ast::Stmt::SyntheticBlock(inner) => {
+                        walk(inner, out)
+                    }
+                    crate::ast::Stmt::Expr(crate::ast::Expr::Call { name, args })
+                        if name.resolve() == "__MUTSU_EXPORT_TYPE__" =>
+                    {
+                        if let Some(crate::ast::Expr::Literal(value)) = args.first() {
+                            let name = value.to_string_value();
+                            if !name.is_empty() && !name.contains("::") {
+                                out.insert(name);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut out = HashSet::new();
+        walk(stmts, &mut out);
+        out
     }
 
     /// The file-scope `constant` and `enum`-value names a `unit` compunit

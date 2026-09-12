@@ -653,6 +653,7 @@ mod main_args;
 pub(crate) mod mark_context;
 mod match_target;
 mod metamodel;
+mod metamodel_new_type;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;

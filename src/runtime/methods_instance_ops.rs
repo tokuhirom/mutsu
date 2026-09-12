@@ -2502,45 +2502,21 @@ impl Interpreter {
                 self.call_function("EVAL", vec![target])
             }
             // Metamodel::*HOW methods
-            "new_type" if matches!(target.view(), ValueView::Package(n) if n.resolve().starts_with("Metamodel::")) =>
+            // `Metamodel::<X>HOW.new_type(:name<Foo>)`, and the same call on a
+            // USER subclass of one that does not override `new_type` — rakudo
+            // inherits the metamethod there, so `class BundleHOW is
+            // Metamodel::ParametricRoleHOW { }; BundleHOW.new_type(...)` mints a
+            // type rather than dying with "No such method 'new_type'".
+            "new_type"
+                if matches!(target.view(), ValueView::Package(n)
+                    if n.resolve().starts_with("Metamodel::")
+                        || self.is_metamodel_how_class(&n.resolve())) =>
             {
-                // Metamodel::PackageHOW.new_type(name => 'Foo')
-                // Returns a type object (Package) with the given name
-                // and registers an empty class so .new works on it.
-                let name = args
-                    .iter()
-                    .find_map(|a| {
-                        if let ValueView::Pair(k, v) = a.view() {
-                            if k == "name" {
-                                Some(v.to_string_value())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| "Anon".to_string());
-                // Register an empty class definition so that .new and other
-                // class operations work on this dynamically created type.
-                if !self.registry().classes.contains_key(&name) {
-                    self.registry_mut()
-                        .classes
-                        .insert(name.clone(), Default::default());
-                }
-                // The metaclass the call was made on IS the new type's
-                // metaclass: `Metamodel::ParametricRoleHOW.new_type(...)`
-                // yields a type whose `.HOW` is a `ParametricRoleHOW`, not the
-                // default `ClassHOW` (`Metamodel::ModuleHOW` a `ModuleHOW`, and
-                // so on). Record it so `.HOW` reports the right one.
-                if let ValueView::Package(how_pkg) = target.view()
-                    && let Some(short) = how_pkg.resolve().strip_prefix("Metamodel::")
-                {
-                    self.registry_mut()
-                        .declared_native_how
-                        .insert(name.clone(), format!("Perl6::Metamodel::{short}"));
-                }
-                Ok(Value::package(Symbol::intern(&name)))
+                let how_class = match target.view() {
+                    ValueView::Package(sym) => sym.resolve(),
+                    _ => unreachable!("guarded by the match above"),
+                };
+                self.metamodel_new_type(&how_class, &args)
             }
             // Metamodel::Primitives static methods
             _ if matches!(target.view(), ValueView::Package(n) if n == "Metamodel::Primitives") => {
