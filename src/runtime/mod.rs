@@ -3490,8 +3490,13 @@ pub struct Interpreter {
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     pub(crate) monkey_typing: bool,
     /// Defaults selected by the import list of the latest
-    /// `use JSON::Fast <...>` / `use JSON::Tiny` (see `runtime/json.rs`).
+    /// `use JSON::Fast <...>` (see `runtime/json.rs`).
     pub(crate) json_import_defaults: crate::runtime::json::JsonImportDefaults,
+    /// True once a `use JSON::Fast` resolved to nothing on the module ladder
+    /// and fell back to the native provider (`runtime/json.rs`). Gates the
+    /// native `to-json`/`from-json` dispatch; see
+    /// [`Interpreter::json_native_provider_active`].
+    pub(crate) json_native_provider: bool,
 
     // === Merged VM execution registers (CP-3 collapse: the bytecode VM was
     // dissolved into the Interpreter; these were the per-execution fields of the

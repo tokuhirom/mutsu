@@ -1,19 +1,13 @@
 use Test;
 
-# This test requires JSON::Tiny. Run with:
-#   prove -e 'target/debug/mutsu -I tmp/json-tiny/lib' t/json-tiny-compat.t
-# Or: MUTSULIB=tmp/json-tiny/lib prove -e 'target/debug/mutsu' t/json-tiny-compat.t
-#
-# Automatically skipped when JSON::Tiny module files are not present.
+# JSON::Tiny is a vendored battery (modules/JSON-Tiny/), so a bare
+# `use JSON::Tiny` resolves it off the bundled floor like any other module and
+# this file exercises the module's OWN Raku source. It used to be answered by
+# mutsu's native Rust JSON implementation, which observably differed from it
+# (`to-json([1,2])` produced a pretty-printed block, not `[ 1, 2 ]`); that
+# name-keyed interception was retired in #8183, and these assertions are
+# upstream JSON::Tiny's semantics, verified against raku.
 
-unless "tmp/json-tiny/lib/JSON/Tiny.pm".IO.e {
-    plan 1;
-    skip "JSON::Tiny not installed (run: git clone https://github.com/moritz/json.git tmp/json-tiny)", 1;
-    done-testing;
-    exit 0;
-}
-
-use lib 'tmp/json-tiny/lib';
 use JSON::Tiny;
 
 plan 48;

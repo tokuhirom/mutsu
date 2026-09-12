@@ -47,11 +47,14 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   holds **40 vendored upstream dists** run verbatim, plus `vendor/zef`. The policy — grow the
   interpreter until the real module runs (rung 2), never reimplement it natively (rung 3) —
   now has only **two** standing native providers: `NativeCall` (measured non-vendorable,
-  [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the JSON `to-json`/`from-json`
-  fast path — the latter re-decided as an exception **scheduled for retirement**
-  ([ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8183](https://github.com/tokuhirom/mutsu/issues/8183)):
-  a measured performance gap is a reason to optimize, not to substitute a semantically divergent
-  implementation under the module's own name (§1.8). The native `Test` provider was deleted outright on 2026-09-10
+  [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the native `JSON::Fast` provider
+  — a last-resort provider for a module mutsu does not ship, consulted only after the
+  resolution ladder comes up empty. The module-name-keyed *interception* it used to be was the
+  exception [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §E2 scheduled for retirement,
+  and it was retired on 2026-09-12 ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)),
+  taking `JSON::Tiny` out of the mechanism entirely: a measured performance gap is a reason to
+  optimize, not to substitute a semantically divergent implementation under the module's own
+  name (§1.8). The native `Test` provider was deleted outright on 2026-09-10
   (~3,300 lines); a bare `use Test` loads rakudo's own `Test.rakumod`.
 - **The active architectural thread is the call and closure path**, and it is nearly closed:
   a per-callsite inline cache (ADR-0066), locals and the five per-call bookkeeping stacks as
@@ -234,52 +237,40 @@ in the code, and the exception list has shrunk to two entries:
   verdict does not depend on it: `use QAST:from<NQP>` and the MoarVM dispatch-program surface
   are structural, and the record's own reopening condition requires all three to fall together.
   This is a justified rung-3 use, recorded as such.
-- **The JSON `to-json`/`from-json` fast path** (`runtime/json.rs`, 759 lines, plus
-  `vm/vm_native_json.rs`) — a partial exception, not a whole-module one: the real `JSON::Tiny`
-  *is* vendored and its `Grammar`/`Actions` run unintercepted against their upstream suite.
-  `docs/batteries/json-tiny.md` recorded the split as permanent policy; **that claim has since
-  been withdrawn from the record and the entry re-decided as an exception scheduled for
-  retirement ([ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4/E2,
-  [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) — both halves of the old rationale
-  had aged out**:
+- **The native `JSON::Fast` provider** (`runtime/json.rs`, 759 lines, plus
+  `vm/vm_native_json.rs`) — a last-resort provider for the one JSON module mutsu does not
+  ship. The module-name-keyed *interception* this entry used to describe was the exception
+  [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4/E2 scheduled for retirement, and it
+  was retired on 2026-09-12 ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); what is
+  left is narrower on every axis:
 
-  - *One of its two justifications has expired.* It rests on the real `JSON::Fast` needing ~50
-    `nqp::` ops mutsu does not implement, and on the `nqp::` op layer having been measured and
-    rejected. mutsu now **has** an `nqp::` op layer — 111 ops across ~1,790 lines
-    (`runtime/nqp_ops*.rs`, `vm/vm_call_nqp.rs`), grown steadily and still growing. What that
-    measurement actually established was narrower and still stands — the op set is a threshold
-    function, so implementing 80% of a *large* module's ops leaves it dead — but "mutsu does
-    not build `nqp::` ops" is simply no longer true, and a ~50-op gap is not the same argument
-    as NativeCall's. What remains of the rationale unambiguously is the second measurement, the
-    regex/grammar engine's speed (the real grammar
-    decodes 200 META-shaped documents in ~600s against the native path's 0.49s, on a path zef
-    walks for every metadata read).
-  - *The mechanism is worse than "a native provider".* It is a module-name-keyed interception
-    smeared across the parser's export list, `use`-time gating, and two separate call paths
-    (`runtime/calls.rs:189` for statement position, the expression path in
-    `vm_call_func_ops.rs`). It does not fill a gap where nothing resolves: the vendored
-    module's routines **do** resolve, and the native path deliberately returns before
-    `call_routine_def` to beat them. Worse, one shared native `from-json` picks its *exception
-    type* from which module names appear anywhere in the program —
-    `json_tiny_exception_style()` is `JSON::Tiny loaded && !JSON::Fast loaded`
-    (`runtime/runtime_module.rs:31`), self-documented as a "best-effort guess" that silently
-    yields JSON::Fast-shaped errors to a program that loads both. And the interception jumps
-    the whole module-resolution ladder documented above, so an explicit `-I`, `MUTSULIB` or
-    site-repo `JSON::Tiny` cannot override it — flagged in the record itself, and a real
-    problem the day an upstream security fix needs to reach a user who cannot rebuild mutsu.
+  - `JSON::Tiny` is gone from it entirely. It is a vendored battery, so `use JSON::Tiny`
+    resolves through the ordinary ladder and runs the module's own Raku source — `to-json([1,2])`
+    answers `[ 1, 2 ]`, the module's spelling, where the interception answered a pretty-printed
+    block.
+  - `JSON::Fast` is not vendored (the real distribution needs ~50 `nqp::` ops mutsu lacks), so
+    nothing resolves and the native routines answer — but only *after* the ladder has run and
+    come up empty, so a `JSON::Fast` reached via `use lib` / `-I` / `MUTSULIB` / the site repo
+    now wins (BATTERIES.md §6). It no longer returns ahead of `call_routine_def` to beat a
+    resolved def.
+  - `json_tiny_exception_style()` — the "best-effort guess" that read the *set* of loaded
+    module names to pick `from-json`'s exception type — is deleted. Each module owns its own
+    error again: `JSON::Tiny` throws its own `X::JSON::Tiny::Invalid` from its own source, and
+    the native provider throws JSON::Fast's plain `X::AdHoc`, whatever else is loaded.
 
-  **Being slow is not a licence for this.** A measured 1000x gap is a reason to make something
-  fast; it is not a reason to shadow a resolved module by name, diverge from its semantics, and
-  bypass the resolution ladder — that is the private-dialect risk BATTERIES.md §1 exists to
-  prevent, arrived at through a performance argument instead of a convenience one. The
-  distinction the project should hold is between an **optimization** and a **substitution**: a
-  fast path that is selected transparently and is semantically indistinguishable from the code
-  it replaces is legitimate (that is what the JIT does to bytecode); one that changes which
-  exception type a program sees, depending on which module names were `use`d, is a different
-  implementation wearing the module's name. The current path is the second kind. Retiring it
-  means paying the real bill — the regex/grammar engine's speed on the vendored module, or an
-  honest transparent specialization of that module's own code — not keeping the interception
-  because the bill is large.
+  The measurement that had been cited as making this permanent has also moved: the real grammar
+  parsed 200 META-shaped documents in >600s when the split was recorded, and does it in **12.6s**
+  today (raku: 0.84s, so mutsu's grammar engine is ~15x off rakudo rather than unusable). That
+  remaining 15x is the honest bill, and `Rakudo::Internals::JSON` — a *core* Rakudo class, which
+  is what zef's metadata path actually calls — is unaffected by any of this, so the sequencing
+  worry that kept the mechanism unexamined did not apply.
+
+  **The line the project holds** is between an **optimization** and a **substitution**: a fast
+  path selected transparently and semantically indistinguishable from the code it replaces is
+  legitimate (that is what the JIT does to bytecode); one that changes which exception type a
+  program sees, depending on which module names were `use`d, is a different implementation
+  wearing the module's name. Being slow was not a licence for the second kind, and a
+  performance measurement is not a justification for a substitution.
 
 `Test` left that list entirely on 2026-09-10: the native TAP provider, its `tap_state`
 bookkeeping, the native subtest machinery, `Stmt::Subtest`/`OpCode::SubtestScope`, the
@@ -483,12 +474,14 @@ No test-specific hardcoded outputs found. Two derivation shortcuts remain:
    native `.package` on multi dispatchers, a synthesized rather than exact `.signature` —
    remain open as a reactive per-case slice. The growth rate matters because §1.9 lets user code
    introspect through this same surface.
-2. **Module names hardcoded into dispatch.** The JSON fast path keys off the literal strings
-   `"JSON::Fast"`/`"JSON::Tiny"` in the parser's export list, in `use`-time gating, and at two
-   call sites, and one of those decisions (which exception type `from-json` throws) reads the
-   *set* of loaded module names rather than anything about the call (§1.8). Any dispatch change
-   has to know these strings exist to avoid silently breaking them, and the behavior is
-   load-order-sensitive by construction.
+2. **Module names hardcoded into dispatch** — *resolved 2026-09-12*
+   ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)). The JSON fast path used to key off
+   the literal strings `"JSON::Fast"`/`"JSON::Tiny"` in the parser's export list, in `use`-time
+   gating, and at two call sites, with one decision (which exception type `from-json` throws)
+   reading the *set* of loaded module names rather than anything about the call. `JSON::Tiny`
+   left the mechanism entirely, the load-order-sensitive exception guess is deleted, and the
+   dispatch sites no longer beat a resolved def — the one remaining name is a last-resort
+   provider consulted only when the ladder resolves nothing (§1.8).
 3. **Parser grammar relaxations for roast** (minor): `is List` type-ish traits, the
    Test::Assuming colonpair, and the `throws-like` trailing-`)` special form.
 
@@ -560,7 +553,7 @@ Ordering rule, stated so it can be argued with:
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`CLAUDE.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
-| 1b | **Retire the JSON `use`-time interception** (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
+| ~~1b~~ | ~~**Retire the JSON `use`-time interception**~~ (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | **Done 2026-09-12** (ADR-0096 §E2 closed). `JSON::Tiny` left the mechanism entirely (it is a vendored battery and now loads like any other module); the exception-shape guess keyed on the set of loaded module names is deleted; the dispatch sites no longer beat a resolved def; and the surviving `JSON::Fast` name is a last-resort provider consulted only when the ladder resolves nothing, so `-I`/`MUTSULIB`/site-repo copies win. The remaining bill — mutsu's grammar engine is ~15x rakudo on the real module, down from the >1000x that had made this look permanent — stands on its own. |
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
 | 4 | **Pay hygiene debt through the work above** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review. Split when a campaign opens the file and the ownership boundary is visible; a standalone line-moving campaign is not proposed, and neither is a bulk rewrite of the surviving `todo/` citations (§6 says why). This row is therefore a discipline, not a queue item — deliberately the one row with no issue behind it. |
@@ -641,10 +634,14 @@ outgrown); and the clause the JSON carve-out was allowed to skip (§D3):
 > What speed justifies is a transparent, semantics-preserving change to the real module's own
 > code path.
 
-The ADR records the JSON interception as an exception **scheduled for retirement**
+The ADR recorded the JSON interception as an exception **scheduled for retirement**
 ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)), not as policy, and
-`docs/batteries/json-tiny.md` withdraws its own "permanent policy" claim accordingly — a
-battery's selection record does not get to make a policy decision.
+`docs/batteries/json-tiny.md` withdrew its own "permanent policy" claim accordingly — a
+battery's selection record does not get to make a policy decision. That retirement landed the
+same day: `JSON::Tiny` left the mechanism entirely, the exception-shape guess is deleted, and
+what survives under the `JSON::Fast` name is a last-resort provider the resolution ladder
+outranks (§1.8). §D3 is therefore the first clause the ADR has already been used to settle
+rather than merely to state.
 
 ---
 

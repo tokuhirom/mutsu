@@ -895,6 +895,7 @@ impl Interpreter {
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
             json_import_defaults: self.json_import_defaults,
+            json_native_provider: self.json_native_provider,
 
             // Merged VM execution registers (CP-3 collapse): a thread clone starts
             // with fresh per-execution registers, exactly as the former

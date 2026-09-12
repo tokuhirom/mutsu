@@ -180,23 +180,6 @@ impl Interpreter {
                     None => self.resolve_function_with_alias(name, &args),
                 };
                 if let Some(def) = def_opt {
-                    // The real JSON::Fast/JSON::Tiny `to-json`/`from-json` defs
-                    // resolve here, but their nqp-based bodies cannot run under
-                    // mutsu — the module-gated native must win, matching the
-                    // expression path (where those defs never compile). A
-                    // user-defined from-json in any other package still wins.
-                    let def_pkg = def.package.resolve();
-                    let is_json_module_pkg = ["JSON::Fast", "JSON::Tiny"].iter().any(|m| {
-                        def_pkg == *m
-                            || (def_pkg.starts_with(*m)
-                                && def_pkg[m.len()..].starts_with(':')
-                                && !def_pkg[m.len()..].starts_with("::"))
-                    });
-                    if is_json_module_pkg
-                        && let Some(result) = self.try_native_json_function(name, &args)
-                    {
-                        return result;
-                    }
                     // The compiled entry replaces the retired
                     // `call_function_def`'s inlined copy that lived here
                     // (ADR-0019 C6d-1): it records deprecation from
@@ -211,12 +194,13 @@ impl Interpreter {
                 } else if self.has_proto(name) {
                     return Err(self.multi_no_match_error(name, &args));
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
-                    // JSON::Fast/JSON::Tiny to-json/from-json in STATEMENT
-                    // position with named args (`from-json($t, :$immutable);`
-                    // inside a try) reaches exec_call via ExecCallPairs; the
-                    // expression path dispatches these in vm_call_func_ops.
-                    // Placed after user-sub resolution so a user-defined
-                    // from-json still wins.
+                    // The native JSON::Fast provider's to-json/from-json in
+                    // STATEMENT position with named args (`from-json($t,
+                    // :$immutable);` inside a try) reaches exec_call via
+                    // ExecCallPairs; the expression path dispatches these in
+                    // vm_call_func_ops. Placed after user-sub resolution so a
+                    // user-defined from-json -- or a real JSON::Fast off the
+                    // module ladder -- still wins.
                     return result;
                 } else {
                     return Err(RuntimeError::new(format!("Unknown call: {}", name)));

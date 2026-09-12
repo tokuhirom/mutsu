@@ -14,21 +14,14 @@ impl Interpreter {
         self.loaded_modules.contains(module)
     }
 
-    /// True once `use JSON::Fast` / `use JSON::Tiny` has been seen, gating the
-    /// native `to-json` / `from-json` dispatch (see `vm/vm_native_json.rs`).
-    pub(crate) fn json_module_loaded(&self) -> bool {
-        self.loaded_modules.contains("JSON::Fast") || self.loaded_modules.contains("JSON::Tiny")
-    }
-
-    /// Whether a `from-json` parse failure should surface as
-    /// `X::JSON::Tiny::Invalid` (the real JSON::Tiny's exception) rather than
-    /// the plain `X::AdHoc` JSON::Fast produces via `die`. Both modules share
-    /// one native `from-json`, so this is a best-effort guess from which
-    /// module name(s) were `use`d — accurate for the common single-import
-    /// case; a program that loads both modules falls back to the
-    /// JSON::Fast-shaped error.
-    pub(crate) fn json_tiny_exception_style(&self) -> bool {
-        self.loaded_modules.contains("JSON::Tiny") && !self.loaded_modules.contains("JSON::Fast")
+    /// True once a `use JSON::Fast` found no `JSON::Fast` anywhere on the
+    /// module-resolution ladder and fell back to the native `to-json` /
+    /// `from-json` (see `vm/vm_native_json.rs`). It is a *last-resort
+    /// provider for a module mutsu does not ship*, never an override: a
+    /// `JSON::Fast` reachable via `use lib` / `-I` / `MUTSULIB` / the site
+    /// repo loads and runs normally, and this stays false.
+    pub(crate) fn json_native_provider_active(&self) -> bool {
+        self.json_native_provider
     }
 
     /// True while some module compunit's mainline is currently running
@@ -293,11 +286,11 @@ impl Interpreter {
         module: &str,
         tags: &[String],
     ) -> Result<(), RuntimeError> {
-        // Native JSON modules: the import list selects per-scope defaults
-        // (`use JSON::Fast <immutable !pretty>`). Every `use` re-selects them —
-        // including re-uses of the already-loaded module below — so this must
-        // run before the loaded_modules early return.
-        if matches!(module, "JSON::Fast" | "JSON::Tiny") {
+        // `use JSON::Fast <immutable !pretty>`: the import list selects
+        // per-scope defaults for the native provider. Every `use` re-selects
+        // them — including re-uses of the already-loaded module below — so this
+        // must run before the loaded_modules early return.
+        if module == "JSON::Fast" {
             self.json_import_defaults =
                 crate::runtime::json::JsonImportDefaults::from_import_words(tags);
         }
@@ -422,9 +415,9 @@ impl Interpreter {
         // for a module that runs no `is export` declarations.
         // `Test` used to be registered here too; it loads rakudo's own
         // `Test.rakumod` now (#7566), which runs its own `is export`
-        // declarations. `JSON::Fast`/`JSON::Tiny`'s `to-json`/`from-json` are
-        // native builtins with no code-var form, so registering their names
-        // would build a stash whose entries resolve to `Nil` -- worse than not
+        // declarations. The native `JSON::Fast` provider's `to-json`/
+        // `from-json` have no code-var form, so registering their names would
+        // build a stash whose entries resolve to `Nil` -- worse than not
         // having it. See the ticket for that residue.
         let result = if matches!(
             module,
@@ -449,12 +442,6 @@ impl Interpreter {
                     // into the VM (see runtime/nativecall.rs); `use NativeCall`
                     // only needs to be a recognized no-op.
                     | "NativeCall"
-                    // JSON::Fast / JSON::Tiny: the real distributions depend on
-                    // ~50 nqp ops mutsu does not implement. Recognize them as
-                    // built-in modules and provide native `to-json`/`from-json`
-                    // (see runtime/json.rs, dispatched in vm_native_json.rs).
-                    | "JSON::Fast"
-                    | "JSON::Tiny"
         ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
@@ -481,6 +468,23 @@ impl Interpreter {
                     self.write_warn_to_stderr(&format!(
                         "WARNING: could not find module {module} to use, ignoring"
                     ));
+                    Ok(())
+                }
+                Err(err) => Err(err),
+            }
+        } else if module == "JSON::Fast" {
+            // `JSON::Fast` is the one JSON module mutsu still provides natively
+            // (`runtime/json.rs`): the real distribution needs ~50 `nqp::` ops
+            // mutsu lacks and is not vendored, so nothing would resolve. It is a
+            // *fallback*, not an override — the ladder runs first, so a real
+            // `JSON::Fast` reached through `use lib` / `-I` / `MUTSULIB` / the
+            // site repo wins (BATTERIES.md §6). `JSON::Tiny` is no longer on
+            // this path at all: it is a vendored battery that loads like any
+            // other module (see docs/batteries/json-tiny.md).
+            match self.load_module(module) {
+                Ok(()) => Ok(()),
+                Err(err) if err.is_unsatisfied_dependency() => {
+                    self.json_native_provider = true;
                     Ok(())
                 }
                 Err(err) => Err(err),
