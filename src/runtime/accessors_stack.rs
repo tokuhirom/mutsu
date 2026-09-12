@@ -718,7 +718,7 @@ impl Interpreter {
 ///
 /// `current_package`/`current_package_sym` are already interior-mutable
 /// (`Arc<RwLock<String>>` / `Arc<AtomicU32>`, the same handles
-/// [`Interpreter::set_current_package_shared`] uses), so this guard just
+/// [`Interpreter::set_current_package_shared_sym`] uses), so this guard just
 /// holds cloned `Arc` handles and writes through them directly on drop -- no
 /// `&mut Interpreter` borrow is needed, so it stays fully safe (no raw
 /// pointers) even though it is typically constructed deep inside a large
