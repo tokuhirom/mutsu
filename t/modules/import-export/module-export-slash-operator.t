@@ -10,7 +10,7 @@ use SlashOperatorExport;
 # match that, so the candidate was deleted and `$vec / 2` fell through to
 # numeric division ("Cannot resolve caller Numeric(...)"). From Math::Vector.
 
-plan 8;
+plan 9;
 
 my $v = slashvec(2, 4, 6);
 
@@ -30,3 +30,8 @@ is 7 / 2, 3.5, 'core infix:</> still applies to numbers';
 # split listed it as `&infix:<`.
 ok UNIT::.keys.grep({ $_ eq '&infix:</>' }).elems >= 0,
    'the pseudo-stash listing does not crash on an operator name containing /';
+
+# #8008: the module's OWN body must be able to reach the operator multis it
+# exports, not just its importers.
+is inside-div(), '1,2,3',
+   "the module's own body can call the multi infix:</> it exports (#8008)";

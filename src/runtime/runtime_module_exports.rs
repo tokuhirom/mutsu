@@ -442,10 +442,14 @@ impl Interpreter {
             if name.starts_with("infix:<") {
                 // An EXPORTED operator becomes lexically visible in whatever
                 // unit imported it, so it carries no declaring-file
-                // restriction (empty set == visible everywhere).
+                // restriction (empty set == visible everywhere). Force the
+                // set empty rather than filling it in only when absent: see
+                // the matching comment in
+                // `runtime_module_export_sub.rs::install_export_symbol`
+                // (#8008) — the declaring module's own decl-time entry is
+                // never absent by the time export runs.
                 crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
-                    .entry(name.clone())
-                    .or_default();
+                    .insert(name.clone(), HashSet::new());
                 crate::vm::vm_jit::note_user_infix_decl();
             }
             let source_single = format!("{module}::{name}");

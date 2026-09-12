@@ -857,6 +857,21 @@ impl Interpreter {
                 self.unit_of_source(Some(&source_path.to_string_lossy()));
             self.module_loading_unit_stack
                 .push((module_unit_for_loading_stack, self.routine_stack_len()));
+            // Scope `current_unit` to this module's own compilation unit while
+            // its mainline runs, exactly like `?FILE` just below. Without this,
+            // a top-level declaration made directly in the module's own body
+            // (not inside a call, which sets `current_unit` per-call from the
+            // callee's own source file) is attributed to whatever unit
+            // TRIGGERED the load -- the importer's, not the module's own.
+            // `sub infix:<...>(...) is export` recording ITS OWN declaring
+            // unit (`registration_sub.rs`'s `user_declared_infix_ops`) is
+            // exactly this shape: the operator was scoped to the IMPORTER's
+            // unit, so the module's own other routines (which run with
+            // `current_unit` correctly set to the module, via the per-call
+            // restore) saw the operator as declared in a foreign unit and
+            // fell back to the core operator (#8008).
+            let saved_unit = self.current_unit;
+            self.current_unit = module_unit_for_loading_stack;
             // If the module file is a `unit module X` (or unit package/class),
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
@@ -1117,6 +1132,7 @@ impl Interpreter {
                 self.unit_module_loading_stack.pop();
             }
             self.module_loading_unit_stack.pop();
+            self.current_unit = saved_unit;
             self.set_current_package(saved_package);
             if result.is_ok() {
                 // A `sub MAIN` defined in a used module is NOT the program's MAIN
