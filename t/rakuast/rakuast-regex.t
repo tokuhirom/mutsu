@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. These examples are intentionally static: dynamic
 # assertions and interpolations remain explicit follow-up boundaries.
 
-plan 15;
+plan 16;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -122,6 +122,38 @@ is Q[grammar GRegexRule { rule x { "a" } }].AST.gist, q:to/END/.chomp, 'grammar 
                             RakuAST::StrLiteral.new("a"),
                           )
                         )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[grammar GRegexAdjacent { rule x { a[bc]d } }].AST.gist, q:to/END/.chomp, 'declaration regex trees retain adjacency around groups';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Grammar.new(
+          name => RakuAST::Name.from-identifier("GRegexAdjacent"),
+          body => RakuAST::Block.new(
+            body => RakuAST::Blockoid.new(
+              RakuAST::StatementList.new(
+                RakuAST::Statement::Expression.new(
+                  expression => RakuAST::RuleDeclaration.new(
+                    name => RakuAST::Name.from-identifier("x"),
+                    body => RakuAST::Regex::Sequence.new(
+                      RakuAST::Regex::Literal.new("a"),
+                      RakuAST::Regex::Group.new(
+                        RakuAST::Regex::Sequence.new(
+                          RakuAST::Regex::Literal.new("bc")
+                        )
+                      ),
+                      RakuAST::Regex::WithWhitespace.new(
+                        RakuAST::Regex::Literal.new("d")
                       )
                     )
                   )

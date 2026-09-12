@@ -405,3 +405,29 @@ that the execution plan comes from the retained tree rather than the value's
 compatibility string. Other regex entry points that currently accept only a
 pattern string, declaration normalization, captures, subrules, and dynamic
 regex nodes remain follow-up slices.
+
+## 10. Declaration source-whitespace and execution-provenance slice (2026-09-12)
+
+Declaration trees now retain the source whitespace boundary that RakuAST
+exposes. `WithWhitespace` marks the term before a written whitespace run; the
+root declaration receives the model's implicit final wrapper, while nested
+groups receive wrappers only for whitespace written inside them. This preserves
+the distinction between `rule x { a[bc]d }` and `rule x { a [bc] d }` without
+encoding execution-only whitespace into the source tree. Source rendering uses
+the same markers, so lowering a declaration from RakuAST does not introduce
+spaces between source-adjacent terms.
+
+Declaration bodies also carry their source tree on the regex value. The named
+regex smartmatch entry point consumes that value through the existing
+`RegexPattern` matcher. Token and regex declarations ignore the model
+wrappers; rule declarations add a `WsRule` only between terms marked with a
+written whitespace boundary. The final model wrapper never consumes trailing
+input, matching the established declaration normalizer. Dynamic declarations
+and matcher entry points that still require a pattern string remain on the
+legacy fallback path.
+
+The focused regressions are in `t/rakuast/rakuast-regex.t`,
+`t/regex/regex-tree-static-execution.t`, and
+`t/regex/regex-tree-value-provenance.t`. They pin AST parity for adjacent
+groups, an EVAL'd rule's execution boundary, and repeated named-rule
+smartmatches.

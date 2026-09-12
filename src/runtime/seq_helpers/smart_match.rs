@@ -492,11 +492,13 @@ impl Interpreter {
                     package,
                 },
             ) => {
-                // Look up the token def and extract the regex pattern from its body
+                // Look up the token def and retain its source tree when the
+                // declaration body has one. The compatibility spelling still
+                // drives the legacy fallback for dynamic declarations.
                 let qualified = format!("{}::{}", package, name);
-                if let Some(pat) = self
-                    .extract_token_regex_pattern(&qualified)
-                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
+                if let Some(regex) = self
+                    .extract_token_regex_value(&qualified)
+                    .or_else(|| self.extract_token_regex_value(&name.resolve()))
                 {
                     let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
@@ -513,7 +515,8 @@ impl Interpreter {
                         def_file: None,
                         invocation_id,
                     });
-                    if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
+                    if let Some(mut captures) = self.regex_match_with_captures_value(&regex, &text)
+                    {
                         self.reset_capture_env_vars();
                         // Set positional captures before executing code blocks
                         for (i, v) in captures.positional.iter().enumerate() {

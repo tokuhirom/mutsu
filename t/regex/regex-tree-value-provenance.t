@@ -8,7 +8,7 @@ use Test;
 # existing RegexPattern matcher; dynamic regex contents remain on the fallback
 # path.
 
-plan 7;
+plan 9;
 
 my $rx = /test/;
 ok 'test' ~~ $rx, 'a parsed regex value keeps matching after storage';
@@ -30,3 +30,9 @@ my $constructed = RakuAST::QuotedRegex.new(
 my $constructed-value = EVAL($constructed);
 ok 'tree' ~~ $constructed-value, 'a constructed tree travels through EVAL';
 nok 'stale' ~~ $constructed-value, 'constructed provenance does not alter semantics';
+
+grammar GRegexDeclaredValue { rule pair { a[bc] d } }
+ok 'abc d' ~~ &GRegexDeclaredValue::pair,
+    'a named rule lowers its declaration tree through smartmatch';
+ok 'abc d' ~~ &GRegexDeclaredValue::pair,
+    'a named rule reuses its declaration tree without duplicate normalization';

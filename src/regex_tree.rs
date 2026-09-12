@@ -13,6 +13,12 @@ pub(crate) struct RegexTree {
     pub(crate) match_immediately: bool,
     #[serde(default)]
     pub(crate) adverbs: Vec<RegexAdverb>,
+    /// The declaration policy that produced this tree, when it came from a
+    /// `regex`, `token`, or `rule` declaration. Execution-only prefixes such
+    /// as `:ratchet` remain outside the source tree and are applied by the
+    /// execution lowerer.
+    #[serde(default)]
+    pub(crate) declaration_kind: Option<RegexDeclKind>,
 }
 
 #[derive(
@@ -64,19 +70,13 @@ impl RegexTree {
             pos: 0,
             declaration,
         };
-        let body = parser.parse_alternation(&[])?;
+        let body = parser.parse_alternation(&[], declaration)?;
         parser.skip_whitespace();
         (parser.pos == parser.chars.len()).then_some(Self {
-            body: if !declaration
-                && let RegexNode::Literal(text) = &body
-                && text.chars().count() > 1
-            {
-                RegexNode::Sequence(vec![body])
-            } else {
-                body
-            },
+            body: sequence_for_multichar_literal(body),
             match_immediately: false,
             adverbs: Vec::new(),
+            declaration_kind: None,
         })
     }
 
@@ -134,6 +134,7 @@ impl RegexTree {
             ratchet: bool,
             ignore_case: bool,
             ignore_mark: bool,
+            rule_sigspace: bool,
         ) -> Option<Vec<crate::runtime::RegexToken>> {
             match node {
                 RegexNode::Literal(text) => {
@@ -210,8 +211,27 @@ impl RegexTree {
                 )]),
                 RegexNode::Sequence(nodes) => {
                     let mut tokens = Vec::new();
-                    for child in nodes {
-                        tokens.extend(lower_node(child, ratchet, ignore_case, ignore_mark)?);
+                    for (index, child) in nodes.iter().enumerate() {
+                        tokens.extend(lower_node(
+                            child,
+                            ratchet,
+                            ignore_case,
+                            ignore_mark,
+                            rule_sigspace,
+                        )?);
+                        // WithWhitespace marks whitespace after its child.
+                        // A final wrapper is the RakuAST model's implicit
+                        // declaration boundary, not trailing input to consume.
+                        if rule_sigspace
+                            && index + 1 < nodes.len()
+                            && matches!(child, RegexNode::WithWhitespace(_))
+                        {
+                            tokens.push(token(
+                                crate::runtime::RegexAtom::WsRule,
+                                crate::runtime::RegexQuant::One,
+                                ratchet,
+                            ));
+                        }
                     }
                     Some(tokens)
                 }
@@ -219,7 +239,7 @@ impl RegexTree {
                     let alternatives = branches
                         .iter()
                         .map(|branch| {
-                            lower_node(branch, ratchet, ignore_case, ignore_mark)
+                            lower_node(branch, ratchet, ignore_case, ignore_mark, rule_sigspace)
                                 .map(|tokens| pattern(tokens, ignore_case, ignore_mark))
                         })
                         .collect::<Option<Vec<_>>>()?;
@@ -230,7 +250,8 @@ impl RegexTree {
                     )])
                 }
                 RegexNode::Group(child) => {
-                    let tokens = lower_node(child, ratchet, ignore_case, ignore_mark)?;
+                    let tokens =
+                        lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
                     Some(vec![token(
                         crate::runtime::RegexAtom::Group(pattern(tokens, ignore_case, ignore_mark)),
                         crate::runtime::RegexQuant::One,
@@ -243,7 +264,8 @@ impl RegexTree {
                         RegexQuantifier::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
                         RegexQuantifier::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
                     };
-                    let mut tokens = lower_node(atom, ratchet, ignore_case, ignore_mark)?;
+                    let mut tokens =
+                        lower_node(atom, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
                     if tokens.len() == 1 {
                         tokens[0].quant = quant;
                         return Some(tokens);
@@ -254,18 +276,23 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
-                // `WithWhitespace` is a RakuAST semantic wrapper. Written
-                // regex whitespace is insignificant unless the runtime
-                // `:sigspace` policy is active, which this static bridge does
-                // not claim to lower.
+                // `WithWhitespace` is a source/model wrapper for ordinary,
+                // token, and regex trees. Rule declaration policy consumes it
+                // as `WsRule` between terms in the enclosing sequence.
                 RegexNode::WithWhitespace(child) => {
-                    lower_node(child, ratchet, ignore_case, ignore_mark)
+                    lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)
                 }
             }
         }
 
         Some(pattern(
-            lower_node(&self.body, ratchet, ignore_case, ignore_mark)?,
+            lower_node(
+                &self.body,
+                ratchet,
+                ignore_case,
+                ignore_mark,
+                self.declaration_kind == Some(RegexDeclKind::Rule),
+            )?,
             ignore_case,
             ignore_mark,
         ))
@@ -289,16 +316,33 @@ impl RegexNode {
                 let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{escaped}\"")
             }
-            Self::Sequence(nodes) => nodes
-                .iter()
-                .map(Self::to_source)
-                .collect::<Vec<_>>()
-                .join(" "),
-            Self::Alternation(nodes) => nodes
-                .iter()
-                .map(Self::to_source)
-                .collect::<Vec<_>>()
-                .join(" | "),
+            Self::Sequence(nodes) => {
+                nodes
+                    .iter()
+                    .enumerate()
+                    .fold(String::new(), |mut source, (index, node)| {
+                        if index > 0 && has_whitespace_after(&nodes[index - 1]) {
+                            source.push(' ');
+                        }
+                        source.push_str(&node.to_source());
+                        source
+                    })
+            }
+            Self::Alternation(nodes) => {
+                nodes
+                    .iter()
+                    .enumerate()
+                    .fold(String::new(), |mut source, (index, node)| {
+                        if index > 0 {
+                            if has_whitespace_after(&nodes[index - 1]) {
+                                source.push(' ');
+                            }
+                            source.push('|');
+                        }
+                        source.push_str(&node.to_source());
+                        source
+                    })
+            }
             Self::Group(child) => format!("[{}]", child.to_source()),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
@@ -314,6 +358,22 @@ impl RegexNode {
     }
 }
 
+fn sequence_for_multichar_literal(node: RegexNode) -> RegexNode {
+    match node {
+        RegexNode::Literal(text) if text.chars().count() > 1 => {
+            RegexNode::Sequence(vec![RegexNode::Literal(text)])
+        }
+        RegexNode::WithWhitespace(inner) if matches!(inner.as_ref(), RegexNode::Literal(text) if text.chars().count() > 1) => {
+            RegexNode::Sequence(vec![RegexNode::WithWhitespace(inner)])
+        }
+        node => node,
+    }
+}
+
+fn has_whitespace_after(node: &RegexNode) -> bool {
+    matches!(node, RegexNode::WithWhitespace(_))
+}
+
 struct Parser {
     chars: Vec<char>,
     pos: usize,
@@ -321,10 +381,13 @@ struct Parser {
 }
 
 impl Parser {
-    fn parse_alternation(&mut self, stops: &[char]) -> Option<RegexNode> {
+    fn parse_alternation(&mut self, stops: &[char], top_level: bool) -> Option<RegexNode> {
         let mut branches = vec![self.parse_sequence(stops)?];
         while self.consume_if('|') {
             branches.push(self.parse_sequence(stops)?);
+        }
+        if top_level && let Some(last) = branches.last_mut() {
+            wrap_last_node(last);
         }
         if branches.len() == 1 {
             Some(branches.pop().unwrap())
@@ -340,9 +403,15 @@ impl Parser {
             self.skip_whitespace();
             let saw_whitespace = self.pos != before;
             let Some(&ch) = self.chars.get(self.pos) else {
+                if saw_whitespace {
+                    wrap_last_with_whitespace(&mut nodes);
+                }
                 break;
             };
             if stops.contains(&ch) || ch == '|' {
+                if saw_whitespace {
+                    wrap_last_with_whitespace(&mut nodes);
+                }
                 break;
             }
             let mut atom = self.parse_atom(stops)?;
@@ -373,15 +442,20 @@ impl Parser {
                 }
             }
 
-            if self.declaration || saw_whitespace && !nodes.is_empty() {
-                // In a declaration, sigspace applies to every top-level atom.
-                // In an ordinary regex, whitespace belongs to the atom before
-                // the next source atom (`/a b/` -> WithWhitespace(a), b).
-                if self.declaration {
-                    atom = RegexNode::WithWhitespace(Box::new(atom));
-                } else if let Some(previous) = nodes.pop() {
-                    nodes.push(RegexNode::WithWhitespace(Box::new(previous)));
+            if self.declaration {
+                // WithWhitespace belongs to the term before a written space.
+                // The root declaration gets one implicit final wrapper, while
+                // nested groups only retain wrappers caused by their own
+                // written whitespace. This is the distinction Rakudo exposes
+                // for `rule x { a[bc]d }`.
+                if saw_whitespace {
+                    wrap_last_with_whitespace(&mut nodes);
                 }
+            } else if saw_whitespace
+                && !nodes.is_empty()
+                && let Some(previous) = nodes.pop()
+            {
+                nodes.push(RegexNode::WithWhitespace(Box::new(previous)));
             }
             nodes.push(atom);
         }
@@ -403,11 +477,13 @@ impl Parser {
             '\\' => self.parse_escape(),
             '[' => {
                 self.pos += 1;
-                let inner = self.parse_alternation(&[']'])?;
+                let inner = self.parse_alternation(&[']'], false)?;
                 if !self.consume_if(']') {
                     return None;
                 }
-                Some(RegexNode::Group(Box::new(inner)))
+                Some(RegexNode::Group(Box::new(sequence_for_multichar_literal(
+                    inner,
+                ))))
             }
             // Parentheses are capture groups in regex slang.  Captures need
             // runtime slot metadata, which this source tree does not retain;
@@ -490,5 +566,28 @@ impl Parser {
         } else {
             false
         }
+    }
+}
+
+fn wrap_last_with_whitespace(nodes: &mut [RegexNode]) {
+    if let Some(last) = nodes.last_mut()
+        && !matches!(last, RegexNode::WithWhitespace(_))
+    {
+        let node = std::mem::replace(last, RegexNode::Sequence(Vec::new()));
+        *last = RegexNode::WithWhitespace(Box::new(node));
+    }
+}
+
+fn wrap_last_node(node: &mut RegexNode) {
+    match node {
+        RegexNode::Sequence(nodes) => wrap_last_with_whitespace(nodes),
+        other => wrap_node_with_whitespace(other),
+    }
+}
+
+fn wrap_node_with_whitespace(node: &mut RegexNode) {
+    if !matches!(node, RegexNode::WithWhitespace(_)) {
+        let old = std::mem::replace(node, RegexNode::Sequence(Vec::new()));
+        *node = RegexNode::WithWhitespace(Box::new(old));
     }
 }
