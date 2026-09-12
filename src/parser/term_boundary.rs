@@ -51,6 +51,7 @@ pub(crate) fn is_pure_value_expr(expr: &Expr) -> bool {
         expr,
         Expr::Literal(_)
             | Expr::LiteralSrc(..)
+            | Expr::RegexLiteral { .. }
             | Expr::Var(_)
             | Expr::ArrayVar(_)
             | Expr::HashVar(_)

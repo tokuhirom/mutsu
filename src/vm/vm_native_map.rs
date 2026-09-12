@@ -339,7 +339,8 @@ fn classify_expr(expr: &Expr) -> Option<bool> {
         | Expr::HyperWhatever
         | Expr::EnvIndex(_)
         | Expr::NonDestructiveSubst { .. }
-        | Expr::MatchRegex(_) => Some(false),
+        | Expr::MatchRegex(_)
+        | Expr::MatchRegexTree { .. } => Some(false),
         // A nested `s///` / `tr///` (e.g. under `~~`) targets whichever value the
         // surrounding construct aliases to `$_`, which we cannot determine here;
         // be conservative. Only a *statement-level* `s///`/`tr///` is recognized

@@ -48,6 +48,8 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         // Already classified (re-running mark_expr should never happen in
         // practice, but stay idempotent) or out of scope for priming (`**`).
         Expr::WhateverArg | Expr::HyperWhatever => {}
+        Expr::RegexLiteral { .. } => {}
+        Expr::MatchRegexTree { .. } => {}
         // A marker's un-curried body is exactly the "argument" role: recurse
         // straight through, no wrapper of its own.
         Expr::WhateverCurry(inner) => mark_curry_body(inner),

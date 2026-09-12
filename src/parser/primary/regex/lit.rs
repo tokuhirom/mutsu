@@ -14,6 +14,7 @@ use crate::parser::helpers::{
     consume_unspace, delim_is_identifier_continuation, split_angle_words, ws,
 };
 use crate::parser::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
+use crate::regex_tree::RegexTree;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -35,6 +36,13 @@ use super::subst::{
     parse_subst_replacement_expr, try_strip_subst_compound_assign,
 };
 use super::trans::{parse_trans_adverbs, process_trans_escapes};
+
+fn static_regex_expr(value: Value, source: &str, declaration: bool) -> Expr {
+    match RegexTree::parse_static(source, declaration) {
+        Some(tree) => Expr::RegexLiteral { value, tree },
+        None => Expr::Literal(value),
+    }
+}
 
 /// A delimiter that unambiguously opens a regex once the `m`/`rx`/`s` keyword
 /// has been read: the four bracket pairs and `/`. Reaching the end of input
@@ -244,7 +252,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             // `rx:ignoremark /ä/` compiled to a bare `ä` and lost its mark
             // insensitivity (the `m:ignoremark` form already prepends `:m`).
             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-            return Ok((rest, Expr::Literal(Value::regex(pattern))));
+            return Ok((
+                rest,
+                static_regex_expr(Value::regex(pattern.clone()), &pattern, false),
+            ));
         }
         if delim_commits_to_regex(open_ch) {
             return Err(unterminated_regex_error(close_ch));
@@ -1008,7 +1019,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     }
                     // Detect obsolete Perl 5 trailing modifiers (e.g., m/pattern/i)
                     reject_trailing_p5_modifiers(rest)?;
-                    let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                    let source_pattern = pattern.to_string();
+                    let pattern = apply_inline_match_adverbs(source_pattern.clone(), &adverbs);
                     if !adverbs.perl5 {
                         validate_regex_pattern_or_perror(&pattern)?;
                     }
@@ -1018,6 +1030,30 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         Value::regex(pattern)
                     };
+                    let rakuast_adverbs = adverbs.source.iter().all(|(name, argument)| {
+                        argument.is_none()
+                            && matches!(name.as_str(), "i" | "ignorecase" | "g" | "global")
+                    });
+                    if rakuast_adverbs
+                        && let Some(mut tree) = RegexTree::parse_static(&source_pattern, false)
+                    {
+                        tree.match_immediately = true;
+                        tree.adverbs = adverbs
+                            .source
+                            .iter()
+                            .map(|(name, argument)| crate::regex_tree::RegexAdverb {
+                                name: name.clone(),
+                                argument: argument.clone(),
+                            })
+                            .collect();
+                        return Ok((
+                            rest,
+                            Expr::MatchRegexTree {
+                                value: regex_val,
+                                tree,
+                            },
+                        ));
+                    }
                     return Ok((rest, Expr::MatchRegex(regex_val)));
                 }
                 if delim_commits_to_regex(open_ch) {
@@ -1033,7 +1069,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         match scan_to_delim(r, '/', '/', false) {
             Some((pattern, rest)) if !pattern.is_empty() => {
                 validate_regex_pattern_or_perror(pattern)?;
-                return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
+                let value = Value::regex(pattern.to_string());
+                return Ok((rest, static_regex_expr(value, pattern, false)));
             }
             // `regex_lit` is only reached in *term* position, where a leading
             // `/` cannot be division — so running off the end of the input here

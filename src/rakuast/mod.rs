@@ -56,6 +56,23 @@ pub enum RakuAstClass {
     RatLiteral,
     StrLiteral,
     QuotedString,
+    QuotedRegex,
+    RegexSequence,
+    RegexLiteral,
+    RegexQuote,
+    RegexWithWhitespace,
+    RegexGroup,
+    RegexAlternation,
+    RegexQuantifiedAtom,
+    RegexQuantifierZeroOrMore,
+    RegexQuantifierOneOrMore,
+    RegexQuantifierZeroOrOne,
+    RegexCharClassDigit,
+    ColonPairTrue,
+    RegexDeclaration,
+    TokenDeclaration,
+    RuleDeclaration,
+    Grammar,
     CallName,
     CallNameWithoutParentheses,
     Name,
@@ -231,6 +248,23 @@ impl RakuAstClass {
             RatLiteral => "RakuAST::RatLiteral",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
+            QuotedRegex => "RakuAST::QuotedRegex",
+            RegexSequence => "RakuAST::Regex::Sequence",
+            RegexLiteral => "RakuAST::Regex::Literal",
+            RegexQuote => "RakuAST::Regex::Quote",
+            RegexWithWhitespace => "RakuAST::Regex::WithWhitespace",
+            RegexGroup => "RakuAST::Regex::Group",
+            RegexAlternation => "RakuAST::Regex::Alternation",
+            RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
+            RegexQuantifierZeroOrMore => "RakuAST::Regex::Quantifier::ZeroOrMore",
+            RegexQuantifierOneOrMore => "RakuAST::Regex::Quantifier::OneOrMore",
+            RegexQuantifierZeroOrOne => "RakuAST::Regex::Quantifier::ZeroOrOne",
+            RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
+            ColonPairTrue => "RakuAST::ColonPair::True",
+            RegexDeclaration => "RakuAST::RegexDeclaration",
+            TokenDeclaration => "RakuAST::TokenDeclaration",
+            RuleDeclaration => "RakuAST::RuleDeclaration",
+            Grammar => "RakuAST::Grammar",
             CallName => "RakuAST::Call::Name",
             CallNameWithoutParentheses => "RakuAST::Call::Name::WithoutParentheses",
             Name => "RakuAST::Name",
@@ -345,6 +379,10 @@ impl RakuAstClass {
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
+                | RakuAstClass::RegexQuantifierZeroOrMore
+                | RakuAstClass::RegexQuantifierOneOrMore
+                | RakuAstClass::RegexQuantifierZeroOrOne
+                | RakuAstClass::RegexCharClassDigit
         )
     }
 
@@ -394,6 +432,7 @@ impl RakuAstClass {
             | RatLiteral
             | StrLiteral
             | QuotedString
+            | QuotedRegex
             | VarLexical
             | TermReduce
             | Sub
@@ -401,6 +440,9 @@ impl RakuAstClass {
             | PointyBlock
             | CallName
             | CallNameWithoutParentheses
+            | RegexDeclaration
+            | TokenDeclaration
+            | RuleDeclaration
             // `RakuAST::WhateverCode::Argument` does not start with
             // `RakuAST::Term::`, so it does not get Term/Expression for free
             // from the name-prefix rule in `type_object_isa` — it must be
@@ -413,6 +455,26 @@ impl RakuAstClass {
             // through this list.
             | TermSelf => TERM,
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
+            RegexLiteral | RegexQuote | RegexGroup | RegexWithWhitespace => &[
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            RegexSequence | RegexAlternation => &["RakuAST::Regex"],
+            RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
+            RegexCharClassDigit => &[
+                "RakuAST::Regex::CharClass",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            Grammar => &[
+                "RakuAST::Class",
+                "RakuAST::Package",
+                "RakuAST::Term",
+                "RakuAST::Expression",
+            ],
+            ColonPairTrue => &["RakuAST::Term", "RakuAST::Expression"],
             _ => &[],
         }
     }
@@ -432,6 +494,9 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     if let Some(rest) = actual.strip_prefix(expected)
         && rest.starts_with("::")
     {
+        return true;
+    }
+    if semantic_type_object_ancestors(actual).contains(&expected) {
         return true;
     }
     match expected {
@@ -500,6 +565,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::PointyBlock"
         | "RakuAST::Call::Name"
         | "RakuAST::Call::Name::WithoutParentheses"
+        | "RakuAST::QuotedRegex"
         // Same "not RakuAST::Term::"-prefixed" gap as the instance-level
         // `semantic_ancestors` above.
         | "RakuAST::WhateverCode::Argument" => TERM,
@@ -508,6 +574,38 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::ApplyPostfix"
         | "RakuAST::ApplyListInfix"
         | "RakuAST::Ternary" => EXPR,
+        "RakuAST::Grammar" => &[
+            "RakuAST::Class",
+            "RakuAST::Package",
+            "RakuAST::Term",
+            "RakuAST::Expression",
+        ],
+        "RakuAST::Regex::Literal"
+        | "RakuAST::Regex::Quote"
+        | "RakuAST::Regex::Group"
+        | "RakuAST::Regex::WithWhitespace" => &[
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
+        "RakuAST::Regex::Sequence" | "RakuAST::Regex::Alternation" => {
+            &["RakuAST::Regex"]
+        },
+        "RakuAST::Regex::QuantifiedAtom" =>
+            &["RakuAST::Regex::Term", "RakuAST::Regex"],
+        "RakuAST::Regex::CharClass::Digit" => &[
+            "RakuAST::Regex::CharClass",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
+        "RakuAST::ColonPair::True" => &["RakuAST::Term", "RakuAST::Expression"],
+        "RakuAST::RegexDeclaration"
+        | "RakuAST::TokenDeclaration"
+        | "RakuAST::RuleDeclaration" => &[
+            "RakuAST::Term",
+            "RakuAST::Expression",
+        ],
         _ => &[],
     }
 }
@@ -533,6 +631,14 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
             | "RakuAST::MetaInfix"
+            | "RakuAST::Regex"
+            | "RakuAST::Regex::Atom"
+            | "RakuAST::Regex::Term"
+            | "RakuAST::Regex::Quantifier"
+            | "RakuAST::Regex::CharClass"
+            | "RakuAST::ColonPair"
+            | "RakuAST::QuotePair"
+            | "RakuAST::Package"
     ) {
         return true;
     }
@@ -548,6 +654,23 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RatLiteral,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
+    RakuAstClass::QuotedRegex,
+    RakuAstClass::RegexSequence,
+    RakuAstClass::RegexLiteral,
+    RakuAstClass::RegexQuote,
+    RakuAstClass::RegexWithWhitespace,
+    RakuAstClass::RegexGroup,
+    RakuAstClass::RegexAlternation,
+    RakuAstClass::RegexQuantifiedAtom,
+    RakuAstClass::RegexQuantifierZeroOrMore,
+    RakuAstClass::RegexQuantifierOneOrMore,
+    RakuAstClass::RegexQuantifierZeroOrOne,
+    RakuAstClass::RegexCharClassDigit,
+    RakuAstClass::ColonPairTrue,
+    RakuAstClass::RegexDeclaration,
+    RakuAstClass::TokenDeclaration,
+    RakuAstClass::RuleDeclaration,
+    RakuAstClass::Grammar,
     RakuAstClass::CallName,
     RakuAstClass::CallNameWithoutParentheses,
     RakuAstClass::Name,
@@ -985,6 +1108,195 @@ pub fn construct(
             fields,
         }))));
     }
+    if matches!(
+        class_name,
+        "RakuAST::Regex::Sequence" | "RakuAST::Regex::Alternation"
+    ) && method == "new"
+    {
+        let class = if class_name.ends_with("Sequence") {
+            RakuAstClass::RegexSequence
+        } else {
+            RakuAstClass::RegexAlternation
+        };
+        for argument in args {
+            require_regex_node(argument, class_name)?;
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields: args
+                .iter()
+                .cloned()
+                .map(|value| RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(value),
+                })
+                .collect(),
+        }))));
+    }
+    if class_name == "RakuAST::Regex::QuantifiedAtom" && method == "new" {
+        let atom = named_arg(args, "atom").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::QuantifiedAtom.new requires `atom`")
+        })?;
+        let quantifier = named_arg(args, "quantifier").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::QuantifiedAtom.new requires `quantifier`")
+        })?;
+        require_regex_node(&atom, class_name)?;
+        require_rakuast_class(
+            &quantifier,
+            RakuAstClass::RegexQuantifierZeroOrMore,
+            "RakuAST::Regex::QuantifiedAtom.new",
+        )
+        .or_else(|_| {
+            require_rakuast_class(
+                &quantifier,
+                RakuAstClass::RegexQuantifierOneOrMore,
+                "RakuAST::Regex::QuantifiedAtom.new",
+            )
+        })
+        .or_else(|_| {
+            require_rakuast_class(
+                &quantifier,
+                RakuAstClass::RegexQuantifierZeroOrOne,
+                "RakuAST::Regex::QuantifiedAtom.new",
+            )
+        })?;
+        let mut fields = vec![
+            RakuAstField {
+                name: Some("atom"),
+                value: RakuAstFieldValue::Node(atom),
+            },
+            RakuAstField {
+                name: Some("quantifier"),
+                value: RakuAstFieldValue::Node(quantifier),
+            },
+        ];
+        for name in ["separator", "trailing-separator"] {
+            if let Some(value) = named_arg(args, name) {
+                require_regex_node(&value, class_name)?;
+                fields.push(RakuAstField {
+                    name: Some(name),
+                    value: RakuAstFieldValue::Node(value),
+                });
+            }
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexQuantifiedAtom,
+            fields,
+        }))));
+    }
+    if class_name == "RakuAST::QuotedRegex" && method == "new" {
+        let body = named_arg(args, "body")
+            .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
+        require_regex_node(&body, class_name)?;
+        let match_immediately = named_arg(args, "match-immediately");
+        if let Some(value) = &match_immediately
+            && !matches!(value.view(), ValueView::Bool(_))
+        {
+            return Err(RuntimeError::new(
+                "RakuAST::QuotedRegex.new expects `match-immediately` to be Bool",
+            ));
+        }
+        let adverbs = named_arg(args, "adverbs")
+            .map(|value| {
+                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
+                    RuntimeError::new("RakuAST::QuotedRegex.new expects `adverbs` to be a list")
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        for adverb in &adverbs {
+            require_rakuast_class(
+                adverb,
+                RakuAstClass::ColonPairTrue,
+                "RakuAST::QuotedRegex.new",
+            )?;
+        }
+        let mut fields = Vec::new();
+        if let Some(value) = match_immediately {
+            fields.push(RakuAstField {
+                name: Some("match-immediately"),
+                value: RakuAstFieldValue::Node(value),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("body"),
+            value: RakuAstFieldValue::Node(body),
+        });
+        if !adverbs.is_empty() {
+            fields.push(RakuAstField {
+                name: Some("adverbs"),
+                value: RakuAstFieldValue::List(adverbs),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::QuotedRegex,
+            fields,
+        }))));
+    }
+    if matches!(
+        class_name,
+        "RakuAST::RegexDeclaration" | "RakuAST::TokenDeclaration" | "RakuAST::RuleDeclaration"
+    ) && method == "new"
+    {
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `name`")))?;
+        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST regex declaration")?;
+        let body = named_arg(args, "body")
+            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `body`")))?;
+        require_regex_node(&body, class_name)?;
+        let class = match class_name {
+            "RakuAST::RegexDeclaration" => RakuAstClass::RegexDeclaration,
+            "RakuAST::TokenDeclaration" => RakuAstClass::TokenDeclaration,
+            _ => RakuAstClass::RuleDeclaration,
+        };
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields: vec![
+                RakuAstField {
+                    name: Some("name"),
+                    value: RakuAstFieldValue::Node(name),
+                },
+                RakuAstField {
+                    name: Some("body"),
+                    value: RakuAstFieldValue::Node(body),
+                },
+            ],
+        }))));
+    }
+    if class_name == "RakuAST::Grammar" && method == "new" {
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Grammar.new requires `name`"))?;
+        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Grammar.new")?;
+        if named_arg(args, "body").is_some() {
+            return Err(RuntimeError::new(
+                "RakuAST::Grammar.new does not accept a `body` argument",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Grammar,
+            fields: vec![
+                RakuAstField {
+                    name: Some("name"),
+                    value: RakuAstFieldValue::Node(name),
+                },
+                RakuAstField {
+                    name: Some("body"),
+                    value: RakuAstFieldValue::Node(empty_block()),
+                },
+            ],
+        }))));
+    }
+    if let Some(class) = zero_positional_class(class_name, method) {
+        if !args.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "{class_name}.{method} expects no arguments"
+            )));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields: Vec::new(),
+        }))));
+    }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
     // and the bare operator nodes (`Infix.new("+")`).
     if let Some(class) = single_positional_class(class_name, method) {
@@ -1038,6 +1350,16 @@ fn empty_blockoid() -> Value {
     }))
 }
 
+fn empty_block() -> Value {
+    Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::Block,
+        fields: vec![RakuAstField {
+            name: Some("body"),
+            value: RakuAstFieldValue::Node(empty_blockoid()),
+        }],
+    }))
+}
+
 fn require_rakuast_class(
     value: &Value,
     expected: RakuAstClass,
@@ -1063,6 +1385,29 @@ fn require_any_rakuast(
         Err(RuntimeError::new(format!(
             "{constructor} expects `{argument}` to be a RakuAST node"
         )))
+    }
+}
+
+fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeError> {
+    match value.view() {
+        ValueView::RakuAst(node)
+            if matches!(
+                node.class,
+                RakuAstClass::RegexSequence
+                    | RakuAstClass::RegexLiteral
+                    | RakuAstClass::RegexQuote
+                    | RakuAstClass::RegexWithWhitespace
+                    | RakuAstClass::RegexGroup
+                    | RakuAstClass::RegexAlternation
+                    | RakuAstClass::RegexQuantifiedAtom
+                    | RakuAstClass::RegexCharClassDigit
+            ) =>
+        {
+            Ok(())
+        }
+        _ => Err(RuntimeError::new(format!(
+            "{constructor} expects a RakuAST regex node"
+        ))),
     }
 }
 
@@ -1136,6 +1481,23 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Type::Capture", "new") => RakuAstClass::TypeCapture,
         ("RakuAST::Trait::Returns", "new") => RakuAstClass::TraitReturns,
         ("RakuAST::Trait::Of", "new") => RakuAstClass::TraitOf,
+        ("RakuAST::Regex::Literal", "new") => RakuAstClass::RegexLiteral,
+        ("RakuAST::Regex::Quote", "new") => RakuAstClass::RegexQuote,
+        ("RakuAST::Regex::Group", "new") => RakuAstClass::RegexGroup,
+        ("RakuAST::Regex::WithWhitespace", "new") => RakuAstClass::RegexWithWhitespace,
+        ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
+        _ => return None,
+    })
+}
+
+fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
+    Some(match (class_name, method) {
+        ("RakuAST::Regex::Quantifier::ZeroOrMore", "new") => {
+            RakuAstClass::RegexQuantifierZeroOrMore
+        }
+        ("RakuAST::Regex::Quantifier::OneOrMore", "new") => RakuAstClass::RegexQuantifierOneOrMore,
+        ("RakuAST::Regex::Quantifier::ZeroOrOne", "new") => RakuAstClass::RegexQuantifierZeroOrOne,
+        ("RakuAST::Regex::CharClass::Digit", "new") => RakuAstClass::RegexCharClassDigit,
         _ => return None,
     })
 }
@@ -1215,6 +1577,10 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             Some("name")
         }
         RakuAstClass::TraitReturns | RakuAstClass::TraitOf => Some("type"),
+        RakuAstClass::RegexLiteral => Some("text"),
+        RakuAstClass::RegexQuote => Some("quoted"),
+        RakuAstClass::RegexSequence | RakuAstClass::RegexAlternation => Some("terms"),
+        RakuAstClass::RegexGroup | RakuAstClass::RegexWithWhitespace => Some("regex"),
         _ => None,
     };
     if positional_name == Some(method)
@@ -1323,6 +1689,23 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeSetting
             | RakuAstClass::TypeCapture
+            | RakuAstClass::QuotedRegex
+            | RakuAstClass::RegexSequence
+            | RakuAstClass::RegexAlternation
+            | RakuAstClass::RegexLiteral
+            | RakuAstClass::RegexQuote
+            | RakuAstClass::RegexWithWhitespace
+            | RakuAstClass::RegexGroup
+            | RakuAstClass::RegexQuantifiedAtom
+            | RakuAstClass::RegexQuantifierZeroOrMore
+            | RakuAstClass::RegexQuantifierOneOrMore
+            | RakuAstClass::RegexQuantifierZeroOrOne
+            | RakuAstClass::RegexCharClassDigit
+            | RakuAstClass::ColonPairTrue
+            | RakuAstClass::RegexDeclaration
+            | RakuAstClass::TokenDeclaration
+            | RakuAstClass::RuleDeclaration
+            | RakuAstClass::Grammar
     )
 }
 
@@ -1360,6 +1743,14 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
         InitializerAssign => &["expression"],
         TypeSimple | TypeSetting | TypeCapture => &["name"],
+        QuotedRegex => &["match-immediately", "body", "adverbs"],
+        RegexSequence | RegexAlternation => &["terms"],
+        RegexLiteral => &["text"],
+        RegexQuote => &["quoted"],
+        RegexGroup | RegexWithWhitespace => &["regex"],
+        RegexQuantifiedAtom => &["atom", "quantifier", "separator", "trailing-separator"],
+        RegexDeclaration | TokenDeclaration | RuleDeclaration => &["name", "body"],
+        Grammar => &["name", "body"],
         _ => &[],
     }
 }

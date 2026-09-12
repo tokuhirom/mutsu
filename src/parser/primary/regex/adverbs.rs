@@ -38,6 +38,10 @@ pub(super) fn regex_adverb_error(
 /// Adverbs parsed from a match/subst/rx expression.
 #[derive(Default)]
 pub(super) struct MatchAdverbs {
+    /// Adverbs in source order, retained for RakuAST. The execution fields
+    /// below intentionally remain the normalized representation used by the
+    /// existing matcher.
+    pub(super) source: Vec<(String, Option<String>)>,
     pub(super) global: bool,
     pub(super) exhaustive: bool,
     pub(super) overlap: bool,
@@ -260,6 +264,13 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             return Err(PError::fatal_with_exception(message, Box::new(ex)));
         }
 
+        let source_name = if leading_digits.is_empty() {
+            name.clone()
+        } else {
+            format!("{leading_digits}{name}")
+        };
+        adverbs.source.push((source_name, arg.map(str::to_string)));
+
         // A boolean-flag regex adverb (`:i`, `:s`, `:m`, ...) is a compile-time
         // switch and cannot take a runtime value. When such an adverb is given an
         // argument that references a dynamic variable (e.g. `m:i(@*ARGS[0])/`),
@@ -387,6 +398,7 @@ pub(super) fn parse_compact_match_adverbs<'a>(
     // news/2026-08/compact-match-adverb-overreach-mis-parses-bareword.md).
     if let Some(rest) = input.strip_prefix('s') {
         adverbs.sigspace = true;
+        adverbs.source.push(("s".to_string(), None));
         rest
     } else {
         input

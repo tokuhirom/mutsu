@@ -520,6 +520,13 @@ pub(crate) enum PhaserKind {
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
+    /// A parser-created static regex with its source-level tree retained for
+    /// RakuAST conversion. Execution still consumes `value` until the shared
+    /// tree's lowering covers the whole regex grammar (ADR-0088).
+    RegexLiteral {
+        value: Value,
+        tree: crate::regex_tree::RegexTree,
+    },
     /// A literal whose original source text differs from the canonical
     /// stringification of its value (e.g. `0xFF` → `Int(255)`, `1.5e0` → a
     /// rounded `Num`, `∞` → `Inf`). The compiler treats this as fully
@@ -575,6 +582,12 @@ pub(crate) enum Expr {
     EnvIndex(String),
     /// m/pattern/ — match against $_ and return the result
     MatchRegex(Value),
+    /// A parser-created static m/pattern/ with its source-level tree retained
+    /// for RakuAST conversion. Execution remains the existing match opcode.
+    MatchRegexTree {
+        value: Value,
+        tree: crate::regex_tree::RegexTree,
+    },
     Subst {
         pattern: String,
         replacement: String,
@@ -1146,6 +1159,14 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
+        /// Source-level regex tree, when this declaration was parsed from a
+        /// static body. The body remains normalized for execution.
+        #[serde(default)]
+        source_regex: Option<crate::regex_tree::RegexTree>,
+        /// `regex` shares the legacy TokenDecl execution path but has a
+        /// distinct RakuAST declaration node.
+        #[serde(default)]
+        regex_kind: crate::regex_tree::RegexDeclKind,
         multi: bool,
         /// `my token foo` — lexically scoped; a duplicate is X::Redeclaration.
         is_my: bool,
@@ -1161,6 +1182,10 @@ pub(crate) enum Stmt {
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
+        /// Source-level regex tree, when this declaration was parsed from a
+        /// static body. The body remains normalized for execution.
+        #[serde(default)]
+        source_regex: Option<crate::regex_tree::RegexTree>,
         multi: bool,
         /// `rule foo is export` — the Regex is importable under `&foo`.
         is_export: bool,
@@ -1418,6 +1443,10 @@ pub(crate) enum Stmt {
         /// make the C3 merge inconsistent whenever `Base` itself is a grammar.
         #[serde(default)]
         implicit_grammar_parent: bool,
+        /// True when the source used the `grammar` declarator. It must not be
+        /// inferred from the synthesized `Grammar` parent.
+        #[serde(default)]
+        is_grammar: bool,
         /// Stable per-declaration-site id (parse-time assigned, non-zero) used to
         /// distinguish same-named lexical (`my`) classes in different scopes.
         /// 0 means "no stable site" (runtime-synthesized or deserialized node).

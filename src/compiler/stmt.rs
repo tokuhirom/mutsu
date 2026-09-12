@@ -96,6 +96,7 @@ impl Compiler {
                 custom_traits,
                 is_unit,
                 implicit_grammar_parent,
+                is_grammar,
                 decl_id,
                 parent_args,
                 ..
@@ -125,6 +126,7 @@ impl Compiler {
                     custom_traits: custom_traits.clone(),
                     is_unit: *is_unit,
                     implicit_grammar_parent: *implicit_grammar_parent,
+                    is_grammar: *is_grammar,
                     decl_id: *decl_id,
                     parent_args: new_parent_args,
                 }
@@ -163,6 +165,8 @@ impl Compiler {
         }
         let regex = match right.as_ref() {
             Expr::MatchRegex(v) | Expr::Literal(v) => v,
+            Expr::RegexLiteral { value, .. } => value,
+            Expr::MatchRegexTree { value, .. } => value,
             _ => return false,
         };
         matches!(
@@ -443,6 +447,9 @@ impl Compiler {
                     Expr::Literal(v) => v.clone(),
                     _ => unreachable!(),
                 }));
+            }
+            Expr::RegexLiteral { value, .. } | Expr::MatchRegexTree { value, .. } => {
+                self.compile_match_regex(value);
             }
             other => self.compile_expr(other),
         }

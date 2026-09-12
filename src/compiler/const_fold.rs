@@ -240,6 +240,7 @@ impl Compiler {
     fn const_operand_mode(&self, expr: &Expr, begin_time: bool) -> Option<Value> {
         match expr {
             Expr::Literal(v) | Expr::LiteralSrc(v, _) => const_scalar(v).then(|| v.clone()),
+            Expr::RegexLiteral { value, .. } => const_scalar(value).then(|| value.clone()),
             Expr::Grouped(inner) => self.const_operand_mode(inner, begin_time),
             Expr::Unary { op, expr } => self.fold_unary_mode(op, expr, begin_time),
             Expr::Binary { left, op, right } => {
@@ -347,6 +348,7 @@ fn expr_is_droppable(expr: &Expr) -> bool {
     match expr {
         Expr::Literal(_)
         | Expr::LiteralSrc(..)
+        | Expr::RegexLiteral { .. }
         | Expr::Var(_)
         | Expr::ArrayVar(_)
         | Expr::HashVar(_)
