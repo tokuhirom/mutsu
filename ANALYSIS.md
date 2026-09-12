@@ -13,7 +13,7 @@ Where the moving parts are tracked:
 | what | where |
 |---|---|
 | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
-| which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked snapshot, regenerated periodically |
+| which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked snapshot, regenerated periodically. It is a snapshot, not a ledger: it lags the ADRs and the issues, so verify against those before citing it (this review initially inherited a closed soundness item from it) |
 | architectural decisions | [docs/adr/](docs/adr/) — 95 ADRs |
 | completed work | [news/](news/) — one file per accomplishment |
 | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
@@ -60,10 +60,10 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   instead of a per-call merged copy (ADR-0092), with kept-set narrowing rejected on
   measurement (ADR-0094). Only ADR-0084 ("the frame `Env` is not the program's symbol table")
   remains design-only.
-- **One live soundness item remains**: cross-thread aliased container writes. ADR-0068's
-  steps 1-2 shipped and step 3 is narrowed to a single unsynchronized route; underneath it,
-  **167 `gc_contents_mut` call sites** carry no synchronization against another VM thread
-  ([#7543](https://github.com/tokuhirom/mutsu/issues/7543), ADR-0001 layer 3c).
+- **There is no known open soundness hole.** The last one — cross-thread aliased container
+  writes — was closed on 2026-09-08: ADR-0068's steps 1-3 are all implemented, all five
+  lane-decline reasons are classified, every route is measured, and the read-side guard's cost
+  was measured afterwards (§2.2).
 - **Performance is a surplus, not a problem**, and is therefore not used as a ranking
   criterion below.
 - **Repository hygiene is the worst-trending axis by a wide margin.** `src/` is ~577k lines
@@ -76,7 +76,8 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   as prose in `BATTERIES.md`/`CLAUDE.md`, not as an ADR (§8).
 
 Nothing found is of the "the basic design is broken" kind. The debt is concentrated in file
-size, panic surface, and one concurrency route.
+size, panic surface, and one substitution mechanism the batteries policy should not have
+allowed.
 
 ---
 
@@ -229,9 +230,10 @@ in the code, and the exception list has shrunk to two entries:
 
 - `NativeCall` — measured non-vendorable (it needs `use QAST:from<NQP>`, MoarVM dispatch
   programs, and 61 missing `nqp::` ops), [#7560](https://github.com/tokuhirom/mutsu/issues/7560).
-  The `nqp::` op half of that measurement is aging for the same reason as the JSON one below,
-  so the verdict is worth re-measuring; `QAST:from<NQP>` and the dispatch programs remain the
-  substantive blockers either way.
+  The op-count half of that measurement moves as the `nqp::` op layer grows (below), but the
+  verdict does not depend on it: `use QAST:from<NQP>` and the MoarVM dispatch-program surface
+  are structural, and the record's own reopening condition requires all three to fall together.
+  This is a justified rung-3 use, recorded as such.
 - **The JSON `to-json`/`from-json` fast path** (`runtime/json.rs`, 759 lines, plus
   `vm/vm_native_json.rs`) — a partial exception, not a whole-module one: the real `JSON::Tiny`
   *is* vendored and its `Grammar`/`Actions` run unintercepted against their upstream suite.
@@ -241,9 +243,12 @@ in the code, and the exception list has shrunk to two entries:
   - *One of its two justifications has expired.* It rests on the real `JSON::Fast` needing ~50
     `nqp::` ops mutsu does not implement, and on the `nqp::` op layer having been measured and
     rejected. mutsu now **has** an `nqp::` op layer — 111 ops across ~1,790 lines
-    (`runtime/nqp_ops*.rs`, `vm/vm_call_nqp.rs`), grown steadily and still growing. Practice
-    reversed that rejection without the record following; what actually remains of the
-    rationale is the second measurement, the regex/grammar engine's speed (the real grammar
+    (`runtime/nqp_ops*.rs`, `vm/vm_call_nqp.rs`), grown steadily and still growing. What that
+    measurement actually established was narrower and still stands — the op set is a threshold
+    function, so implementing 80% of a *large* module's ops leaves it dead — but "mutsu does
+    not build `nqp::` ops" is simply no longer true, and a ~50-op gap is not the same argument
+    as NativeCall's. What remains of the rationale unambiguously is the second measurement, the
+    regex/grammar engine's speed (the real grammar
     decodes 200 META-shaped documents in ~600s against the native path's 0.49s, on a path zef
     walks for every metadata read).
   - *The mechanism is worse than "a native provider".* It is a module-name-keyed interception
@@ -347,21 +352,37 @@ its store before it wakes another thread**, closing a visibility window and a lo
 `call_native_instance_method_mut_in_place`'s read-modify-write over a shared attribute cell.
 That is follow-on work built on the closed primitive, not a reopening of it.
 
-### 2.2 Cross-thread aliased container writes — the live soundness item
+### 2.2 Cross-thread aliased container writes — closed
 
-This is the one open soundness hole. ADR-0068 established that a cross-thread aliased container
-write needs a synchronized store rather than a name-keyed lane; steps 1 and 2 are implemented,
-the route audit closed four of the five measured routes, and step 3 is narrowed to a **single
-remaining unsynchronized route** (an element store through a container returned by a user
-method).
+ADR-0068 established that a cross-thread aliased container write needs a synchronized store
+rather than a name-keyed lane, and **all three of its steps are implemented** (closed
+2026-09-08). An element store reaching its container through a shared `ContainerRef` cell takes
+a cell-keyed stripe lock (`value/container_lock.rs`), and so do the read chokepoints
+(`Value::with_deref` / `into_deref`) — the dominant race was writer-versus-reader, so guarding
+only writes left failures standing. All five reasons the name-keyed lane declines are
+classified, every route is measured with an oracle-classified probe and a stress acceptance,
+and the one unexplained historical SIGSEGV was shown not to belong to this class. Pins live in
+`t/concurrent-*.t`.
 
-Underneath it, the general hazard is unchanged in kind and has grown in count: **167
-`gc_contents_mut` call sites**, none synchronized against another VM thread
-([#7543](https://github.com/tokuhirom/mutsu/issues/7543)). This is ADR-0001 layer 3c territory,
-frozen until a measured trigger. The crash cluster it used to produce is gone — `Supply.act`
-now serializes tap dispatch, which is what made concurrent emitters race two `Vec::resize`
-calls through one aliased container — but the class of hazard is closed by construction only
-once step 3 lands.
+Two results from that campaign are worth carrying forward, because both contradict the obvious
+reasoning:
+
+- **Count the funnels, not the call sites.** `gc_contents_mut` has 167 call sites, and citing
+  that number as exposure is exactly the mistake the ADR warns against: the class has **three**
+  funnels — the named element store, the attribute-rooted element store, and the mutating
+  method — and every route tried arrived at one of them. Probe a suspected new route rather
+  than reasoning from its shape.
+- **The shared thing is the cell, not the node.** Twenty threads writing one celled array reach
+  thirteen distinct `Gc<ArrayData>` addresses, because `Gc::make_mut` copies an aliased node, so
+  a node-keyed lock excludes nothing.
+
+What remained afterwards was a performance question, not a correctness one, and it has been
+measured: the read-side guard is free when no VM mutator thread ever spawns, costs +5-7% on the
+shape nobody predicted (a program that spawns a worker early and then does heavy
+*single-threaded* work through a bound container, since the gate is sticky), and is a **net win
+of 12-13% on genuinely concurrent programs**, because a stripe is cheaper than several cores
+contending on the cell's own `Mutex<Value>` and the inner node's refcount atomics. No change
+was made.
 
 ### 2.3 `RuntimeError` as a control channel
 
@@ -533,12 +554,11 @@ Ordering rule, stated so it can be argued with:
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the parity frontier** (§1.8) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," recorded only in `BATTERIES.md`/`CLAUDE.md`. Its rejected alternative and its two named exceptions are exactly what an ADR preserves — including the one whose stated rationale has already expired (the `nqp::` op rejection) and which no document currently reflects. With ADR-0085 shipping a nightly parity number, the follow-on work can be chosen by measurement instead of by anecdote. |
-| 1b | **Retire the JSON `use`-time interception** (§1.8, §4) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
-| 2 | **Close ADR-0068 step 3's last route, then decide the `gc_contents_mut` general case** (§2.2) | soundness | One identified unsynchronized store path is a bounded, actionable task; the 167-site general hazard ([#7543](https://github.com/tokuhirom/mutsu/issues/7543)) is the ADR-0001 layer 3c decision behind it. Everything else in this document is a quality issue; this one is a correctness one. |
-| 3 | **Supply panic propagation, and a mechanism against the panic-surface trend** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
-| 4 | **Finish the call-path thread: ADR-0084** (§1.3) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
-| 5 | **Pay hygiene debt through the work above, and finish the issue migration** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review — split when a campaign opens the file and the ownership boundary is visible. The one piece worth doing standalone is mechanical: ~600 surviving `todo/…` path citations in `src/`, `docs/adr/` and `PLAN.md` point at a deleted directory and should be rewritten to issue links in bulk. |
-| 6 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros still have no consumer. |
+| 1b | **Retire the JSON `use`-time interception** (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
+| 2 | **Supply panic propagation, and a mechanism against the panic-surface trend** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
+| 3 | **Finish the call-path thread: ADR-0084** (§1.3) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
+| 4 | **Pay hygiene debt through the work above, and finish the issue migration** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review — split when a campaign opens the file and the ownership boundary is visible. The one piece worth doing standalone is mechanical: ~600 surviving `todo/…` path citations in `src/`, `docs/adr/` and `PLAN.md` point at a deleted directory and should be rewritten to issue links in bulk. |
+| 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros still have no consumer. |
 
 Explicitly **not** ranked as current architecture work: the completed ADR-0013/0015-P3b/0016/
 0018/0019/0020/0029/0058/0085 campaigns; optional ADR-0015 P3c; ADR-0016's deliberately
@@ -585,7 +605,7 @@ Reading 95 ADRs as a list is not useful; they fall into a small number of campai
 | thread | ADRs | state |
 |---|---|---|
 | Substrate: GC, NaN-boxing, JIT, interior mutability | 0001, 0003, 0004, 0005, 0013, 0095 | closed, with ADR-0095 as active hardening |
-| Cross-thread container writes | 0068 (+ ADR-0001 layer 3c) | the one open soundness item |
+| Cross-thread container writes | 0068 (+ ADR-0001 layer 3c) | closed 2026-09-08, cost measured after |
 | Compiled declarations and unified dispatch | 0019, 0029, 0047, 0051, 0066, 0070, 0071, 0093 | mechanism closed; catalog/fidelity residue |
 | Lexical slots, capture, call frames | 0018, 0023, 0024, 0025, 0027, 0055, 0061, 0077, 0078, 0084, 0086, 0092, 0094 | landed except ADR-0084 |
 | Containers, itemization, container identity | 0015, 0036, 0039, 0040, 0042, 0045, 0049, 0059, 0064, 0067, 0079, 0080, 0083, 0089, 0090 | mostly landed; 0079/0040/0045 design-only |
@@ -608,8 +628,10 @@ carve-out an ADR is for), the retirement precedent now set by deleting the nativ
 provider are exactly the "why, and what we rejected" an ADR exists to preserve. It should also
 record the reversal that already happened in practice: "do not build an `nqp::` op layer" was
 the companion measurement to the original policy, and mutsu has since built one (111 ops and
-growing, §1.8) without any document saying so. A rejection the codebase has outgrown is worse
-than no record, because it keeps being cited.
+growing, §1.8) without any document saying so. The measurement's durable half — that the op set
+is a threshold function, so a large module is not reached by adding ops one at a time — should
+be stated as that, rather than as a blanket rejection the codebase has outgrown while documents
+keep citing it.
 
 The clause that record most needs is the one the JSON carve-out was allowed to skip: **a
 performance measurement is not a justification for a substitution.** Rung 3 is banned because a
