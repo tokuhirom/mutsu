@@ -200,7 +200,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(pkg.to_string())),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         self.copy_full_registry_into(&mut interp);
         if self.test_module_loaded() {

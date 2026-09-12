@@ -521,7 +521,7 @@ impl Interpreter {
             current_package: Arc::new(RwLock::new(pkg.to_string())),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             state_vars: self.state_vars.clone(),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);
         interp.regex_match_len_at_start(pattern, text)

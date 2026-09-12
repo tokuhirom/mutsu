@@ -273,6 +273,50 @@ impl Interpreter {
         paths
     }
 
+    /// The process-wide memo behind [`Interpreter::bundled_lib_paths_shared`],
+    /// keyed by the `MUTSU_BUNDLE_DIR` value the last scan was made under so a
+    /// process that changes it still re-scans.
+    #[allow(clippy::type_complexity)]
+    fn bundled_lib_paths_memo()
+    -> &'static std::sync::RwLock<Option<(Option<String>, Arc<Vec<String>>)>> {
+        static MEMO: std::sync::RwLock<Option<(Option<String>, Arc<Vec<String>>)>> =
+            std::sync::RwLock::new(None);
+        &MEMO
+    }
+
+    /// [`Self::resolve_bundled_lib_paths`], scanned at most once per process
+    /// (per `MUTSU_BUNDLE_DIR` value) and handed out as a shared `Arc`.
+    ///
+    /// The scan is a `read_dir` of the bundle base plus a `join` + `is_dir`
+    /// stat for every distribution in it — ~40 entries, ~130 KB of
+    /// instructions. `Interpreter::new` ran it unconditionally, and a
+    /// grammar-with-actions parse builds one scratch interpreter per
+    /// subrule-with-arguments call and per embedded code block: 3,109 of them
+    /// on a 60-row `benchmarks/bench-yaml-parse.raku` document, i.e. 3,109 full
+    /// directory scans (124,360 `DirEntry::path`s, 133,687 `is_dir` stats) of a
+    /// directory whose contents cannot change under us, for 6.7% of the whole
+    /// program's instructions (#7576 round 12).
+    ///
+    /// The answer depends only on `MUTSU_BUNDLE_DIR` and the running
+    /// executable's location, so it is memoized on the former (the latter
+    /// cannot change within a process). A bundle directory whose *contents*
+    /// change mid-process is not picked up — adding a module search path at
+    /// runtime is what `-I` / `MUTSULIB` / `use lib` are for.
+    pub(crate) fn bundled_lib_paths_shared() -> Arc<Vec<String>> {
+        let bundle_dir = std::env::var("MUTSU_BUNDLE_DIR").ok();
+        if let Ok(memo) = Self::bundled_lib_paths_memo().read()
+            && let Some((key, paths)) = memo.as_ref()
+            && *key == bundle_dir
+        {
+            return Arc::clone(paths);
+        }
+        let paths = Arc::new(Self::resolve_bundled_lib_paths());
+        if let Ok(mut memo) = Self::bundled_lib_paths_memo().write() {
+            *memo = Some((bundle_dir, Arc::clone(&paths)));
+        }
+        paths
+    }
+
     pub(crate) fn resolve_bundled_lib_paths() -> Vec<String> {
         use std::path::PathBuf;
         let base: Option<PathBuf> = if let Ok(dir) = std::env::var("MUTSU_BUNDLE_DIR") {

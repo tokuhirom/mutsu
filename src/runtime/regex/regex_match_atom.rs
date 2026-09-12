@@ -1005,7 +1005,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(pkg.to_string())),
-            ..Self::new_regex_scratch()
+            ..self.new_regex_scratch_sharing_io()
         };
         // Full registry: the grammar's methods live in `Registry::classes`, which
         // the lean `copy_decl_registry_into` omits.
