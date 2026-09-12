@@ -3,7 +3,7 @@
 Two tools run real, unaudited ecosystem code under mutsu:
 
 * `dist-compat-sweep.py` — the sampling diagnostic ("does `use <module>` work?"),
-  bucketing load failures by root cause for `TODO_dist/TICKETS.md`;
+  bucketing load failures by root cause;
 * `ecosystem-sweep.py` — the exhaustive parity ledger (ADR-0085): every
   distribution's own test suite, run on both rakudo and mutsu.
 
