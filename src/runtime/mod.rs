@@ -792,6 +792,8 @@ mod registration_class_compose;
 mod registration_class_compose_body;
 pub(crate) mod registration_class_compose_record;
 mod registration_class_decl;
+mod registration_class_deferred_parents;
+mod registration_class_parents;
 pub(crate) mod registration_class_validate;
 mod registration_role;
 mod registration_role_body;

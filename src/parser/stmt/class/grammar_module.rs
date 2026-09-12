@@ -244,10 +244,12 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     // A `grammar G { also is Base; }` body carries its parent the same way a
     // `class` body does; without this extraction the bare `is(also, Base)`
     // infix expression would reach the runtime as "two terms in a row".
+    let mut body_parents: Vec<String> = Vec::new();
     body.retain(|stmt| {
         if let Some(parent_name) = crate::parser::stmt::class::stmt_also_is_parent(stmt) {
             crate::parser::stmt::class::push_also_is_parent(
                 &mut parents,
+                &mut body_parents,
                 &mut implicit_grammar_parent,
                 parent_name,
             );
@@ -279,6 +281,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             is_grammar: true,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args,
+            body_parents,
         },
     ))
 }

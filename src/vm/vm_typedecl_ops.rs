@@ -158,6 +158,7 @@ impl Interpreter {
             is_lexical,
             hidden_parents,
             does_parents,
+            body_parents,
             repr,
             language_version,
             custom_traits,
@@ -302,6 +303,17 @@ impl Interpreter {
                 .iter()
                 .map(|p| self.lexical_env_remap_name(p))
                 .collect();
+            // `body_parents` marks entries of `parents` by name, so it has to
+            // go through exactly the same remap chain to keep matching after
+            // the mapping above. A parent that is still unresolvable at this
+            // point -- the whole reason the marker exists -- passes both steps
+            // unchanged, since each only rewrites a name that already names a
+            // registered class or role.
+            let mapped_body_parents: Vec<String> = body_parents
+                .iter()
+                .map(|p| self.lexical_env_remap_name(p))
+                .map(|p| self.qualify_sibling_parent_name(&p))
+                .collect();
             // Register CUnion / CStruct / CPointer repr *before* running the
             // class body: a `unit class Foo is repr('CStruct'); has ...; say
             // Foo.REPR;` folds every trailing statement (including that
@@ -344,6 +356,7 @@ impl Interpreter {
                         is_lexical: *is_lexical,
                         hidden_parents: &mapped_hidden_parents,
                         does_parents,
+                        body_parents: &mapped_body_parents,
                         language_version,
                         is_stub: *is_stub,
                         trusts,

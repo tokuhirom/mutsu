@@ -1516,6 +1516,17 @@ pub(crate) enum Stmt {
         /// no consumer yet (D4-2/D4-3).
         #[serde(default)]
         parent_args: Vec<(String, Vec<Expr>)>,
+        /// Parent names contributed by an `also is Parent` statement in the
+        /// class *body* rather than by the declaration header. Rakudo applies
+        /// `also is` at its position in the body, so such a parent can become
+        /// resolvable only once the body has run -- it may be brought in by a
+        /// `use` inside the body, or be a class the body itself declares.
+        /// These names also appear in `parents`; this vector marks which of
+        /// them may be deferred past the body instead of raising
+        /// X::Inheritance::UnknownParent before the body has had a chance to
+        /// introduce them.
+        #[serde(default)]
+        body_parents: Vec<String>,
     },
     HasDecl {
         name: Symbol,

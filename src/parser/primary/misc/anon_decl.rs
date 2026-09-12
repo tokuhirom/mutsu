@@ -149,6 +149,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             is_grammar: false,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args: Vec::new(),
+            body_parents: Vec::new(),
         })),
     ))
 }
@@ -184,10 +185,12 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     // named `grammar G { also is Base }.parse(...)` takes.
     let mut parents = vec!["Grammar".to_string()];
     let mut implicit_grammar_parent = true;
+    let mut body_parents: Vec<String> = Vec::new();
     body.retain(|stmt| {
         if let Some(parent_name) = crate::parser::stmt::class::stmt_also_is_parent(stmt) {
             crate::parser::stmt::class::push_also_is_parent(
                 &mut parents,
+                &mut body_parents,
                 &mut implicit_grammar_parent,
                 parent_name,
             );
@@ -216,6 +219,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             is_grammar: true,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args: Vec::new(),
+            body_parents,
         })),
     ))
 }

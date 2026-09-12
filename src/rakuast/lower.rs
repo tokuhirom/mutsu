@@ -514,6 +514,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // exactly what `decl_id: 0` means.
         decl_id: 0,
         parent_args: Vec::new(),
+        body_parents: Vec::new(),
     })
 }
 
@@ -538,6 +539,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_grammar: true,
         decl_id: 0,
         parent_args: Vec::new(),
+        body_parents: Vec::new(),
     })
 }
 

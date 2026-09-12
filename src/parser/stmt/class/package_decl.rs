@@ -345,6 +345,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_grammar: false,
                     decl_id: crate::ast::next_class_decl_id(),
                     parent_args,
+                    body_parents: Vec::new(),
                 },
             ),
         ));
@@ -566,6 +567,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_grammar: true,
                     decl_id: crate::ast::next_class_decl_id(),
                     parent_args: Vec::new(),
+                    body_parents: Vec::new(),
                 },
             ),
         ));

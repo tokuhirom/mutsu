@@ -1085,6 +1085,7 @@ impl Interpreter {
             is_hidden: false,
             is_lexical: false,
             hidden_parents: &[],
+            body_parents: &[],
             does_parents: &parents,
             language_version: &language_version,
             is_stub: false,

@@ -212,8 +212,12 @@ pub(crate) fn stmt_also_is_parent(stmt: &Stmt) -> Option<String> {
 /// base is itself a grammar ("Inconsistent class hierarchy"), which is how
 /// CSS::Grammar::CSS21 (`unit grammar ...; also is CSS::Grammar;`) failed to
 /// load.
+/// `body_parents` records the same name a second time, marking it as
+/// body-positioned so registration can defer resolving it until after the body
+/// has run (`Stmt::ClassDecl::body_parents`).
 pub(crate) fn push_also_is_parent(
     parents: &mut Vec<String>,
+    body_parents: &mut Vec<String>,
     implicit_grammar_parent: &mut bool,
     parent_name: String,
 ) {
@@ -221,6 +225,7 @@ pub(crate) fn push_also_is_parent(
         parents.retain(|p| p != "Grammar");
         *implicit_grammar_parent = false;
     }
+    body_parents.push(parent_name.clone());
     parents.push(parent_name);
 }
 

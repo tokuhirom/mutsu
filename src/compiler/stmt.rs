@@ -99,6 +99,7 @@ impl Compiler {
                 is_grammar,
                 decl_id,
                 parent_args,
+                body_parents,
                 ..
             } => {
                 let new_parents: Vec<String> = parents.iter().map(&qualify_parent).collect();
@@ -129,6 +130,9 @@ impl Compiler {
                     is_grammar: *is_grammar,
                     decl_id: *decl_id,
                     parent_args: new_parent_args,
+                    // Re-key alongside `parents` so the body-positioned marker
+                    // still matches the qualified name it marks.
+                    body_parents: body_parents.iter().map(&qualify_parent).collect(),
                 }
             }
             Stmt::RoleDecl {
