@@ -281,7 +281,9 @@ earlier ones.
     interpolation `"{ … }"`, and regexes each need substantial new converter/lowerer work and are out
     of scope for the incremental-slice cadence. `WhateverCode` now has an explicit design of its own:
     [ADR-0033](0033-whatever-priming-leaf-and-derived-scope.md) (leaf split + derived priming scope,
-    with closure construction deferred from the parser to the compiler). The rest remain undesigned.
+    with closure construction deferred from the parser to the compiler). Regexes now have the
+    shared source-level tree design in [ADR-0088](0088-rakuast-regex-boundary-tree.md), but its
+    implementation is not started; CATCH blocks and code-block interpolation remain undesigned.
 
   - **Slice 1 (literals) — done.** `src/rakuast/lower.rs` lowers a RakuAST node back to internal
     `Stmt`/`Expr`; `builtin_eval` now recognises a `Value::RakuAst` first argument, lowers it, and
