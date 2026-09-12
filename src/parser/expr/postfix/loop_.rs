@@ -245,6 +245,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 .chars()
                 .any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"'))
             && after.chars().next().is_some_and(char::is_whitespace)
+            // The spelling alone does not make this a prefix operator: only a
+            // declaration does. Without this check every punctuation-only
+            // parenthesised term followed by a space was eaten as a call to an
+            // operator nobody declared, so Raku's own `(*)` — a parenthesised
+            // `Whatever` — failed to parse wherever a space followed it
+            // (`method shape() { (*,) }`, issue #7988), and the failure was a
+            // demand for the operand that `prefix:<(*)>` would have taken.
+            && crate::parser::stmt::simple::is_user_declared_prefix_sub(&format!("({})", op))
         {
             let (after, _) = ws(after)?;
             let (after, arg) = prefix_expr(after)?;
