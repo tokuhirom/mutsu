@@ -6,7 +6,10 @@ with rakudo as the denominator.
 
 - **Method and metric definitions**: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md)
 - **Why it is shaped this way**: [ADR-0085](../docs/adr/0085-ecosystem-testsuite-parity-measurement.md)
-- **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
+- **How the work is picked now**: by root cause (below) or by distribution (the two skills at
+  the end of this file). The campaign that built the ledger was
+  [#7785](https://github.com/tokuhirom/mutsu/issues/7785), closed 2026-09-12 — read it for the
+  method and the numbers it started from
 
 ## What is here
 
