@@ -72,6 +72,9 @@ fn has_decl_list(
             deprecated_message: None,
             is_built: None,
             unknown_traits: Vec::new(),
+            // `has @.x := ...` is refused outright, so a `has` declaration's
+            // initializer is always an assignment.
+            default_is_bind: false,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -1106,6 +1109,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             deprecated_message,
             is_built,
             unknown_traits,
+            // As above: only the `my`/`our` class-level spellings can bind.
+            default_is_bind: false,
         },
     ))
 }

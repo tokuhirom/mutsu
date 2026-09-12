@@ -429,6 +429,11 @@ pub(crate) struct CompiledAttrDecl {
     /// the same `constant`/enum lookup a normal read would use is safe,
     /// unlike guessing. See `Interpreter::resolve_dynamic_attr_shape`.
     pub(crate) dynamic_shape: bool,
+    /// `default` was written with `:=` rather than `=` — only reachable for a
+    /// class-level attribute (`our @.x := @c`), and the reason the class-level
+    /// registration path stores the right-hand container itself instead of a
+    /// copy. See `Stmt::HasDecl::default_is_bind`.
+    pub(crate) default_is_bind: bool,
 }
 
 impl CompiledAttrDecl {
@@ -466,6 +471,7 @@ impl CompiledAttrDecl {
             deprecated_message,
             is_built,
             unknown_traits,
+            default_is_bind,
         } = stmt
         else {
             unreachable!("CompiledAttrDecl::from_stmt called on a non-HasDecl statement");
@@ -504,6 +510,7 @@ impl CompiledAttrDecl {
             unknown_traits: unknown_traits.clone(),
             declared_shape,
             dynamic_shape,
+            default_is_bind: *default_is_bind,
         }
     }
 }

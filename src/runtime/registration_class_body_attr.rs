@@ -222,7 +222,22 @@ impl Interpreter {
         if decl.is_our || decl.is_my {
             // Evaluate the default value if present
             let initial_value = if let Some(arg) = &decl.default {
-                self.eval_decl_trait_arg(arg)?
+                let value = self.eval_decl_trait_arg(arg)?;
+                if decl.default_is_bind {
+                    // `our @.x := @c` BINDS: the accessor hands back the very
+                    // container on the right, so a later push to `@c` shows
+                    // through it (Math::Symbolic's `our @.operations :=
+                    // @operations`).
+                    value
+                } else {
+                    // `our @.x = @c` ASSIGNS, so the attribute gets a COPY.
+                    // Storing the evaluated value made the two spellings
+                    // indistinguishable, which is the actual bug: `=` aliased
+                    // whatever container it was given (#8150). A default that
+                    // built its own fresh container owns its `Gc` already, so
+                    // this is free on the common path.
+                    value.detach_shared_container()
+                }
             } else {
                 Value::NIL
             };

@@ -1520,6 +1520,9 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         deprecated_message: None,
         is_built: None,
         unknown_traits: Vec::new(),
+        // RakuAST models an attribute's initializer as an assignment; rakudo
+        // has no `:=` attribute-declaration node to lower from.
+        default_is_bind: false,
     })
 }
 

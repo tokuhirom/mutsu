@@ -316,10 +316,11 @@ pub(super) fn try_dot_twigil_attr<'a>(
         // in rakudo ("Cannot use := to initialize an attribute"), which is why
         // this branch lives here -- only the `my`/`our` scoped spellings reach
         // it -- and not in `has_decl`, which rejects it outright.
-        let (after_name, default) = if let Some(r) = after_name.strip_prefix(":=") {
+        let (after_name, default, default_is_bind) = if let Some(r) = after_name.strip_prefix(":=")
+        {
             let (r, _) = ws(r)?;
             let (r, expr) = expression(r)?;
-            (r, Some(expr))
+            (r, Some(expr), true)
         } else if after_name.starts_with('=')
             && !after_name.starts_with("==")
             && !after_name.starts_with("=>")
@@ -327,9 +328,9 @@ pub(super) fn try_dot_twigil_attr<'a>(
             let r = &after_name[1..];
             let (r, _) = ws(r)?;
             let (r, expr) = expression(r)?;
-            (r, Some(expr))
+            (r, Some(expr), false)
         } else {
-            (after_name, None)
+            (after_name, None, false)
         };
         // `class C { our Int $.x }` is refused at compile time, like every
         // other `our TYPE` spelling -- see `our_type_constraint_error`. Raised
@@ -361,6 +362,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             deprecated_message: None,
             is_built: None,
             unknown_traits: Vec::new(),
+            default_is_bind,
         };
         if apply_modifier {
             return parse_statement_modifier(after_name, stmt).map(Some);

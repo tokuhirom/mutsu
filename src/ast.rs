@@ -1638,6 +1638,14 @@ pub(crate) enum Stmt {
         /// to that sub at class registration; otherwise this causes an
         /// `X::Comp::Trait::Unknown` error.
         unknown_traits: Vec<(String, String, Option<Expr>)>,
+        /// `default` was written with `:=`, not `=`. Only a CLASS-LEVEL
+        /// attribute (`our @.x := @c` / `my @.x := @c`) can be bound —
+        /// `has @.x := ...` is "Cannot use := to initialize an attribute" in
+        /// rakudo — and the two spellings mean different things: a bind makes
+        /// the accessor hand back the very container on the right, while `=`
+        /// is an assignment and must copy it (#8150).
+        #[serde(default)]
+        default_is_bind: bool,
     },
     MethodDecl {
         name: Symbol,
