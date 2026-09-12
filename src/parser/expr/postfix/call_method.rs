@@ -169,6 +169,21 @@ pub(crate) fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBrac
             current_dim = Vec::new();
             let (r3, _) = parse_char(r2, ';')?;
             let (r3, _) = ws(r3)?;
+            // A subscript holds a *semilist*, so the `;` may be a terminator
+            // rather than a dimension separator: `@!kept[ $i ?? $a !! $b; ] = ...`
+            // (Data::RandomKeep) is the one-dimensional `@!kept[...]`, not a
+            // two-dimensional index whose second dimension is missing. Only the
+            // subscript's own closer can follow, so peeking at it is enough.
+            if r3.starts_with(']') || r3.starts_with('}') {
+                return Ok((
+                    r3,
+                    if dimensions.len() == 1 {
+                        ParsedBracketIndex::Single(dimensions.remove(0))
+                    } else {
+                        ParsedBracketIndex::MultiDim(dimensions)
+                    },
+                ));
+            }
             let (r3, next) = crate::parser::expr::expression(r3)?;
             current_dim.push(next);
             r = r3;

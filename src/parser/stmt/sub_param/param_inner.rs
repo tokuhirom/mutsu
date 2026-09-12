@@ -931,6 +931,16 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.onearg = onearg;
             p.type_constraint = type_constraint;
             p.optional_marker = true;
+            // An anonymous optional still takes the ordinary parameter tail:
+            // `Int @data, Int $seed = 0, $? where { $*KERNEL.bits == 64 }`
+            // (Digest::xxHash). Returning here used to leave the `where` (or an
+            // `is` trait, or a default) unconsumed, so the whole signature
+            // failed at the closing paren. An invocant marker (`method m($?: |)`)
+            // has none of those, so it still falls through untouched.
+            let (after_q, tail) = super::helpers::parse_subsig_tail(after_q)?;
+            p.traits = tail.traits;
+            p.where_constraint = tail.where_constraint;
+            p.default = tail.default;
             return Ok((after_q, p));
         }
     }
