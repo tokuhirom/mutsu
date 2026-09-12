@@ -417,6 +417,14 @@ impl Interpreter {
 
     /// Check if a type name is known (either a class, role, or enum).
     pub(crate) fn has_type(&self, name: &str) -> bool {
+        // A lexical type's registry identity is intentionally retained after
+        // its module is loaded, but the source-facing qualified name is not a
+        // package symbol visible to an unrelated compunit. Keep the type
+        // available to code running in its declaring package while refusing
+        // the imported name from outside it (#8120).
+        if self.is_my_scoped_type_name(name) && !self.my_scoped_type_visible_here(name) {
+            return false;
+        }
         // A `my`-scoped class/role/enum whose enclosing block has exited is moved
         // into `suppressed_names`: once out of lexical scope it is no longer a
         // visible type under its bare short name (raku: "Type 'A' is not declared"

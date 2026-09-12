@@ -371,6 +371,56 @@ impl Interpreter {
             && !self.our_scoped_package_items.contains(fq_name)
     }
 
+    /// Check whether `fq_name` is the source-facing name of a lexically scoped
+    /// type. Lexical types use an opaque NUL-suffixed registry key, so the
+    /// package-item marker cannot be queried with the unmangled spelling that
+    /// appears in source (`M::State`).
+    pub(crate) fn is_my_scoped_type_name(&self, fq_name: &str) -> bool {
+        if !fq_name.contains("::") {
+            return false;
+        }
+        let prefix = format!("{fq_name}\u{0}");
+        let registry = self.registry();
+        registry
+            .classes
+            .keys()
+            .chain(registry.roles.keys())
+            .chain(registry.enum_types.keys())
+            .chain(registry.subsets.keys())
+            .any(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
+    }
+
+    /// Whether a lexically scoped type's source-facing name is visible from
+    /// the current compilation unit. The registry keeps the type globally so
+    /// escaped values retain their identity, but a type declared by an
+    /// imported module must not become a package-qualified symbol in the
+    /// importing unit. A same-compilation-unit declaration remains visible,
+    /// including namespaced `my class` declarations.
+    pub(crate) fn my_scoped_type_visible_here(&self, fq_name: &str) -> bool {
+        if !self.is_my_scoped_type_name(fq_name) {
+            return true;
+        }
+        let prefix = format!("{fq_name}\u{0}");
+        let key = {
+            let registry = self.registry();
+            registry
+                .classes
+                .keys()
+                .find(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
+                .cloned()
+        };
+        let Some(key) = key else {
+            return true;
+        };
+        let Some(&declaring_unit) = self.class_declaring_units.get(&key) else {
+            // Roles and enums do not currently record a declaring unit. Keep
+            // their existing behavior until they have equivalent provenance.
+            return true;
+        };
+        self.unit_chain_contains_unit(self.executing_unit_sym_for_module_load(), declaring_unit)
+            || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+    }
+
     /// Must a call to this qualified name stay unresolved? True for a
     /// `my`-scoped package item. A plain `sub f` in a module or class body is
     /// lexical: it is exported and callable under its short name, but it is
