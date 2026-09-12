@@ -16,6 +16,13 @@ concrete "what's covered, what's missing" reference for picking the next slot.
 
 ## 1. Adoption policy — community-first, adopt-as-is
 
+**The decision behind this section, its rejected alternative, and its exception
+list are recorded in
+[ADR-0096](docs/adr/0096-batteries-adoption-policy.md).** Read it before
+proposing anything that deviates from the ordering below — including a
+"just this once, it is too slow" carve-out, which ADR-0096 §D3 specifically
+rules out.
+
 The ordering below is strict. Do not skip to a lower rung because a higher one
 looks like more work up front — the whole point is to stay aligned with the real
 Raku ecosystem rather than accreting a private dialect.
@@ -42,6 +49,18 @@ Raku ecosystem rather than accreting a private dialect.
    shape is not a pile of private forks. Once mutsu carries weight in the
    ecosystem, prefer contributing enabling work back upstream over maintaining
    mutsu-only divergences.
+
+### Consequence: a performance measurement does not buy an exemption
+
+Speed justifies an **optimization** — one selected transparently and
+semantically indistinguishable from the code it replaces, which is what the JIT
+does to bytecode. It never justifies a **substitution**: a different
+implementation under the real module's name, changing what a program observes
+(an exception type, a message, an edge-case answer, or which module resolves).
+The private-dialect argument does not weaken when the divergence is bought with
+a benchmark instead of with convenience. See
+[ADR-0096 §D3](docs/adr/0096-batteries-adoption-policy.md), and #8183 for the
+one carve-out that predates the rule being written down.
 
 ### Consequence: prefer "make the real module run" over "make a shim"
 

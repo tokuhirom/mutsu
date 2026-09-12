@@ -27,8 +27,10 @@ implementation** (`src/runtime/json.rs`, dispatched in
 `src/runtime/runtime_module.rs` (`use_module_with_tags_inner`) — the bare
 module names `"JSON::Fast"` / `"JSON::Tiny"` are recognized and treated as a
 no-op *before* the normal `-I` / `MUTSULIB` / bundled-module search even runs.
-This was a rung-3 private reimplementation, justified because the real
-`JSON::Fast` needs ~50 missing `nqp::` ops (`news/2026-07/nqp-op-layer-measured-and-rejected.md`).
+This was a rung-3 private reimplementation, justified at the time by the real
+`JSON::Fast` needing ~50 missing `nqp::` ops
+(`news/2026-07/nqp-op-layer-measured-and-rejected.md`) — a justification that has
+since expired; see "Policy status of the split" below.
 
 `JSON::Tiny` is different: it is pure Raku and **already runs on mutsu
 unmodified**. So why not just delete the emulation for it and let
@@ -66,7 +68,7 @@ failure. The real `JSON::Tiny.from-json` throws `X::JSON::Tiny::Invalid`
 native path threw a plain `X::AdHoc` (matching `JSON::Fast`, which really does
 just `die` a string). Fixed by making `native_from_json` pick the exception
 shape based on which module was `use`d (`self.loaded_modules.contains(...)`,
-see `json_tiny_exception_style()` in `src/vm/vm_native_json.rs`) —
+see `json_tiny_exception_style()` in `src/runtime/runtime_module.rs`) —
 `JSON::Fast`'s own `X::JSON::AdditionalContent` mirroring
 (`t/json-additional-content.t`) was the precedent. Pin:
 `t/json-tiny-invalid-exception.t`.
@@ -76,12 +78,40 @@ Upstream tests: 6 files, 135 subtests (`t/04-roundtrip.t` has 10 expected
 covered by `t/json-tiny-invalid-exception.t` and the pre-existing
 `t/json-tiny-compat.t`.
 
+## Policy status of the split (updated 2026-09-12)
+
+**This record's earlier claim that the native/vendored split is "permanent
+policy" is withdrawn.** A battery's selection record does not decide policy;
+[ADR-0096](../adr/0096-batteries-adoption-policy.md) does, and it lists this
+interception as **an exception scheduled for retirement**, not as policy
+(§D4/E2). Two reasons, both of which postdate the paragraph they replace:
+
+- *A performance measurement justifies an optimization, never a substitution*
+  (ADR-0096 §D3). The ~1000x measurement below stands as a measurement — it is
+  an argument for making the grammar engine fast, or for a transparent
+  specialization of the vendored module's own code path. It is not an argument
+  for shadowing a resolved module by name and diverging from its semantics
+  (the exception type this path returns depends on which module names appear
+  anywhere in the program — see `json_tiny_exception_style()`).
+- *The `nqp::` half of the rationale has expired.* "The real `JSON::Fast` needs
+  ~50 missing `nqp::` ops, and an op layer was rejected" is no longer the
+  situation: mutsu has 111 `nqp::` ops across ~1,790 lines. The durable form of
+  that 2026-07 measurement is narrower — the op set is a *threshold* function,
+  so a large module is not reached one op at a time (ADR-0096 §D5).
+
+Retirement is tracked by
+[#8183](https://github.com/tokuhirom/mutsu/issues/8183), which also notes the
+sequencing: the regex/grammar engine's cost on the vendored grammar is on the
+regression side of this (zef walks the JSON path for every metadata read), so
+the work has to be scheduled rather than simply reverted. Nothing below is
+changed by this note; it is the *justification* that is superseded.
+
 ## What is NOT fixed by this record
 
-- **The native/vendored split for the bare module names is permanent policy,
-  not a stopgap** — reversing it needs mutsu's regex/grammar engine to get
-  much faster first (see the measurement above), which is a separate,
-  large campaign.
+- **The bare module names still hit the native path.** Reversing that needs the
+  work in #8183 — the regex/grammar engine's speed on the vendored module,
+  and/or an honest transparent specialization that cannot diverge observably —
+  which is a separate, large campaign.
 - **`mzef`/site-repo overrides of `JSON::Tiny` do not shadow the native
   path.** BATTERIES.md §6 says an explicit `-I` / `MUTSULIB` / installed
   module should take priority over the bundled floor; the native interception
