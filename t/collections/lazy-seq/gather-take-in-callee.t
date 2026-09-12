@@ -5,9 +5,15 @@ use Test;
 # coroutine soundly — the driver snapshots only its own frame, so the old
 # suspension signal unwound the callee and corrupted the saved ip/stack
 # ("Interpreter stack underflow in CallFunc" for a compiled callee, silently
-# missing elements for an interpreter-arm one). `take_value` now keeps
-# collecting eagerly when the take arrives from a nested call frame
+# missing elements for an interpreter-arm one). `take_value` therefore does
+# not raise the signal when the take arrives from a nested call frame
 # (`lazy_pull_entry_call_depth`), so these shapes produce every element.
+#
+# It does still park `gather_suspend_pending` there, so an UNBOUNDED body
+# whose takes all come from a callee stops at the next iteration boundary of
+# a loop in the driver's own frame instead of collecting forever — see
+# `gather-take-in-callee-infinite-loop.t`. Every gather below is finite, so
+# that deferral never fires here and the expected contents are unchanged.
 
 plan 6;
 

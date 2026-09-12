@@ -483,7 +483,7 @@ impl Interpreter {
             // Deferred lazy-pull suspension (see `gather_suspend_pending`):
             // an iteration boundary is the exact point where re-entering from
             // the condition on resume continues correctly.
-            if self.gather_suspend_pending {
+            if self.gather_suspend_boundary_reached() {
                 self.gather_suspend_pending = false;
                 let nested = self.gather_for_loop_resume.take();
                 self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop {

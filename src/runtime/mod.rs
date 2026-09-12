@@ -4088,10 +4088,17 @@ pub struct Interpreter {
     /// the callee frames and leave the saved ip pointing at the caller's
     /// call op with its arguments already drained (resume then skips the call
     /// or underflows the stack — `gather trip(5)` with `take` inside `trip`'s
-    /// `for` loop). `take_value` compares the live depth against this and
-    /// keeps collecting eagerly instead of suspending when the take is
-    /// deeper: the pull over-produces but stays correct. Saved/restored
-    /// around each pull, so nested pulls compare against their own entry.
+    /// `for` loop). `take_value` compares the live depth against this and,
+    /// when the take is deeper, parks `gather_suspend_pending` instead of
+    /// raising: the pull keeps collecting until a condition-driven loop in
+    /// the driver's OWN frame reaches its next iteration boundary, which
+    /// happens only after the callee has returned and is a sound suspension
+    /// point. `gather_suspend_boundary_reached` compares against this field
+    /// again so a loop *inside* the callee leaves the flag alone. The pull may
+    /// over-produce but always stops; before the flag was parked, a gather
+    /// body whose only takes came from a nested call under an infinite loop
+    /// collected forever. Saved/restored around each pull, so nested pulls
+    /// compare against their own entry.
     pub(crate) lazy_pull_entry_call_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
     /// Next routine-invocation id this interpreter will hand out, and one past
