@@ -31,63 +31,19 @@ thread_local! {
     /// as `<expr(3)>`) re-resolves through a fresh scratch interpreter (bind
     /// args, eval body, bake params) on EVERY match-position probe; nested
     /// precedence-climbing grammars (P47) re-enter that per position and per
-    /// LR-seed iteration, which is exponential without memoization. Cached
-    /// only when every candidate's body references no variables beyond its
-    /// own parameters (the args are part of the key), so a body reading an
-    /// outer runtime lexical is never staled. Same `TOKEN_DEFS_GEN`
-    /// invalidation as above.
+    /// LR-seed iteration, which is exponential without memoization. Same
+    /// `TOKEN_DEFS_GEN` invalidation as above.
+    ///
+    /// An entry is stored only when the resolution read nothing the key does
+    /// not carry, which the resolution reports for itself — see
+    /// [`super::regex_arg_purity`]. That replaced a syntactic predicate over
+    /// the pattern text (`pattern_static_modulo_params`), which rejected every
+    /// `$<capture>` form — most of a real grammar's parameterized rules — while
+    /// trusting the body evaluation and the argument expressions, which can
+    /// read anything.
     static PARSED_TOKEN_ARG_CANDIDATES: std::cell::RefCell<
         rustc_hash::FxHashMap<(String, String, String), CachedCandidates>,
     > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-}
-
-/// True when `pattern` contains no interpolation the with-args cache key does
-/// not cover: no `@`/`%` refs, no `$<cap>`/`$0`/`$(...)` forms, and every
-/// `$ident` names one of `params` (raku identifier rules: `-` extends a name
-/// only before a letter).
-fn pattern_static_modulo_params(pattern: &str, params: &[String]) -> bool {
-    if pattern.contains(['@', '%']) {
-        return false;
-    }
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0usize;
-    while i < chars.len() {
-        match chars[i] {
-            '\\' => i += 2,
-            '$' => {
-                let j0 = i + 1;
-                let mut j = j0;
-                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
-                    j += 1;
-                    while j < chars.len() {
-                        let c = chars[j];
-                        let kebab = c == '-'
-                            && chars
-                                .get(j + 1)
-                                .is_some_and(|n| n.is_alphabetic() || *n == '_');
-                        if c.is_alphanumeric() || c == '_' || kebab {
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    let name: String = chars[j0..j].iter().collect();
-                    if !params
-                        .iter()
-                        .any(|p| p.trim_start_matches(['$', '@', '%', '&', ':']) == name)
-                    {
-                        return false;
-                    }
-                    i = j;
-                } else {
-                    // `$<cap>`, `$0`, `$(...)`, bare `$` — dynamic.
-                    return false;
-                }
-            }
-            _ => i += 1,
-        }
-    }
-    true
 }
 
 impl Interpreter {
@@ -212,40 +168,43 @@ impl Interpreter {
             let raw_empty = hit.is_empty();
             return (hit, raw_empty);
         }
-        let raw = self.resolve_named_regex_candidates_in_pkg(spec, pkg, arg_values);
-        let raw_empty = raw.is_empty();
-        let mut parsed_list = Vec::with_capacity(raw.len());
-        for (sub_pat, sub_pkg, sym_key) in raw {
-            if let Some(parsed) = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg) {
-                parsed_list.push((parsed, sub_pkg, sym_key));
-            }
-        }
-        let arc = std::sync::Arc::new(parsed_list);
-        if let Some(fp) = args_fp {
-            // Cache only when every candidate def's body is self-contained
-            // (no variable references beyond its own params).
-            let cacheable = self
-                .resolve_token_defs_in_pkg(&spec.lookup_name, pkg)
-                .iter()
-                .all(|def| {
-                    def.body.iter().all(|stmt| match stmt {
-                        crate::ast::Stmt::Expr(crate::ast::Expr::Literal(v)) => match v.view() {
-                            ValueView::Regex(pat) => {
-                                pattern_static_modulo_params(&pat, &def.params)
-                            }
-                            _ => false,
-                        },
-                        _ => false,
-                    })
-                });
-            if cacheable {
-                PARSED_TOKEN_ARG_CANDIDATES.with(|c| {
-                    c.borrow_mut().insert(
-                        (pkg.to_string(), spec.lookup_name.clone(), fp),
-                        (tok_gen, std::sync::Arc::clone(&arc)),
-                    );
-                });
-            }
+        // Resolve with the purity flag cleared, so it reports only THIS
+        // resolution's reads; `with_memo_window` ORs it back into the enclosing
+        // one on the way out. Everything the entry would have to be a function
+        // of — the rule bodies, the argument expressions, the parameter
+        // binding, and the parse of each resolved candidate — runs inside.
+        let ((raw_empty, arc), consulted_ambient) =
+            super::regex_arg_purity::with_memo_window(|| {
+                let raw = self.resolve_named_regex_candidates_in_pkg(spec, pkg, arg_values);
+                let raw_empty = raw.is_empty();
+                let mut parsed_list = Vec::with_capacity(raw.len());
+                for (sub_pat, sub_pkg, sym_key) in raw {
+                    if let Some(parsed) = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg) {
+                        parsed_list.push((parsed, sub_pkg, sym_key));
+                    }
+                }
+                (raw_empty, std::sync::Arc::new(parsed_list))
+            });
+        if let Some(fp) = args_fp
+            && !consulted_ambient
+        {
+            PARSED_TOKEN_ARG_CANDIDATES.with(|c| {
+                let mut cache = c.borrow_mut();
+                // The key carries the RENDERED arguments, which are runtime
+                // data: a grammar parameterized on the text it is parsing
+                // (`<block($indent)>` over a deep document) mints a fresh key
+                // per distinct value. Bound it the way
+                // `REGEX_SUBPATTERN_PARSE_CACHE` is bounded, for the same
+                // reason and at the same cost — dropping the memo buys back
+                // re-resolutions and nothing else.
+                if cache.len() >= crate::runtime::regex_parse::SUBPATTERN_PARSE_CACHE_MAX {
+                    cache.clear();
+                }
+                cache.insert(
+                    (pkg.to_string(), spec.lookup_name.clone(), fp),
+                    (tok_gen, std::sync::Arc::clone(&arc)),
+                );
+            });
         }
         (arc, raw_empty)
     }
@@ -367,6 +326,58 @@ impl Interpreter {
             literal_matches
         };
         for def in defs {
+            let params: Vec<String> = def
+                .param_defs
+                .iter()
+                .map(|pd| pd.name.clone())
+                .chain(def.params.iter().cloned())
+                .collect();
+            let (resolved, _) = super::regex_arg_purity::with_resolution(params, || {
+                // Binding evaluates a parameter default or a `where` clause in
+                // the scratch env — arbitrary expressions over the caller's
+                // lexical scope, which the memo key does not carry.
+                if def
+                    .param_defs
+                    .iter()
+                    .any(|pd| pd.default.is_some() || pd.where_constraint.is_some())
+                {
+                    super::regex_arg_purity::note_opaque_read();
+                }
+                // Likewise the body: a constant one (the usual `token
+                // t($p) { … }`, whose body is the regex literal itself)
+                // evaluates to itself, anything else runs code.
+                if !Self::body_is_constant(&def.body) {
+                    super::regex_arg_purity::note_opaque_read();
+                }
+                self.resolve_one_token_pattern_with_args(&def, arg_values)
+            });
+            out.extend(resolved);
+        }
+        out
+    }
+
+    /// True when `body` evaluates to a constant — every statement is a line
+    /// marker or a literal, so running it reads nothing. `Expr::Literal` is
+    /// exactly what the compiler turns into a `LoadConst`.
+    fn body_is_constant(body: &[crate::ast::Stmt]) -> bool {
+        body.iter().all(|stmt| {
+            matches!(
+                stmt,
+                crate::ast::Stmt::SetLine(_) | crate::ast::Stmt::Expr(crate::ast::Expr::Literal(_))
+            )
+        })
+    }
+
+    /// One candidate of [`Self::resolve_token_patterns_with_args_in_pkg`]: bind
+    /// the arguments in a scratch interpreter, evaluate the body, and render
+    /// the resulting pattern.
+    fn resolve_one_token_pattern_with_args(
+        &mut self,
+        def: &Arc<FunctionDef>,
+        arg_values: &[Value],
+    ) -> Vec<(String, String, Option<String>)> {
+        let mut out = Vec::new();
+        {
             let mut interp = Interpreter {
                 env: self.env.clone(),
                 current_package: Arc::new(RwLock::new(def.package.resolve())),
