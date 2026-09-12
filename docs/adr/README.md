@@ -119,3 +119,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0091](0091-slang-package-declarators.md) | A slang's `package_declarator:sym<...>` candidate is read as a declarator registration, not executed | Accepted (implemented) |
 | [0092](0092-closure-capture-is-a-chained-tier-not-a-merged-copy.md) | Closure capture should be a chained tier, not a per-call merged copy | Proposed |
 | [0093](0093-core-only-infix-operators-are-shadowed-not-extended.md) | A core operator rakudo does not declare is *shadowed* by a user declaration, not extended | Accepted (implemented) |
+| [0094](0094-closure-capture-kept-set-is-not-narrowed.md) | The closure capture's kept set is not narrowed — its cost is the call-time merge | Accepted |
