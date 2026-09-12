@@ -162,7 +162,10 @@ impl Interpreter {
     /// `:D:`-invocant candidate must both survive composition.
     fn method_signatures_match_with_invocant(required: &MethodDef, candidate: &MethodDef) -> bool {
         Self::method_signatures_match(required, candidate)
-            && Self::invocant_type_constraint(required) == Self::invocant_type_constraint(candidate)
+            && (!required.is_multi
+                || !candidate.is_multi
+                || Self::invocant_type_constraint(required)
+                    == Self::invocant_type_constraint(candidate))
     }
 
     fn stub_is_nullary(def: &MethodDef) -> bool {
