@@ -7,7 +7,7 @@ use Test;
 # angle spellings were all silently missing after a dot.
 # From Game::Entities 0.1.6 (`.[COMPONENTS; $i].<>`), which could not load.
 
-plan 14;
+plan 15;
 
 my %h = a => 1, b => 2;
 my @a = [1, 2];
@@ -40,6 +40,10 @@ is $c.[0; 1], 2, '.[0; 1] indexes two dimensions';
 # (mutsu bug, and it predates this fix — the undotted spelling does it too).
 my $dotted = %n.{'a'; 'b'};
 is-deeply $dotted, (1,), '.{...;...} indexes two dimensions';
+
+# `Type{...}` is the object-constructor shorthand, but `Type.{...}` is a
+# postcircumfix call on the type object (roast/S02-types/hash.t).
+dies-ok { EVAL q[Mu.{'a'}] }, 'Type.{...} is a subscript, not Type.new(...)';
 
 # Zen `.[]` / `.{}` still select the whole container
 is-deeply @a.[], [1, 2], '.[] is the whole array';

@@ -776,7 +776,13 @@ fn postfix_expr_loop_from(
     // `brace_final` below as each postfix op moves the term along.
     let mut term_ends_with_ws = ends_with_ws;
     let mut last_iter_start: Option<&str> = None;
+    // Set when the previous iteration consumed a `.` and rewound to a
+    // subscript opener. `Type{...}` is the object-constructor shorthand but
+    // `Type.{...}` is a postcircumfix call on the type object (roast's
+    // `Mu.{'a'}`), so the dot has to reach the branch that tells them apart.
+    let mut dotted_subscript = false;
     loop {
+        let came_from_dot = std::mem::take(&mut dotted_subscript);
         // A postfix op consumed in the previous iteration moves the
         // "does the expression end in `}` at end of line" state along:
         // `.map({...})` ends in `)` (keeps chaining), `.map: {...}` ends in
@@ -1017,6 +1023,7 @@ fn postfix_expr_loop_from(
             // longer "ends with whitespace" and `.{...}` still reads as a
             // subscript rather than a block.
             if r.starts_with(['[', '{', '<', '\u{00AB}']) {
+                dotted_subscript = true;
                 rest = r;
                 continue;
             }
@@ -2015,6 +2022,7 @@ fn postfix_expr_loop_from(
         // call result (raku binds a no-whitespace `{` as postcircumfix), so a
         // declared or imported sub falls through to the Index arm below.
         if rest.starts_with('{')
+            && !came_from_dot
             && matches!(&expr, Expr::BareWord(name) if {
                 name != "self"
                 && crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()
