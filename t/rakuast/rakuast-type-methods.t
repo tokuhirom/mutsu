@@ -26,7 +26,7 @@ is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
     'StatementList exposes construction, mutation, and its read accessor';
 
 is RakuAST::Statement::Expression.^methods(:local).map(*.name).sort.join(','),
-    'expression,loop-modifier,new',
+    'condition-modifier,expression,loop-modifier,new',
     'statement wrapper exposes constructor and accessors';
 
 is RakuAST::Postfix.^methods(:local).map(*.name).sort.join(','),

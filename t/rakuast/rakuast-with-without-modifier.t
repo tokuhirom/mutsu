@@ -26,9 +26,9 @@ is Q["nf" without Nil].AST.statements[0].condition-modifier.^name,
 
 # It is a *condition* modifier, not a loop modifier: `loop-modifier` is the
 # field a real `given` fills, and `with` must leave it out entirely.
-unlike Q[say 1 with 2].AST.gist, /'loop-modifier'/,
+nok Q[say 1 with 2].AST.statements[0].loop-modifier.defined,
     'with modifier does not occupy the loop-modifier slot';
-unlike Q[say 1 without Nil].AST.gist, /'loop-modifier'/,
+nok Q[say 1 without Nil].AST.statements[0].loop-modifier.defined,
     'without modifier does not occupy the loop-modifier slot';
 
 # The modified statement survives as the statement's own expression, with the
@@ -43,7 +43,7 @@ is Q[say 1 with 2].AST.statements[0].expression.^name,
 is Q[(say 1 if $_.defined) given 2].AST.statements[0].loop-modifier.^name,
     'RakuAST::StatementModifier::Given',
     'an explicit given modifier is still a Given, not mistaken for a with';
-like Q[(say 1 if $_.defined) given 2].AST.gist, /'loop-modifier'/,
+ok Q[(say 1 if $_.defined) given 2].AST.statements[0].loop-modifier.defined,
     'an explicit given modifier fills the loop-modifier slot instead';
 
 # A real `given` block is unaffected too.

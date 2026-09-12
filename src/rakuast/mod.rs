@@ -11,6 +11,7 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod convert;
+mod fields;
 mod formatter;
 mod lower;
 mod render;
@@ -649,6 +650,11 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Postcircumfix"
             | "RakuAST::Circumfix"
             | "RakuAST::StatementModifier"
+            // The two abstract halves of the StatementModifier hierarchy: an
+            // absent `condition-modifier` / `loop-modifier` answers with one of
+            // these type objects, so they have to be nameable.
+            | "RakuAST::StatementModifier::Condition"
+            | "RakuAST::StatementModifier::Loop"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
             | "RakuAST::MetaInfix"
@@ -1667,21 +1673,6 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             return Some(field_to_value(&f.value));
         }
     }
-    // A declared-but-omitted boolean field reads as `False`: raku's gist elides
-    // `dwim-left` / `dwim-right` when they are false, but the accessors still
-    // answer.
-    if node.class == RakuAstClass::MetaInfixHyper && matches!(method, "dwim-left" | "dwim-right") {
-        return Some(Value::truth(false));
-    }
-    if node.class == RakuAstClass::Pragma {
-        match method {
-            // Rakudo declares both fields but omits their false/empty values
-            // from `.gist` for the argument-less form.
-            "argument" => return Some(Value::NIL),
-            "off" => return Some(Value::truth(false)),
-            _ => {}
-        }
-    }
     if method == "statements" && matches!(node.class, RakuAstClass::StatementList) {
         let items = node
             .fields
@@ -1693,33 +1684,23 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // Positional-leaf accessors: a node whose single positional field is its
     // payload exposes it under a class-specific name (`IntLiteral.value`,
     // `Var::Lexical.name`). The named-field loop above runs first, so a class
-    // with a *named* field of the same name (e.g. `Call::Name.name`) is unaffected.
-    let positional_name = match node.class {
-        RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
-            Some("value")
-        }
-        RakuAstClass::FunctionInfix => Some("function"),
-        RakuAstClass::VarLexical => Some("name"),
-        RakuAstClass::Blockoid => Some("statement-list"),
-        RakuAstClass::InitializerAssign => Some("expression"),
-        RakuAstClass::MetaInfixAssign => Some("infix"),
-        RakuAstClass::TypeSimple | RakuAstClass::TypeSetting | RakuAstClass::TypeCapture => {
-            Some("name")
-        }
-        RakuAstClass::TraitReturns | RakuAstClass::TraitOf => Some("type"),
-        RakuAstClass::RegexLiteral => Some("text"),
-        RakuAstClass::RegexQuote => Some("quoted"),
-        RakuAstClass::RegexSequence | RakuAstClass::RegexAlternation => Some("terms"),
-        RakuAstClass::RegexGroup | RakuAstClass::RegexWithWhitespace => Some("regex"),
-        _ => None,
-    };
-    if positional_name == Some(method)
+    // with a *named* field of the same name (e.g. `Call::Name.name`) is
+    // unaffected.
+    if fields::positional_accessor(node.class) == Some(method)
         && let Some(f) = node.fields.first()
         && f.name.is_none()
     {
         return Some(field_to_value(&f.value));
     }
-    None
+    // A field the class DECLARES but this node does not carry still answers:
+    // rakudo models every field as an attribute, so an absent optional clause
+    // reads as an undefined type object (or `()` / `False` / `0`) rather than
+    // dying. That is what makes `.defined` the way to test for one — see
+    // `fields::Absent`.
+    fields::model_fields(node.class)
+        .iter()
+        .find(|(name, _)| *name == method)
+        .and_then(|(_, absent)| absent.value())
 }
 
 /// Native methods currently exposed directly by a RakuAST model class.
@@ -1778,7 +1759,7 @@ pub fn inherited_method_names(class_name: &str) -> Option<Vec<&'static str>> {
 ///
 /// As with [`local_method_names`], these are mutsu's public model fields rather
 /// than Rakudo's backend storage slots.
-pub fn local_attribute_names(class_name: &str) -> Option<&'static [&'static str]> {
+pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
     class_from_name(class_name).map(accessor_names)
 }
 
@@ -1841,52 +1822,14 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
     )
 }
 
-fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
-    use RakuAstClass::*;
-    match class {
-        StatementList => &["statements"],
-        StatementExpression => &["expression", "loop-modifier"],
-        IntLiteral | RatLiteral | StrLiteral => &["value"],
-        VarLexical => &["name"],
-        ApplyInfix => &["left", "infix", "right"],
-        FunctionInfix => &["function"],
-        ApplyPrefix => &["prefix", "operand"],
-        ApplyPostfix => &["operand", "postfix"],
-        Postfix => &["operator"],
-        Block => &["body"],
-        Blockoid => &["statement-list"],
-        Sub => &["name", "signature", "traits", "body"],
-        Signature => &["parameters", "returns"],
-        MetaInfixAssign => &["infix"],
-        MetaInfixHyper => &["dwim-left", "infix", "dwim-right"],
-        TraitReturns | TraitOf => &["type"],
-        Parameter => &[
-            "type",
-            "names",
-            "type-captures",
-            "target",
-            "optional",
-            "default",
-            "where",
-            "slurpy",
-            "sub-signature",
-        ],
-        ParameterTargetVar => &["name"],
-        VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
-        InitializerAssign => &["expression"],
-        TypeSimple | TypeSetting | TypeCapture => &["name"],
-        TypeEnum => &["name", "term"],
-        QuotedRegex => &["match-immediately", "body", "adverbs"],
-        RegexSequence | RegexAlternation => &["terms"],
-        RegexLiteral => &["text"],
-        RegexQuote => &["quoted"],
-        RegexGroup | RegexWithWhitespace => &["regex"],
-        RegexQuantifiedAtom => &["atom", "quantifier", "separator", "trailing-separator"],
-        RegexDeclaration | TokenDeclaration | RuleDeclaration => &["name", "body"],
-        Grammar => &["name", "body"],
-        Pragma => &["name", "argument", "off"],
-        _ => &[],
-    }
+/// The accessor names a RakuAST class declares, in declaration order. Derived
+/// from [`fields::model_fields`] so introspection and dispatch cannot disagree
+/// about which accessors a class has.
+fn accessor_names(class: RakuAstClass) -> Vec<&'static str> {
+    fields::model_fields(class)
+        .iter()
+        .map(|(name, _)| *name)
+        .collect()
 }
 
 fn field_to_value(fv: &RakuAstFieldValue) -> Value {
