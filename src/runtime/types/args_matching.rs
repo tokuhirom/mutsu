@@ -603,13 +603,22 @@ impl Interpreter {
                 // first one declared always won (#8089). Dispatch and binding
                 // have to agree here, or a candidate is selected and then dies
                 // binding the very call it was selected for.
-                let where_default =
-                    if !arg_was_supplied && let Some(default_expr) = pd.default.as_ref() {
-                        self.eval_block_value(&[Stmt::Expr(default_expr.clone())])
-                            .ok()
-                    } else {
-                        None
-                    };
+                // Only a `where` clause consumes this, so it is evaluated only
+                // when there is one. Evaluating it unconditionally ran every
+                // candidate's default once per dispatch, in a scope where the
+                // *earlier* parameters are not bound yet -- so a default that
+                // reads a sibling (`multi m(Str $c, $d = $c ~ "!")`) saw an
+                // unbound `$c` and emitted a spurious "Use of Nil in string
+                // context" for a value that was then thrown away (#8078).
+                let where_default = if pd.where_constraint.is_some()
+                    && !arg_was_supplied
+                    && let Some(default_expr) = pd.default.as_ref()
+                {
+                    self.eval_block_value(&[Stmt::Expr(default_expr.clone())])
+                        .ok()
+                } else {
+                    None
+                };
                 if let Some(where_expr) = &pd.where_constraint {
                     let Some(arg) = where_default.as_ref().or(arg_for_checks.as_ref()) else {
                         return false;
