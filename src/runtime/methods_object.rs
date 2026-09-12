@@ -405,7 +405,7 @@ impl Interpreter {
         let attr_syms = std::sync::Arc::new(
             class_attrs
                 .iter()
-                .map(|a| crate::symbol::Symbol::intern(&a.name))
+                .map(|a| super::attribute_storage_key(class_attrs.as_ref(), &a.name, a.sigil))
                 .collect::<Vec<_>>(),
         );
         // MRO-resolved `is Type` container traits for every declared attribute

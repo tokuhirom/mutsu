@@ -101,8 +101,9 @@ impl Interpreter {
             return Ok(());
         };
         let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
+        let class_attrs = self.collect_class_attributes(class_key);
         for d in deferred {
-            let key = Symbol::intern(&d.name);
+            let key = super::attribute_storage_key(&class_attrs, &d.name, d.sigil);
             if written.contains(&key) {
                 continue;
             }
@@ -199,6 +200,13 @@ impl Interpreter {
         sigil: char,
         attr_type_constraints: &std::collections::HashMap<String, String>,
     ) -> Value {
+        let class_attrs = self.collect_class_attributes(class_key);
+        let declared_type = class_attrs
+            .iter()
+            .find(|attr| attr.name == attr_name && attr.sigil == sigil)
+            .and_then(|attr| {
+                super::attribute_type_constraint(&class_attrs, attr, attr_type_constraints)
+            });
         match sigil {
             '@' => {
                 // Check for `is Type` trait (e.g. `has @.a is Buf`)
@@ -212,13 +220,7 @@ impl Interpreter {
                 } else {
                     let arr = Value::real_array(Vec::new());
                     // Register element type constraint for typed array attributes
-                    let tc = self
-                        .registry()
-                        .classes
-                        .get(class_key)
-                        .and_then(|cd| cd.attribute_types.get(attr_name))
-                        .cloned();
-                    match tc {
+                    match declared_type {
                         Some(tc) => self.tag_container_metadata(
                             arr,
                             super::ContainerTypeInfo {
@@ -243,13 +245,7 @@ impl Interpreter {
                 } else {
                     let h = Value::hash(std::collections::HashMap::new());
                     // Register value type constraint for typed hash attributes
-                    let tc = self
-                        .registry()
-                        .classes
-                        .get(class_key)
-                        .and_then(|cd| cd.attribute_types.get(attr_name))
-                        .cloned();
-                    match tc {
+                    match declared_type {
                         Some(tc) => self.tag_container_metadata(
                             h,
                             super::ContainerTypeInfo {
@@ -262,7 +258,7 @@ impl Interpreter {
                     }
                 }
             }
-            _ => match attr_type_constraints.get(attr_name).map(String::as_str) {
+            _ => match declared_type.as_deref() {
                 Some(
                     "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
                     | "uint32" | "uint64" | "byte" | "atomicint",

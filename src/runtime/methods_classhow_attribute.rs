@@ -61,7 +61,7 @@ impl Interpreter {
                 }
                 if let Some(cd) = self.registry().classes.get(cn) {
                     for attr in &cd.attributes {
-                        if seen_names.insert(attr.name.clone()) {
+                        if seen_names.insert((attr.name.clone(), attr.sigil)) {
                             result.push(self.make_attribute_object(attr, cn));
                         }
                     }
@@ -178,12 +178,20 @@ impl Interpreter {
         // registers as `META6::Support`, and `.type` must report that resolved
         // type (rakudo does) — JSON::Unmarshal constructs nested typed
         // attributes from it.
-        let raw_type_name = self
-            .registry()
-            .classes
-            .get(owner)
-            .and_then(|cd| cd.attribute_types.get(attr_name))
-            .cloned()
+        let raw_type_name = attr
+            .type_constraint
+            .clone()
+            .or_else(|| {
+                let registry = self.registry();
+                let class_def = registry.classes.get(owner)?;
+                let collides = class_def
+                    .attributes
+                    .iter()
+                    .any(|other| other.name == *attr_name && other.sigil != sigil);
+                (!collides)
+                    .then(|| class_def.attribute_types.get(attr_name).cloned())
+                    .flatten()
+            })
             .map(|t| self.resolve_type_name_for_owner(owner, t));
         // For @ sigil, the exposed type is Positional[T]; for % it is Associative[T]
         let type_name = match sigil {

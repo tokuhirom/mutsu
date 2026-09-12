@@ -167,6 +167,7 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
         is_rw: false,
         is_required: None,
         sigil: '$',
+        type_constraint: None,
         where_constraint: None,
         declared_shape: None,
     });

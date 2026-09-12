@@ -120,6 +120,21 @@ pub(crate) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
     }
 }
 
+/// Return the variable sigil carried by an attribute twigil. A missing
+/// container sigil denotes the scalar form (`$!x`/`$.x`); `@` and `%` retain
+/// their container kind. This is separate from [`attr_twigil_base`] because
+/// most callers only need privacy, while the instance store must distinguish
+/// colliding scalar and container attributes with the same bare name.
+pub(crate) fn attr_twigil_sigil(name: &str) -> Option<char> {
+    let sigil = match name.as_bytes() {
+        [b'@', ..] => '@',
+        [b'%', ..] => '%',
+        [b'&', ..] => '&',
+        _ => '$',
+    };
+    attr_twigil_base(name).map(|_| sigil)
+}
+
 /// The attribute map of an instance: `Symbol -> Value`, hashed with `FxHash`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct AttrMap(FxHashMap<Symbol, Value>);

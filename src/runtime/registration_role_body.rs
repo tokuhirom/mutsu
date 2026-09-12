@@ -16,6 +16,7 @@ impl Interpreter {
         &mut self,
         cx: &mut RoleDeclCx<'_>,
         name: crate::symbol::Symbol,
+        sigil: char,
     ) -> Result<(), RuntimeError> {
         // Look up this attribute's precompiled descriptor (ADR-0019 D2b
         // remainder/D10) by name — see the identical rationale in
@@ -26,7 +27,7 @@ impl Interpreter {
         let decl = cx
             .attr_decls
             .iter()
-            .find(|(n, _)| *n == name)
+            .find(|(n, decl)| *n == name && decl.sigil == sigil)
             .map(|(_, decl)| decl.clone())
             .expect("role_body_has_decl: no attr_decls entry for this Attr op's name");
         let attr_name_str = decl.name.clone();
@@ -86,31 +87,44 @@ impl Interpreter {
             .role_def
             .attributes
             .iter()
-            .find(|a| a.name == attr_name_str)
+            .find(|a| a.name == attr_name_str && a.sigil == decl.sigil)
         {
             // The attribute already exists from a parent role composition.
             // Record the conflict; the existing one came from a composed role.
             // We need to figure out which role contributed it.
-            let parent_role =
-                self.registry()
-                    .role_parents
-                    .get(cx.name)
-                    .and_then(|parents| {
-                        parents.iter().find(|p| {
-                            let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
-                            self.registry().roles.get(base).is_some_and(|r| {
-                                r.attributes.iter().any(|a| a.name == attr_name_str)
-                            })
+            let parent_role = self
+                .registry()
+                .role_parents
+                .get(cx.name)
+                .and_then(|parents| {
+                    parents.iter().find(|p| {
+                        let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
+                        self.registry().roles.get(base).is_some_and(|r| {
+                            r.attributes
+                                .iter()
+                                .any(|a| a.name == attr_name_str && a.sigil == decl.sigil)
                         })
                     })
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string());
+                })
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
             let _ = existing;
             cx.role_def.attribute_conflicts.push((
                 attr_name_str.clone(),
                 cx.name.to_string(),
                 parent_role,
             ));
+        }
+        if crate::runtime::attribute_accessor_conflicts(
+            &cx.role_def.attributes,
+            &attr_name_str,
+            decl.sigil,
+            decl.is_public,
+        ) {
+            return Err(RuntimeError::new(format!(
+                "Two or more attributes declared that both want an accessor method '{}'",
+                attr_name_str
+            )));
         }
         // Apply role-level `is rw`: same logic as class_is_rw
         // `is readonly` on individual attributes overrides `is rw` on the role
@@ -123,6 +137,7 @@ impl Interpreter {
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
+            type_constraint: decl.type_constraint.clone(),
             where_constraint: decl.where_constraint.clone(),
             declared_shape: decl.declared_shape.clone(),
         });
@@ -377,7 +392,12 @@ impl Interpreter {
             Vec::new()
         };
         for attr in &role.attributes {
-            if cx.role_def.attributes.iter().any(|a| a.name == attr.name) {
+            if cx
+                .role_def
+                .attributes
+                .iter()
+                .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+            {
                 // Already present. Only a real conflict if both
                 // sides declared it directly (vs. inherited from
                 // a shared ancestor in a diamond). Skip otherwise.

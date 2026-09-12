@@ -610,7 +610,10 @@ impl Interpreter {
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs.iter().position(|a| a.name == attr.name) {
+                    if let Some(pos) = attrs
+                        .iter()
+                        .position(|a| a.name == attr.name && a.sigil == attr.sigil)
+                    {
                         attrs.remove(pos);
                     }
                     attrs.push(attr.clone());
@@ -645,11 +648,11 @@ impl Interpreter {
     ) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
+        let mut seen: HashSet<(String, char)> = HashSet::new();
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if seen.insert(attr.name.clone()) {
+                    if seen.insert((attr.name.clone(), attr.sigil)) {
                         attrs.push(attr.clone());
                     }
                 }
@@ -671,11 +674,13 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut result: Vec<(String, ClassAttributeDef)> = Vec::new();
         // Track which attribute names appear in multiple classes (need qualified storage)
-        let mut attr_counts: HashMap<String, usize> = HashMap::new();
+        let mut attr_counts: HashMap<(String, char), usize> = HashMap::new();
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    *attr_counts.entry(attr.name.clone()).or_insert(0) += 1;
+                    *attr_counts
+                        .entry((attr.name.clone(), attr.sigil))
+                        .or_insert(0) += 1;
                 }
             }
         }
@@ -683,7 +688,12 @@ impl Interpreter {
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if attr_counts.get(&attr.name).copied().unwrap_or(0) > 1 {
+                    if attr_counts
+                        .get(&(attr.name.clone(), attr.sigil))
+                        .copied()
+                        .unwrap_or(0)
+                        > 1
+                    {
                         result.push((cn.resolve(), attr.clone()));
                     }
                 }
@@ -711,7 +721,10 @@ impl Interpreter {
                     visited.push(parent_role_name.clone());
                     if let Some(parent_role) = self.registry().roles.get(&parent_role_name) {
                         for attr in &parent_role.attributes {
-                            if !attrs.iter().any(|a| a.name == attr.name) {
+                            if !attrs
+                                .iter()
+                                .any(|a| a.name == attr.name && a.sigil == attr.sigil)
+                            {
                                 attrs.push(attr.clone());
                             }
                         }

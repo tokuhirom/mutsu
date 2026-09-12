@@ -17,10 +17,10 @@ impl Interpreter {
         if !(name.starts_with('@') || name.starts_with('%')) {
             return Ok(val);
         }
-        let Some((bare, _)) = crate::value::attr_twigil_base(name) else {
+        let Some((_, _)) = crate::value::attr_twigil_base(name) else {
             return Ok(val);
         };
-        let Some(tc) = self.self_attr_type_constraint(bare) else {
+        let Some(tc) = self.self_attr_type_constraint(name) else {
             return Ok(val);
         };
         if matches!(tc.as_str(), "Mu" | "Any") {

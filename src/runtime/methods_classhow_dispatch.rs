@@ -1339,6 +1339,7 @@ impl Interpreter {
                             is_rw,
                             is_required: None,
                             sigil,
+                            type_constraint: type_constraint.clone(),
                             where_constraint: None,
                             declared_shape: None,
                         });

@@ -376,6 +376,8 @@ impl Interpreter {
             let attr_name = &attr.name;
             let default = &attr.default;
             let sigil = &attr.sigil;
+            let attr_type_constraint =
+                super::attribute_type_constraint(&plan.class_attrs, attr, &plan.type_constraints);
             // A `@`/`%` attribute with no declared default that a bless named
             // argument provides would get an empty container here only for the
             // override loop below to immediately replace it — skip the throwaway
@@ -421,7 +423,7 @@ impl Interpreter {
                     // not Nil (matches `dispatch_new`). Leaving it Nil makes
                     // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
                     let mut arr = Value::real_array(Vec::new());
-                    if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
+                    if let Some(tc) = attr_type_constraint.clone() {
                         arr = self.tag_container_metadata(
                             arr,
                             super::ContainerTypeInfo {

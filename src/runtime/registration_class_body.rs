@@ -174,9 +174,9 @@ impl Interpreter {
                         });
                         continue;
                     }
-                    crate::opcode::ClassBodyOp::Attr { name } => {
+                    crate::opcode::ClassBodyOp::Attr { name, sigil } => {
                         if matches!(
-                            self.class_body_has_decl(&mut cx, *name)?,
+                            self.class_body_has_decl(&mut cx, *name, *sigil)?,
                             ClassBodyFlow::SkipTail
                         ) {
                             continue;

@@ -500,7 +500,7 @@ mod seq_body_shapes;
 
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
-pub(crate) use attr_map::{AttrBits, AttrKey, AttrMap, attr_twigil_base};
+pub(crate) use attr_map::{AttrBits, AttrKey, AttrMap, attr_twigil_base, attr_twigil_sigil};
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
