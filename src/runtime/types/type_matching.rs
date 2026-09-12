@@ -964,6 +964,18 @@ impl Interpreter {
             // `where` blocks across `~~` checks. Do NOT snapshot/restore the
             // whole env here (a previous attempt broke that test); the
             // per-name saves below cover only the bind variable.
+            //
+            // Run the predicate as if still lexically inside the package the
+            // `subset` was declared in (Raku closes `where` over the
+            // declaration scope). Without this, a predicate that references a
+            // sibling symbol private to that package (e.g. a `grammar`
+            // nested in the same `class` body) resolves it only when the
+            // ambient dynamic package happens to already be that class —
+            // true inside one of the class's own methods, but NOT while
+            // matching a multi candidate's signature during dispatch, before
+            // any method body has been entered (#8003).
+            let saved_package = self.current_package();
+            self.set_current_package(subset.decl_package.clone());
             let ok = if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
@@ -1086,6 +1098,7 @@ impl Interpreter {
             } else {
                 true
             };
+            self.set_current_package(saved_package);
             return ok;
         }
         if let Some((constraint_base, constraint_args)) =
