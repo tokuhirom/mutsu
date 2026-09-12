@@ -22,19 +22,23 @@ impl Interpreter {
                     .filter(|p| p != package),
             );
             let prefixes: Vec<String> = packages.iter().map(|p| format!("{p}::")).collect();
+            // Filter on the interned `&'static str`: `Symbol::resolve` is
+            // `as_str().to_owned()`, so spelling this with `resolve()` would
+            // build (and drop) an owned `String` for every key in the registry
+            // on every `.parse` call.
             let defs: Vec<(String, std::sync::Arc<FunctionDef>)> = self
                 .registry()
                 .token_defs
                 .iter()
                 .filter(|(k, _)| {
-                    let ks = k.resolve();
+                    let ks = k.as_str();
                     prefixes.iter().any(|pre| ks.starts_with(pre.as_str()))
                 })
                 .flat_map(|(k, v)| {
                     // `Pkg::rule` / `Pkg::rule:sym<x>` -> the bare rule name a
                     // capture is stored under (`rule`).
-                    let ks = k.resolve();
-                    let bare = ks.rsplit("::").next().unwrap_or(&ks);
+                    let ks = k.as_str();
+                    let bare = ks.rsplit("::").next().unwrap_or(ks);
                     let bare = bare.split(':').next().unwrap_or(bare).to_string();
                     v.iter().map(move |d| (bare.clone(), d.clone()))
                 })
@@ -45,23 +49,24 @@ impl Interpreter {
                 }
             }
         }
-        // Extract `:my $*/%*/@*NAME = INIT;` declarations from the patterns.
+        // Extract `:my $*/%*/@*NAME = INIT;` declarations from the patterns, and
+        // at the same time remember which RULE declared what, so the reduce walk
+        // can give each match of a declaring rule its own binding instead of
+        // letting every match share the one parse-wide slot established below.
+        // Keyed by the bare rule name, which is what a capture is stored under.
+        // One scan feeds both: the per-rule map used to re-scan every pattern a
+        // second time for the identical answer.
         let mut decls: Vec<String> = Vec::new();
-        for (_, pat) in &patterns {
-            Self::collect_dynamic_var_decls(pat, &mut decls);
-        }
-        // Remember which RULE declared what, so the reduce walk can give each
-        // match of a declaring rule its own binding instead of letting every
-        // match share the one parse-wide slot established below. Keyed by the
-        // bare rule name, which is what a capture is stored under.
         {
             let mut per_rule: HashMap<String, Vec<String>> = HashMap::new();
             for (rule, pat) in &patterns {
                 let mut rule_decls: Vec<String> = Vec::new();
                 Self::collect_dynamic_var_decls(pat, &mut rule_decls);
-                if !rule_decls.is_empty() {
-                    per_rule.entry(rule.clone()).or_default().extend(rule_decls);
+                if rule_decls.is_empty() {
+                    continue;
                 }
+                decls.extend(rule_decls.iter().cloned());
+                per_rule.entry(rule.clone()).or_default().extend(rule_decls);
             }
             self.grammar_rule_dynvar_decls = per_rule;
         }
@@ -131,34 +136,32 @@ impl Interpreter {
 
     /// Collect `:my $*/%*/@*… = …;` declaration substrings (main-slang code
     /// between `:my ` and the terminating `;`) from a rule pattern.
+    ///
+    /// Walks the `:` positions rather than every character: the declaration can
+    /// only start at one, and testing a position used to mean materializing the
+    /// whole remaining pattern as an owned `String`, which made the scan
+    /// quadratic in the pattern length (1.3% of a YAMLish parse, and 2.6% of the
+    /// allocations in it, for an answer that is almost always "no declarations").
     fn collect_dynamic_var_decls(pattern: &str, out: &mut Vec<String>) {
-        let bytes: Vec<char> = pattern.chars().collect();
-        let mut i = 0;
-        while i < bytes.len() {
-            let rest: String = bytes[i..].iter().collect();
-            if let Some(after) = rest
-                .strip_prefix(":my ")
-                .or_else(|| rest.strip_prefix(":our "))
-            {
-                // Only dynamic (`*`-twigil) declarations concern us.
-                let trimmed = after.trim_start();
-                if matches!(trimmed.chars().next(), Some('$' | '@' | '%'))
-                    && trimmed.chars().nth(1) == Some('*')
-                {
-                    // Collect `my … ` up to the `;`.
-                    let decl: String = rest
-                        .strip_prefix(':')
-                        .unwrap_or(&rest)
-                        .chars()
-                        .take_while(|&c| c != ';')
-                        .collect();
-                    out.push(decl.trim().to_string());
-                }
-                // Skip past this `:my`.
-                i += 4;
+        let mut rest = pattern;
+        while let Some(colon) = rest.find(':') {
+            let at = &rest[colon..];
+            // `:` is one byte, so the tail is on a char boundary.
+            rest = &at[1..];
+            let Some(after) = at.strip_prefix(":my ").or_else(|| at.strip_prefix(":our ")) else {
                 continue;
+            };
+            // Only dynamic (`*`-twigil) declarations concern us.
+            let trimmed = after.trim_start();
+            let mut sigil_and_twigil = trimmed.chars();
+            if matches!(sigil_and_twigil.next(), Some('$' | '@' | '%'))
+                && sigil_and_twigil.next() == Some('*')
+            {
+                // Collect `my … ` up to the `;`.
+                let decl = &at[1..];
+                let decl = decl.split(';').next().unwrap_or(decl);
+                out.push(decl.trim().to_string());
             }
-            i += 1;
         }
     }
 

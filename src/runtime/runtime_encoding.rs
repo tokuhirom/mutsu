@@ -1,6 +1,24 @@
 use super::*;
 
 impl Interpreter {
+    /// The built-in encoding table, built **once per process** and handed out
+    /// as a shared `Arc`.
+    ///
+    /// Building it allocates ~30 `String`s, and `Interpreter::new` ran it on
+    /// every construction — including the 1,609 regex/grammar scratch
+    /// interpreters one YAMLish parse builds. Sharing is safe because
+    /// `encoding_registry` is already copy-on-write: `register_encoding` goes
+    /// through `cow_table_mut`, so the first interpreter to add a user encoding
+    /// forks itself a private copy. Same mechanism as
+    /// `Interpreter::shared_builtin_registry`.
+    pub(crate) fn shared_builtin_encodings() -> std::sync::Arc<Vec<EncodingEntry>> {
+        static TEMPLATE: std::sync::OnceLock<std::sync::Arc<Vec<EncodingEntry>>> =
+            std::sync::OnceLock::new();
+        std::sync::Arc::clone(
+            TEMPLATE.get_or_init(|| std::sync::Arc::new(Self::builtin_encodings())),
+        )
+    }
+
     pub(crate) fn builtin_encodings() -> Vec<EncodingEntry> {
         vec![
             EncodingEntry {
