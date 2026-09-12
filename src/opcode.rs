@@ -4823,10 +4823,21 @@ pub(crate) struct CompiledCode {
     /// `needs_cell_locals` it does NOT require `captured_mutated_locals`
     /// membership (the whole point is the mutation analysis never saw the write).
     ///
-    /// SCALARS only. The `@`/`%` half of the same complement is
+    /// SCALARS and `&` code lexicals. The `@`/`%` half of the same complement is
     /// `needs_cell_unvouched_containers` — same rule, different delivery site.
-    /// `&` is in neither (a `Sub` value must not be boxed, and rebinding `&f` is
-    /// a name-write the vouch already sees).
+    ///
+    /// `&` used to be in NEITHER set, on the reasoning that "a `Sub` value must
+    /// not be boxed, and rebinding `&f` is a name-write the vouch already sees".
+    /// The second half of that is exactly backwards: the vouch does see the
+    /// name-write, and therefore REFUSES to vouch — leaving nothing behind it.
+    /// With no decl-site container cell to fall back on either, a reassigned
+    /// `&f` captured by an escaping closure had no defence at all and resolved
+    /// by name up the live frame chain (Algorithm::LCS 0.1.1 recursed into the
+    /// callee's own same-named `&` parameter until the stack overflowed). The
+    /// `Sub` value-kind refusal in `box_captured_lexicals` is likewise lifted
+    /// for this trigger only — it is ADR-0025's last unargued "keep", and the
+    /// same argument that retired `Package`/`Array`/`Hash` applies to it.
+    /// See `t/routines/closure/closure-capture-sub-valued-cell.t`.
     ///
     /// INCLUDES this frame's own parameters. They were excluded when the set
     /// first shipped, because boxing one leaked state between two invocations of
@@ -4858,7 +4869,16 @@ pub(crate) struct CompiledCode {
     ///
     /// Delivered at the DECLARATION site (`exec_set_local_op` ->
     /// `box_decl_local_container_cell`), not at each capture like the scalar
-    /// lane. That is ADR-0039's mechanism, and it is also the only affordable
+    /// lane — EXCEPT for a PARAMETER, which has no declaration store, so that
+    /// site never ran for one and it reached neither half of the dichotomy (the
+    /// Algorithm::LCS 0.1.1 comparator closed over `lcs`'s `@a`/`@b` parameters
+    /// but ran inside `strip-prefix`, whose same-named parameters hold the
+    /// REVERSED arrays). A parameter takes its cell from `box_captured_lexicals`
+    /// instead, scoped to `code.param_local_slots` so an ordinary `my @a` keeps
+    /// the decl site and the cost measured below is unchanged. See
+    /// `t/routines/closure/closure-capture-container-arg-cell.t`.
+    ///
+    /// That is ADR-0039's mechanism, and it is also the only affordable
     /// one: a `@o.shift xx $_` thunk is created once per repetition, so boxing
     /// from `box_captured_lexicals` ran the whole per-free-var loop 720k times
     /// for 1.2k declarations and took `roast/S15-nfg/concat-stable.t` from 2s to
@@ -7526,11 +7546,18 @@ impl CompiledCode {
             .filter(|sym| !vouched.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
-                    // `box_captured_lexicals` only boxes `$` scalars; an
+                    // `box_captured_lexicals` boxes `$` scalars and, for this
+                    // unvouched-escaping case only, `&` code lexicals; an
                     // `@`/`%` lexical takes the decl-site container cell
-                    // instead (`needs_cell_unvouched_containers`, just below),
-                    // and a `&` lexical is never boxed at all.
-                    crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%', '&'])
+                    // instead (`needs_cell_unvouched_containers`, just below).
+                    //
+                    // `&` used to be excluded here alongside `@`/`%`, but it has
+                    // no decl-site cell to fall back on, so it landed in NEITHER
+                    // complement: a reassigned `&f` captured by an escaping
+                    // closure had neither the vouch nor a cell, and a same-named
+                    // `&` lexical in the calling frame won. That is exactly the
+                    // hole the dichotomy exists to close.
+                    crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%'])
                 })
             })
             .collect();

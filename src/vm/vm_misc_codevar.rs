@@ -63,7 +63,10 @@ impl Interpreter {
         // against the executing frame's own `code.locals`, so it can never
         // pick up an enclosing frame's slot numbering.
         if let Some(slot) = self.find_local_slot(code, &format!("&{}", name)) {
-            let slot_val = self.locals[slot].clone();
+            // Read through a shared cell (ADR-0055 §7.3): `&cb` as a VALUE
+            // (`.defined`, `~~ Callable`, passed as an argument) must be the
+            // callable, not the cell holding it.
+            let slot_val = self.locals[slot].clone().into_deref();
             if !slot_val.is_nil() {
                 self.stack.push(slot_val);
                 return Ok(());

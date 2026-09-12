@@ -226,7 +226,10 @@ impl Interpreter {
         let ampname = format!("&{}", name);
         let candidate = code
             .and_then(|c| self.locals_get_by_name(c, &ampname))
-            .or_else(|| self.env().get(&ampname).cloned());
+            .or_else(|| self.env().get(&ampname).cloned())
+            // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
+            // filter below must classify the CALLABLE, not the cell.
+            .map(|v| v.into_deref());
         candidate.filter(|v| {
             matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
                 || matches!(v.view(), ValueView::Routine { .. })
@@ -1447,7 +1450,8 @@ impl Interpreter {
             && let Some(val) = self.locals.get(slot)
             && !val.is_nil()
         {
-            target = val.clone();
+            // Read through a shared cell (ADR-0055 §7.3) before dispatch.
+            target = val.clone().into_deref();
         }
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
