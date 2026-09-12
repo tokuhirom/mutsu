@@ -1442,7 +1442,16 @@ impl Interpreter {
         // Trigger (E) is independent of `captured_mutated_locals` on purpose (see
         // `needs_cell_unvouched_locals`), so it must bypass the early return.
         let has_unvouched = !code.needs_cell_unvouched_locals.is_empty();
+        // A `@`/`%` PARAMETER in the unvouched-container set has no declaration
+        // store, so `box_decl_local_container_cell`'s usual delivery site
+        // (`exec_set_local_op`) never runs for it — it reached neither half of
+        // the dichotomy. Its cell is delivered here instead. Scoped to parameter
+        // slots on purpose: an ordinary `my @a` still takes the decl site, so
+        // the per-capture cost ADR-0039 measured (`@o.shift xx $_`) is unchanged.
+        let has_unvouched_param_container =
+            !code.needs_cell_unvouched_containers.is_empty() && !code.param_local_slots.is_empty();
         if !has_unvouched
+            && !has_unvouched_param_container
             && ((code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
                 || (self.loop_local_vars.is_empty()
                     && code.needs_cell_locals.is_empty()
@@ -1476,7 +1485,25 @@ impl Interpreter {
             // can run orders of magnitude more often than the declaration it
             // captures (`@o.shift xx $_` creates one thunk per repetition), so
             // per-capture boxing is the wrong site for a per-binding decision.
-            if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
+            // `&` is admitted for the unvouched-escaping case (E) only: unlike
+            // `@`/`%` it has no decl-site container cell to fall back on, so
+            // without this it has no defence at all (see
+            // `needs_cell_unvouched_locals`).
+            if s.starts_with('@') || s.starts_with('%') {
+                // ... except a PARAMETER, which has no decl site either: deliver
+                // its unvouched-container cell here (see the flag above).
+                if has_unvouched_param_container
+                    && code.needs_cell_unvouched_containers.contains(sym)
+                    && !cc.authoritative_free_vars.contains(sym)
+                    && let Some(idx) =
+                        Self::resolve_capture_slot(code, &cc.free_var_parent_slots, fv_i, *sym)
+                    && code.param_local_slots.contains(&(idx as u32))
+                {
+                    self.box_decl_local_container_cell(code, idx, true);
+                }
+                continue;
+            }
+            if s.starts_with('&') && !unvouched_escaping {
                 continue;
             }
             let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(sym));
@@ -1562,16 +1589,21 @@ impl Interpreter {
             // staleness bug, so the cell is mandatory. Note this boxes the `$`
             // SCALAR container, not the Array/Hash itself — `@a`/`%h` sigil
             // locals still take `box_decl_local_container_cell`.
+            // A Sub is refused a cell on the ordinary paths, but NOT when it is
+            // the unvouched-escaping case (E): there the cell is the only thing
+            // distinguishing this binding from a same-named caller lexical, so
+            // refusing it reopens the very hole the dichotomy exists to close.
+            let refuse_sub = matches!(cur.view(), ValueView::Sub(..)) && !unvouched_escaping;
             if !cur.is_any_type_object()
-                && matches!(
-                    cur.view(),
-                    ValueView::Sub(..)
-                        | ValueView::Proxy { .. }
-                        | ValueView::Seq(..)
-                        | ValueView::HyperSeq(..)
-                        | ValueView::RaceSeq(..)
-                        | ValueView::Slip(..)
-                )
+                && (refuse_sub
+                    || matches!(
+                        cur.view(),
+                        ValueView::Proxy { .. }
+                            | ValueView::Seq(..)
+                            | ValueView::HyperSeq(..)
+                            | ValueView::RaceSeq(..)
+                            | ValueView::Slip(..)
+                    ))
             {
                 continue;
             }

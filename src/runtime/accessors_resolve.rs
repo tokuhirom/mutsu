@@ -411,6 +411,16 @@ impl Interpreter {
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", bare_name);
         if let Some(val) = self.env.get(&var_key) {
+            // An `&` lexical may be a shared cell (the unvouched-escaping
+            // capture, ADR-0055 §7.3): read through it, never hand the cell to
+            // a caller that expects a callable. Branch rather than calling
+            // `deref_container` unconditionally — this is a hot resolution path
+            // and the non-cell case must keep its single clone.
+            let val = if val.is_container_ref() {
+                val.deref_container()
+            } else {
+                val.clone()
+            };
             // Upgrade WeakSub references (e.g., &?BLOCK) to strong Sub
             if let ValueView::WeakSub(weak) = val.view() {
                 return match weak.upgrade() {
@@ -418,7 +428,7 @@ impl Interpreter {
                     None => Value::NIL,
                 };
             }
-            return val.clone();
+            return val;
         }
         // `return` is a control-flow keyword that also resolves as &return
         // so that it can be rebound (proxied return pattern).
