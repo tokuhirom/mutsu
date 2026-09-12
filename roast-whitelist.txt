@@ -400,6 +400,7 @@ roast/S04-statements/while.t
 roast/S04-statements/with.t
 roast/S05-capture/alias.t
 roast/S05-capture/array-alias.t
+roast/S05-capture/caps.t
 roast/S05-capture/dot.t
 roast/S05-capture/match-object.t
 roast/S05-capture/named.t
@@ -448,6 +449,7 @@ roast/S05-metasyntax/longest-alternative.t
 roast/S05-metasyntax/lookaround.t
 roast/S05-metasyntax/null.t
 roast/S05-metasyntax/proto-token-ltm.t
+roast/S05-metasyntax/regex.t
 roast/S05-metasyntax/repeat.t
 roast/S05-metasyntax/sequential-alternation.t
 roast/S05-metasyntax/single-quotes.t
