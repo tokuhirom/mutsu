@@ -249,6 +249,26 @@ fn param_trait_mixin_type(traits: &[String]) -> Option<Symbol> {
     traits.iter().rev().find_map(|t| map.get(t).copied())
 }
 
+/// Whether a parameter name is one of the synthetic placeholders the parser
+/// gives an *anonymous* parameter (`$`, `$?`, `@?`, `%?`, a bare `::T` capture,
+/// a subsignature carrier). The parameter has no user-visible name, so both
+/// `.gist` of a Signature and a binding error message have to render it the way
+/// rakudo does -- as a bare sigil, or as `<anon>` -- never as the placeholder.
+pub fn is_anonymous_param_name(name: &str) -> bool {
+    name == "_capture"
+        || name == "__type_only__"
+        // A bare `::T` / `::T:` capture carries a synthetic parameter name; the
+        // parameter itself is anonymous, and rakudo renders it as a bare `$`.
+        || name.starts_with("__type_capture__")
+        || name.starts_with("__ANON_STATE_")
+        || name == "__ANON_OPTIONAL__"
+        || name == "__subsig__"
+        || name == "__ANON_ARRAY__"
+        || name == "__ANON_HASH__"
+        || name == "@__ANON_ARRAY__"
+        || name == "%__ANON_HASH__"
+}
+
 /// Convert a ParamDef (from the parser) to a SigParam (for runtime).
 pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     let is_capture = p.slurpy && (p.name == "_capture" || p.sigilless);
@@ -266,19 +286,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 
     let name = if is_implicit_topic {
         "_".to_string()
-    } else if p.name == "_capture"
-        || p.name == "__type_only__"
-        // A bare `::T` / `::T:` capture carries a synthetic parameter name; the
-        // parameter itself is anonymous, and rakudo renders it as a bare `$`.
-        || p.name.starts_with("__type_capture__")
-        || p.name.starts_with("__ANON_STATE_")
-        || p.name == "__ANON_OPTIONAL__"
-        || p.name == "__subsig__"
-        || p.name == "__ANON_ARRAY__"
-        || p.name == "__ANON_HASH__"
-        || p.name == "@__ANON_ARRAY__"
-        || p.name == "%__ANON_HASH__"
-    {
+    } else if is_anonymous_param_name(&p.name) {
         String::new()
     } else if p.name.starts_with('@') || p.name.starts_with('%') || p.name.starts_with('&') {
         p.name[1..].to_string()

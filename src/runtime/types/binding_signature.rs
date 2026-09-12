@@ -25,6 +25,13 @@ fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
 /// no sigil for a scalar (`x` for `$x`), so restore it; a name that already has
 /// one (`@a`, `%h`, `&c`) is left alone.
 fn param_display_name(pd: &crate::ast::ParamDef) -> String {
+    // An anonymous parameter (`$`, `$?`, `@?`, `%?`) carries a synthetic parser
+    // placeholder as its name. Rakudo names it `<anon>` in a binding error, so
+    // leaking `$__ANON_OPTIONAL__` / `$__ANON_STATE__` into the message would
+    // both be wrong and expose an internal spelling.
+    if pd.name.is_empty() || crate::value::signature::is_anonymous_param_name(&pd.name) {
+        return "<anon>".to_string();
+    }
     if pd.name.starts_with(['$', '@', '%', '&']) {
         pd.name.clone()
     } else {
@@ -151,6 +158,80 @@ impl Interpreter {
                 &bound_val,
                 Some(&*self),
             ));
+        }
+        Ok(())
+    }
+
+    /// Evaluate a positional parameter's `where` post-constraint against the
+    /// value the parameter is about to bind.
+    ///
+    /// Rakudo runs the constraint on every binding path, not just the one that
+    /// received an argument: an omitted optional binds its nominal type object
+    /// (`Any`, or the declared type) and a defaulted parameter binds the
+    /// evaluated default, and the constraint is tested against *that*. Skipping
+    /// it for the omitted case let `sub f($x? where { $_ ~~ Int })` accept a
+    /// bare `f()`, and -- because a `where` clause is a multi-dispatch
+    /// discriminator -- silently widened candidate selection (#8089). So all
+    /// three binder paths funnel through here.
+    fn check_positional_param_where_constraint(
+        &mut self,
+        pd: &ParamDef,
+        name_sym: Symbol,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        let Some(where_expr) = &pd.where_constraint else {
+            return Ok(());
+        };
+        let saved_param = if pd.name.is_empty() {
+            None
+        } else {
+            self.env.get(&pd.name).cloned()
+        };
+        if !pd.name.is_empty() {
+            self.bind_param_value_sym(&pd.name, name_sym, value.clone());
+        }
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), value.clone());
+        let ok = match where_expr.as_ref() {
+            Expr::AnonSub { body, .. } => {
+                let ph_keys = self.bind_where_placeholders(body, value);
+                let r = self
+                    .eval_block_value(body)
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                for k in ph_keys {
+                    self.unmark_readonly(&k);
+                    self.env.remove(&k);
+                }
+                r
+            }
+            // Method calls on $_ (topic) in where constraints:
+            // evaluate and check truthiness of the result, not smart-match.
+            // `where .method: args` is equivalent to `where { .method: args }`.
+            Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
+                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                    .map(|v| v.truthy())
+                    .unwrap_or(false)
+            }
+            expr => self
+                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                .map(|v| self.smart_match(value, &v))
+                .unwrap_or(false),
+        };
+        if let Some(previous) = saved_topic {
+            self.env.insert("_".to_string(), previous);
+        } else {
+            self.env.remove("_");
+        }
+        if !pd.name.is_empty() {
+            if let Some(previous) = saved_param {
+                self.env.insert(pd.name.clone(), previous);
+            } else {
+                self.env.remove(&pd.name);
+            }
+        }
+        if !ok {
+            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
         }
         Ok(())
     }
@@ -517,14 +598,11 @@ impl Interpreter {
                 // `Type check failed in binding to parameter '$y'; expected
                 // Int but got Str ("s")` -- the same shape the subset branch
                 // just above already spells, with the sigil restored and an
-                // anonymous parameter named `<anon>`. Verified against
-                // `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'` and its
-                // anonymous-parameter twin.
-                let param_display = if pd.name == "__type_only__" {
-                    "<anon>".to_string()
-                } else {
-                    param_display_name(pd)
-                };
+                // anonymous parameter named `<anon>` (which
+                // `param_display_name` handles for every anonymous spelling).
+                // Verified against `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'`
+                // and its anonymous-parameter twin.
+                let param_display = param_display_name(pd);
                 return Err(RuntimeError::typecheck_binding_parameter_with_repr(
                     &param_display,
                     &resolved_constraint,
@@ -2601,63 +2679,7 @@ impl Interpreter {
                         )
                         .with_parameter_object(pd, Some(&*self)));
                     }
-                    if let Some(where_expr) = &pd.where_constraint {
-                        let saved_param = if pd.name.is_empty() {
-                            None
-                        } else {
-                            self.env.get(&pd.name).cloned()
-                        };
-                        if !pd.name.is_empty() {
-                            self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
-                        }
-                        let saved_topic = self.env.get("_").cloned();
-                        self.env.insert("_".to_string(), value.clone());
-                        let ok = match where_expr.as_ref() {
-                            Expr::AnonSub { body, .. } => {
-                                let ph_keys = self.bind_where_placeholders(body, &value);
-                                let r = self
-                                    .eval_block_value(body)
-                                    .map(|v| v.truthy())
-                                    .unwrap_or(false);
-                                for k in ph_keys {
-                                    self.unmark_readonly(&k);
-                                    self.env.remove(&k);
-                                }
-                                r
-                            }
-                            // Method calls on $_ (topic) in where constraints:
-                            // evaluate and check truthiness of the result, not smart-match.
-                            // `where .method: args` is equivalent to `where { .method: args }`.
-                            Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                                    .map(|v| v.truthy())
-                                    .unwrap_or(false)
-                            }
-                            expr => self
-                                .eval_block_value(&[Stmt::Expr(expr.clone())])
-                                .map(|v| self.smart_match(&value, &v))
-                                .unwrap_or(false),
-                        };
-                        if let Some(previous) = saved_topic {
-                            self.env.insert("_".to_string(), previous);
-                        } else {
-                            self.env.remove("_");
-                        }
-                        if !pd.name.is_empty() {
-                            if let Some(previous) = saved_param {
-                                self.env.insert(pd.name.clone(), previous);
-                            } else {
-                                self.env.remove(&pd.name);
-                            }
-                        }
-                        if !ok {
-                            return Err(Self::parameter_where_binding_error(
-                                pd,
-                                &value,
-                                Some(&*self),
-                            ));
-                        }
-                    }
+                    self.check_positional_param_where_constraint(pd, pd_name_sym(), &value)?;
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
                     // concrete captured type name, not the raw `::T` token.
@@ -2801,6 +2823,10 @@ impl Interpreter {
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
+                    // `sub f($x where { ... } = 3)`: the post-constraint applies
+                    // to the default too (rakudo rejects the reverse spelling,
+                    // `$x = 3 where { ... }`, at compile time).
+                    self.check_positional_param_where_constraint(pd, pd_name_sym(), &value)?;
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
@@ -2843,18 +2869,22 @@ impl Interpreter {
                         if total_positional == 1 { "" } else { "s" },
                         positional_arg_count
                     )));
-                } else if !pd.name.is_empty() {
+                } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
-                    self.bind_param_value_sym(
-                        &pd.name,
-                        pd_name_sym(),
-                        Self::missing_optional_param_value(pd),
-                    );
-                    self.bind_param_type_constraint_sym(
-                        &pd.name,
-                        pd_name_sym(),
-                        pd.type_constraint.clone(),
-                    );
+                    let value = Self::missing_optional_param_value(pd);
+                    // An omitted optional still runs its `where` post-constraint,
+                    // against the type object it would bind (#8089). An anonymous
+                    // optional (`$? where { $*KERNEL.bits == 64 }`) binds nothing
+                    // but is checked all the same -- that is its whole purpose.
+                    self.check_positional_param_where_constraint(pd, pd_name_sym(), &value)?;
+                    if !pd.name.is_empty() {
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value);
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
+                    }
                 }
             }
         }
