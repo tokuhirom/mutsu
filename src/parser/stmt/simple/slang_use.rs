@@ -11,6 +11,58 @@
 
 use super::*;
 
+/// Apply one slang registration's overrides to the current unit's parser
+/// state: production overrides become [`SlangModes`] flags, and `L10N::XX`
+/// vocabulary tokens / `<category>2ast` mappings become the unit's
+/// [`L10nVocabulary`].
+///
+/// An override that is neither is a hard error naming the rule (ADR-0026
+/// §2.2): silently ignoring it would leave the unit parsing under a grammar
+/// the slang meant to change. Production overrides are tried first — Tuxic's
+/// `routine-declarator:sym<sub>` would otherwise look like an L10N `routine-`
+/// token.
+pub(crate) fn apply_slang_overrides(
+    overrides: &[crate::runtime::slang_activation::SlangRuleOverride],
+) -> Result<(), String> {
+    let mut modes = slang_modes();
+    let mut vocabulary = l10n_vocabulary_snapshot()
+        .map(|v| (*v).clone())
+        .unwrap_or_default();
+    for over in overrides {
+        if apply_slang_rule_override(&mut modes, &over.name).is_some() {
+            continue;
+        }
+        if !over.aliases.is_empty() {
+            vocabulary.insert_aliases(
+                over.aliases
+                    .iter()
+                    .map(|(localized, canonical)| (localized.as_str(), canonical.as_str())),
+            );
+            continue;
+        }
+        if vocabulary.try_insert_token(&over.name, over.body.as_deref()) {
+            continue;
+        }
+        return Err(format!(
+            "Slang activation NYI: grammar rule override '{}' is not supported by this \
+             implementation (recognized: term:sym<identifier>, methodop, \
+             routine-declarator:sym<sub>, identifier, name, and the L10N vocabulary \
+             token categories)",
+            over.name
+        ));
+    }
+    let vocabulary = (!vocabulary.is_empty()).then(|| std::rc::Rc::new(vocabulary));
+    let changed = modes != slang_modes() || vocabulary != l10n_vocabulary_snapshot();
+    if changed {
+        set_slang_modes(modes);
+        set_l10n_vocabulary(vocabulary);
+        // A memoized parse from before the grammar changed must not be
+        // replayed under the new one.
+        crate::parser::invalidate_all_memos();
+    }
+    Ok(())
+}
+
 /// Activate slang parser modes for the rest of the current unit if `module`
 /// is slang-activating. Returns an error message when activation itself
 /// fails (module load error, or an override of a grammar rule mutsu does not
@@ -32,21 +84,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(module: &str) -> Result<(), St
         parser_lib_paths(),
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
-    let mut modes = slang_modes();
-    for rule in &rules {
-        if apply_slang_rule_override(&mut modes, rule).is_none() {
-            // `define_slang` already validated; this only fires if the two
-            // maps ever drift apart.
-            return Err(format!(
-                "slang activation for '{module}': unsupported grammar rule override '{rule}'"
-            ));
-        }
-    }
-    if modes != slang_modes() {
-        set_slang_modes(modes);
-        // A memoized parse from before the mode flip must not be replayed
-        // under the new grammar.
-        crate::parser::invalidate_all_memos();
-    }
-    Ok(())
+    // `define_slang` already validated these on the activation thread; this
+    // only re-reports if the two maps ever drift apart.
+    apply_slang_overrides(&rules).map_err(|e| format!("slang activation for '{module}': {e}"))
 }

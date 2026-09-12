@@ -287,7 +287,15 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         {
             return Err(PError::expected("user-declared type shadows keyword"));
         }
-        let (rest, _) = parse_tag(input, kw)?;
+        // An L10N slang vocabulary spells these term keywords in its own
+        // language (`term-now` → `現在`, `enum-True` → `正`), and they are
+        // recognized here rather than as barewords, so the vocabulary has to be
+        // consulted at this tag match too.
+        let rest = match crate::parser::stmt::simple::l10n_match_keyword(kw, input) {
+            Some(Some(rest)) => rest,
+            Some(None) => return Err(PError::expected("term replaced by the active slang")),
+            None => parse_tag(input, kw)?.0,
+        };
         // Check word boundary (superscript digits are NOT word chars)
         if let Some(c) = rest.chars().next()
             && (c.is_alphanumeric() || c == '_'

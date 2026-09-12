@@ -3494,6 +3494,20 @@ impl Interpreter {
         {
             return result;
         }
+        // `Str.AST($slang)` — parse the string under the localized surface
+        // syntax of the `L10N::<$slang>` distribution. An interpreter *carrier*
+        // in the `EVAL` sense rather than a tree-walk fallback: resolving
+        // `L10N::<$slang>` needs this interpreter's module search path, which
+        // the pure arity cascade serving the plain no-argument `.AST` has no way
+        // to reach. A named argument (`.AST(:compunit)`) is not a slang.
+        if method == "AST"
+            && !bypass_native_fastpath
+            && let ValueView::Str(source) = target.view()
+            && let [slang] = args.as_slice()
+            && !matches!(slang.view(), ValueView::Pair(..))
+        {
+            return self.str_ast_with_slang(&source, slang);
+        }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
         let native_result = if bypass_native_fastpath {

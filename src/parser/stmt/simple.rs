@@ -29,6 +29,7 @@ use super::{
 mod compile_consts;
 mod control_stmts;
 mod io_stmts;
+mod l10n;
 mod lib_paths;
 mod module_exports;
 mod pragma_preseed;
@@ -45,13 +46,17 @@ pub use lib_paths::{
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
+pub(crate) use l10n::{
+    L10nVocabulary, l10n_alias, l10n_canonical_keyword, l10n_match_keyword, set_l10n_preseed,
+    set_l10n_vocabulary,
+};
 pub(crate) use registry::{
     current_language_version, current_language_version_starts_with, set_current_language_version,
 };
 pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
 pub(crate) use slang_modes::{
-    apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes, slang_modes,
-    slang_spaced_call, slang_spaced_methodop,
+    SlangModes, apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes,
+    slang_modes, slang_spaced_call, slang_spaced_methodop,
 };
 
 // `pub(super)` re-exports.
@@ -69,6 +74,7 @@ pub(in crate::parser) use compile_consts::{
     register_compile_time_constant, suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
+pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
 pub(in crate::parser) use lib_paths::{parser_lib_paths, try_add_parse_time_lib_path};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
@@ -89,6 +95,7 @@ pub(in crate::parser) use registry::{
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
+pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,

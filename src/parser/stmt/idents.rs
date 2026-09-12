@@ -8,7 +8,16 @@
 use super::*;
 
 /// Try to match a keyword at the start of input, ensuring word boundary.
+///
+/// This is the single place the parser recognizes a Raku keyword by spelling,
+/// which makes it the seam an L10N slang vocabulary hooks: under an active
+/// `L10N::XX` vocabulary the localized spelling stands in for `kw` (and, for a
+/// keyword the vocabulary *replaces* rather than aliases, the ASCII spelling
+/// stops matching). See `stmt::simple::l10n`.
 pub(crate) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
+    if let Some(decision) = crate::parser::stmt::simple::l10n_match_keyword(kw, input) {
+        return decision;
+    }
     if input.starts_with(kw) && !is_ident_char(input.as_bytes().get(kw.len()).copied()) {
         Some(&input[kw.len()..])
     } else {

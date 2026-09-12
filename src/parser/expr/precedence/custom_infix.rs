@@ -75,6 +75,13 @@ pub(crate) fn parse_flipflop_infix(input: &str) -> Option<(String, usize)> {
 }
 
 pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
+    // Under an L10N slang vocabulary the reserved words wear localized
+    // spellings, and a word that spells `if` is as reserved as `if` itself —
+    // otherwise `1 の場合 1` reads as a user-defined word infix named `の場合`
+    // instead of as the `if` statement modifier.
+    if let Some(canonical) = crate::parser::stmt::simple::l10n_canonical_keyword(name) {
+        return is_reserved_infix_word(&canonical);
+    }
     if name
         .chars()
         .next()
