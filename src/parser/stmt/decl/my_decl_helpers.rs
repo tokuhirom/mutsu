@@ -89,7 +89,8 @@ pub(super) fn parse_sigilless_decl(
     let (r, _) = ws(r)?;
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
-        let (r, expr) = parse_assign_expr_or_comma(r)?;
+        let (r, expr) =
+            crate::parser::expr::with_ternary_else_assignment(|| parse_assign_expr_or_comma(r))?;
         let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
@@ -151,7 +152,8 @@ pub(super) fn parse_sigilless_decl(
     if r.starts_with('=') && !r.starts_with("==") && !r.starts_with("=>") {
         let r = &r[1..];
         let (r, _) = ws(r)?;
-        let (r, expr) = parse_assign_expr_or_comma(r)?;
+        let (r, expr) =
+            crate::parser::expr::with_ternary_else_assignment(|| parse_assign_expr_or_comma(r))?;
         let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
