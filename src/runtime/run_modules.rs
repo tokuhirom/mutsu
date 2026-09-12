@@ -1348,12 +1348,31 @@ impl Interpreter {
                 is_our,
                 is_dynamic,
                 is_export,
+                custom_traits,
                 ..
             } = s
             else {
                 continue;
             };
             if *is_our || *is_dynamic || *is_export || name.contains("::") {
+                continue;
+            }
+            // A `constant` is NOT a compunit lexical, whichever way it is
+            // spelled. [`Interpreter::collect_unit_package_scope_names`] owns
+            // those: they keep their value in `module_scope_names` (and hence in
+            // the package-keyed `module_scope_lexicals`, where the module's own
+            // routines read them) and lose only their bare `env` binding.
+            // Moving one into `unit_lexicals` instead takes it OUT of
+            // `module_scope_names`, and the module's own routines then read it
+            // as `Nil`.
+            //
+            // The `is_our` test above catches the bare `constant @a = ...`
+            // spelling, which parses as `VarDecl { is_our: true }`, but NOT
+            // `my constant @a = ...`, which parses with `is_our: false` — so
+            // discriminate on the `__constant` trait the same way
+            // `collect_unit_package_scope_names` does, rather than on a
+            // scope keyword that only incidentally lines up.
+            if custom_traits.iter().any(|(t, _)| t == "__constant") {
                 continue;
             }
             // Anonymous container slots (`@__ANON_ARRAY__`/`%__ANON_HASH__`)

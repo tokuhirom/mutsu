@@ -662,6 +662,33 @@ impl Interpreter {
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);
         }
+        // An enum value used as a POSITIONAL subscript numifies to its value
+        // (`@a[Green]` is `@a[1]`): an enum value is a `Cool`, and the subscript
+        // protocol numifies its index, exactly as the explicit `@a[+Green]` /
+        // `@a[Green.Int]` spellings already did. Business::CreditCard indexes its
+        // obsolete-brand table by the card type it just looked up
+        // (`@renamed[$found]`), which answered `Nil` for every card.
+        //
+        // Gated on `is_positional` so an ASSOCIATIVE subscript keeps the enum
+        // itself as the key — `%h{Green}` is keyed by the enum value, not by its
+        // ordinal, and numifying it there would break the matching write.
+        //
+        // `as_index_i64` (not `as_i64`) so a STRING-valued enum is left alone
+        // rather than folded to element 0: raku numifies it through `Str.Int`
+        // and dies with X::Str::Numeric.
+        if is_positional
+            && let ValueView::Enum { value, .. } = index.view()
+            && let Some(i) = value.as_index_i64()
+        {
+            index = Value::int(i);
+        }
+        // `Bool` is `enum Bool <False True>`, so the same rule gives
+        // `@a[True] == @a[1]` and `@a[False] == @a[0]`. It is a distinct
+        // `ValueView`, never `ValueView::Enum`, so it needs its own arm.
+        // Positional-only for the same reason: `%h{True}` is keyed by the Bool.
+        if is_positional && let ValueView::Bool(b) = index.view() {
+            index = Value::int(i64::from(b));
+        }
         // A user object used as a positional subscript coerces via its `.Int`
         // method (`@a[$obj]` where `$obj` defines `method Int`, Raku subscript
         // protocol). Gate on an array-like target so an associative `%h{...}`
