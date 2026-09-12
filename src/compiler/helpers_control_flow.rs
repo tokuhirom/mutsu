@@ -31,6 +31,20 @@ impl Compiler {
         {
             return true;
         }
+        // An uppercase spec naming a known enum VALUE (`--> B` where `enum E
+        // <A B C>`) is a definite return of that value, not a type constraint
+        // named `B` -- the enum's own TYPE name (`E`) is a separate,
+        // parse-time-registered user type and is unaffected (#8022). Checked
+        // via the parser's own thread-local enum-value registry
+        // (`register_user_enum_value`/`is_user_declared_enum_value`), the only
+        // enum-membership fact a static function with no interpreter access
+        // can consult; the interpreter's twin check in
+        // `Interpreter::is_definite_return_spec` must agree.
+        if crate::runtime::utils::is_builtin_enum_value(s)
+            || crate::parser::is_user_declared_enum_value(s)
+        {
+            return true;
+        }
         matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "e" | "tau")
             || (s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
                 && !crate::runtime::utils::is_known_type_constraint(s))

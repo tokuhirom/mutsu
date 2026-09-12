@@ -99,6 +99,10 @@ pub(crate) fn restore_slang_state(
     stmt::simple::set_slang_modes(modes);
     stmt::simple::set_l10n_vocabulary(vocabulary);
 }
+/// Re-exported crate-wide (not just within `parser`) so the compiler's
+/// `is_definite_return_spec` twin can consult the same parse-time enum-value
+/// registry (#8022) without interpreter access.
+pub(crate) use stmt::simple::is_user_declared_enum_value;
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };
