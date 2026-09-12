@@ -133,31 +133,26 @@ impl Interpreter {
                     // sub pre-pass accepts any type declared in the unit.
                     || (!tc.contains("::")
                         && self.type_known_by_short_name(tc_base))
-                    // A qualified type supplied by a module `use`d within
-                    // this role body is not yet loaded at registration
-                    // time (the body's `use` runs after this validation),
-                    // so accept it if a body import could provide it. The
-                    // call site resolves it for real.
-                    || (tc.contains("::")
-                        && cx.body_used_modules.iter().any(|m| {
-                            tc_base == m
-                                || tc_base.starts_with(&format!("{m}::"))
-                                || m.starts_with(&format!("{tc_base}::"))
-                        }))
-                    // The same deferral for an UNQUALIFIED constraint, which
-                    // the name comparison above cannot express: a module
-                    // exports a type under a bare name, so nothing about
-                    // `Event` predicts that `use Test::Async::Event` is what
-                    // supplies it (`unit package Test::Async; class Event is
-                    // export`). Only a body `use` of a module that has NOT
-                    // been loaded yet defers — once every module this body
-                    // names is loaded, an unresolvable name really is a typo
-                    // and still reports X::Parameter::InvalidType.
-                    || (!tc.contains("::")
-                        && cx
-                            .body_used_modules
-                            .iter()
-                            .any(|m| !self.is_module_loaded(m)));
+                    // A type supplied by a module `use`d within this role
+                    // body is not yet loaded at registration time (the
+                    // body's `use` runs after this validation), so accept
+                    // the constraint if a body import could still provide
+                    // it. Applies equally to a qualified name
+                    // (`Event::Test`) and a bare one (`Event`): nothing
+                    // about either spelling predicts which `use`d module
+                    // supplies it (`unit package Outer; class Event is
+                    // export; class Event::Test is Event { }` — `Event::Test`
+                    // shares no textual prefix with the module name
+                    // `Types1` that exports it, #8023), so a name-based match
+                    // against the module name is unsound either way. Only a
+                    // body `use` of a module that has NOT been loaded yet
+                    // defers — once every module this body names is loaded,
+                    // an unresolvable name really is a typo and still
+                    // reports X::Parameter::InvalidType.
+                    || cx
+                        .body_used_modules
+                        .iter()
+                        .any(|m| !self.is_module_loaded(m));
                 if !resolvable {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("type".to_string(), Value::str(tc.to_string()));
