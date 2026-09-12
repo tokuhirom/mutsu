@@ -116,6 +116,15 @@ impl Interpreter {
         {
             return false;
         }
+        // An uppercase spec naming a known enum VALUE (`--> B` where
+        // `enum E <A B C>`) is a definite return of that value, not a type
+        // constraint named `B` (#8022) -- must agree with the compiler's
+        // twin check in `Compiler::is_definite_return_spec`, which consults
+        // the parser's enum-value registry instead (no interpreter access
+        // there); this checks the actual runtime enum-key namespace.
+        if crate::runtime::utils::is_builtin_enum_value(s) || self.enum_bare_value(s).is_some() {
+            return true;
+        }
         if s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
             && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_')
@@ -398,6 +407,16 @@ impl Interpreter {
             && let Ok(i) = s.parse::<i64>()
         {
             return Ok(Value::int(i));
+        }
+        // A user-declared enum value (`--> B`, #8022): read directly out of
+        // the enum-key bare-name namespace rather than through `eval_eval_string`
+        // below. `EVAL` compiles a fresh compilation unit and does not resolve
+        // an enum's bare key from the enclosing scope the way ordinary
+        // bareword resolution does, so routing this through it would still
+        // answer "Undeclared name" for the exact case this discriminator
+        // exists to serve.
+        if let Some(v) = self.enum_bare_value(s) {
+            return Ok(v.clone());
         }
         self.eval_eval_string(s)
     }

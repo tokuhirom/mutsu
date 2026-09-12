@@ -102,6 +102,10 @@ pub(crate) fn restore_slang_state(
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };
+/// Re-exported crate-wide (not just within `parser`) so the compiler's
+/// `is_definite_return_spec` twin can consult the same parse-time enum-value
+/// registry (#8022) without interpreter access.
+pub(crate) use stmt::simple::is_user_declared_enum_value;
 
 pub(crate) use expr::precedence::lower_feed_node;
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
