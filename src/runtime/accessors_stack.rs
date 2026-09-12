@@ -449,14 +449,23 @@ impl Interpreter {
                 && items.len() >= *limit
             {
                 // A take inside a routine call NESTED under the lazy-pull
-                // driver cannot suspend soundly (the driver snapshots only its
-                // own frame; the signal would unwind the callee and corrupt
-                // the saved ip/stack — see `lazy_pull_entry_call_depth`). Keep
-                // collecting eagerly instead; over-production is correct.
+                // driver cannot suspend soundly AT THE TAKE (the driver
+                // snapshots only its own frame; the signal would unwind the
+                // callee and corrupt the saved ip/stack — see
+                // `lazy_pull_entry_call_depth`). It can still suspend at the
+                // next iteration boundary of a condition-driven loop that
+                // lives in the driver's OWN frame, which is reached only after
+                // the callee has returned: park the deferred-suspension flag
+                // and let that boundary consume it (the consumption sites
+                // check the frame depth themselves). Without this the pull
+                // collected eagerly and forever whenever the gather body's
+                // only takes came from a nested call under an infinite loop
+                // (`gather { loop { self!bitmap(...) } }`, EuclideanRhythm).
                 if self
                     .lazy_pull_entry_call_depth
                     .is_some_and(|entry| self.call_frames.len() > entry)
                 {
+                    self.gather_suspend_pending = true;
                     return Ok(());
                 }
                 if self.lazy_take_boundary_defer {
@@ -481,6 +490,21 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// Whether a deferred lazy-pull suspension (`gather_suspend_pending`) may
+    /// be taken at the iteration boundary the caller has just reached.
+    ///
+    /// The pull driver can only snapshot and resume its OWN frame, so only a
+    /// loop running at (or above) the driver's entry call depth is a sound
+    /// suspension point. A loop inside a routine the gather body called must
+    /// leave the flag set and keep running: the flag survives the callee's
+    /// return and the gather body's own loop consumes it one boundary later.
+    pub(crate) fn gather_suspend_boundary_reached(&self) -> bool {
+        self.gather_suspend_pending
+            && self
+                .lazy_pull_entry_call_depth
+                .is_none_or(|entry| self.call_frames.len() <= entry)
     }
 
     pub(crate) fn gather_items_len(&self) -> usize {
