@@ -86,7 +86,7 @@ class GLOBAL::NativeCall::CStr {
 }
 "#;
 
-/// NativeCall's five exported helper routines, each with the name that gates
+/// NativeCall's six exported helper routines, each with the name that gates
 /// its injection.
 ///
 /// **None of these is a Raku builtin.** Rakudo exports them from
@@ -98,8 +98,8 @@ class GLOBAL::NativeCall::CStr {
 /// pass or wrap. The marshalling stays in Rust behind a `__mutsu_`-prefixed
 /// primitive that is not part of the user-visible surface.
 ///
-/// Injected per entry, so a program that declares its own `sub refresh` keeps
-/// the other four (see `inject_nativecall_subs_prelude`).
+/// Injected per entry, so a program that declares its own sub refresh keeps
+/// the other five (see inject_nativecall_subs_prelude).
 ///
 /// None is `is export`, even though Rakudo declares them `is export(:DEFAULT)`:
 /// a prelude is spliced into the *host* compunit, so an `is export` here would
@@ -172,6 +172,30 @@ our sub explicitly-manage(Str $str, :$encoding = 'utf8') {
         "refresh",
         r#"
 our sub refresh($obj) { 1 }
+"#,
+    ),
+    (
+        "guess_library_name",
+        r#"
+our proto guess_library_name(|) { * }
+multi guess_library_name(IO::Path $lib) {
+    guess_library_name($lib.absolute.Str)
+}
+multi guess_library_name(Callable $lib) {
+    guess_library_name($lib())
+}
+multi guess_library_name(List $lib) {
+    guess_library_name($lib[0], $lib[1])
+}
+multi guess_library_name(Str $libname, $apiversion = '') {
+    $libname.DEFINITE
+        ?? $libname ~~ /[\.<.alpha>+ | \.so [\.<.digit>+]+ ] $/
+            ?? $libname
+            !! $*VM.platform-library-name(
+                $libname.IO, :version($apiversion || Version)
+            ).Str
+        !! ''
+}
 "#,
     ),
 ];
