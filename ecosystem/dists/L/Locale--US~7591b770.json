@@ -11,11 +11,10 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'uc' for invocant of type 'Any'",
         "nok": 0,
         "ok": 1,
         "plan": 60,
-        "secs": 0.1,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +24,7 @@
         "nok": 0,
         "ok": 60,
         "plan": 60,
-        "secs": 1.11,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "date": "2026-09-12",
+    "harness": 2,
+    "host": "linux-x86_64",
+    "mutsu_commit": "2c9146a8",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -31,6 +31,26 @@ impl Interpreter {
         // every caller sees `None` (see `@a[Inf] = ...` in S02-types/array.t).
         match idx.view() {
             ValueView::Int(i) if i >= 0 => Some(i as usize),
+            // An enum value is a `Cool`, so as an ARRAY index it numifies to its
+            // value (`@a[Green] = ...` is `@a[1] = ...`). Without this the
+            // `to_string_value()` fallback below parsed the enum's KEY
+            // ("Green"), failed, and the write reported "Index out of bounds".
+            // The read path numifies in `exec_index_op_with_positional`; every
+            // caller here is already an array-positional site.
+            //
+            // `as_index_i64` (not `as_i64`) so a STRING-valued enum stays on the
+            // fallback path rather than silently indexing element 0 — raku dies
+            // with X::Str::Numeric there. A negative value falls through too,
+            // and is rejected as out of range exactly as a literal `@a[-1]` is.
+            ValueView::Enum { value, .. } if value.as_index_i64().is_some_and(|i| i >= 0) => {
+                value.as_index_i64().map(|i| i as usize)
+            }
+            // `Bool` is `enum Bool <False True>`, so it numifies as a subscript
+            // the same way: `@a[True]` is `@a[1]`. It reaches here as a plain
+            // `ValueView::Bool`, never as `ValueView::Enum`, so it needs its own
+            // arm — without it `to_string_value()` produced "True" and the parse
+            // failed.
+            ValueView::Bool(b) => Some(usize::from(b)),
             ValueView::Num(f) if f >= 0.0 && f.is_finite() => Some(f as usize),
             ValueView::Rat(n, d) if d != 0 => {
                 let f = n as f64 / d as f64;
