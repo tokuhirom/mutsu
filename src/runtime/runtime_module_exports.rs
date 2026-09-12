@@ -241,8 +241,8 @@ impl Interpreter {
     /// the re-export silently did nothing.
     ///
     /// The list is Rakudo's `NativeCall.rakumod` / `NativeCall::Types` export
-    /// set: the trait that makes a sub native, the four helper routines, and the
-    /// C type objects.
+    /// set: the trait that makes a sub native, the five DEFAULT helper
+    /// routines, the TEST-only library-name helper, and the C type objects.
     ///
     /// A module loaded from source populates `exported_subs` as its `is export`
     /// declarations are registered, and `package_stash_value` builds
@@ -278,13 +278,12 @@ impl Interpreter {
         for name in SUBS {
             self.register_exported_sub("NativeCall".to_string(), name.to_string(), Vec::new());
         }
-        // `guess_library_name` is a routine, but it is spelled `&…` by consumers
-        // and lives with the types in Rakudo's export map; registering it in both
-        // sets keeps either spelling resolvable.
+        // guess_library_name is a TEST-only routine in Rakudo. It is kept out
+        // of DEFAULT so use NativeCall :TEST is the import that exposes it.
         self.register_exported_sub(
             "NativeCall".to_string(),
             "guess_library_name".to_string(),
-            Vec::new(),
+            vec!["TEST".to_string()],
         );
         for name in TYPES {
             self.register_exported_var("NativeCall".to_string(), name.to_string(), Vec::new());

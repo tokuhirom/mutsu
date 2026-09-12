@@ -72,11 +72,11 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend NativeCall's exported helper routines — `cglobal`, `nativecast`,
-    /// `nativesizeof`, `explicitly-manage`, `refresh` — to a program that uses
-    /// NativeCall and calls them.
+    /// Prepend NativeCall's exported helper routines — cglobal, nativecast,
+    /// nativesizeof, explicitly-manage, refresh, guess_library_name — to a
+    /// program that uses NativeCall and calls them.
     ///
-    /// None of the five is a Raku builtin: Rakudo exports them from
+    /// None of the six is a Raku builtin: Rakudo exports them from
     /// `NativeCall.rakumod`, and mutsu's working agreement puts a routine in the
     /// builtin set only if `Language/perl-func.rakudoc` lists it. Injecting them
     /// as ordinary `our sub`s is what makes them importable rather than ambient,
@@ -95,6 +95,7 @@ impl Interpreter {
         if !source.contains("NativeCall") {
             return;
         }
+        let test_tag_requested = source.contains("use NativeCall :TEST");
         use std::sync::OnceLock;
         static SUB_STMTS: OnceLock<Vec<Vec<Stmt>>> = OnceLock::new();
         let parsed = SUB_STMTS.get_or_init(|| {
@@ -111,7 +112,10 @@ impl Interpreter {
         });
         let mut prelude: Vec<Stmt> = Vec::new();
         for ((name, _), decl) in NATIVECALL_SUB_PRELUDES.iter().zip(parsed) {
-            if source.contains(name) && !Self::declares_toplevel_sub(stmts, name) {
+            if source.contains(name)
+                && (*name != "guess_library_name" || test_tag_requested)
+                && !Self::declares_toplevel_sub(stmts, name)
+            {
                 prelude.extend(decl.iter().cloned());
             }
         }
