@@ -135,9 +135,18 @@ fn interpreter_version() -> String {
 pub(crate) fn enabled_by_default() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::env::var("MUTSU_PRECOMP")
-            .map(|v| v != "0")
-            .unwrap_or(true)
+        // Read once per process: `Interpreter::new` asks on every construction,
+        // and `std::env::var` locks the environment and allocates a `String` for
+        // the answer. The variable is a process-wide switch, so a later
+        // `set_var` was never meant to change an already-built interpreter's
+        // default anyway (`precomp_enabled` is a per-interpreter field the CLI
+        // overrides directly).
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("MUTSU_PRECOMP")
+                .map(|v| v != "0")
+                .unwrap_or(true)
+        })
     }
     #[cfg(target_arch = "wasm32")]
     {

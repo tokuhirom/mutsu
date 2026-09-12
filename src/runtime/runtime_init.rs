@@ -2995,26 +2995,37 @@ impl Interpreter {
         if !Self::is_building_scratch() {
             crate::gc::gc_safepoint(crate::gc::SafepointKind::Construct);
         }
-        let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::int(current_process_id()));
-        env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
-        env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
-        env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
-        // Populate %*ENV with all OS environment variables so that
-        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly. A scratch
-        // interpreter inherits the caller's env (which already carries %*ENV), so
-        // skip the OS-env sweep there.
-        if !Self::is_building_scratch() {
+        // Seed the process-wide magicals. A scratch interpreter skips ALL of
+        // it: every one of the ten scratch construction sites spells
+        // `Interpreter { env: <the caller's env>, .. }` (directly, or through
+        // `make_regex_eval_env`, which starts from `self.env.clone()`), so this
+        // whole map — `%*ENV`'s OS sweep, `$*TZ`'s `localtime_r`,
+        // `$*INIT-INSTANT`'s clock read, `$*SCHEDULER`'s instance — is built and
+        // dropped unread. That is the same argument `init_io_environment` was
+        // put behind this guard on (round 12 of #7576); the `%*ENV` sweep was
+        // the only part of it excluded then. A YAMLish parse builds 1,609
+        // scratch interpreters.
+        let env = if Self::is_building_scratch() {
+            HashMap::new()
+        } else {
+            let mut env = HashMap::new();
+            env.insert("*PID".to_string(), Value::int(current_process_id()));
+            env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
+            env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
+            env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
+            // Populate %*ENV with all OS environment variables so that
+            // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
             let env_hash = os_env_hash();
             env.insert(
                 "%*ENV".to_string(),
                 Value::hash_with_data(Value::hash_arc(env_hash)),
             );
-        }
-        env.insert(
-            "*SCHEDULER".to_string(),
-            Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
-        );
+            env.insert(
+                "*SCHEDULER".to_string(),
+                Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
+            );
+            env
+        };
 
         let mut interpreter = Self {
             open_role_group: None,
@@ -3229,7 +3240,7 @@ impl Interpreter {
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),
             shared_critical_dirty: Arc::new(RwLock::new(HashSet::new())),
             critical_section_depth: 0,
-            encoding_registry: std::sync::Arc::new(Self::builtin_encodings()),
+            encoding_registry: Self::shared_builtin_encodings(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
             role_pun_construction: Vec::new(),

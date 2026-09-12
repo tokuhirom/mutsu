@@ -28,8 +28,9 @@ use crate::value::Value;
 thread_local! {
     static PRIMARY_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
     static PRIMARY_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
-    /// Original source pointer and length, set at parse_program start for $?LINE computation.
-    static ORIGINAL_SOURCE: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };
+    /// Original source pointer, length and newline index, set at parse_program
+    /// start for $?LINE computation.
+    static ORIGINAL_SOURCE: RefCell<SourceOrigin> = const { RefCell::new(SourceOrigin::EMPTY) };
     /// Leaked string regions from heredoc parsing.
     /// Used to compute correct line numbers when the parser operates on leaked strings
     /// that are outside the original source buffer.
@@ -37,6 +38,51 @@ thread_local! {
 }
 
 static PRIMARY_MEMO: ParseMemo<Expr> = ParseMemo::new(&PRIMARY_MEMO_TLS, &PRIMARY_MEMO_STATS_TLS);
+
+/// Byte offsets of every `\n` in a source buffer, ascending.
+///
+/// `current_line_number` is called once per statement *attempt*, backtracking
+/// included — hundreds of thousands of times over one module parse — and used
+/// to count the newlines in the prefix by rescanning it, which is O(offset) per
+/// call and therefore quadratic in the source length. The index turns each
+/// lookup into a `partition_point`, so it is built once per parse (the parse
+/// already reads every byte) and read in O(log lines) thereafter. Shared as an
+/// `Rc` because `snapshot_source_state` clones the origin around every nested
+/// sub-parse.
+type NewlineIndex = std::rc::Rc<[usize]>;
+
+/// Count the newlines that precede `offset` in a buffer whose newline offsets
+/// are `newlines`.
+fn newlines_before(newlines: &[usize], offset: usize) -> i64 {
+    newlines.partition_point(|&n| n < offset) as i64
+}
+
+/// Collect the newline offsets of `source`.
+fn newline_index(source: &str) -> NewlineIndex {
+    source.match_indices('\n').map(|(i, _)| i).collect()
+}
+
+/// The source buffer `$?LINE` is computed against: where it lives, how long it
+/// is, and where its lines break.
+#[derive(Clone)]
+struct SourceOrigin {
+    ptr: usize,
+    len: usize,
+    newlines: Option<NewlineIndex>,
+}
+
+impl SourceOrigin {
+    /// No source recorded yet. `const` so the thread-local needs no lazy init.
+    const EMPTY: Self = Self {
+        ptr: 0,
+        len: 0,
+        newlines: None,
+    };
+
+    fn newlines(&self) -> &[usize] {
+        self.newlines.as_deref().unwrap_or(&[])
+    }
+}
 
 /// A leaked string region from heredoc parsing, with a line-number jump.
 #[derive(Clone)]
@@ -49,12 +95,20 @@ struct LeakedRegion {
     line_before_jump: i64,
     /// Line number after the jump (start of after_terminator content).
     line_after_jump: i64,
+    /// Newline offsets within the leaked buffer, for the same reason the
+    /// original source carries one.
+    newlines: NewlineIndex,
 }
 
 /// Set the original source for $?LINE computation.
 pub(super) fn set_original_source(source: &str) {
+    let newlines = newline_index(source);
     ORIGINAL_SOURCE.with(|s| {
-        *s.borrow_mut() = (source.as_ptr() as usize, source.len());
+        *s.borrow_mut() = SourceOrigin {
+            ptr: source.as_ptr() as usize,
+            len: source.len(),
+            newlines: Some(newlines),
+        };
     });
     LEAKED_REGIONS.with(|r| r.borrow_mut().clear());
 }
@@ -65,13 +119,13 @@ pub(super) fn set_original_source(source: &str) {
 /// or `EVAL` parse does not leave `ORIGINAL_SOURCE` dangling at a dropped buffer
 /// — which would collapse the enclosing parse's line numbers to 1.
 pub(in crate::parser) struct SourceState {
-    original: (usize, usize),
+    original: SourceOrigin,
     leaked: Vec<LeakedRegion>,
 }
 
 /// Snapshot the current source-location state.
 pub(in crate::parser) fn snapshot_source_state() -> SourceState {
-    let original = ORIGINAL_SOURCE.with(|s| *s.borrow());
+    let original = ORIGINAL_SOURCE.with(|s| s.borrow().clone());
     let leaked = LEAKED_REGIONS.with(|r| r.borrow().clone());
     SourceState { original, leaked }
 }
@@ -92,6 +146,7 @@ pub(in crate::parser) fn register_leaked_region_with_jump(
     line_before_jump: i64,
     line_after_jump: i64,
 ) {
+    let newlines = newline_index(leaked);
     LEAKED_REGIONS.with(|r| {
         r.borrow_mut().push(LeakedRegion {
             ptr: leaked.as_ptr() as usize,
@@ -99,6 +154,7 @@ pub(in crate::parser) fn register_leaked_region_with_jump(
             jump_offset,
             line_before_jump,
             line_after_jump,
+            newlines,
         });
     });
 }
@@ -110,21 +166,14 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 /// Compute the 1-based line number of `input` within the original source.
 pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
     ORIGINAL_SOURCE.with(|s| {
-        let (src_ptr, src_len) = *s.borrow();
-        if src_ptr == 0 {
+        let origin = s.borrow();
+        if origin.ptr == 0 {
             return 1;
         }
         let input_ptr = input.as_ptr() as usize;
-        if input_ptr >= src_ptr && input_ptr <= src_ptr + src_len {
-            let offset = input_ptr - src_ptr;
-            // SAFETY: offset is within the original source bounds
-            let src_slice = unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    src_ptr as *const u8,
-                    offset,
-                ))
-            };
-            return (src_slice.matches('\n').count() + 1) as i64;
+        if input_ptr >= origin.ptr && input_ptr <= origin.ptr + origin.len {
+            let offset = input_ptr - origin.ptr;
+            return newlines_before(origin.newlines(), offset) + 1;
         }
         // Check leaked regions (from heredoc parsing)
         LEAKED_REGIONS.with(|r| {
@@ -132,21 +181,13 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
                 if input_ptr >= region.ptr && input_ptr <= region.ptr + region.len {
                     let offset = input_ptr - region.ptr;
                     if offset < region.jump_offset {
-                        let slice = unsafe {
-                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                                region.ptr as *const u8,
-                                offset,
-                            ))
-                        };
-                        return region.line_before_jump + slice.matches('\n').count() as i64;
+                        return region.line_before_jump + newlines_before(&region.newlines, offset);
                     } else {
-                        let slice = unsafe {
-                            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                                (region.ptr + region.jump_offset) as *const u8,
-                                offset - region.jump_offset,
-                            ))
-                        };
-                        return region.line_after_jump + slice.matches('\n').count() as i64;
+                        // Newlines in `[jump_offset, offset)`: the ones before
+                        // the offset, minus the ones before the jump.
+                        return region.line_after_jump
+                            + (newlines_before(&region.newlines, offset)
+                                - newlines_before(&region.newlines, region.jump_offset));
                     }
                 }
             }
@@ -163,7 +204,8 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
 /// original source buffer (e.g. a leaked heredoc region).
 pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)> {
     ORIGINAL_SOURCE.with(|s| {
-        let (src_ptr, src_len) = *s.borrow();
+        let origin = s.borrow();
+        let (src_ptr, src_len) = (origin.ptr, origin.len);
         if src_ptr == 0 {
             return None;
         }
@@ -196,21 +238,16 @@ pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)>
 /// writes "(`{{` was at line 1)" for an unterminated embedded comment).
 pub(in crate::parser) fn source_line_at(eject: &str) -> Option<usize> {
     ORIGINAL_SOURCE.with(|s| {
-        let (src_ptr, src_len) = *s.borrow();
-        if src_ptr == 0 {
+        let origin = s.borrow();
+        if origin.ptr == 0 {
             return None;
         }
         let eject_ptr = eject.as_ptr() as usize;
-        if eject_ptr < src_ptr || eject_ptr > src_ptr + src_len {
+        if eject_ptr < origin.ptr || eject_ptr > origin.ptr + origin.len {
             return None;
         }
-        let offset = eject_ptr - src_ptr;
-        // SAFETY: as in `source_span_at` — the pointer/length pair came from a
-        // live `&str` and `offset` is inside it.
-        let full = unsafe {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, src_len))
-        };
-        Some(full[..offset].matches('\n').count() + 1)
+        let offset = eject_ptr - origin.ptr;
+        Some(newlines_before(origin.newlines(), offset) as usize + 1)
     })
 }
 
@@ -218,12 +255,12 @@ pub(in crate::parser) fn source_line_at(eject: &str) -> Option<usize> {
 /// or a registered leaked region.
 pub(in crate::parser) fn is_within_original_source(input: &str) -> bool {
     ORIGINAL_SOURCE.with(|s| {
-        let (src_ptr, src_len) = *s.borrow();
-        if src_ptr == 0 {
+        let origin = s.borrow();
+        if origin.ptr == 0 {
             return false;
         }
         let input_ptr = input.as_ptr() as usize;
-        if input_ptr >= src_ptr && input_ptr <= src_ptr + src_len {
+        if input_ptr >= origin.ptr && input_ptr <= origin.ptr + origin.len {
             return true;
         }
         // Also check leaked regions
