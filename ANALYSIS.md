@@ -48,8 +48,9 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   interpreter until the real module runs (rung 2), never reimplement it natively (rung 3) —
   now has only **two** standing native providers: `NativeCall` (measured non-vendorable,
   [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the JSON `to-json`/`from-json`
-  fast path, which is a deliberate, measured, permanent exception rather than a pending
-  retirement (§1.8). The native `Test` provider was deleted outright on 2026-09-10
+  fast path — recorded as permanent policy, but on a rationale half of which has since expired,
+  through a module-name-keyed interception mechanism that is debt in its own right (§1.8). The
+  native `Test` provider was deleted outright on 2026-09-10
   (~3,300 lines); a bare `use Test` loads rakudo's own `Test.rakumod`.
 - **The active architectural thread is the call and closure path**, and it is nearly closed:
   a per-callsite inline cache (ADR-0066), locals and the five per-call bookkeeping stacks as
@@ -227,16 +228,40 @@ in the code, and the exception list has shrunk to two entries:
 
 - `NativeCall` — measured non-vendorable (it needs `use QAST:from<NQP>`, MoarVM dispatch
   programs, and 61 missing `nqp::` ops), [#7560](https://github.com/tokuhirom/mutsu/issues/7560).
+  The `nqp::` op half of that measurement is aging for the same reason as the JSON one below,
+  so the verdict is worth re-measuring; `QAST:from<NQP>` and the dispatch programs remain the
+  substantive blockers either way.
 - **The JSON `to-json`/`from-json` fast path** (`runtime/json.rs`, 759 lines, plus
-  `vm/vm_native_json.rs`) — gated at `use`-time and intercepting **both** `JSON::Fast` and
-  `JSON::Tiny`. This is a partial exception, not a whole-module one: the real `JSON::Tiny` *is*
-  vendored and its `Grammar`/`Actions` are not intercepted, so they run for real and pass their
-  upstream suite. Two measurements hold the split in place — the real `JSON::Fast` needs ~50
-  `nqp::` ops mutsu does not implement (and the `nqp::` op layer itself was measured and
-  rejected), and the real grammar decodes 200 META-shaped documents in ~600s against the native
-  path's 0.49s, on a path zef walks for every metadata read. `docs/batteries/json-tiny.md`
-  records the split as **permanent policy**, which is what distinguishes it from `Test`: that
-  provider was a stopgap awaiting deletion, this one is a decision.
+  `vm/vm_native_json.rs`) — a partial exception, not a whole-module one: the real `JSON::Tiny`
+  *is* vendored and its `Grammar`/`Actions` run unintercepted against their upstream suite.
+  `docs/batteries/json-tiny.md` records the split as permanent policy, but **that record has
+  aged badly on both halves and should be re-decided rather than cited**:
+
+  - *One of its two justifications has expired.* It rests on the real `JSON::Fast` needing ~50
+    `nqp::` ops mutsu does not implement, and on the `nqp::` op layer having been measured and
+    rejected. mutsu now **has** an `nqp::` op layer — 111 ops across ~1,790 lines
+    (`runtime/nqp_ops*.rs`, `vm/vm_call_nqp.rs`), grown steadily and still growing. Practice
+    reversed that rejection without the record following; what actually remains of the
+    rationale is the second measurement, the regex/grammar engine's speed (the real grammar
+    decodes 200 META-shaped documents in ~600s against the native path's 0.49s, on a path zef
+    walks for every metadata read).
+  - *The mechanism is worse than "a native provider".* It is a module-name-keyed interception
+    smeared across the parser's export list, `use`-time gating, and two separate call paths
+    (`runtime/calls.rs:189` for statement position, the expression path in
+    `vm_call_func_ops.rs`). It does not fill a gap where nothing resolves: the vendored
+    module's routines **do** resolve, and the native path deliberately returns before
+    `call_routine_def` to beat them. Worse, one shared native `from-json` picks its *exception
+    type* from which module names appear anywhere in the program —
+    `json_tiny_exception_style()` is `JSON::Tiny loaded && !JSON::Fast loaded`
+    (`runtime/runtime_module.rs:31`), self-documented as a "best-effort guess" that silently
+    yields JSON::Fast-shaped errors to a program that loads both. And the interception jumps
+    the whole module-resolution ladder documented above, so an explicit `-I`, `MUTSULIB` or
+    site-repo `JSON::Tiny` cannot override it — flagged in the record itself, and a real
+    problem the day an upstream security fix needs to reach a user who cannot rebuild mutsu.
+
+  Whether the fast path survives is a performance question about the grammar engine. Whether it
+  should keep *this shape* is not: load-order-dependent exception types and a hardcoded
+  two-module bypass of the precedence chain are debt independent of that decision.
 
 `Test` left that list entirely on 2026-09-10: the native TAP provider, its `tap_state`
 bookkeeping, the native subtest machinery, `Stmt::Subtest`/`OpCode::SubtestScope`, the
@@ -266,8 +291,8 @@ and ADR-0091 (§1.6) extends the same protocol to slang-registered package decla
 The structural observation: the user protocol is driven from inside a plan-driven,
 mostly-compiled registration path whose `body_plan` walk is still imperative Rust rather than
 bytecode, so MOP breadth couples to that walker's shape. What remains unbuilt for a module like
-Test::Async is the NQP/QAST layer, which is a different and much larger claim than "HOW
-subclassing is unbuilt".
+Test::Async is the QAST and dispatch-program layer *above* the `nqp::` op set (which does now
+exist, §1.8) — a different and much larger claim than "HOW subclassing is unbuilt".
 
 ### 1.10 Representation campaigns
 
@@ -424,7 +449,13 @@ No test-specific hardcoded outputs found. Two derivation shortcuts remain:
    native `.package` on multi dispatchers, a synthesized rather than exact `.signature` —
    remain open as a reactive per-case slice. The growth rate matters because §1.9 lets user code
    introspect through this same surface.
-2. **Parser grammar relaxations for roast** (minor): `is List` type-ish traits, the
+2. **Module names hardcoded into dispatch.** The JSON fast path keys off the literal strings
+   `"JSON::Fast"`/`"JSON::Tiny"` in the parser's export list, in `use`-time gating, and at two
+   call sites, and one of those decisions (which exception type `from-json` throws) reads the
+   *set* of loaded module names rather than anything about the call (§1.8). Any dispatch change
+   has to know these strings exist to avoid silently breaking them, and the behavior is
+   load-order-sensitive by construction.
+3. **Parser grammar relaxations for roast** (minor): `is List` type-ish traits, the
    Test::Assuming colonpair, and the `throws-like` trailing-`)` special form.
 
 ---
@@ -491,7 +522,8 @@ Ordering rule, stated so it can be argued with:
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Write the batteries adoption-policy ADR, then follow the parity frontier** (§1.8) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," recorded only in `BATTERIES.md`/`CLAUDE.md`. Its rejected alternative and its two named exceptions are exactly what an ADR preserves. With ADR-0085 shipping a nightly parity number, the follow-on work can be chosen by measurement instead of by anecdote. |
+| 1 | **Write the batteries adoption-policy ADR, then follow the parity frontier** (§1.8) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," recorded only in `BATTERIES.md`/`CLAUDE.md`. Its rejected alternative and its two named exceptions are exactly what an ADR preserves — including the one whose stated rationale has already expired (the `nqp::` op rejection) and which no document currently reflects. With ADR-0085 shipping a nightly parity number, the follow-on work can be chosen by measurement instead of by anecdote. |
+| 1b | **Re-decide the JSON interception's shape, separately from whether it survives** (§1.8, §4) | design cleanup | Keeping a fast path is a grammar-engine performance question and may well be right. Deciding it by module-name string matching at three layers, letting the loaded-module *set* choose an exception type, and bypassing the module-resolution ladder for two hardcoded names is a separate question with a worse answer. If the path stays, it should be one explicit, documented dispatch decision, not an interception the rest of the dispatch code has to remember. |
 | 2 | **Close ADR-0068 step 3's last route, then decide the `gc_contents_mut` general case** (§2.2) | soundness | One identified unsynchronized store path is a bounded, actionable task; the 167-site general hazard ([#7543](https://github.com/tokuhirom/mutsu/issues/7543)) is the ADR-0001 layer 3c decision behind it. Everything else in this document is a quality issue; this one is a correctness one. |
 | 3 | **Supply panic propagation, and a mechanism against the panic-surface trend** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 4 | **Finish the call-path thread: ADR-0084** (§1.3) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
@@ -563,8 +595,11 @@ alternative (native reimplementation), its two surviving exceptions (`NativeCall
 `to-json`/`from-json` fast path — the latter declared permanent in a batteries record rather
 than in a decision document, despite being exactly the kind of measured, costly-to-reverse
 carve-out an ADR is for), the retirement precedent now set by deleting the native `Test`
-provider, and the companion measurement "do not build an `nqp::` op layer" are exactly the
-"why, and what we rejected" an ADR exists to preserve. It is listed here rather than drafted unilaterally because
+provider are exactly the "why, and what we rejected" an ADR exists to preserve. It should also
+record the reversal that already happened in practice: "do not build an `nqp::` op layer" was
+the companion measurement to the original policy, and mutsu has since built one (111 ops and
+growing, §1.8) without any document saying so. A rejection the codebase has outgrown is worse
+than no record, because it keeps being cited. It is listed here rather than drafted unilaterally because
 the decision is the user's.
 
 ---
