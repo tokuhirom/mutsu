@@ -427,6 +427,7 @@ impl Compiler {
         let wc_raw = is_whatever_code && param == "_" && whatever_lambda_body_mutates_topic(body);
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
+                type_capture: None,
                 name: "_".to_string(),
                 default: None,
                 multi_invocant: true,

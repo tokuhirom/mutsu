@@ -329,6 +329,14 @@ impl Interpreter {
         {
             value = self.coerce_positional_bind_failover(value)?;
         }
+        // A `::T` capture records the argument's type under `T`; it is not a
+        // nominal check. Done before the constraint block so `::T Foo:D $x`
+        // binds the capture AND enforces `Foo:D` (#7984) — the two used to be
+        // mutually exclusive arms of one chain because both lived in the same
+        // `Option<String>`.
+        if let Some(captured_name) = pd.captured_type_name() {
+            self.bind_type_capture(captured_name, &value);
+        }
         if let Some(constraint) = &pd.type_constraint
             && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
         {
@@ -380,8 +388,10 @@ impl Interpreter {
                     err.exception = Some(Box::new(exception));
                     return Err(err);
                 }
-            } else if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
-                self.bind_type_capture(captured_name, &value);
+            } else if resolved_constraint.starts_with("::") {
+                // `::?CLASS` / `::?ROLE` / `::(expr)`: reported as a capture by
+                // `captured_type_name` and already bound above. They are no
+                // nominal check, so skip the arms below as they always have.
             } else if let Some((target, source)) = parse_coercion_type(&resolved_constraint) {
                 // Coercion type: check source type if specified, then coerce.
                 // A `T(S)` parameter accepts a value that is already a `T`
@@ -799,11 +809,7 @@ impl Interpreter {
                 if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
                     continue;
                 }
-                if let Some(captured_name) = pd
-                    .type_constraint
-                    .as_deref()
-                    .and_then(|constraint| constraint.strip_prefix("::"))
-                {
+                if let Some(captured_name) = pd.captured_type_name() {
                     self.bind_type_capture(captured_name, &invocant_value);
                 }
             }
@@ -1930,11 +1936,7 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
-                    let value = if pd
-                        .type_constraint
-                        .as_deref()
-                        .is_some_and(|constraint| constraint.starts_with("::"))
-                    {
+                    let value = if pd.captured_type_name().is_some() {
                         self.normalize_type_capture_value(value)
                     } else {
                         value
@@ -1956,11 +1958,7 @@ impl Interpreter {
                     // variable. A named variable with a destructuring
                     // sub-signature binds the outer parameter too.
                     let is_rename = pd.named_alias;
-                    if let Some(captured_name) = pd
-                        .type_constraint
-                        .as_deref()
-                        .and_then(|constraint| constraint.strip_prefix("::"))
-                    {
+                    if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                         if !pd.name.is_empty() && !is_rename {
                             self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
@@ -2803,11 +2801,7 @@ impl Interpreter {
                 } else if let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
-                    if let Some(captured_name) = pd
-                        .type_constraint
-                        .as_deref()
-                        .and_then(|constraint| constraint.strip_prefix("::"))
-                    {
+                    if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
                         self.bind_param_value_sym(&pd.name, pd_name_sym(), value);

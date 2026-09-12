@@ -443,16 +443,13 @@ impl Interpreter {
         // already refuses to *reclassify* such an error as the compile-time
         // `X::TypeCheck::Argument`; the message has to stay honest too.)
         //
-        // A capture is recorded as the DECLARING parameter's
-        // `type_constraint` (`::T $x` is `ParamDef { name: "x",
-        // type_constraint: Some("::T") }`), not as a parameter of its own.
+        // A capture is recorded on the DECLARING parameter's `type_capture`
+        // field (`::T $x` is `ParamDef { name: "x", type_capture: Some("T") }`),
+        // not as a parameter of its own.
         let signature_has_type_captures = param_defs.iter().any(|pd| {
             pd.name.starts_with("::")
                 || pd.name == "__type_capture__"
-                || pd
-                    .type_constraint
-                    .as_deref()
-                    .is_some_and(|tc| tc.starts_with("::"))
+                || pd.captured_type_name().is_some()
         });
         if signature_has_type_captures {
             return err;

@@ -10,6 +10,7 @@ use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
     ParamDef {
+        type_capture: None,
         name,
         default: None,
         multi_invocant: true,

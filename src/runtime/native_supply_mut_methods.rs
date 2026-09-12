@@ -1672,6 +1672,7 @@ impl Interpreter {
             (
                 vec!["v".to_string()],
                 vec![crate::ast::ParamDef {
+                    type_capture: None,
                     name: "v".to_string(),
                     default: None,
                     multi_invocant: true,

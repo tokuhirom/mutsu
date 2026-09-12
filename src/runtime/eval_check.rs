@@ -273,8 +273,7 @@ fn collect_type_captures(
 ) -> Vec<String> {
     let mut added = Vec::new();
     for pd in param_defs {
-        if let Some(tc) = pd.type_constraint.as_deref()
-            && let Some(name) = tc.strip_prefix("::")
+        if let Some(name) = pd.captured_type_name()
             && !name.is_empty()
             && !name.contains("::")
             && captures.insert(name.to_string())

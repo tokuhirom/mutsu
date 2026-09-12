@@ -58,6 +58,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
+                type_capture: None,
                 name: unpack_name.clone(),
                 default: None,
                 multi_invocant: true,
@@ -105,6 +106,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             }
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
+                type_capture: None,
                 name: unpack_name.clone(),
                 default: None,
                 multi_invocant: true,
@@ -170,6 +172,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
+                type_capture: None,
                 name: unpack_name.clone(),
                 default: None,
                 multi_invocant: true,
@@ -362,6 +365,7 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         r,
         ParamDef {
+            type_capture: None,
             name: String::new(),
             default: None,
             multi_invocant: true,
@@ -451,6 +455,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                type_capture: None,
                 name,
                 default: None,
                 multi_invocant: true,
@@ -539,6 +544,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            type_capture: None,
             name: param_name,
             default,
             multi_invocant: true,

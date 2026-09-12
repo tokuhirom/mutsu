@@ -907,7 +907,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         if def.type_constraint.is_some() {
             return Err(unsupported(owner));
         }
-        def.type_constraint = Some(format!("::{type_capture}"));
+        def.type_capture = Some(type_capture);
     }
     // `$y = EXPR` -> an optional positional with a default value.
     if let Some(d) = parameter.fields.iter().find(|f| f.name == Some("default")) {
@@ -945,6 +945,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
 fn positional_param(name: &str) -> ParamDef {
     ParamDef {
+        type_capture: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

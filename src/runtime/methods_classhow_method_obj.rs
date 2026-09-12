@@ -717,6 +717,7 @@ impl Interpreter {
                     let mut params = vec!["self".to_string()];
                     params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
                     let mut param_defs = vec![crate::ast::ParamDef {
+                        type_capture: None,
                         name: "self".to_string(),
                         default: None,
                         multi_invocant: true,

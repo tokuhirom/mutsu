@@ -288,6 +288,7 @@ impl Interpreter {
                         data.params
                             .iter()
                             .map(|name| ParamDef {
+                                type_capture: None,
                                 name: name.clone(),
                                 default: None,
                                 multi_invocant: true,
@@ -328,6 +329,7 @@ impl Interpreter {
                             .is_some_and(|cc| cc.is_pointy_block);
                         if data.is_bare_block && !is_pointy && !use_positional {
                             defs.push(ParamDef {
+                                type_capture: None,
                                 name: "$_".to_string(),
                                 default: Some(Expr::Var("$_".to_string())),
                                 multi_invocant: true,
@@ -353,6 +355,7 @@ impl Interpreter {
                         }
                         if use_positional {
                             defs.push(ParamDef {
+                                type_capture: None,
                                 name: "@_".to_string(),
                                 default: None,
                                 multi_invocant: true,
@@ -378,6 +381,7 @@ impl Interpreter {
                         }
                         if use_named {
                             defs.push(ParamDef {
+                                type_capture: None,
                                 name: "%_".to_string(),
                                 default: None,
                                 multi_invocant: true,

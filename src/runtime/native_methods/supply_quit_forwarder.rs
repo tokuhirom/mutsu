@@ -139,6 +139,7 @@ impl Interpreter {
             name: Symbol::intern(""),
             params: std::sync::Arc::new(vec!["v".to_string()]),
             param_defs: std::sync::Arc::new(vec![crate::ast::ParamDef {
+                type_capture: None,
                 name: "v".to_string(),
                 default: None,
                 multi_invocant: true,

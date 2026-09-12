@@ -26,6 +26,28 @@ pub(crate) fn make_smiley_invocant_param(invocant_type: String) -> ParamDef {
     p
 }
 
+/// Split a leading `::T` type capture off an invocant marker:
+/// `method merge(::T CRDT:D: $x)` captures the invocant's type as `T` *and*
+/// constrains it to `CRDT:D` (#7984).
+///
+/// Only consumes the capture when a nominal invocant marker really follows, so
+/// `::T: $x` (capture-only invocant) and `::T $x` (an ordinary captured
+/// parameter) keep their existing readings. Returns the input unchanged with
+/// `None` otherwise.
+pub(crate) fn split_invocant_type_capture(input: &str) -> (&str, Option<String>) {
+    let Some((after_capture, name)) = crate::parser::stmt::sub_param::strip_type_capture(input)
+    else {
+        return (input, None);
+    };
+    let Ok((after_ws, _)) = ws(after_capture) else {
+        return (input, None);
+    };
+    if parse_implicit_invocant_marker(after_ws).is_none() {
+        return (input, None);
+    }
+    (after_ws, Some(name))
+}
+
 /// Strip sigil prefix from a parameter name, returning the bare name.
 pub(crate) fn strip_param_sigil(name: &str) -> &str {
     name.strip_prefix('@')
@@ -203,10 +225,24 @@ pub(crate) fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> 
         }
         rest = r;
     }
-    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+    let (head, invocant_capture) = split_invocant_type_capture(rest);
+    if let Some((r, invocant_type)) = parse_implicit_invocant_marker(head) {
         rest = r;
+        // A capture on the invocant has to survive as a real parameter — it is
+        // the only place `T` is recorded. An uncaptured anonymous marker
+        // (`Foo:`) is still discarded here, as before.
+        if let Some(name) = invocant_capture {
+            let mut inv = make_smiley_invocant_param(invocant_type);
+            inv.type_capture = Some(name);
+            inv.multi_invocant = multi_invocant;
+            params.push(inv);
+        }
         if rest.starts_with(')') {
             return Ok((rest, params));
+        }
+        if let Some(stripped) = rest.strip_prefix("-->") {
+            let r = skip_return_type_annotation(stripped)?;
+            return Ok((r, params));
         }
         let (r, mut p) = parse_single_param(rest)?;
         p.multi_invocant = multi_invocant;

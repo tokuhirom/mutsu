@@ -137,6 +137,12 @@ impl Interpreter {
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant
+                    // A `::T` capture has to be BOUND, which only the general
+                    // binder does. It used to be excluded by the
+                    // `is_fast_type_name` test below, because the capture lived
+                    // in `type_constraint` as `"::T"`; now it is its own field
+                    // and the gate has to name it (#7984).
+                    && pd.captured_type_name().is_none()
                     && pd.traits.is_empty();
                 if !common {
                     return false;
@@ -210,11 +216,16 @@ impl Interpreter {
                     && pd.traits.is_empty()
                     && pd.sub_signature.is_none()
                     // Only allow basic type constraints that fast_type_check handles.
-                    // Excludes subset types, type captures (::T), parametric roles, etc.
+                    // Excludes subset types, parametric roles, etc.
                     && pd
                         .type_constraint
                         .as_deref()
                         .is_none_or(Self::is_fast_type_name)
+                    // A `::T` type capture needs the general binder to bind it
+                    // (#7984); the `is_fast_type_name` test above used to reject
+                    // it only because the capture was spelled into
+                    // `type_constraint`.
+                    && pd.captured_type_name().is_none()
                     // Exclude @/% params which need special collection semantics.
                     // A plain `&` parameter is a scalar Callable binding: the
                     // positional binder already installs its value in the
@@ -533,6 +544,7 @@ impl Interpreter {
             || pd.outer_sub_signature.is_some()
             || pd.code_signature.is_some()
             || pd.type_constraint.is_some()
+            || pd.captured_type_name().is_some()
             || pd.literal_value.is_some()
             || pd.shape_constraints.is_some()
         {

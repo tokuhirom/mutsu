@@ -534,6 +534,9 @@ impl Interpreter {
                                         } else {
                                             5
                                         }
+                                    } else if pd.captured_type_name().is_some() {
+                                        // A bare `::T` type parameter is generic (#7984).
+                                        1
                                     } else {
                                         0
                                     };

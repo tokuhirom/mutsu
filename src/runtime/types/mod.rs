@@ -793,8 +793,16 @@ impl Interpreter {
         }
     }
 
-    fn type_capture_marker_key(name: &str) -> String {
-        format!("__type_capture__{}", name)
+    /// Env key recording that `bind_type_capture` bound a capture named `name`.
+    ///
+    /// Deliberately NOT `__type_capture__<name>`: that is also the synthetic
+    /// *parameter name* a bare `::T` / `::T:` capture carries, so the binder's
+    /// own "bind the parameter under its name" step overwrote the marker with
+    /// the argument value. `has_type_capture_binding` then said no, and every
+    /// later `T` resolution — a `--> T` return constraint above all — fell back
+    /// to the literal name `T` (#7984).
+    pub(in crate::runtime) fn type_capture_marker_key(name: &str) -> String {
+        format!("__mutsu_type_capture_bound__{}", name)
     }
 }
 
@@ -1077,11 +1085,7 @@ impl Interpreter {
             .type_param_defs
             .iter()
             .filter_map(|pd| {
-                if let Some(captured) = pd
-                    .type_constraint
-                    .as_deref()
-                    .and_then(|constraint| constraint.strip_prefix("::"))
-                {
+                if let Some(captured) = pd.captured_type_name() {
                     self.env.get(captured).cloned()
                 } else {
                     self.env.get(&pd.name).cloned()

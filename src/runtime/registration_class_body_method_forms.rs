@@ -39,6 +39,7 @@ pub(super) fn method_sub_form_params(
                 .cloned(),
         );
         let self_param = crate::ast::ParamDef {
+            type_capture: None,
             name: "self".to_string(),
             default: None,
             multi_invocant: true,
@@ -101,6 +102,7 @@ impl Interpreter {
             &method_param_defs[1..]
         } else {
             sub_param_defs.push(ParamDef {
+                type_capture: None,
                 name: "self".to_string(),
                 default: None,
                 multi_invocant: true,

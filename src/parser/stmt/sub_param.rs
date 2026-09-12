@@ -34,5 +34,5 @@ pub(super) use method_decl::{
 pub(super) use param_inner::parse_single_param;
 pub(super) use type_constraint::{
     check_invalid_type_smiley, parse_implicit_invocant_marker, parse_of_type_constraint_chain,
-    parse_type_constraint_expr,
+    parse_type_constraint_expr, strip_type_capture,
 };

@@ -16,6 +16,7 @@ fn say(text: &str) -> Stmt {
 
 fn param(name: &str) -> ParamDef {
     ParamDef {
+        type_capture: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

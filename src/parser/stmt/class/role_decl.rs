@@ -133,11 +133,7 @@ pub(crate) fn parse_optional_role_type_params(
         let params = param_defs
             .iter()
             .map(|pd| {
-                if let Some(captured) = pd
-                    .type_constraint
-                    .as_deref()
-                    .and_then(|t| t.strip_prefix("::"))
-                {
+                if let Some(captured) = pd.captured_type_name() {
                     captured.to_string()
                 } else {
                     pd.name.trim_start_matches(['$', '@', '%', '&']).to_string()
@@ -182,6 +178,7 @@ pub(crate) fn parse_optional_role_type_params(
                 };
                 params.push(name.clone());
                 param_defs.push(ParamDef {
+                    type_capture: None,
                     name,
                     default,
                     multi_invocant: true,
@@ -218,6 +215,7 @@ pub(crate) fn parse_optional_role_type_params(
                 {
                     params.push(name.clone());
                     param_defs.push(ParamDef {
+                        type_capture: None,
                         name: format!("__type_capture__{}", name),
                         default: Some(default_expr),
                         multi_invocant: true,
@@ -247,11 +245,7 @@ pub(crate) fn parse_optional_role_type_params(
         if let Ok((rest, pd)) = parse_single_param(part)
             && rest.trim().is_empty()
         {
-            let name = if let Some(captured) = pd
-                .type_constraint
-                .as_deref()
-                .and_then(|t| t.strip_prefix("::"))
-            {
+            let name = if let Some(captured) = pd.captured_type_name() {
                 captured.to_string()
             } else {
                 pd.name.trim_start_matches(['$', '@', '%', '&']).to_string()
@@ -435,11 +429,13 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     // No package path is pushed for a role body: the scope inside a role is
     // generic, so Raku refuses to install an `our`-scoped declaration there and
     // there is no composed name to register.
-    let (rest, mut body) = match block(rest) {
-        Ok(ok) => ok,
-        Err(e) if e.is_fatal() => return Err(e),
-        Err(_) => consume_raw_braced_body(rest)?,
-    };
+    // A role body parses like any other block. It used to fall back to
+    // `consume_raw_braced_body` on a non-fatal failure, which DISCARDED the
+    // whole body: `role R { method m(::T R:D: $x) { 1 } }` compiled to an empty
+    // role and the call site then died with "No such method", with no
+    // diagnostic pointing at the signature that had not parsed (#7984). A role
+    // body that does not parse is a parse error, exactly as a class body is.
+    let (rest, mut body) = block(rest)?;
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {

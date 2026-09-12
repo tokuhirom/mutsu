@@ -1137,6 +1137,7 @@ pub(in crate::runtime) fn callable_signature_info(
                 params
                     .into_iter()
                     .map(|name| ParamDef {
+                        type_capture: None,
                         name,
                         default: None,
                         multi_invocant: true,
@@ -1172,6 +1173,7 @@ pub(in crate::runtime) fn callable_signature_info(
                 params
                     .into_iter()
                     .map(|name| ParamDef {
+                        type_capture: None,
                         name,
                         default: None,
                         multi_invocant: true,
