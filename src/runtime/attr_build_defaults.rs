@@ -365,6 +365,15 @@ impl Interpreter {
         } else {
             self.env.remove("?CLASS");
         }
-        result
+        // An attribute initializer is an ASSIGNMENT, so the attribute gets a
+        // COPY of whatever container the default evaluated to, not that
+        // container itself: `my @c = 1,2; class C { has @.x = @c }` must not
+        // let a later `@c.push(3)` show through `.x`. Detaching here -- the
+        // single env-setup shape every construction path shares -- covers
+        // `dispatch_new`'s pre-BUILD fill, the post-BUILD deferred pass, the
+        // native default-constructor fast path and `dispatch_bless` at once.
+        // A default that built its own fresh container owns its `Gc` already,
+        // so this is free on the common path (#8150).
+        result.map(Value::detach_shared_container)
     }
 }
