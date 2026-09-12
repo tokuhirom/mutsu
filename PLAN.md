@@ -100,26 +100,23 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 
 ### B4. Module-compatibility frontier (the base of batteries)
 
-- [ ] **★Ecosystem parity KPI** — run every zef distribution's own test suite on **both** rakudo and
-      mutsu and publish the difference as the project's headline compatibility number, with
-      per-distribution machine-readable records in `ecosystem/`. **P1-P3 have landed: the corpus is
-      measured.** Run 34566091231 (2026-09-11, `scope: all`, 27/27 shards green) covers all 1624
-      distributions at one commit — **41.2%** dist parity, 53.6% file, 62.4% assertion — and the
-      first `history.tsv` row exists. **P5 has produced its first batch**:
-      `scripts/ecosystem-tickets.py` clusters the ledger by root cause, ranked by distributions
-      affected, and fifteen issues covering ~330 distribution slots were filed from it
-      (docs/ecosystem-parity.md §9). What is left of P5 is the tail — 970 clusters below ten
-      distributions, a sampling job rather than a queue to drain. P4 is closed: the workflow is the
-      entry point, and the `make`-level wrapper it also listed was dropped (it would fail
-      `ci-docs-only.sh --check-inputs`; docs/ecosystem-parity.md §8).
-      Decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md);
-      operations manual and phases (P1-P5, one PR each):
-      [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
-      tracking issue [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
-      The sweep runs **nightly at 03:20 JST** (`schedule:` in `ecosystem-sweep.yml`, ADR-0085 D9's
-      second amendment) and can also be dispatched for one shard or one distribution. It is a
-      measurement, not a gate, so it still does **not** close B1's "working-module regression CI" —
-      that stays a separate item.
+- [ ] **★Ecosystem parity: per-distribution work** — the KPI itself is **built and running**; what
+      remains is turning red records green, one distribution (or one root cause) at a time. The
+      corpus is measured nightly at 03:20 JST and published: **41.1%** dist parity, 53.4% file,
+      63.1% assertion, with per-distribution records in `ecosystem/` and the chart in
+      `ecosystem/history.svg`. Pick work one of two ways — by **root cause** from the clustered
+      issues (`scripts/ecosystem-tickets.py`, see docs/ecosystem-parity.md §9; the ten largest
+      clusters are filed as `todo:*` issues), or by **distribution** with
+      [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
+      [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) (a uniform random
+      draw, locked on [#7884](https://github.com/tokuhirom/mutsu/issues/7884) so parallel agents do
+      not collide). Prefer a root cause when one covers several distributions; a uniform draw is what
+      keeps the published figure honest.
+      Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
+      decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The campaign
+      that built all of this was [#7785](https://github.com/tokuhirom/mutsu/issues/7785), closed
+      2026-09-12. The sweep is a measurement, not a gate, so it does **not** close B1's
+      "working-module regression CI" — that stays a separate item.
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.

@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Accepted (design confirmed 2026-09-10; P1-P3 implemented — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep, and again 2026-09-11 to schedule it nightly on measured cost)
+- Status: Accepted and **fully implemented** (design confirmed 2026-09-10; P1-P5 landed by 2026-09-12 — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep, and again 2026-09-11 to schedule it nightly on measured cost)
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -404,7 +404,10 @@ the history row, which is what keeps the series comparable.
 
 ## Implementation status
 
-Phases are listed in [docs/ecosystem-parity.md](../ecosystem-parity.md) §7.
+Phases are listed in [docs/ecosystem-parity.md](../ecosystem-parity.md) §7. **All
+five are done**, and #7785 was closed on 2026-09-12: what this ADR describes is
+now infrastructure that runs, and the work it feeds is per distribution and per
+root cause, tracked one issue per cause rather than as one ecosystem issue.
 
 | phase | state |
 |---|---|

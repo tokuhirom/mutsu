@@ -8,7 +8,10 @@ sides, and publish the difference.
   — the decisions (rakudo as the denominator, flat dependency closures,
   one file per distribution, the sandbox and environment contract). Read it
   before changing the method; this file is the *how*.
-- **Tracking issue**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785).
+- **The campaign that built this**: [#7785](https://github.com/tokuhirom/mutsu/issues/7785),
+  closed 2026-09-12 with all five phases landed. There is no open tracking issue any more,
+  deliberately: the remaining work is **per distribution and per root cause**, and it is
+  tracked as one issue per cause (§9) rather than as one issue for the ecosystem.
 - **Acting on a record**: this file measures; taking one distribution from red
   to green is
   [`.agents/skills/ecosystem-dist-fix/SKILL.md`](../.agents/skills/ecosystem-dist-fix/SKILL.md),
@@ -24,15 +27,21 @@ sides, and publish the difference.
   release gate on the ~40 *bundled* dists. This campaign is neither: it is an
   exhaustive, re-runnable ledger over the whole ecosystem.
 
-> **Status: P1, P2 and P3 landed.** The corpus has been measured: [run
-> 34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231)
-> (2026-09-11, `scope=all`, 27/27 shards green) covers all **1624**
-> distributions at mutsu `1557d41` against rakudo 2026.07, and the headline is
-> **41.2%** dist parity — 53.6% file parity, 62.4% assertion parity. The first
-> `history.tsv` row and the chart exist as of that sweep. A sweep runs either
-> locally (§8) or from GitHub Actions (§8.1), so the numbers do not depend on
-> having a many-core box to hand. **P5 has produced its first batch** — fifteen
-> root-caused issues covering ~330 distribution slots, see section 9.
+> **Status: built, measured, published, and running nightly.** All five phases
+> landed between 2026-09-10 and 2026-09-12. The corpus is measured at one commit
+> per sweep ([run 34566091231](https://github.com/tokuhirom/mutsu/actions/runs/34566091231)
+> was the first, 27/27 shards green over all 1624 distributions); the headline is
+> **41.1%** dist parity — 53.4% file, 63.1% assertion — and `history.tsv` plus the
+> chart carry it over time. A sweep runs nightly, on dispatch, or locally (§8).
+> P5's first batch filed fifteen root-caused issues covering ~330 distribution
+> slots (§9).
+>
+> **What to do with this now: pick work, not phases.** Either take a root cause
+> from the clustered issues (§9), or take a distribution with the
+> [`ecosystem-dist-fix`](../.agents/skills/ecosystem-dist-fix/SKILL.md) /
+> [`ecosystem-dist-roulette`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
+> skills. Prefer a root cause when one covers several distributions; prefer the
+> uniform random draw over cherry-picking a cheap record, which games the figure.
 
 ## 1. What gets measured
 
