@@ -941,6 +941,16 @@ impl Interpreter {
             return false;
         };
         if let ValueView::ContainerRef(cell) = slot.view() {
+            // A whole-container `:=` bind installs the target cell in the
+            // unit-lexical store separately (`unit_scope_lexical_bind`). Do
+            // not treat that cell as a value to store through the old cell:
+            // when both are the same cell this would make it contain itself,
+            // and the next definedness/read-through would deadlock while
+            // recursively locking the same Mutex (todo:ticket #8048).
+            if matches!(val.view(), ValueView::ContainerRef(new_cell) if crate::gc::Gc::ptr_eq(&cell, &new_cell))
+            {
+                return true;
+            }
             Self::cell_store_preserving_container_identity(name, &cell, val);
             return true;
         }
