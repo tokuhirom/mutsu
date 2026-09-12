@@ -517,6 +517,14 @@ impl Interpreter {
         if self.cur_repo.pending_global_symbols.contains(name) {
             return Self::no_such_symbol_failure(name);
         }
+        // A lexical type remains registered for escaped values, but its
+        // source-facing qualified name is not a package symbol visible from an
+        // unrelated compunit (#8120). Check this before the generic compound
+        // type/package fallback below, which otherwise manufactures a Package
+        // value for any known-looking qualified name.
+        if self.is_my_scoped_type_name(name) && !self.my_scoped_type_visible_here(name) {
+            return Self::no_such_symbol_failure(name);
+        }
         // Pseudo-package names like MY, CORE, OUTER, CALLER, etc. should
         // resolve to Package values so that .WHO can produce the stash.
         if Self::is_pseudo_package_name(name) {
@@ -551,7 +559,8 @@ impl Interpreter {
             && !value.is_nil()
             // Skip `my`-scoped package items for indirect type lookup (::())
             // since they should not be visible outside their declaring scope.
-            && !self.is_my_scoped_package_item(name)
+            && (!self.is_my_scoped_package_item(name)
+                && (!self.is_my_scoped_type_name(name) || self.my_scoped_type_visible_here(name)))
         {
             return value.clone();
         }

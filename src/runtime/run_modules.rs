@@ -1054,8 +1054,16 @@ impl Interpreter {
                     match value.view() {
                         ValueView::Package(target) => {
                             let target = target.resolve();
-                            !Self::package_is_owned_by(&target, module)
-                                && !registered_here.contains(&target)
+                            // A `my class`/`my role` is registered under a
+                            // package-qualified storage name, but its short
+                            // env binding is still only lexical to the module
+                            // body. Do not preserve that binding merely because
+                            // the storage name belongs to this module: doing so
+                            // lets a private type shadow a same-named declaration
+                            // in the importing compunit (#8120).
+                            self.is_my_scoped_package_item(&target)
+                                || (!Self::package_is_owned_by(&target, module)
+                                    && !registered_here.contains(&target))
                         }
                         _ => false,
                     }
@@ -1317,7 +1325,11 @@ impl Interpreter {
                         .rsplit_once("::")
                         .map(|(_, short)| (short.to_string(), qualified.clone()))
                 })
-                .filter(|(short, qualified)| short != qualified && !Self::is_builtin_type(short))
+                .filter(|(short, qualified)| {
+                    short != qualified
+                        && !Self::is_builtin_type(short)
+                        && !self.is_my_scoped_package_item(qualified)
+                })
                 .collect();
             if !aliases.is_empty() {
                 let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)

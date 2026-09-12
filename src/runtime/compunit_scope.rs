@@ -429,4 +429,17 @@ impl Interpreter {
         }
         false
     }
+
+    /// Whether `start`, or an EVAL parent of it, is `target`.
+    pub(crate) fn unit_chain_contains_unit(&self, start: Symbol, target: Symbol) -> bool {
+        let mut unit = Some(start);
+        for _ in 0..64 {
+            let Some(sym) = unit else { return false };
+            if sym == target {
+                return true;
+            }
+            unit = crate::runtime::eval_unit_parent(sym);
+        }
+        false
+    }
 }
