@@ -238,13 +238,26 @@ pub(super) const ENUMERATION_ROLE_PRELUDE: &str = r#"
 role GLOBAL::Enumeration {
     has $.key;
     has $.value;
-    method kv() { self.key, self.value }
-    method pair() { self.key => self.value }
-    method Numeric() { self.value }
-    method Int() { self.value.Int }
-    method Real() { self.value }
-    method gist() { self.key.Str }
-    method raku() { self.^name ~ '::' ~ self.key }
+    # Every one of these is a `multi` with an explicit `::?CLASS:D:` invocant
+    # because that is what rakudo has: measured on `class C does Enumeration {}`,
+    # they arrive as candidates on `Mu`'s and `Any`'s own dispatchers
+    # (`C.^methods` reports `gist multi=True pkg=Mu`, `kv multi=True pkg=Any`,
+    # and likewise `raku`/`Numeric`/`Int`/`Real`), not as `only` methods of the
+    # role. The difference is load-bearing, not cosmetic: rakudo rejects
+    # `multi method gist` in a class whose role supplied an `only` `gist`
+    # ("Cannot have a multi candidate for 'gist' when an only method is also in
+    # the package"), so declaring these `only` would make the documented
+    # `class DNA does Enumeration { multi method gist(::?CLASS:D:) {...} }`
+    # override unwritable -- under mutsu it surfaced as `Ambiguous call to
+    # 'gist(DNA: )'` once a class multi with a matching invocant smiley stopped
+    # displacing the role's candidate (#8119).
+    multi method kv(::?CLASS:D:) { self.key, self.value }
+    multi method pair(::?CLASS:D:) { self.key => self.value }
+    multi method Numeric(::?CLASS:D:) { self.value }
+    multi method Int(::?CLASS:D:) { self.value.Int }
+    multi method Real(::?CLASS:D:) { self.value }
+    multi method gist(::?CLASS:D:) { self.key.Str }
+    multi method raku(::?CLASS:D:) { self.^name ~ '::' ~ self.key }
 }
 "#;
 
