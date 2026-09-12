@@ -48,9 +48,9 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   interpreter until the real module runs (rung 2), never reimplement it natively (rung 3) —
   now has only **two** standing native providers: `NativeCall` (measured non-vendorable,
   [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the JSON `to-json`/`from-json`
-  fast path — recorded as permanent policy, but on a rationale half of which has since expired,
-  and delivered through a module-name-keyed interception that should be retired: a measured
-  performance gap is a reason to optimize, not to substitute a semantically divergent
+  fast path — the latter re-decided as an exception **scheduled for retirement**
+  ([ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8183](https://github.com/tokuhirom/mutsu/issues/8183)):
+  a measured performance gap is a reason to optimize, not to substitute a semantically divergent
   implementation under the module's own name (§1.8). The native `Test` provider was deleted outright on 2026-09-10
   (~3,300 lines); a bare `use Test` loads rakudo's own `Test.rakumod`.
 - **The active architectural thread is the call and closure path**, and it is nearly closed:
@@ -237,8 +237,11 @@ in the code, and the exception list has shrunk to two entries:
 - **The JSON `to-json`/`from-json` fast path** (`runtime/json.rs`, 759 lines, plus
   `vm/vm_native_json.rs`) — a partial exception, not a whole-module one: the real `JSON::Tiny`
   *is* vendored and its `Grammar`/`Actions` run unintercepted against their upstream suite.
-  `docs/batteries/json-tiny.md` records the split as permanent policy, but **that record has
-  aged badly on both halves and should be re-decided rather than cited**:
+  `docs/batteries/json-tiny.md` recorded the split as permanent policy; **that claim has since
+  been withdrawn from the record and the entry re-decided as an exception scheduled for
+  retirement ([ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4/E2,
+  [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) — both halves of the old rationale
+  had aged out**:
 
   - *One of its two justifications has expired.* It rests on the real `JSON::Fast` needing ~50
     `nqp::` ops mutsu does not implement, and on the `nqp::` op layer having been measured and
@@ -282,7 +285,7 @@ in the code, and the exception list has shrunk to two entries:
 bookkeeping, the native subtest machinery, `Stmt::Subtest`/`OpCode::SubtestScope`, the
 `MUTSU_REAL_TEST` gate and both comparison-sweep scripts were **deleted** (~3,300 lines), with
 0 regressions across `t/` and the roast whitelist. A small parse-time `TEST_EXPORTS` list
-survives for a measured startup-latency reason (35ms → 93ms avoided) and is self-validated
+survives for a measured startup-latency reason (it keeps `use Test` at 7ms instead of 93ms) and is self-validated
 against the vendored module by `test_exports_match_the_vendored_module`.
 
 **Why this belongs in an architecture review**: the vendored suites are the strictest
@@ -291,7 +294,7 @@ committed number — per-distribution test-suite parity against rakudo, measured
 corpus of ~1,600 distributions, currently ≈41% dist / ≈53% file / ≈63% assertion. That metric,
 not roast, is now what should choose interpreter work. The native-provider exception list is a
 first-class piece of the architecture and should shrink monotonically or be justified in
-writing.
+writing — the discipline [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4 now states.
 
 ### 1.9 Metaobject protocol
 
@@ -556,7 +559,7 @@ Ordering rule, stated so it can be argued with:
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Write the batteries adoption-policy ADR, then follow the parity frontier** (§1.8, [#8184](https://github.com/tokuhirom/mutsu/issues/8184)) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," recorded only in `BATTERIES.md`/`CLAUDE.md`. Its rejected alternative and its two named exceptions are exactly what an ADR preserves — including the one whose stated rationale has already expired (the `nqp::` op rejection) and which no document currently reflects. With ADR-0085 shipping a nightly parity number, the follow-on work can be chosen by measurement instead of by anecdote. |
+| 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`CLAUDE.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
 | 1b | **Retire the JSON `use`-time interception** (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | Module-name string matching at three layers, an exception type chosen by the set of loaded module names, and a two-module bypass of the resolution ladder are not justified by the vendored module being slow. Speed is a reason to optimize — transparently, preserving semantics — not to substitute. The work this actually names is the grammar engine's cost on the real module, plus deleting a mechanism the rest of dispatch currently has to remember. |
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
@@ -617,33 +620,31 @@ Reading 95 ADRs as a list is not useful; they fall into a small number of campai
 | Concurrency: pool, supplies, taps | 0020, 0028, 0031, 0043, 0062, 0074 | landed |
 | Parser, slangs, declarators, modules | 0026, 0044, 0050, 0052, 0053, 0054, 0081, 0087, 0091 | mechanisms landed; several design-only |
 | RakuAST | 0011, 0088 | phases 1-5 landed; regex boundary in progress |
-| Product and process | 0002, 0075, 0085, plus the unwritten batteries policy | ADR-0085 is the new KPI |
+| Product and process | 0002, 0075, 0085, 0096 | ADR-0085 is the new KPI; 0096 records the batteries policy |
 
-### One ADR is still missing
+### The missing ADR — written 2026-09-12
 
-**The batteries adoption policy.** "Grow the interpreter until the real upstream module runs
-verbatim (rung 2); native provision (rung 3) is banned" is a load-bearing, costly-to-reverse
-decision recorded only in `BATTERIES.md` and `CLAUDE.md` as a user decision. Its rejected
-alternative (native reimplementation), its two surviving exceptions (`NativeCall`, and the JSON
-`to-json`/`from-json` fast path — the latter declared permanent in a batteries record rather
-than in a decision document, despite being exactly the kind of measured, costly-to-reverse
-carve-out an ADR is for), the retirement precedent now set by deleting the native `Test`
-provider are exactly the "why, and what we rejected" an ADR exists to preserve. It should also
-record the reversal that already happened in practice: "do not build an `nqp::` op layer" was
-the companion measurement to the original policy, and mutsu has since built one (111 ops and
-growing, §1.8) without any document saying so. The measurement's durable half — that the op set
-is a threshold function, so a large module is not reached by adding ops one at a time — should
-be stated as that, rather than as a blanket rejection the codebase has outgrown while documents
-keep citing it.
+**The batteries adoption policy** was the one load-bearing decision this review found recorded
+nowhere but in `BATTERIES.md` and `CLAUDE.md` prose. It is now
+[ADR-0096](docs/adr/0096-batteries-adoption-policy.md) ([#8184](https://github.com/tokuhirom/mutsu/issues/8184)),
+carrying the five things the prose could not: the rejected alternative (native reimplementation,
+and what it costs — the compatibility signal, silent divergence, a maintenance tail, the
+resolution ladder); the exception list as an auditable two-entry list with the discipline that
+keeps an entry on it (§D4); the retirement precedent set by `Pod::To::Text` and by deleting the
+native `Test` provider (§D6); the accurate form of the `nqp::` measurement (§D5 — the op set is
+a *threshold* function, not "do not build an op layer", which is a claim 111 shipped ops have
+outgrown); and the clause the JSON carve-out was allowed to skip (§D3):
 
-The clause that record most needs is the one the JSON carve-out was allowed to skip: **a
-performance measurement is not a justification for a substitution.** Rung 3 is banned because a
-module that only looks like the upstream one is a private dialect, and that argument does not
-weaken when the reason for the divergence is speed rather than convenience. What speed does
-justify is optimization — transparent, semantics-preserving, and applied to the real module's
-own code path. An ADR that states the ban but leaves "unless it is slow" implicit will keep
-producing mechanisms like this one. It is listed here rather than drafted unilaterally because
-the decision is the user's.
+> **A performance measurement justifies an optimization, never a substitution.** Rung 3 is
+> banned because a module that only looks like the upstream one is a private dialect, and that
+> argument does not weaken when the divergence is bought with speed rather than convenience.
+> What speed justifies is a transparent, semantics-preserving change to the real module's own
+> code path.
+
+The ADR records the JSON interception as an exception **scheduled for retirement**
+([#8183](https://github.com/tokuhirom/mutsu/issues/8183)), not as policy, and
+`docs/batteries/json-tiny.md` withdraws its own "permanent policy" claim accordingly — a
+battery's selection record does not get to make a policy decision.
 
 ---
 

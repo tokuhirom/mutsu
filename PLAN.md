@@ -37,11 +37,13 @@ mutsu's unique position. Four components:
 - **Phase order is fixed by [ADR-0001](docs/adr/0001-gc-strategy-and-phasing.md)**: A (catch up) →
   A' → B (value representation + GC) → C (JIT). A, B and C have all landed; read the ADR before
   touching GC, Track B, NaN-boxing, or JIT.
-- **Bundling policy is [BATTERIES.md](BATTERIES.md)**: adopt the upstream module verbatim and grow
-  mutsu until it runs. Providing a module "natively" is banned going forward, and a performance
-  measurement does not buy an exemption — speed justifies a transparent optimization, never a
-  substitution under the real module's name. The policy is not yet an ADR:
-  [#8184](https://github.com/tokuhirom/mutsu/issues/8184).
+- **Bundling policy is [ADR-0096](docs/adr/0096-batteries-adoption-policy.md)**, implemented by
+  [BATTERIES.md](BATTERIES.md): adopt the upstream module verbatim and grow mutsu until it runs.
+  Providing a module "natively" is banned going forward, and a performance measurement does not
+  buy an exemption — speed justifies a transparent optimization, never a substitution under the
+  real module's name. The exception list is two entries (ADR-0096 §D4): `NativeCall`, justified;
+  the JSON interception, scheduled for retirement
+  ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)).
 
 ---
 
