@@ -244,13 +244,18 @@ Time::Duration · Time::Duration::Parser · Trap · Util::Uuencode · ValueList
    **This is now its own campaign, designed in
    [ADR-0085](adr/0085-ecosystem-testsuite-parity-measurement.md) with the
    operations manual in [docs/ecosystem-parity.md](ecosystem-parity.md)**
-   ([#7785](https://github.com/tokuhirom/mutsu/issues/7785)): an exhaustive,
-   re-runnable ledger over the whole fez corpus that runs each suite on
-   **both** rakudo and mutsu and publishes the difference as the project KPI.
-   This sweep stays what it is — the *sampling diagnostic* that buckets load
-   failures by root cause and feeds `TODO_dist/TICKETS.md`; the two will share
-   one implementation of the index reader, tarball cache, sandbox wrapper and
-   TAP parser.
+   ([#7785](https://github.com/tokuhirom/mutsu/issues/7785), all five phases
+   done): an exhaustive, re-runnable ledger over the whole fez corpus
+   (`ecosystem/`) that runs each suite on **both** rakudo and mutsu and
+   publishes the difference as the project KPI. **This superseded the
+   sampling diagnostic's own ticket queue**: `TODO_dist/TICKETS.md` and
+   `scripts/dist-compat-tickets.py` were retired, and `scripts/ecosystem-tickets.py`
+   now clusters the exhaustive ledger's own records into root-caused findings,
+   filed directly as GitHub issues (`docs/issue-workflow.md`) rather than
+   committed as a queue file. This sweep stays what it is — the *sampling
+   diagnostic* that buckets load failures by root cause; it shares one
+   implementation of the index reader, tarball cache, sandbox wrapper and TAP
+   parser with the exhaustive ledger.
 2. **Dep-closure sweep**: `mzef install` each sampled dist into a shared throwaway
    HOME so `missing_dep` collapses and second-order bugs (deps that themselves
    fail) surface.
