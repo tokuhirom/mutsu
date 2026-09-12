@@ -15,6 +15,26 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Anonymous named parameter carrying a sub-signature: `-> :($a, $b) { ... }`.
+    // Despite reading like a signature literal, rakudo parses this as ONE
+    // parameter — an anonymous named `$` whose sub-signature is `($a, $b)`, so
+    // `(-> :($a, $b) { }).signature.gist` is `(:$ ($a, $b))`. The sub-parameter
+    // parser already gets this exactly right (`sub (:($a, $b))` produces the
+    // same shape), so delegate to it instead of restating the shape here: every
+    // other branch below is a hand-rolled copy of one of its cases, and this is
+    // the one place a copy buys nothing. `block_param` is the only field that
+    // differs, and it is a property of the enclosing pointy block rather than
+    // of the parameter's spelling.
+    //
+    // Without this, `-> :(PrettyDump $pretty, $ds, Int:D :$depth = 0 --> Str)`
+    // (PrettyDump, and Collection / RakuConfig through it) reached no branch at
+    // all and the whole block failed to parse.
+    if input.starts_with(":(") {
+        let (r, mut p) = crate::parser::stmt::sub_param::parse_single_param(input)?;
+        p.block_param = true;
+        return Ok((r, p));
+    }
+
     // Optional type constraint before the variable
     // Use parse_type_constraint_expr to handle coercion types (e.g., Numeric(Cool)),
     // qualified names (Int::Odd), definedness markers (:D/:U), etc.

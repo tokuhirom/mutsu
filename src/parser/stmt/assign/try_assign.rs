@@ -594,7 +594,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             },
         ));
     }
-    if let Some(stripped) = r2.strip_prefix("⚛+=") {
+    if let Some((stripped, negate)) = super::strip_atomic_compound_assign(r2) {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
@@ -605,7 +605,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             rest,
             Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![Expr::Literal(Value::str(name)), rhs],
+                args: vec![
+                    Expr::Literal(Value::str(name)),
+                    super::atomic_delta_expr(rhs, negate),
+                ],
             },
         ));
     }

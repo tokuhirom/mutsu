@@ -95,6 +95,17 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         return handle_simple_assign(&rest[1..], s);
     }
 
+    // `my $qu ⚛= $!queue-unblock;` (Async::Workers) — an atomic store used as a
+    // declaration's initializer. On a variable the declaration is only now
+    // bringing into existence there is nothing to be atomic against: no other
+    // thread can hold a reference to it yet, so this is an ordinary
+    // initialization and rakudo treats it as one. Later `⚛` operations on the
+    // name still go through the atomic machinery, exactly as they do after a
+    // plain `my atomicint $i = 5`.
+    if let Some(stripped) = rest.strip_prefix("⚛=") {
+        return handle_simple_assign(stripped, s);
+    }
+
     // Method-call-assign .= in declaration: my Type $var .= method(args)
     if let Some(stripped) = rest.strip_prefix(".=") {
         return handle_method_call_assign(stripped, s);

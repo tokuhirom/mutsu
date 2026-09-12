@@ -97,7 +97,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     }
     let (rest, lhs) = expression_no_sequence(rest)?;
     let (rest, _) = ws(rest)?;
-    if let Some(stripped) = rest.strip_prefix("⚛+=") {
+    if let Some((stripped, negate)) = super::strip_atomic_compound_assign(rest) {
         let name = match lhs {
             Expr::Var(name) => name,
             _ => return Err(PError::expected("atomic compound assignment expression")),
@@ -113,7 +113,10 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             rest,
             Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![Expr::Literal(Value::str(name)), rhs],
+                args: vec![
+                    Expr::Literal(Value::str(name)),
+                    super::atomic_delta_expr(rhs, negate),
+                ],
             },
         ));
     }

@@ -464,7 +464,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
     // Simple assignment
-    if let Some(stripped) = rest.strip_prefix("⚛+=") {
+    if let Some((stripped, negate)) = super::strip_atomic_compound_assign(rest) {
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
@@ -476,7 +476,10 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         })?;
         let stmt = Stmt::Expr(Expr::Call {
             name: Symbol::intern("__mutsu_atomic_add_var"),
-            args: vec![Expr::Literal(Value::str(name)), rhs],
+            args: vec![
+                Expr::Literal(Value::str(name)),
+                super::atomic_delta_expr(rhs, negate),
+            ],
         });
         return parse_statement_modifier(rest, stmt);
     }
