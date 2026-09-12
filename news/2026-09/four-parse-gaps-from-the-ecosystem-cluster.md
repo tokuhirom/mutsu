@@ -21,10 +21,15 @@ after a dot:
   `$x.<>` did not parse at all;
 - nested-angle keys (`%h.<a<b>>`) and the interpolating `.<<$k>>` / `.«$k»` spellings.
 
-Deleting the copies and rewinding to the opener fixes all five spellings at once. The `.` just
-consumed is part of the span the postfix loop measures, so the term no longer ends on whitespace
-and `.{...}` still reads as a subscript rather than a block. Game::Entities 0.1.6
-(`.[COMPONENTS; $i].<>`) goes `blocked_load` → loading.
+Deleting the copies and rewinding to the opener fixes all five spellings at once. One thing the
+dot really does change had to come along: `Type{...}` is the object-constructor shorthand while
+`Type.{...}` is a postcircumfix call on the type object (roast's `Mu.{'a'}`), and the shorthand
+branch sits earlier in the loop than the postcircumfix one, so a one-iteration flag rides the
+rewind to tell them apart. Nothing else needed carrying: the `.` just consumed is part of the span
+the postfix loop measures, so the term no longer ends on whitespace and `.{...}` still reads as a
+subscript rather than a block.
+
+Game::Entities 0.1.6 (`.[COMPONENTS; $i].<>`) goes `blocked_load` → loading.
 
 ## An anonymous destructuring parameter may carry a type
 
