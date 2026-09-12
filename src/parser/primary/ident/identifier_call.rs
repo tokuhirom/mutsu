@@ -315,7 +315,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // enum value (`言う` for `say` under `L10N::JA`) is an additional name for
     // it, so translate it back to the canonical name here — the bareword term
     // production — and let everything downstream see the ordinary Raku name.
-    if let Some(canonical) = crate::parser::stmt::simple::l10n_alias(&name) {
+    //
+    // A *replaced* keyword needs the same translation here, not only at the
+    // `keyword()` seam: this production recognizes `try`/`do`/`gather`/`if`/
+    // `for`/`last`/`redo`/... by matching the parsed identifier against a fixed
+    // string below, so a localized spelling would otherwise fall through to a
+    // bare word. `试试 { 10 / 2 }` (`stmt-prefix-try` under `L10N::ZH`) read as
+    // `BareWord("试试")` instead of as a `try` block for exactly that reason.
+    // The ASCII spelling keeps working here even where the vocabulary replaces
+    // it — over-accepting, which cannot mis-parse a program rakudo accepts.
+    if let Some(canonical) = crate::parser::stmt::simple::l10n_alias(&name)
+        .or_else(|| crate::parser::stmt::simple::l10n_canonical_keyword(&name))
+    {
         name = canonical;
     }
     // Slang `identifier`/`name` override (ADR-0026 §2.3, Slangify's Piersing

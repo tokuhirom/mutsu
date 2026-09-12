@@ -323,6 +323,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
         }
         break;
     }
+    let base_is_explicit = base.is_some();
     let base = base.unwrap_or_else(|| "Any".to_string());
     let (rest, predicate) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
@@ -338,6 +339,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::SubsetDecl {
             name: Symbol::intern(&name),
             base,
+            base_is_explicit,
             predicate,
             version: super::super::simple::current_language_version(),
             is_export,
@@ -389,6 +391,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         base = Some(b);
         rest = r;
     }
+    let base_is_explicit = base.is_some();
     let base = base.unwrap_or_else(|| "Any".to_string());
     let (rest, predicate) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
@@ -400,6 +403,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     let decl = Stmt::SubsetDecl {
         name: Symbol::intern(&name),
         base,
+        base_is_explicit,
         predicate,
         version: super::super::simple::current_language_version(),
         is_export: false,

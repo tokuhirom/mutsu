@@ -12,7 +12,7 @@ use Test;
 # `L10N::Testish` (t/lib/L10N/Testish.rakumod) is a miniature of the generated
 # roles those distributions ship.
 
-plan 12;
+plan 14;
 
 # --- replacement categories: the localized spelling stands in for the keyword.
 my $ast = 'mine $x = 41; $x + 1'.AST('Testish');
@@ -27,6 +27,16 @@ is 'klass K { }; K.^name'.AST('Testish').EVAL, 'K',
 
 is 'subby f() { 3 }; f()'.AST('Testish').EVAL, 3,
     'a localized routine declarator declares a callable sub';
+
+# A statement prefix is recognized by the bareword-term production (by matching
+# the parsed identifier against a fixed string), not through the `keyword()`
+# seam the block/scope/routine categories hook -- so it needs its own
+# translation site. Without it `试试 { 10 / 2 }` under `L10N::ZH` read as a bare
+# word instead of as a `try` block.
+is 'mine $x = tryish { 10 / 2 }; $x'.AST('Testish').EVAL, 5,
+    'a localized statement prefix parses in expression position';
+is 'tryish { die "boom" }; 7'.AST('Testish').EVAL, 7,
+    'and in statement position, where it still swallows the exception';
 
 # A non-ASCII spelling, matched on a character boundary rather than a byte one.
 is 'mine $x = 0; なければ $x { 9 }'.AST('Testish').EVAL, 9,

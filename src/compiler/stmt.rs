@@ -1265,6 +1265,7 @@ impl Compiler {
                         let base = type_constraint.clone().unwrap_or_else(|| "Any".to_string());
                         let subset_stmt = Stmt::SubsetDecl {
                             name: Symbol::intern(&anon),
+                            base_is_explicit: type_constraint.is_some(),
                             base,
                             predicate: Some((**wc).clone()),
                             version: String::new(),
