@@ -358,6 +358,13 @@ impl Interpreter {
                     },
                 )
             )?;
+            // Take the rollback snapshot `register_class_decl` leaves behind
+            // for a deferred `is` trait IMMEDIATELY, into a local: a nested
+            // declaration in this class's own body runs its own
+            // `RegisterClass` op before the dispatch below and would otherwise
+            // overwrite the field with its own snapshot. See
+            // `Interpreter::deferred_trait_class_rollback`.
+            let deferred_trait_rollback = self.deferred_trait_class_rollback.take();
             // ADR-0019 Phase F box F5 shadow check: confirm this successful
             // registration bumped `Registry::method_generation` (see
             // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
@@ -602,17 +609,13 @@ impl Interpreter {
                     {
                         Ok(_) => {}
                         Err(err) if Self::is_trait_mod_no_candidate(&err) => {
-                            self.rollback_deferred_trait_class_decl();
+                            self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
                             return Err(self.unknown_parent_error(&storage_name, trait_name));
                         }
                         Err(err) => return Err(err),
                     }
                 }
             }
-            // The deferral paid off (or there was none): the class stands, so
-            // drop the rollback snapshot rather than leaving it for whichever
-            // declaration runs next.
-            self.deferred_trait_class_rollback = None;
             // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
             // KNOWN-class parent matches a *typed* user candidate
             // (`multi trait_mod:<is>(Mu:U, SomeType:U)`, more specific than the
@@ -702,9 +705,17 @@ impl Interpreter {
     /// Without this a failed `class B is NoSuchParent { }` (in any scope that
     /// declares a `trait_mod:<is>` at all, which merely importing `Test` does)
     /// left `B` half-registered, and the next genuine `class B` died as a
-    /// redeclaration instead.
-    fn rollback_deferred_trait_class_decl(&mut self) {
-        let Some((name, snapshot)) = self.deferred_trait_class_rollback.take() else {
+    /// redeclaration instead. `rollback` is the snapshot the caller took off
+    /// `Interpreter::deferred_trait_class_rollback` right after registering,
+    /// not a fresh read of that field — see the take site for why.
+    fn rollback_deferred_trait_class_decl(
+        &mut self,
+        rollback: Option<(
+            String,
+            crate::runtime::registration_class_validate::ClassRegSnapshot,
+        )>,
+    ) {
+        let Some((name, snapshot)) = rollback else {
             return;
         };
         snapshot.restore(self, &name);

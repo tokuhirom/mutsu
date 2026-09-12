@@ -19,7 +19,7 @@ use Test;
 # `Alpha.^mro` as `Alpha, Any, Mu`. mutsu left the name in the parent list on
 # BOTH paths, giving every such class a phantom ancestor.
 
-plan 9;
+plan 12;
 
 use MONKEY-SEE-NO-EVAL;
 
@@ -54,4 +54,28 @@ throws-like 'class Delta is Explodes { }', X::AdHoc,
     class Base { method who { 'base' } }
     class Derived is Base { }
     is Derived.new.who, 'base', 'a known uppercase parent is still ordinary inheritance';
+}
+
+# A declaration that dies because no candidate claimed its trait must leave no
+# trace: the class shell is published BEFORE the dispatch runs (the handler has
+# to see the type object), so the name stayed registered and the next genuine
+# declaration of it died as a redeclaration. Merely `use Test` is enough to put
+# a `trait_mod:<is>` in scope, so this reached ordinary test files.
+{
+    try { EVAL 'class Reused is NotAnyTraitAtAll { }' };
+    lives-ok { EVAL 'class Reused { method m { 1 } }' },
+        'a failed trait declaration frees its name again';
+}
+
+# A class whose own trait is deferred may still declare nested types in its
+# body — those run their own registration before the outer dispatch, so the
+# outer rollback snapshot must not be the nested one's.
+{
+    multi sub trait_mod:<is>(Mu:U $doee, :$Outerish!) { %fired{'Outerish'} = $doee.^name }
+    class Outer is Outerish {
+        class Inner { method v { 7 } }
+        method use-inner { Inner.new.v }
+    }
+    is %fired{'Outerish'}, 'Outer', 'the enclosing class trait fired';
+    is Outer.new.use-inner, 7, 'and its nested class still resolves';
 }
