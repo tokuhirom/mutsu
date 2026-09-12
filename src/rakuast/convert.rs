@@ -2934,7 +2934,8 @@ fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
 
 /// A slurpy parameter `*@a` / `**@a` -> `Parameter(target => …, slurpy =>
 /// RakuAST::Parameter::Slurpy::{Flattened,Unflattened})`. A slurpy carries no
-/// `type`/`optional` field.
+/// `type`/`optional` field, and the marker is a type object rather than a node
+/// (see `slurpy_marker_value`).
 fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
         class: RakuAstClass::ParameterTargetVar,
@@ -2943,19 +2944,18 @@ fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstN
             Value::str(format!("{sigil}{desigil}")),
         )],
     };
-    let slurpy = RakuAstNode {
-        class: if double {
-            RakuAstClass::ParameterSlurpyUnflattened
-        } else {
-            RakuAstClass::ParameterSlurpyFlattened
-        },
-        fields: Vec::new(),
-    };
+    // The marker is the `RakuAST::Parameter::Slurpy::*` TYPE OBJECT, as it is in
+    // rakudo -- see `slurpy_marker_value`.
+    let slurpy = super::slurpy_marker_value(if double {
+        RakuAstClass::ParameterSlurpyUnflattened
+    } else {
+        RakuAstClass::ParameterSlurpyFlattened
+    });
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields: vec![
             node_field(Some("target"), target),
-            node_field(Some("slurpy"), slurpy),
+            leaf_field(Some("slurpy"), slurpy),
         ],
     })
 }

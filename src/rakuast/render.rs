@@ -174,6 +174,12 @@ fn render_paren_list(items: &[Value], indent: usize) -> String {
 fn render_leaf(v: &Value) -> String {
     match v.view() {
         ValueView::Str(s) => render_str_literal(&s),
+        // A TYPE OBJECT field value renders as its bare class name, not as the
+        // `(Name)` form `Mu.gist` gives a type object on its own: rakudo's
+        // `Parameter` gist shows `slurpy => RakuAST::Parameter::Slurpy::Flattened`
+        // while `.slurpy.gist` alone is `(Flattened)`. See `slurpy_marker_value`
+        // for why the field holds a type object at all (GH #8157).
+        ValueView::Package(name) => name.resolve().to_string(),
         _ => v.to_string_value(),
     }
 }

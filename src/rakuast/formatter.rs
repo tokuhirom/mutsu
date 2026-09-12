@@ -45,7 +45,8 @@ pub fn formatter_ast(format: &str) -> Value {
         RakuAstClass::ParameterTargetVar,
         vec![named("name", Value::str("@args".to_string()))],
     );
-    let slurpy = node(RakuAstClass::ParameterSlurpyFlattened, vec![]);
+    // The type object, not a node of that class -- see `slurpy_marker_value`.
+    let slurpy = super::slurpy_marker_value(RakuAstClass::ParameterSlurpyFlattened);
     let parameter = node(
         RakuAstClass::Parameter,
         vec![named("target", target), named("slurpy", slurpy)],
