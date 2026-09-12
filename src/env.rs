@@ -493,6 +493,53 @@ pub struct Env {
     // `SipHash` here showed up as ~5% of self time on method-heavy benchmarks
     // (mzef ctor) — the same reason `SymMap` is `FxHashMap`.
     tombstones: Option<rustc_hash::FxHashSet<Symbol>>,
+    /// A closure's captured env, chained UNDER the whole parent chain rather
+    /// than merged into this overlay key by key (ADR-0092).
+    ///
+    /// Name lookups on a frame that has one resolve
+    /// `overlay -> parent chain -> GLOBAL_BASE -> fallback`. That is exactly
+    /// the precedence the per-key merge in `call_compiled_closure_in_unit`
+    /// used to build by hand: its default was `entry_or_insert_sym_with`
+    /// (don't overwrite anything already visible from the caller, base tier
+    /// included), so the caller chain and the base already won over every
+    /// captured name — and the probes inserted *nothing* in the ordinary case,
+    /// because the capture had been filtered out of the very chain it was then
+    /// compared against
+    /// ([#7565](https://github.com/tokuhirom/mutsu/issues/7565)). Removing the
+    /// loop is worth ~1 000 instructions per closure call over a ~12-entry
+    /// capture; the mechanism here costs most of that back on a chain with no
+    /// capture, so the case for it is §2 of the ADR (a probe loop that provably
+    /// does nothing should not exist) rather than the number.
+    ///
+    /// The merge's explicit OVERWRITE cases (a captured `ContainerRef` cell, a
+    /// lexical `self`, a non-routine block's topic and `$!`, the authoritative
+    /// and owned capture lists, per-instance state) still insert into the
+    /// overlay, which is above both.
+    ///
+    /// Every reader that walks the chain must treat this as a tier below it:
+    /// [`Self::get_sym`]/[`Self::contains_key_sym`] consult every fallback in
+    /// the chain, not just the leaf's — which is what keeps a *callee* of the
+    /// closure resolving captured names, as it did when they lived in the
+    /// frame overlay it chains over,
+    /// [`Self::flattened`]/[`Self::filtered_flat`]/[`Self::filtered_flat_capture`]
+    /// layer it in underneath, and [`Self::tier_addrs`]/[`Self::tier_maps`]
+    /// include it so the capture memo cannot mistake two frames with different
+    /// captures for one another. Iteration (`iter`/`keys`/`values`/`len`) is
+    /// overlay-only as before and so does NOT see it — which is what the exit
+    /// writeback wants, since a captured name the body never touched was
+    /// never its own write.
+    fallback: Option<Arc<Tier>>,
+    /// True when this env, or any tier below it, carries a
+    /// [`fallback`](Self::fallback).
+    ///
+    /// The lookup loops need "does this chain have a fallback at all?" *before*
+    /// they know the answer is a miss, and asking it by walking the chain would
+    /// cost more than the fallback saves. It is a one-way latch maintained by
+    /// the two mutators that can make it true ([`Self::scoped_child`] inherits
+    /// the parent's, [`Self::set_capture_fallback`] sets it) and is false for
+    /// every env built flat — [`Self::flattened`] and the `filtered_flat*`
+    /// family fold any fallback into the map they return.
+    chain_has_fallback: bool,
     /// Number of parent tiers below this env (0 for a flat env). Used to bound
     /// the chain length: a recursive function would otherwise grow the chain one
     /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
@@ -647,6 +694,8 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym: None,
+            fallback: None,
+            chain_has_fallback: false,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -733,13 +782,19 @@ impl Env {
         // (copy-on-write on first insert via `cow_mut`'s `Arc::make_mut`).
         // Steady-state recursion therefore allocates nothing here — the two
         // `Arc::new`s per call were ~14% of fib with the JIT on.
+        //
+        // A tier carrying a closure-capture `fallback` is NOT invisible — its
+        // captured names resolve through it — so it is never skipped here,
+        // however empty its own overlay is.
         if parent.inner.is_empty()
             && parent.tombstones.is_none()
+            && parent.fallback.is_none()
             && let Some(gp) = parent.parent.take()
         {
             let mut arc = gp;
             while arc.inner.is_empty()
                 && arc.tombstones.is_none()
+                && arc.fallback.is_none()
                 && let Some(gp) = &arc.parent
             {
                 let gp = Arc::clone(gp);
@@ -747,23 +802,29 @@ impl Env {
             }
             if arc.depth >= MAX_OVERLAY_DEPTH {
                 let flat = arc.flattened();
+                let (flat_depth, flat_chf) = (flat.depth, flat.chain_has_fallback);
                 return Self {
                     inner: empty_overlay(),
-                    depth: flat.depth + 1,
+                    depth: flat_depth + 1,
                     parent: Some(Arc::new(flat)),
                     tombstones: None,
                     file_sym,
+                    fallback: None,
+                    chain_has_fallback: flat_chf,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base: None,
                 };
             }
+            let (arc_depth, arc_chf) = (arc.depth, arc.chain_has_fallback);
             return Self {
                 inner: empty_overlay(),
-                depth: arc.depth + 1,
+                depth: arc_depth + 1,
                 parent: Some(arc),
                 tombstones: None,
                 file_sym,
+                fallback: None,
+                chain_has_fallback: arc_chf,
                 frame_writes: None,
                 code_entries: None,
                 dyn_base: None,
@@ -774,12 +835,15 @@ impl Env {
         } else {
             parent
         };
+        let (parent_depth, parent_chf) = (parent.depth, parent.chain_has_fallback);
         Self {
             inner: empty_overlay(),
-            depth: parent.depth + 1,
+            depth: parent_depth + 1,
             parent: Some(Arc::new(parent)),
             tombstones: None,
             file_sym,
+            fallback: None,
+            chain_has_fallback: parent_chf,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -816,7 +880,14 @@ impl Env {
         self.file_sym = match self.inner.get(&file_key()) {
             Some(v) => file_sym_of(v),
             None if self.is_tombstoned(file_key()) => None,
-            None => self.parent.as_ref().and_then(|p| p.file_sym),
+            // The capture fallback is the lowest tier (see the field), so it
+            // answers only when the whole chain is silent.
+            None => self.parent.as_ref().and_then(|p| p.file_sym).or_else(|| {
+                self.fallback
+                    .as_ref()
+                    .and_then(|fb| fb.get(&file_key()))
+                    .and_then(file_sym_of)
+            }),
         };
     }
 
@@ -1047,6 +1118,15 @@ impl Env {
     /// every boundary that captures/clones the env so no full-view iteration
     /// consumer is starved of parent lexicals.
     pub(crate) fn flattened(&self) -> Self {
+        // A capture fallback is a real tier (see the field), so an env that has
+        // one is never "already flat" and never collapses to its parent: the
+        // general arm below layers every fallback in the chain under the
+        // overlays. The latch, not a chain walk: `flattened` runs per closure
+        // creation, and walking the chain to discover that there is no fallback
+        // cost 0.8% of `benchmarks/bench-ctor.raku` on its own.
+        if self.chain_has_fallback {
+            return self.flattened_with_fallbacks();
+        }
         match &self.parent {
             None => self.clone(),
             // An overlay that never received a write (and holds no tombstone)
@@ -1123,12 +1203,193 @@ impl Env {
                     // The merged map is no longer any one frame's tier;
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
+                    fallback: None,
+                    chain_has_fallback: false,
                     frame_writes: None,
                     code_entries: None,
                     dyn_base,
                 }
             }
         }
+    }
+
+    /// Push every capture [`fallback`](Self::fallback) in this chain into
+    /// `out`, lowest precedence first.
+    ///
+    /// Precedence among fallbacks is tail-most-wins, matching
+    /// [`Self::get_sym_with_fallback`]: a closure created inside another body
+    /// chains over it, and the outer capture is the enclosing lexical scope of
+    /// the inner one. Writing them leaf-first here lets a later `insert`
+    /// overwrite an earlier one and reproduces that.
+    fn collect_fallbacks(&self, out: &mut SymMap, base: Option<&SymMap>) {
+        let mut cur = self;
+        loop {
+            if let Some(fb) = &cur.fallback {
+                for (k, v) in fb.iter() {
+                    if base.is_some_and(|b| b.contains_key(k)) {
+                        continue;
+                    }
+                    out.insert(*k, v.clone());
+                }
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => return,
+            }
+        }
+    }
+
+    /// [`Self::collect_fallbacks`] restricted to the entries `keep` accepts.
+    /// Returns whether anything was written, which is what tells the chain
+    /// walk that follows whether its first tier is still the outermost one.
+    ///
+    /// A reject suppresses a lower-precedence fallback's entry for the same
+    /// key, as it does in the chain walk: `keep` sees the value as well as the
+    /// key, so two nested closures capturing one name can disagree about it.
+    ///
+    /// `base` is the chain tail's base tier, and a key it holds is skipped:
+    /// the base beats a fallback while the chain is live ([`Self::get_sym`]
+    /// probes it first), but it is carried forward rather than materialized, so
+    /// writing the fallback's entry into the flat map would invert that.
+    fn collect_fallbacks_filtered<F: Fn(Symbol, &Value) -> bool>(
+        &self,
+        out: &mut SymMap,
+        keep: &F,
+        base: Option<&SymMap>,
+    ) -> bool {
+        let mut wrote = false;
+        let mut cur = self;
+        loop {
+            if let Some(fb) = &cur.fallback {
+                for (k, v) in fb.iter() {
+                    if base.is_some_and(|b| b.contains_key(k)) {
+                        continue;
+                    }
+                    if keep(*k, v) {
+                        out.insert(*k, v.clone());
+                        wrote = true;
+                    } else if wrote {
+                        out.remove(k);
+                    }
+                }
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => return wrote,
+            }
+        }
+    }
+
+    /// [`Self::flattened`] for a chain that carries at least one capture
+    /// fallback: the fallbacks go in first (they lose to every overlay in the
+    /// chain), then the chain itself, root-ward first.
+    ///
+    /// The base tier is carried forward rather than materialized, exactly as
+    /// [`Self::flattened`] does, so the fallbacks are collected *minus* the
+    /// keys it holds: the base beats a fallback while the chain is live, and a
+    /// flattened fallback entry would otherwise invert that.
+    fn flattened_with_fallbacks(&self) -> Self {
+        let mut tiers: Vec<&Env> = Vec::new();
+        let mut cur: &Env = self;
+        while let Some(parent) = &cur.parent {
+            tiers.push(cur);
+            cur = parent;
+        }
+        let dyn_base = cur.dyn_base.clone();
+        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+            Some(base) => Some(base),
+            None => global_base(),
+        };
+        let mut merged: SymMap = SymMap::default();
+        self.collect_fallbacks(&mut merged, base_map);
+        for (k, v) in cur.inner.iter() {
+            merged.insert(*k, v.clone());
+        }
+        let mut any_tombstone = false;
+        for tier in tiers.into_iter().rev() {
+            if let Some(tomb) = &tier.tombstones {
+                any_tombstone = true;
+                for k in tomb {
+                    merged.remove(k);
+                }
+            }
+            for (k, v) in tier.inner.iter() {
+                merged.insert(*k, v.clone());
+            }
+        }
+        // A tombstone that hides a base-tier dynamic has to survive the
+        // collapse -- see `flattened`'s general arm, which this mirrors.
+        let tombstones = any_tombstone
+            .then(|| residual_base_tombstones(self, &merged, dyn_base.as_deref()))
+            .flatten();
+        Self {
+            inner: Arc::new(Tier::new(merged)),
+            parent: None,
+            tombstones,
+            depth: 0,
+            file_sym: self.file_sym,
+            fallback: None,
+            chain_has_fallback: false,
+            frame_writes: None,
+            code_entries: None,
+            dyn_base,
+        }
+    }
+
+    /// Install `tier` as this env's closure-capture [`fallback`](Self::fallback).
+    ///
+    /// Replaces any fallback already there: a frame env belongs to exactly one
+    /// call, and the merge installs it once, before the body runs.
+    pub(crate) fn set_capture_fallback(&mut self, tier: Arc<Tier>) {
+        self.fallback = Some(tier);
+        self.chain_has_fallback = true;
+        // A captured `?FILE` is visible through the fallback exactly as an
+        // overlay one is, and `source_file_sym` is an O(1) mirror of that
+        // answer, so it has to be re-derived here like any other mutator.
+        if self.file_sym.is_none() {
+            self.refresh_file_sym();
+        }
+    }
+
+    /// This env viewed as ONE tier, for installing it as a closure frame's
+    /// [`fallback`](Self::fallback).
+    ///
+    /// Ordinarily an `Arc` bump: a `SubData`'s env is flat (`clone_env` /
+    /// `filtered_flat_capture` both return one), so its overlay already *is*
+    /// its whole visible view.
+    ///
+    /// The exception is a `Sub` built straight from a live scoped env — a
+    /// `whenever` callback is (`react_whenever.rs`'s `self.env.clone()`), and
+    /// ~80 sites could be. There the overlay alone is not the view, because a
+    /// closure frame keeps its own capture in a fallback rather than in its
+    /// overlay, so a callback built inside one would silently lose every name
+    /// that frame captured. (Pinned by the three-level nested `whenever` in
+    /// `t/concurrency/supply/promise-of-supply-completion.t`: `$x` from the
+    /// outermost `whenever` reached the second level and not the third.)
+    ///
+    /// The parent CHAIN is deliberately not folded in. The per-key merge this
+    /// replaces iterated the captured env's own tier only — `Env::iter` does
+    /// not walk the chain — and reached chain lexicals solely through the
+    /// by-name `get_sym` lookups that still stand beside it (`self`, the
+    /// authoritative and owned capture lists). Folding it in here would make a
+    /// closure capture strictly more than it used to.
+    #[inline]
+    pub(crate) fn capture_tier(&self) -> Arc<Tier> {
+        match &self.fallback {
+            None => Arc::clone(&self.inner),
+            Some(fb) => Self::capture_tier_merged(&self.inner, fb),
+        }
+    }
+
+    /// The rare half of [`Self::capture_tier`], kept out of line so the `Arc`
+    /// bump stays a load and a refcount increment.
+    #[cold]
+    fn capture_tier_merged(inner: &Arc<Tier>, fb: &Arc<Tier>) -> Arc<Tier> {
+        let mut merged: SymMap = (***fb).clone();
+        for (k, v) in inner.iter() {
+            merged.insert(*k, v.clone());
+        }
+        Arc::new(Tier::new(merged))
     }
 
     /// Build a flat env holding exactly the entries `keep` accepts, walking
@@ -1201,6 +1462,9 @@ impl Env {
             let mut cur = Some(self);
             while let Some(env) = cur {
                 cap += env.inner.len();
+                if env.chain_has_fallback {
+                    cap += env.fallback.as_ref().map_or(0, |fb| fb.len());
+                }
                 any_tombstone |= env.tombstones.is_some();
                 dyn_base = env.dyn_base.as_ref();
                 cur = env.parent.as_deref();
@@ -1208,7 +1472,17 @@ impl Env {
         }
         let dyn_base = dyn_base.cloned();
         let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
-        collect(self, &mut out, keep, true);
+        // The capture fallbacks are the lowest tiers of all, so they go in
+        // first and every overlay in the chain layers over them. When one
+        // contributes, the chain's own root tier is no longer the first thing
+        // written and must start suppressing its rejects (`outermost=false`).
+        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+            Some(base) => Some(base),
+            None => global_base(),
+        };
+        let outermost =
+            !self.chain_has_fallback || !self.collect_fallbacks_filtered(&mut out, keep, base_map);
+        collect(self, &mut out, keep, outermost);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         // The per-interpreter base tier rides along by reference, exactly as
@@ -1225,6 +1499,8 @@ impl Env {
             tombstones,
             depth: 0,
             file_sym,
+            fallback: None,
+            chain_has_fallback: false,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -1322,6 +1598,12 @@ impl Env {
             let mut cur = Some(self);
             while let Some(env) = cur {
                 cap += env.inner.capture_upper_bound();
+                if env.chain_has_fallback {
+                    cap += env
+                        .fallback
+                        .as_ref()
+                        .map_or(0, |fb| fb.capture_upper_bound());
+                }
                 any_tombstone |= env.tombstones.is_some();
                 dyn_base = env.dyn_base.as_ref();
                 cur = env.parent.as_deref();
@@ -1329,7 +1611,18 @@ impl Env {
         }
         let dyn_base = dyn_base.cloned();
         let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
-        collect(self, &mut out, keep, true);
+        // A closure created inside a closure body sees the outer capture
+        // through its frame's fallback tier, not through an overlay, so the
+        // walk has to start there or the inner closure loses every name the
+        // outer one captured (ADR-0092 §4). Gated on the latch: this runs per
+        // closure creation, and a chain walk that finds nothing is pure loss.
+        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+            Some(base) => Some(base),
+            None => global_base(),
+        };
+        let outermost =
+            !self.chain_has_fallback || !self.collect_fallbacks_filtered(&mut out, keep, base_map);
+        collect(self, &mut out, keep, outermost);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         // The per-interpreter base tier rides along by reference, exactly as
@@ -1345,6 +1638,8 @@ impl Env {
             tombstones,
             depth: 0,
             file_sym,
+            fallback: None,
+            chain_has_fallback: false,
             frame_writes: None,
             code_entries: None,
             dyn_base,
@@ -1403,28 +1698,79 @@ impl Env {
 
     #[inline]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
-        if let Some(v) = self.inner.get(&key) {
-            return Some(v);
+        // One predictable branch for every env in the process that has no
+        // capture below it, which is nearly all of them. The fallback walk is
+        // a separate copy of this loop rather than a flag inside it, so the
+        // common path pays no per-tier test.
+        if self.chain_has_fallback {
+            return self.get_sym_with_fallback(key);
         }
-        // A tombstoned key is deleted in this scope: do not fall through to the
-        // parent/base tier.
-        if self.is_tombstoned(key) {
-            return None;
+        // Walk the parent chain (each tier may itself be scoped) as a LOOP, not
+        // a recursion. It used to be a self-call in tail position, which the
+        // optimizer turned into this loop for free — but a capture `fallback`
+        // has to be consulted *after* the chain misses, and the smallest
+        // expression of that ("recurse, then check my own fallback") puts work
+        // after the call and costs a real stack frame per tier. Measured at
+        // +1 591 instructions per iteration of #7565's loop, which was most of
+        // what dropping the per-key capture merge had just saved. Spelling the
+        // walk out keeps the chain cost exactly what it was and moves the
+        // fallback onto its own pass.
+        let mut cur = self;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            // A tombstoned key is deleted in this scope: do not fall through to
+            // the parent, the base tier, or a fallback.
+            if cur.is_tombstoned(key) {
+                return None;
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
         }
-        // Walk the parent chain (each tier may itself be scoped). The chain
-        // bottoms out at a flat env, which consults GLOBAL_BASE; intermediate
-        // tiers do not, so the base is checked exactly once.
-        if let Some(parent) = &self.parent {
-            return parent.get_sym(key);
-        }
-        // Chain tail: one base-tier probe. The per-interpreter tier (built-in
-        // dynamics, ADR-0086) is a superset of the process-wide one, so an env
-        // that has it needs no second look at `GLOBAL_BASE` — see
+        // Chain tail: one base-tier probe, on the tier the loop walked to
+        // rather than on `self`. The per-interpreter tier (built-in dynamics,
+        // ADR-0086) is a superset of the process-wide one, so an env that has
+        // it needs no second look at `GLOBAL_BASE` — see
         // [`Self::set_dyn_base`].
-        match &self.dyn_base {
-            Some(base) => base.get(&key),
-            None => global_base().and_then(|b| b.get(&key)),
+        cur.base_get(key)
+    }
+
+    /// [`Self::get_sym`] for a chain that carries a capture
+    /// [`fallback`](Self::fallback), which is only ever a frame executing a
+    /// closure.
+    ///
+    /// The fallback tiers are below the base, so this cannot answer from one
+    /// until the whole chain and the base have missed — but it collects them in
+    /// the SAME walk rather than making a second pass, because a miss is the
+    /// common outcome here (every speculative metadata probe) and walking twice
+    /// for it cost more than the capture merge this replaces ever did.
+    fn get_sym_with_fallback(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        // Tail-most wins, so keep overwriting: a closure created inside another
+        // closure's body chains over it, and the outer capture is the enclosing
+        // lexical scope of the inner one.
+        let mut found = None;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            if cur.is_tombstoned(key) {
+                return None;
+            }
+            if let Some(fb) = &cur.fallback
+                && let Some(v) = fb.get(&key)
+            {
+                found = Some(v);
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
         }
+        cur.base_get(key).or(found)
     }
 
     #[inline]
@@ -1434,19 +1780,26 @@ impl Env {
 
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
-        if self.inner.contains_key(&key) {
-            return true;
+        if self.chain_has_fallback {
+            return self.get_sym_with_fallback(key).is_some();
         }
-        if self.is_tombstoned(key) {
-            return false;
+        // Loop, not recursion — see `get_sym` for why.
+        let mut cur = self;
+        loop {
+            if cur.inner.contains_key(&key) {
+                return true;
+            }
+            if cur.is_tombstoned(key) {
+                return false;
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
         }
-        if let Some(parent) = &self.parent {
-            return parent.contains_key_sym(key);
-        }
-        match &self.dyn_base {
-            Some(base) => base.contains_key(&key),
-            None => global_base().is_some_and(|b| b.contains_key(&key)),
-        }
+        // Chain tail: one base-tier probe, on the tier the loop walked to --
+        // see `get_sym`.
+        cur.base_get(key).is_some()
     }
 
     /// True if `key` is declared in THIS frame's own overlay tier specifically
@@ -1601,7 +1954,7 @@ impl Env {
         // overlay entry goes and the seeded value below shows through — which
         // is what a tier below an overlay means, and what `GLOBAL_BASE` has
         // always done for a flat env's enum constants.
-        if self.parent.is_none() && !self.inner.contains_key(&key) {
+        if self.parent.is_none() && self.fallback.is_none() && !self.inner.contains_key(&key) {
             return None;
         }
         self.note_frame_write(key);
@@ -1609,14 +1962,14 @@ impl Env {
         // Scoped env: if the key still exists in the parent/base tier, record a
         // tombstone so it stops shadowing through. The visible value before
         // removal is the overlay value if present, else the parent/base value.
-        if self.parent.is_some() {
-            // Chain-aware lookup (covers the base tier at the chain tail).
-            let parent_val = self
-                .parent
-                .as_ref()
-                .and_then(|p| p.get_sym(key))
-                .or_else(|| self.base_get(key))
-                .cloned();
+        // A capture fallback is a tier below the chain, so it needs the same
+        // treatment: without a tombstone, removing a captured name would leave
+        // it visible.
+        if self.parent.is_some() || self.fallback.is_some() {
+            // Chain-aware lookup (covers the base tier at the chain tail and
+            // any capture fallback). The overlay entry is already gone, so this
+            // is exactly "what would still be visible without a tombstone".
+            let parent_val = self.get_sym(key).cloned();
             if parent_val.is_some() {
                 let visible = from_overlay.or(parent_val);
                 self.tombstones
@@ -1642,15 +1995,14 @@ impl Env {
             if self.is_tombstoned(key) {
                 return None;
             }
-            // Promote from the parent chain (chain-aware get_sym already covers
-            // the base tier at the chain tail) so a write to a caller lexical
-            // lands in this frame's overlay and is not silently lost.
-            let promote = self
-                .parent
-                .as_ref()
-                .and_then(|p| p.get_sym(key))
-                .or_else(|| self.base_get(key))
-                .cloned();
+            // Promote from wherever the name is visible — the parent chain,
+            // the base tier (`base_get`, at the chain tail), or a capture
+            // fallback — so a write to a caller lexical or a captured one lands
+            // in this frame's overlay instead of being silently lost. `get_sym`
+            // is the single definition of "visible", and re-probing this
+            // overlay (a known miss) is one hash on a path that is about to
+            // clone a value anyway.
+            let promote = self.get_sym(key).cloned();
             if let Some(v) = promote {
                 self.untombstone(key);
                 // A promotion ADDS a key to this overlay, so it has to reach the
@@ -1726,6 +2078,13 @@ impl Env {
         for v in self.inner.values() {
             visitor.visit_value(v);
         }
+        // The capture fallback is a live tier of this env, reachable by name
+        // from the running frame, so it is a root like any other tier.
+        if let Some(fb) = &self.fallback {
+            for v in fb.values() {
+                visitor.visit_value(v);
+            }
+        }
         if let Some(parent) = &self.parent {
             parent.visit_values(visitor);
             return;
@@ -1774,6 +2133,13 @@ impl Env {
                     .unwrap_or_default(),
             },
         };
+        // The capture fallback is the lowest tier: `or_insert` so anything the
+        // chain (or the base) already provided keeps winning.
+        if let Some(fb) = &self.fallback {
+            for (k, v) in fb.iter() {
+                out.entry(k.resolve()).or_insert_with(|| v.clone());
+            }
+        }
         if let Some(tomb) = &self.tombstones {
             for k in tomb {
                 out.remove(&k.resolve());
@@ -1810,6 +2176,14 @@ impl Env {
                 .unwrap_or_default()
             }
         };
+        if let Some(fb) = &self.fallback {
+            for k in fb.keys() {
+                let name = k.resolve();
+                if keep(&name) {
+                    out.insert(name);
+                }
+            }
+        }
         if let Some(tomb) = &self.tombstones {
             for k in tomb {
                 out.remove(&k.resolve());
@@ -1906,6 +2280,18 @@ impl Env {
             }
             addrs[len] = Arc::as_ptr(&cur.inner) as usize;
             len += 1;
+            // A capture fallback is a tier of this chain and can differ
+            // between two frames whose overlays are identical (two closures
+            // from one factory, called in turn), so it has to be part of the
+            // identity or the capture memo would hand the second one the
+            // first one's capture.
+            if let Some(fb) = &cur.fallback {
+                if len == MAX_IDENTITY_TIERS {
+                    return None;
+                }
+                addrs[len] = Arc::as_ptr(fb) as usize;
+                len += 1;
+            }
             match &cur.parent {
                 Some(parent) => cur = parent,
                 None => break,
@@ -1924,6 +2310,11 @@ impl Env {
         let mut cur = self;
         loop {
             maps.push(Arc::clone(&cur.inner));
+            // Same order as `tier_addrs`, which `TierAddrs::matches` zips
+            // against this.
+            if let Some(fb) = &cur.fallback {
+                maps.push(Arc::clone(fb));
+            }
             match &cur.parent {
                 Some(parent) => cur = parent,
                 None => break,
@@ -1977,6 +2368,8 @@ impl From<HashMap<String, Value>> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            fallback: None,
+            chain_has_fallback: false,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -1994,6 +2387,8 @@ impl From<HashMap<Symbol, Value>> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            fallback: None,
+            chain_has_fallback: false,
             frame_writes: None,
             code_entries: None,
             dyn_base: None,
@@ -2204,6 +2599,124 @@ mod tests {
         assert!(leaf.get_sym(s("missing")).is_none());
         assert!(leaf.contains_key_sym(s("a")));
         assert!(!leaf.contains_key_sym(s("missing")));
+    }
+
+    /// Build the tier a closure capture would install (ADR-0092).
+    fn capture_of(writes: &[(&str, i64)]) -> std::sync::Arc<Tier> {
+        let mut e = Env::new();
+        for (k, v) in writes {
+            e.insert((*k).to_string(), Value::int(*v));
+        }
+        e.capture_tier()
+    }
+
+    #[test]
+    fn a_capture_fallback_is_the_lowest_tier_of_the_chain() {
+        let mut root = Env::new();
+        root.insert("shared".into(), Value::int(1));
+        let mut frame = scoped_with(root, &[("own", 2)]);
+        frame.set_capture_fallback(capture_of(&[("shared", 99), ("captured", 3)]));
+
+        // The chain wins over the capture -- that is the `entry_or_insert_sym_with`
+        // don't-overwrite default the tier replaces.
+        assert_eq!(frame.get_sym(s("shared")), Some(&Value::int(1)));
+        // A name the chain does not provide comes from the capture.
+        assert_eq!(frame.get_sym(s("captured")), Some(&Value::int(3)));
+        assert!(frame.contains_key_sym(s("captured")));
+        assert!(!frame.contains_key_sym(s("missing")));
+        // Iteration stays overlay-only, so the exit writeback does not see a
+        // captured name the body never touched.
+        assert_eq!(frame.keys().copied().collect::<Vec<_>>(), vec![s("own")]);
+    }
+
+    #[test]
+    fn a_callee_chained_over_a_closure_frame_still_sees_its_capture() {
+        let mut frame = Env::scoped_child(Env::new());
+        frame.set_capture_fallback(capture_of(&[("captured", 3)]));
+        let callee = scoped_with(frame, &[("local", 4)]);
+        // The merge used to leave captured names in the closure's overlay, which
+        // a callee resolves through its parent chain. The fallback pass has to
+        // consult every tier's fallback, not just the leaf's, to keep that.
+        assert_eq!(callee.get_sym(s("captured")), Some(&Value::int(3)));
+    }
+
+    #[test]
+    fn the_tail_most_capture_wins_between_nested_closures() {
+        let mut outer = Env::scoped_child(Env::new());
+        outer.set_capture_fallback(capture_of(&[("x", 1)]));
+        let mut inner = Env::scoped_child(outer);
+        inner.set_capture_fallback(capture_of(&[("x", 2)]));
+        // The outer closure's frame is the inner one's enclosing lexical scope.
+        assert_eq!(inner.get_sym(s("x")), Some(&Value::int(1)));
+        // Flattening must reproduce the tiered answer exactly.
+        assert_eq!(inner.flattened().get_sym(s("x")), Some(&Value::int(1)));
+    }
+
+    #[test]
+    fn a_write_shadows_the_capture_and_a_remove_tombstones_it() {
+        let mut frame = Env::scoped_child(Env::new());
+        frame.set_capture_fallback(capture_of(&[("captured", 3)]));
+        // `get_mut` promotes a captured name into the overlay, or the write
+        // would land nowhere.
+        *frame.get_mut("captured").expect("promoted") = Value::int(7);
+        assert_eq!(frame.get_sym(s("captured")), Some(&Value::int(7)));
+        // A removal has to tombstone: the capture is a tier below, so dropping
+        // the overlay entry alone would make the captured value reappear.
+        assert_eq!(frame.remove("captured"), Some(Value::int(7)));
+        assert!(frame.get_sym(s("captured")).is_none());
+        assert!(!frame.contains_key_sym(s("captured")));
+    }
+
+    #[test]
+    fn flattening_folds_the_capture_in_under_the_chain() {
+        let mut root = Env::new();
+        root.insert("shared".into(), Value::int(1));
+        let mut frame = scoped_with(root, &[("own", 2)]);
+        frame.set_capture_fallback(capture_of(&[("shared", 99), ("captured", 3)]));
+        let flat = frame.flattened();
+        assert!(!flat.is_scoped());
+        assert_eq!(flat.get_sym(s("shared")), Some(&Value::int(1)));
+        assert_eq!(flat.get_sym(s("own")), Some(&Value::int(2)));
+        assert_eq!(flat.get_sym(s("captured")), Some(&Value::int(3)));
+    }
+
+    #[test]
+    fn capture_tier_of_a_closure_frame_carries_its_own_capture() {
+        // A `Sub` built straight from a live closure frame (`whenever`) keeps
+        // that frame's capture in a fallback, not its overlay, so the tier the
+        // next call installs has to be the union of the two.
+        let mut frame = Env::scoped_child(Env::new());
+        frame.insert("own".into(), Value::int(2));
+        frame.set_capture_fallback(capture_of(&[("own", 99), ("outer", 1)]));
+        let tier = frame.capture_tier();
+        assert_eq!(tier.get(&s("outer")), Some(&Value::int(1)));
+        // The overlay shadows the fallback within the merged view.
+        assert_eq!(tier.get(&s("own")), Some(&Value::int(2)));
+    }
+
+    #[test]
+    fn a_frame_carrying_a_capture_is_never_skipped_as_an_empty_tier() {
+        // `scoped_child`'s empty-tier reuse treats a write-free overlay as
+        // invisible. A fallback makes the tier visible even so; skipping it
+        // would drop the capture from the chain entirely.
+        let mut frame = Env::scoped_child(Env::new());
+        frame.set_capture_fallback(capture_of(&[("captured", 3)]));
+        assert!(frame.overlay_is_shared_empty());
+        let child = Env::scoped_child(frame);
+        assert_eq!(child.get_sym(s("captured")), Some(&Value::int(3)));
+    }
+
+    #[test]
+    fn two_frames_with_different_captures_have_different_tier_identities() {
+        // The capture memo keys on `tier_addrs`; without the fallback in it,
+        // two closures from one factory called in turn would share a capture.
+        let mut a = Env::scoped_child(Env::new());
+        a.set_capture_fallback(capture_of(&[("x", 1)]));
+        let mut b = a.clone();
+        b.set_capture_fallback(capture_of(&[("x", 2)]));
+        assert!(a.tier_addrs().expect("describable") != b.tier_addrs().expect("describable"));
+        assert!(!a.tier_addrs().expect("describable").matches(&b.tier_maps()));
+        assert!(a.tier_addrs().expect("describable").matches(&a.tier_maps()));
     }
 
     #[test]
