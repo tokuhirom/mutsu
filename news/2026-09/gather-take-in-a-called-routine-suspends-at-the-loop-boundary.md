@@ -37,7 +37,7 @@ all.
 
 ## What it moves
 
-`t/control/gather-take-in-nested-call-stays-lazy.t` pins nine shapes: a bare sub and a private
+`t/collections/lazy-seq/gather-take-in-callee-infinite-loop.t` pins nine shapes: a bare sub and a private
 method called from an infinite `loop`, the same under `while`, a take two call levels down, a take
 inside a loop in the callee (still sound, may over-produce, but terminates), two finite gathers that
 must keep their exact contents, and one check that a suspended pull does not truncate a later
