@@ -21,7 +21,13 @@ after a dot:
   `$x.<>` did not parse at all;
 - nested-angle keys (`%h.<a<b>>`) and the interpolating `.<<$k>>` / `.«$k»` spellings.
 
-Deleting the copies and rewinding to the opener fixes all five spellings at once. One thing the
+Two of those — the semicolon dimensions and `.<>` — were fixed on `main` while this work was in
+flight ([#8155](https://github.com/tokuhirom/mutsu/issues/8155)), by *growing* the copies: a shared
+`dotted_subscript_expr` for the two bracket arms, and a third arm for the literal `<>`. That
+version says so itself ("adverbs on the dotted form (`%h.<>:k`) are still unhandled, as they are
+for every other dotted subscript"), which is the argument for the other direction. Deleting the
+copies and rewinding to the opener fixes all five spellings at once, and needs no helper to keep
+two arms from drifting apart, because there are no longer two arms. One thing the
 dot really does change had to come along: `Type{...}` is the object-constructor shorthand while
 `Type.{...}` is a postcircumfix call on the type object (roast's `Mu.{'a'}`), and the shorthand
 branch sits earlier in the loop than the postcircumfix one, so a one-iteration flag rides the
