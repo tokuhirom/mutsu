@@ -2212,6 +2212,11 @@ pub struct RegexAdverbs {
     /// The defining scope this literal closed over, when its pattern embeds
     /// code — see [`RegexClosure`]. `None` for every ordinary literal.
     pub captured: Option<Arc<HashMap<String, Value>>>,
+    /// Source-level provenance for a parser-created static regex. This is
+    /// separate from the execution spelling in `pattern`: the runtime may
+    /// carry normalized prefixes there, while RakuAST and the execution
+    /// lowerer need the parser's structural tree.
+    pub(crate) source_tree: Option<Box<crate::regex_tree::RegexTree>>,
 }
 
 /// Boxed payload of [`Value::RegexCaptured`]: a code-bearing regex literal
@@ -2228,7 +2233,11 @@ pub struct RegexClosure {
     pub pattern: Arc<String>,
     /// Captured lexicals, keyed the way `env` keys them (`$x` -> `x`,
     /// `@x`/`%x`/`&x` keep their sigil).
-    pub scope: Arc<HashMap<String, Value>>,
+    pub scope: Option<Arc<HashMap<String, Value>>>,
+    /// Source-level provenance for a static regex value. A source-only value
+    /// has no defining lexical scope, so `scope` is `None`; code-bearing
+    /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
+    pub source_tree: Option<Box<crate::regex_tree::RegexTree>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

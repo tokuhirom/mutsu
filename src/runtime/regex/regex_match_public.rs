@@ -188,6 +188,47 @@ impl Interpreter {
         text: &str,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
+        self.regex_match_with_parsed_captures(&parsed, text)
+    }
+
+    /// Match a regex value whose source tree may already have been retained by
+    /// the parser. This is the value-aware counterpart of
+    /// `regex_match_with_captures_core`; it keeps the same matcher and capture
+    /// post-processing while allowing the parse boundary to consume the shared
+    /// tree directly.
+    pub(in crate::runtime) fn regex_match_with_captures_value(
+        &mut self,
+        regex: &Value,
+        text: &str,
+    ) -> Option<RegexCaptures> {
+        let pattern = match regex.view() {
+            ValueView::Regex(pattern) => pattern.to_string(),
+            ValueView::RegexWithAdverbs(adverbs) => adverbs.pattern.to_string(),
+            _ => return None,
+        };
+        // The value-aware path is intentionally only a leaf for the static
+        // tree slice. Declarative prefixes and the anchored single-subrule
+        // ranking path have side effects and package-resolution steps that the
+        // ordinary string entry point owns; preserve those semantics intact.
+        if regex.regex_source_tree().is_none()
+            || Self::parse_anchored_single_subrule(&pattern).is_some()
+            || !Self::parse_regex_declarative_prefix(&pattern).0.is_empty()
+        {
+            return self.regex_match_with_captures(&pattern, text);
+        }
+        let parsed = self.parse_regex_value(regex)?;
+        let result = self.regex_match_with_parsed_captures(&parsed, text);
+        if let Some(caps) = &result {
+            self.persist_embedded_my_decls(caps, &HashSet::new());
+        }
+        result
+    }
+
+    fn regex_match_with_parsed_captures(
+        &mut self,
+        parsed: &RegexPattern,
+        text: &str,
+    ) -> Option<RegexCaptures> {
         let pkg = self.current_package();
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
@@ -199,7 +240,7 @@ impl Interpreter {
         // stripped space so captured text derives from the original subject.
         if parsed.ignore_mark {
             let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
-            let stripped_parsed = strip_marks_pattern(&parsed);
+            let stripped_parsed = strip_marks_pattern(parsed);
             let orig_len = orig_chars.len();
             if stripped_parsed.anchor_start {
                 return self
@@ -238,9 +279,9 @@ impl Interpreter {
         // in folded space that correspond to the start of an original character's
         // fold expansion. This prevents false matches in the middle of a fold
         // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
-        if parsed.ignore_case && needs_casefold_expansion(orig_chars, &parsed) {
+        if parsed.ignore_case && needs_casefold_expansion(orig_chars, parsed) {
             let (folded_chars, pos_map) = casefold_text(orig_chars);
-            let folded_parsed = casefold_pattern(&parsed);
+            let folded_parsed = casefold_pattern(parsed);
             let orig_len = orig_chars.len();
 
             // Helper: check if a position in folded space is at a fold boundary
@@ -293,7 +334,7 @@ impl Interpreter {
         let chars = orig_chars;
         if parsed.anchor_start {
             return self
-                .regex_match_end_from_caps_in_pkg(&parsed, chars, 0, &pkg)
+                .regex_match_end_from_caps_in_pkg(parsed, chars, 0, &pkg)
                 .map(|(end, mut caps)| {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
@@ -303,7 +344,7 @@ impl Interpreter {
         }
         for start in 0..=chars.len() {
             if let Some((end, mut caps)) =
-                self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, &pkg)
+                self.regex_match_end_from_caps_in_pkg(parsed, chars, start, &pkg)
             {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);

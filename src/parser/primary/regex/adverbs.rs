@@ -463,5 +463,6 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
         // Filled in at *load* time by `OpCode::LoadRegexClosure` when the
         // pattern embeds code; a parsed literal never carries a scope.
         captured: None,
+        source_tree: None,
     })
 }

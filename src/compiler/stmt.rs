@@ -452,8 +452,9 @@ impl Compiler {
                     _ => unreachable!(),
                 }));
             }
-            Expr::RegexLiteral { value, .. } | Expr::MatchRegexTree { value, .. } => {
-                self.compile_match_regex(value);
+            Expr::RegexLiteral { value, tree } | Expr::MatchRegexTree { value, tree } => {
+                let value = value.with_regex_source_tree(tree.clone());
+                self.compile_match_regex(&value);
             }
             other => self.compile_expr(other),
         }

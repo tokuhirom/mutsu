@@ -1,8 +1,8 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
-- Status: Accepted (static source-tree, RakuAST, and execution-lowering slices
-  implemented 2026-09-12; dynamic contents and the complete execution-tree
-  migration remain)
+- Status: Accepted (static source-tree, RakuAST, execution-lowering, and
+  static-value-provenance slices implemented 2026-09-12; dynamic contents and
+  the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -354,13 +354,15 @@ classes, and the simple quantifiers directly to `RegexPattern`, carrying the
 whose meaning depends on captures, interpolation, code, or package state keep
 using the established structural parser. The bridge is intentionally a
 fallback-compatible step: the compiled `Value::Regex` still carries its
-execution spelling, so the parser-bound tree must remain the next migration
-target rather than being rediscovered from normalized declaration text.
+execution spelling, while static expression values now carry parser-produced
+tree provenance alongside it. Declaration-normalized values and the remaining
+string-only entry points must still migrate without rediscovering source trees
+from normalized declaration text.
 
 The following remain intentionally open: dynamic assertions and interpolation,
-captures and subrules, adverbs with runtime arguments, and replacing the
-string-carried regex value with parser-produced tree provenance throughout the
-remaining matcher entry points.
+captures and subrules, adverbs with runtime arguments, declaration-normalized
+values, and replacing string-only regex inputs with parser-produced tree
+provenance throughout the remaining matcher entry points.
 
 ## 8. Static execution-lowering slice (2026-09-12)
 
@@ -376,5 +378,30 @@ The regression pin is `t/regex/regex-tree-static-execution.t`: it exercises
 literal and quantified-class `EVAL` results twice, plus a ratcheted token
 declaration twice, and checks rejection cases. The Rust lowering tests pin the
 plan shape and the fallback boundary. This slice establishes only the static
-plan conversion; captures, subrules, dynamic values, and the parser-produced
-tree transport remain separate slices.
+plan conversion; captures, subrules, dynamic values, and the remaining
+string-only execution entry points remain separate slices.
+
+## 9. Static regex-value provenance slice (2026-09-12)
+
+Parser-created static expression regexes now retain their `RegexTree` on the
+regex value as it passes through the compiler and ordinary smartmatch path.
+Plain regex values use the existing transparent `Regex` view, while adverb
+payloads retain their existing execution flags and carry the tree alongside
+them. The captured-scope representation is optional so a source-only value
+does not install a synthetic lexical scope; code-bearing regexes continue to
+use the established closure path.
+
+`Interpreter::parse_regex_value` consumes that provenance for the static
+execution subset and caches the resulting `RegexPattern` with a tree
+fingerprint. It falls back to the established string parser for unsupported,
+dynamic, synthesized, and declaration-normalized values. The matcher and its
+Parser -> Compiler -> VM entry point are otherwise unchanged: this slice
+removes the reparse at the value-aware single-match smartmatch boundary only.
+
+The focused regression is `t/regex/regex-tree-value-provenance.t`, which stores
+plain and adverb-bearing regexes, lowers a constructed `QuotedRegex`, and
+matches each through the ordinary value path. A stale-spelling Rust test pins
+that the execution plan comes from the retained tree rather than the value's
+compatibility string. Other regex entry points that currently accept only a
+pattern string, declaration normalization, captures, subrules, and dynamic
+regex nodes remain follow-up slices.

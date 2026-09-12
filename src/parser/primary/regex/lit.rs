@@ -39,7 +39,10 @@ use super::trans::{parse_trans_adverbs, process_trans_escapes};
 
 fn static_regex_expr(value: Value, source: &str, declaration: bool) -> Expr {
     match RegexTree::parse_static(source, declaration) {
-        Some(tree) => Expr::RegexLiteral { value, tree },
+        Some(tree) => Expr::RegexLiteral {
+            value: value.with_regex_source_tree(tree.clone()),
+            tree,
+        },
         None => Expr::Literal(value),
     }
 }
@@ -1049,7 +1052,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         return Ok((
                             rest,
                             Expr::MatchRegexTree {
-                                value: regex_val,
+                                value: regex_val.with_regex_source_tree(tree.clone()),
                                 tree,
                             },
                         ));

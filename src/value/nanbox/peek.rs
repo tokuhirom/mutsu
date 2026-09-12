@@ -259,7 +259,21 @@ impl NanBox {
             return None;
         }
         // SAFETY: kind-checked above; the word is live for this borrow.
-        Some(&unsafe { peek_arc::<crate::value::RegexClosure>(bits) }.scope)
+        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+            .scope
+            .as_ref()
+    }
+
+    /// The source-level tree carried by a transparent regex provenance value.
+    #[inline]
+    pub(in crate::value) fn regex_source_tree(&self) -> Option<&crate::regex_tree::RegexTree> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+            .source_tree
+            .as_deref()
     }
 
     /// Whether this word is a `Proxy` — a pure tag probe (same motivation as

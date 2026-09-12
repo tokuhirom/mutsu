@@ -39,7 +39,33 @@ impl Value {
         pattern: Arc<String>,
         scope: Arc<std::collections::HashMap<String, Value>>,
     ) -> Self {
-        Value::RegexCaptured(Arc::new(crate::value::RegexClosure { pattern, scope }))
+        Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
+            pattern,
+            scope: Some(scope),
+            source_tree: None,
+        }))
+    }
+
+    /// Attach parser-produced source provenance to a regex value while
+    /// preserving its execution spelling and adverb payload. Plain regexes
+    /// use the existing transparent closure-shaped representation; unlike a
+    /// code closure, that representation carries no lexical scope.
+    pub(crate) fn with_regex_source_tree(&self, tree: crate::regex_tree::RegexTree) -> Self {
+        match self.view() {
+            ValueView::Regex(pattern) => {
+                Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
+                    pattern: Arc::new(pattern.to_string()),
+                    scope: None,
+                    source_tree: Some(Box::new(tree)),
+                }))
+            }
+            ValueView::RegexWithAdverbs(adverbs) => {
+                let mut adverbs = adverbs.clone();
+                adverbs.source_tree = Some(Box::new(tree));
+                Value::regex_with_adverbs(adverbs)
+            }
+            _ => self.clone(),
+        }
     }
     /// The defining scope this regex closed over, or `None` for a regex that
     /// captured nothing (and for every non-regex value).
@@ -51,6 +77,18 @@ impl Value {
         }
         match self.view() {
             ValueView::RegexWithAdverbs(a) => a.captured.clone(),
+            _ => None,
+        }
+    }
+
+    /// Source-level provenance carried by a parser-created regex value, or
+    /// `None` for synthesized/legacy values without a structural tree.
+    pub(crate) fn regex_source_tree(&self) -> Option<&crate::regex_tree::RegexTree> {
+        if let Some(tree) = self.0.regex_source_tree() {
+            return Some(tree);
+        }
+        match self.view() {
+            ValueView::RegexWithAdverbs(a) => a.source_tree.as_deref(),
             _ => None,
         }
     }
