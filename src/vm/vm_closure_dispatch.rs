@@ -369,14 +369,33 @@ impl Interpreter {
             self.set_env(crate::env::Env::scoped_child(parent));
         }
 
-        // Merge captured environment into current env (or_insert = don't overwrite existing).
-        // Key directly by the captured Symbol to avoid a resolve()+re-intern per entry.
+        // Install the captured env as a TIER below this frame's whole chain
+        // (ADR-0092): `overlay -> caller chain -> GLOBAL_BASE -> capture`.
+        //
+        // That is precedence-identical to the per-key `entry_or_insert_sym_with`
+        // merge this replaces — its default was "don't overwrite anything
+        // already visible", so the caller chain and the base already beat every
+        // captured name — but it is one `Arc` bump instead of ~31 chain-walking
+        // `contains_key_sym` probes per call, which #8019 measured inserting
+        // *nothing*: the capture had been filtered out of the very chain it was
+        // then compared against. Worth ~1 000 instructions per closure call
+        // over the ~12-entry capture a `use Test` leaves after #8079 moved the
+        // built-in dynamics into a per-interpreter base tier; ADR-0092 §7.5
+        // records what that nets out to once the tier's own cost is paid.
+        //
+        // The loop below is now only the OVERWRITE exceptions, which still have
+        // to land in the overlay (above the chain, not below it). It stays a
+        // scan of the captured tier because `ContainerRef`-ness is a property of
+        // each value, not of its key.
+        let capture_tier = data.env.capture_tier();
+        self.env_mut()
+            .set_capture_fallback(std::sync::Arc::clone(&capture_tier));
         // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
         // (box-on-capture, lever C Slice 2). It is the single source of truth for
         // that lexical, so it must OVERWRITE any stale plain value the caller env
         // currently holds (e.g. a later loop iteration's slot re-injection) — the
         // don't-overwrite default would otherwise hide this closure's own cell.
-        for (k, v) in data.env.iter() {
+        for (k, v) in capture_tier.iter() {
             if matches!(v.view(), ValueView::ContainerRef(_)) {
                 // A captured `ContainerRef` cell normally OVERWRITES the caller's
                 // stale value (it is the single source of truth for that lexical).
@@ -389,9 +408,10 @@ impl Interpreter {
                 // already excluded from `authoritative_free_vars` below for the same
                 // reason; do the same for the box-on-capture cell — don't overwrite,
                 // so the live dynamic binding stands.
-                if k.is_dynamic_var_env_key() {
-                    self.env_mut().entry_or_insert_sym_with(*k, || v.clone());
-                } else {
+                // A dynamic keeps the don't-overwrite default, which the
+                // fallback tier installed above already implements: it provides
+                // the captured cell only when no live dynamic frame has one.
+                if !k.is_dynamic_var_env_key() {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             } else if *k == crate::symbol::wk::self_() {
@@ -437,9 +457,9 @@ impl Interpreter {
                 // just below in this function), so this overwrite is safe for
                 // non-routine blocks only.
                 self.env_mut().insert_sym(*k, v.clone());
-            } else {
-                self.env_mut().entry_or_insert_sym_with(*k, || v.clone());
             }
+            // Every other captured name is the don't-overwrite default, which
+            // the fallback tier installed above already implements.
         }
         // `self` may live in a PARENT tier of the captured env: the loop above
         // iterates the own tier only (`Env::iter` does not walk the chain,

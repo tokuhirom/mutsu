@@ -1,6 +1,7 @@
 # ADR-0092: Closure capture should be a chained tier, not a per-call merged copy
 
-- **Status**: Proposed
+- **Status**: Accepted (implemented 2026-09-12; see §7 for what the
+  implementation found)
 - **Date**: 2026-09-12
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (slot-addressed lexical capture and env sync — the capture's other half),
@@ -167,14 +168,9 @@ slice:
   by the whole chain rather than by the leaf alone, at the cost of carrying it
   down the recursion.
 
-## 5. What this ADR deliberately does not decide
+## 5. What this ADR deliberately did not decide
 
-Whether to do it. The measurement says 4 831 instructions per closure call on
-one loop, most of it floor; that is worth a redesign of this size only if
-§3.3's lookup split measures neutral on the no-closure path. Whoever takes this
-should build §3.3 behind the existing bench harness and measure
-`benchmarks/bench-ctor.raku` and `bench-class.raku` (neither imports anything,
-both create closures inside method frames) before touching semantics.
+Whether to do it. That is settled by §7: §3.3 was built and shipped.
 
 ## 6. Also measured, and relevant to whoever reads this
 
@@ -186,3 +182,105 @@ binary as §1.1, is worth **57 instructions per iteration** — 0.5% of the tax,
 inside the noise band this filter is documented to have. The memo it was said to
 block shipped without it (`src/env_tier.rs`). Nobody should spend a large,
 unsound-by-default change on it for this ticket's metric.
+
+## 7. What the implementation found (2026-09-12)
+
+§3.3 shipped. Both of the two things it said had to be settled first turned out
+not to be costs at all, and the real cost was somewhere neither was looking.
+
+### 7.1 The lookup split (§3.3 item 1) was not needed
+
+§3.3 assumed the capture had to be consulted *between* the chain's tail and
+`GLOBAL_BASE`, which would have meant a base-less recursion with the public
+entry point wrapping it. It does not. The merge's default was
+`entry_or_insert_sym_with`, which asks `contains_key_sym` — and that consults
+the base tier at the chain's tail. So the base already beat every captured name,
+and the correct order is `overlay -> chain -> GLOBAL_BASE -> fallback`, with the
+base still consulted exactly once where it always was.
+
+### 7.2 The semantic change (§3.3 item 2) was avoidable
+
+§3.3 warned that capture entries would stop being visible to *callees* of the
+closure. They do not. `get_sym`'s fallback pass walks every tier in the chain,
+not just the leaf, and answers from the tail-most fallback that has the key, so
+a callee chained over the closure frame resolves captured names exactly as it
+did when the merge left them in that frame's overlay. The same rule settles
+precedence between nested closures for free: the outer closure's frame is the
+inner one's enclosing lexical scope, and it is the one nearer the tail.
+
+### 7.3 The cost was the shape of the chain walk, not the fallback
+
+`get_sym` ended in `return parent.get_sym(key)` — a self-call in tail position,
+which the optimizer turned into a loop. The smallest correct expression of
+"consult my fallback once the chain has missed" puts work *after* that call,
+which destroys the tail call and costs a stack frame per tier: **+1 591
+instructions per iteration**, against the 2 926 that dropping `contains_key_sym`
+had just saved. Spelling the walk out as an explicit loop and moving the
+fallback to a `#[cold]` pass behind a `chain_has_fallback` latch keeps the chain
+cost unchanged.
+
+The latch matters a second time: gating `flattened` and the `filtered_flat*`
+family on a chain *walk* rather than the latch cost **0.8% of
+`benchmarks/bench-ctor.raku`** by itself. Those run per closure creation; a walk
+that finds nothing is pure loss.
+
+### 7.4 A `Sub` can hold a live scoped env, and §4's list was one short
+
+§4 listed the readers that must treat the fallback as a tier. It missed the one
+that broke: a `Sub` built straight from a *live scoped* env rather than from a
+flattened capture (`react_whenever.rs` passes `self.env.clone()`; ~80 sites
+could). The merge iterated such an env's own tier only, which was correct while
+a closure frame kept its capture *in* its overlay; once the capture moved to a
+fallback, a callback built inside a closure body lost every name that frame had
+captured. `Env::capture_tier` is the fix — ordinarily an `Arc` bump, the union
+of overlay over fallback when the env has one. Pinned by the three-level nested
+`whenever` in `t/concurrency/supply/promise-of-supply-completion.t`.
+
+### 7.5 Measured
+
+**§1.1's prize was taken by another change before this landed.** That ablation
+put the merge at 3 877 (floor) / 4 831 (`use Test`) over a 31-entry capture, of
+which ~19 were the built-in dynamics. #8079 then moved those into a
+per-interpreter base tier (ADR-0086) and out of the capture, leaving ~12
+entries and a merge worth ~1 000. Measured against `main` at `8be9152e`,
+warm-run callgrind slopes, 10 000 -> 50 000 iterations, `MUTSU_JIT=off
+MUTSU_GC=off`, release:
+
+| | base | after | |
+| --- | --- | --- | --- |
+| leaf loop, no `use Test` | 67 656 | 67 764 | +0.16% |
+| leaf loop `+ use Test` | 75 871 | 75 574 | -0.39% |
+| **its tax** | **8 215** | **7 810** | **-4.9%** |
+| calling loop, no `use Test` | 74 175 | 74 376 | +0.27% |
+| calling loop `+ use Test` | 84 053 | 83 477 | -0.69% |
+| **its tax** | **9 878** | **9 101** | **-7.9%** |
+
+`bench-class.raku` +0.16%. So the decision stands on §2's architecture — a
+per-call probe loop that provably did nothing is gone — rather than on a
+speedup: import-using closure code is 0.4-0.7% faster, import-free closure code
+0.2% slower (one more `Env` field, taking it to 96 bytes, plus one branch at the
+top of `get_sym`), and the import tax itself is 5-8% smaller.
+
+**One-walk lesson.** Putting the fallback on its own `#[cold]` second pass over
+the chain, entered after the main walk missed, cost **+426 on the floor** —
+worse than the merge it replaces. Inside a closure body the latch is always on
+and a *miss* is the common outcome, so the chain got walked twice for it.
+Collecting the fallbacks during the same walk, in a separate copy of the loop
+selected by the latch at the top, brings it to +108.
+
+An ablation of what remains at this site, taken before #8079 landed (so read the
+ratio, not the absolutes) says the rest is the `ContainerRef` scan §2
+deliberately kept:
+
+| gated out | floor | `+ use Test` |
+| --- | --- | --- |
+| the remaining `ContainerRef` scan | -1 405 | -1 736 |
+| the fallback install itself | -269 | -123 |
+
+The scan survives because `ContainerRef`-ness is a property of each *value*, not
+of its key, so `src/env_tier.rs`'s key-set index cannot memoize it. Making it
+cheap means a value-derived memo on `Tier`, invalidated by every mutator that
+can change a value rather than only by those that can add a key. That is
+tractable — `Tier`'s map is private and every mutator is in that one file, which
+is the property the module was built for — but it widens that module's stated
+contract, so it is a separate decision rather than a continuation of this one.
