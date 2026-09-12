@@ -14,17 +14,110 @@
     "unresolved": []
   },
   "dist": "Math::Libgsl::Wavelet",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "first_failure": "Math::Libgsl::Wavelet module can be use-d ok",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 4.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-raw-1d.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Wavelet-0.0.3/t/01-raw-1d.rakutest:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-raw-2d.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Wavelet-0.0.3/t/02-raw-2d.rakutest:8]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-oo-1d.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Wavelet-0.0.3/t/03-oo-1d.rakutest:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-oo-2d.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Wavelet-0.0.3/t/04-oo-2d.rakutest:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.11,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.59,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::Libgsl::Raw::Wavelet": "Variable $.vector used where no 'self' is available",
+    "Math::Libgsl::Raw::Wavelet": "ok",
     "Math::Libgsl::Wavelet": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -35,12 +128,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_WAVELET/63365a36e2e9449175ac080c3a1a23e4c1d862be.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.3"

@@ -7,16 +7,132 @@
     "unresolved": []
   },
   "dist": "Logic::Ternary",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: not3",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 3.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-operators.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller ACCEPTS(Logic::Ternary:D: Bool:D); none of these signatures matches:",
+        "nok": 2,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-smartmatch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Package 'Any' already has a method 'Ternary' (did you mean to declare a multi method?)",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-export.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Impossible coercion from 'Bool' into 'Logic::Ternary': no acceptable coercion method found",
+        "nok": 18,
+        "ok": 6,
+        "plan": null,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-coerce-type.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Logic::Ternary": "X::InvalidType: Invalid typename 'Enumeration'"
+    "Logic::Ternary": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-12",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "0f9ee5e50",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +143,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/OG/LOGIC_TERNARY/8d9e715edbccd6ef73f06048d99630257239a120.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 164,
+    "baseline_files": 5,
+    "mutsu_assertions": 7,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 5
   },
   "version": "0.0.4"
 }

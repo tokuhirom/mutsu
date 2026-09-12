@@ -9,16 +9,40 @@
     "unresolved": []
   },
   "dist": "List::Agnostic",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding; expected Positional but got Any",
+        "nok": 0,
+        "ok": 8,
+        "plan": 29,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "List::Agnostic": "expected statement: expected expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ..."
+    "List::Agnostic": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -29,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/IS/LIST_AGNOSTIC/dd1abcede6fda76fdbfcddfe3c832669b9a3fa10.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 29,
+    "baseline_files": 1,
+    "mutsu_assertions": 8,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.7"
 }

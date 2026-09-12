@@ -44,16 +44,40 @@
     "unresolved": []
   },
   "dist": "WAT--CLI",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "WAT::CLI module can be use-d ok",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "WAT::CLI": "Failed to slurp '(Any)': No such file or directory (os error 2)"
+    "WAT::CLI": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -64,13 +88,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/AT/WATCLI/0877dd3845b5e4082b792ff6d4045ee1e2eabc9c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "1"
 }

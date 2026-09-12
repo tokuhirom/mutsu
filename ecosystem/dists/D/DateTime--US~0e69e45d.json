@@ -17,15 +17,15 @@
   "dist": "DateTime::US",
   "files": [],
   "load": {
-    "DateTime::US": "Runtime error: No return arguments allowed when return value UInt # range 0..6 is already specified in the signature",
+    "DateTime::US": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
     "DateTime::US::Subs": "Runtime error: No return arguments allowed when return value UInt # range 0..6 is already specified in the signature"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

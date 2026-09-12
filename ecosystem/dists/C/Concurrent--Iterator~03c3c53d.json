@@ -9,46 +9,44 @@
   "dist": "Concurrent::Iterator",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 120.11,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/convenience.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.7,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "One call on underlying iterator so far",
-        "nok": 2,
-        "ok": 6,
+        "nok": 0,
+        "ok": 16,
         "plan": 16,
-        "secs": 0.08,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/distribution.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.33,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +58,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.07,
+        "secs": 8.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +68,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.53,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -96,13 +94,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONCURRENT_ITERATOR/657a6ff42685579c51e7c2cd309f45ed3f2cb810.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 3,
-    "mutsu_assertions": 9,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 26,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "1.1"
 }

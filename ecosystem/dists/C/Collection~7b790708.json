@@ -35,19 +35,19 @@
   "dist": "Collection",
   "files": [],
   "load": {
-    "Collection": "expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
+    "Collection": "Failed to parse module 'RakuConfig': X::Comp::Group: Function 'RakuConfig::BadConfig' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
     "Collection::Entities": "ok",
     "Collection::Exceptions": "ok",
     "Collection::Progress": "ok",
-    "Collection::RefreshPlugins": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:194:30:",
-    "Collection::TestPlugin": "expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ..."
+    "Collection::RefreshPlugins": "thread 'mutsu-main' (3) panicked at src/parser/stmt/simple_expr_stmt/core.rs:1638:26:",
+    "Collection::TestPlugin": "Failed to parse module 'RakuConfig': X::Comp::Group: Function 'RakuConfig::BadConfig' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

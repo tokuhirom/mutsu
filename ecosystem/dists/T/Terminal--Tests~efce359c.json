@@ -14,42 +14,18 @@
     "unresolved": []
   },
   "dist": "Terminal::Tests",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Invalid attribute name 'bold'",
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/00-use.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 15.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "Terminal::Tests": "ok",
-    "Terminal::Tests::App::FullTest": "ok",
+    "Terminal::Tests::App::FullTest": "expected statement: expected expected statement: expected expression statement or ')' [at lib/Hash/Ordered.rakumod:46]",
     "Terminal::Tests::App::QuickTest": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -60,13 +36,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_TESTS/a5e9be5817502b68db390effae494be0fe5be6bb.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.18"
 }

@@ -7,16 +7,40 @@
     "unresolved": []
   },
   "dist": "roundrobin-slip",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller roundrobin(); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "roundrobin-slip": "Unsupported nqp:: op: nqp::list"
+    "roundrobin-slip": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/OU/ROUNDROBINSLIP/0e6689da09d0219123c5c6c76305c84416b92673.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 8,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }

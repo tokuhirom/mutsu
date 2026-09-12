@@ -23,16 +23,39 @@
     "unresolved": []
   },
   "dist": "deredere",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-correctness.t",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 56.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "deredere": "Variable $.original_name used where no 'self' is available"
+    "deredere": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -43,12 +66,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/ER/DEREDERE/642911e53183dcc9cc34ff5edf14dfd70b264c58.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
     "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
-    "parity_files": 0,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.0"

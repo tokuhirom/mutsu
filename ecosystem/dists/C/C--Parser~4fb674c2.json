@@ -15,7 +15,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.8,
+        "secs": 7.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.34,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.6,
+        "secs": 7.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,58 +61,12 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       },
       "path": "t/03_hello.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "gives a C::AST::TransUnit",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/04_hello_ast.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "gives a TransUnit",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/05_modern.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
@@ -130,7 +84,53 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.33,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04_hello_ast.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "gives a TransUnit",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05_modern.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "gives a C::AST::TransUnit",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.57,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +153,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.37,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.31,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -186,7 +186,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.36,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,7 +198,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.15,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -208,7 +208,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.35,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -227,10 +227,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -35,87 +35,16 @@
     "unresolved": []
   },
   "dist": "RedFactory",
-  "files": [
-    {
-      "cmp": "no_baseline",
-      "flaky": true,
-      "mutsu": {
-        "first_failure": "Confused. expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 19.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Failed to parse module 'Red': Unexpected block in infix position (missing statement control word before the expression?)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-example.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 4.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected use sta",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-not-model.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "RedFactory": "raku_also_fails"
+    "RedFactory": "Runtime error: Failed to parse module 'Red::Driver::CommonSQL': Confused: Two terms in a row"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -126,13 +55,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/ED/REDFACTORY/75455034c834d8e3c1a3bae5d77813b3a5fc196d.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 27,
-    "baseline_files": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 2
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

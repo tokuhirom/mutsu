@@ -27,20 +27,20 @@
   "dist": "FFmpegProgressBar",
   "files": [],
   "load": {
-    "FFmpegProgressBar": "expected statement: expected expected statement: expected expected statement: expected expected statement: expected return value expression or '.' or digits or generic radix literal or unicode numeric",
+    "FFmpegProgressBar": "expected statement: expected expected statement: expected expected statement: expected expected statement: expected return value expression or '.' or digits or generic radix literal or unicode numeric [at FFmpegProgressBar-0.0.7/lib/FFmpegProgressBar.rakumod:2125]",
     "FFmpegProgressBar::FFmpegFlags": "ok",
     "FFmpegProgressBar::Formatter": "ok",
     "FFmpegProgressBar::Parser": "ok",
     "FFmpegProgressBar::Probe": "ok",
     "FFmpegProgressBar::ProgressSnapshot": "ok",
-    "FFmpegProgressBar::Terminal": "Variable $.dwSize used where no 'self' is available"
+    "FFmpegProgressBar::Terminal": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

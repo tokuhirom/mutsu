@@ -14,11 +14,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "css3x-selectors simple-selector warnings",
-        "nok": 12,
-        "ok": 80,
+        "first_failure": "css3x-selectors simple-selector no warnings",
+        "nok": 8,
+        "ok": 84,
         "plan": 92,
-        "secs": 1.0,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 10.57,
+        "secs": 14.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,14 +41,14 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
-    "host": "linux-x86_64",
-    "mutsu_commit": "99075c8",
+    "date": "2026-09-12",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
-    "sandbox": "none"
+    "sandbox": "bwrap"
   },
   "schema": 1,
   "source": {
@@ -59,7 +59,7 @@
   "totals": {
     "baseline_assertions": 92,
     "baseline_files": 1,
-    "mutsu_assertions": 80,
+    "mutsu_assertions": 84,
     "parity_files": 0,
     "regressed_files": 1
   },

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,76 +24,74 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.45,
+        "secs": 2.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Index out of bounds",
-        "nok": 0,
-        "ok": 10,
+        "first_failure": "2-byte escapes recognized",
+        "nok": 6,
+        "ok": 24,
         "plan": 30,
-        "secs": 0.17,
+        "secs": 12.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 1.96,
+        "secs": 2.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Index out of bounds",
         "nok": 0,
-        "ok": 0,
+        "ok": 21,
         "plan": 21,
-        "secs": 0.19,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-strings.rakutest",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.02,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Index out of bounds",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.21,
+        "secs": 62.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-csi.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.93,
+        "secs": 5.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,11 +100,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Index out of bounds",
+        "first_failure": "Cannot assign to a readonly variable or a value",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.17,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -116,30 +114,29 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.08,
+        "secs": 6.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Index out of bounds",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.19,
+        "secs": 30.59,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-incomplete.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.53,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,10 +148,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -169,9 +166,9 @@
   "totals": {
     "baseline_assertions": 74,
     "baseline_files": 6,
-    "mutsu_assertions": 11,
-    "parity_files": 1,
-    "regressed_files": 5
+    "mutsu_assertions": 60,
+    "parity_files": 4,
+    "regressed_files": 2
   },
   "version": "0.0.4"
 }

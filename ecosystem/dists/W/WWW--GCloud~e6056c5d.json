@@ -43,78 +43,7 @@
     "unresolved": []
   },
   "dist": "WWW::GCloud",
-  "files": [
-    {
-      "cmp": "no_baseline",
-      "path": "t/020-cpromise.rakutest",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 39.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/030-rec-attr-aliasing.rakutest",
-      "raku": {
-        "first_failure": "Could not find JSON::Class::HOW::Jsonish:auth<zef:vrurg> in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.95,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/040-query-params.rakutest",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/050-type-map.rakutest",
-      "raku": {
-        "first_failure": "Could not find JSON::Class::HOW::Jsonish:auth<zef:vrurg> in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/060-gc-enum.rakutest",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 10.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "WWW::GCloud": "raku_also_fails",
     "WWW::GCloud::API": "raku_also_fails",
@@ -173,15 +102,15 @@
     "WWW::GCloud::Record": "ok",
     "WWW::GCloud::Resource": "ok",
     "WWW::GCloud::Types": "ok",
-    "WWW::GCloud::Utils": "ok",
+    "WWW::GCloud::Utils": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
     "WWW::GCloud::X": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -192,7 +121,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/WW/WWW_GCLOUD/33085f5dc3877141f8941ac8cb48718d681bd101.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "blocked_load",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

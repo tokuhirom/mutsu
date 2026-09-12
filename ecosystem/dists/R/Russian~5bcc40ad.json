@@ -7,17 +7,186 @@
     "unresolved": []
   },
   "dist": "Russian",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic-simple.t",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 23.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "нуль() returns Nil",
+        "nok": 2,
+        "ok": 14,
+        "plan": 50,
+        "secs": 14.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-comprehensive.t",
+      "raku": {
+        "first_failure": "Module loads successfully",
+        "nok": 2,
+        "ok": 12,
+        "plan": 100,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-simple.t",
+      "raku": {
+        "first_failure": "Variable '$результат' is not declared. Perhaps you forgot a 'sub' if",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "пусто is Nil",
+        "nok": 3,
+        "ok": 99,
+        "plan": 102,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-functions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 102,
+        "plan": 102,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: истина",
+        "nok": 0,
+        "ok": 19,
+        "plan": 40,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-operators.t",
+      "raku": {
+        "nok": 0,
+        "ok": 40,
+        "plan": 40,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-functional.t",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-datetime.t",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-edge-cases.t",
+      "raku": {
+        "first_failure": "минимум of empty array dies",
+        "nok": 3,
+        "ok": 7,
+        "plan": 50,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "Russian": "expected statement: expected expected statement: expected anonymous sub parameter list/body or expected statement: expected expression statement or '.' or digits or generic radix literal or unicode nu",
+    "Russian": "ok",
     "Русский": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -28,13 +197,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/US/RUSSIAN/179d24d3ecd6e89e6612bc952910b1ada06faf22.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 202,
+    "baseline_files": 5,
+    "mutsu_assertions": 178,
+    "parity_files": 3,
+    "regressed_files": 2
   },
   "version": "0.0.1"
 }

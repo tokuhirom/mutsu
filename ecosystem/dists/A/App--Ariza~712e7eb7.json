@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.24,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.87,
+        "secs": 5.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,11 +39,11 @@
       "cmp": "no_baseline",
       "path": "t/02-platform.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-libc-2-604871/musl' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-libc-2-930889/musl' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 5,
         "plan": 7,
-        "secs": 2.39,
+        "secs": 2.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 7,
-        "secs": 33.36,
+        "secs": 35.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 6.03,
+        "secs": 6.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 7,
-        "secs": 63.44,
+        "secs": 70.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.66,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 8,
-        "secs": 2.13,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 2.17,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 32,
-        "secs": 4.31,
+        "secs": 5.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -151,11 +151,11 @@
       "cmp": "no_baseline",
       "path": "t/12-launcher.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-launcher-2-425277' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-launcher-2-865582' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 2.79,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -169,7 +169,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 2.41,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -183,7 +183,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 12,
-        "secs": 2.64,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -197,7 +197,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 2.75,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -211,7 +211,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 2.2,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -225,7 +225,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 9,
-        "secs": 1.4,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -239,7 +239,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 16,
-        "secs": 2.07,
+        "secs": 3.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -249,11 +249,11 @@
       "cmp": "no_baseline",
       "path": "t/19-installer-update.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-installer-2-384687/root' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-installer-2-467053/root' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.21,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,7 +266,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 1.05,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -276,7 +276,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.16,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,11 +286,11 @@
       "cmp": "no_baseline",
       "path": "t/20-update-coordinator.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-2-462516' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-2-741898' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.92,
+        "secs": 2.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -300,11 +300,11 @@
       "cmp": "no_baseline",
       "path": "t/21-update-integration.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-integration-2-928712/root' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-integration-2-571814/root' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 2.31,
+        "secs": 3.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -332,10 +332,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

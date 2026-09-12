@@ -26,69 +26,23 @@
     "unresolved": []
   },
   "dist": "DSL::Entity::WeatherData",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "F0664",
-        "nok": 2,
-        "ok": 0,
-        "plan": 2,
-        "secs": 1.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/Station-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 73.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/Variables-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "DSL::Entity::WeatherData": "ok",
-    "DSL::Entity::WeatherData::Actions::Bulgarian::Standard": "ok",
-    "DSL::Entity::WeatherData::Actions::Raku::System": "ok",
-    "DSL::Entity::WeatherData::Actions::WL::Entity": "ok",
-    "DSL::Entity::WeatherData::Actions::WL::System": "ok",
-    "DSL::Entity::WeatherData::Grammar": "ok",
-    "DSL::Entity::WeatherData::Grammar::EntityNames": "ok",
-    "DSL::Entity::WeatherData::ResourceAccess": "ok"
+    "DSL::Entity::WeatherData": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Actions::Bulgarian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Actions::Raku::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Actions::WL::Entity": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Actions::WL::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Grammar": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::Grammar::EntityNames": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::WeatherData::ResourceAccess": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -99,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_WEATHERDATA/2544e9ddba116c5f8fb1a934eb4e4e29e392e0f8.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 7,
-    "baseline_files": 2,
-    "mutsu_assertions": 5,
-    "parity_files": 1,
-    "regressed_files": 1
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.1.0"
 }

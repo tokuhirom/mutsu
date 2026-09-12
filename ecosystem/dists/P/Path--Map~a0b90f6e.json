@@ -15,7 +15,7 @@
         "nok": 24,
         "ok": 5,
         "plan": 29,
-        "secs": 0.45,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 3.05,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.8,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,11 +57,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expression statement or anonymous sub parameter list/body or '{'",
+        "first_failure": "Confused. expected statement: expected expression statement or anonymous sub parameter list/body or '{' [at Path-Map-0.4/t/trait.rakutest:7]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.06,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.1,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 7,
         "ok": 1,
         "plan": 9,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.02,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 0.2,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.86,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,10 +129,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

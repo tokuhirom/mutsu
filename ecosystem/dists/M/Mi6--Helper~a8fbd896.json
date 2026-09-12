@@ -39,17 +39,54 @@
     "unresolved": []
   },
   "dist": "Mi6::Helper",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/0-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 37.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/1-create.rakutest",
+      "raku": {
+        "first_failure": "Unable to open temporary dir after 10 attempts within \"/tmp\"",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Mi6::Helper": "X::InvalidType: Invalid typename 'TAP::Entry::Handler'",
-    "Mi6::Helper::Utils": "X::InvalidType: Invalid typename 'TAP::Entry::Handler'"
+    "Mi6::Helper": "ok",
+    "Mi6::Helper::Utils": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-12",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "0f9ee5e50",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -60,12 +97,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/I6/MI6_HELPER/5dc26ffdc1f7adeac056cd4efd64f9fe4d04f49f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "1.2.1"

@@ -11,23 +11,22 @@
   "dist": "Grammar::Message",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Invalid attribute name 'blue'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
+        "ok": 5,
+        "plan": 5,
         "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-basic.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.02,
+        "secs": 3.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAMMAR_MESSAGE/3b2445209534386d06581614e90dfe114c336252.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 5,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 5,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

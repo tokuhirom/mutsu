@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ...",
+        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ... [at dist/t/00-use.rakutest:34]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.04,
+        "secs": 0.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 3.28,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

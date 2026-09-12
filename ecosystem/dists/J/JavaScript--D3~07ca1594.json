@@ -23,28 +23,186 @@
     "unresolved": []
   },
   "dist": "JavaScript::D3",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: is-str-time-series",
+        "nok": 0,
+        "ok": 8,
+        "plan": 15,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-plots-calls.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 44.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller JavaScript::D3::Utilities::NormalizeData(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-charts-calls.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-random-mandala-calls.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller JavaScript::D3::Plots::HeatmapPlot(Array:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-chessboard.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-clock-gauge.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-named-colors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-angle-path.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "JavaScript::D3": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Charts": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Chess": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::CodeSnippets": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::CodeSnippets3D": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Gauge": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Graph": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Images": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Plots": "No such method 'IO' for invocant of type 'Any'",
-    "JavaScript::D3::Plots3D": "No such method 'IO' for invocant of type 'Any'",
+    "JavaScript::D3": "ok",
+    "JavaScript::D3::Charts": "ok",
+    "JavaScript::D3::Chess": "ok",
+    "JavaScript::D3::CodeSnippets": "ok",
+    "JavaScript::D3::CodeSnippets3D": "ok",
+    "JavaScript::D3::Gauge": "ok",
+    "JavaScript::D3::Graph": "ok",
+    "JavaScript::D3::Images": "ok",
+    "JavaScript::D3::Plots": "ok",
+    "JavaScript::D3::Plots3D": "ok",
     "JavaScript::D3::Predicates": "ok",
-    "JavaScript::D3::Random": "expected statement: expected expected statement: expected expression statement or ')'",
-    "JavaScript::D3::Utilities": "No such method 'IO' for invocant of type 'Any'"
+    "JavaScript::D3::Random": "ok",
+    "JavaScript::D3::Utilities": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -55,13 +213,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/AV/JAVASCRIPT_D3/cc1a7cc73f0a2e20045f0aec2fe39cf4b172f9c9.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 43,
+    "baseline_files": 7,
+    "mutsu_assertions": 26,
+    "parity_files": 4,
+    "regressed_files": 3
   },
   "version": "0.3.1"
 }

@@ -13,18 +13,70 @@
     "unresolved": []
   },
   "dist": "Bitcoin",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'Blob' for invocant of type 'Int'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 116.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/basics.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 17.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/bip32.t",
+      "raku": {
+        "first_failure": "Could not find Digest::HMAC:auth<grondilu> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/bip39.t",
+      "raku": {
+        "first_failure": "Could not find PBKDF2 in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "BIP32": "raku_also_fails",
     "BIP39": "ok",
-    "Bitcoin": "Variable $.x used where no 'self' is available"
+    "Bitcoin": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -35,13 +87,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/IT/BITCOIN/73fbc0831786ce9dcf899f8a500f671f2f096aa0.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 5,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.7.1"
 }

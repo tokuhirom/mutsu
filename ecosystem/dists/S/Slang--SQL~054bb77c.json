@@ -13,14 +13,14 @@
   "dist": "Slang::SQL",
   "files": [],
   "load": {
-    "Slang::SQL": "Could not find QAST in:"
+    "Slang::SQL": "Runtime error: slang activation for 'Slang::SQL' failed: Slang activation NYI: grammar rule override 'statement_control:sym<sql>' is not supported by this implementation (recognized: term:sym<identifi"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

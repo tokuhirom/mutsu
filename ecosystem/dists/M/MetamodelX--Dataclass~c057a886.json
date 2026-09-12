@@ -20,14 +20,14 @@
   "dist": "MetamodelX::Dataclass",
   "files": [],
   "load": {
-    "MetamodelX::Dataclass": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expression after infix operator or '.' or digits or generic radix literal or ."
+    "MetamodelX::Dataclass": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expression after infix operator or '.' or digits or generic radix literal or . [at lib/MetamodelX/Dataclass.rakumod:14]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

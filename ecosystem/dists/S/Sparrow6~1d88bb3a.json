@@ -71,10 +71,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -83,7 +83,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/S/PA/SPARROW6/763c0fb75a19be68c6e7ec48d5fc58ba7640536d.tar.gz"
+    "url": "https://360.zef.pm/S/PA/SPARROW6/d5074c46af3184bf743b2c611bfc93256e7909d2.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -93,5 +93,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.94"
+  "version": "0.0.95"
 }

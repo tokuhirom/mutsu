@@ -46,7 +46,7 @@
   "dist": "Grammar::TokenProcessing",
   "files": [],
   "load": {
-    "Grammar::TokenProcessing": "Failed to parse module 'Grammar::TokenProcessing': Unmatched ( in regex",
+    "Grammar::TokenProcessing": "Failed to parse module 'Grammar::TokenProcessing': Unmatched ( in regex [at lib/Grammar/TokenProcessing.rakumod:89]",
     "Grammar::TokenProcessing::Actions::EBNF": "ok",
     "Grammar::TokenProcessing::Actions::EnhancedTokens": "ok",
     "Grammar::TokenProcessing::Actions::RandomSentence": "ok",
@@ -58,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

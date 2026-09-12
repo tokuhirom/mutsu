@@ -17,14 +17,14 @@
   "dist": "Net::Postgres",
   "files": [],
   "load": {
-    "Net::Postgres": "expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ..."
+    "Net::Postgres": "Unknown role: Serializable"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -10,113 +10,20 @@
     "unresolved": []
   },
   "dist": "Math::Fitting",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller Math::Fitting::LinearRegression::Fit(Array:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-linear-regression.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 32.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller is-positional-of-lists(Array:D, Int:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-linear-model-fit.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 1.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller is-positional-of-lists(Array:D, Int:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-linear-model-fit-MD.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 1.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller Math::Fitting::LinearModel::Fit(Array:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/04-linear-model-fit-basis.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Math::Fitting": "ok",
+    "Math::Fitting": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expected statement: expected right-hand expression after '=' or '.' or digits  [at Math/Fitting/LinearModel.rakumod:98]",
     "Math::Fitting::FittedModel": "ok",
-    "Math::Fitting::LinearModel": "ok",
+    "Math::Fitting::LinearModel": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or expected statement: expected right-hand expression after '=' or '.' or digits  [at Math/Fitting/LinearModel.rakumod:98]",
     "Math::Fitting::LinearRegression": "ok",
     "Math::Fitting::Predicates": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -127,13 +34,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_FITTING/189821d77f3cb2fe3e28bd69d0746d7dcbaa99a0.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 25,
-    "baseline_files": 4,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 4
+    "regressed_files": 0
   },
   "version": "0.0.5"
 }

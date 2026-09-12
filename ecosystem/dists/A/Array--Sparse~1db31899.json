@@ -9,16 +9,40 @@
     "unresolved": []
   },
   "dist": "Array::Sparse",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "did we get 10 elements",
+        "nok": 10,
+        "ok": 2,
+        "plan": 23,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 4.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Array::Sparse": "unparsed input, column 1: \"}\\n\\n# vim: expandtab shiftwidth=4\""
+    "Array::Sparse": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -29,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RR/ARRAY_SPARSE/6851b8c18f9dfec544542421ba8ee15ec7602798.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 23,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.13"
 }

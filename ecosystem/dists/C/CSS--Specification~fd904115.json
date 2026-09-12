@@ -15,7 +15,7 @@
   "files": [],
   "load": {
     "CSS::Specification": "ok",
-    "CSS::Specification::AST": "'CSS::Specification::AST' cannot inherit from 'CSS::Grammar::AST' because it is unknown.",
+    "CSS::Specification::AST": "ok",
     "CSS::Specification::Actions": "ok",
     "CSS::Specification::Base::Actions": "ok",
     "CSS::Specification::Base::Grammar": "ok",
@@ -24,10 +24,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

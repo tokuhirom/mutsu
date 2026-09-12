@@ -33,167 +33,16 @@
     "unresolved": []
   },
   "dist": "Cro::WebSocket",
-  "files": [
-    {
-      "cmp": "no_baseline",
-      "path": "t/http-router-websocket.rakutest",
-      "raku": {
-        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 6.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Hello",
-        "nok": 14,
-        "ok": 3,
-        "plan": 17,
-        "secs": 70.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/websocket-frame-parser.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 57,
-        "plan": 57,
-        "secs": 3.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 45.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/websocket-frame-serializer.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 2.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Handler without close promise passed doesn't work",
-        "nok": 2,
-        "ok": 0,
-        "plan": 2,
-        "secs": 10.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/websocket-handler.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Hello",
-        "nok": 4,
-        "ok": 0,
-        "plan": 4,
-        "secs": 20.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/websocket-message-parser.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 0.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Hello",
-        "nok": 4,
-        "ok": 0,
-        "plan": 4,
-        "secs": 20.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/websocket-message-serializer.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 0.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/websocket-message.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "Cro::HTTP::Router::WebSocket": "raku_also_fails",
     "Cro::WebSocket::BodyParsers": "ok",
     "Cro::WebSocket::BodySerializers": "ok",
     "Cro::WebSocket::Client": "raku_also_fails",
-    "Cro::WebSocket::Client::Connection": "ok",
+    "Cro::WebSocket::Client::Connection": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
     "Cro::WebSocket::Frame": "ok",
     "Cro::WebSocket::FrameParser": "ok",
-    "Cro::WebSocket::FrameSerializer": "ok",
+    "Cro::WebSocket::FrameSerializer": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
     "Cro::WebSocket::Handler": "ok",
     "Cro::WebSocket::Internal": "ok",
     "Cro::WebSocket::Message": "ok",
@@ -203,10 +52,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -217,13 +66,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/RO/CRO_WEBSOCKET/ed1f2481248f53caafc607573edd72b2f1402e58.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 128,
-    "baseline_files": 6,
-    "mutsu_assertions": 16,
-    "parity_files": 2,
-    "regressed_files": 4
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.8.10"
 }

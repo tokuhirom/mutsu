@@ -23,7 +23,7 @@
         "nok": 3,
         "ok": 7,
         "plan": 33,
-        "secs": 1.36,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 19.69,
+        "secs": 17.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-at2nczh7/dist/PURL-0.0.15/t/tests/types/deb-test.json",
+        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-x7pi20gz/dist/PURL-0.0.15/t/tests/types/deb-test.json",
         "nok": 1,
         "ok": 1,
         "plan": 34,
-        "secs": 1.94,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.26,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.71,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.4,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,10 +91,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

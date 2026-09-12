@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No matching candidates for method: !index",
+        "first_failure": "Type Array does not support associative indexing.",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.9,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "not ok 6 -",
-        "nok": 14,
-        "ok": 7,
+        "first_failure": "not ok 2 -",
+        "nok": 16,
+        "ok": 5,
         "plan": 21,
-        "secs": 0.27,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.98,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -78,7 +78,7 @@
   "totals": {
     "baseline_assertions": 23,
     "baseline_files": 2,
-    "mutsu_assertions": 7,
+    "mutsu_assertions": 5,
     "parity_files": 0,
     "regressed_files": 2
   },

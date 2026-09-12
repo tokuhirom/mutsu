@@ -35,15 +35,15 @@
     "Pod::To::PDF::Lite": "raku_also_fails",
     "Pod::To::PDF::Lite::Async": "raku_also_fails",
     "Pod::To::PDF::Lite::Async::Scheduler": "ok",
-    "Pod::To::PDF::Lite::Style": "Could not instantiate role 'PDF::COS::Tie' because it died with X::Inheritance::UnknownParent; exception details:",
+    "Pod::To::PDF::Lite::Style": "ok",
     "Pod::To::PDF::Lite::Writer": "expected statement: expected expression statement or ')' [at PDF/Lite/Writer.rakumod:291]"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-12",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "0f9ee5e50",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

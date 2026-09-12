@@ -13,15 +13,15 @@
   "dist": "EC",
   "files": [],
   "load": {
-    "ed25519": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...",
-    "secp256k1": "Variable $.x used where no 'self' is available"
+    "ed25519": "expected statement: expected expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ... [at elliptic-curves-raku-main/lib/ed25519.rakumod:110]",
+    "secp256k1": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

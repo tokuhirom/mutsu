@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.87,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can only handle",
         "nok": 0,
-        "ok": 2,
+        "ok": 23,
         "plan": 23,
-        "secs": 0.18,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 3.19,
+        "secs": 3.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 0.17,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +69,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 3.59,
+        "secs": 4.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +81,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.15,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +91,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.87,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,10 +106,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -125,9 +124,9 @@
   "totals": {
     "baseline_assertions": 68,
     "baseline_files": 4,
-    "mutsu_assertions": 13,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 34,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.1.13"
 }

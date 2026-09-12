@@ -9,18 +9,18 @@
   "dist": "ASN::BER",
   "files": [],
   "load": {
-    "ASN::Parser": "Unknown role: Set",
-    "ASN::Parser::Async": "Unknown role: Set",
-    "ASN::Serializer": "Unknown role: Set",
-    "ASN::Serializer::Async": "Unknown role: Set",
-    "ASN::Types": "Unknown role: Set"
+    "ASN::Parser": "'ASNSetOf' cannot inherit from 'Set' because it is unknown.",
+    "ASN::Parser::Async": "'ASNSetOf' cannot inherit from 'Set' because it is unknown.",
+    "ASN::Serializer": "'ASNSetOf' cannot inherit from 'Set' because it is unknown.",
+    "ASN::Serializer::Async": "'ASNSetOf' cannot inherit from 'Set' because it is unknown.",
+    "ASN::Types": "'ASNSetOf' cannot inherit from 'Set' because it is unknown."
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

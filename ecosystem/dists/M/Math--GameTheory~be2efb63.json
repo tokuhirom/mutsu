@@ -11,19 +11,64 @@
     "unresolved": []
   },
   "dist": "Math::GameTheory",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 12.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-matrix-game-construction.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::GameTheory": "expected statement: expected expected statement: expected expression statement or ')'",
-    "Math::GameTheory::Creators": "expected statement: expected expected statement: expected expression statement or ')'",
+    "Math::GameTheory": "ok",
+    "Math::GameTheory::Creators": "ok",
     "Math::GameTheory::MatrixGame": "ok",
     "Math::GameTheory::MatrixGame::Formatish": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -34,12 +79,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_GAMETHEORY/23ed442a69948983a77f85804e888f5afc62b1be.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 12,
+    "baseline_files": 2,
+    "mutsu_assertions": 12,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.1"

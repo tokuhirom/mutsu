@@ -11,23 +11,22 @@
   "dist": "Math::SalvoCombatModeling",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unsupported language 'Bulgarian'. Expected one of:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.24,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-definitions-import.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 6.06,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_SALVOCOMBATMODELING/0d532a959f0e3465a3924ec90be090003459ea6d.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 3,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 3,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

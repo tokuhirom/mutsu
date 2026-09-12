@@ -27,23 +27,367 @@
     "unresolved": []
   },
   "dist": "Data::Reshapers",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 2 -",
+        "nok": 11,
+        "ok": 7,
+        "plan": 25,
+        "secs": 28.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-cross-tabulate-over-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 37.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 2 -",
+        "nok": 2,
+        "ok": 1,
+        "plan": 12,
+        "secs": 25.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-to-long-format-over-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 11.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Confused: Two terms in a row",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-to-wide-format-over-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 6.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: AutomaticKey\t0",
+        "nok": 0,
+        "ok": 1,
+        "plan": 4,
+        "secs": 28.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-data-reshape.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 6.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 1st\t144 2nd\t106 3rd\t216",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 26.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-to-pretty-table.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-transpose.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+        "nok": 0,
+        "ok": 2,
+        "plan": 6,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-dimensions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "join across left, with fill",
+        "nok": 3,
+        "ok": 4,
+        "plan": 9,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/08-join-across.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'key' for invocant of type 'Hash'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 20,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-select-columns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-flatten.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "memory allocation of 557072 bytes failed",
+        "nok": 0,
+        "ok": 2,
+        "plan": 14,
+        "secs": 39.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-take-drop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 5,
+        "ok": 2,
+        "plan": 11,
+        "secs": 11.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/12-type-system.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-stratified-take-drop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: AutomaticKey\t0",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-separate-column.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-transpose-sparse-data.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Data::Reshapers": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "Data::Reshapers": "ok",
     "Data::Reshapers::Adapters": "ok",
     "Data::Reshapers::CrossTabulate": "ok",
     "Data::Reshapers::JoinAcross": "ok",
     "Data::Reshapers::ToLongFormat": "ok",
-    "Data::Reshapers::ToPrettyTable": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
+    "Data::Reshapers::ToPrettyTable": "ok",
     "Data::Reshapers::ToWideFormat": "ok",
     "Data::Reshapers::Transpose": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,13 +398,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_RESHAPERS/7756bc390da1e9404be1450c7a677a57abae8108.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 161,
+    "baseline_files": 15,
+    "mutsu_assertions": 41,
+    "parity_files": 2,
+    "regressed_files": 13
   },
   "version": "0.3.8"
 }

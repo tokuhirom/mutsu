@@ -114,7 +114,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 120.1,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -128,7 +128,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 120.11,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -142,7 +142,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 87.63,
+        "secs": 104.26,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -156,7 +156,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 10.93,
+        "secs": 13.11,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -170,7 +170,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 11.78,
+        "secs": 12.86,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -184,7 +184,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 13.86,
+        "secs": 13.3,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -198,7 +198,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 14.39,
+        "secs": 13.45,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -212,7 +212,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 13.98,
+        "secs": 9.75,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -226,7 +226,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 13.95,
+        "secs": 10.15,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -238,10 +238,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

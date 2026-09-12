@@ -15,7 +15,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 17,
-        "secs": 0.11,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.97,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Malformed my (did you mean to declare a sigilless \\var or $var?).",
+        "first_failure": "Malformed my (did you mean to declare a sigilless \\var or $var?). [at CompUnit-Util-0.7.0/t/02-re-export.rakutest:26]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.03,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.82,
+        "secs": 6.26,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.9,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.14,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.53,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.11,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.06,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +130,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.1,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.92,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,7 +153,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.13,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.55,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 0.12,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -186,7 +186,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.09,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,10 +198,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

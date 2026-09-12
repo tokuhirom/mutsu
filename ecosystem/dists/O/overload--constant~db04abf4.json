@@ -7,40 +7,16 @@
     "unresolved": []
   },
   "dist": "overload::constant",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "can overload integer",
-        "nok": 7,
-        "ok": 6,
-        "plan": 13,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 2.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "overload::constant": "ok"
+    "overload::constant": "No such method 'refine_slang' for invocant of type 'Mutsu::Slang::CompLang'"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +27,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/O/VE/OVERLOAD_CONSTANT/a7875eb5590c18df020357feba769ded4bac8120.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 13,
-    "baseline_files": 1,
-    "mutsu_assertions": 6,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

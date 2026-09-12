@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.6,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.82,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 7.53,
+        "secs": 11.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,30 +46,29 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.9,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 120.1,
+        "ok": 9,
+        "plan": 9,
+        "secs": 187.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/ripemd.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 78.35,
+        "secs": 106.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +80,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.05,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +90,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.32,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,10 +107,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -122,13 +121,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/IG/DIGEST/8f2092538c1c35ea49c3e9d613a82fe2a3ba4708.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 4,
-    "mutsu_assertions": 12,
-    "parity_files": 3,
-    "regressed_files": 1
+    "mutsu_assertions": 21,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "1.1.0"
 }

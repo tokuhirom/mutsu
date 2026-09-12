@@ -20,15 +20,15 @@
     "GLFW::Mouse": "ok",
     "GLFW::Version": "ok",
     "GLFW::VidMode": "ok",
-    "GLFW::Window": "ok",
+    "GLFW::Window": "expected statement: expected expected statement: expected expression statement or anonymous sub parameter list/body or expected statement: expected expression statement or ')' [at lib/GLFW/Window.rakumod:261]",
     "GLFW::Window::Attribute": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -39,7 +39,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/LF/GLFW/78b26616138f20fcf03047f753a2fdddae3ce2b2.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "blocked_load",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

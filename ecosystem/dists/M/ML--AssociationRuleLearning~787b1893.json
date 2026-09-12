@@ -46,19 +46,19 @@
   "dist": "ML::AssociationRuleLearning",
   "files": [],
   "load": {
-    "ML::AssociationRuleLearning": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "ML::AssociationRuleLearning::Apriori": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "ML::AssociationRuleLearning::Eclat": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "ML::AssociationRuleLearning::Measures": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "ML::AssociationRuleLearning::Preprocessing": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)",
-    "ML::AssociationRuleLearning::RuleFinding": "X::Comp::Trait::Duplicate: attribute 'min-width' already exists in class 'Pretty::Table' (possibly from role composition)"
+    "ML::AssociationRuleLearning": "Redeclaration of routine 'leafQ'. Did you mean to declare a multi-sub?",
+    "ML::AssociationRuleLearning::Apriori": "Redeclaration of routine 'leafQ'. Did you mean to declare a multi-sub?",
+    "ML::AssociationRuleLearning::Eclat": "ok",
+    "ML::AssociationRuleLearning::Measures": "ok",
+    "ML::AssociationRuleLearning::Preprocessing": "ok",
+    "ML::AssociationRuleLearning::RuleFinding": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

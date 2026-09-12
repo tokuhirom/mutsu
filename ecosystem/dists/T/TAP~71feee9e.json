@@ -7,16 +7,63 @@
     "unresolved": []
   },
   "dist": "TAP",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "planned 2",
+        "nok": 5,
+        "ok": 1,
+        "plan": 6,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/source-file.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 5.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'inconsistencies' for invocant of type 'TAP::Unknown'",
+        "nok": 18,
+        "ok": 17,
+        "plan": null,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/string.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 61,
+        "plan": 61,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "TAP": "X::InvalidType: Invalid typename 'TAP::Entry::Handler'"
+    "TAP": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-12",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "0f9ee5e50",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/AP/TAP/9e61c2435b4e1a51a1d789036265a1f2090c8bb6.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 67,
+    "baseline_files": 2,
+    "mutsu_assertions": 18,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.3.15"
 }

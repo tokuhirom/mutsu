@@ -37,14 +37,13 @@
   "dist": "Slangify::Tutorial",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "partial",
       "mutsu": {
         "first_failure": "actions populate Booking from canonical DSL",
         "nok": 6,
         "ok": 5,
         "plan": 11,
-        "secs": 3.5,
+        "secs": 2.7,
         "skip": 1,
         "todo": 0,
         "verdict": "fail"
@@ -54,7 +53,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 10.98,
+        "secs": 118.01,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -68,10 +67,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-11",
-    "harness": 1,
+    "date": "2026-09-12",
+    "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7807eb5",
+    "mutsu_commit": "36527ea",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -82,13 +81,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANGIFY_TUTORIAL/b5e7f20a7b0819d2ceca5d19a1f9e8a68cf25f1a.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 11,
+    "baseline_files": 1,
+    "mutsu_assertions": 5,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }
