@@ -420,6 +420,15 @@ pub(crate) struct CompiledAttrDecl {
     /// pattern) — `default` above no longer carries a raw `Expr` a consumer
     /// could re-inspect at construction time.
     pub(crate) declared_shape: Option<Vec<usize>>,
+    /// True when `default` matches the `Array.new(:shape(...))` pattern but
+    /// at least one dimension is not a literal integer (`has @.a[N]` with a
+    /// named `constant N`), so `declared_shape` above came back `None` even
+    /// though this genuinely is a shaped-array declaration (#8032). A
+    /// registration site with `&mut self` available can still resolve it —
+    /// `default` is exactly `Array.new(:shape(N))`, and evaluating N through
+    /// the same `constant`/enum lookup a normal read would use is safe,
+    /// unlike guessing. See `Interpreter::resolve_dynamic_attr_shape`.
+    pub(crate) dynamic_shape: bool,
 }
 
 impl CompiledAttrDecl {
@@ -461,7 +470,8 @@ impl CompiledAttrDecl {
         else {
             unreachable!("CompiledAttrDecl::from_stmt called on a non-HasDecl statement");
         };
-        let declared_shape = attr_declared_shape(default.as_ref());
+        let (declared_shape, has_shape_pattern) = attr_declared_shape(default.as_ref());
+        let dynamic_shape = has_shape_pattern && declared_shape.is_none();
         CompiledAttrDecl {
             name: name.resolve(),
             is_public: *is_public,
@@ -493,6 +503,7 @@ impl CompiledAttrDecl {
             is_built: *is_built,
             unknown_traits: unknown_traits.clone(),
             declared_shape,
+            dynamic_shape,
         }
     }
 }
@@ -2966,20 +2977,27 @@ pub(crate) struct CompiledDeclExpr {
 /// before `default` is lowered to a `DeclTraitArg` and this pattern-match
 /// becomes unreachable — instead of on every instance construction via
 /// `DeclTraitArg::as_expr()` (which panics on a `Compiled` chunk).
-fn attr_declared_shape(default: Option<&Expr>) -> Option<Vec<usize>> {
-    let expr = default?;
+/// Returns `(literal dims if every dimension is a literal integer, whether
+/// `default` matches the shaped-array pattern at all)`. The second element
+/// lets a caller distinguish "not a shaped declaration" from "a shaped
+/// declaration whose dimensions need a runtime lookup" (`dynamic_shape`
+/// above) — both look like `None` if only the first is kept.
+fn attr_declared_shape(default: Option<&Expr>) -> (Option<Vec<usize>>, bool) {
+    let Some(expr) = default else {
+        return (None, false);
+    };
     // Match Array.new(:shape(...)) or Array.new(:shape(...), :data(...))
     let Expr::MethodCall {
         target, name, args, ..
     } = expr
     else {
-        return None;
+        return (None, false);
     };
     if name.resolve() != "new" {
-        return None;
+        return (None, false);
     }
     if !matches!(target.as_ref(), Expr::BareWord(s) if s == "Array") {
-        return None;
+        return (None, false);
     }
     // Find the :shape(...) pair in args
     for arg in args {
@@ -2992,10 +3010,10 @@ fn attr_declared_shape(default: Option<&Expr>) -> Option<Vec<usize>> {
             && let ValueView::Str(key) = lit.view()
             && key.as_str() == "shape"
         {
-            return attr_shape_dims_from_expr(right);
+            return (attr_shape_dims_from_expr(right), true);
         }
     }
-    None
+    (None, false)
 }
 
 fn attr_shape_dims_from_expr(expr: &Expr) -> Option<Vec<usize>> {

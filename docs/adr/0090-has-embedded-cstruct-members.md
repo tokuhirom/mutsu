@@ -74,7 +74,10 @@ Concretely:
    in-progress set catches the cycle), and `HAS T @.x[N]` where `N` is a named
    constant rather than a literal, since only a literal shape survives into the
    compiled declaration. Both make `nativesizeof` fail loudly instead of
-   returning a number that is wrong.
+   returning a number that is wrong. (The `N`-is-a-constant case was resolved by
+   [#8032](https://github.com/tokuhirom/mutsu/issues/8032) — see the third
+   alternative below — leaving only a shape that genuinely cannot be resolved,
+   e.g. one depending on instance state, still refused.)
 
 ## Alternatives considered
 
