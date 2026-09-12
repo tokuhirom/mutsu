@@ -40,6 +40,14 @@ pub(crate) const BUILTIN_ROLE_NAMES: &[&str] = &[
     "PositionalBindFailover",
     "Systemic",
     "Awaitable",
+    // Supplied as a real role with state by `ENUMERATION_ROLE_PRELUDE`, so
+    // most consumers see it through `has_role`. It is listed here too because
+    // one consumer runs BEFORE any prelude is registered: the compiler
+    // qualifies a class header's `does` parent with the enclosing package
+    // unless the name is a known core type, so without this entry
+    // `unit module M; class C does Enumeration` compiled a parent named
+    // `M::Enumeration` that nothing could ever resolve.
+    "Enumeration",
 ];
 
 /// Is `name` one of [`BUILTIN_ROLE_NAMES`]?

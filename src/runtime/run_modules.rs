@@ -572,6 +572,7 @@ impl Interpreter {
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
+        Self::inject_enumeration_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {

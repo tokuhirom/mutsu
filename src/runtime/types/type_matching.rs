@@ -438,15 +438,25 @@ impl Interpreter {
         {
             return true;
         }
+        // Every enum value and every enum type object does `Enumeration`: those
+        // are their own `Value` shapes, so no composed-role list mentions the
+        // role and the membership has to be asserted here. Anything else FALLS
+        // THROUGH to the ordinary role check rather than being denied — an
+        // ordinary class may compose `Enumeration` too (the role is supplied by
+        // `ENUMERATION_ROLE_PRELUDE`, as `raku-doc`'s own `class DNA does
+        // Enumeration` example and `Logic::Ternary` both do), and denying it
+        // here made `$instance ~~ Enumeration` `False` for a class that had
+        // just composed the role.
         if constraint == "Enumeration" {
-            // Every enum value and every enum type object does `Enumeration`.
-            return match value.view() {
-                ValueView::Enum { .. } => true,
-                ValueView::Package(name) => {
-                    self.registry().enum_types.contains_key(&*name.resolve())
+            match value.view() {
+                ValueView::Enum { .. } => return true,
+                ValueView::Package(name)
+                    if self.registry().enum_types.contains_key(&*name.resolve()) =>
+                {
+                    return true;
                 }
-                _ => false,
-            };
+                _ => {}
+            }
         }
         // The native socket classes (`IO::Socket::INET`, `IO::Socket::Async`)
         // do the built-in `IO::Socket` role in Raku, but mutsu implements them

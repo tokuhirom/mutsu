@@ -1,7 +1,7 @@
 use super::run::{
-    IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE,
-    NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
-    TRAIT_MOD_IS_NATIVECALL_PRELUDE,
+    ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
+    NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE,
+    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE,
 };
 use super::source_code_text::CodeText;
 use super::*;
@@ -274,6 +274,35 @@ impl Interpreter {
         static METAMODEL_ROLE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = METAMODEL_ROLE_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(METAMODEL_ROLE_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the builtin `Enumeration` role ([`ENUMERATION_ROLE_PRELUDE`]) to
+    /// a program (or module) that mentions it.
+    ///
+    /// Gated on the name like the other role preludes, and skipped when the
+    /// compunit declares its own `role Enumeration` (which the prelude would
+    /// collide with). Injected for MODULES too, not only the main program: the
+    /// distribution that motivated this is `Logic::Ternary`, whose
+    /// `class Logic::Ternary does Enumeration` lives in the module, while the
+    /// program that loads it (`use Logic::Ternary;`) never names `Enumeration`
+    /// at all — so gating on the main program's source alone would never fire.
+    pub(super) fn inject_enumeration_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if !source.contains("Enumeration") || source.contains("role Enumeration") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static ENUMERATION_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = ENUMERATION_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(ENUMERATION_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
