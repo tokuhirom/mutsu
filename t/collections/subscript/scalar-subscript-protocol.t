@@ -1,6 +1,6 @@
 use Test;
 
-plan 28;
+plan 31;
 
 # A subscript store into a `$` that already holds a DEFINED value follows
 # rakudo's Positional/Associative protocol: a value that does not do the
@@ -66,6 +66,21 @@ plan 28;
         message => 'Type Int does not support associative indexing.',
         'an alias to the scalar refuses it too';
     is $s, 42, 'and the aliased scalar is untouched';
+}
+
+# A Buf/Blob reaches this store as an `Instance` carrying its own storage
+# attribute rather than one of the `ValueView` shapes above, so it is refused
+# by a separate instance arm -- but the protocol answer is the same: neither
+# does Associative, whatever the key looks like (#7556).
+{
+    my $s = Buf.new(1, 2, 3);
+    throws-like { $s<k> = 5 }, X::AdHoc,
+        message => 'Type Buf does not support associative indexing.',
+        'a Buf refuses an associative store';
+    throws-like { $s{0} = 5 }, X::AdHoc,
+        message => 'Type Buf does not support associative indexing.',
+        'even with a numeric-looking key';
+    is $s[0], 1, 'and is left alone';
 }
 
 # --- positional subscript: X::Assignment::RO naming the value ---------------
