@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 46;
+plan 62;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -135,6 +135,96 @@ is Q[/a$$/].AST.gist, q:to/END/.chomp, 'an end-of-line anchor remains structural
           body => RakuAST::Regex::Sequence.new(
             RakuAST::Regex::Literal.new("a"),
             RakuAST::Regex::Anchor::EndOfLine.new
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <?before bar>/].AST.gist, q:to/END/.chomp, 'a positive lookahead keeps its named regex argument';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Lookahead.new(
+              assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                name      => RakuAST::Name.from-identifier("before"),
+                regex-arg => RakuAST::Regex::Sequence.new(
+                  RakuAST::Regex::Literal.new("bar")
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <!before bar>/].AST.gist, q:to/END/.chomp, 'a negative lookahead preserves negation';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Lookahead.new(
+              negated   => True,
+              assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                name      => RakuAST::Name.from-identifier("before"),
+                regex-arg => RakuAST::Regex::Sequence.new(
+                  RakuAST::Regex::Literal.new("bar")
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/<?after foo> bar/].AST.gist, q:to/END/.chomp, 'a positive lookbehind keeps the after assertion';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Assertion::Lookahead.new(
+                assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                  name      => RakuAST::Name.from-identifier("after"),
+                  regex-arg => RakuAST::Regex::Sequence.new(
+                    RakuAST::Regex::Literal.new("foo")
+                  )
+                )
+              )
+            ),
+            RakuAST::Regex::Literal.new("bar")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/<!after foo> bar/].AST.gist, q:to/END/.chomp, 'a negative lookbehind preserves negation';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Assertion::Lookahead.new(
+                negated   => True,
+                assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                  name      => RakuAST::Name.from-identifier("after"),
+                  regex-arg => RakuAST::Regex::Sequence.new(
+                    RakuAST::Regex::Literal.new("foo")
+                  )
+                )
+              )
+            ),
+            RakuAST::Regex::Literal.new("bar")
           )
         )
       )
@@ -293,6 +383,43 @@ my $constructed = RakuAST::QuotedRegex.new(
 $_ = 'TEST';
 is EVAL($constructed).raku, 'Match.new(:orig("TEST"), :from(0), :pos(4))',
     'a constructed match-immediate regex uses the existing matcher';
+
+my $lookaround-arg = RakuAST::Regex::Assertion::Named::RegexArg.new(
+    name => RakuAST::Name.from-identifier('before'),
+    regex-arg => RakuAST::Regex::Literal.new('bar'),
+);
+my $lookahead = RakuAST::Regex::Assertion::Lookahead.new(
+    assertion => $lookaround-arg,
+);
+ok $lookahead ~~ RakuAST::Regex::Assertion,
+    'lookaround nodes retain their abstract assertion type';
+is $lookahead.negated, False,
+    'positive lookaround assertions default to non-negated';
+is $lookahead.assertion.name.raku, 'RakuAST::Name.from-identifier("before")',
+    'lookaround assertions expose their named assertion';
+is $lookahead.assertion.regex-arg.text, 'bar',
+    'named regex arguments expose their regex body';
+
+my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
+ok 'foobar' ~~ $positive-before,
+    'a lowered positive lookahead matches without consuming its assertion';
+nok 'foobaz' ~~ $positive-before,
+    'a lowered positive lookahead rejects a missing suffix';
+my $negative-before = EVAL(Q[/foo <!before bar>/].AST);
+nok 'foobar' ~~ $negative-before,
+    'a lowered negative lookahead rejects its asserted suffix';
+ok 'foobaz' ~~ $negative-before,
+    'a lowered negative lookahead accepts a different suffix';
+my $positive-after = EVAL(Q[/<?after foo> bar/].AST);
+ok 'foobar' ~~ $positive-after,
+    'a lowered positive lookbehind matches its preceding text';
+nok 'bazbar' ~~ $positive-after,
+    'a lowered positive lookbehind rejects different preceding text';
+my $negative-after = EVAL(Q[/<!after foo> bar/].AST);
+nok 'foobar' ~~ $negative-after,
+    'a lowered negative lookbehind rejects its preceding text';
+ok 'bazbar' ~~ $negative-after,
+    'a lowered negative lookbehind accepts different preceding text';
 
 is Q[/<alias=foo>/].AST.gist, q:to/END/.chomp, 'a subrule alias retains its assertion child';
     RakuAST::StatementList.new(

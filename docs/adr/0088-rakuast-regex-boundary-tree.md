@@ -3,7 +3,7 @@
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
-  bare-subrule, and anchor slices implemented
+  bare-subrule, anchor, and explicit-static-lookaround slices implemented
   2026-09-12/13; other dynamic contents and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -598,3 +598,26 @@ model type behavior, constructed-tree EVAL, and line/string anchor matching.
 Lookaround assertions, Unicode/compound character classes, code assertions,
 qualified or argumented subrules, and other runtime-valued assertions remain
 explicit follow-up boundaries.
+
+## 18. Explicit static lookaround slice (2026-09-13)
+
+Explicit positive and negative lookaround assertions with a static body now
+retain their source shape in `RegexTree`: `<?before body>`, `<!before body>`,
+`<?after body>`, and `<!after body>`. The read direction emits
+`Regex::Assertion::Lookahead` around `Assertion::Named::RegexArg`, preserving
+the `before`/`after` name and the `negated` bit exactly as Rakudo exposes
+them. The write direction accepts the same two model nodes and lowers them
+back to the existing `RegexAtom::Lookaround` matcher.
+
+The execution lowerer builds the nested `RegexPattern` from the shared tree,
+so lookahead remains zero-width and lookbehind still uses the existing bounded
+start search. No code is evaluated while converting or lowering the node.
+The bounded parser slice accepts only pure static lookaround bodies; escaped
+forms, interpolations, subrules, captures, code assertions, and the unprefixed
+or dot-prefixed spellings remain on the legacy path until their distinct
+RakuAST shapes and runtime context are represented.
+
+The focused regressions are in `t/rakuast/rakuast-regex.t` and
+`t/regex/regex-tree-lookaround.t`. They pin the four dual-oracle model
+shapes, node accessors and hierarchy, constructed-tree lowering, repeated
+lookahead use, and positive/negative lookahead/lookbehind matching.
