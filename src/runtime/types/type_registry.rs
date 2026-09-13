@@ -455,6 +455,18 @@ impl Interpreter {
                 return true;
             }
         }
+        // A public class can retain a private helper type in its declaration
+        // (`class Public { has Private $.value }`). The helper is moved out of
+        // the loading frame's env so it cannot leak into importers, but the
+        // public class's own package still needs that lexical at instantiation
+        // time. Consult the package-keyed module scope when the running code
+        // belongs to that package.
+        if let Some(ValueView::Package(target)) = self.module_scope_lexical(name).map(Value::view) {
+            let resolved = target.resolve();
+            if resolved != name && self.has_type_direct(&resolved) {
+                return true;
+            }
+        }
         self.package_type_alias(name).is_some()
     }
 
@@ -525,6 +537,15 @@ impl Interpreter {
         name: &str,
     ) -> Option<&'a V> {
         for candidate in self.running_package_candidates().into_iter().flatten() {
+            // A parameterized class runs with its instantiated display name
+            // (`M::C[T]`), while package-owned lexical tables are keyed by the
+            // unparameterized class name (`M::C`). Probe that base owner before
+            // walking its package ancestors.
+            if let Some((base, _)) = candidate.split_once('[')
+                && let Some(found) = Self::lookup_in_package_chain(table, base, name)
+            {
+                return Some(found);
+            }
             if let Some(found) = Self::lookup_in_package_chain(table, candidate, name) {
                 return Some(found);
             }
@@ -821,6 +842,15 @@ impl Interpreter {
             match pkg.rsplit_once("::") {
                 Some((parent, _)) => pkg = parent,
                 None => break,
+            }
+        }
+        if let Some(ValueView::Package(target)) = self
+            .module_scope_lexical_for_owner(owner, &name)
+            .map(Value::view)
+        {
+            let resolved = target.resolve();
+            if resolved != name && self.has_type_direct(&resolved) {
+                return resolved.to_string();
             }
         }
         name
