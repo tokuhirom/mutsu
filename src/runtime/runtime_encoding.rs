@@ -398,9 +398,40 @@ impl Interpreter {
     /// escaped values retain their identity, but a type declared by an
     /// imported module must not become a package-qualified symbol in the
     /// importing unit. A same-compilation-unit declaration remains visible,
-    /// including namespaced `my class` declarations.
+    /// including namespaced `my class` declarations. Exception classes under
+    /// `X::` are package-qualified API even when their declaration uses `my`;
+    /// a namespaced lexical type under an existing class is likewise visible
+    /// through that class's package (for example, a package-local test double).
     pub(crate) fn my_scoped_type_visible_here(&self, fq_name: &str) -> bool {
         if !self.is_my_scoped_type_name(fq_name) {
+            return true;
+        }
+        if fq_name == "X" || fq_name.starts_with("X::") {
+            return true;
+        }
+        let type_package = fq_name.rsplit_once("::").map(|(package, _)| package);
+        let current_package = self.current_package();
+        let method_class = self.method_class_stack_top_str();
+        if let Some(type_package) = type_package
+            && (current_package == type_package
+                || type_package.starts_with(&format!("{current_package}::")))
+        {
+            return true;
+        }
+        if let Some(type_package) = type_package
+            && method_class.is_some_and(|class| {
+                class == type_package || type_package.starts_with(&format!("{class}::"))
+            })
+        {
+            return true;
+        }
+        if type_package.is_some_and(|package| {
+            let registry = self.registry();
+            registry.classes.contains_key(package)
+                || registry.roles.contains_key(package)
+                || registry.enum_types.contains_key(package)
+                || registry.subsets.contains_key(package)
+        }) {
             return true;
         }
         let prefix = format!("{fq_name}\u{0}");
