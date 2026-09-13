@@ -1,3 +1,4 @@
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView};
 
 /// Unescape backslash sequences in a `<...>` word.
@@ -128,7 +129,7 @@ fn negate_angle_numeric(val: Value) -> Value {
 }
 
 fn make_allomorphic_value(val: Value, word: &str) -> Value {
-    let mut mixins = std::collections::HashMap::new();
+    let mut mixins = ValueMap::default();
     mixins.insert("Str".to_string(), Value::str(word.to_string()));
     Value::mixin(val, mixins)
 }

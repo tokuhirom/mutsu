@@ -14,6 +14,7 @@
 //! `Str|a` and the store had written `a`.
 
 use crate::runtime::utils::{quanthash_elem_entry, record_quanthash_original};
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView};
 use std::collections::HashMap;
 
@@ -129,7 +130,7 @@ pub(crate) fn quanthash_store(target: &Value, args: &[Value]) -> Option<Value> {
         }
         _ => return None,
     };
-    let mut originals: HashMap<String, Value> = HashMap::new();
+    let mut originals: ValueMap = ValueMap::default();
     for e in &entries {
         record_quanthash_original(&mut originals, &e.key, &e.elem);
     }

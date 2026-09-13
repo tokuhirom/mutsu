@@ -60,6 +60,7 @@ encoding_rs = "0.8"
 wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 rustc-hash = "2.1.1"
+foldhash = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode = { version = "2", features = ["serde"] }

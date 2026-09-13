@@ -1,13 +1,11 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 use num_bigint::BigInt;
 
 impl Interpreter {
-    fn apply_hash_assignment_entry(
-        updated: &mut std::collections::HashMap<String, Value>,
-        item: Value,
-    ) -> bool {
+    fn apply_hash_assignment_entry(updated: &mut ValueMap, item: Value) -> bool {
         let item = item.into_descalarized();
         match item.view() {
             ValueView::Pair(key, boxed) => {
@@ -26,10 +24,7 @@ impl Interpreter {
         }
     }
 
-    fn normalize_hash_like_assignment(
-        existing_hash: std::collections::HashMap<String, Value>,
-        value: Value,
-    ) -> Value {
+    fn normalize_hash_like_assignment(existing_hash: ValueMap, value: Value) -> Value {
         let normalized_value = value.into_descalarized();
         match normalized_value.view() {
             ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(..) => {
@@ -143,7 +138,7 @@ impl Interpreter {
                     // Hash.STORE list-contextualizes a flat alternating list as
                     // key/value pairs. Build it directly so a Nil value remains
                     // Nil until the target container's default-decay step below.
-                    let mut map = std::collections::HashMap::new();
+                    let mut map = ValueMap::default();
                     let mut iter = items.iter().cloned();
                     while let Some(key) = iter.next() {
                         let val = iter.next().unwrap_or(Value::NIL);
@@ -151,7 +146,7 @@ impl Interpreter {
                     }
                     Value::hash(map)
                 }
-                _ => Self::normalize_hash_like_assignment(std::collections::HashMap::new(), value),
+                _ => Self::normalize_hash_like_assignment(ValueMap::default(), value),
             };
             return Self::carry_container_default(current.as_ref(), result);
         }
@@ -161,7 +156,7 @@ impl Interpreter {
                 let result = if matches!(value.view(), ValueView::Hash(_)) {
                     value
                 } else {
-                    Self::normalize_hash_like_assignment(std::collections::HashMap::new(), value)
+                    Self::normalize_hash_like_assignment(ValueMap::default(), value)
                 };
                 Self::carry_container_default(current.as_ref(), result)
             }

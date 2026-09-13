@@ -3,6 +3,7 @@
 use super::ValueView;
 use super::expected_type_object;
 use super::{RuntimeError, Value};
+use crate::value::ValueMap;
 use std::collections::HashMap;
 
 impl RuntimeError {
@@ -13,7 +14,7 @@ impl RuntimeError {
     /// Verified against `raku -e ':45<abcd>'` and `raku -e '"z".parse-base(45)'`.
     pub(crate) fn radix_out_of_range(radix: i64) -> Self {
         let msg = format!("Radix {radix} out of range (allowed: 2..36)");
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("radix".to_string(), Value::int(radix));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         let ex = Value::make_instance(
@@ -45,7 +46,7 @@ impl RuntimeError {
             "Cannot dispatch to method {} on {} because it is not inherited or done by {}",
             method, qualifier, invocant_type
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert("method".to_string(), Value::str(method.to_string()));
         attrs.insert("invocant".to_string(), invocant);
@@ -69,7 +70,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn undeclared(what: &str, name: &str) -> Self {
         let msg = format!("Undeclared {} '{}'", what, name);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -93,7 +94,7 @@ impl RuntimeError {
             Some(b'$' | b'@' | b'%' | b'&') => name.to_string(),
             _ => format!("${name}"),
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str("Variable".to_string()));
         attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
         attrs.insert("name".to_string(), Value::str(symbol.clone()));
@@ -119,11 +120,11 @@ impl RuntimeError {
         message: impl Into<String>,
         suggestions: Vec<String>,
     ) -> Self {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message.into()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
         let arr: Vec<Value> = suggestions.iter().cloned().map(Value::str).collect();
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(name.to_string(), Value::array(arr.clone()));
         attrs.insert("routine_suggestion".to_string(), Value::hash(map));
         // Also expose a flat `suggestions` list so `.suggestions` is uniformly
@@ -139,11 +140,11 @@ impl RuntimeError {
         message: impl Into<String>,
         suggestions: Vec<String>,
     ) -> Self {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message.into()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
         let arr: Vec<Value> = suggestions.iter().cloned().map(Value::str).collect();
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(name.to_string(), Value::array(arr.clone()));
         attrs.insert("type_suggestion".to_string(), Value::hash(map));
         attrs.insert("suggestions".to_string(), Value::array(arr));
@@ -154,10 +155,10 @@ impl RuntimeError {
     /// before its textual declaration in the same compilation unit. Carries a
     /// `post_types` hash `{ name => [line] }` (mirrors rakudo's `.post_types`).
     pub(crate) fn post_declared_type_symbols(name: &str, message: impl Into<String>) -> Self {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message.into()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(name.to_string(), Value::array(vec![Value::Int(1)]));
         attrs.insert("post_types".to_string(), Value::hash(map));
         Self::typed("X::Undeclared::Symbols", attrs)
@@ -166,7 +167,7 @@ impl RuntimeError {
     /// X::CompUnit::UnsatisfiedDependency - a required module could not be found.
     pub(crate) fn unsatisfied_dependency(module: &str) -> Self {
         let msg = format!("Could not find {} in:\n    (module repositories)", module);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("specification".to_string(), Value::str(module.to_string()));
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::CompUnit::UnsatisfiedDependency", attrs)
@@ -176,7 +177,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn redeclaration(what: &str, name: &str) -> Self {
         let msg = format!("Redeclaration of {} '{}'", what, name);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -189,7 +190,7 @@ impl RuntimeError {
             "Redeclaration of routine '{}'. Did you mean to declare a multi-sub?",
             name
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str("routine".to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -211,7 +212,7 @@ impl RuntimeError {
             msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
         }
 
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("method".to_string(), Value::str(method.to_string()));
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -238,7 +239,7 @@ impl RuntimeError {
             "Unsupported use of {}. In Raku please use: {}.",
             old, replacement
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("old".to_string(), Value::str(old.to_string()));
         attrs.insert(
             "replacement".to_string(),
@@ -264,7 +265,7 @@ impl RuntimeError {
         let msg = format!(
             "Variable definition of type {type_display}{implicit_note} needs to be given an initializer"
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("type".to_string(), Value::str(type_display.to_string()));
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         if let Some(i) = implicit {
@@ -277,7 +278,7 @@ impl RuntimeError {
     /// X::Syntax::WithoutElse - `without` followed by an `else`-family keyword.
     pub(crate) fn without_else(keyword: &str) -> Self {
         let msg = format!("\"without\" does not take \"{keyword}\", please rewrite using \"with\"");
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Syntax::WithoutElse", attrs)
@@ -297,7 +298,7 @@ impl RuntimeError {
             "Expected a term, but found either infix {prefixes} or redundant prefix {single}\n  \
              (to suppress this message, please use a space like {single} {single})"
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("prefixes".to_string(), Value::str(prefixes.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Syntax::DuplicatedPrefix", attrs)
@@ -308,7 +309,7 @@ impl RuntimeError {
     /// `keyword` attribute on both (`S04-statements/unless.t`).
     pub(crate) fn unless_else(keyword: &str) -> Self {
         let msg = format!("\"unless\" does not take \"{keyword}\", please rewrite using \"if\"");
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Syntax::UnlessElse", attrs)
@@ -332,7 +333,7 @@ impl RuntimeError {
             "Can't apply trait '{trait_type} {subtype}' on a {scope} scoped {declaring}. \
              Only {supported_list} scoped {declaring}s are supported."
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("type".to_string(), Value::str(trait_type.to_string()));
         attrs.insert("subtype".to_string(), Value::str(subtype.to_string()));
         attrs.insert("declaring".to_string(), Value::str(declaring.to_string()));
@@ -357,7 +358,7 @@ impl RuntimeError {
     pub(crate) fn unexpected_adverb(unexpected: &[String], what: &str, source: &str) -> Self {
         let names = unexpected.join("', '");
         let msg = format!("Unexpected adverb '{names}' passed to {what} on '{source}'.");
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert(
             "unexpected".to_string(),
             Value::array(unexpected.iter().map(|s| Value::str(s.clone())).collect()),
@@ -393,7 +394,7 @@ impl RuntimeError {
     /// X::Immutable - Cannot modify an immutable value
     pub(crate) fn immutable(typename: &str, method: &str) -> Self {
         let msg = format!("Cannot call '{}' on an immutable '{}'", method, typename);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("method".to_string(), Value::str(method.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -406,7 +407,7 @@ impl RuntimeError {
                    - To use a Supplier in order to get a live supply\n \
                    - To use Supply.on-demand to create an on-demand supply\n \
                    - To create a Supply using a supply block";
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg.to_string()));
         Self::typed("X::Supply::New", attrs)
     }
@@ -414,7 +415,7 @@ impl RuntimeError {
     /// X::Cannot::Lazy - Cannot .elems a lazy list
     pub(crate) fn cannot_lazy(action: &str) -> Self {
         let msg = format!("Cannot .{} a lazy list", action);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str(action.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Cannot::Lazy", attrs)
@@ -423,7 +424,7 @@ impl RuntimeError {
     /// X::Cannot::Lazy with an action string and "onto" type (e.g., for .Capture on lazy lists)
     pub(crate) fn cannot_lazy_with_action(action: &str, onto: &str) -> Self {
         let msg = format!("Cannot {} a lazy list onto a {}", action, onto);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str(action.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Cannot::Lazy", attrs)
@@ -432,7 +433,7 @@ impl RuntimeError {
     /// X::Cannot::Lazy with a `what` attribute (e.g., for coercion to Bag/Set/Mix)
     pub(crate) fn cannot_lazy_what(what: &str) -> Self {
         let msg = format!("Cannot coerce a lazy list to a {}", what);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str("coerce".to_string()));
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -443,7 +444,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn syntax_missing(what: &str) -> Self {
         let msg = format!("Missing {}", what);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Syntax::Missing", attrs)
@@ -458,7 +459,7 @@ impl RuntimeError {
     /// X::Syntax::Confused with a reason attribute (for "Two terms in a row" etc.)
     pub(crate) fn syntax_confused_with_reason(reason: impl Into<String>) -> Self {
         let reason = reason.into();
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(reason.clone()));
         attrs.insert("reason".to_string(), Value::str(reason));
         Self::typed("X::Syntax::Confused", attrs)
@@ -468,7 +469,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn syntax_malformed(what: &str, message: impl Into<String>) -> Self {
         let message = message.into();
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("message".to_string(), Value::str(message.clone()));
         Self::typed("X::Syntax::Malformed", attrs)
@@ -496,7 +497,7 @@ impl RuntimeError {
         } else {
             "Attempt to return outside of any Routine".to_string()
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert(
             "out-of-dynamic-scope".to_string(),
@@ -535,7 +536,7 @@ impl RuntimeError {
                 expected, got
             )
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got_value.clone());
         if let Some(sym) = symbol {
@@ -582,7 +583,7 @@ impl RuntimeError {
                 display_param, routine, kind, expected, actual_kind, got
             )
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
         attrs.insert("routine".to_string(), Value::str(routine.to_string()));
@@ -602,7 +603,7 @@ impl RuntimeError {
     /// X::IO::Closed - IO::Handle is closed
     pub(crate) fn io_closed(trying: &str) -> Self {
         let msg = format!("Cannot do '{}' on a closed handle", trying);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("trying".to_string(), Value::str(trying.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::IO::Closed", attrs)
@@ -612,7 +613,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn bind(target: &str) -> Self {
         let msg = format!("Cannot bind to {}", target);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("target".to_string(), Value::str(target.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::Bind", attrs)
@@ -624,7 +625,7 @@ impl RuntimeError {
             "Illegal dimension in shape: {}. All dimensions must be integers bigger than 0",
             dim
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("dim".to_string(), Value::Int(dim));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::IllegalDimensionInShape", attrs)
@@ -638,7 +639,7 @@ impl RuntimeError {
             "Illegal dimension in shape: {}. All dimensions must be integers bigger than 0",
             dim
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("dim".to_string(), Value::bigint(dim.clone()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::IllegalDimensionInShape", attrs)
@@ -660,7 +661,7 @@ impl RuntimeError {
             "Unsupported combination of adverbs ({}) passed to {}\non '{}'.",
             nogo_display, what, source
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("source".to_string(), Value::str(source.to_string()));
         attrs.insert(
@@ -695,7 +696,7 @@ impl RuntimeError {
                 param, expected, got
             )
         });
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         // raku exposes `.expected` as the expected type OBJECT.
         attrs.insert("expected".to_string(), expected_type_object(expected));
@@ -748,7 +749,7 @@ but got '{}' ({}) as a value without a container.",
             crate::runtime::utils::gist_value(got),
             crate::runtime::utils::got_type_name(got),
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
         attrs.insert("got".to_string(), got.clone());
         attrs.insert("message".to_string(), Value::str(msg));
@@ -784,7 +785,7 @@ but got '{}' ({}) as a value without a container.",
                 param, expected, got_type, repr
             )
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), value.clone());
@@ -803,7 +804,7 @@ but got '{}' ({}) as a value without a container.",
             got,
             crate::builtins::methods_0arg::raku_repr::raku_value(value),
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert(
             "expected".to_string(),
@@ -824,7 +825,7 @@ but got '{}' ({}) as a value without a container.",
             "Signature constraint check failed in binding to parameter '{}'; expected {} but got {}",
             param, expected, got
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
@@ -845,7 +846,7 @@ but got '{}' ({}) as a value without a container.",
             "Constraint type check failed in binding to parameter '<anon>'; expected {} but got {}",
             expected_repr, got_repr
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str("<anon>".to_string()));
         attrs.insert("expected".to_string(), expected.clone());
         attrs.insert("got".to_string(), got.clone());
@@ -866,7 +867,7 @@ but got '{}' ({}) as a value without a container.",
             "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
             param, expected, got_name
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got);
@@ -881,7 +882,7 @@ but got '{}' ({}) as a value without a container.",
     /// environment-variable exception handler. The object always contains a
     /// `message` key (null when the exception has no message attribute).
     pub fn to_json_exception(&self) -> String {
-        let (class_name, attrs): (String, HashMap<String, Value>) = match &self.exception {
+        let (class_name, attrs): (String, ValueMap) = match &self.exception {
             Some(boxed) => match boxed.view() {
                 ValueView::Instance {
                     class_name,
@@ -896,13 +897,13 @@ but got '{}' ({}) as a value without a container.",
                         .collect(),
                 ),
                 _ => ("X::AdHoc".to_string(), {
-                    let mut m = HashMap::new();
+                    let mut m = ValueMap::default();
                     m.insert("message".to_string(), Value::str(boxed.to_string_value()));
                     m
                 }),
             },
             None => ("X::AdHoc".to_string(), {
-                let mut m = HashMap::new();
+                let mut m = ValueMap::default();
                 m.insert("message".to_string(), Value::str(self.message.to_string()));
                 m
             }),

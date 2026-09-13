@@ -238,7 +238,10 @@ impl Interpreter {
         attrs.insert("pos".to_string(), Value::int(pos));
         attrs.insert("orig".to_string(), Value::str(orig.to_string()));
         attrs.insert("list".to_string(), Value::array(Vec::new()));
-        attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
+        attrs.insert(
+            "named".to_string(),
+            Value::hash_bare_values(ValueMap::default()),
+        );
         if failed {
             attrs.insert("__failed_match__".to_string(), Value::TRUE);
         }

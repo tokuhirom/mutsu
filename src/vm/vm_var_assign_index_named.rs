@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,16 +28,12 @@ impl Interpreter {
     /// QuantHash (Set/Bag/Mix) subscript (`$sh{1001} = 42`). Set/Bag/Mix store
     /// their keys stringified; the `original_keys` side table lets `.keys`/
     /// `.raku` recover the object (`1001`, an Int) rather than the string.
-    fn record_quanthash_object_key(
-        original_keys: &mut Option<std::collections::HashMap<String, Value>>,
-        key: &str,
-        idx: &Value,
-    ) {
+    fn record_quanthash_object_key(original_keys: &mut Option<ValueMap>, key: &str, idx: &Value) {
         if matches!(idx.view(), ValueView::Str(_)) {
             return;
         }
         original_keys
-            .get_or_insert_with(std::collections::HashMap::new)
+            .get_or_insert_with(ValueMap::default)
             .insert(key.to_string(), idx.clone());
     }
 
@@ -67,10 +64,7 @@ impl Interpreter {
     }
 
     /// Drop an original-object key when its QuantHash element is removed.
-    fn forget_quanthash_object_key(
-        original_keys: &mut Option<std::collections::HashMap<String, Value>>,
-        key: &str,
-    ) {
+    fn forget_quanthash_object_key(original_keys: &mut Option<ValueMap>, key: &str) {
         if let Some(ok) = original_keys.as_mut() {
             ok.remove(key);
         }
@@ -1010,7 +1004,7 @@ impl Interpreter {
                 if is_positional {
                     Value::real_array(Vec::new())
                 } else {
-                    Value::hash(HashMap::new())
+                    Value::hash(ValueMap::default())
                 }
             });
             self.assign_store_nil_default(&var_name, &container)
@@ -1200,7 +1194,7 @@ impl Interpreter {
                     elem_value.to_string_value()
                 )
             };
-            let mut attrs = HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("message".to_string(), Value::str(message));
             attrs.insert("value".to_string(), elem_value);
             return Err(RuntimeError::typed("X::Assignment::RO", attrs));
@@ -1569,10 +1563,8 @@ impl Interpreter {
                         self.env_root_descended_mut(&var_name).map(|c| c.view()),
                         Some(ValueView::Hash(_))
                     ) {
-                        self.env_mut().insert(
-                            var_name.clone(),
-                            Value::hash(std::collections::HashMap::new()),
-                        );
+                        self.env_mut()
+                            .insert(var_name.clone(), Value::hash(ValueMap::default()));
                     }
                     if let Some(container) = self.env_root_descended_mut(&var_name) {
                         let _ = container.with_hash_mut(|hash| {
@@ -2007,10 +1999,8 @@ impl Interpreter {
                     self.env().get(&var_name).map(Value::view),
                     Some(ValueView::Hash(_))
                 ) {
-                    self.env_mut().insert(
-                        var_name.clone(),
-                        Value::hash(std::collections::HashMap::new()),
-                    );
+                    self.env_mut()
+                        .insert(var_name.clone(), Value::hash(ValueMap::default()));
                 }
                 let slice_is_object_hash =
                     loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
@@ -2083,9 +2073,7 @@ impl Interpreter {
                         // Store original keys for object hashes (embedded in
                         // HashData, COW-stable) after slice insert.
                         if slice_is_object_hash {
-                            let orig = h
-                                .original_keys
-                                .get_or_insert_with(std::collections::HashMap::new);
+                            let orig = h.original_keys.get_or_insert_with(ValueMap::default);
                             for key in keys.iter() {
                                 let wk = runtime::utils::value_which_key(key);
                                 orig.insert(wk, key.clone());
@@ -2495,7 +2483,7 @@ impl Interpreter {
                         let display = format!("{}()", cn);
                         return Err(RuntimeError::assignment_ro_typename(&cn, &display));
                     }
-                    let hash_map: HashMap<String, Value> = HashMap::from(&*attributes.as_map());
+                    let hash_map: ValueMap = HashMap::from(&*attributes.as_map());
                     let hash_val = Value::hash(hash_map);
                     self.env_mut().insert(var_name.clone(), hash_val);
                 }
@@ -2650,7 +2638,7 @@ impl Interpreter {
                             // is not flipped into `.WHICH` keying mid-stream.
                             if use_which {
                                 hd.original_keys
-                                    .get_or_insert_with(std::collections::HashMap::new)
+                                    .get_or_insert_with(ValueMap::default)
                                     .insert(key.clone(), Self::object_hash_key_value(&idx));
                             }
                         })
@@ -2802,7 +2790,7 @@ impl Interpreter {
                         // (the store key is the `.WHICH` string; record the key
                         // object so `.keys` reports it).
                         let type_name = sym.resolve();
-                        let mut originals = HashMap::new();
+                        let mut originals = ValueMap::default();
                         crate::runtime::utils::record_quanthash_original(
                             &mut originals,
                             &key,
@@ -2810,7 +2798,7 @@ impl Interpreter {
                         );
                         match type_name.as_str() {
                             "MixHash" => {
-                                let mut weights = HashMap::new();
+                                let mut weights = std::collections::HashMap::new();
                                 let weight = Self::mix_assignment_weight(&val)?;
                                 if weight != 0.0 {
                                     weights.insert(key.clone(), weight);
@@ -2818,7 +2806,7 @@ impl Interpreter {
                                 *container = Value::mix_hash_with_original_keys(weights, originals);
                             }
                             "BagHash" => {
-                                let mut counts = HashMap::new();
+                                let mut counts = std::collections::HashMap::new();
                                 let count = Self::bag_assignment_count(&val)?;
                                 if num_traits::Signed::is_positive(&count) {
                                     counts.insert(key.clone(), count);
@@ -2896,11 +2884,11 @@ impl Interpreter {
                             arr[i] = Self::itemize_value(val.clone());
                             *container = Value::real_array_initialized_at(arr, i);
                         } else {
-                            let mut hash = std::collections::HashMap::new();
+                            let mut hash = ValueMap::default();
                             hash.insert(key.clone(), Self::itemize_value(val.clone()));
                             let mut hash_val = Value::hash(hash);
                             if use_which {
-                                let mut orig = HashMap::new();
+                                let mut orig = ValueMap::default();
                                 orig.insert(key.clone(), Self::object_hash_key_value(&idx));
                                 hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                             }
@@ -2918,11 +2906,11 @@ impl Interpreter {
                         self.env_mut()
                             .insert(var_name.clone(), Value::real_array_initialized_at(arr, i));
                     } else {
-                        let mut hash = std::collections::HashMap::new();
+                        let mut hash = ValueMap::default();
                         hash.insert(key.clone(), Self::itemize_value(val.clone()));
                         let mut hash_val = Value::hash(hash);
                         if use_which {
-                            let mut orig = HashMap::new();
+                            let mut orig = ValueMap::default();
                             orig.insert(key.clone(), Self::object_hash_key_value(&idx));
                             hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                         }
@@ -3558,7 +3546,7 @@ impl Interpreter {
         if var_name.starts_with('%')
             && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
         {
-            let inner_hash = Value::hash(std::collections::HashMap::new());
+            let inner_hash = Value::hash(ValueMap::default());
             if !loan_env!(self, type_matches_value(&constraint, &inner_hash)) {
                 return Err(RuntimeError::new(format!(
                     "Type check failed in assignment to {var_name}; expected {constraint} but got Hash (autovivification)"
@@ -3608,11 +3596,11 @@ impl Interpreter {
             let init = if var_name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if var_name.starts_with('%') {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             } else if inner_positional {
                 Value::real_array(Vec::new())
             } else {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             };
             // A container autovivified into a `$` scalar is held by a Scalar
             // container, so it itemizes (`$x.raku` is `${...}` / `$[...]`,
@@ -3720,7 +3708,7 @@ impl Interpreter {
                         arr[inner_i] = (if outer_positional {
                             Value::real_array_unassigned(Vec::new())
                         } else {
-                            Value::hash(std::collections::HashMap::new())
+                            Value::hash(ValueMap::default())
                         })
                         .itemize_for_element_store();
                     }
@@ -3805,7 +3793,7 @@ impl Interpreter {
                         (if outer_positional {
                             Value::real_array_unassigned(Vec::new())
                         } else {
-                            Value::hash(std::collections::HashMap::new())
+                            Value::hash(ValueMap::default())
                         })
                         .itemize_for_element_store()
                     });
@@ -4135,7 +4123,7 @@ impl Interpreter {
         let fresh = if positional {
             Value::real_array_unassigned(Vec::new())
         } else {
-            Value::hash(std::collections::HashMap::new())
+            Value::hash(ValueMap::default())
         };
         fresh.itemize_for_element_store()
     }
@@ -4435,7 +4423,7 @@ impl Interpreter {
         let probe = if outer_positional {
             Value::real_array(Vec::new())
         } else {
-            Value::hash(std::collections::HashMap::new())
+            Value::hash(ValueMap::default())
         };
         if loan_env!(self, type_matches_value(&ty, &probe)) {
             return None;
@@ -4662,11 +4650,11 @@ impl Interpreter {
             let init = if var_name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if var_name.starts_with('%') {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             } else if positional_flags[0] {
                 Value::real_array(Vec::new())
             } else {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             };
             self.env_mut().insert(var_name.clone(), init);
         }
@@ -4815,7 +4803,7 @@ impl Interpreter {
                         if is_positional {
                             *cur = Value::real_array(Vec::new());
                         } else {
-                            *cur = Value::hash(std::collections::HashMap::new());
+                            *cur = Value::hash(ValueMap::default());
                         }
                         // Retry this level
                         if let Some(next) =
@@ -4901,7 +4889,7 @@ impl Interpreter {
                             }
                             *cur = Value::real_array(arr);
                         } else {
-                            let mut h = std::collections::HashMap::new();
+                            let mut h = ValueMap::default();
                             h.insert(key.clone(), leaf_val.clone());
                             *cur = Value::hash(h);
                         }

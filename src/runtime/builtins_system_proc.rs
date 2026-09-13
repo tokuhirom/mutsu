@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn extract_proc_options_reads_win_verbatim_hash() {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("win-verbatim-args".to_string(), Value::TRUE);
         let args = vec![Value::hash(map)];
         let opts = Interpreter::extract_proc_options(&args, 0);

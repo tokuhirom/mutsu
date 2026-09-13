@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Lightweight compiled function call that avoids the heavyweight frame
@@ -305,7 +306,7 @@ impl Interpreter {
                 // exactly like a plain `:%tls` (Cro::HTTP::Server.new).
                 for (alias_name, alias_slot) in &npb.alias_binds {
                     let alias_seed = if alias_name.starts_with('%') {
-                        Value::hash(std::collections::HashMap::new())
+                        Value::hash(ValueMap::default())
                     } else if alias_name.starts_with('@') {
                         Value::real_array(Vec::new())
                     } else {

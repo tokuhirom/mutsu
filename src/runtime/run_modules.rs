@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Resolve a module name to a file path by searching lib paths and standard locations.
@@ -656,7 +657,7 @@ impl Interpreter {
         use std::collections::HashMap;
         let prefix_path = Path::new(prefix);
         let resources_dir = prefix_path.join("resources");
-        let mut resolved_files: HashMap<String, Value> = HashMap::new();
+        let mut resolved_files: ValueMap = ValueMap::default();
         if let Some(files_val) = meta_val.hash_get_str("files")
             && let ValueView::Hash(fmap) = files_val.view()
         {
@@ -673,7 +674,7 @@ impl Interpreter {
         }
         let mut meta_map = match meta_val.view() {
             ValueView::Hash(m) => m.map.clone(),
-            _ => HashMap::new(),
+            _ => ValueMap::default(),
         };
         meta_map.insert(
             "files".to_string(),
@@ -813,7 +814,7 @@ impl Interpreter {
         // module: a member named `<directive>::<declarator>` must use a known
         // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
         Self::validate_exporthow_directives(&stmts)?;
-        let mut module_scope_names: HashMap<String, Value> = HashMap::new();
+        let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
         // Hoisted above the `should_skip_runtime_for_use_only_module` branch
@@ -1726,8 +1727,8 @@ impl Interpreter {
     fn collect_module_scope_names(
         &self,
         before: &std::collections::HashSet<crate::symbol::Symbol>,
-    ) -> HashMap<String, Value> {
-        let mut names = HashMap::new();
+    ) -> ValueMap {
+        let mut names = ValueMap::default();
         for key in self.env.keys() {
             if before.contains(key) {
                 continue;
@@ -1773,7 +1774,7 @@ impl Interpreter {
     /// The subset of [`Self::collect_module_scope_names`] that are short-name type
     /// aliases: a `Package` naming a *different* registered type
     /// (`THING2 => Drv2::Native::THING2`).
-    fn module_type_aliases_of(&self, scope: &HashMap<String, Value>) -> HashMap<String, String> {
+    fn module_type_aliases_of(&self, scope: &ValueMap) -> HashMap<String, String> {
         scope
             .iter()
             .filter_map(|(name, value)| {

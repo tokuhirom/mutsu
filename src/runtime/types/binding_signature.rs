@@ -619,7 +619,7 @@ impl Interpreter {
                 || resolved_constraint.starts_with("Hash["))
                 && matches!(value.view(), ValueView::Array(..))
             {
-                let mut map = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
                 if let ValueView::Array(items, ..) = value.view() {
                     for item in items.iter() {
                         if let ValueView::Pair(k, v) = item.view() {
@@ -1098,7 +1098,7 @@ impl Interpreter {
                 .iter()
                 .any(|p| p == "%_" || p.starts_with(':') || p.contains('^'))
             {
-                let mut leftover_named = std::collections::HashMap::new();
+                let mut leftover_named = ValueMap::default();
                 for (key, val) in named_args {
                     if !consumed_named.contains(&key) {
                         leftover_named.insert(key, val);
@@ -1354,7 +1354,7 @@ impl Interpreter {
                     // and also collect any Pair (named) args from the ENTIRE arg list
                     // that were not consumed by explicit named parameters.
                     let mut positional = Vec::new();
-                    let mut named = std::collections::HashMap::new();
+                    let mut named = ValueMap::default();
                     // First, collect remaining args from positional_idx
                     for arg in args[positional_idx..].iter().cloned() {
                         let arg = unwrap_varref_value(arg);
@@ -1429,7 +1429,7 @@ impl Interpreter {
                 } else if is_hash_slurpy {
                     // *%hash -- collect Pair arguments into a hash,
                     // excluding args already bound to explicit named parameters.
-                    let mut hash_items = std::collections::HashMap::new();
+                    let mut hash_items = ValueMap::default();
                     for arg in args.iter() {
                         let arg = unwrap_varref_value(arg.clone());
                         if let ValueView::Pair(k, v) = arg.view()
@@ -2731,7 +2731,7 @@ impl Interpreter {
                         if pd.name.starts_with('%')
                             && let ValueView::Array(items, ..) = value.view()
                         {
-                            let mut map = std::collections::HashMap::new();
+                            let mut map = ValueMap::default();
                             for item in items.iter() {
                                 if let ValueView::Pair(k, v) = item.view() {
                                     map.insert(k.clone(), v.clone());

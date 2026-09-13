@@ -255,7 +255,7 @@ impl Interpreter {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
-                        let mut named = std::collections::HashMap::new();
+                        let mut named = ValueMap::default();
                         let remaining = remaining_args(p);
                         for arg in &remaining {
                             let arg = unwrap_varref_value(arg.clone());

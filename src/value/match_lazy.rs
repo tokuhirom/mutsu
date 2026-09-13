@@ -157,7 +157,7 @@ impl MatchNode {
         // Silent-action captures: hidden `<.foo>` subrule matches (stored
         // under a marker-prefixed key). Absent from `.hash`, but the grammar
         // action walk fires their action methods via `silent_caps`.
-        let mut sub_named: HashMap<String, Value> = HashMap::new();
+        let mut sub_named: ValueMap = ValueMap::default();
         let mut silent_caps_vals: Vec<Value> = Vec::new();
         for (key, slot) in &kids.named {
             if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
@@ -207,7 +207,7 @@ impl MatchNode {
         // Per-match `:my $*x` values, re-installed around this node's action
         // by the grammar action walk.
         if !kids.regex_vars.is_empty() {
-            let vars: HashMap<String, Value> = kids
+            let vars: ValueMap = kids
                 .regex_vars
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -215,7 +215,7 @@ impl MatchNode {
             attrs.insert("reduce_time_vars", Value::hash_bare_values(vars));
         }
         if !kids.capture_alias_map.is_empty() {
-            let alias_hash: HashMap<String, Value> = kids
+            let alias_hash: ValueMap = kids
                 .capture_alias_map
                 .iter()
                 .map(|(k, v)| (k.as_str().to_string(), Value::str(v.as_str().to_string())))
@@ -246,7 +246,7 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     attrs.insert("from", Value::Int(from as i64));
     attrs.insert("to", Value::Int(to as i64));
     attrs.insert("list", Value::array(Vec::new()));
-    attrs.insert("named", Value::hash_bare_values(HashMap::new()));
+    attrs.insert("named", Value::hash_bare_values(ValueMap::default()));
     attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
     Value::make_instance(match_class_symbol(), attrs)
 }
@@ -368,7 +368,7 @@ impl Value {
         attrs.insert("from", Value::Int(0));
         attrs.insert("to", Value::Int(s.chars().count() as i64));
         attrs.insert("list", Value::array(Vec::new()));
-        attrs.insert("named", Value::hash_bare_values(HashMap::new()));
+        attrs.insert("named", Value::hash_bare_values(ValueMap::default()));
         attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
         Value::make_instance(match_class_symbol(), attrs)
     }

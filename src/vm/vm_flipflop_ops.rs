@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn exec_infix_func_op(
@@ -248,7 +249,7 @@ impl Interpreter {
             let rhs_pattern = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
             let scope = self.flip_flop_scope_key();
             let matcher_key = MetaNs::FfState.owned_key_from_parts(&[&scope, &site_id.to_string()]);
-            let mut map = std::collections::HashMap::new();
+            let mut map = ValueMap::default();
             map.insert("__mutsu_ff_matcher".to_string(), Value::TRUE);
             map.insert("key".to_string(), Value::str(matcher_key));
             map.insert("lhs".to_string(), lhs_pattern);

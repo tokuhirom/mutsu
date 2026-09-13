@@ -65,7 +65,7 @@ impl Interpreter {
         }
         let (inner, mut mixins) = match sub_val.view() {
             ValueView::Mixin(inner, existing) => (inner.as_ref().clone(), (**existing).clone()),
-            _ => (sub_val, HashMap::new().into()),
+            _ => (sub_val, ValueMap::default().into()),
         };
         for role_name in &roles {
             mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
@@ -743,7 +743,7 @@ impl Interpreter {
         let (inner, mut mixins) = if let ValueView::Mixin(inner, existing) = left.view() {
             (inner.as_ref().clone(), (**existing).clone())
         } else {
-            (left, HashMap::new().into())
+            (left, ValueMap::default().into())
         };
         mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
         // A monotonic application-order stamp: Rakudo resolves a method-name
@@ -890,7 +890,7 @@ impl Interpreter {
                     // a typed `has Int $.x`.
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
-                        '%' => Value::hash_with_data(Value::hash_arc(HashMap::new())),
+                        '%' => Value::hash_with_data(Value::hash_arc(ValueMap::default())),
                         _ => Value::package(crate::symbol::wk::any()),
                     }
                 };

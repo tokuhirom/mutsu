@@ -13,6 +13,7 @@
 use crate::runtime::Interpreter;
 use crate::runtime::utils::set_hash_original_keys;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -83,7 +84,7 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
             return Err(make_odd_number_error(&items));
         }
     }
-    let mut map = HashMap::new();
+    let mut map = ValueMap::default();
     let mut iter = items.iter();
     while let Some(item) = iter.next() {
         match item.view() {
@@ -109,8 +110,8 @@ where
     I: Iterator<Item = (String, Value, Value)>,
     F: Fn(&Value) -> Value,
 {
-    let mut map = HashMap::new();
-    let mut original_keys = HashMap::new();
+    let mut map = ValueMap::default();
+    let mut original_keys = ValueMap::default();
     let mut has_typed = false;
     // The QuantHash store key is a `.WHICH` string; the produced Hash is
     // display-string-keyed (raku: `$set.Hash<a>` works), with the element
@@ -179,7 +180,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             // %($/) returns the named captures hash.
             Ok(target
                 .match_named()
-                .unwrap_or_else(|| Value::hash(HashMap::new())))
+                .unwrap_or_else(|| Value::hash(ValueMap::default())))
         }
         // A bare `Pair` receiver is one key/value binding, not an odd-length
         // item list. BOTH pair flavours have to be here: since ADR-0021 the
@@ -192,12 +193,12 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             if check_odd {
                 match target.view() {
                     ValueView::Pair(k, v) => {
-                        let mut map = HashMap::new();
+                        let mut map = ValueMap::default();
                         map.insert(k.to_string(), v.clone());
                         return Ok(Value::hash(map));
                     }
                     ValueView::ValuePair(k, v) => {
-                        let mut map = HashMap::new();
+                        let mut map = ValueMap::default();
                         map.insert(k.to_string_value(), v.clone());
                         return Ok(Value::hash(map));
                     }
@@ -205,7 +206,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 }
                 return Err(make_odd_number_error(std::slice::from_ref(&target)));
             }
-            let mut map = HashMap::new();
+            let mut map = ValueMap::default();
             map.insert(target.to_string_value(), Value::TRUE);
             Ok(Value::hash(map))
         }
@@ -232,7 +233,7 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
             // Str-keyed, so stringify each original key object (raku:
             // `my %h{Any} = 1 => "a"; %h.Map.keys` is `("1",)`).
             let typed = map.has_typed_keys();
-            let deconted: HashMap<String, Value> = map
+            let deconted: ValueMap = map
                 .iter()
                 .map(|(k, v)| {
                     // ADR-0040 slices 1-2: a Hash value that is an aggregate

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use crate::vm::vm_comparison_ops::expand_range_to_list;
 
 impl Interpreter {
@@ -577,7 +578,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some((key, value)) = pair_map {
-            let mut m = std::collections::HashMap::new();
+            let mut m = ValueMap::default();
             m.insert(key, value);
             let dim = Self::normalize_multidim_dim(&dims[0]);
             return self.multi_dim_hash_read(&m, &dim, &dims[1..]);
@@ -781,7 +782,7 @@ impl Interpreter {
     /// `*` (all values). A missing key reads as `Nil`.
     fn multi_dim_hash_read(
         &mut self,
-        map: &std::collections::HashMap<String, Value>,
+        map: &ValueMap,
         dim: &Value,
         rest: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -1292,7 +1293,7 @@ impl Interpreter {
         if positional {
             Value::real_array(Vec::new())
         } else {
-            Value::hash(std::collections::HashMap::new())
+            Value::hash(ValueMap::default())
         }
     }
 
@@ -1500,7 +1501,7 @@ impl Interpreter {
     /// nested autoviv: the level lives in a Scalar element slot, so `.raku`
     /// renders it `${...}` and it counts as one item in list context.
     fn fresh_assoc_level() -> Value {
-        Value::hash(std::collections::HashMap::new()).itemize_for_element_store()
+        Value::hash(ValueMap::default()).itemize_for_element_store()
     }
 
     /// A value stored at an Associative leaf lives in a Scalar container, so
@@ -1735,7 +1736,7 @@ impl Interpreter {
     /// Ensure the target is a hash, converting from Nil/Any if necessary.
     fn ensure_hash(target: &mut Value) {
         if matches!(target.view(), ValueView::Nil | ValueView::Package(..)) {
-            *target = Value::hash_with_data(Value::hash_arc(std::collections::HashMap::new()));
+            *target = Value::hash_with_data(Value::hash_arc(ValueMap::default()));
         }
     }
 

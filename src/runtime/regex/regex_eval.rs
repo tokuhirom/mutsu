@@ -1,11 +1,12 @@
 use super::super::*;
+use crate::value::ValueMap;
 
 /// What one inline regex `{ … }` / `<?{ … }>` evaluation produced.
 pub(super) struct InlineCodeOutcome {
     /// The body's value (`None` when the code failed to parse or threw).
     pub(super) value: Option<Value>,
     /// Writes the body made to the regex's own `:my`/`:let` lexicals.
-    pub(super) writes: HashMap<String, Value>,
+    pub(super) writes: ValueMap,
     /// The value the body's `make` produced, if it ran one. Raku executes
     /// `make` inline, where the cursor is, and it belongs to the rule node
     /// currently being matched — the caller threads it onto that node through
@@ -240,7 +241,7 @@ impl Interpreter {
         let Some((stmts, code_cache_id)) = self.parse_regex_code_cached_with_id(code) else {
             return InlineCodeOutcome {
                 value: None,
-                writes: HashMap::new(),
+                writes: ValueMap::default(),
                 made: None,
             };
         };
@@ -301,7 +302,7 @@ impl Interpreter {
         // `token linetag { ^^ (\h*) <tag> <?{ $<tag>.made<type> ~~ none(...) }> ... }`).
         // The actions run in a scratch interpreter so the assertion's own
         // `$/`/`$0` env below is not clobbered by the action dispatch.
-        let made_named: HashMap<String, Value> = if code.contains(".made") {
+        let made_named: ValueMap = if code.contains(".made") {
             if let Some(actions0) = self.current_grammar_actions.clone() {
                 self.run_named_capture_actions(caps, actions0)
             } else {
@@ -310,7 +311,7 @@ impl Interpreter {
                 self.named_capture_match_objects(caps)
             }
         } else {
-            HashMap::new()
+            ValueMap::default()
         };
 
         // Set named captures (texts derive from spans through the engine-scope
@@ -418,7 +419,7 @@ impl Interpreter {
         // value has to survive as a `regex_vars` delta so a later `$name`
         // interpolation or `<?{ … }>` assertion in the same match reads it, while
         // `self.env` goes back to what the enclosing scope had.
-        let mut writes: HashMap<String, Value> = HashMap::new();
+        let mut writes: ValueMap = ValueMap::default();
         for k in caps.regex_vars().keys() {
             if let Some(now) = self.env.get(k)
                 && caps.regex_vars().get(k) != Some(now)
@@ -578,7 +579,7 @@ impl Interpreter {
     /// no `:actions` object is in play: the capture must still be a Match (so
     /// `.made` answers Nil) rather than the plain Str the fast path installs —
     /// on a Str, `.made` is a method-not-found, which now propagates as a die.
-    fn named_capture_match_objects(&mut self, caps: &RegexCaptures) -> HashMap<String, Value> {
+    fn named_capture_match_objects(&mut self, caps: &RegexCaptures) -> ValueMap {
         let target =
             super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
         let full = Value::make_match_object_full(
@@ -593,7 +594,7 @@ impl Interpreter {
             Some(ValueView::Hash(named)) => {
                 named.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
             }
-            _ => HashMap::new(),
+            _ => ValueMap::default(),
         }
     }
 
@@ -603,12 +604,8 @@ impl Interpreter {
     /// `$<x>.made` inside `<?{ ... }>` assertions during parsing. Runs in a
     /// scratch interpreter to avoid mutating the caller's env. Best-effort: a
     /// capture whose action errors or is absent maps to its un-actioned Match.
-    fn run_named_capture_actions(
-        &mut self,
-        caps: &RegexCaptures,
-        mut actions: Value,
-    ) -> HashMap<String, Value> {
-        let mut out = HashMap::new();
+    fn run_named_capture_actions(&mut self, caps: &RegexCaptures, mut actions: Value) -> ValueMap {
+        let mut out = ValueMap::default();
         // Mid-match synthesis: the accumulator carries no subject yet, so the
         // subject comes from the live engine scope (empty-subject fallback is
         // unreachable in practice — this only runs from inside a match).
@@ -774,7 +771,7 @@ impl Interpreter {
             scratch.env.insert(k, v);
         }
         // Baseline of `$*` vars visible to the action, to diff after it runs.
-        let baseline: HashMap<String, Value> = scratch
+        let baseline: ValueMap = scratch
             .env
             .iter()
             .filter(|(k, _)| k.starts_with("*"))

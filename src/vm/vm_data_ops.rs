@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// ADR-0049 (slices 1-2): a real `Array`/`Hash` element is a `Scalar`
@@ -244,7 +245,7 @@ impl Interpreter {
         // literal's key/value pairs are pushed flat (key, val, key, val, ...),
         // so scanning the whole `items` slice checks both sides.
         self.explode_if_fatal_failure_in_composite(&items)?;
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         for pair in items.chunks(2) {
             // A bare type-object key (`%(Int, 1)`) stringifies to "" with the
             // Rakudo "uninitialized value in string context" warning (or a user
@@ -276,7 +277,7 @@ impl Interpreter {
         // are `Pair`/`ValuePair` values, so the composite check descends one
         // level into the pair's value.
         self.explode_if_fatal_failure_in_composite(&items)?;
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         for item in items {
             match item.view() {
                 // ADR-0040 slice 2: a `%(...)` literal's values are `Scalar`
@@ -467,7 +468,7 @@ impl Interpreter {
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut positional = Vec::new();
-        let mut named = HashMap::new();
+        let mut named = ValueMap::default();
         for val in raw {
             // A `WrapVarRef`-tagged scalar variable positional (`\($a)`): capture
             // the variable's *container* so `$c[0]` aliases `$a` and `$c[0]++`

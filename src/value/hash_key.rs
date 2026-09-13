@@ -2,12 +2,13 @@
 //!
 //! Step 1 of [#7549](https://github.com/tokuhirom/mutsu/issues/7549). This
 //! module introduces the type and nothing else: `HashData::map` is still
-//! `HashMap<String, Value>`, so landing this changes no behavior. Switching the
-//! two maps over is the separate step that the issue's measurement gates.
+//! `String`-keyed (a [`ValueMap`](crate::value::ValueMap)), so landing this
+//! changes no behavior. Switching the two maps over is the separate step that
+//! the issue's measurement gates.
 //!
 //! # The problem it exists to solve
 //!
-//! `HashData::map` is a `HashMap<String, Value>` under `derive(Clone)`, so every
+//! `HashData::map` is a `String`-keyed map under `derive(Clone)`, so every
 //! value-copy of a hash deep-clones each `String` key: one heap allocation per
 //! key. Measured on the issue, a `my %h = %g` over a 200-key hash costs 200.9
 //! allocations per copy — 200 keys plus one table — and the key clones are ~72%

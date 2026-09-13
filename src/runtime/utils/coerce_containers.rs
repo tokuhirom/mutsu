@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 /// The concrete key(s) a hash-initializer pair stores its value under. A Junction
 /// key threads over its members (`"a"|"b" => 1` stores 1 under both `a` and `b`,
@@ -191,8 +192,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     flat.push(item.clone());
                 }
             }
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let mut i = 0;
             while i < flat.len() {
                 if let ValueView::Pair(k, v) = flat[i].view() {
@@ -239,8 +240,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) | ValueView::Slip(_) => {
             let items = crate::runtime::utils::value_to_list(&value);
             let items = &items[..];
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let mut i = 0;
             while i < items.len() {
                 if let ValueView::Pair(k, v) = items[i].view() {
@@ -276,13 +277,13 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             set_hash_original_keys(Value::hash(map), original_keys)
         }
         ValueView::Pair(k, v) => {
-            let mut map = HashMap::new();
+            let mut map = ValueMap::default();
             map.insert(k.clone(), hash_stored_value(v.deref_container()));
             Value::hash(map)
         }
         ValueView::ValuePair(k, v) => {
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let dv = hash_stored_value(v.deref_container());
             for kk in hash_pair_keys(k) {
                 let str_key = kk.to_string_value();
@@ -294,8 +295,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             set_hash_original_keys(Value::hash(map), original_keys)
         }
         ValueView::Set(items, _) => {
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let mut has_typed = false;
             // The store key is a `.WHICH` string; the produced Hash is
             // display-string-keyed with the element object recorded.
@@ -316,8 +317,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             result
         }
         ValueView::Bag(items, _) => {
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let mut has_typed = false;
             for (key, count) in items.iter() {
                 let typed = items.typed_key(key);
@@ -336,8 +337,8 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             result
         }
         ValueView::Mix(items, _) => {
-            let mut map = HashMap::new();
-            let mut original_keys: HashMap<String, Value> = HashMap::new();
+            let mut map = ValueMap::default();
+            let mut original_keys: ValueMap = ValueMap::default();
             let mut has_typed = false;
             for (key, weight) in items.iter() {
                 let typed = items.typed_key(key);
@@ -383,19 +384,19 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                 ArrayKind::List,
             ))
         }
-        ValueView::Nil => Value::hash(HashMap::new()),
+        ValueView::Nil => Value::hash(ValueMap::default()),
         ValueView::Instance { .. } if value.is_match_instance() => {
             // %($/) returns the named captures hash
             value
                 .match_named()
-                .unwrap_or_else(|| Value::hash(HashMap::new()))
+                .unwrap_or_else(|| Value::hash(ValueMap::default()))
         }
         _ => {
             // ADR-0049 slice 5: same rationale as the two odd-trailing-key
             // arms above -- a single scalar coerced to a Hash with no paired
             // value gets the standard `Package("Any")` gap marker instead of
             // a raw `Value::NIL`.
-            let mut map = HashMap::new();
+            let mut map = ValueMap::default();
             map.insert(
                 value.to_string_value(),
                 Value::package(crate::symbol::wk::any()),
@@ -438,8 +439,8 @@ where
         .last()
         .map(Value::to_string_value)
         .unwrap_or_else(|| "Nil".to_string());
-    let mut map = HashMap::new();
-    let mut original_keys: HashMap<String, Value> = HashMap::new();
+    let mut map = ValueMap::default();
+    let mut original_keys: ValueMap = ValueMap::default();
     // An itemized Pair (`$(:a(1))`) or a Pair held in a `:=` element cell (e.g.
     // a classify bucket element) still counts as a hash initializer pair; an
     // itemized *hash* stays opaque and dies "Odd number" like raku.

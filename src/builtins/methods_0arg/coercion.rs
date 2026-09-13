@@ -1,5 +1,6 @@
 use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
 use std::collections::HashMap;
 
@@ -851,7 +852,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
 /// diverged under ADR-0034: `Seq`'s is `SeqBody`, `Slip`'s stays `Vec<Value>`).
 fn items_to_capture_value(items: &[Value]) -> Value {
     let mut positional = vec![];
-    let mut named = HashMap::new();
+    let mut named = ValueMap::default();
     for item in items.iter() {
         match item.view() {
             ValueView::Pair(k, v) => {
@@ -881,31 +882,31 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             ..
         } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
             let positional = crate::value::value_buf::buf_elems_or_empty(&attributes);
-            Ok(Value::capture(positional, HashMap::new()))
+            Ok(Value::capture(positional, ValueMap::default()))
         }
         // Numeric types follow Mu.Capture: public attributes become nameds.
         // Complex → \(:re, :im)
         ValueView::Complex(r, i) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("re".to_string(), Value::num(r));
             named.insert("im".to_string(), Value::num(i));
             Ok(Value::capture(vec![], named))
         }
         // Rat/FatRat/BigRat → \(:numerator, :denominator)
         ValueView::Rat(n, d) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("numerator".to_string(), Value::int(n));
             named.insert("denominator".to_string(), Value::int(d));
             Ok(Value::capture(vec![], named))
         }
         ValueView::FatRat(n, d) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("numerator".to_string(), Value::int(n));
             named.insert("denominator".to_string(), Value::int(d));
             Ok(Value::capture(vec![], named))
         }
         ValueView::BigRat(n, d) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("numerator".to_string(), Value::bigint(n.clone()));
             named.insert("denominator".to_string(), Value::bigint(d.clone()));
             Ok(Value::capture(vec![], named))
@@ -924,13 +925,13 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         }
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         ValueView::Pair(k, v) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("key".to_string(), Value::str(k.clone()));
             named.insert("value".to_string(), v.clone());
             Ok(Value::capture(vec![], named))
         }
         ValueView::ValuePair(k, v) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("key".to_string(), k.clone());
             named.insert("value".to_string(), v.clone());
             Ok(Value::capture(vec![], named))
@@ -938,7 +939,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // Set.Capture → named args where each key maps to True (the named-arg
         // name is the element's display string; store keys are `.WHICH`).
         ValueView::Set(s, _) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for k in s.iter() {
                 named.insert(s.typed_key(k).to_string_value(), Value::TRUE);
             }
@@ -946,7 +947,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         }
         // Bag.Capture → named args where each key maps to its count
         ValueView::Bag(b, _) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for (k, v) in b.iter() {
                 named.insert(
                     b.typed_key(k).to_string_value(),
@@ -957,7 +958,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         }
         // Mix.Capture → named args where each key maps to its weight
         ValueView::Mix(m, _) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for (k, v) in m.iter() {
                 // Use Int when the weight is a whole number
                 let val = if v.fract() == 0.0 && v.is_finite() {
@@ -975,7 +976,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // hash is `\(:42(70), :a(42))`).
         ValueView::Hash(map) => {
             let typed = map.has_typed_keys();
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for (k, v) in map.iter() {
                 let name = if typed {
                     map.typed_key(k).to_string_value()
@@ -994,7 +995,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // Array/List.Capture → positional args, with Pair values becoming named
         ValueView::Array(items, ..) => {
             let mut positional = vec![];
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for item in items.iter() {
                 match item.view() {
                     ValueView::Pair(k, v) => {
@@ -1022,7 +1023,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             } else {
                 let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
                 let mut positional = vec![];
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 for item in items.iter() {
                     match item.view() {
                         ValueView::Pair(k, v) => {
@@ -1042,7 +1043,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         | ValueView::RangeExcl(start, end)
         | ValueView::RangeExclStart(start, end)
         | ValueView::RangeExclBoth(start, end) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("min".to_string(), Value::int(start));
             named.insert("max".to_string(), Value::int(end));
             named.insert(
@@ -1068,7 +1069,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             excl_start,
             excl_end,
         } => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("min".to_string(), (**start).clone());
             named.insert("max".to_string(), (**end).clone());
             named.insert("excludes-min".to_string(), Value::truth(excl_start));
@@ -1092,7 +1093,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 .get("value")
                 .map(crate::builtins::arith::real_to_rat)
                 .unwrap_or_else(|| crate::value::make_rat(0, 1));
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert("tai".to_string(), tai);
             Ok(Value::capture(vec![], named))
         }
@@ -1104,7 +1105,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             attributes,
             ..
         } if matches!(class_name.resolve().as_str(), "IO::Path" | "Path") => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for (k, v) in attributes.as_map().iter() {
                 let key = if k == "cwd" { "CWD" } else { k.as_str() };
                 named.insert(key.to_string(), v.clone());
@@ -1116,7 +1117,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // named (the spec tests only assert the contents they know about, so
         // extra bookkeeping attributes are harmless).
         ValueView::Instance { attributes, .. } => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             for (k, v) in attributes.as_map().iter() {
                 named.insert(k.resolve(), v.clone());
             }
@@ -1127,7 +1128,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // package-qualified term, e.g. `PromiseStatus::Planned`) so it `eqv`s
         // the literal `PromiseStatus::<status>`.
         ValueView::Promise(shared) => {
-            let mut named = HashMap::new();
+            let mut named = ValueMap::default();
             named.insert(
                 "status".to_string(),
                 Value::package(crate::symbol::Symbol::intern(&format!(
@@ -1138,7 +1139,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             Ok(Value::capture(vec![], named))
         }
         // Nil.Capture → empty capture
-        ValueView::Nil => Ok(Value::capture(vec![], HashMap::new())),
+        ValueView::Nil => Ok(Value::capture(vec![], ValueMap::default())),
         // Types whose .Capture throws X::Cannot::Capture
         ValueView::Bool(_)
         | ValueView::Str(_)
@@ -1162,16 +1163,16 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             match type_name.as_str() {
                 "IntStr" | "NumStr" | "RatStr" | "ComplexStr" | "WhateverCode" | "Signature"
                 | "Version" => Err(cannot_capture(&type_name)),
-                _ => Ok(Value::capture(vec![target.clone()], HashMap::new())),
+                _ => Ok(Value::capture(vec![target.clone()], ValueMap::default())),
             }
         }
         // Default: wrap in a single-positional capture
-        _ => Ok(Value::capture(vec![target.clone()], HashMap::new())),
+        _ => Ok(Value::capture(vec![target.clone()], ValueMap::default())),
     }
 }
 
 fn cannot_capture(type_name: &str) -> RuntimeError {
-    let mut attrs = HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), Value::str(type_name.to_string()));
     attrs.insert(
         "message".to_string(),

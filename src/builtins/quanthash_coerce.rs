@@ -20,6 +20,7 @@ use crate::runtime::utils::value_to_list;
 use crate::runtime::utils::{
     quanthash_elem_entry, quanthash_insert_set, record_quanthash_original, str_elem_key,
 };
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Signed;
@@ -40,7 +41,7 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         return to_set(inner, what);
     }
     let mut elems = HashSet::new();
-    let mut original_keys: HashMap<String, Value> = HashMap::new();
+    let mut original_keys: ValueMap = ValueMap::default();
     // `flatten` is true when this item sits in a list-context-flattening
     // position (an element of a List `(...)` invocant): nested Lists/Arrays/
     // Seqs/Hashes spill their contents. It is false for elements of an Array
@@ -48,7 +49,7 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // `[1,[2,3]].Set` has two elements, but `(1,[2,3]).Set` has three).
     fn add_item(
         elems: &mut HashSet<String>,
-        original_keys: &mut HashMap<String, Value>,
+        original_keys: &mut ValueMap,
         item: &Value,
         flatten: bool,
     ) {
@@ -239,11 +240,11 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         return to_bag(inner, what);
     }
     let mut counts: HashMap<String, BigInt> = HashMap::new();
-    let mut original_keys: HashMap<String, Value> = HashMap::new();
+    let mut original_keys: ValueMap = ValueMap::default();
 
     fn add_item(
         counts: &mut HashMap<String, BigInt>,
-        original_keys: &mut HashMap<String, Value>,
+        original_keys: &mut ValueMap,
         item: &Value,
     ) -> Result<(), RuntimeError> {
         let item = crate::runtime::utils::strip_quanthash_mixin_elem(item);
@@ -279,7 +280,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     /// `[1,[2,3]].Bag` has two keys, `(1,[2,3]).Bag` has three).
     fn flatten_into(
         counts: &mut HashMap<String, BigInt>,
-        original_keys: &mut HashMap<String, Value>,
+        original_keys: &mut ValueMap,
         value: &Value,
         flatten: bool,
     ) -> Result<(), RuntimeError> {
@@ -535,11 +536,7 @@ pub(crate) fn mix_pair_weight_value(v: &Value) -> Result<Value, RuntimeError> {
 /// Accumulate `w` into `weights[key]` using exact `Value` arithmetic
 /// (`arith_add` keeps `Rat + Rat` exact). Mix weights are folded as `Value`s
 /// during construction and only lowered to `f64` at the coercion boundary.
-fn mix_accum(
-    weights: &mut HashMap<String, Value>,
-    key: String,
-    w: Value,
-) -> Result<(), RuntimeError> {
+fn mix_accum(weights: &mut ValueMap, key: String, w: Value) -> Result<(), RuntimeError> {
     use std::collections::hash_map::Entry;
     match weights.entry(key) {
         Entry::Occupied(mut e) => {
@@ -554,8 +551,8 @@ fn mix_accum(
 }
 
 fn mix_add_item_with_keys(
-    weights: &mut HashMap<String, Value>,
-    original_keys: &mut HashMap<String, Value>,
+    weights: &mut ValueMap,
+    original_keys: &mut ValueMap,
     item: &Value,
     flatten: bool,
 ) -> Result<(), RuntimeError> {
@@ -656,8 +653,8 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
     // Weights are folded as exact `Value`s (so `0.1 + 0.02` stays `0.12`) and
     // lowered to the stored `f64` representation only at the return boundary.
-    let mut weights: HashMap<String, Value> = HashMap::new();
-    let mut original_keys: HashMap<String, Value> = HashMap::new();
+    let mut weights: ValueMap = ValueMap::default();
+    let mut original_keys: ValueMap = ValueMap::default();
     match target.view() {
         // Always return the immutable variant; the caller flips it for `.MixHash`.
         ValueView::Mix(m, _) => return Ok(Value::mix_parts(m.clone(), false)),

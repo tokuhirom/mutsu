@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Collect key-value pairs from Hash.push/append arguments.
@@ -94,12 +95,7 @@ impl Interpreter {
     /// Insert a key-value pair into a hash with push/append semantics.
     /// push: if key exists, stack the new value (existing becomes [existing, new])
     /// append: if key exists, flatten arrays when appending
-    pub(crate) fn hash_push_insert(
-        hash: &mut std::collections::HashMap<String, Value>,
-        key: String,
-        value: Value,
-        is_push: bool,
-    ) {
+    pub(crate) fn hash_push_insert(hash: &mut ValueMap, key: String, value: Value, is_push: bool) {
         // ADR-0040 slice 1: itemize the value at the store, same as a plain
         // `%h<k> = v` element assign (`%h.push('a' => [1,2]); %h<a>.raku` is
         // `$[1, 2]` in raku, not `[1, 2]`).

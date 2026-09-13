@@ -11,10 +11,7 @@ impl BagData {
         }
     }
 
-    pub fn with_original_keys(
-        counts: HashMap<String, NumBigInt>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn with_original_keys(counts: HashMap<String, NumBigInt>, original_keys: ValueMap) -> Self {
         BagData {
             counts,
             original_keys: Some(original_keys),
@@ -76,10 +73,7 @@ impl SetData {
         }
     }
 
-    pub fn with_original_keys(
-        elements: HashSet<String>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn with_original_keys(elements: HashSet<String>, original_keys: ValueMap) -> Self {
         SetData {
             elements,
             original_keys: Some(original_keys),
@@ -141,10 +135,7 @@ impl MixData {
         }
     }
 
-    pub fn with_original_keys(
-        weights: HashMap<String, f64>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn with_original_keys(weights: HashMap<String, f64>, original_keys: ValueMap) -> Self {
         MixData {
             weights,
             original_keys: Some(original_keys),

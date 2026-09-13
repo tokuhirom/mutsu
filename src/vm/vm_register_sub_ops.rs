@@ -2,6 +2,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// A parameter may carry a trait the signature machinery does not know
@@ -138,7 +139,7 @@ impl Interpreter {
                 is_raw: *is_raw,
                 env,
                 assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
+                assumed_named: ValueMap::default(),
                 id: crate::value::next_instance_id(),
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` — mark it
                 // so `.WHAT`/`.^name`/smartmatch report `Block`. Named anonymous subs
@@ -210,7 +211,7 @@ impl Interpreter {
                 // Upvalue snapshot (single-store Slice E); see capture_closure_env.
                 env: self.capture_closure_env(code, &compiled_code),
                 assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
+                assumed_named: ValueMap::default(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: true,

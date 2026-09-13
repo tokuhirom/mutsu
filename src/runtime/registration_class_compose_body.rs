@@ -11,6 +11,7 @@ use super::registration_class_compose::{RoleCompositionCx, RoleCompositionOutcom
 use super::registration_class_decl::{BUILTIN_INHERITABLE_TYPES, BUILTIN_PARENT_TYPES};
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Apply a role through the ClassHOW add_role MOP operation.
@@ -172,7 +173,7 @@ impl Interpreter {
         cx: &mut RoleCompositionCx<'_>,
         base_role_name: &str,
         role: &RoleDef,
-        role_param_values: &HashMap<String, Value>,
+        role_param_values: &ValueMap,
         role_arg_values: &[Value],
     ) -> Result<(), RuntimeError> {
         if role.deferred_body.is_empty() {
@@ -401,7 +402,7 @@ impl Interpreter {
         cx: &mut RoleCompositionCx<'_>,
         base_role_name: &str,
         role: &RoleDef,
-        role_param_values: &HashMap<String, Value>,
+        role_param_values: &ValueMap,
     ) {
         // ADR-0019 F4c-3: hoisted out of `if let Some(x) = self.registry()
         // ....cloned() { .. }` -- see the matching comment further down in
@@ -624,7 +625,7 @@ impl Interpreter {
                     mro: [].into(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
-                    class_level_attrs: HashMap::new(),
+                    class_level_attrs: ValueMap::default(),
                 };
                 self.registry_mut()
                     .classes

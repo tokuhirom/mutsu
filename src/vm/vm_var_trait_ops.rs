@@ -1,5 +1,6 @@
 //! Variable trait application (`my $x is Foo` / container parameterization).
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// The single positional argument a custom container's `STORE` receives for
@@ -499,7 +500,7 @@ impl Interpreter {
                         }
                         let needs_rekey = rekeyed.iter().any(|(old, (new, _))| old != new);
                         if needs_rekey {
-                            let mut originals = std::collections::HashMap::new();
+                            let mut originals = ValueMap::default();
                             instance = match instance.view() {
                                 ValueView::Mix(data, mutable) => {
                                     let mut weights = std::collections::HashMap::new();

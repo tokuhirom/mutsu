@@ -321,7 +321,7 @@ impl Interpreter {
                     is_raw: false,
                     env: self.env().clone(),
                     assumed_positional: Vec::new(),
-                    assumed_named: HashMap::new(),
+                    assumed_named: ValueMap::default(),
                     id: crate::value::next_instance_id(),
                     empty_sig: false,
                     is_bare_block: false,

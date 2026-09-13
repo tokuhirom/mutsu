@@ -8,11 +8,12 @@ use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::platform_library_name;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Build the "files" hash for a distribution.
     pub(crate) fn build_dist_files_hash(&self, prefix: &str, meta: &Value) -> Value {
-        let mut files = HashMap::new();
+        let mut files = ValueMap::default();
         let prefix_path = std::path::Path::new(prefix);
         if let Some(resources) = meta.hash_get_str("resources")
             && let ValueView::Array(arr, _) = resources.view()
@@ -226,9 +227,9 @@ impl Interpreter {
             for ext in [".rakumod", ".pm6", ".raku", ".pm"] {
                 let candidate = prefix_path.join(format!("{relative}{ext}"));
                 if candidate.exists() {
-                    let mut meta_map = HashMap::new();
+                    let mut meta_map = ValueMap::default();
                     meta_map.insert("name".to_string(), Value::str(short_name.clone()));
-                    let mut provides_map = HashMap::new();
+                    let mut provides_map = ValueMap::default();
                     provides_map.insert(short_name.clone(), Value::str(format!("{relative}{ext}")));
                     meta_map.insert(
                         "provides".to_string(),

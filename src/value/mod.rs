@@ -67,7 +67,7 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.
-pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
+pub(crate) type ProxySubclassAttrs = Arc<Mutex<ValueMap>>;
 
 /// The mutable state attached to a [`ValueRepr::Mixin`].
 ///
@@ -84,18 +84,18 @@ pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 /// containing `Gc<MixinOverrides>`, and therefore aliases both fields.
 #[derive(Debug)]
 pub(crate) struct MixinOverrides {
-    overrides: HashMap<String, Value>,
+    overrides: ValueMap,
     attributes: Gc<InstanceAttrs>,
 }
 
 impl MixinOverrides {
-    pub(crate) fn new(overrides: HashMap<String, Value>) -> Self {
+    pub(crate) fn new(overrides: ValueMap) -> Self {
         let state = Self::with_attributes(overrides, AttrMap::new());
         state.seed_missing_attributes();
         state
     }
 
-    pub(crate) fn with_attributes(overrides: HashMap<String, Value>, attributes: AttrMap) -> Self {
+    pub(crate) fn with_attributes(overrides: ValueMap, attributes: AttrMap) -> Self {
         Self {
             overrides,
             attributes: Gc::new(InstanceAttrs::role_storage(attributes)),
@@ -104,11 +104,11 @@ impl MixinOverrides {
 
     /// The composition/override map. This is the only map used for type
     /// identity, method overrides, and marker inspection.
-    pub(crate) fn overrides(&self) -> &HashMap<String, Value> {
+    pub(crate) fn overrides(&self) -> &ValueMap {
         &self.overrides
     }
 
-    pub(crate) fn overrides_mut(&mut self) -> &mut HashMap<String, Value> {
+    pub(crate) fn overrides_mut(&mut self) -> &mut ValueMap {
         &mut self.overrides
     }
 
@@ -286,8 +286,8 @@ impl MixinOverrides {
     }
 }
 
-impl From<HashMap<String, Value>> for MixinOverrides {
-    fn from(overrides: HashMap<String, Value>) -> Self {
+impl From<ValueMap> for MixinOverrides {
+    fn from(overrides: ValueMap) -> Self {
         Self::new(overrides)
     }
 }
@@ -393,7 +393,7 @@ pub(crate) struct BagData {
     pub counts: HashMap<String, NumBigInt>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Bag is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Int` for `BagHash[Int]`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -412,7 +412,7 @@ pub(crate) struct SetData {
     pub elements: HashSet<String>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Set is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Str` for `SetHash[Str]`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -431,7 +431,7 @@ pub(crate) struct MixData {
     pub weights: HashMap<String, f64>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Mix is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Real` for `MixHash`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -458,7 +458,9 @@ mod guards;
 pub mod hash_key;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
+pub mod user_key_map;
 pub use hash_key::HashKey;
+pub use user_key_map::ValueMap;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
 pub(crate) mod match_view;
@@ -1138,7 +1140,7 @@ pub struct SubData {
     pub(crate) is_raw: bool,
     pub env: Env,
     pub(crate) assumed_positional: Vec<Value>,
-    pub(crate) assumed_named: HashMap<String, Value>,
+    pub(crate) assumed_named: ValueMap,
     pub id: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
@@ -1487,7 +1489,10 @@ pub enum ArrayKind {
 /// are unchanged; only structural mutation/rebuild sites touch the wrapper.
 #[derive(Debug, Clone, Default)]
 pub struct HashData {
-    pub map: HashMap<String, Value>,
+    /// The key/value map. [`ValueMap`], not a std `HashMap`: the keys are
+    /// runtime data, so the hasher is a randomly-seeded fast one rather than
+    /// SipHash (ADR-0103 / #8333).
+    pub map: ValueMap,
     /// This hash's `.WHICH` identity. Lazily minted and never reused, so two
     /// dead temporaries cannot collide the way their recycled ADDRESSES could
     /// (`{a=>1}.WHICH eq {a=>1}.WHICH` was `True`). See [`which_id::WhichId`].
@@ -1504,7 +1509,7 @@ pub struct HashData {
     /// For object hashes / typed-key hashes: maps each stored `.WHICH` key
     /// string back to the original key object (so `.keys`/subscript see the
     /// real key, not the WHICH string).
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// `is default(...)` element default — the value a missing-key read yields.
     /// Embedded (replacing the former `Arc::as_ptr`-keyed `hash_defaults` side
     /// table) so it travels with the hash through copy-on-write — the pointer
@@ -1810,7 +1815,7 @@ pub(in crate::value) enum ValueRepr {
         #[allow(clippy::box_collection)]
         positional: Box<Vec<Value>>,
         #[allow(clippy::box_collection)]
-        named: Box<HashMap<String, Value>>,
+        named: Box<ValueMap>,
     },
     /// A *named variable reference*: an argument (or pair value, or `:=` RHS)
     /// tagged with the name of the variable it was read from, so that `is rw` /
@@ -2167,7 +2172,7 @@ pub struct CustomTypeInstanceData {
     pub how: Box<Value>,
     pub repr: String,
     pub type_name: Symbol,
-    pub attributes: Arc<HashMap<String, Value>>,
+    pub attributes: Arc<ValueMap>,
     pub id: u64,
 }
 
@@ -2266,7 +2271,7 @@ pub struct RegexAdverbs {
     pub(crate) source_adverbs: Option<RegexSourceAdverbs>,
     /// The defining scope this literal closed over, when its pattern embeds
     /// code — see [`RegexClosure`]. `None` for every ordinary literal.
-    pub captured: Option<Arc<HashMap<String, Value>>>,
+    pub captured: Option<Arc<ValueMap>>,
     /// Source-level provenance for a parser-created static regex. This is
     /// separate from the execution spelling in `pattern`: the runtime may
     /// carry normalized prefixes there, while RakuAST and the execution
@@ -2288,7 +2293,7 @@ pub struct RegexClosure {
     pub pattern: Arc<String>,
     /// Captured lexicals, keyed the way `env` keys them (`$x` -> `x`,
     /// `@x`/`%x`/`&x` keep their sigil).
-    pub scope: Option<Arc<HashMap<String, Value>>>,
+    pub scope: Option<Arc<ValueMap>>,
     /// Source-level provenance for a static regex value. A source-only value
     /// has no defining lexical scope, so `scope` is `None`; code-bearing
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
@@ -2826,7 +2831,7 @@ mod hash_chokepoint_tests {
 
     #[test]
     fn insert_through_replaces_bare_entry() {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("a".to_string(), Value::Int(1));
         Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
         assert_eq!(
@@ -2840,7 +2845,7 @@ mod hash_chokepoint_tests {
 
     #[test]
     fn insert_through_creates_missing_entry() {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
         assert_eq!(
             map.get("b")
@@ -2857,7 +2862,7 @@ mod hash_chokepoint_tests {
         // assignment to the key must write *through* the cell (preserving the
         // binding), not replace the entry with a bare value.
         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Int(1)));
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));
         // The entry is still the same cell (binding preserved)...

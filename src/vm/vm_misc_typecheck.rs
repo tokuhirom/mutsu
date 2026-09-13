@@ -1,5 +1,6 @@
 use super::vm_misc_ops::*;
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn exec_type_check_op_inner(
@@ -297,7 +298,7 @@ impl Interpreter {
                 if base_constraint == "Int"
                     && matches!(value.view(), ValueView::Num(f) if f.is_nan() || f.is_infinite())
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("value".to_string(), value.clone());
                     attrs.insert(
                         "vartype".to_string(),
@@ -359,7 +360,7 @@ impl Interpreter {
                         "Package '{}' is insufficiently type-like to qualify a variable.  Did you mean 'class'?",
                         constraint
                     );
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("type".to_string(), Value::str(constraint.to_string()));
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Syntax::Variable::BadType", attrs));
@@ -394,7 +395,7 @@ impl Interpreter {
                 );
                 // Group message mirrors Raku: the sorrow message plus "Malformed my".
                 let group_msg = format!("{}\nMalformed my", undecl_msg);
-                let mut group_attrs = std::collections::HashMap::new();
+                let mut group_attrs = ValueMap::default();
                 group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
                 group_attrs.insert("worries".to_string(), Value::array(vec![]));
                 group_attrs.insert("panic".to_string(), Value::NIL);

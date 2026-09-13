@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn mark_failure_handled_on_stack(stack: &mut [Value]) {
@@ -806,8 +807,7 @@ impl Interpreter {
                         // Hash (raku auto-declares it as Hash under `no strict`):
                         // `%h<k>` is `(Any)`, `%h.raku` is `{}`. Anonymous
                         // `%`-sigil variables share this default.
-                        self.stack
-                            .push(Value::hash(std::collections::HashMap::new()));
+                        self.stack.push(Value::hash(ValueMap::default()));
                     }
                 }
                 *ip += 1;

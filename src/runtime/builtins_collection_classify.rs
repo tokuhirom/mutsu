@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn builtin_classify(
@@ -70,7 +71,7 @@ impl Interpreter {
         }
 
         fn insert_nested_bucket(
-            buckets: &mut HashMap<String, Value>,
+            buckets: &mut ValueMap,
             path: &[Value],
             item: Value,
             name: &str,
@@ -97,7 +98,7 @@ impl Interpreter {
             } else {
                 let entry = buckets
                     .entry(key)
-                    .or_insert_with(|| Value::hash(HashMap::new()));
+                    .or_insert_with(|| Value::hash(ValueMap::default()));
                 let is_hash = matches!(entry.view(), ValueView::Hash(_));
                 let is_array = matches!(entry.view(), ValueView::Array(..));
                 // Record the next path component's key object in the nested
@@ -110,7 +111,7 @@ impl Interpreter {
                     let data = crate::gc::Gc::make_mut(map);
                     if !matches!(path[1].view(), ValueView::Str(_)) {
                         data.original_keys
-                            .get_or_insert_with(HashMap::new)
+                            .get_or_insert_with(ValueMap::default)
                             .insert(path[1].to_string_value(), path[1].clone());
                     }
                     insert_nested_bucket(&mut data.map, &path[1..], item, name)
@@ -122,7 +123,7 @@ impl Interpreter {
                 } else if is_array {
                     Err(mixed_level_error(name))
                 } else {
-                    *entry = Value::hash(HashMap::new());
+                    *entry = Value::hash(ValueMap::default());
                     entry
                         .with_hash_mut(|map| recurse(map, item.clone()))
                         .unwrap_or(Ok(()))
@@ -170,7 +171,7 @@ impl Interpreter {
             }
         }
         let Some(mapper) = mapper else {
-            return Ok(into_target.unwrap_or_else(|| Value::hash(HashMap::new())));
+            return Ok(into_target.unwrap_or_else(|| Value::hash(ValueMap::default())));
         };
 
         // A list element that is a named-marker `Pair` is data here, not a
@@ -235,16 +236,16 @@ impl Interpreter {
         // an *object hash* so `$result{ any(...) }` is a by-key lookup (not
         // junction autothreading) and `.keys` yields the real key objects.
         // Records each first-level non-Str key object under its encoded string.
-        let mut object_keys: HashMap<String, Value> = HashMap::new();
+        let mut object_keys: ValueMap = ValueMap::default();
         // An `:into` object hash stores `.WHICH` keys: seed the (raw-string-
         // keyed) working buckets from its original key objects, and remember
         // its key type so the result keeps the object-hash identity.
         let mut into_key_type: Option<String> = None;
-        let mut buckets: HashMap<String, Value> = match into_target.as_ref().map(Value::view) {
+        let mut buckets: ValueMap = match into_target.as_ref().map(Value::view) {
             Some(ValueView::Hash(map)) => {
                 into_key_type = map.key_type.clone();
                 if map.has_typed_keys() {
-                    let mut seeded = HashMap::with_capacity(map.len());
+                    let mut seeded = crate::value::user_key_map::with_capacity(map.len());
                     for (k, v) in map.iter() {
                         let obj = map.typed_key(k);
                         let str_key = obj.to_string_value();
@@ -258,15 +259,15 @@ impl Interpreter {
                     map.as_ref().map.clone()
                 }
             }
-            _ => HashMap::new(),
+            _ => ValueMap::default(),
         };
         // Bag/Mix elements are stored by `.WHICH` key with the source objects
         // recorded in `original_keys` (see quanthash_keys.rs). Carry the
         // into-target's original keys forward and record every category key we
         // add, so the classified QuantHash keeps element identity (and its
         // `.WHICH` matches a freshly-constructed one — is-deeply / eqv).
-        let mut bag_originals: HashMap<String, Value> = HashMap::new();
-        let mut mix_originals: HashMap<String, Value> = HashMap::new();
+        let mut bag_originals: ValueMap = ValueMap::default();
+        let mut mix_originals: ValueMap = ValueMap::default();
         let mut bag_counts: Option<HashMap<String, num_bigint::BigInt>> =
             match into_target.as_ref().map(Value::view) {
                 Some(ValueView::Bag(b, _)) => {
@@ -524,11 +525,11 @@ impl Interpreter {
     /// `Hash[Mu,Mu]` shape as a `:{...}` literal; the `:into` forms pass the
     /// target's own key type so the target's identity is preserved.
     fn classify_finish_hash(
-        buckets: HashMap<String, Value>,
-        object_keys: HashMap<String, Value>,
+        buckets: ValueMap,
+        object_keys: ValueMap,
         key_type: Option<String>,
     ) -> Value {
-        let buckets: HashMap<String, Value> = buckets
+        let buckets: ValueMap = buckets
             .into_iter()
             .map(|(k, v)| (k, Self::itemize_bucket_value(v, key_type.is_some())))
             .collect();

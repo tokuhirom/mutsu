@@ -419,7 +419,7 @@ impl Interpreter {
                         && suffix.chars().all(|c| c.is_ascii_digit())
                     {
                         let int_val: i64 = suffix.parse().unwrap_or(0);
-                        let mut mixins = std::collections::HashMap::new();
+                        let mut mixins = ValueMap::default();
                         mixins.insert("Str".to_string(), Value::str(suffix.to_string()));
                         named.push((
                             first_char.to_string(),

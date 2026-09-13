@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 /// Whether a set operator's left operand makes the result a mutable QuantHash.
 /// Raku's set operators (`(|)`/`(&)`/`(-)`/`(^)`/`(.)`/`(+)`) take their
@@ -50,12 +51,12 @@ pub(crate) fn with_set_mutability(mut result: Value, mutable: bool) -> Value {
 /// In Raku, when the RHS is a Hash, it is treated as a Set (truthy keys
 /// with weight 1) rather than using its numeric values as weights.
 pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
-    let mut originals: HashMap<String, Value> = HashMap::new();
+    let mut originals: ValueMap = ValueMap::default();
     // When the RHS is a Hash, coerce it to a Set for subtraction.
     // The Hash's truthy keys each count as weight 1.
     let right_as_set;
     let effective_right = if matches!(right.view(), ValueView::Hash(_)) {
-        right_as_set = Value::set_typed(coerce_to_set(right, &mut originals), HashMap::new());
+        right_as_set = Value::set_typed(coerce_to_set(right, &mut originals), ValueMap::default());
         &right_as_set
     } else {
         right
@@ -116,7 +117,7 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
         }
     };
     let result_level = type_level(left).max(type_level(right));
-    let mut originals: HashMap<String, Value> = HashMap::new();
+    let mut originals: ValueMap = ValueMap::default();
     match result_level {
         2 => {
             let a = coerce_to_mix(left, &mut originals);
@@ -149,7 +150,7 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
 }
 
 /// Coerce a value to a Bag's arbitrary-precision weight map.
-fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, BigInt> {
+fn coerce_to_bag(val: &Value, originals: &mut ValueMap) -> HashMap<String, BigInt> {
     match val.view() {
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);
@@ -180,7 +181,7 @@ fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
 }
 
 /// Coerce a value to a Mix (HashMap<String, f64>)
-fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, f64> {
+fn coerce_to_mix(val: &Value, originals: &mut ValueMap) -> HashMap<String, f64> {
     match val.view() {
         ValueView::Mix(m, _) => {
             extend_quanthash_originals(originals, &m.original_keys);
@@ -221,7 +222,7 @@ fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
 /// (entries with zero are dropped).
 pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
     let level = set_type_level(left).max(set_type_level(right));
-    let mut originals: HashMap<String, Value> = HashMap::new();
+    let mut originals: ValueMap = ValueMap::default();
     match level {
         2 => {
             // Mix-level symmetric difference: |a - b| for each key
@@ -271,7 +272,7 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
 /// This is NOT a left-fold; it operates on all inputs simultaneously.
 pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
     let level = args.iter().map(set_type_level).max().unwrap_or(0);
-    let mut originals: HashMap<String, Value> = HashMap::new();
+    let mut originals: ValueMap = ValueMap::default();
     match level {
         2 => {
             // Mix-level: collect all weight vectors per key, then max - second_max

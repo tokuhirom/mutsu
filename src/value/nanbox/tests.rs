@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::env::Env;
+use crate::value::ValueMap;
 
 fn roundtrip(repr: ValueRepr) -> ValueRepr {
     NanBox::from_repr(repr).into_repr()
@@ -248,7 +249,7 @@ fn sample_sub() -> Gc<SubData> {
         is_raw: false,
         env: Env::new(),
         assumed_positional: vec![],
-        assumed_named: HashMap::new(),
+        assumed_named: ValueMap::default(),
         id: 12345,
         empty_sig: false,
         is_bare_block: false,
@@ -344,7 +345,7 @@ fn shared_multifield_box_decodes_by_clone_unique_by_move() {
     // Shared word: both clones decode to the same field pointers.
     let b = NanBox::from_repr(ValueRepr::Mixin(
         inner.clone(),
-        crate::gc::Gc::new(HashMap::new().into()),
+        crate::gc::Gc::new(ValueMap::default().into()),
     ));
     let b2 = b.clone();
     let (r1, r2) = (b.into_repr(), b2.into_repr());
@@ -389,7 +390,7 @@ fn every_variant_roundtrips_losslessly() {
         ),
         ValueRepr::Hash(
             Gc::new(HashData {
-                map: HashMap::from([("k".to_string(), Value::int(1))]),
+                map: ValueMap::from_iter([("k".to_string(), Value::int(1))]),
                 ..Default::default()
             }),
             false,
@@ -484,7 +485,7 @@ fn every_variant_roundtrips_losslessly() {
             scope: Some(Arc::new(
                 [("x".to_string(), Value::int(3))]
                     .into_iter()
-                    .collect::<std::collections::HashMap<_, _>>(),
+                    .collect::<ValueMap>(),
             )),
             source_tree: None,
             signature: None,
@@ -517,11 +518,13 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::HyperWhatever,
         ValueRepr::Mixin(
             Arc::new(Value::int(1)),
-            crate::gc::Gc::new(HashMap::from([("Bool".to_string(), Value::truth(true))]).into()),
+            crate::gc::Gc::new(
+                ValueMap::from_iter([("Bool".to_string(), Value::truth(true))]).into(),
+            ),
         ),
         ValueRepr::Capture {
             positional: Box::new(vec![Value::int(1)]),
-            named: Box::new(HashMap::from([("n".to_string(), Value::int(2))])),
+            named: Box::new(ValueMap::from_iter([("n".to_string(), Value::int(2))])),
         },
         ValueRepr::Uni(Box::new(UniData {
             form: "NFC".to_string(),
@@ -539,7 +542,7 @@ fn every_variant_roundtrips_losslessly() {
             storer: Box::new(Value::NIL),
             subclass: Some((
                 Symbol::intern("MyProxy"),
-                Arc::new(Mutex::new(HashMap::new())),
+                Arc::new(Mutex::new(ValueMap::default())),
             )),
             decontainerized: true,
         },
@@ -558,7 +561,7 @@ fn every_variant_roundtrips_losslessly() {
             how: Box::new(Value::NIL),
             repr: "P6opaque".to_string(),
             type_name: Symbol::intern("CustomT"),
-            attributes: Arc::new(HashMap::new()),
+            attributes: Arc::new(ValueMap::default()),
             id: 2,
         })),
         ValueRepr::Scalar(Box::new(Value::int(11))),

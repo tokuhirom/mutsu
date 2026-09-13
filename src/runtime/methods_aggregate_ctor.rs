@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
@@ -366,12 +367,12 @@ impl Interpreter {
                 flat.extend(Self::value_to_list(arg));
             }
         }
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         // Track the original (typed) key objects for a non-`Str`-keyed object
         // hash (`Hash[Int,Int].new(1 => 2)`) so `.keys`/`.pairs`/`.raku` report
         // the real key (`Int(1)`, not `"1"`). Populated below only when the key
         // type is a non-`Str` type.
-        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut original_keys: ValueMap = ValueMap::default();
         let mut iter = flat.into_iter();
         while let Some(item) = iter.next() {
             match item.view() {

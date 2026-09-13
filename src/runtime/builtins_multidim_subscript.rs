@@ -246,7 +246,7 @@ impl Interpreter {
         };
         let target = if let Some(inst) = assoc_instance.as_ref() {
             let keys_val = self.call_method_with_values(inst.clone(), "keys", vec![])?;
-            let mut map = std::collections::HashMap::new();
+            let mut map = ValueMap::default();
             for key in crate::runtime::utils::value_to_list(&keys_val) {
                 let value =
                     self.call_method_with_values(inst.clone(), "AT-KEY", vec![key.clone()])?;

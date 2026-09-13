@@ -207,7 +207,7 @@ impl Interpreter {
 
         let is_win = cfg!(windows);
 
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("name".to_string(), Value::str(name));
         attrs.insert("auth".to_string(), Value::str(auth));
         attrs.insert("version".to_string(), version);
@@ -269,7 +269,7 @@ impl Interpreter {
     }
 
     pub(super) fn make_perl_instance() -> Value {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("name".to_string(), Value::str_from("Raku"));
         attrs.insert("auth".to_string(), Value::str_from("The Perl Foundation"));
         attrs.insert("version".to_string(), Self::language_version_value());
@@ -359,7 +359,7 @@ impl Interpreter {
     }
 
     pub(super) fn make_vm_instance() -> Value {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("name".to_string(), Value::str_from("mutsu"));
         attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
         attrs.insert(
@@ -393,7 +393,7 @@ impl Interpreter {
         attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
         attrs.insert("prefix".to_string(), Value::str_from("mutsu"));
         // properties: a non-empty hash so the value is truthy.
-        let mut props = HashMap::new();
+        let mut props = ValueMap::default();
         props.insert("name".to_string(), Value::str_from("mutsu"));
         attrs.insert("properties".to_string(), Value::hash(props));
         attrs.insert(

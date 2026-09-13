@@ -634,7 +634,7 @@ impl Interpreter {
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
             doc_comment_list: Vec::new(),
-            why_cache: HashMap::new(),
+            why_cache: ValueMap::default(),
             why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: Box::new(std::cell::Cell::new(false)),
@@ -656,11 +656,11 @@ impl Interpreter {
             skip_postcircumfix_overload: false,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
-            pending_inner_export_subs: HashMap::new(),
+            pending_inner_export_subs: ValueMap::default(),
             module_export_defs: HashMap::new(),
             defined_slang_rules: Vec::new(),
             defined_slang_declarators: Vec::new(),
-            slang_declarator_hows: HashMap::new(),
+            slang_declarator_hows: ValueMap::default(),
             end_phasers: Vec::new(),
             end_phaser_seq: 0,
             module_load_order: Vec::new(),
@@ -792,7 +792,7 @@ impl Interpreter {
                 self.thread_param_shadow_vars.borrow().clone(),
             )),
             // The child re-binds its own env-bound parameters if it runs any.
-            param_bound_aggregates: std::collections::HashMap::new(),
+            param_bound_aggregates: ValueMap::default(),
             suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.

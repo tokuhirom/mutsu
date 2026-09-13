@@ -143,7 +143,7 @@ impl Interpreter {
                     let emitted_count =
                         emitted_count.load(std::sync::atomic::Ordering::Relaxed) as i64;
                     if let Some(status_id) = status_sid {
-                        let mut status_hash = HashMap::new();
+                        let mut status_hash = ValueMap::default();
                         status_hash.insert("allowed".to_string(), Value::int(effective_limit));
                         status_hash.insert("bled".to_string(), Value::int(0));
                         status_hash.insert("buffered".to_string(), Value::int(0));

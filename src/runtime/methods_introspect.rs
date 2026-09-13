@@ -410,7 +410,7 @@ impl Interpreter {
         // ordinary mixin layers lets WHAT, name, identity, and method dispatch
         // all observe the same composed metaobject.
         for _ in 0..anonymous_mixin_layers {
-            let mut mixins = HashMap::new();
+            let mut mixins = ValueMap::default();
             mixins.insert("__mutsu_role__<anon>".to_string(), Value::TRUE);
             how = Value::mixin(how, mixins);
         }
@@ -761,7 +761,7 @@ impl Interpreter {
             },
         );
         attrs.insert("WHEREFORE".to_string(), wherefore);
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
         // contents is leading + trailing joined by newline
         let contents = doc.contents();
         attrs.insert("contents".to_string(), Value::str(contents));
@@ -990,7 +990,7 @@ impl Interpreter {
             None
         };
         if let Some(variants) = variants_ref {
-            let mut map = HashMap::new();
+            let mut map = ValueMap::default();
             for (k, v) in variants {
                 map.insert(k.clone(), v.to_value());
             }

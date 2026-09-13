@@ -1,6 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Return the default fill value for a native type constraint.
@@ -318,7 +318,7 @@ impl Interpreter {
                 Ok(true)
             }
             ValueView::Nil if matches!(idx.view(), ValueView::Str(_)) => {
-                let mut updated = std::collections::HashMap::new();
+                let mut updated = ValueMap::default();
                 updated.insert(idx.to_string_value(), val.clone());
                 *attr_value = Value::hash_with_data(Value::hash_arc(updated));
                 Ok(true)
@@ -548,7 +548,7 @@ impl Interpreter {
             }
             // Build a new map where old-hash references are replaced with
             // a placeholder, then wrap it in an Arc and fix up the placeholder.
-            let mut new_map = HashMap::new();
+            let mut new_map = ValueMap::default();
             let mut circular_keys = Vec::new();
             for (k, v) in new_arc.iter() {
                 if let ValueView::Hash(inner_arc) = v.view()
@@ -644,7 +644,7 @@ impl Interpreter {
             if needs_fixup {
                 // Clone the map, but track self-referencing hash keys so we
                 // can preserve the circular hash structure in the new Arc.
-                let mut new_map = HashMap::new();
+                let mut new_map = ValueMap::default();
                 let mut self_ref_keys = Vec::new();
                 for (k, hv) in map.iter() {
                     if let ValueView::Hash(inner_arc) = hv.view()

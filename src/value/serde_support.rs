@@ -6,6 +6,7 @@
 
 use super::{ArrayKind, EnumValue, JunctionKind, Value, ValueRepr, ValueView, VersionPart};
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use num_bigint::BigInt as NumBigInt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -148,9 +149,7 @@ enum SerJunctionKind {
     None,
 }
 
-fn ser_original_keys(
-    orig: &Option<HashMap<String, Value>>,
-) -> Result<HashMap<String, Box<SerValue>>, String> {
+fn ser_original_keys(orig: &Option<ValueMap>) -> Result<HashMap<String, Box<SerValue>>, String> {
     let Some(orig) = orig else {
         return Ok(HashMap::new());
     };
@@ -159,7 +158,7 @@ fn ser_original_keys(
         .collect()
 }
 
-fn de_original_keys(orig: HashMap<String, Box<SerValue>>) -> HashMap<String, Value> {
+fn de_original_keys(orig: HashMap<String, Box<SerValue>>) -> ValueMap {
     orig.into_iter()
         .map(|(k, v)| (k, ser_to_value(*v)))
         .collect()
@@ -425,7 +424,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Hash(map) => Value::hash(
             map.into_iter()
                 .map(|(k, v)| (k, ser_to_value(v)))
-                .collect::<HashMap<String, Value>>(),
+                .collect::<ValueMap>(),
         ),
         SerValue::Rat(n, d) => Value::Rat(n, d),
         SerValue::FatRat(n, d) => Value::FatRat(n, d),
@@ -571,7 +570,7 @@ fn ser_to_value(sv: SerValue) -> Value {
                 overrides
                     .into_iter()
                     .map(|(k, v)| (k, ser_to_value(v)))
-                    .collect::<HashMap<_, _>>(),
+                    .collect::<ValueMap>(),
             )),
         ),
         SerValue::MixinWithAttributes {
@@ -582,7 +581,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             let overrides = overrides
                 .into_iter()
                 .map(|(k, v)| (k, ser_to_value(v)))
-                .collect::<HashMap<_, _>>();
+                .collect::<ValueMap>();
             let attributes = attributes
                 .into_iter()
                 .map(|(k, v)| (Symbol::intern(&k), ser_to_value(v)))
@@ -640,7 +639,7 @@ mod tests {
 
     #[test]
     fn mixin_serialization_preserves_live_role_cell_and_promoted_value() {
-        let mut overrides = HashMap::new();
+        let mut overrides = ValueMap::default();
         overrides.insert("__mutsu_role__R".to_string(), Value::TRUE);
         overrides.insert("__mutsu_attr__n".to_string(), Value::int(1));
         let value = Value::mixin(Value::int(0), overrides);

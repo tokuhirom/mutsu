@@ -249,7 +249,7 @@ impl Interpreter {
                     // declared type object from the stored Nil at read time.
                     let empty = match sigil {
                         '@' => Value::real_array(Vec::new()),
-                        '%' => Value::hash(HashMap::new()),
+                        '%' => Value::hash(ValueMap::default()),
                         _ => match attr_type_constraint.as_ref() {
                             Some(c) => Self::native_scalar_default(c).unwrap_or(Value::NIL),
                             None => Value::package(crate::symbol::wk::any()),

@@ -892,6 +892,7 @@ pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thre
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
+use crate::value::ValueMap;
 
 /// One class/role attribute declaration.
 ///
@@ -2297,12 +2298,12 @@ pub struct Interpreter {
     /// Ordered list of doc comments for $=pod
     doc_comment_list: Vec<DocComment>,
     /// Cache for .WHY results so identity checks (=:=) work
-    why_cache: HashMap<String, Value>,
+    why_cache: ValueMap,
     /// Pod declarators keyed by the concrete WHEREFORE object's stable id.
     /// DOC INIT uses AST-built declarants before runtime registration, so a
     /// name key would collide for multis and same-named parameters.
     why_object_cache: HashMap<u64, Value>,
-    type_metadata: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
+    type_metadata: std::sync::Arc<HashMap<String, ValueMap>>,
     /// `Box<Cell<bool>>`-backed (not a plain `bool`, and not a bare `Cell`):
     /// read/written through the `when_matched()`/`set_when_matched()`
     /// accessors below AND directly by `vm_call_state_guard::WhenMatchedGuard`,
@@ -2370,7 +2371,7 @@ pub struct Interpreter {
     /// loading when the import happened. `apply_module_export` consumes the
     /// entry: the imported sub becomes that module's own EXPORT for *its*
     /// importers, called with their `use` arguments.
-    pending_inner_export_subs: HashMap<String, Value>,
+    pending_inner_export_subs: ValueMap,
     /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
@@ -2388,7 +2389,7 @@ pub struct Interpreter {
     /// `$*LANG.set_how($pkgdecl, $HOW)`: the metaclass a package declaration
     /// of each kind is currently built with. Keyed by the `$*PKGDECL` name
     /// (`'role'`, `'test-hub'`, ...).
-    pub(crate) slang_declarator_hows: HashMap<String, Value>,
+    pub(crate) slang_declarator_hows: ValueMap,
     /// Registered END phasers, in registration order (they run in reverse).
     end_phasers: Vec<EndPhaser>,
     /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
@@ -2721,7 +2722,7 @@ pub struct Interpreter {
     pub(crate) current_distribution_frame_floor: usize,
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
-    pub(crate) package_distributions: std::sync::Arc<HashMap<String, Value>>,
+    pub(crate) package_distributions: std::sync::Arc<ValueMap>,
     /// Short type names a module imported for its OWN lexical scope, keyed by the
     /// module name and by every class/role that module declares:
     /// `{"Drv2" | "Drv2::Native" => {"THING2" => "Drv2::Native::THING2"}}`.
@@ -2782,7 +2783,7 @@ pub struct Interpreter {
     /// mixed a role into it) keyed by package and routine name. Captured at
     /// `is export` registration time so `import` can restore the `&name` env
     /// binding with the role mixed in, rather than just the plain FunctionDef.
-    exported_sub_values: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
+    exported_sub_values: std::sync::Arc<HashMap<String, ValueMap>>,
     /// Regex bodies of `token`/`rule`/`regex` declarations marked `is export`,
     /// keyed by the module being loaded and the declarator's name.
     ///
@@ -2980,7 +2981,7 @@ pub struct Interpreter {
     /// — keyed to the sub's declaration, not the box site, so a same-named sibling-
     /// block `my` cannot pollute it. A read BEFORE the block runs misses (the cell is
     /// not yet recorded), correctly yielding the undefined value.
-    pub(crate) escaped_our_lexical_cells: HashMap<String, Value>,
+    pub(crate) escaped_our_lexical_cells: ValueMap,
     /// Names of block lexicals that are captured by an `our`-scoped named sub
     /// (the union of every code's `needs_cell_escaping_our_sub`). Seeded once at the
     /// start of `run()` from the top-level code, so it is known BEFORE the declaring
@@ -3111,7 +3112,7 @@ pub struct Interpreter {
     /// *first* spawn in a process consults it before any thread exists, and a
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
-    pub(crate) param_bound_aggregates: std::collections::HashMap<String, Value>,
+    pub(crate) param_bound_aggregates: ValueMap,
     /// Set while an *incidental* locals -> env mirror is running: the I/O
     /// pre-sync (`sync_env_from_locals_declared`, run before Say/Put/Print/Note
     /// so a `$*OUT` override or a `.gist` sees fresh values) and the regex
@@ -3189,7 +3190,7 @@ pub struct Interpreter {
     /// `sigilless_alias_key`). Never cleared, so removing an alias still resolves.
     sigilless_alias_seen: bool,
     /// Variable default values set by `is default(...)` trait.
-    var_defaults: HashMap<String, Value>,
+    var_defaults: ValueMap,
     // Array/Hash element defaults are embedded in `ArrayData.default` /
     // `HashData.default`.
     // An object hash's key type (`%h{Str}`) is carried by `HashData::key_type`
@@ -3394,7 +3395,7 @@ pub struct Interpreter {
     wrap_sub_names: HashMap<u64, String>,
     /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
     /// when dispatching named function calls through the wrap chain.
-    wrap_name_to_sub: HashMap<String, Value>,
+    wrap_name_to_sub: ValueMap,
     /// Maps function name to the callable_id at the time wrap was first called.
     /// Used to detect sub redefinition (e.g. `sub foo` in a new block).
     wrap_callable_ids: std::sync::Arc<HashMap<String, Option<i64>>>,
@@ -4518,7 +4519,7 @@ mod tests {
     use crate::env::Env;
     use crate::opcode::{CompiledCode, OpCode};
     use crate::symbol::Symbol;
-    use crate::value::{SubData, Value};
+    use crate::value::{SubData, Value, ValueMap};
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -4844,7 +4845,7 @@ mod tests {
             is_raw: false,
             env,
             assumed_positional: vec![],
-            assumed_named: std::collections::HashMap::new(),
+            assumed_named: ValueMap::default(),
             id: 1,
             empty_sig: false,
             is_bare_block: false,

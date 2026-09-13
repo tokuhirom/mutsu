@@ -5,6 +5,7 @@ use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::HandleSpec;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(crate) fn augment_role_error(&self, name: &str) -> RuntimeError {
@@ -890,7 +891,7 @@ impl Interpreter {
         let class_attrs = self.collect_class_attributes(class_name);
 
         // Parse named args
-        let mut named_args: HashMap<String, Value> = HashMap::new();
+        let mut named_args: ValueMap = ValueMap::default();
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
                 named_args.insert(key.clone(), value.clone());
@@ -1232,7 +1233,7 @@ impl Interpreter {
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
             wildcard_handles: all_wildcard_handles,
             alias_attributes: HashSet::new(),
-            class_level_attrs: HashMap::new(),
+            class_level_attrs: ValueMap::default(),
         };
         self.registry_mut()
             .classes

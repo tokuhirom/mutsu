@@ -1,5 +1,6 @@
 use super::vm_string_regex_ops::*;
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     #[allow(clippy::too_many_arguments)]
@@ -36,7 +37,7 @@ impl Interpreter {
                     ValueView::Num(_) => "Num",
                     _ => "Str",
                 };
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -282,13 +283,12 @@ impl Interpreter {
                 (true, false) => ra.keys().cloned().collect(),
             };
             let identity = runtime::reduction_identity(op);
-            let mut result = std::collections::HashMap::with_capacity(keys.len());
+            let mut result = crate::value::user_key_map::with_capacity(keys.len());
             // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
             // metadata carried in `original_keys`, not derivable from the
             // `.WHICH`-string key alone — merge it from whichever side(s)
             // actually have it for each key surviving into the result.
-            let mut original_keys: std::collections::HashMap<String, Value> =
-                std::collections::HashMap::new();
+            let mut original_keys: ValueMap = ValueMap::default();
             for key in keys {
                 let l = la.get(&key).unwrap_or(&identity).clone();
                 let r = ra.get(&key).unwrap_or(&identity).clone();
@@ -329,7 +329,7 @@ impl Interpreter {
             && !Self::is_listy(right)
         {
             let map = map.clone();
-            let mut result = std::collections::HashMap::with_capacity(map.len());
+            let mut result = crate::value::user_key_map::with_capacity(map.len());
             for (key, value) in map.iter() {
                 let v = self.hyper_op_pair(op, value, right, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
@@ -345,7 +345,7 @@ impl Interpreter {
             && !Self::is_listy(left)
         {
             let map = map.clone();
-            let mut result = std::collections::HashMap::with_capacity(map.len());
+            let mut result = crate::value::user_key_map::with_capacity(map.len());
             for (key, value) in map.iter() {
                 let v = self.hyper_op_pair(op, left, value, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
@@ -530,7 +530,7 @@ impl Interpreter {
     /// hyper logic applies. Set membership becomes `True`, Bag/Mix weights become
     /// Int/Num. Non-QuantHash values pass through unchanged (scalar broadcast).
     pub(crate) fn quanthash_to_hash(v: &Value) -> Value {
-        let map: std::collections::HashMap<String, Value> = match v.view() {
+        let map: ValueMap = match v.view() {
             ValueView::Set(d, _) => d
                 .elements
                 .iter()

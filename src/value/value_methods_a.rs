@@ -37,7 +37,7 @@ impl Value {
     /// [`crate::value::RegexClosure`]. Views as a plain `Regex`.
     pub(crate) fn regex_closure(
         pattern: Arc<String>,
-        scope: Arc<std::collections::HashMap<String, Value>>,
+        scope: Arc<ValueMap>,
         signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
@@ -91,9 +91,7 @@ impl Value {
     }
     /// The defining scope this regex closed over, or `None` for a regex that
     /// captured nothing (and for every non-regex value).
-    pub(crate) fn regex_closure_scope(
-        &self,
-    ) -> Option<Arc<std::collections::HashMap<String, Value>>> {
+    pub(crate) fn regex_closure_scope(&self) -> Option<Arc<ValueMap>> {
         if let Some(scope) = self.0.regex_closure_scope() {
             return Some(scope.clone());
         }
@@ -140,7 +138,7 @@ impl Value {
             Ok(statement)
         })
     }
-    pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
+    pub fn mixin(inner: Value, overrides: ValueMap) -> Self {
         Self::mixin_with_state(inner, overrides.into())
     }
 
@@ -161,7 +159,7 @@ impl Value {
     }
     /// Create a Capture value. Boxes the positional/named payloads (the variant
     /// stores them behind `Box` to keep `Value` small).
-    pub fn capture(positional: Vec<Value>, named: HashMap<String, Value>) -> Self {
+    pub fn capture(positional: Vec<Value>, named: ValueMap) -> Self {
         Value::from_repr(ValueRepr::Capture {
             positional: Box::new(positional),
             named: Box::new(named),
@@ -277,7 +275,7 @@ impl Value {
         how: Box<Value>,
         repr: String,
         type_name: Symbol,
-        attributes: Arc<HashMap<String, Value>>,
+        attributes: Arc<ValueMap>,
         id: u64,
     ) -> Self {
         Value::CustomTypeInstance(Box::new(CustomTypeInstanceData {
@@ -304,7 +302,7 @@ impl Value {
     /// Fresh empty Hash tagged with the "element" container-descriptor name —
     /// the `%`-param twin of [`Value::element_descriptor_array`].
     pub(crate) fn element_descriptor_hash() -> Self {
-        let mut data = HashData::new(std::collections::HashMap::new());
+        let mut data = HashData::new(ValueMap::default());
         data.descriptor_name = Some("element".into());
         Value::hash(data)
     }
@@ -783,7 +781,7 @@ impl Value {
     /// but a later write is a real Hash element store and must create the
     /// per-value container. Routing all writes through this chokepoint also
     /// keeps promoted aliases from being replaced by nested containers.
-    pub fn hash_insert_through(map: &mut HashMap<String, Value>, key: String, val: Value) {
+    pub fn hash_insert_through(map: &mut ValueMap, key: String, val: Value) {
         match map.get_mut(&key) {
             Some(slot) if slot.is_container_ref() => Value::assign_element_slot(slot, val),
             Some(slot) => {
@@ -832,7 +830,7 @@ impl Value {
             // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             if !data.map.contains_key(key) {
-                let new_hash = Value::hash(HashMap::new());
+                let new_hash = Value::hash(ValueMap::default());
                 data.map.insert(key.to_string(), new_hash);
             }
             // The entry exists (created just above if missing): an EAGER token,
@@ -895,7 +893,7 @@ impl Value {
                     Some(Value::ContainerRef(cell))
                 }
                 None => {
-                    let new_hash = Value::hash(HashMap::new());
+                    let new_hash = Value::hash(ValueMap::default());
                     data.map.insert(key.to_string(), new_hash.clone());
                     Some(new_hash)
                 }

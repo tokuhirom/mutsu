@@ -171,7 +171,7 @@ impl Interpreter {
                                 enclosing_prefixes: enclosing_prefixes.clone(),
                             });
                     } else {
-                        let mut attrs = std::collections::HashMap::new();
+                        let mut attrs = ValueMap::default();
                         attrs.insert("type".to_string(), Value::str(tc.to_string()));
                         attrs.insert(
                             "message".to_string(),
@@ -387,7 +387,7 @@ impl Interpreter {
                 || (resolved_indirect != check.tc_base
                     && self.is_resolvable_type(&resolved_indirect));
             if !resolvable {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("type".to_string(), Value::str(check.tc.clone()));
                 attrs.insert(
                     "message".to_string(),

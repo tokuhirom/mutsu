@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Track C: route a simple `%h{$k} = $v` through the shared cell when a
@@ -464,7 +465,7 @@ impl Interpreter {
                 let idx = self.stack.pop().unwrap();
                 let val = self.stack.pop().unwrap();
                 let key = idx.to_string_value();
-                let mut map = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
                 // ADR-0040 slice 1: itemize the stored value.
                 map.insert(key.clone(), Self::itemize_value(val.clone()));
                 self.env_mut()

@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::FunctionDef;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Check if a function has the `is DEPRECATED` trait and record a deprecation event,
@@ -558,7 +559,7 @@ impl Interpreter {
                 ..
             } = ex.view()
             {
-                let mut new_attrs: std::collections::HashMap<String, Value> = attributes
+                let mut new_attrs: ValueMap = attributes
                     .as_map()
                     .iter()
                     .map(|(k, v)| (k.resolve(), v.clone()))

@@ -79,7 +79,7 @@ impl Interpreter {
                 let dup = (is_my && !seen_my.insert(n.clone()))
                     || (is_our && !seen_our.insert(n.clone()));
                 if dup {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("symbol".to_string(), Value::str(n.clone()));
                     attrs.insert("what".to_string(), Value::str(what.to_string()));
                     attrs.insert(
@@ -114,7 +114,7 @@ impl Interpreter {
                                 if *prev_all_multi && *multi {
                                     // all-multi so far: still allowed
                                 } else {
-                                    let mut attrs = std::collections::HashMap::new();
+                                    let mut attrs = ValueMap::default();
                                     attrs.insert("symbol".to_string(), Value::str(n.clone()));
                                     attrs.insert(
                                         "what".to_string(),
@@ -138,7 +138,7 @@ impl Interpreter {
                             continue;
                         }
                         if !seen_tokens.insert(n.clone()) {
-                            let mut attrs = std::collections::HashMap::new();
+                            let mut attrs = ValueMap::default();
                             attrs.insert("symbol".to_string(), Value::str(n.clone()));
                             attrs.insert("what".to_string(), Value::str("regex".to_string()));
                             // Rakudo phrases a token/regex redeclaration inside a
@@ -163,7 +163,7 @@ impl Interpreter {
         };
 
         let type_redeclaration = |name: &str| -> RuntimeError {
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("symbol".to_string(), Value::str(name.to_string()));
             attrs.insert(
                 "message".to_string(),
@@ -217,7 +217,7 @@ impl Interpreter {
                         if *prev_all_multi && *multi {
                             // still all-multi, allowed
                         } else {
-                            let mut attrs = std::collections::HashMap::new();
+                            let mut attrs = ValueMap::default();
                             attrs.insert("symbol".to_string(), Value::str(name.clone()));
                             attrs.insert("what".to_string(), Value::str("routine".to_string()));
                             attrs.insert(
@@ -269,7 +269,7 @@ impl Interpreter {
                     // different (typically absent) repr, a later one cannot set it.
                     match seen_class_repr.get(&name) {
                         Some(prev) if repr.is_some() && prev != repr => {
-                            let mut attrs = std::collections::HashMap::new();
+                            let mut attrs = ValueMap::default();
                             attrs.insert("type".to_string(), Value::str(name.clone()));
                             attrs.insert(
                                 "message".to_string(),

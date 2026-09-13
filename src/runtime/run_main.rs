@@ -1,6 +1,6 @@
 use super::main_args::{CandidateDispatch, ParsedMainArgs};
 use super::*;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// The `RUN-MAIN(&main, $mainline, :$in-as-argsfiles)` core sub. Gives a
@@ -145,12 +145,12 @@ impl Interpreter {
         let raw_strings: Vec<String> = raw_values.iter().map(|v| v.to_string_value()).collect();
         let parsed = match Self::parse_cli_args(&raw_strings, &named_info, &sub_main_opts) {
             Ok(p) => p,
-            Err(_) => return Value::capture(Vec::new(), HashMap::new()),
+            Err(_) => return Value::capture(Vec::new(), ValueMap::default()),
         };
         let positional: Vec<Value> = parsed.positional.iter().map(Self::val_coerce).collect();
         // Collect named args, merging duplicates into an Array (Rakudo's CLI
         // processing turns repeated `--n=x --n=y` into `n => [x, y]`).
-        let mut named: HashMap<String, Value> = HashMap::new();
+        let mut named: ValueMap = ValueMap::default();
         for (k, v) in &parsed.named {
             let coerced = Self::val_coerce(v);
             if let Some(existing) = named.get_mut(k) {
@@ -209,7 +209,7 @@ impl Interpreter {
             is_raw: false,
             env: Env::new(),
             assumed_positional: Vec::new(),
-            assumed_named: HashMap::new(),
+            assumed_named: ValueMap::default(),
             id: crate::value::next_instance_id(),
             empty_sig: false,
             is_bare_block: false,

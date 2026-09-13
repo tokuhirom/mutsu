@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 /// Take the next unclaimed capture env recorded for `key`. Each compiled body
 /// can back several `MethodDef`s (multi candidates), so the envs are consumed
@@ -91,7 +92,7 @@ impl Interpreter {
         base: &Value,
         captures: &[(Symbol, u32)],
     ) -> Value {
-        let mut scope: HashMap<String, Value> = HashMap::new();
+        let mut scope: ValueMap = ValueMap::default();
         for (sym, slot) in captures {
             let name = sym.resolve();
             if *slot != crate::opcode::NOT_A_LOCAL && code.needs_cell_regex.contains(sym) {
@@ -661,7 +662,7 @@ impl Interpreter {
                 // shadow-meta, and system names; see `capture_closure_env`.
                 env: captured_env,
                 assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
+                assumed_named: ValueMap::default(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: is_block,
@@ -788,7 +789,7 @@ impl Interpreter {
                 is_raw: *is_raw,
                 env,
                 assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
+                assumed_named: ValueMap::default(),
                 id: crate::value::next_instance_id(),
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. Named
                 // anonymous subs (`sub {...}`) have `is_pointy_block == false` and

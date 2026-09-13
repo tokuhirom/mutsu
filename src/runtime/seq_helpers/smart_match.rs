@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::signature::{extract_sig_info, signature_smartmatch};
 
@@ -1022,7 +1023,7 @@ impl Interpreter {
                             named.with_hash_mut(|named_hash| {
                                 let named_hash = crate::gc::Gc::make_mut(named_hash);
                                 for (hash_name, entries) in captures.hash_captures() {
-                                    let mut hash_map: HashMap<String, Value> = HashMap::new();
+                                    let mut hash_map: ValueMap = ValueMap::default();
                                     for (key, value) in entries {
                                         let val = match value {
                                             Some(v) => Value::str(v.clone()),

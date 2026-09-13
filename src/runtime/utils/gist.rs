@@ -532,7 +532,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     .as_map()
                     .get("__mutsu_hash_storage")
                     .cloned()
-                    .unwrap_or_else(|| crate::value::Value::hash(std::collections::HashMap::new())),
+                    .unwrap_or_else(|| crate::value::Value::hash(ValueMap::default())),
             )
         }
         // A QuantHash (`is Bag`/`is SetHash`/...) subclass instance gists as its

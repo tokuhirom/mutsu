@@ -30,6 +30,7 @@ use std::collections::HashSet;
 use super::{Interpreter, RuntimeError};
 use crate::opcode::DeclTraitArg;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{AttrMap, Value, ValueView};
 
 /// An attribute whose initializer was postponed until after the BUILD phase.
@@ -180,7 +181,7 @@ impl Interpreter {
         match self.call_method_with_values(type_obj, "new", vec![]) {
             Ok(v) => v,
             Err(_) if sigil == '@' => Value::real_array(Vec::new()),
-            Err(_) => Value::hash(std::collections::HashMap::new()),
+            Err(_) => Value::hash(ValueMap::default()),
         }
     }
 
@@ -243,7 +244,7 @@ impl Interpreter {
                 if let Some(type_name) = is_type {
                     self.build_is_type_container(&type_name, '%')
                 } else {
-                    let h = Value::hash(std::collections::HashMap::new());
+                    let h = Value::hash(ValueMap::default());
                     // Register value type constraint for typed hash attributes
                     match declared_type {
                         Some(tc) => self.tag_container_metadata(

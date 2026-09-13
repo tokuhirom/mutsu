@@ -16,6 +16,7 @@
 use super::*;
 use crate::runtime::json::{self, ToJsonOpts};
 use crate::value::Value;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Pre-convert to-json subject args: user instances doing Associative
@@ -89,7 +90,7 @@ impl Interpreter {
                 if assoc {
                     // Associative wins over Positional (JSON::Fast dispatch
                     // order); elements are Pairs.
-                    let mut map = std::collections::HashMap::new();
+                    let mut map = ValueMap::default();
                     for item in &items {
                         match item.view() {
                             ValueView::Pair(k, v) => {
@@ -122,7 +123,7 @@ impl Interpreter {
                 )
             }
             ValueView::Hash(h) => {
-                let map: std::collections::HashMap<String, Value> = h
+                let map: ValueMap = h
                     .map
                     .iter()
                     .map(|(k, v)| (k.clone(), self.prepare_to_json_subject(v)))

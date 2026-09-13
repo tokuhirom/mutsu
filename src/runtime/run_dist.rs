@@ -1,12 +1,11 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Build the %?RESOURCES hash for the current package/distribution context.
     /// Looks up the distribution for the current package (or falls back to current_distribution)
     /// and returns a Hash mapping resource names to their absolute paths on disk.
     pub(crate) fn build_resources_for_package(&self) -> Value {
-        use std::collections::HashMap;
-
         // `%?RESOURCES` is lexically tied to the compilation unit whose source
         // contains the token, i.e. the module of the *currently executing*
         // routine — not whichever module is currently being loaded. So the
@@ -60,12 +59,10 @@ impl Interpreter {
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
             return self.build_resources_from_dist(&dist.clone());
         }
-        Value::hash_with_data(Value::hash_arc(HashMap::new()))
+        Value::hash_with_data(Value::hash_arc(ValueMap::default()))
     }
 
     fn build_resources_from_dist(&self, dist: &Value) -> Value {
-        use std::collections::HashMap;
-
         let meta = match dist.view() {
             ValueView::Instance { attributes, .. } => {
                 // Try "meta" first (Distribution::Installation from detect_inst_distribution),
@@ -95,7 +92,7 @@ impl Interpreter {
             ValueView::Hash(map) => map.get("resources").cloned().unwrap_or(Value::NIL),
             _ => Value::NIL,
         };
-        let mut result: HashMap<String, Value> = HashMap::new();
+        let mut result: ValueMap = ValueMap::default();
         match resources_val.view() {
             ValueView::Array(arr, _) => {
                 for item in arr.iter() {
@@ -218,7 +215,7 @@ impl Interpreter {
     }
 
     fn build_distribution_from_lib_dir(lib_dir: &Path) -> Value {
-        let mut meta = HashMap::new();
+        let mut meta = ValueMap::default();
         let lib_path = lib_dir.to_string_lossy().to_string();
         meta.insert("name".to_string(), Value::str(lib_path));
         meta.insert("ver".to_string(), Value::str("*".to_string()));
@@ -232,7 +229,7 @@ impl Interpreter {
         {
             Self::scan_resources(rd)
         } else {
-            Value::hash_with_data(Value::hash_arc(HashMap::new()))
+            Value::hash_with_data(Value::hash_arc(ValueMap::default()))
         };
         meta.insert("resources".to_string(), resources);
         let mut attrs = HashMap::new();
@@ -244,7 +241,7 @@ impl Interpreter {
     }
 
     fn scan_lib_provides(lib_dir: &Path) -> Value {
-        let mut provides = HashMap::new();
+        let mut provides = ValueMap::default();
         let extensions = [".rakumod", ".pm6", ".pm"];
         if let Ok(entries) = std::fs::read_dir(lib_dir) {
             for entry in entries.flatten() {
@@ -266,7 +263,7 @@ impl Interpreter {
     }
 
     fn scan_resources(resources_dir: &Path) -> Value {
-        let mut files = HashMap::new();
+        let mut files = ValueMap::default();
         if let Ok(entries) = std::fs::read_dir(resources_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -281,10 +278,10 @@ impl Interpreter {
         Value::hash_with_data(Value::hash_arc(files))
     }
 
-    fn parse_meta6_json(content: &str) -> Option<HashMap<String, Value>> {
+    fn parse_meta6_json(content: &str) -> Option<ValueMap> {
         let json: serde_json::Value = serde_json::from_str(content).ok()?;
         let obj = json.as_object()?;
-        let mut meta = HashMap::new();
+        let mut meta = ValueMap::default();
         for (key, val) in obj {
             meta.insert(key.clone(), Self::json_to_value(val));
         }
@@ -308,7 +305,7 @@ impl Interpreter {
             Json::String(s) => Value::str(s.clone()),
             Json::Array(arr) => Value::array(arr.iter().map(Self::json_to_value).collect()),
             Json::Object(obj) => {
-                let mut map = HashMap::new();
+                let mut map = ValueMap::default();
                 for (k, v) in obj {
                     map.insert(k.clone(), Self::json_to_value(v));
                 }

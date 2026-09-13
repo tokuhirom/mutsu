@@ -10,6 +10,7 @@ use super::registration_class::{
 use super::registration_class_decl::BUILTIN_PARENT_TYPES;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 /// Replace whole type-name tokens in `name` that exactly match a role type
 /// parameter with its concrete type name. Tokens are delimited by `[`, `]`,
@@ -421,7 +422,7 @@ impl Interpreter {
                 cx.class_def.wildcard_handles.push(wh.clone());
             }
         }
-        let role_param_values: HashMap<String, Value> = role_param_names
+        let role_param_values: ValueMap = role_param_names
             .iter()
             .cloned()
             .zip(role_arg_values.iter().cloned())

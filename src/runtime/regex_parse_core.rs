@@ -3782,7 +3782,7 @@ impl Interpreter {
                     if depth > 0 {
                         PENDING_REGEX_ERROR.with(|e| {
                             *e.borrow_mut() = Some(RuntimeError::typed("X::Comp::Group", {
-                                let mut attrs = std::collections::HashMap::new();
+                                let mut attrs = ValueMap::default();
                                 attrs.insert(
                                     "message".to_string(),
                                     Value::str("Unmatched ( in regex".to_string()),

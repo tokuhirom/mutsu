@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 /// Build a structured `X::Routine::Unwrap` error (`&f.unwrap($bad-handle)`).
@@ -29,8 +30,8 @@ pub(super) fn method_wrap_handle_attrs(
     candidate_idx: usize,
     handle_id: u64,
     wrapped: &Value,
-) -> std::collections::HashMap<String, Value> {
-    let mut attrs = std::collections::HashMap::new();
+) -> ValueMap {
+    let mut attrs = ValueMap::default();
     attrs.insert("wrap-class".to_string(), Value::str(class_name.to_string()));
     attrs.insert(
         "wrap-method".to_string(),
@@ -95,7 +96,7 @@ impl Interpreter {
                 is_raw: false,
                 env: self.env().clone(),
                 assumed_positional: Vec::new(),
-                assumed_named: std::collections::HashMap::new(),
+                assumed_named: ValueMap::default(),
                 id: crate::value::next_instance_id(),
                 empty_sig: false,
                 is_bare_block: false,
@@ -467,7 +468,7 @@ impl Interpreter {
                     failure_attrs.insert("exception".to_string(), exception);
                     failure_attrs.insert("handled".to_string(), Value::FALSE);
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
-                    let mut mixins = std::collections::HashMap::new();
+                    let mut mixins = ValueMap::default();
                     mixins.insert("Failure".to_string(), failure);
                     Value::mixin(
                         Value::sub_value(crate::gc::Gc::new(sub_data.clone())),
@@ -618,7 +619,7 @@ impl Interpreter {
                     failure_attrs.insert("exception".to_string(), exception);
                     failure_attrs.insert("handled".to_string(), Value::FALSE);
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
-                    let mut mixins = std::collections::HashMap::new();
+                    let mut mixins = ValueMap::default();
                     mixins.insert("Failure".to_string(), failure);
                     return Some(Ok(Value::mixin(
                         Value::sub_value(crate::gc::Gc::new(next)),

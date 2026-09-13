@@ -6,6 +6,7 @@ use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::types::is_stash_class_name;
 
@@ -324,7 +325,7 @@ impl Interpreter {
                     .as_map()
                     .get("symbols")
                     .cloned()
-                    .unwrap_or_else(|| Value::hash(HashMap::new()));
+                    .unwrap_or_else(|| Value::hash(ValueMap::default()));
                 return Some(Ok(Value::str(
                     crate::builtins::methods_0arg::raku_repr::raku_value(&symbols),
                 )));
@@ -426,7 +427,7 @@ impl Interpreter {
                     .unwrap_or_else(|| "$".to_string());
                 let base = match sigil.as_str() {
                     "@" => Value::array(Vec::new()),
-                    "%" => Value::hash(std::collections::HashMap::new()),
+                    "%" => Value::hash(ValueMap::default()),
                     _ => Value::NIL,
                 };
                 return self.call_method_with_values(base, method, args);
@@ -2975,7 +2976,7 @@ impl Interpreter {
     /// Mutate an array attribute in a Proxy subclass's shared storage.
     pub(crate) fn proxy_subclass_array_mutate(
         &mut self,
-        attrs_ref: &Arc<std::sync::Mutex<HashMap<String, Value>>>,
+        attrs_ref: &Arc<std::sync::Mutex<ValueMap>>,
         attr_name: &str,
         method: &str,
         args: &[Value],

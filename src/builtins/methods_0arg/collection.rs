@@ -1,5 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
 
@@ -314,8 +315,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
     match method {
         "hash" => match target.view() {
             ValueView::Set(s, _) => {
-                let mut map = std::collections::HashMap::new();
-                let mut original_keys = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
+                let mut original_keys = ValueMap::default();
                 let mut has_typed = false;
                 for k in s.iter() {
                     let typed = s.typed_key(k);
@@ -335,8 +336,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(result))
             }
             ValueView::Bag(b, _) => {
-                let mut map = std::collections::HashMap::new();
-                let mut original_keys = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
+                let mut original_keys = ValueMap::default();
                 let mut has_typed = false;
                 for (k, v) in b.iter() {
                     let typed = b.typed_key(k);
@@ -355,8 +356,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(result))
             }
             ValueView::Mix(m, _) => {
-                let mut map = std::collections::HashMap::new();
-                let mut original_keys = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
+                let mut original_keys = ValueMap::default();
                 let mut has_typed = false;
                 for (k, v) in m.iter() {
                     let typed = m.typed_key(k);
@@ -393,13 +394,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // An Associative's `.hash` is itself, and the Hash *type object*
                 // is no exception (`Hash.hash` is `Hash`, not `{}`).
                 "Hash" => Some(Ok(target.clone())),
-                _ => Some(Ok(Value::hash(std::collections::HashMap::new()))),
+                _ => Some(Ok(Value::hash(ValueMap::default()))),
             },
             // An undefined invocant (`my $d`; a bare `Nil`) has no contents, so
             // `.hash` is the empty hash — like the type-object arm above. Without
             // this, `Nil` falls to the list path below and is treated as a
             // one-element initializer → spurious "Odd number of elements".
-            ValueView::Nil => Some(Ok(Value::hash(std::collections::HashMap::new()))),
+            ValueView::Nil => Some(Ok(Value::hash(ValueMap::default()))),
             // `.hash` on a hash (`%$h`) IS that hash in Associative context:
             // return it de-itemized (a `$`-held itemized hash contextualized as
             // `%$h` spills to the hash, not an opaque single element), preserving
@@ -855,7 +856,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         })
                         .unwrap_or(Value::NIL);
                     let got_type = crate::value::types::what_type_name(&got_val);
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("operation".to_string(), Value::str_from("invert"));
                     attrs.insert(
                         "expected".to_string(),

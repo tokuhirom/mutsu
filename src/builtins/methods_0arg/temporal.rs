@@ -1,5 +1,6 @@
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -93,7 +94,7 @@ fn make_out_of_range_error_int_as(
     range: &str,
 ) -> RuntimeError {
     let msg = format!("{} out of range. Is: {}, should be in {}", what, got, range);
-    let mut attrs = HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), Value::str(what.to_string()));
     attrs.insert("got".to_string(), Value::int(got));
     attrs.insert("range".to_string(), Value::str(range.to_string()));
@@ -108,7 +109,7 @@ fn make_out_of_range_error(what: &str, got: String, range: &str) -> RuntimeError
         .map(Value::int)
         .unwrap_or_else(|_| Value::str(got.clone()));
     let msg = format!("{} out of range. Is: {}, should be in {}", what, got, range);
-    let mut attrs = HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), Value::str(what.to_string()));
     attrs.insert("got".to_string(), got_val);
     attrs.insert("range".to_string(), Value::str(range.to_string()));
@@ -126,7 +127,7 @@ fn make_leap_second_out_of_range_error(second: f64) -> RuntimeError {
         "Second out of range. Is: {}, should be in 0..59.999999... (or leap second on a valid UTC insertion day)",
         second
     );
-    let mut attrs = HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), Value::str("Second".to_string()));
     attrs.insert("got".to_string(), Value::num(second));
     attrs.insert("range".to_string(), Value::str("0..^60".to_string()));

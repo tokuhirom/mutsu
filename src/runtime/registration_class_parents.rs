@@ -61,7 +61,7 @@ impl Interpreter {
                 msg.push_str(&format!("    '{}'\n", s));
             }
         }
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("child-name".to_string(), Value::str(name.to_string()));
         attrs.insert("child".to_string(), Value::str(name.to_string()));
         attrs.insert(
@@ -148,7 +148,7 @@ impl Interpreter {
                     || self.registry().roles.contains_key(name.as_ref())
                     || self.registry().enum_types.contains_key(name.as_ref()));
             if resolved_parent == name.as_ref() && !lexical_class_shadows_package_type {
-                let mut attrs = HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("name".to_string(), Value::str(name.to_string()));
                 attrs.insert(
                     "message".to_string(),
@@ -200,7 +200,7 @@ impl Interpreter {
                         "{} does not support inheritance, so {} cannot inherit from it",
                         resolved_parent_name, name
                     );
-                    let mut attrs = HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("child-typename".to_string(), Value::str(name.to_string()));
                     attrs.insert(
                         "parent".to_string(),

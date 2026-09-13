@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn exec_hyper_func_op(
@@ -317,18 +318,16 @@ impl Interpreter {
             _ => unreachable!("exec_hyper_func_op_hash called without a hash operand"),
         };
         let identity = Value::int(0);
-        let mut result: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::with_capacity(keys.len());
-        let mut mutated: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::with_capacity(if do_writeback { keys.len() } else { 0 });
+        let mut result: ValueMap = crate::value::user_key_map::with_capacity(keys.len());
+        let mut mutated: ValueMap =
+            crate::value::user_key_map::with_capacity(if do_writeback { keys.len() } else { 0 });
         // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
         // metadata carried in `original_keys`, not derivable from the
         // `.WHICH`-string key alone — merge it from whichever side(s)
         // actually have it for each key surviving into the result. Mirrors
         // the symbolic-operator hyper op fix in `hyper_op_pair`
         // (vm_hyper_ops.rs).
-        let mut original_keys: std::collections::HashMap<String, Value> =
-            std::collections::HashMap::new();
+        let mut original_keys: ValueMap = ValueMap::default();
         for key in keys {
             let l = match &la {
                 Some(m) => m.get(&key).cloned().unwrap_or_else(|| identity.clone()),
@@ -382,7 +381,7 @@ impl Interpreter {
             .as_ref()
             .and_then(|m| m.declared_type.clone())
             .or_else(|| ra.as_ref().and_then(|m| m.declared_type.clone()));
-        let tagged_hash = |map: std::collections::HashMap<String, Value>| {
+        let tagged_hash = |map: ValueMap| {
             let mut data = crate::value::HashData::new(map);
             data.key_type = key_type.clone();
             data.value_type = value_type.clone();

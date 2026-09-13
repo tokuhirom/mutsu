@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 
 /// Which enclosing lexical scope an `OUTER::` / `OUTERS::` access names
@@ -20,7 +21,7 @@ pub(super) struct LexicalScopeSnapshot {
     user_listop_shadows: std::collections::HashSet<String>,
     constant_vars_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
-    constant_values: std::collections::HashMap<String, Value>,
+    constant_values: ValueMap,
     my_vars_current_scope: std::collections::HashSet<String>,
     class_names_current_scope: std::collections::HashSet<String>,
     lexical_class_names_current_scope: std::collections::HashSet<String>,
