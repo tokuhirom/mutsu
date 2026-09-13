@@ -79,7 +79,12 @@ impl Interpreter {
         // *this* match's embedded `{ }` code blocks wrote a caller variable by name
         // (the engine records them there but nothing consumes the log otherwise).
         self.pending_local_updates.clear();
-        let saved_topic = self.env().get("_").cloned();
+        // Symbol-keyed topic access throughout this op. The by-name `Env` API
+        // re-interns its literal on every call, and this op reads or writes
+        // `$_` up to five times per `~~` -- which callgrind put at more than
+        // the matcher itself costs (#8269).
+        let topic = crate::symbol::wk::topic();
+        let saved_topic = self.env().get_sym(topic).cloned();
         // ADR-0045: `$_ ~~ s///` where the topic is an *aliasing* binding — a
         // `for` loop parameter bound to its source's element container — must
         // keep that binding for the duration of the RHS and write through it.
@@ -87,7 +92,7 @@ impl Interpreter {
         // orphan the cell and the substitution would never reach the source
         // element (`t/smartmatch-subst-topic.t`). The topic already holds
         // exactly `left`'s container, so there is nothing to install.
-        let topic_cell = match self.env().get("_").map(Value::view) {
+        let topic_cell = match self.env().get_sym(topic).map(Value::view) {
             Some(ValueView::ContainerRef(arc)) if matches!(lhs, Some(SmartMatchLhs::Var { name, .. }) if name == "_") => {
                 Some(arc.clone())
             }
@@ -101,7 +106,7 @@ impl Interpreter {
         // really does answer `True` there, which is why the flag is set from the
         // RHS's written shape rather than from what it evaluates to.
         if topic_cell.is_none() && !rhs_is_bare_topic {
-            self.env_mut().insert("_".to_string(), left.clone());
+            self.env_mut().insert_sym(topic, left.clone());
         }
         // While the RHS runs, `$_` is *aliased* to the LHS variable (`$x ~~ s///`
         // topicalizes `$x`). A destructive `s///`/`tr///` checks `$_`'s readonly
@@ -161,9 +166,9 @@ impl Interpreter {
         if lhs_is_literal && (was_substitution || was_transliterate) && right.truthy() {
             // Restore the topic before propagating the error.
             if let Some(v) = saved_topic {
-                self.env_mut().insert("_".to_string(), v);
+                self.env_mut().insert_sym(topic, v);
             } else {
-                self.env_mut().remove("_");
+                self.env_mut().remove_sym(topic);
             }
             return Err(RuntimeError::assignment_ro(Some("Str")));
         }
@@ -185,7 +190,7 @@ impl Interpreter {
         // pure predicate match as "modified".
         let topic_after = self
             .env()
-            .get("_")
+            .get_sym(topic)
             .cloned()
             .unwrap_or(Value::NIL)
             .deref_container();
@@ -279,18 +284,18 @@ impl Interpreter {
             {
                 // Restore the topic before propagating the error.
                 if let Some(v) = saved_topic.clone() {
-                    self.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert_sym(topic, v);
                 } else {
-                    self.env_mut().remove("_");
+                    self.env_mut().remove_sym(topic);
                 }
                 return Err(e);
             }
         }
         if !lhs_is_topic {
             if let Some(v) = saved_topic {
-                self.env_mut().insert("_".to_string(), v);
+                self.env_mut().insert_sym(topic, v);
             } else {
-                self.env_mut().remove("_");
+                self.env_mut().remove_sym(topic);
             }
         }
         // When RHS was a transliterate (tr///), return the result directly.

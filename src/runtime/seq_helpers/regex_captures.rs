@@ -38,7 +38,10 @@ impl Interpreter {
 
     /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
     pub(in crate::runtime) fn clear_match_state(&mut self) {
-        self.env.insert("/".to_string(), Value::NIL);
+        // Symbol-keyed: this runs on every *failed* match, so a by-name insert
+        // puts an intern of the literal `/` on the per-match path (#8269).
+        self.env
+            .insert_sym(crate::symbol::wk::match_var(), Value::NIL);
         self.reset_capture_env_vars();
     }
 
@@ -49,8 +52,8 @@ impl Interpreter {
     /// what `clear_match_state` does.)
     pub(in crate::runtime) fn clear_multi_match_state(&mut self) {
         self.clear_match_state();
-        self.env.insert(
-            "/".to_string(),
+        self.env.insert_sym(
+            crate::symbol::wk::match_var(),
             Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                 crate::value::ArrayKind::List,
@@ -122,7 +125,8 @@ impl Interpreter {
         }
         attrs.insert("named".to_string(), Value::hash_bare_values(named));
         let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);
-        self.env.insert("/".to_string(), match_obj.clone());
+        self.env
+            .insert_sym(crate::symbol::wk::match_var(), match_obj.clone());
 
         // Reset stale numeric/named captures before applying new ones.
         self.reset_capture_env_vars();
@@ -132,10 +136,12 @@ impl Interpreter {
                 Some((from, to)) => make_capture_match(&captures.span_text(*from, *to), *from, *to),
                 None => Value::NIL,
             };
-            self.env.insert(i.to_string(), value);
+            self.env
+                .insert_sym(crate::symbol::wk::capture_index(i), value);
         }
         if captures.positional_slots().is_empty() {
-            self.env.insert("0".to_string(), Value::NIL);
+            self.env
+                .insert_sym(crate::symbol::wk::capture_index(0), Value::NIL);
         }
         // Set named capture env vars from the match object's named hash
         let named_v = match_obj.match_named();
