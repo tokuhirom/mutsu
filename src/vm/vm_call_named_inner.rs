@@ -638,7 +638,7 @@ impl Interpreter {
                                 _ => None,
                             });
                     }
-                    self.propagate_sigilless_alias_chain(&cf.code, &pd.name, &final_val);
+                    self.propagate_sigilless_alias_chain(&cf.code, &pd.name, None, &final_val);
                 }
             }
         }

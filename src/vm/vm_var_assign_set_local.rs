@@ -319,6 +319,76 @@ impl Interpreter {
     /// one the full path would run anyway. A guard that fails is never wrong —
     /// it just takes the (unchanged) slow path.
     #[inline]
+    /// True when `idx` is the *source* slot of a recorded `:=` bind pair, i.e.
+    /// when a write to it has to be propagated into the alias's slot by
+    /// [`Interpreter::exec_set_local_op_inner`]'s reverse-propagation loop.
+    ///
+    /// That loop is the only thing `local_bind_pairs` makes the full store do,
+    /// and it fires on exactly one condition: `source == idx`, or `source` being
+    /// a slot the *forward* alias-chain walk just wrote. The forward walk is
+    /// itself gated on `env::closure_meta_keys_possible()`, which the caller
+    /// checks separately — so on any store the fast path can serve, the walk
+    /// wrote nothing and `source == idx` is the whole test.
+    ///
+    /// Asking that question per slot rather than per program is what makes the
+    /// narrowing worth having. `local_bind_pairs` is frame-global: **one**
+    /// `my $x := $y` anywhere in a scope used to push every plain scalar store
+    /// in that scope onto the full ~2,000-line cascade, including stores to
+    /// variables the binding cannot reach. `benchmarks/bench-threads-serial.raku`
+    /// is the measured case — its single `my $sref := $seed` taxed the loop
+    /// counter and the accumulator of every loop in the file, and a bare
+    /// `$s = $s + ($i +& 255)` loop ran 1.87x slower for it (~480 -> ~905 ns
+    /// per iteration) with no array and no thread in sight.
+    ///
+    /// The pairs are scalar-only (a `@`/`%` bind is served by a shared
+    /// `ContainerRef` cell and returns before the pair is recorded) and there are
+    /// never many of them, so the scan is over a handful of `usize`s at most.
+    fn slot_is_bind_pair_source(&self, idx: usize) -> bool {
+        self.local_bind_pairs
+            .iter()
+            .any(|&(source, _)| source == idx)
+    }
+
+    /// True when local slot `idx` carries `:=`/sigilless binding metadata of its
+    /// own — a `__mutsu_sigilless_alias::<name>` entry for the full store's
+    /// forward alias-chain walk, or a `__mutsu_sigilless_readonly::<name>`
+    /// marker that can reject the write.
+    ///
+    /// This replaces two process-global latches in the fast path's gate with the
+    /// per-slot question they stand for. `__mutsu_sigilless_*` keys are created
+    /// by any `:=` bind with a variable source, `my $x := $y` included, and both
+    /// latches are monotonic — so a single such binding anywhere used to push
+    /// *every* plain scalar store in the process onto the full ~2,000-line
+    /// cascade, including stores to variables that binding cannot reach. That is
+    /// the dominant cost of `benchmarks/bench-threads-serial.raku`, whose one
+    /// `my $sref := $seed` taxed the loop counter and accumulator of every loop
+    /// in the file: a bare `$s = $s + ($i +& 255)` loop ran 1.87x slower for it
+    /// (~480 -> ~905 ns per iteration), with no array and no thread in sight.
+    ///
+    /// The narrowing is exact rather than heuristic. Both consumers the gate
+    /// stands in for are addressed by THIS slot's own key: the forward walk
+    /// starts at `code.alias_sym(idx)` and does nothing when that key is absent,
+    /// and the readonly refusal reads `code.readonly_sym(idx)`. The other two
+    /// key families [`crate::env::closure_meta_keys_possible`] lumps in
+    /// (`__mutsu_state_key::`, `__mutsu_predictive_seq_iter::`) are NOT per-slot
+    /// questions here, so they keep their own whole-program gate
+    /// ([`crate::env::closure_state_meta_keys_possible`]) in the caller.
+    ///
+    /// Only the ALIAS key is asked per slot. The readonly marker keeps its own
+    /// whole-program latch in the caller: it is created only for a bind whose
+    /// source really is readonly (see the `:=` store site below), so it is rare
+    /// enough that a second per-store env probe would cost more than it saves.
+    ///
+    /// A program that never made a sigilless/`:=` binding answers with one
+    /// relaxed atomic load and reaches no env at all, exactly as before.
+    fn slot_has_sigilless_meta(&self, code: &CompiledCode, idx: usize) -> bool {
+        if !crate::env::sigilless_meta_keys_possible() {
+            return false;
+        }
+        code.alias_sym(idx)
+            .is_some_and(|sym| self.env().contains_key_sym(sym))
+    }
+
     fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
         let idx = idx as usize;
         // The slot's name makes every name-derived branch inert (see the
@@ -343,24 +413,28 @@ impl Interpreter {
         //   - a sigilless multi-dim slice bind to distribute through
         //     (`distribute_bound_multidim_slice`),
         //   - a `:=`-bound decont marker to clear (`update_bound_decont_marker`),
-        //   - a pending alias bind to resolve, or a recorded bind pair to
-        //     propagate the write to,
+        //   - a pending alias bind to resolve, or a recorded bind pair that
+        //     this slot is the SOURCE of (see `slot_is_bind_pair_source`),
         //   - an `is default(...)` value to substitute for a stored `Nil`,
         //   - a typed lexical whose constraint has to be checked and coerced,
-        //   - a sigilless-readonly marker that would reject the write,
         //   - an atomic-variable cell to detach the name from,
-        //   - a `:=` alias chain to walk forward,
+        //   - a `state`/predictive-`Seq` closure-metadata key anywhere in the
+        //     program,
+        //   - a sigilless-readonly marker that would reject the write,
+        //   - a `:=` alias chain hanging off THIS slot to walk forward (see
+        //     `slot_has_sigilless_meta`),
         //   - a `Failure` to turn fatal, or a declaration still in flight on
         //     another thread.
         if crate::env::bound_array_slice_possible()
             || self.bound_decont_active().get()
             || !self.pending_alias_bind_names.is_empty()
-            || !self.local_bind_pairs.is_empty()
+            || self.slot_is_bind_pair_source(idx)
             || self.has_var_defaults()
             || Self::env_type_constraint_seen()
             || crate::env::sigilless_readonly_keys_possible()
             || Self::atomic_var_seen_anywhere()
-            || crate::env::closure_meta_keys_possible()
+            || crate::env::closure_state_meta_keys_possible()
+            || self.slot_has_sigilless_meta(code, idx)
             || self.fatal_mode
             || !self.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty()
@@ -1810,10 +1884,31 @@ impl Interpreter {
             // `False` here made the alias writable and silently dropped the store.
             // (The SetGlobal bind path already propagates this.)
             let source_kind = self.readonly_kind(&resolved_source);
-            self.env_mut().insert_sym_noting(
-                runtime::sigilless_readonly_key(name),
-                Value::truth(source_kind.is_some()),
-            );
+            let readonly_key = runtime::sigilless_readonly_key(name);
+            if source_kind.is_some() {
+                self.env_mut().insert_sym_noting(readonly_key, Value::TRUE);
+            } else if crate::env::sigilless_readonly_keys_possible()
+                && self.env().contains_key_sym(readonly_key)
+            {
+                // A writable bind must not inherit an earlier same-named
+                // binding's marker, but it must not CREATE one either. Every
+                // reader of this key tests for `Bool(true)` specifically
+                // (`name_is_readonly_binding_for`, `CheckReadOnly`,
+                // `exec_capture_var_cell_op`), so a stored `False` and an absent
+                // key are the same answer -- while the `False` additionally
+                // armed the monotonic `SIGILLESS_READONLY_KEY_SEEN` latch for
+                // the rest of the process.
+                //
+                // That latch gates `name_is_readonly_binding_for`, which every
+                // `++`/`--`/`OP=` and every `CheckReadOnly` consults, each miss
+                // costing a `format!`ed, `Symbol::intern`ed env probe. So one
+                // ordinary `my $x := $y` -- a binding that is not readonly at
+                // all, and whose marker was `False` -- taxed every
+                // read-modify-write in the program. Writing the key only when it
+                // is genuinely `True` leaves a program that never bound a
+                // readonly name paying nothing.
+                self.env_mut().remove_sym(readonly_key);
+            }
             if let Some(kind) = source_kind {
                 self.mark_readonly_with(name, kind);
             }
