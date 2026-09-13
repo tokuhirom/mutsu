@@ -45,6 +45,64 @@ fn destructures_pair_by_name(value: &Value, sub_params: &[ParamDef]) -> bool {
         && sub_params.iter().all(|p| p.named)
 }
 
+/// Whether an all-named sub-signature is destructuring a `Hash`/`Map`, as
+/// `%patch (:$op, :@path)` does.
+///
+/// The `Pair` story above, one level out: an `Associative`'s capture has no
+/// POSITIONAL part either (rakudo's `{:x(1), :y(2)}.Capture.list` is `()`,
+/// and its `.hash` holds the entries), but
+/// `positional_values_from_unpack_target` reports one element per entry —
+/// the shape the positional-destructure forms read. So an all-named
+/// sub-signature leaves every entry unconsumed by construction and the
+/// leftover-positional check has to sit this one out too. A slurpy counts as
+/// "named" here only in the sense that it does not make the sub-signature
+/// positional; which slurpy it is decides the entry check below.
+fn destructures_associative_by_name(value: &Value, sub_params: &[ParamDef]) -> bool {
+    matches!(
+        value.unwrap_varref().descalarize().view(),
+        ValueView::Hash(_)
+    ) && !sub_params.is_empty()
+        && sub_params.iter().all(|p| p.named || p.slurpy)
+}
+
+/// Every entry of an `Associative` unpack target is a NAMED part of its
+/// capture, so one the sub-signature does not name is an unaccounted named
+/// argument and the candidate does not match — rakudo rejects
+/// `%h (:$x!)` against `{:x(1), :y(2)}` exactly as it rejects a surplus named
+/// argument at a call. A named slurpy (`*%rest`) accepts the remainder; a
+/// POSITIONAL slurpy (`*@rest`) does not, since there are no positional parts
+/// for it to take.
+fn associative_entries_all_named(value: &Value, sub_params: &[ParamDef]) -> bool {
+    if sub_params
+        .iter()
+        .any(|p| p.slurpy && (p.named || p.name.starts_with('%')))
+    {
+        return true;
+    }
+    let entries = named_values_from_unpack_target(value);
+    entries.keys().all(|key| {
+        sub_params
+            .iter()
+            .any(|pd| named_param_addresses_key(pd, key))
+    })
+}
+
+/// Whether `pd` — a sub-signature parameter — is the one that consumes the
+/// entry `key`. `:$op` spells the name in `pd.name` with its sigil; the rename
+/// form `:op($o)` puts the SOURCE name there instead, with the target in its
+/// sub-signature (see [`is_named_rename_sub_signature`]). Either way `pd.name`
+/// is what the entry has to match, sigil-stripped.
+fn named_param_addresses_key(pd: &ParamDef, key: &str) -> bool {
+    if !pd.named {
+        return false;
+    }
+    let stripped = pd
+        .name
+        .strip_prefix(['$', '@', '%', '&'])
+        .unwrap_or(&pd.name);
+    stripped == key || pd.name == key
+}
+
 pub(in crate::runtime) fn varref_from_value(value: &Value) -> Option<(String, Value)> {
     indexed_varref_from_value(value).map(|(name, inner, _)| (name, inner))
 }
@@ -530,6 +588,14 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         {
             return false;
         }
+    }
+    // An all-named destructure of an `Associative` consumes no positional
+    // element by construction, so its entries are checked as NAMED arguments
+    // instead — which is what rakudo does, and what makes
+    // `multi sub p(%patch (:$op!, :@path!))` (every `Crane::Patch` operation
+    // candidate) match a plain hash argument at all.
+    if destructures_associative_by_name(value, sub_params) {
+        return associative_entries_all_named(value, sub_params);
     }
     // If there are unconsumed positional elements and no slurpy param, the match
     // fails — unless this is an all-named destructure of a Pair, which consumes
