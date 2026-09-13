@@ -459,10 +459,12 @@ impl Interpreter {
                     | "fatal"
                     | "oo"
                     | "class"
-                    // NativeCall: the `is native(...)` trait machinery is built
-                    // into the VM (see runtime/nativecall.rs); `use NativeCall`
-                    // only needs to be a recognized no-op.
+                    // NativeCall: the `is native(...)` trait machinery and the
+                    // NativeCall::Types declarations are built into the VM
+                    // (see runtime/nativecall.rs); these uses only need to be
+                    // recognized no-ops.
                     | "NativeCall"
+                    | "NativeCall::Types"
         ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
