@@ -4112,6 +4112,7 @@ impl Compiler {
                 name,
                 body,
                 custom_traits,
+                is_lexical,
                 ..
             } => {
                 // Declaring the same class name twice in one lexical scope is an
@@ -4140,7 +4141,19 @@ impl Compiler {
                     } else {
                         format!("{}::{}", self.current_package, cname)
                     };
-                    if !self.class_names_current_scope.insert(redeclaration_key) {
+                    let already_declared =
+                        self.class_names_current_scope.contains(&redeclaration_key);
+                    let already_lexical = self
+                        .lexical_class_names_current_scope
+                        .contains(&redeclaration_key);
+                    let may_shadow_outer_package_class = *is_lexical
+                        && !cname.contains("::")
+                        && self.current_package != "GLOBAL"
+                        && !already_lexical
+                        && self
+                            .qualified_class_names_current_scope
+                            .contains(&redeclaration_key);
+                    if already_declared && !may_shadow_outer_package_class {
                         let sym = cname.rsplit("::").next().unwrap_or(&cname).to_string();
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("symbol".to_string(), Value::str(sym));
@@ -4150,6 +4163,16 @@ impl Compiler {
                         self.code.emit(OpCode::LoadConst(cidx));
                         self.code.emit(OpCode::Die { user_throw: false });
                         return;
+                    }
+                    self.class_names_current_scope
+                        .insert(redeclaration_key.clone());
+                    if *is_lexical {
+                        self.lexical_class_names_current_scope
+                            .insert(redeclaration_key.clone());
+                    }
+                    if cname.contains("::") {
+                        self.qualified_class_names_current_scope
+                            .insert(redeclaration_key);
                     }
                 }
                 // A method installed by RegisterClass outlives this frame and has

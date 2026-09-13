@@ -23,6 +23,8 @@ pub(super) struct LexicalScopeSnapshot {
     constant_values: std::collections::HashMap<String, Value>,
     my_vars_current_scope: std::collections::HashSet<String>,
     class_names_current_scope: std::collections::HashSet<String>,
+    lexical_class_names_current_scope: std::collections::HashSet<String>,
+    qualified_class_names_current_scope: std::collections::HashSet<String>,
     accessed_dynamic_vars: std::collections::HashSet<String>,
     /// True when this push left `accessed_dynamic_vars` untouched (a
     /// transparent synthetic-wrapper inlining, not a real scope) — see
@@ -68,6 +70,12 @@ impl Compiler {
             // Likewise a same-named class inside an inner block shadows rather
             // than redeclares the outer one.
             class_names_current_scope: std::mem::take(&mut self.class_names_current_scope),
+            lexical_class_names_current_scope: std::mem::take(
+                &mut self.lexical_class_names_current_scope,
+            ),
+            qualified_class_names_current_scope: std::mem::take(
+                &mut self.qualified_class_names_current_scope,
+            ),
             // The entered block starts with no dynamic-var reads recorded of
             // its own: X::Dynamic::Postdeclaration must only fire for a `my
             // $*x` that follows an earlier read of `$*x` in the SAME block —
@@ -105,6 +113,8 @@ impl Compiler {
         self.constant_values = saved.constant_values;
         self.my_vars_current_scope = saved.my_vars_current_scope;
         self.class_names_current_scope = saved.class_names_current_scope;
+        self.lexical_class_names_current_scope = saved.lexical_class_names_current_scope;
+        self.qualified_class_names_current_scope = saved.qualified_class_names_current_scope;
         // A transparent push (see `push_dynamic_scope_lexical`) never touched
         // `accessed_dynamic_vars`, so the matching pop must not touch it
         // either — restoring the (empty, unused) snapshot value here would

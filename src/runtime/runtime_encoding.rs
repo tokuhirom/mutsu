@@ -262,6 +262,22 @@ impl Interpreter {
     /// env binds the bare name to that storage name, so `is Foo` links to the Foo
     /// visible in *this* scope rather than a same-named class from another scope.
     pub(crate) fn lexical_env_remap_name(&self, name: &str) -> String {
+        // A qualified parent name addresses a package member before lexical
+        // aliases. When a lexical child shadows that same source-facing name
+        // (`module M { my class C is M::C {} }`), the env contains `M::C` as
+        // the child's mangled binding, but the qualified spelling still names
+        // the existing package class. Keep the qualified name when that
+        // package member exists; namespaced lexical types with no package
+        // member continue through the env remap below.
+        if name.contains("::") {
+            let registry = self.registry();
+            if registry.classes.contains_key(name)
+                || registry.roles.contains_key(name)
+                || registry.enum_types.contains_key(name)
+            {
+                return name.to_string();
+            }
+        }
         if let Some(ValueView::Package(p)) = self.env().get(name).map(Value::view) {
             let resolved = p.resolve();
             // Only trust this as an ADR-0047 lexical-class remap when `resolved`
@@ -424,6 +440,17 @@ impl Interpreter {
             })
         {
             return true;
+        }
+        // A lexical type declared inside a `module`/`package`/`class` body is
+        // still in the same compilation unit, but its package-qualified name
+        // is only available while code is running in that package. A same-file
+        // lookup after the package block must not turn the lexical declaration
+        // into a package symbol (`module M { my class C {} }; M::C`). The
+        // package-kind table distinguishes this from a namespaced lexical
+        // declaration at file scope (`my class M::C {}`), whose qualified name
+        // remains visible within its own compilation unit.
+        if type_package.is_some_and(|package| self.registry().package_kinds.contains_key(package)) {
+            return false;
         }
         if type_package.is_some_and(|package| {
             let registry = self.registry();

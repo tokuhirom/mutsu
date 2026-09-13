@@ -834,8 +834,12 @@ impl Interpreter {
             {
                 continue;
             }
-            // Skip my-scoped items (they should not appear in the package stash)
-            if self.is_my_scoped_package_item(&key_s) {
+            // Skip my-scoped items (they should not appear in the package stash).
+            // A lexical type is registered in the env under its source-facing
+            // qualified name (`M::C`) but marked under its mangled registry
+            // storage name (`M::C\0<decl-id>`), so the package-item marker alone
+            // cannot identify this env entry.
+            if self.is_my_scoped_package_item(&key_s) || self.is_my_scoped_type_name(&key_s) {
                 continue;
             }
             // GLOBAL's env scan sees the self-qualified mirror of a root
