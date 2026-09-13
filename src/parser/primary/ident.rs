@@ -2,7 +2,7 @@ mod anon_sub;
 mod circumfix;
 mod identifier_call;
 mod listop;
-mod predicates;
+pub(crate) mod predicates;
 mod supply;
 mod supply_emit_expr;
 mod term_literals;

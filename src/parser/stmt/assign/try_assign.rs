@@ -198,9 +198,11 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             let keys = crate::parser::helpers::split_angle_words(&inner[..end]);
             if keys.is_empty()
-                || !keys
-                    .iter()
-                    .all(|k| !k.is_empty() && k.chars().all(crate::parser::expr::is_angle_key_char))
+                || !keys.iter().all(|k| {
+                    !k.is_empty()
+                        && k.chars()
+                            .all(crate::parser::expr::is_conservative_angle_key_char)
+                })
             {
                 return Err(PError::expected("assignment expression"));
             }

@@ -27,7 +27,7 @@ use crate::value::Value;
 use super::helpers::ws;
 pub(in crate::parser) use postfix::consumed_span;
 pub(in crate::parser) use postfix::dot_assign_to_name;
-pub(in crate::parser) use postfix::is_angle_key_char;
+pub(in crate::parser) use postfix::is_conservative_angle_key_char;
 pub(in crate::parser) use postfix::parse_bracket_indices;
 pub(in crate::parser) use postfix::postfix_expr_continue;
 pub(in crate::parser) use postfix::without_pending_prefix;

@@ -185,10 +185,14 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
         // `(1 op 2) ~ 3` and `1 op 2 ?? "y" !! "n"` as `(1 op 2) ?? "y" !! "n"`.
         {
             use crate::parser::stmt::simple::PREC_ADDITIVE;
-            // A custom infix *word* must not span a statement boundary: a bare
-            // identifier opening the next line is a new statement, not an infix.
+            // A *speculative* custom infix word must not span a statement
+            // boundary: a bare identifier opening the next line is a new
+            // statement, not an infix. An operator the parser has seen declared
+            // is unambiguous and does continue the expression, exactly as a
+            // symbolic infix on a continuation line already does.
             let crossed_newline = rest[..rest.len() - r.len()].contains('\n');
-            if !crossed_newline
+            if (!crossed_newline
+                || crate::parser::expr::precedence::is_declared_custom_infix_word(r))
                 && let Some(new_rest) = crate::parser::expr::precedence::try_custom_infix_word(
                     r,
                     &mut left,
