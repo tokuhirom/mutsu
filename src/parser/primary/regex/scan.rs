@@ -490,23 +490,11 @@ fn scan_to_delim_inner(
                     chars.next(); // skip ? or !
                 }
                 chars.next(); // skip {
-                let mut brace_depth = 1u32;
-                loop {
-                    match chars.next() {
-                        Some((_, '{')) => brace_depth += 1,
-                        Some((_, '}')) => {
-                            brace_depth -= 1;
-                            if brace_depth == 0 {
-                                break;
-                            }
-                        }
-                        Some((_, '\\')) => {
-                            chars.next();
-                        }
-                        Some(_) => {}
-                        None => return None,
-                    }
-                }
+                // The assertion body is Raku code, so a brace in a quoted
+                // string is not its closing brace (`<?{ $x eq '}' }>`).
+                // Reuse the quote-aware scanner used by ordinary embedded
+                // code blocks rather than counting braces in raw source.
+                skip_interp_block(&mut chars)?;
                 // Consume the closing >
                 if let Some((_, '>')) = chars.next() {
                     // done
