@@ -185,6 +185,31 @@ pub(crate) fn record_regex_code_parse(hit: bool) {
     }
 }
 
+// #8265: RAW_TOKEN_CANDIDATES effectiveness -- the registry-walk resolution
+// (`resolve_token_patterns_static_in_pkg`, which formats each `:sym<...>`
+// candidate's pattern text from scratch) that a subrule reference needed on
+// EVERY call whenever any one of a proto's candidates was non-static, because
+// `regex_pattern_is_static` misclassified `$<name>=[...]` named-capture
+// bindings as runtime interpolation and declined the whole proto's
+// `PARSED_TOKEN_CANDIDATES` memo. A `misses` count that keeps growing with
+// the number of `<subrule>` references (rather than staying at one per
+// `TOKEN_DEFS_GEN`) means that walk is happening again on every reference --
+// the regression this counter exists to catch.
+static REGEX_RAW_TOKEN_CANDIDATES_HITS: AtomicU64 = AtomicU64::new(0);
+static REGEX_RAW_TOKEN_CANDIDATES_MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one lookup in `RAW_TOKEN_CANDIDATES` (#8265).
+#[inline]
+pub(crate) fn record_regex_raw_token_candidates(hit: bool) {
+    if enabled() {
+        if hit {
+            REGEX_RAW_TOKEN_CANDIDATES_HITS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_RAW_TOKEN_CANDIDATES_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Record one `Arc::make_mut` on a stored regex capture node; `shared` means
 /// the node had other holders (strong_count > 1) so make_mut deep-copied it.
 #[inline]
@@ -1188,6 +1213,11 @@ pub(crate) fn dump() {
     let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] regex-code-parse-cache: hits={code_parse_hits} misses={code_parse_misses}"
+    );
+    let raw_candidates_hits = REGEX_RAW_TOKEN_CANDIDATES_HITS.load(Ordering::Relaxed);
+    let raw_candidates_misses = REGEX_RAW_TOKEN_CANDIDATES_MISSES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-raw-token-candidates-cache: hits={raw_candidates_hits} misses={raw_candidates_misses}"
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");

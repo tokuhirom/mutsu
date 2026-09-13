@@ -225,13 +225,24 @@ pub(crate) static TOKEN_DEFS_GEN: std::sync::atomic::AtomicU64 =
 /// A sigil counts as interpolation only when what follows can actually start a
 /// variable form (see `interpolate_regex_scalars` / the `<...>` tokenizer
 /// forms): an identifier start, a digit (`$0` backrefs stay conservative), a
-/// twigil (`$*x`, `$?FILE`, `$^a`, `$!x`, `$.x`), `{`/`(` contextualizers,
-/// `$<name>` capture forms, or `@$var` derefs. This stays a conservative
-/// superset of what the parser substitutes; false "dynamic" only costs cache
-/// misses, never correctness.
+/// twigil (`$*x`, `$?FILE`, `$^a`, `$!x`, `$.x`), or `{`/`(` contextualizers.
+/// This stays a conservative superset of what the parser substitutes; false
+/// "dynamic" only costs cache misses, never correctness.
+///
+/// `<` is deliberately NOT one of these forms (#8265): `$<name>` is a named
+/// backreference and `$<name>=`/`@<name>=`/`%<name>=` are named-capture
+/// bindings, all resolved purely by the structural regex parser from the
+/// literal name text -- none of them is runtime variable interpolation, and
+/// `interpolate_regex_scalars` (the actual substitution pass this predicate
+/// exists to gate) has no `$</@</%<` branch at all; a `$<...>` occurrence
+/// reaches its final "copy verbatim" fallback untouched. Misclassifying it as
+/// dynamic declined the cache for every candidate that used the common
+/// `token value:sym<x> { <sym> }` shape (lowered to `:ratchet
+/// $<sym>=[x]`), which cost the whole proto's memo, not just this one
+/// candidate.
 pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     fn starts_variable_form(c: char) -> bool {
-        c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '<' | '*' | '?' | '^' | '.' | '!')
+        c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '*' | '?' | '^' | '.' | '!')
     }
     let chars: Vec<char> = pattern.chars().collect();
     let mut i = 0usize;
@@ -1648,6 +1659,43 @@ mod tests {
         }
         // Compound class missing operator (plain message, no typed exception).
         assert!(validate_regex_structurally("<[abc] [def]>").is_err());
+    }
+
+    #[test]
+    fn is_static_accepts_named_capture_and_backref_forms() {
+        // #8265: `$<name>`/`$<name>=`/`@<name>=`/`%<name>=` are resolved from
+        // their literal name text alone -- not runtime variable interpolation
+        // -- so none of these may classify as dynamic. `:ratchet
+        // $<sym>=[true]` is exactly what a bare `<sym>` inside `token
+        // value:sym<true> { <sym> }` lowers to.
+        for p in [
+            r"$<name>",
+            r"$<name>=[abc]",
+            r":ratchet $<sym>=[true]",
+            r"@<name>=[abc]+",
+            r"%<name>=[abc]",
+            r"a $<x>=[b] c",
+        ] {
+            assert!(
+                regex_pattern_is_static(p),
+                "expected `{p}` to be classified static (named capture/backref, not interpolation)"
+            );
+        }
+    }
+
+    #[test]
+    fn is_static_still_rejects_genuine_interpolation() {
+        // The fix must not widen the predicate beyond `<` -- every other
+        // dynamic form it already recognized stays dynamic.
+        for p in [
+            r"$var", r"@var", r"$*x", r"$?FILE", r"$^a", r"$!x", r"$.x", r"${expr}", r"$(expr)",
+            r"@$var",
+        ] {
+            assert!(
+                !regex_pattern_is_static(p),
+                "expected `{p}` to stay classified dynamic"
+            );
+        }
     }
 
     #[test]
