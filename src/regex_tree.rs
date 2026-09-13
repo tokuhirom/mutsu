@@ -900,8 +900,8 @@ impl Parser {
     /// body>`, and `<!after body>` forms, plus the unprefixed and dot-prefixed
     /// named forms. The latter retain their capture policy in a separate tree
     /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
-    /// characters are accepted when the nested tree already has a source and
-    /// execution representation.
+    /// characters and ordinary scalar interpolations are accepted when the
+    /// nested tree already has a source and execution representation.
     fn parse_lookaround(&mut self) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1; // '<'
@@ -993,7 +993,7 @@ impl Parser {
         }
         let body_source: String = self.chars[body_start..self.pos].iter().collect();
         let assertion = RegexTree::parse_static(&body_source, false)?.body;
-        if !is_static_lookaround_body(&assertion) {
+        if !is_supported_lookaround_body(&assertion) {
             self.pos = start;
             return None;
         }
@@ -1282,15 +1282,18 @@ fn contains_subrule(node: &RegexNode) -> bool {
     }
 }
 
-fn is_static_lookaround_body(node: &RegexNode) -> bool {
+fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     match node {
         RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClassDigit => true,
         RegexNode::Sequence(nodes) | RegexNode::Alternation(nodes) => {
-            nodes.iter().all(is_static_lookaround_body)
+            nodes.iter().all(is_supported_lookaround_body)
         }
         RegexNode::Group(child)
         | RegexNode::Quantified { atom: child, .. }
-        | RegexNode::WithWhitespace(child) => is_static_lookaround_body(child),
+        | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
+        RegexNode::Interpolation {
+            sequential: false, ..
+        } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
@@ -1301,7 +1304,7 @@ fn is_static_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
-            is_static_lookaround_body(assertion)
+            is_supported_lookaround_body(assertion)
         }
     }
 }
