@@ -19,14 +19,42 @@
 # Sized so a release mutsu takes well under a second, because
 # scripts/bench-det.sh re-runs every benchmark under callgrind at ~90x native.
 #
-# The raku column and the ratio record NA for this row, as they do for every
-# battery-using benchmark (bench-yaml-parse and the grammar ones): scripts/
-# bench-ci.sh measures the reference with a bare `raku <file>`, and a stock
-# rakudo has no JSON::Fast to find. The mutsu absolute series and the
-# deterministic instruction counts are the signal here. To get the cross-
-# interpreter number by hand, point rakudo at the vendored copy:
+# ----------------------------------------------------------------------------
+# Resolving a bundled battery without `-I`.
 #
-#     raku -I modules/JSON-Fast/lib benchmarks/bench-json-fast.raku
+# scripts/bench-ci.sh measures the reference interpreter with a bare
+# `raku <file>` and passes no module search path, so a benchmark that just says
+# `use JSON::Fast` records NA in the raku column and NA for the ratio -- which
+# is the one number this benchmark exists to track. The line below fixes that
+# for any interpreter, by naming the vendored copy relative to this FILE rather
+# than to the working directory:
+#
+#     use lib $?FILE.IO.parent(2).add('modules/<Dist>/lib').Str;
+#
+# It is the idiom for any benchmark that needs a battery (bench-yaml-parse and
+# bench-yaml-parse-big still take the `-I`-less NA and could adopt it). Two
+# properties are load-bearing:
+#
+# - It names ONE distribution, not `modules/*/lib`. Globbing every battery onto
+#   the search path would add ~36 directories of unrelated module-resolution
+#   work to the thing being timed, and makes rakudo emit a deprecation warning
+#   for JSON-Tiny's `.pm` files on top.
+# - It changes nothing for mutsu, whose bundled batteries ARE `modules/<Dist>/
+#   lib` (`Interpreter::bundled_lib_paths`), so `use lib` merely names the file
+#   mutsu would have loaded anyway. The mutsu series stays comparable across
+#   this change; only the raku column goes from NA to a real measurement.
+#
+# Read that ratio for what it is: WHOLE-SCRIPT time, including rakudo's startup
+# floor, which is ~0.15s on the bench runner and larger than the JSON work it
+# does here. That is true of every row in this suite -- the raku column across
+# the whole history sits in 0.14-0.30s -- and is the documented design, since
+# the ratio exists to normalize runner speed rather than to isolate one
+# operation. So this row's ratio will read near 1, and it is NOT the ~63x/~126x
+# of #8289, which was measured on the encode/decode calls alone with startup
+# excluded. What it does do is move when dispatch cost moves, which is the
+# point; for the isolated per-operation figure, time the calls directly.
+# ----------------------------------------------------------------------------
+use lib $?FILE.IO.parent(2).add('modules/JSON-Fast/lib').Str;
 use JSON::Fast;
 
 my %doc =
