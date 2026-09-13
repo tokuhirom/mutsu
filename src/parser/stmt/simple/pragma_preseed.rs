@@ -220,6 +220,22 @@ pub(crate) fn register_imported_value_term(name: &str) {
     });
 }
 
+/// Return sigilless value terms imported by the current parse. EVAL starts a
+/// fresh parser scope, so its preseed must carry these names across the scope
+/// reset just as it carries locally declared constant markers.
+pub(crate) fn imported_value_term_names() -> Vec<String> {
+    SCOPES.with(|s| {
+        let mut names: Vec<String> = s
+            .borrow()
+            .iter()
+            .flat_map(|scope| scope.imported_value_terms.iter().cloned())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    })
+}
+
 /// Whether `name` names a sigilless value term imported from a scanned module.
 /// Such a name is a complete nullary term, so it can never be the routine call
 /// that the `when`-matcher gobbled-block check is looking for.

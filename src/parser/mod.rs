@@ -53,6 +53,10 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+pub(crate) fn imported_value_term_names() -> Vec<String> {
+    stmt::simple::imported_value_term_names()
+}
+
 /// Parse a quote body under `qq` (double-quote) interpolation rules: variables
 /// with their postcircumfixes, embedded `{ ... }` code blocks, and the full
 /// backslash-escape set.

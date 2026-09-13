@@ -244,7 +244,8 @@ impl Interpreter {
     /// their sigil, never as a bareword term, so they are not term symbols.
     pub(crate) fn collect_eval_user_value_term_names(&self) -> Vec<String> {
         const MARKER: &str = "__mutsu_constant_var::";
-        self.env
+        let mut names: Vec<String> = self
+            .env
             .keys()
             .filter_map(|key| {
                 let name = key.resolve();
@@ -253,7 +254,11 @@ impl Interpreter {
                 (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
                     .then(|| bare.to_string())
             })
-            .collect()
+            .collect();
+        names.extend(crate::parser::imported_value_term_names());
+        names.sort_unstable();
+        names.dedup();
+        names
     }
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
