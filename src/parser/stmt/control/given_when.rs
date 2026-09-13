@@ -4,7 +4,7 @@ use super::*;
 pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("given", input).ok_or_else(|| PError::expected("given statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, topic) = expression(rest)?;
+    let (rest, topic) = parse_comma_or_expr(rest)?;
     let (rest, _) = ws(rest)?;
     // Check for pointy block: given EXPR -> $param { ... }
     let (rest, pointy_param) = if let Some(r) = rest.strip_prefix("->") {
@@ -33,7 +33,10 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("when", input).ok_or_else(|| PError::expected("when statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, cond) = condition_expr(rest)?;
+    // A `when` matcher is a full comma expression. This is the same parsing
+    // rule used by `if` conditions, and is required for element-wise
+    // smartmatching of list topics (`when * == 1, * { ... }`).
+    let (rest, cond) = super::conditionals::conditional_expr(rest)?;
     let (rest, _) = ws(rest)?;
     // An undeclared bareword in term position immediately followed by a block is
     // treated by raku as a function call that gobbles the block (e.g.

@@ -18,7 +18,7 @@ pub(crate) struct ElseClause {
     body: Vec<Stmt>,
 }
 
-fn conditional_expr(input: &str) -> PResult<'_, Expr> {
+pub(super) fn conditional_expr(input: &str) -> PResult<'_, Expr> {
     match parse_comma_or_expr(input) {
         Ok((rest, cond)) => {
             let (tail, _) = ws(rest)?;
