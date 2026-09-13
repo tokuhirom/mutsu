@@ -313,14 +313,18 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         if let Some(r) = keyword("does", rest) {
             let (r, _) = ws1(r)?;
             let (r, role_name) = qualified_ident(r)?;
-            if role_name == name {
+            let (r, _) = ws(r)?;
+            let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
+            // A parameterised role may compose the unparameterised candidate
+            // of its own role group (`role R[Int $n] does R`).  Only reject
+            // the same candidate: an unparameterised declaration composing
+            // its unparameterised self (`role R does R`) remains invalid.
+            if role_name == name && type_params.is_empty() && bracket_suffix.is_empty() {
                 return Err(PError::fatal(format!(
                     "X::InvalidType: role '{}' cannot compose itself",
                     name
                 )));
             }
-            let (r, _) = ws(r)?;
-            let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
             let (r, _) = ws(r)?;
             let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
             parent_roles.push((format!("{}{}", role_name, bracket_suffix), args, false));
