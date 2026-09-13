@@ -475,6 +475,7 @@ fn every_variant_roundtrips_losslessly() {
             sigspace: false,
             samecase: false,
             samespace: false,
+            source_adverbs: None,
             captured: None,
             source_tree: None,
         })),

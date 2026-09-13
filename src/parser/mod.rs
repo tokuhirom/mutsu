@@ -923,7 +923,8 @@ mod tests {
         };
         let items = match expr {
             Expr::ArrayLiteral(items) => items,
-            Expr::Call { name, args } if name.resolve() == "list" => args,
+            // The reserved spelling a word list lowers to; see `make_list_expr`.
+            Expr::Call { name, args } if name.resolve() == "__mutsu_word_list" => args,
             _ => panic!("expected list expression"),
         };
         assert_eq!(items.len(), 7);

@@ -1639,7 +1639,22 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             if assertion.class != RakuAstClass::RegexAssertionNamedRegexArg {
                 return Err(unsupported(node));
             }
-            let name_node = named_child(assertion, "name")?;
+            let RegexNode::NamedLookaround {
+                assertion: regex_arg,
+                is_behind,
+                ..
+            } = lower_regex_node(assertion)?
+            else {
+                return Err(unsupported(node));
+            };
+            Ok(RegexNode::Lookaround {
+                assertion: regex_arg,
+                negated: bool_field(node, "negated")?,
+                is_behind,
+            })
+        }
+        RakuAstClass::RegexAssertionNamedRegexArg => {
+            let name_node = named_child(node, "name")?;
             if name_node.class != RakuAstClass::Name {
                 return Err(unsupported(node));
             }
@@ -1652,14 +1667,12 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 "after" => true,
                 _ => return Err(unsupported(node)),
             };
-            let regex_arg = named_child(assertion, "regex-arg")?;
-            Ok(RegexNode::Lookaround {
-                assertion: Box::new(lower_regex_node(regex_arg)?),
-                negated: bool_field(node, "negated")?,
+            Ok(RegexNode::NamedLookaround {
+                assertion: Box::new(lower_regex_node(named_child(node, "regex-arg")?)?),
                 is_behind,
+                capturing: bool_field(node, "capturing")?,
             })
         }
-        RakuAstClass::RegexAssertionNamedRegexArg => Err(unsupported(node)),
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             if sequential {
@@ -1748,6 +1761,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         sigspace: false,
         samecase: false,
         samespace: false,
+        source_adverbs: None,
         captured: None,
         source_tree: None,
     };

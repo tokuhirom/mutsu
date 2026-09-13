@@ -950,10 +950,18 @@ impl Interpreter {
         crate::runtime::utils::shape_value_for_sigiled_target(target, val)
     }
 
+    /// `slot` is `name`'s compile-time local slot when the caller has one. It
+    /// buys the pre-interned `__mutsu_sigilless_alias::<name>` key out of
+    /// [`CompiledCode::alias_sym`] instead of re-interning it here, which is what
+    /// the by-name form costs on every single read-modify-write once ANY `:=`
+    /// binding in the program has armed `sigilless_alias_seen` -- including the
+    /// overwhelmingly common case of a program whose one binding is an ordinary
+    /// `my $x := $y` that this name has nothing to do with.
     pub(crate) fn propagate_sigilless_alias_chain(
         &mut self,
         code: &CompiledCode,
         name: &str,
+        slot: Option<usize>,
         val: &Value,
     ) {
         // Fast path: no sigilless-parameter alias has ever been registered, so the
@@ -961,7 +969,10 @@ impl Interpreter {
         if !self.sigilless_alias_seen() {
             return;
         }
-        let alias_key = crate::runtime::sigilless_alias_key(name);
+        let alias_key = match slot.and_then(|s| code.alias_sym(s)) {
+            Some(sym) => sym,
+            None => crate::runtime::sigilless_alias_key(name),
+        };
         let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
             if let ValueView::Str(n) = v.view() {
                 Some(n.to_string())
@@ -1082,7 +1093,7 @@ impl Interpreter {
         }
         // Propagate the new value along the sigilless alias chain and into self's
         // shared cell for an attribute-twigil alias.
-        self.propagate_sigilless_alias_chain(code, name, &new_val);
+        self.propagate_sigilless_alias_chain(code, name, slot.map(|s| s as usize), &new_val);
         // Write back to source variable when the target is `$_` bound to a container.
         if name == "_"
             && let Some(ref source_var) = self.topic_source_var

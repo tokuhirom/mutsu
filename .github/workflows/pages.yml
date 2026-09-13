@@ -1,4 +1,8 @@
-name: Deploy WASM Demo to GitHub Pages
+# The whole of site/ — the landing page, the manual, the batteries and
+# ecosystem listings, the bench-trend dashboard, and the wasm playground among
+# them. It stopped being "the WASM demo" long ago (site/README.md: "It is
+# mutsu's home page, not a WebAssembly demo").
+name: Deploy the site to GitHub Pages
 
 on:
   # The interpreter comes from the latest published npm package. Keep the push
@@ -11,12 +15,19 @@ on:
   # to pick up interpreter changes, trigger this workflow by hand
   # (`gh workflow run pages.yml`, or the "Run workflow" button).
   #
-  # The daily schedule below is the safety net for everything the push filter
-  # deliberately ignores: a newly published npm package, roast-whitelist.txt
-  # growth (the landing page's "N% of the spec passes" figure), a module
-  # vendored into modules/ outside a site change, and the bench-data history
-  # that bench-trend.html renders. Without it the deployed site can sit stale
-  # for weeks until someone remembers to press "Run workflow".
+  # Note that the ecosystem parity data needs no trigger of its own: a sweep
+  # lands its records as a pull request into main (ecosystem-sweep.yml), so the
+  # `ecosystem/**` path below fires on that merge — which is the right moment,
+  # because the records are only in the tree this job checks out once they are
+  # merged. Do NOT "fix" this by adding `Ecosystem sweep` to the workflow_run
+  # list: that fires while the pull request is still open and would deploy the
+  # previous sweep's numbers.
+  #
+  # The daily schedule below is the safety net for what remains outside both
+  # the push filter and the workflow_run list: a newly published npm package
+  # and roast-whitelist.txt growth (the landing page's "N% of the spec passes"
+  # figure). Without it the deployed site can sit stale for weeks until someone
+  # remembers to press "Run workflow".
   schedule:
     - cron: '17 21 * * *'
   push:
@@ -29,10 +40,21 @@ on:
       - 'ecosystem/**'                 # the ecosystem page is built from these
       - 'scripts/gen-ecosystem-manifest.py'
       - '.github/workflows/pages.yml'
-  # A successful tagged release publishes npm before the Release workflow
-  # completes, so this deploy picks up the new `latest` package automatically.
   workflow_run:
-    workflows: [Release]
+    # Release: a successful tagged release publishes npm before the Release
+    # workflow completes, so this deploy picks up the new `latest` package
+    # automatically.
+    #
+    # Bench: bench-trend.html is rendered from the `bench-data` branch, and
+    # bench.yml pushes there with the default GITHUB_TOKEN — a push GitHub
+    # deliberately does not let start a workflow, on a branch this workflow
+    # does not watch anyway. So no `push:` filter can ever see new perf data;
+    # completion of the run that produced it is the only signal there is.
+    # Waiting for the daily cron instead left the published trend up to 24
+    # hours behind, and this ordering also closes the one-commit lag the
+    # render step used to document: the row for the commit being measured is
+    # already on `bench-data` by the time this fires.
+    workflows: [Release, Bench]
     types: [completed]
   workflow_dispatch:
 
@@ -47,10 +69,18 @@ concurrency:
 
 jobs:
   build:
+    # A failed upstream run produced nothing to publish. Beyond that the two
+    # watched workflows differ: a `workflow_dispatch` Release run uploads
+    # artifacts but creates no release and publishes no npm package, so there
+    # is nothing new for this deploy to pick up and only a tag push counts —
+    # whereas Bench appends its row to `bench-data` however it was started, so
+    # a dispatched Bench run is just as much a reason to redeploy as a pushed
+    # one.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+       (github.event.workflow_run.name != 'Release' ||
+        github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,10 +135,12 @@ jobs:
       - name: Render bench-trend dashboard
         # Pull the perf history from the bench-data branch and render it into the
         # deployed site as bench-trend.html, so the trend is viewable at
-        # <pages-url>/bench-trend.html with no download. The data is up to the
-        # PREVIOUS main commit — bench.yml appends the current commit's row
-        # concurrently, so this page catches up on the next push (a ~1-commit
-        # lag, fine for a trend view). Best-effort: if bench-data has no history
+        # <pages-url>/bench-trend.html with no download. On the `workflow_run`
+        # trigger this fires after Bench finished, so the row for the commit it
+        # measured is already here; on any other trigger the history is simply
+        # whatever `bench-data` holds at that moment. (Before the Bench trigger
+        # existed, a `site/**` push raced bench.yml's append and this page was
+        # reliably one commit behind.) Best-effort: if bench-data has no history
         # yet, skip without failing the deploy.
         #
         # BOTH series are rendered onto one page (#8085): the wall-clock one and

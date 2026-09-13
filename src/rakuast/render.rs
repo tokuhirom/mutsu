@@ -80,7 +80,9 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
     node.fields
         .iter()
         .filter(|field| {
-            !(node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array"))
+            !(node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
+                || node.class == RakuAstClass::RegexAssertionNamedRegexArg
+                    && field.name == Some("capturing"))
         })
         .collect()
 }

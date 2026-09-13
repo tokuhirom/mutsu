@@ -2352,6 +2352,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![
                     node_field(Some("name"), name_from_identifier(keyword)),
                     node_field(Some("regex-arg"), regex_node(assertion)?),
+                    leaf_field(Some("capturing"), Value::truth(true)),
                 ],
             };
             let mut fields = Vec::new();
@@ -2360,6 +2361,21 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             }
             fields.push(node_field(Some("assertion"), named_assertion));
             (RakuAstClass::RegexAssertionLookahead, fields)
+        }
+        RegexNode::NamedLookaround {
+            assertion,
+            is_behind,
+            capturing,
+        } => {
+            let keyword = if *is_behind { "after" } else { "before" };
+            (
+                RakuAstClass::RegexAssertionNamedRegexArg,
+                vec![
+                    node_field(Some("name"), name_from_identifier(keyword)),
+                    node_field(Some("regex-arg"), regex_node(assertion)?),
+                    leaf_field(Some("capturing"), Value::truth(*capturing)),
+                ],
+            )
         }
         RegexNode::Interpolation { name, sequential } => (
             RakuAstClass::RegexInterpolation,

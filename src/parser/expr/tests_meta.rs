@@ -135,8 +135,10 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
             Expr::ArrayLiteral(ref items) if items.len() == 2
         ) || matches!(
             *expr,
+            // A word list lowers to the RESERVED `__mutsu_word_list`, not to a
+            // plain `list` call a user's own `sub list` could capture.
             Expr::Call { ref name, ref args }
-                if name.resolve() == "list" && args.len() == 2
+                if name.resolve() == "__mutsu_word_list" && args.len() == 2
         )
     ));
 }

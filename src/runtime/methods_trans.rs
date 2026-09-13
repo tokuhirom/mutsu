@@ -190,6 +190,14 @@ fn extract_regex_pattern(key: &str) -> Option<&str> {
     }
 }
 
+fn regex_value_pattern(v: &Value) -> Option<String> {
+    match v.view() {
+        ValueView::Regex(pattern) => Some(pattern.to_string()),
+        ValueView::RegexWithAdverbs(adverbs) => Some(adverbs.pattern.to_string()),
+        _ => None,
+    }
+}
+
 impl Interpreter {
     pub(crate) fn dispatch_trans(
         &mut self,
@@ -268,15 +276,15 @@ impl Interpreter {
                 let key = &key_norm;
                 let value = &value_norm;
                 // For ValuePair, the key preserves its original type
-                if let ValueView::Regex(pattern) = key.view() {
+                if let Some(pattern) = regex_value_pattern(key) {
                     if is_closure(value) {
                         rules.push(TransRule::RegexClosure {
-                            pattern: pattern.to_string(),
+                            pattern,
                             closure: value.clone(),
                         });
                     } else {
                         rules.push(TransRule::Regex {
-                            pattern: pattern.to_string(),
+                            pattern,
                             replacement: value.to_string_value(),
                         });
                     }
@@ -307,9 +315,7 @@ impl Interpreter {
                     };
                     // Check if the from-side array contains any Regex values.
                     let has_regex = if let ValueView::Array(items, ..) = key.view() {
-                        items
-                            .iter()
-                            .any(|v| matches!(v.view(), ValueView::Regex(..)))
+                        items.iter().any(|v| regex_value_pattern(v).is_some())
                     } else {
                         false
                     };
@@ -340,9 +346,9 @@ impl Interpreter {
                         if let ValueView::Array(items, ..) = key.view() {
                             for (idx, item) in items.iter().enumerate() {
                                 let replacement = to_list.get(idx).cloned().unwrap_or_default();
-                                if let ValueView::Regex(pattern) = item.view() {
+                                if let Some(pattern) = regex_value_pattern(item) {
                                     rules.push(TransRule::Regex {
-                                        pattern: pattern.to_string(),
+                                        pattern,
                                         replacement,
                                     });
                                 } else {

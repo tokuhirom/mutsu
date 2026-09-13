@@ -720,6 +720,7 @@ impl Interpreter {
                 | "graph"
                 | "print"
                 | "ws"
+                | "ident"
         )
     }
 
