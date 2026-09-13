@@ -417,9 +417,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
     // not(expr) — tight-binding form: not followed by ( without space
-    if input.starts_with("not(")
-        && !crate::parser::stmt::simple::is_user_declared_sub("not")
-    {
+    if input.starts_with("not(") && !crate::parser::stmt::simple::is_user_declared_sub("not") {
         let r = &input[3..];
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws(r)?;
@@ -435,9 +433,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     // so(expr) — tight-binding form: so followed by ( without space
-    if input.starts_with("so(")
-        && !crate::parser::stmt::simple::is_user_declared_sub("so")
-    {
+    if input.starts_with("so(") && !crate::parser::stmt::simple::is_user_declared_sub("so") {
         let r = &input[2..];
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws(r)?;
