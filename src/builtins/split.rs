@@ -121,8 +121,6 @@ pub(crate) struct SplitMatch {
     pub splitter_index: usize,
     /// Whether this match came from a regex splitter (affects :v/:kv/:p output).
     pub is_regex: bool,
-    /// The original string being split (needed for Match object construction).
-    pub orig: String,
     /// The fully-built separator `Match` for a regex splitter, carrying the
     /// span-bearing positional AND named captures the engine recorded. Only the
     /// runtime split paths hold the engine's `RegexCaptures`, so only they set
@@ -171,7 +169,6 @@ fn split_by_string(
                     matched: String::new(),
                     splitter_index: 0,
                     is_regex: false,
-                    orig: String::new(),
                     match_obj: None,
                 }),
             ));
@@ -217,7 +214,6 @@ fn split_by_string(
                         matched: sep.to_string(),
                         splitter_index: 0,
                         is_regex: false,
-                        orig: String::new(),
                         match_obj: None,
                     }),
                 ));
@@ -298,7 +294,6 @@ fn split_by_strings(
                         matched,
                         splitter_index: splitter_idx,
                         is_regex: false,
-                        orig: String::new(),
                         match_obj: None,
                     }),
                 ));

@@ -45,6 +45,7 @@ pub(crate) struct MatchTarget {
 
 impl MatchTarget {
     pub(crate) fn new(text: &str) -> Self {
+        crate::vm::vm_stats::record_regex_match_target_built();
         Self {
             text: Arc::new(text.to_string()),
             chars: text.chars().collect(),

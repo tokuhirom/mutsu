@@ -115,9 +115,14 @@ impl Interpreter {
         // the same iterative walk the operator form uses in `exec_subst_op`.
         let mut matches: Vec<(usize, usize, Vec<String>)> = Vec::new();
         let mut pos = 0usize;
-        while let Some((start, end, caps)) =
-            loan_env!(self, regex_find_first_from_with_captures(pat, text, pos))
-        {
+        // One target for the whole scan: the subject never changes, and building
+        // it copies the whole string plus its char vector, so a per-match target
+        // made a global substitution quadratic in subject length (#8247).
+        let target = crate::runtime::MatchTarget::new(text);
+        while let Some((start, end, caps, _named)) = loan_env!(
+            self,
+            regex_find_first_from_with_all_captures_in(pat, &target, pos)
+        ) {
             pos = if end > start { end } else { start + 1 };
             matches.push((start, end, caps));
             // A non-global `.subst` replaces only the first match, so scanning

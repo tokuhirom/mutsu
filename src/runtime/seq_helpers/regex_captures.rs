@@ -633,7 +633,11 @@ impl Interpreter {
     ) -> Vec<(usize, usize, Vec<String>)> {
         let mut out = Vec::new();
         let mut pos = 0usize;
-        while let Some((s, e, caps)) = self.regex_find_first_from_with_captures(pattern, text, pos)
+        // One target for the whole scan: rebuilding it per match is quadratic in
+        // subject length (#8247).
+        let target = MatchTarget::new(text);
+        while let Some((s, e, caps, _named)) =
+            self.regex_find_first_from_with_all_captures_in(pattern, &target, pos)
         {
             out.push((s, e, caps));
             pos = if e > s { e } else { s + 1 };
