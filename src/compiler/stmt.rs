@@ -3998,6 +3998,18 @@ impl Compiler {
                 // (`v6`, `strict`, `nqp`, ...) are matched by earlier arms and
                 // never reach here, so they keep folding.
                 self.fold_ctx.note_operator_decl();
+                // Raku's `use` is BEGIN-time. Record the module so the unit-level
+                // pass can hoist the *load* of a `use` nested in a block ahead of
+                // the mainline, leaving this in-position import where Raku scopes
+                // it (GH-8201, `compiler::begin_use`).
+                if let Some(name) = super::begin_use::preloadable_module_name(
+                    module,
+                    tags,
+                    condition.as_deref(),
+                    arg.as_ref(),
+                ) {
+                    self.unit_use_ctx.note_use(name);
+                }
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 // The native JSON modules read their import list at run time to
                 // select per-scope defaults (`use JSON::Fast <immutable !pretty>`).

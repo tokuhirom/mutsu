@@ -139,6 +139,33 @@ impl Interpreter {
         Ok(())
     }
 
+    /// BEGIN-time preload emitted at the head of a unit for a module `use`d
+    /// inside a nested block (see [`crate::opcode::OpCode::PreloadModule`]).
+    ///
+    /// Performs the load half of `use` only, so the packages the module installs
+    /// are reachable from statements that run before the block is entered, while
+    /// the lexical import stays at the `use`'s own position. Errors are
+    /// deliberately discarded: nothing in the source asked for the module *here*,
+    /// so a module that cannot be found must not abort a program whose `use` may
+    /// never run. The in-position `UseModule` still reports it if reached.
+    pub(super) fn exec_preload_module_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let module = Self::const_str(code, name_idx).to_string();
+        // The load runs inside a preload scope, which contains the
+        // `GLOBAL::`-prefixed routine and proto aliases mutsu's sub hoisting
+        // installs while a module body loads. Those are lexical to whoever asked
+        // for the module, and until now they were contained by the import scope
+        // of the very block holding the `use`. Hoisting the load out of that
+        // block would otherwise leave an exported `proto sub head(|)` shadowing
+        // the core listop for the whole file, where raku keeps the import lexical
+        // to the block (`t/modules/import-export/use-in-do-block-is-scoped.t`).
+        // The pop keeps every `::`-qualified definition the module owns, and the
+        // classes it declares — which is the whole point of the preload — and the
+        // in-position `use` re-aliases from those.
+        self.push_preload_scope();
+        let _ = self.preload_module(&module);
+        self.pop_import_scope();
+    }
+
     pub(super) fn exec_need_module_op(
         &mut self,
         code: &CompiledCode,
@@ -190,6 +217,17 @@ impl Interpreter {
             return Err(RuntimeError::new(
                 "X::LibEmpty: Repository specification can not be an empty string",
             ));
+        }
+        // Re-prepending the path that is already at the front of the chain
+        // changes nothing, so skip it. That is what makes the BEGIN-time preload
+        // prologue's replay of this unit's literal `use lib` specs invisible:
+        // the prologue put the spec at the head so a hoisted load could resolve,
+        // and this in-position `use lib` recognizes its own work instead of
+        // doubling the entry and chaining `$*REPO` twice. A path merely present
+        // deeper in the chain is still promoted — `use lib` outranks `-I` and
+        // `MUTSULIB`.
+        if self.lib_path_is_front(&path) {
+            return Ok(());
         }
         // An `inst#PREFIX` spec selects a CompUnit::Repository::Installation as
         // the current `$*REPO`, chained in front of whatever was there before.

@@ -140,9 +140,11 @@ ledger row all wait on those two.
 
 ## Upstream test suite
 
-5 of the 6 upstream files pass whole against the bundled `lib/`
-(`t/04-roundtrip.t` has 10 expected `TODO passed`). `t/01-parse.t` is **92/93**
-and is therefore not on `batteries-whitelist.txt`. Its last assertion is:
+All 6 upstream files pass whole against the bundled `lib/` and are on
+`batteries-whitelist.txt` (`t/04-roundtrip.t` has 10 expected `TODO passed`).
+
+`t/01-parse.t` was the last to get there. It sat at **92/93** from the
+interception retirement until 2026-09-13, on this assertion:
 
 ```raku
 throws-like {
@@ -152,13 +154,14 @@ throws-like {
 ```
 
 Both of `throws-like`'s arguments evaluate before the block is invoked, so
-`X::JSON::Tiny::Invalid` is read before the block's `use` has run. Raku
-performs `use` at BEGIN time and has the symbol; mutsu's `use` is a runtime
-opcode, so the reference gets a fabricated stub and the type comparison fails
-against the module's real `JSON::Tiny::X::JSON::Tiny::Invalid`. That is a
+`X::JSON::Tiny::Invalid` was read before the block's `use` had run. Raku
+performs `use` at BEGIN time and has the symbol; mutsu's `use` was a runtime
+opcode, so the reference got a fabricated stub and the type comparison failed
+against the module's real `JSON::Tiny::X::JSON::Tiny::Invalid`. That was a
 general `use`-is-not-BEGIN-time gap with a JSON-free repro, filed as
-[#8201](https://github.com/tokuhirom/mutsu/issues/8201); fixing it is what puts
-this file back on the whitelist.
+[#8201](https://github.com/tokuhirom/mutsu/issues/8201) and fixed by hoisting
+the *load* half of a nested `use` to the head of the compunit — see
+`news/2026-09/use-in-a-nested-block-loads-at-begin-time.md`.
 
 The assertion did pass under the old arrangement — but only because both sides
 were mutsu fabrications agreeing with each other: the native path threw an

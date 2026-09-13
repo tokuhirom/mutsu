@@ -38,6 +38,22 @@ impl Interpreter {
 
     /// Save current function/class/proto keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
+        self.push_import_scope_scoping_classes(true);
+    }
+
+    /// The scope the BEGIN-time module preload runs its load inside.
+    ///
+    /// Same rollback as an import scope for the routine and proto registries —
+    /// mutsu's sub hoisting installs every exported routine under `GLOBAL::`
+    /// while a module body loads, and those aliases belong to whoever wrote the
+    /// `use`, not to the whole file — but the class registry is left alone: a
+    /// package the module declares is exactly what the preload hoists the load
+    /// in order to publish, and raku installs it into GLOBAL at load time too.
+    pub(crate) fn push_preload_scope(&mut self) {
+        self.push_import_scope_scoping_classes(false);
+    }
+
+    fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
             let reg = self.registry();
             crate::runtime::ImportScopeSnapshot {
@@ -54,6 +70,7 @@ impl Interpreter {
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
                 monkey_typing: self.monkey_typing,
+                scope_classes,
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -107,6 +124,7 @@ impl Interpreter {
                 strict_mode,
                 fatal_mode,
                 monkey_typing,
+                scope_classes,
             } = snapshot;
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
@@ -153,9 +171,12 @@ impl Interpreter {
             // dying with X::Method::NotFound in the second block
             // (t/module-reuse-class-in-block.t). Bare imported aliases are
             // still removed with the import scope.
-            self.registry_mut().classes.retain(|key, _| {
-                class_snapshot.contains(key) || (key.contains("::") && !key.starts_with("GLOBAL::"))
-            });
+            if scope_classes {
+                self.registry_mut().classes.retain(|key, _| {
+                    class_snapshot.contains(key)
+                        || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                });
+            }
             // `proto sub name(|) is export` imports under the importing package
             // (`GLOBAL::skip`) into BOTH proto tables, and `has_proto` reads the
             // name set. Left behind, an imported proto kept a bare call on the
@@ -268,10 +289,37 @@ impl Interpreter {
         (&module[..bare_end], selectors)
     }
 
+    /// Load a module the way `use` does — registering its exports, package
+    /// globals and types — but *without* importing anything into the current
+    /// lexical scope.
+    ///
+    /// This is the BEGIN-time half of `use` (see
+    /// [`crate::opcode::OpCode::PreloadModule`]): Raku loads every `use`d
+    /// compunit before the importing unit's mainline runs, so its packages are
+    /// visible everywhere, while the import itself stays lexical to the scope
+    /// holding the `use`. `need_module` is not a substitute — it loads with
+    /// `suppress_exports` set, so the module's `is export` routines are never
+    /// registered and a later `use` of the (now already-loaded) module has
+    /// nothing left to import.
+    pub(crate) fn preload_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.use_module_with_tags_scoped(module, &[], false)
+    }
+
     pub fn use_module_with_tags(
         &mut self,
         module: &str,
         tags: &[String],
+    ) -> Result<(), RuntimeError> {
+        self.use_module_with_tags_scoped(module, tags, true)
+    }
+
+    /// `import`: whether the module's exports are installed into the current
+    /// lexical scope. False only for the BEGIN-time preload above.
+    fn use_module_with_tags_scoped(
+        &mut self,
+        module: &str,
+        tags: &[String],
+        import: bool,
     ) -> Result<(), RuntimeError> {
         // The parser rides dist selectors on the module name
         // (`JSON::Class:auth<zef:jonathanstowe>:api<1.0>`). Split them off here
@@ -292,7 +340,7 @@ impl Interpreter {
         // always wants ordinary export semantics regardless of an ambient
         // `need`, so suspend the flag for exactly this nested load.
         let saved_suppress_exports = std::mem::replace(&mut self.suppress_exports, false);
-        let result = self.use_module_with_tags_inner(module, tags);
+        let result = self.use_module_with_tags_inner(module, tags, import);
         self.suppress_exports = saved_suppress_exports;
         self.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue
@@ -306,6 +354,7 @@ impl Interpreter {
         &mut self,
         module: &str,
         tags: &[String],
+        import: bool,
     ) -> Result<(), RuntimeError> {
         // `use JSON::Fast <immutable !pretty>`: the import list selects
         // per-scope defaults for the native provider. Every `use` re-selects
@@ -394,6 +443,9 @@ impl Interpreter {
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even
             // though the module body itself is not re-run.
+            if !import {
+                return Ok(());
+            }
             self.rerun_module_export(module)?;
             return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
@@ -878,7 +930,8 @@ impl Interpreter {
                     .or_default()
                     .extend(package_globals);
             }
-            if let Err(err) = self.import_module(module, tags)
+            if import
+                && let Err(err) = self.import_module(module, tags)
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);

@@ -136,6 +136,7 @@ IO::Path::ChildSecure	01-operation.rakutest
 IO::Socket::Async::SSL	bad-incoming.rakutest
 JSON::JWT	01-decode.rakutest
 JSON::JWT	02-encode.rakutest
+JSON::Tiny	01-parse.t
 JSON::Tiny	02-structure.t
 JSON::Tiny	03-unicode.t
 JSON::Tiny	04-roundtrip.t
