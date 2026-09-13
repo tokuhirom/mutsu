@@ -15,7 +15,7 @@ goes out of its way to exercise cost the same as plain ones:
 
 | 400,000 iterations, mainline scope | mutsu | raku |
 | --- | ---: | ---: |
-| `$s = $s + @data[$i +& 255]`, plain `@data` | 824 ns/iter | 224 ns/iter |
+| `$s = $s + @data[$i +& 255]`, plain `@data` | 821 ns/iter | 224 ns/iter |
 | the same through a `:=`-bound `@alias` | 828 ns/iter | 232 ns/iter |
 
 So celling is free here. What is not free is the presence of the file's one scalar binding,
@@ -23,7 +23,7 @@ So celling is free here. What is not free is the presence of the file's one scal
 
 | 400,000 iterations of `$s = $s + ($i +& 255)` | ns/iter |
 | --- | ---: |
-| as written | 480 |
+| as written | 490 |
 | with an unrelated `my $x := $y` in scope | 905 |
 
 **1.87x slower, with no array, no container and no thread in sight.** Every loop in
@@ -85,11 +85,12 @@ release build, idle box, with and without an unrelated `my $x := $y` in scope:
 It is not gone — the residue is one env probe per store and per RMW, plus the general cost of a
 `Symbol`-keyed miss walking the overlay and the `GLOBAL_BASE` tier — and the rest of
 `bench-threads-serial`'s gap is separate work: an indexed element *read* still costs ~330 ns of
-marginal cost against rakudo's ~39 ns, and a `:=`-bound array's element *store* costs ~3,400 ns
-against a plain array's ~800 ns, because #8151's fast store lane declines for a celled container.
-Both are filed separately.
+marginal cost against rakudo's ~39 ns ([#8308](https://github.com/tokuhirom/mutsu/issues/8308)), and
+a `:=`-bound array's element *store* costs ~3,800 ns against a plain array's ~780 ns because
+#8151's fast store lane declines for a celled container
+([#8307](https://github.com/tokuhirom/mutsu/issues/8307)).
 
-Pinned by `t/vm/writeback/scalar-bind-unrelated-store-semantics.t`, which exercises the stores that now reach
-the fast path for the first time — typed lexicals, `is default`, `state`, readonly and `is rw`
-parameter binds, sigilless aliases, three-name bind groups and redeclaration — in a file that has a
-scalar `:=` in scope.
+Pinned by `t/vm/writeback/scalar-bind-unrelated-store-semantics.t`, which exercises the stores that
+now reach the fast path for the first time — typed lexicals, `is default`, `state`, readonly and
+`is rw` parameter binds, sigilless aliases, three-name bind groups and redeclaration — in a file
+that has a scalar `:=` in scope.
