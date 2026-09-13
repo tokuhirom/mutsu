@@ -237,8 +237,7 @@ impl Interpreter {
                     // rather than a buf payload, and a `Uni` answers with its
                     // codepoints, so ask the shared accessor before falling
                     // back to the buf length.
-                    _ => Self::nqp_elems_of(&v)
-                        .map(|e| e.len())
+                    _ => Self::nqp_elems_len_of(&v)
                         .or_else(|| match v.view() {
                             ValueView::Instance { attributes, .. } => {
                                 value_buf::buf_len(&attributes)
@@ -297,8 +296,7 @@ impl Interpreter {
                     }
                     _ => usize::try_from(idx)
                         .ok()
-                        .zip(Self::nqp_elems_of(&target))
-                        .and_then(|(i, elems)| elems.get(i).cloned()),
+                        .and_then(|i| Self::nqp_elem_at(&target, i)),
                 };
                 let elem = elem.unwrap_or(Value::int(0));
                 if op == "atpos_n" {

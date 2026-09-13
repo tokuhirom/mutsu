@@ -128,12 +128,32 @@ it emitted *unescaped, invalid JSON* for any string containing a quote or a
 control character, which nobody noticed for months precisely because it was not
 the real module. Tracked as [#8289](https://github.com/tokuhirom/mutsu/issues/8289).
 
-One cheap signal for whoever picks that up: `nqp::add_i` in a tight loop is
-**0.5x** the cost of plain `+` under rakudo (the op bypasses dispatch) and
-**1.5x** under mutsu (it does not). That 3x is real but nowhere near the 500x,
-so the bulk is elsewhere — most likely the per-character string and codepoint
-ops (`nqp::ordat`, `nqp::substr`, `nqp::strtocodes`, `nqp::splice`) that this
-module's scanner runs once per input byte. Profile before assuming.
+### What the profile found
+
+Two unrelated problems, not one. The table above is the second of them.
+
+**Encoding one long string was quadratic in its length**, and is fixed:
+`str-escape`'s per-codepoint scan called `nqp::elems` and `nqp::atpos_i`, and
+both copied the whole element vector per call. An 8,000-character encode went
+0.305s -> 0.047s. See
+`news/2026-09/nqp-uni-element-access-was-quadratic.md`. It moves the table
+above by about 2%, because a META6 document is many *short* strings — which is
+exactly why it stayed invisible until someone varied the string length.
+
+**The 63x/126x itself is call overhead, and is still open.** mutsu's plain `+`
+is 2.3x *faster* than rakudo's; a named sub call is 4.1x slower and an `nqp::`
+op about 3x. The VM loop is not the problem, calls are. Callgrind over three
+decodes puts `format_inner` at 8.3% inclusive over 113,055 calls, every top
+caller being dispatch-key construction (`find_compiled_function_inner`,
+`candidate_search_packages`, `has_proto`, `resolve_proto_function`), plus
+`__memcmp_avx2_movbe` at 3.8% and the malloc/free family at 15.5%. mutsu
+resolves calls by building and comparing strings, and that is a dispatch
+problem rather than a JSON one.
+
+The earlier guess recorded here — that the per-character ops `nqp::ordat` /
+`nqp::substr` / `nqp::strtocodes` were the bulk — was half right and half
+wrong, and is kept as a caution: those ops are ~3x rakudo, which is real and
+nowhere near 126x. Profile before assuming.
 
 The one historical number worth keeping: the 2026-06 measurement that justified
 the native path (200 META-shaped documents, >600s through `JSON::Tiny`'s grammar

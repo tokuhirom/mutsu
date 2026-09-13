@@ -109,6 +109,40 @@ impl Interpreter {
         )))
     }
 
+    /// How many elements a list-ish nqp value has, without materializing them.
+    ///
+    /// `nqp::elems` is a loop *condition* in nqp code (`while $i < elems($a)`),
+    /// so answering it via [`Interpreter::nqp_elems_of`]'s whole-vector copy
+    /// made every such loop quadratic in its own length.
+    pub(crate) fn nqp_elems_len_of(target: &Value) -> Option<usize> {
+        if let Some(array) = nqp_backing_array(target) {
+            return match array.view() {
+                ValueView::Array(items, _) => Some(items.len()),
+                _ => None,
+            };
+        }
+        if let ValueView::Instance { attributes, .. } = target.view() {
+            return crate::value::value_buf::buf_len(&attributes);
+        }
+        None
+    }
+
+    /// One element of a list-ish nqp value, without materializing the rest —
+    /// the O(1) read behind `nqp::atpos_i`, for the same reason as
+    /// [`Interpreter::nqp_elems_len_of`].
+    pub(crate) fn nqp_elem_at(target: &Value, idx: usize) -> Option<Value> {
+        if let Some(array) = nqp_backing_array(target) {
+            return match array.view() {
+                ValueView::Array(items, _) => items.get(idx).cloned(),
+                _ => None,
+            };
+        }
+        if let ValueView::Instance { attributes, .. } = target.view() {
+            return crate::value::value_buf::buf_elem_at(&attributes, idx);
+        }
+        None
+    }
+
     /// The elements of a list-ish nqp value, read-only.
     pub(crate) fn nqp_elems_of(target: &Value) -> Option<Vec<Value>> {
         if let Some(array) = nqp_backing_array(target) {
