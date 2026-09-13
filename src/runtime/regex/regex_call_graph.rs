@@ -32,6 +32,14 @@
 //! keep a runtime escape for that (`regex_match_atom.rs`'s `first_only`
 //! retry, and the streamed subrule's seed-consulted fallback in
 //! `regex_match_lazy_subrule.rs`), exactly as the first half of Slice 2 does.
+//!
+//! The walk therefore also reports whether the cone runs user code *at all*
+//! ([`DirectCalls::runs_user_code`]). That second bit is what the
+//! left-recursion gate needs and the streamed path does not: a cone with no
+//! reachable call to its own name AND no user code in it cannot re-enter its
+//! key by any route, so the activation the key exists for can be skipped
+//! outright rather than merely escaped from afterwards
+//! ([`Interpreter::subrule_needs_no_lr_bookkeeping`]).
 
 use std::cell::RefCell;
 // `STREAMABLE` is probed before every `<subrule>` call is even resolved, so
@@ -53,6 +61,19 @@ type RuleNode = (Symbol, Symbol);
 /// call cone is answered "not proven" rather than walked further — the
 /// analysis exists to save work, not to spend it.
 const MAX_REACHABLE_RULES: usize = 512;
+
+/// What one rule's candidates dispatch to, as far as the walk can name it.
+pub(super) struct DirectCalls {
+    /// The rules every candidate calls directly.
+    callees: Vec<RuleNode>,
+    /// Some atom in one of the candidates runs user code — a `{ ... }` /
+    /// `<?{ ... }>` block, a `:my $x = ...` declaration, a `** { ... }`
+    /// quantifier bound, a `<:prop(...)>` property predicate. That code can
+    /// call any rule by hand, so it is an edge the walk cannot name. The
+    /// streamed path tolerates it (it has a runtime escape); the
+    /// left-recursion gate does not.
+    runs_user_code: bool,
+}
 
 /// Why a `<subrule>` call could not take the streamed path.
 ///
@@ -141,7 +162,7 @@ thread_local! {
     #[allow(clippy::type_complexity)]
     static DIRECT_CALLS: RefCell<(
         u64,
-        HashMap<RuleNode, Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline>>,
+        HashMap<RuleNode, Result<std::sync::Arc<DirectCalls>, StreamDecline>>,
     )> = RefCell::new((0, HashMap::default()));
 
     /// `pkg -> subrule atom text -> may this call be streamed?`. This is the
@@ -170,30 +191,41 @@ impl Interpreter {
     /// and an unresolvable edge both mean "may re-enter" but cost entirely
     /// different work to clear.
     fn reenter_decline(&mut self, name: &str, pkg: Symbol) -> Option<StreamDecline> {
+        self.cone_walk(name, pkg).0
+    }
+
+    /// The walk itself, reporting both facts it can establish about the cone:
+    /// why the key may be re-entered (`None` = proven unreachable), and whether
+    /// no rule in the cone runs user code. The second is only meaningful
+    /// alongside a `None` first — an aborted walk answers `false` rather than
+    /// guessing at the part it never reached.
+    fn cone_walk(&mut self, name: &str, pkg: Symbol) -> (Option<StreamDecline>, bool) {
         let name_sym = Symbol::intern(name);
         let start: RuleNode = (pkg, name_sym);
         let mut seen: HashSet<RuleNode> = HashSet::from_iter([start]);
         let mut queue: VecDeque<RuleNode> = VecDeque::from([start]);
+        let mut code_free = true;
         while let Some((cur_pkg, cur_name)) = queue.pop_front() {
             let calls = match self.direct_rule_calls(cur_name.as_str(), cur_pkg) {
                 Ok(calls) => calls,
-                Err(reason) => return Some(reason),
+                Err(reason) => return (Some(reason), false),
             };
-            for callee in calls.iter() {
+            code_free &= !calls.runs_user_code;
+            for callee in calls.callees.iter() {
                 // Reaching the starting NAME again closes the loop the
                 // growing-seed algorithm exists for.
                 if callee.1 == name_sym {
-                    return Some(StreamDecline::ReentersOwnName);
+                    return (Some(StreamDecline::ReentersOwnName), false);
                 }
                 if seen.len() >= MAX_REACHABLE_RULES {
-                    return Some(StreamDecline::ReachableSetTooLarge);
+                    return (Some(StreamDecline::ReachableSetTooLarge), false);
                 }
                 if seen.insert(*callee) {
                     queue.push_back(*callee);
                 }
             }
         }
-        None
+        (None, code_free)
     }
 
     /// The rules every candidate of `<name>` in `pkg` calls directly, or `None`
@@ -207,7 +239,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         pkg: Symbol,
-    ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
+    ) -> Result<std::sync::Arc<DirectCalls>, StreamDecline> {
         let generation = token_defs_gen();
         let key: RuleNode = (pkg, Symbol::intern(name));
         if let Some(hit) = DIRECT_CALLS.with(|c| {
@@ -256,18 +288,24 @@ impl Interpreter {
         pkg: Symbol,
         candidates: &[super::regex_token_resolve::ParsedTokenCandidate],
         raw_empty: bool,
-    ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
+    ) -> Result<std::sync::Arc<DirectCalls>, StreamDecline> {
         if raw_empty || candidates.is_empty() {
             // No token/regex/rule answers to this name here. It is either a
             // builtin assertion or character class (`<alpha>`, `<ws>` with no
             // grammar override, `<sym>`), which cannot dispatch to a user rule,
             // or a plain grammar METHOD — arbitrary user code, so unknowable.
             return match self.registry().user_method_overloads(pkg.as_str(), name) {
-                None => Ok(std::sync::Arc::new(Vec::new())),
+                None => Ok(std::sync::Arc::new(DirectCalls {
+                    callees: Vec::new(),
+                    runs_user_code: false,
+                })),
                 Some(_) => Err(StreamDecline::CalleeIsMethod),
             };
         }
-        let mut out: Vec<RuleNode> = Vec::new();
+        let mut out = DirectCalls {
+            callees: Vec::new(),
+            runs_user_code: false,
+        };
         for (parsed, sub_pkg, _) in candidates.iter() {
             // A candidate's own body resolves its unqualified subrule
             // references against the package that DEFINED it, not against the
@@ -279,8 +317,8 @@ impl Interpreter {
         // Sorted by interned id, not lexicographically: the order is only a
         // means to `dedup`, and comparing two `u32`s beats resolving four
         // strings.
-        out.sort_by_key(|(pkg, name)| (pkg.id(), name.id()));
-        out.dedup();
+        out.callees.sort_by_key(|(pkg, name)| (pkg.id(), name.id()));
+        out.callees.dedup();
         Ok(std::sync::Arc::new(out))
     }
 }
@@ -318,6 +356,60 @@ impl Interpreter {
                 .or_default()
                 .insert(atom_text.to_string(), verdict);
         });
+        verdict
+    }
+
+    /// May a `<name>` call in `pkg` skip its left-recursion activation
+    /// entirely?
+    ///
+    /// The activation exists so that a re-entry of the same `(name, args,
+    /// position)` key reads a growing seed instead of recursing forever. Two
+    /// things have to hold for it to be dead weight, and both are properties of
+    /// the call cone rather than of this call:
+    ///
+    /// * nothing reachable from `(pkg, name)` calls a rule of the same *name* —
+    ///   the key carries no package, so the walk's name-only comparison is
+    ///   exactly the right question;
+    /// * no rule in the cone runs user code, which could name one by hand and
+    ///   is the case the callers' runtime escapes exist for.
+    ///
+    /// A live activation of the same name elsewhere on the stack answers `false`
+    /// without consulting any of it — see
+    /// [`super::regex_lr_state::lr_skip_verdict`]. The result is that the skip
+    /// is not an approximation: in every state where it applies, the three map
+    /// operations it replaces would have created an entry, read `false` from
+    /// it, and removed it again.
+    ///
+    /// CALLERS MUST HAVE RULED OUT A CUSTOM-HOW GRAMMAR — one routes dispatch
+    /// through a user `find_method`, so the call graph is not what runs. Both
+    /// call sites already know the answer (the streamed path declines on it
+    /// outright, the eager arm binds it for its own dispatch attempt), and
+    /// asking again here would take a registry read lock per `<subrule>` call
+    /// for a fact that is not even memoizable: a custom-HOW grammar can be
+    /// declared after a verdict is cached, and `TOKEN_DEFS_GEN` is not what
+    /// tracks it.
+    #[inline]
+    pub(super) fn subrule_needs_no_lr_bookkeeping(&mut self, name: Symbol, pkg: Symbol) -> bool {
+        let generation = token_defs_gen();
+        match super::regex_lr_state::lr_skip_verdict(name, pkg, generation) {
+            Some(hit) => hit,
+            None => self.compute_lr_bookkeeping_verdict(name, pkg, generation),
+        }
+    }
+
+    /// [`Interpreter::subrule_needs_no_lr_bookkeeping`]'s cache miss: once per
+    /// `(package, rule name)` per token generation, out of line so the probe
+    /// that answers every other call stays a few instructions.
+    #[inline(never)]
+    fn compute_lr_bookkeeping_verdict(
+        &mut self,
+        name: Symbol,
+        pkg: Symbol,
+        generation: u64,
+    ) -> bool {
+        let (decline, code_free) = self.cone_walk(name.as_str(), pkg);
+        let verdict = decline.is_none() && code_free;
+        super::regex_lr_state::lr_record_skip_verdict(name, pkg, generation, verdict);
         verdict
     }
 
@@ -419,8 +511,15 @@ fn pattern_text_is_static_outside_code_blocks(pattern: &str) -> bool {
 /// Append every rule `pattern` (matched in `pkg`) can dispatch to. Returns
 /// `false` when it contains a construct whose target is not statically known,
 /// in which case `out` is meaningless.
-fn collect_pattern_calls(pattern: &RegexPattern, pkg: Symbol, out: &mut Vec<RuleNode>) -> bool {
+fn collect_pattern_calls(pattern: &RegexPattern, pkg: Symbol, out: &mut DirectCalls) -> bool {
     pattern.tokens.iter().all(|token| {
+        // `** { ... }` decides its repeat count by running the block.
+        if matches!(
+            token.quant,
+            crate::runtime::regex_types::RegexQuant::RepeatCode(_)
+        ) {
+            out.runs_user_code = true;
+        }
         collect_atom_calls(&token.atom, pkg, out)
             && token
                 .separator
@@ -429,7 +528,7 @@ fn collect_pattern_calls(pattern: &RegexPattern, pkg: Symbol, out: &mut Vec<Rule
     })
 }
 
-fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) -> bool {
+fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> bool {
     match atom {
         // Matches text or asserts on its own; reaches no dispatcher.
         RegexAtom::Literal(_)
@@ -438,14 +537,9 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
         | RegexAtom::Newline
         | RegexAtom::NotNewline
         | RegexAtom::ZeroWidth
-        // User code. See the module header: treated as harmless here, with a
-        // runtime escape at both call sites.
-        | RegexAtom::CodeAssertion { .. }
-        | RegexAtom::UnicodeProp { .. }
         | RegexAtom::UnicodePropAssert { .. }
         | RegexAtom::CaptureStartMarker
         | RegexAtom::CaptureEndMarker
-        | RegexAtom::VarDecl { .. }
         | RegexAtom::CompositeClass { .. }
         | RegexAtom::LeftWordBoundary
         | RegexAtom::RightWordBoundary
@@ -461,6 +555,20 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::TildeMarker => true,
+        // User code. See the module header: it names no edge the walk can
+        // record, so it stays "harmless" for the streamed path's purposes
+        // (which has a runtime escape) — but it is recorded, because the
+        // left-recursion gate skips the very escape that covers it.
+        RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => {
+            out.runs_user_code = true;
+            true
+        }
+        // `<:Numeric_Value(...)>` takes a predicate expression; the bare
+        // property form does not.
+        RegexAtom::UnicodeProp { args, .. } => {
+            out.runs_user_code |= args.is_some();
+            true
+        }
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
             collect_pattern_calls(p, pkg, out)
         }
@@ -475,7 +583,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
         }
         RegexAtom::WsRule => {
             // `<.ws>` dispatches to whatever `ws` the grammar resolves to.
-            out.push((pkg, Symbol::intern("ws")));
+            out.callees.push((pkg, Symbol::intern("ws")));
             true
         }
         RegexAtom::Named(name) => {
@@ -499,7 +607,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
             {
                 return false;
             }
-            out.push((pkg, spec.lookup_sym));
+            out.callees.push((pkg, spec.lookup_sym));
             true
         }
         // `<{ ... }>` matches whatever regex the code returns; `<~~>` re-enters
