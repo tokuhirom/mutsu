@@ -214,6 +214,47 @@ pub(crate) fn record_regex_raw_token_candidates(hit: bool) {
     }
 }
 
+// ADR-0099 Stage 1 (#8272): the literal-prefix scan prefilter.
+// `applied`/`declined` counts SCANS (one `regex_scan_positions` call each),
+// not positions -- "declined" growing in step with the un-prefilterable
+// pattern shapes a workload actually uses is expected and fine.
+// `positions_offered` is the total position count `declined` would have had
+// to walk; `position_hits` is how many the prefilter actually yielded when
+// applied. A huge gap between them is the whole point (each unyielded
+// position skips a full engine entry, ~983 instructions per ADR-0099 §2.4).
+static REGEX_PREFILTER_APPLIED: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_DECLINED: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_POSITIONS_OFFERED: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_POSITION_HITS: AtomicU64 = AtomicU64::new(0);
+
+/// Record that a scan's candidate-position prefilter fired, narrowing
+/// `positions_offered` positions down to whatever `record_regex_prefilter_position_hit`
+/// counts as the scan actually iterates.
+#[inline]
+pub(crate) fn record_regex_prefilter_applied(positions_offered: usize) {
+    if enabled() {
+        REGEX_PREFILTER_APPLIED.fetch_add(1, Ordering::Relaxed);
+        REGEX_PREFILTER_POSITIONS_OFFERED.fetch_add(positions_offered as u64, Ordering::Relaxed);
+    }
+}
+
+/// Record that a scan had no usable prefix and fell back to every position.
+#[inline]
+pub(crate) fn record_regex_prefilter_declined() {
+    if enabled() {
+        REGEX_PREFILTER_DECLINED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one candidate position the prefilter actually yielded (a literal
+/// occurrence found), as opposed to a position it skipped silently.
+#[inline]
+pub(crate) fn record_regex_prefilter_position_hit() {
+    if enabled() {
+        REGEX_PREFILTER_POSITION_HITS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Record one lookup in the top-level regex parse cache.
 #[inline]
 pub(crate) fn record_regex_parse_cache(hit: bool) {
@@ -1234,6 +1275,13 @@ pub(crate) fn dump() {
     let raw_candidates_misses = REGEX_RAW_TOKEN_CANDIDATES_MISSES.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] regex-raw-token-candidates-cache: hits={raw_candidates_hits} misses={raw_candidates_misses}"
+    );
+    let prefilter_applied = REGEX_PREFILTER_APPLIED.load(Ordering::Relaxed);
+    let prefilter_declined = REGEX_PREFILTER_DECLINED.load(Ordering::Relaxed);
+    let prefilter_positions_offered = REGEX_PREFILTER_POSITIONS_OFFERED.load(Ordering::Relaxed);
+    let prefilter_position_hits = REGEX_PREFILTER_POSITION_HITS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits}"
     );
     let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
     let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);

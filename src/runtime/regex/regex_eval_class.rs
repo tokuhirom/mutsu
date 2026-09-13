@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
+use super::regex_prefilter::regex_scan_positions;
 
 impl Interpreter {
     pub(super) fn regex_match_class_ignorecase(
@@ -193,7 +194,7 @@ impl Interpreter {
                     found = Some((0, end, caps));
                 }
             } else {
-                for start in pos..=chars.len() {
+                for start in regex_scan_positions(&parsed, chars, pos) {
                     if let Some((end, mut caps)) =
                         self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, pkg)
                     {
@@ -239,7 +240,7 @@ impl Interpreter {
                     found = Some((0, end));
                 }
             } else {
-                for start in search_start..=chars.len() {
+                for start in regex_scan_positions(&parsed, &chars, search_start) {
                     if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, start, pkg)
                     {
                         found = Some((start, end));
