@@ -4101,9 +4101,13 @@ impl Interpreter {
             }
             OpCode::IndexAutovivifyLazyTerminal {
                 is_positional,
-                decl_bind,
+                raw_list_elem,
             } => {
-                self.exec_index_autovivify_lazy_op_decl_bind(true, *is_positional, *decl_bind)?;
+                self.exec_index_autovivify_lazy_op_raw_list_elem(
+                    true,
+                    *is_positional,
+                    *raw_list_elem,
+                )?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx, slot) => {

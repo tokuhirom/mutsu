@@ -1338,11 +1338,13 @@ pub(crate) struct Compiler {
     /// the only place that knows -- the trailing `MarkSigilless` compiles after
     /// the declaration. One-shot, like [`Self::bind_vardecl`].
     sigilless_bind_vardecl: bool,
-    /// True while compiling the RHS of a `:=` DECLARATION (`my \a := ...`,
-    /// `my $x := ...`), so the terminal index emits
-    /// `IndexAutovivifyLazyTerminal { decl_bind: true }` and leaves an
+    /// True while compiling a terminal subscript whose consumer settles its own
+    /// writability from the element it receives — the RHS of a `:=`
+    /// DECLARATION (`my \a := ...`, `my $x := ...`) and a `return-rw` operand —
+    /// so the terminal index emits
+    /// `IndexAutovivifyLazyTerminal { raw_list_elem: true }` and leaves an
     /// immutable `List`'s scalar element unpromoted (and hence immutable).
-    decl_bind_terminal: bool,
+    raw_list_elem_terminal: bool,
     /// True only while compiling the statement operand of `do`. `WheneverScope`
     /// reads this to leave its Tap on the ordinary value stack.
     do_stmt_yields_value: bool,
@@ -1689,7 +1691,7 @@ impl Compiler {
             self_is_signature_param: false,
             bind_vardecl: false,
             sigilless_bind_vardecl: false,
-            decl_bind_terminal: false,
+            raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,

@@ -32,6 +32,18 @@ pub(crate) fn refuse_map_removal(target: &Value) -> Result<(), RuntimeError> {
     if target.is_immutable_map() {
         return Err(RuntimeError::new(MAP_REMOVAL_REFUSED));
     }
+    // A `Pair` DOES `Associative` — so a `<k>:delete` reaches it rather than
+    // erroring as a non-container — but it is just as immutable as a `Map`, and
+    // rakudo refuses with the same wording naming `Pair`
+    // (`(c => True)<c>:delete`). Crane's `Crane.remove` reads exactly that
+    // payload back out (`Can not remove values from a (\w+)`) to raise
+    // `X::Crane::Remove::RO`; mutsu answered `Any` and removed nothing.
+    if matches!(
+        target.descalarize().view(),
+        ValueView::Pair(..) | ValueView::ValuePair(..)
+    ) {
+        return Err(RuntimeError::new("Can not remove values from a Pair"));
+    }
     Ok(())
 }
 

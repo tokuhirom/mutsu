@@ -390,19 +390,24 @@ impl RuntimeError {
     /// dedicated wording, which names no value.
     ///
     /// The value itself is retained in the `value` attribute for exception
-    /// matching (`X::Assignment::RO.value`).
+    /// matching (`X::Assignment::RO.value`), and its type name in `typename` —
+    /// rakudo derives that attribute from the value, and a consumer that reads
+    /// it (`Crane::Set`'s `X::Crane::OpSet::RO.new(:typename(.typename))`) must
+    /// see the same thing whichever constructor raised the refusal.
     pub(crate) fn assignment_ro_value(value: Value) -> Self {
+        let typename = crate::runtime::utils::value_type_name(&value);
         let message = if matches!(value.view(), super::ValueView::Nil) {
             "Cannot modify an immutable Nil value".to_string()
         } else {
             format!(
                 "Cannot modify an immutable {} ({})",
-                crate::runtime::utils::value_type_name(&value),
+                typename,
                 crate::runtime::utils::gist_value(&value)
             )
         };
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str(message));
+        attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("value".to_string(), value);
         Self::typed("X::Assignment::RO", attrs)
     }

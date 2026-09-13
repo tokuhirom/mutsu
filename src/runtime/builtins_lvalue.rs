@@ -331,12 +331,12 @@ impl Interpreter {
         if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
             return Ok(stored);
         }
-        let typename = crate::runtime::utils::value_type_name(&result);
         // Rakudo renders the refused value with `.gist`, so a `Pair` reads
         // `a => hash` rather than its tab-joined string coercion (`a\thash`),
-        // and a `List` reads `(1 2)`.
-        let repr = crate::runtime::utils::gist_value(&result);
-        Err(RuntimeError::assignment_ro_typename(typename, &repr))
+        // and a `List` reads `(1 2)`. `Nil` has its own wording, which
+        // `assignment_ro_value` knows and the typename form does not — an
+        // out-of-range `return-rw` index into an immutable `List` reaches it.
+        Err(RuntimeError::assignment_ro_value(result))
     }
 
     /// A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for

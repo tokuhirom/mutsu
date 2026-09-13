@@ -3885,6 +3885,53 @@ impl Interpreter {
         Self::subscript_descent_refusal_at(slot, outer_positional, None)
     }
 
+    /// The `Pair` rule, shared by the chained-store walk above and by the
+    /// COMPUTED-target store (`f(){key} = v`, `OpCode::IndexAssignGeneric`).
+    ///
+    /// A `Pair` DOES `Associative`, so an ASSOCIATIVE subscript descends into it
+    /// and rakudo refuses at the VALUE it reaches — `my %h = :x(:y(1));
+    /// %h<x><y> = 2` is "Cannot modify an immutable Int (1)" — while a key the
+    /// one-entry `Pair` does not hold reads back undefined, giving rakudo's
+    /// "Cannot modify an immutable Nil value". Refusing on the Pair's TYPE
+    /// instead produced `X::AdHoc` "Type Pair does not support associative
+    /// indexing", which is what rakudo raises for a genuinely non-Associative
+    /// target (an `Int`, a `Seq`) and which Crane's
+    /// `CATCH { when X::Assignment::RO }` cannot map to `X::Crane::OpSet::RO`.
+    ///
+    /// A POSITIONAL subscript is a different question — a `Pair` is not
+    /// Positional — and rakudo names the Pair itself there
+    /// (`my @a = (a => 1), 3; @a[0][0] = 9` is "Cannot modify an immutable
+    /// Pair (a => 1)"), so this answers `None` and leaves that to the caller.
+    pub(crate) fn pair_subscript_store_refusal(
+        slot: &Value,
+        outer_positional: bool,
+        next_key: Option<&str>,
+    ) -> Option<RuntimeError> {
+        if outer_positional {
+            return None;
+        }
+        let (pair_key, pair_value) = match slot.view() {
+            ValueView::Pair(key, value) => (key.to_string(), value.clone()),
+            ValueView::ValuePair(key, value) => (key.to_string_value(), value.clone()),
+            _ => return None,
+        };
+        let addressed = match next_key {
+            Some(k) if k == pair_key => pair_value,
+            Some(_) => Value::NIL,
+            // No key threaded through: name the Pair, which is at least the
+            // right class and the right ballpark value.
+            None => slot.clone(),
+        };
+        Some(if addressed.is_nil() {
+            RuntimeError::assignment_ro_value(addressed)
+        } else {
+            RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(&addressed),
+                &crate::runtime::utils::gist_value(&addressed),
+            )
+        })
+    }
+
     /// [`Interpreter::subscript_descent_refusal`] told which key the next
     /// subscript addresses, so a `Pair` slot can name the value the store would
     /// have had to modify (see the `Pair` arm below).
@@ -3893,43 +3940,8 @@ impl Interpreter {
         outer_positional: bool,
         next_key: Option<&str>,
     ) -> Option<RuntimeError> {
-        // A `Pair` DOES `Associative`, so an ASSOCIATIVE next subscript descends
-        // into it and refuses at the value it reaches — `my %h = :x(:y(1));
-        // %h<x><y> = 2` is "Cannot modify an immutable Int (1)", and a key the
-        // one-entry Pair does not hold reads back undefined, giving rakudo's
-        // "Cannot modify an immutable Nil value". Refusing on the SLOT's type
-        // instead produced `X::AdHoc` "Type Pair does not support associative
-        // indexing", which is what rakudo raises for a genuinely non-Associative
-        // slot (an `Int`, a `Seq`) and which Crane's
-        // `CATCH { when X::Assignment::RO }` cannot map to `X::Crane::OpSet::RO`.
-        //
-        // A POSITIONAL next subscript is a different question — a Pair is not
-        // Positional — and rakudo names the Pair itself there
-        // (`my @a = (a => 1), 3; @a[0][0] = 9` is "Cannot modify an immutable
-        // Pair (a => 1)"), which the type-based arm below already produces.
-        let pair_parts = (!outer_positional)
-            .then(|| match slot.view() {
-                ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
-                ValueView::ValuePair(key, value) => Some((key.to_string_value(), value.clone())),
-                _ => None,
-            })
-            .flatten();
-        if let Some((pair_key, pair_value)) = pair_parts {
-            let addressed = match next_key {
-                Some(k) if k == pair_key => pair_value,
-                Some(_) => Value::NIL,
-                // No key threaded through: name the Pair, which is at least the
-                // right class and the right ballpark value.
-                None => slot.clone(),
-            };
-            return Some(if addressed.is_nil() {
-                RuntimeError::assignment_ro_value(addressed)
-            } else {
-                RuntimeError::assignment_ro_typename(
-                    crate::runtime::utils::value_type_name(&addressed),
-                    &crate::runtime::utils::gist_value(&addressed),
-                )
-            });
+        if let Some(err) = Self::pair_subscript_store_refusal(slot, outer_positional, next_key) {
+            return Some(err);
         }
         let view = slot.view();
         let descendable = matches!(
@@ -4805,6 +4817,20 @@ impl Interpreter {
             ));
         }
         let key = idx.to_string_value();
+        // A `Pair` target reached through an EXPRESSION (`Crane::At.at($root,
+        // @path){$step} = $value`, the shape every non-in-place `Crane.replace`
+        // / `Crane.remove` is built on) follows the same rule as one the
+        // chained-store walk steps onto: rakudo refuses at the value the
+        // subscript reaches. The generic path used to treat it as a scalar to
+        // autovivify, so the store silently succeeded and left the caller's
+        // variable reading `Any`.
+        if let Some(err) = Self::pair_subscript_store_refusal(
+            target.deref_container().descalarize(),
+            is_positional,
+            Some(&key),
+        ) {
+            return Err(err);
+        }
         // A single scalar index names one element, so the assignment's rvalue is
         // itemized (like a scalar-variable / named single-index assignment);
         // `@z = (foo()[$b] = l, l)` => `@z.elems == 1`. A multi-element slice

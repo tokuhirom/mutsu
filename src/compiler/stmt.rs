@@ -1550,12 +1550,12 @@ impl Compiler {
                     // declaration the parser itself tagged is a declaration
                     // bind. (`@`/`%` targets never carry the tag; they alias
                     // the whole container and keep the promotion too.)
-                    self.decl_bind_terminal = sigilless_bind_vardecl || scalar_bind_decont;
+                    self.raw_list_elem_terminal = sigilless_bind_vardecl || scalar_bind_decont;
                     self.bind_target_direct = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
-                    self.decl_bind_terminal = false;
+                    self.raw_list_elem_terminal = false;
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
                         || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))

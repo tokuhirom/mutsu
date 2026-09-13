@@ -386,12 +386,23 @@ impl Interpreter {
     /// and mutations are visible in the source structure. Returns the
     /// block's (decontainerized) result plus the cell's post-call value for
     /// the caller to write back into the source slot.
+    ///
+    /// The leaf goes in DECONTAINERIZED. A source element that was already
+    /// promoted to a cell by an earlier `:=` bind or `is rw` descent would
+    /// otherwise be boxed a second time, and the block's `$_` would be a
+    /// container around a container — which every method dispatched on the raw
+    /// `$_` then misses: `my %h = :a(:b(1)); my $x := %h<a>;
+    /// %h.deepmap({ .clone })` died with "No such method 'clone' for invocant
+    /// of type 'Pair'". Writing back is unaffected: the caller stores this
+    /// cell's post-call value into the source slot itself.
     fn deepmap_leaf_call(
         &mut self,
         block: &Value,
         leaf: &Value,
     ) -> Result<(Value, Value), RuntimeError> {
-        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(leaf.clone()));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
+            leaf.deref_container().clone(),
+        ));
         let res = self.call_sub_value(
             block.clone(),
             vec![Value::container_ref(cell.clone())],

@@ -755,7 +755,7 @@ impl Interpreter {
         // rule `OpCode::MarkSigillessBindSource` states for the sigilless
         // spelling. Without this, an immutable `List` element
         // (`my $x := (5, 6)[0]`, whose promotion `IndexAutovivifyLazyTerminal
-        // { decl_bind: true }` now declines) would look like a named bind.
+        // { raw_list_elem: true }` now declines) would look like a named bind.
         let synthetic_index_source = bind_source
             .as_deref()
             .is_some_and(|n| n.starts_with("__mutsu_bind_index_ref_"));
