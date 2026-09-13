@@ -75,8 +75,11 @@ impl Interpreter {
         // `package Foo { }` block) is unaffected — see
         // `Interpreter::qualified_name_visible_here`.
         if crate::runtime::utils::has_double_colon(name)
-            && ((self.is_my_scoped_type_name(name) && !self.my_scoped_type_visible_here(name))
-                || !self.qualified_name_visible_here(name))
+            && if self.is_my_scoped_type_name(name) {
+                !self.my_scoped_type_visible_here(name)
+            } else {
+                !self.qualified_name_visible_here(name)
+            }
         {
             return Err(RuntimeError::new(format!(
                 "Could not find symbol '{}'",
