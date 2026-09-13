@@ -378,7 +378,7 @@ impl Interpreter {
                 } else {
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
-                        '%' => Value::hash(HashMap::new()),
+                        '%' => Value::hash(ValueMap::default()),
                         _ => Value::NIL,
                     }
                 };

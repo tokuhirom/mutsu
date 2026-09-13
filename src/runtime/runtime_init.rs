@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 thread_local! {
     /// Set while constructing a lightweight regex/grammar scratch interpreter
@@ -18,15 +19,15 @@ thread_local! {
 /// wasm32 has no process environment to sweep, so the browser build starts
 /// with an empty `%*ENV` that scripts can still write to.
 #[cfg(not(target_family = "wasm"))]
-fn os_env_hash() -> HashMap<String, Value> {
+fn os_env_hash() -> ValueMap {
     std::env::vars()
         .map(|(key, value)| (key, builtins_collection::builtin_val(&[Value::str(value)])))
         .collect()
 }
 
 #[cfg(target_family = "wasm")]
-fn os_env_hash() -> HashMap<String, Value> {
-    HashMap::new()
+fn os_env_hash() -> ValueMap {
+    ValueMap::default()
 }
 
 impl Interpreter {
@@ -137,7 +138,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -153,7 +154,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -169,7 +170,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -188,7 +189,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -204,7 +205,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -223,7 +224,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -239,7 +240,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -255,7 +256,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -302,7 +303,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -318,7 +319,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -334,7 +335,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -350,7 +351,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -366,7 +367,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -392,7 +393,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -408,7 +409,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -446,7 +447,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert("Proc".to_string(), {
@@ -502,7 +503,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             }
         });
         classes.insert(
@@ -521,7 +522,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -548,7 +549,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -575,7 +576,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -598,7 +599,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -621,7 +622,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -640,7 +641,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -659,7 +660,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -678,7 +679,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -694,7 +695,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -713,7 +714,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -729,7 +730,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -745,7 +746,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -764,7 +765,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -783,7 +784,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -879,7 +880,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -932,7 +933,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1000,7 +1001,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1016,7 +1017,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1032,7 +1033,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1051,7 +1052,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1084,7 +1085,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1115,7 +1116,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1149,7 +1150,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1181,7 +1182,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         // The compiler-identity object is `Raku` (`$*RAKU.^name` is `Raku`, and
@@ -1222,7 +1223,7 @@ impl Interpreter {
                     embedded_attributes: HashSet::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
-                    class_level_attrs: HashMap::new(),
+                    class_level_attrs: ValueMap::default(),
                 },
             );
         }
@@ -1260,7 +1261,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1289,7 +1290,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1322,7 +1323,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1341,7 +1342,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1357,7 +1358,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1386,7 +1387,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1402,7 +1403,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         // Pod object model (rakudo `src/core.c/Pod.pm6`). The declared
@@ -1525,7 +1526,7 @@ impl Interpreter {
                     embedded_attributes: HashSet::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
-                    class_level_attrs: HashMap::new(),
+                    class_level_attrs: ValueMap::default(),
                 },
             );
         }
@@ -1542,7 +1543,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1558,7 +1559,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1574,7 +1575,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1590,7 +1591,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1611,7 +1612,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1627,7 +1628,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1646,7 +1647,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1662,7 +1663,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1678,7 +1679,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1694,7 +1695,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1712,7 +1713,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1732,7 +1733,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
         classes.insert(
@@ -1751,7 +1752,7 @@ impl Interpreter {
                 embedded_attributes: HashSet::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
+                class_level_attrs: ValueMap::default(),
             },
         );
 
@@ -1796,7 +1797,7 @@ impl Interpreter {
                     embedded_attributes: HashSet::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
-                    class_level_attrs: HashMap::new(),
+                    class_level_attrs: ValueMap::default(),
                 },
             );
             if !does.is_empty() {
@@ -3042,9 +3043,9 @@ impl Interpreter {
         // the only part of it excluded then. A YAMLish parse builds 1,609
         // scratch interpreters.
         let env = if Self::is_building_scratch() {
-            HashMap::new()
+            ValueMap::default()
         } else {
-            let mut env = HashMap::new();
+            let mut env = ValueMap::default();
             env.insert("*PID".to_string(), Value::int(current_process_id()));
             env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
             env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
@@ -3128,7 +3129,7 @@ impl Interpreter {
             block_stack: Vec::new(),
             doc_comments: HashMap::new(),
             doc_comment_list: Vec::new(),
-            why_cache: HashMap::new(),
+            why_cache: ValueMap::default(),
             why_object_cache: HashMap::new(),
             type_metadata: Default::default(),
             when_matched: Box::new(std::cell::Cell::new(false)),
@@ -3147,11 +3148,11 @@ impl Interpreter {
             skip_postcircumfix_overload: false,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
-            pending_inner_export_subs: HashMap::new(),
+            pending_inner_export_subs: ValueMap::default(),
             module_export_defs: HashMap::new(),
             defined_slang_rules: Vec::new(),
             defined_slang_declarators: Vec::new(),
-            slang_declarator_hows: HashMap::new(),
+            slang_declarator_hows: ValueMap::default(),
             end_phasers: Vec::new(),
             end_phaser_seq: 0,
             module_load_order: Vec::new(),
@@ -3231,7 +3232,7 @@ impl Interpreter {
             class_body_static_names: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             mainline_lexical_subs: Default::default(),
-            escaped_our_lexical_cells: HashMap::new(),
+            escaped_our_lexical_cells: ValueMap::default(),
             escaping_our_lexical_names: Default::default(),
             escaped_our_sub_names: Default::default(),
             our_scalar_cell_names: Default::default(),
@@ -3244,7 +3245,7 @@ impl Interpreter {
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
             )),
-            param_bound_aggregates: std::collections::HashMap::new(),
+            param_bound_aggregates: ValueMap::default(),
             suppress_shared_publish: false,
             type_body_written_lexicals: Default::default(),
             closure_captured_state: HashMap::new(),
@@ -3258,7 +3259,7 @@ impl Interpreter {
             attributes_pragma: String::new(),
             atomic_var_seen: false,
             sigilless_alias_seen: false,
-            var_defaults: HashMap::new(),
+            var_defaults: ValueMap::default(),
             instance_type_metadata: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),
@@ -3294,7 +3295,7 @@ impl Interpreter {
             metamodel_dispatch_stack: Vec::new(),
             wrap_chains: Default::default(),
             wrap_sub_names: HashMap::new(),
-            wrap_name_to_sub: HashMap::new(),
+            wrap_name_to_sub: ValueMap::default(),
             wrap_callable_ids: Default::default(),
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),

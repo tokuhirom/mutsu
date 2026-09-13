@@ -306,7 +306,7 @@ impl Interpreter {
             let key = index_value.to_string_value();
             let mut data = match container.view() {
                 ValueView::Hash(items) => (**items).clone(),
-                ValueView::Nil => crate::value::HashData::new(std::collections::HashMap::new()),
+                ValueView::Nil => crate::value::HashData::new(ValueMap::default()),
                 _ => {
                     return Err(RuntimeError::assignment_ro_typename(
                         &crate::value::what_type_name(&container),

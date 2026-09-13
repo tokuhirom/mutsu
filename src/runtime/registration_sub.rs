@@ -316,7 +316,7 @@ impl Interpreter {
                 if !inner.is_empty()
                     && !crate::runtime::native_types::is_native_array_element_type(inner)
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert(
                         "message".to_string(),
                         Value::str(format!(
@@ -339,7 +339,7 @@ impl Interpreter {
                 && !base.is_empty()
                 && (declared_packages.contains(base) || declared_classes.contains(base))
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("{} cannot be parameterized", base)),
@@ -389,7 +389,7 @@ impl Interpreter {
                     "Package '{}' is insufficiently type-like to qualify a parameter.  Did you mean 'class'?",
                     tc
                 );
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("type".to_string(), Value::str(tc.to_string()));
                 attrs.insert("message".to_string(), Value::str(msg));
                 return Err(RuntimeError::typed("X::Parameter::BadType", attrs));
@@ -405,7 +405,7 @@ impl Interpreter {
                     suggestions.push(s);
                 }
             }
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("typename".to_string(), Value::str(tc.to_string()));
             attrs.insert(
                 "suggestions".to_string(),
@@ -507,7 +507,7 @@ impl Interpreter {
                 quoted.join(", ")
             ));
         }
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));
         attrs.insert(
             "suggestions".to_string(),
@@ -818,6 +818,12 @@ impl Interpreter {
         let is_method_value_decl = custom_traits
             .iter()
             .any(|(t, _)| t == "__mutsu_method_decl");
+        // Which declarator the source wrote, recovered from the marker the
+        // `Stmt::MethodDecl` lowering left behind (`src/compiler/stmt.rs`).
+        // `Sub` for every ordinary `sub` declaration, which carries no marker.
+        let declarator = crate::ast::RoutineDeclarator::from_markers(
+            custom_traits.iter().map(|(t, _)| t.as_str()),
+        );
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
@@ -1019,7 +1025,7 @@ impl Interpreter {
             let is_hoisted =
                 is_lexical_hoist || custom_traits.iter().any(|(t, _)| t == "__hoisted");
             if is_our_scoped && !is_hoisted && !self.registry().proto_subs_contains(&single_key) {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
                     "message".to_string(),
@@ -1048,7 +1054,7 @@ impl Interpreter {
             is_cached: custom_traits.iter().any(|(t, _)| t == "cached"),
             is_rw,
             is_raw,
-            is_method: false,
+            declarator,
             empty_sig,
             is_stub: metadata.map_or_else(
                 || Self::is_stub_routine_body(body),
@@ -1514,6 +1520,18 @@ impl Interpreter {
                     name
                 )))
                 .cloned();
+            // The declarator has to be stamped on the env this value captures:
+            // `&name` for a `my method` / `my submethod` is built right here,
+            // not through `sub_value_from_function_def`, so nothing downstream
+            // gets a second chance to say what type it is. Without it every
+            // named method declaration answered `Sub`.
+            let mut captured_env = self.env.clone();
+            if let Some(callable_type) = declarator.callable_type() {
+                captured_env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from(callable_type),
+                );
+            }
             let sub_val = if let Some(def) = installed {
                 Value::make_sub_for_routine(
                     def.package,
@@ -1522,7 +1540,7 @@ impl Interpreter {
                     def.param_defs.clone(),
                     def.body.clone(),
                     def.is_rw,
-                    self.env.clone(),
+                    captured_env,
                     def.compiled.clone(),
                 )
             } else {
@@ -1533,7 +1551,7 @@ impl Interpreter {
                     param_defs.to_vec(),
                     body.to_vec(),
                     is_rw,
-                    self.env.clone(),
+                    captured_env,
                 )
             };
             self.env.insert(format!("&{}", name), sub_val);
@@ -1771,7 +1789,7 @@ impl Interpreter {
             is_test_assertion: false,
             is_rw: false,
             is_raw: false,
-            is_method: false,
+            declarator: crate::ast::RoutineDeclarator::Sub,
             empty_sig: false,
             is_stub: Self::is_stub_routine_body(body),
             return_type: None,
@@ -1959,7 +1977,7 @@ impl Interpreter {
                 is_test_assertion: false,
                 is_rw: false,
                 is_raw: false,
-                is_method: false,
+                declarator: crate::ast::RoutineDeclarator::Sub,
                 empty_sig: proto_empty_sig,
                 is_stub: Self::is_stub_routine_body(body),
                 return_type: return_type.cloned(),
@@ -2024,7 +2042,7 @@ impl Interpreter {
                 is_test_assertion: false,
                 is_rw: false,
                 is_raw: false,
-                is_method: false,
+                declarator: crate::ast::RoutineDeclarator::Sub,
                 empty_sig: proto_empty_sig,
                 is_stub: Self::is_stub_routine_body(body),
                 return_type: return_type.cloned(),
@@ -2249,7 +2267,7 @@ impl Interpreter {
         // its values above; this return value is only consumed when the declaration is
         // used in expression position (`my $e = enum Foo <a b c>`) — a bare statement
         // pushes it as a harmless sink (see `exec_register_enum_op`).
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         for (key, val) in &enum_variants {
             map.insert(key.clone(), val.to_value());
         }

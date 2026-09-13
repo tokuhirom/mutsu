@@ -393,7 +393,7 @@ impl Interpreter {
             is_test_assertion: false,
             is_rw: false,
             is_raw: false,
-            is_method: true,
+            declarator: crate::ast::RoutineDeclarator::Method,
             empty_sig: false,
             is_stub: Self::is_stub_routine_body(proto_body),
             return_type: return_type.clone(),

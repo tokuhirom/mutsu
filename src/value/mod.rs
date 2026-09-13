@@ -67,7 +67,7 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.
-pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
+pub(crate) type ProxySubclassAttrs = Arc<Mutex<ValueMap>>;
 
 /// The mutable state attached to a [`ValueRepr::Mixin`].
 ///
@@ -84,18 +84,18 @@ pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 /// containing `Gc<MixinOverrides>`, and therefore aliases both fields.
 #[derive(Debug)]
 pub(crate) struct MixinOverrides {
-    overrides: HashMap<String, Value>,
+    overrides: ValueMap,
     attributes: Gc<InstanceAttrs>,
 }
 
 impl MixinOverrides {
-    pub(crate) fn new(overrides: HashMap<String, Value>) -> Self {
+    pub(crate) fn new(overrides: ValueMap) -> Self {
         let state = Self::with_attributes(overrides, AttrMap::new());
         state.seed_missing_attributes();
         state
     }
 
-    pub(crate) fn with_attributes(overrides: HashMap<String, Value>, attributes: AttrMap) -> Self {
+    pub(crate) fn with_attributes(overrides: ValueMap, attributes: AttrMap) -> Self {
         Self {
             overrides,
             attributes: Gc::new(InstanceAttrs::role_storage(attributes)),
@@ -104,11 +104,11 @@ impl MixinOverrides {
 
     /// The composition/override map. This is the only map used for type
     /// identity, method overrides, and marker inspection.
-    pub(crate) fn overrides(&self) -> &HashMap<String, Value> {
+    pub(crate) fn overrides(&self) -> &ValueMap {
         &self.overrides
     }
 
-    pub(crate) fn overrides_mut(&mut self) -> &mut HashMap<String, Value> {
+    pub(crate) fn overrides_mut(&mut self) -> &mut ValueMap {
         &mut self.overrides
     }
 
@@ -286,8 +286,8 @@ impl MixinOverrides {
     }
 }
 
-impl From<HashMap<String, Value>> for MixinOverrides {
-    fn from(overrides: HashMap<String, Value>) -> Self {
+impl From<ValueMap> for MixinOverrides {
+    fn from(overrides: ValueMap) -> Self {
         Self::new(overrides)
     }
 }
@@ -393,7 +393,7 @@ pub(crate) struct BagData {
     pub counts: HashMap<String, NumBigInt>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Bag is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Int` for `BagHash[Int]`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -412,7 +412,7 @@ pub(crate) struct SetData {
     pub elements: HashSet<String>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Set is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Str` for `SetHash[Str]`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -431,7 +431,7 @@ pub(crate) struct MixData {
     pub weights: HashMap<String, f64>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Mix is created from mixed-type data.
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// Element value-type constraint (e.g. `Real` for `MixHash`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint for parameterized QuantHashes, if any.
@@ -458,7 +458,9 @@ mod guards;
 pub mod hash_key;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
+pub mod user_key_map;
 pub use hash_key::HashKey;
+pub use user_key_map::ValueMap;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
 pub(crate) mod match_view;
@@ -1138,7 +1140,7 @@ pub struct SubData {
     pub(crate) is_raw: bool,
     pub env: Env,
     pub(crate) assumed_positional: Vec<Value>,
-    pub(crate) assumed_named: HashMap<String, Value>,
+    pub(crate) assumed_named: ValueMap,
     pub id: u64,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
@@ -1269,6 +1271,50 @@ pub(crate) struct ParamNameSyms {
     /// `param_defs[i].name`, and the names bound by sub-signatures
     /// (`|c(Str $x)`). The exit writeback probes env keys against this set.
     pub(crate) call_local: rustc_hash::FxHashSet<Symbol>,
+    /// Whether the **light closure bind** may serve this signature
+    /// (`vm_closure_light_bind.rs`, #8335): every parameter is a bare
+    /// identifier and there are no `ParamDef`s at all — the shape a pointy
+    /// block (`-> $a { … }`) reaches the general binder's *legacy placeholder*
+    /// branch with.
+    ///
+    /// For that shape the whole general bind reduces to "itemize the argument
+    /// and store it under the parameter's key". Every other spelling has a
+    /// branch of its own that the light bind does not reproduce, so each is
+    /// refused here:
+    ///
+    /// * `^a` / `@^a` / `%^a` / `&^a` (positional placeholders) and `:a` /
+    ///   `@:a` / `%:a` (named placeholders) take the placeholder arms, which
+    ///   type-check, consume named arguments and publish twigil-less aliases;
+    /// * `@x` / `%x` / `&x` / `\x` bind raw (no itemization), and `@x`
+    ///   re-homes its value
+    ///   ([`crate::runtime::Interpreter::normalize_positional_param_value`]);
+    /// * `_` is the topic: exempt from itemization, and bound by the
+    ///   implicit-topic machinery rather than here;
+    /// * `@_` / `%_` are the legacy argument aggregates the binder publishes
+    ///   itself;
+    /// * `self` makes the binder mirror the binding onto the reserved lexical
+    ///   key ([`crate::ast::param_names_declare_self_lexical`]);
+    /// * a `__mutsu`-prefixed synthetic name (the `supply` block emitter) is
+    ///   itemization-exempt.
+    ///
+    /// A signature carrying any `ParamDef` is out of scope by construction: it
+    /// takes the general binder's *real* path, with defaults, type
+    /// constraints, `where` clauses, traits and sub-signatures.
+    pub(crate) light_bindable: bool,
+}
+
+/// Whether a legacy-path parameter name is a bare identifier the light closure
+/// bind may serve. See [`ParamNameSyms::light_bindable`] for what each rejected
+/// shape would have needed instead.
+fn is_light_bindable_param_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    // Requiring an alphabetic first character covers the topic `_` and every
+    // `__mutsu` synthetic name in one test, along with every sigil and twigil.
+    match chars.next() {
+        Some(c) if c.is_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_') && name != "self"
 }
 
 /// The `Symbol`-keyed twin of `Interpreter::collect_sub_signature_names`: every
@@ -1300,7 +1346,14 @@ impl SubData {
                 }
                 collect_sub_signature_syms(&pd.sub_signature, &mut call_local);
             }
-            Arc::new(ParamNameSyms { params, call_local })
+            let light_bindable = !self.params.is_empty()
+                && self.param_defs.is_empty()
+                && self.params.iter().all(|p| is_light_bindable_param_name(p));
+            Arc::new(ParamNameSyms {
+                params,
+                call_local,
+                light_bindable,
+            })
         })
     }
 
@@ -1566,7 +1619,10 @@ pub enum ArrayKind {
 /// are unchanged; only structural mutation/rebuild sites touch the wrapper.
 #[derive(Debug, Clone, Default)]
 pub struct HashData {
-    pub map: HashMap<String, Value>,
+    /// The key/value map. [`ValueMap`], not a std `HashMap`: the keys are
+    /// runtime data, so the hasher is a randomly-seeded fast one rather than
+    /// SipHash (ADR-0103 / #8333).
+    pub map: ValueMap,
     /// This hash's `.WHICH` identity. Lazily minted and never reused, so two
     /// dead temporaries cannot collide the way their recycled ADDRESSES could
     /// (`{a=>1}.WHICH eq {a=>1}.WHICH` was `True`). See [`which_id::WhichId`].
@@ -1583,7 +1639,7 @@ pub struct HashData {
     /// For object hashes / typed-key hashes: maps each stored `.WHICH` key
     /// string back to the original key object (so `.keys`/subscript see the
     /// real key, not the WHICH string).
-    pub original_keys: Option<HashMap<String, Value>>,
+    pub original_keys: Option<ValueMap>,
     /// `is default(...)` element default — the value a missing-key read yields.
     /// Embedded (replacing the former `Arc::as_ptr`-keyed `hash_defaults` side
     /// table) so it travels with the hash through copy-on-write — the pointer
@@ -1889,7 +1945,7 @@ pub(in crate::value) enum ValueRepr {
         #[allow(clippy::box_collection)]
         positional: Box<Vec<Value>>,
         #[allow(clippy::box_collection)]
-        named: Box<HashMap<String, Value>>,
+        named: Box<ValueMap>,
     },
     /// A *named variable reference*: an argument (or pair value, or `:=` RHS)
     /// tagged with the name of the variable it was read from, so that `is rw` /
@@ -2246,7 +2302,7 @@ pub struct CustomTypeInstanceData {
     pub how: Box<Value>,
     pub repr: String,
     pub type_name: Symbol,
-    pub attributes: Arc<HashMap<String, Value>>,
+    pub attributes: Arc<ValueMap>,
     pub id: u64,
 }
 
@@ -2345,7 +2401,7 @@ pub struct RegexAdverbs {
     pub(crate) source_adverbs: Option<RegexSourceAdverbs>,
     /// The defining scope this literal closed over, when its pattern embeds
     /// code — see [`RegexClosure`]. `None` for every ordinary literal.
-    pub captured: Option<Arc<HashMap<String, Value>>>,
+    pub captured: Option<Arc<ValueMap>>,
     /// Source-level provenance for a parser-created static regex. This is
     /// separate from the execution spelling in `pattern`: the runtime may
     /// carry normalized prefixes there, while RakuAST and the execution
@@ -2367,7 +2423,7 @@ pub struct RegexClosure {
     pub pattern: Arc<String>,
     /// Captured lexicals, keyed the way `env` keys them (`$x` -> `x`,
     /// `@x`/`%x`/`&x` keep their sigil).
-    pub scope: Option<Arc<HashMap<String, Value>>>,
+    pub scope: Option<Arc<ValueMap>>,
     /// Source-level provenance for a static regex value. A source-only value
     /// has no defining lexical scope, so `scope` is `None`; code-bearing
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
@@ -2905,7 +2961,7 @@ mod hash_chokepoint_tests {
 
     #[test]
     fn insert_through_replaces_bare_entry() {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("a".to_string(), Value::Int(1));
         Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
         assert_eq!(
@@ -2919,7 +2975,7 @@ mod hash_chokepoint_tests {
 
     #[test]
     fn insert_through_creates_missing_entry() {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
         assert_eq!(
             map.get("b")
@@ -2936,7 +2992,7 @@ mod hash_chokepoint_tests {
         // assignment to the key must write *through* the cell (preserving the
         // binding), not replace the entry with a bare value.
         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Int(1)));
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));
         // The entry is still the same cell (binding preserved)...
@@ -2946,5 +3002,60 @@ mod hash_chokepoint_tests {
         ));
         // ...and the alias observes the new value through the cell.
         assert_eq!(cell.lock().unwrap().as_int(), Some(99));
+    }
+}
+
+#[cfg(test)]
+mod light_bindable_param_name_tests {
+    use super::is_light_bindable_param_name;
+
+    /// The admitted set is exactly "bare identifier": what a pointy block's
+    /// parameter (`-> $a { … }`, stored sigil-less as `"a"`) looks like.
+    #[test]
+    fn a_bare_identifier_is_light_bindable() {
+        for name in ["a", "cb", "x1", "some_name", "Ω"] {
+            assert!(
+                is_light_bindable_param_name(name),
+                "{name:?} is a bare identifier and must be light-bindable"
+            );
+        }
+    }
+
+    /// Every rejected shape reaches a general-binder branch the light bind does
+    /// not reproduce — see `ParamNameSyms::light_bindable` for which one.
+    #[test]
+    fn every_other_spelling_is_refused() {
+        for name in [
+            // positional and named placeholders
+            "^a",
+            "@^a",
+            "%^a",
+            "&^a",
+            ":a",
+            "@:a",
+            "%:a",
+            // sigils that do not bind an itemized scalar
+            "@x",
+            "%x",
+            "&x",
+            "\\x",
+            "$x",
+            // the topic, the legacy aggregates, the invocant
+            "_",
+            "@_",
+            "%_",
+            "self",
+            // synthetic names (the `supply` block emitter) and attributives
+            "__mutsu_supply_emitter_0",
+            "!attr",
+            ".attr",
+            "*dyn",
+            "",
+        ] {
+            assert!(
+                !is_light_bindable_param_name(name),
+                "{name:?} must not be light-bindable"
+            );
+        }
     }
 }

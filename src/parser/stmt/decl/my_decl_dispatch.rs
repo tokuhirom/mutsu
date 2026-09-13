@@ -191,11 +191,24 @@ pub(super) fn try_keyword_dispatch(
     // my/our submethod name(...) { ... }
     if let Some(r) = keyword("submethod", rest) {
         let (r, _) = ws1(r)?;
-        if is_our {
-            return method_decl_body(r, false, true).map(Some);
+        // `method_decl_body*` parses the shared declarator grammar and leaves
+        // `is_submethod` false, so the keyword has to be recorded here or the
+        // declaration is indistinguishable from a `method` one from this point
+        // on -- which is why `my submethod foo` registered as a `Sub` even once
+        // the lowering learned to carry a declarator.
+        let (r, mut stmt) = if is_our {
+            method_decl_body(r, false, true)?
         } else {
-            return method_decl_body_my(r, false, false).map(Some);
+            method_decl_body_my(r, false, false)?
+        };
+        if let Stmt::MethodDecl {
+            ref mut is_submethod,
+            ..
+        } = stmt
+        {
+            *is_submethod = true;
         }
+        return Ok(Some((r, stmt)));
     }
 
     // my class Name is Parent { ... }

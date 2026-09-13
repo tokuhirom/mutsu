@@ -67,7 +67,7 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
             ])),
             crate::value::ArrayKind::Array,
         ),
-        "Hash" => Value::hash(std::collections::HashMap::from([(
+        "Hash" => Value::hash(crate::value::ValueMap::from_iter([(
             "a".to_string(),
             Value::int(1),
         )])),

@@ -1,8 +1,8 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     fn wrap_in_begin_time(inner: RuntimeError) -> RuntimeError {
-        use std::collections::HashMap;
         let inner_exception = inner
             .exception
             .as_ref()
@@ -12,7 +12,7 @@ impl Interpreter {
             "An exception occurred while evaluating a CHECK\nException details:\n  {}",
             inner.message
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert("exception".to_string(), inner_exception);
         RuntimeError::typed("X::Comp::BeginTime", attrs)

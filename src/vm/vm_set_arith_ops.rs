@@ -3,6 +3,7 @@
 use super::*;
 use crate::runtime::utils::bag_weight;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use num_bigint::BigInt as NumBigInt;
 use num_traits::Zero;
 
@@ -42,7 +43,7 @@ impl Interpreter {
         let result_level = left_level.max(right_level).max(1); // minimum Bag
         let result_mutable = runtime::set_result_mutability(&left);
 
-        let mut originals: HashMap<String, Value> = HashMap::new();
+        let mut originals: ValueMap = ValueMap::default();
         let result = match result_level {
             2 => {
                 // Result is Mix
@@ -121,7 +122,7 @@ impl Interpreter {
     /// Helper: extract bag-like weights from a list item (Pair or plain value)
     fn bag_insert_item(
         result: &mut HashMap<String, NumBigInt>,
-        originals: &mut HashMap<String, Value>,
+        originals: &mut ValueMap,
         item: &Value,
     ) {
         use crate::runtime::utils::{
@@ -148,11 +149,7 @@ impl Interpreter {
     }
 
     /// Helper: extract mix-like weights from a list item (Pair or plain value)
-    fn mix_insert_item(
-        result: &mut HashMap<String, f64>,
-        originals: &mut HashMap<String, Value>,
-        item: &Value,
-    ) {
+    fn mix_insert_item(result: &mut HashMap<String, f64>, originals: &mut ValueMap, item: &Value) {
         use crate::runtime::utils::{
             quanthash_elem_entry, record_quanthash_original, str_elem_key,
         };
@@ -182,10 +179,7 @@ impl Interpreter {
     /// Coerce a value to a Bag's weight map. Weights are arbitrary-precision:
     /// `BagData.counts` is a `BigInt` map, so a bag can hold (and an operator
     /// must be able to add) a weight above `i64::MAX`.
-    fn coerce_to_bag(
-        val: &Value,
-        originals: &mut HashMap<String, Value>,
-    ) -> HashMap<String, NumBigInt> {
+    fn coerce_to_bag(val: &Value, originals: &mut ValueMap) -> HashMap<String, NumBigInt> {
         use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
         // A role mixin wraps the operand without replacing it (`%h does R` is a
         // `Hash+{R}`, still a Hash), so fold the value underneath it.
@@ -264,7 +258,7 @@ impl Interpreter {
     }
 
     /// Coerce a value to a Mix (HashMap<String, f64>)
-    fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, f64> {
+    fn coerce_to_mix(val: &Value, originals: &mut ValueMap) -> HashMap<String, f64> {
         use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
         // A role mixin wraps the operand without replacing it (`%h does R` is a
         // `Hash+{R}`, still a Hash), so fold the value underneath it.
@@ -375,7 +369,7 @@ impl Interpreter {
         let result_level = left_level.max(right_level);
         let result_mutable = runtime::set_result_mutability(&left);
 
-        let mut originals: HashMap<String, Value> = HashMap::new();
+        let mut originals: ValueMap = ValueMap::default();
         let result = match result_level {
             2 => {
                 // Result is Mix

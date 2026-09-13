@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -26,7 +27,7 @@ impl Interpreter {
             let line = callsite_line.unwrap_or(0);
             let code = self.current_routine_sub_value();
             let my_hash = self.build_lexical_hash(&self.env, None);
-            let mut attrs = HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("file".to_string(), Value::str(file));
             Self::insert_callframe_code_attrs(&mut attrs, &code);
@@ -63,7 +64,7 @@ impl Interpreter {
             .map(|frame| self.code_frame_value(frame))
             .unwrap_or(Value::NIL);
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(entry.line));
         attrs.insert("file".to_string(), Value::str(entry.file.clone()));
         Self::insert_callframe_code_attrs(&mut attrs, &code);
@@ -82,7 +83,7 @@ impl Interpreter {
     fn block_frame_value(&self, file: &str, callsite_line: Option<i64>) -> Value {
         let code = Value::package(Symbol::intern("Block"));
         let my_hash = self.build_lexical_hash(&self.env, None);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(callsite_line.unwrap_or(0)));
         attrs.insert("file".to_string(), Value::str(file.to_string()));
         Self::insert_callframe_code_attrs(&mut attrs, &code);
@@ -99,12 +100,12 @@ impl Interpreter {
     /// object, and its annotations mirror `line`/`file`.
     fn setting_frame_value(&self, file: &str) -> Value {
         let code = Value::package(Symbol::intern("Mu"));
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(1));
         attrs.insert("file".to_string(), Value::str(file.to_string()));
         Self::insert_callframe_code_attrs(&mut attrs, &code);
         attrs.insert("code".to_string(), code);
-        attrs.insert("my".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("my".to_string(), Value::hash(ValueMap::default()));
         attrs.insert("inline".to_string(), Value::FALSE);
         attrs.insert("__depth".to_string(), Value::int(1));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
@@ -113,7 +114,7 @@ impl Interpreter {
 
     /// Extract subname, package, subtype, and sub attributes from a code value
     /// and insert them into the CallFrame attributes map.
-    fn insert_callframe_code_attrs(attrs: &mut HashMap<String, Value>, code: &Value) {
+    fn insert_callframe_code_attrs(attrs: &mut ValueMap, code: &Value) {
         // A routine ever composed with a role (`.^mixin(Role)`, or a trait
         // handler's `$r does Role`) is a `Mixin` wrapping its `Sub` here, not
         // a bare `Sub` — see `Interpreter::materialize_routine_mixins`. Look
@@ -163,7 +164,7 @@ impl Interpreter {
     }
 
     fn build_lexical_hash(&self, env: &Env, callframe_depth: Option<usize>) -> Value {
-        let mut hash = HashMap::new();
+        let mut hash = ValueMap::default();
         for (k, v) in env.iter() {
             // Skip internal keys and special variables
             if k.starts_with("__") || k.starts_with("?") || k.starts_with("*") || k.starts_with("=")
@@ -193,8 +194,8 @@ impl Interpreter {
         Value::hash(hash)
     }
 
-    pub(crate) fn build_annotations(&self, attrs: &HashMap<String, Value>) -> Value {
-        let mut map = HashMap::new();
+    pub(crate) fn build_annotations(&self, attrs: &ValueMap) -> Value {
+        let mut map = ValueMap::default();
         if let Some(file) = attrs.get("file") {
             map.insert("file".to_string(), file.clone());
         }
@@ -246,7 +247,7 @@ impl Interpreter {
         if addresses.is_empty() {
             addresses.push("127.0.0.1".to_string());
         }
-        let mut info = HashMap::new();
+        let mut info = ValueMap::default();
         info.insert("name".to_string(), Value::str(name.clone()));
         info.insert("addr".to_string(), Value::str(addresses[0].clone()));
         info.insert("aliases".to_string(), Value::array(Vec::new()));

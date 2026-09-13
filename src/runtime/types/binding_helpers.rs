@@ -105,7 +105,7 @@ impl Interpreter {
     /// positional). A method that declares its own hash slurpy (`*%foo`)
     /// replaces `*%_`; callers skip this then.
     pub(crate) fn implicit_method_named_slurpy(param_defs: &[ParamDef], args: &[Value]) -> Value {
-        let mut implicit_named = std::collections::HashMap::new();
+        let mut implicit_named = ValueMap::default();
         for arg in args.iter() {
             let unwrapped = arg.unwrap_varref();
             if !unwrapped.is_string_pair_value() {

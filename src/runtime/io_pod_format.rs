@@ -81,7 +81,7 @@ impl Interpreter {
 
         let mut fc_attrs = HashMap::new();
         fc_attrs.insert("type".to_string(), Value::str(letter.to_string()));
-        fc_attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        fc_attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
 
         // `Pod::FormattingCode.meta` is always a `Positional` in rakudo — empty
         // for the codes that carry no metadata — so every branch below sets it.

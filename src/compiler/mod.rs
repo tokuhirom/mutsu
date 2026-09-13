@@ -6,6 +6,7 @@ use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode, WhenMat
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use crate::value::ValueMap;
 
 static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -1630,10 +1631,10 @@ pub(crate) struct Compiler {
     /// branch at compile time. Follows `constant_vars_in_scope`'s lifecycle: a
     /// constant leaving its declaring block stops being inlined (it is then an
     /// `our`-scoped package symbol again).
-    constant_values: HashMap<String, Value>,
+    constant_values: ValueMap,
     /// Same, for constants declared in an *enclosing* compiler — a sub body must
     /// still inline the file-level `constant DEBUG` it reads.
-    outer_constant_values: HashMap<String, Value>,
+    outer_constant_values: ValueMap,
 }
 
 /// How [`Compiler::compile_phaser_block_scope`] should dispose of a
@@ -1735,8 +1736,8 @@ impl Compiler {
             unit_use_ctx: std::sync::Arc::new(begin_use::UnitUseCtx::default()),
             begin_preloads: Vec::new(),
             begin_preload_lib_paths: Vec::new(),
-            constant_values: HashMap::new(),
-            outer_constant_values: HashMap::new(),
+            constant_values: ValueMap::default(),
+            outer_constant_values: ValueMap::default(),
         }
     }
 

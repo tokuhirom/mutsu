@@ -1,6 +1,7 @@
 //! Mixin (`but`/`does`), `isa`, and pair-construction ops.
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
@@ -186,7 +187,7 @@ impl Interpreter {
     fn apply_single_mixin(left: Value, mixin_type: String, right: Value) -> Value {
         let mut mixins = match left.view() {
             ValueView::Mixin(_, existing_mixins) => (**existing_mixins).clone(),
-            _ => std::collections::HashMap::new().into(),
+            _ => ValueMap::default().into(),
         };
         mixins.insert(mixin_type, right);
         let anon = crate::parser::next_anon_role_name();

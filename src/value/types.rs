@@ -583,9 +583,7 @@ pub(crate) fn mixin_identity_key(mixins: &MixinOverrides) -> String {
 /// `__mutsu_role_seq__*` (per-application-order bookkeeping),
 /// `__mutsu_type_name__` (the mutable `.^set_name` target — written later,
 /// in place, onto the cache entry itself), and any other bookkeeping key.
-pub(crate) fn filter_composition_markers(
-    mixins: &MixinOverrides,
-) -> std::collections::HashMap<String, Value> {
+pub(crate) fn filter_composition_markers(mixins: &MixinOverrides) -> ValueMap {
     mixins
         .iter()
         .filter(|(k, _)| {
@@ -664,7 +662,7 @@ pub(crate) fn allomorph_wordcase_result(inner: &Value, wordcased: String) -> Val
         // Int / BigInt allomorph (IntStr).
         _ => Value::int(0),
     };
-    let mut new_mixins = std::collections::HashMap::new();
+    let mut new_mixins = ValueMap::default();
     new_mixins.insert("Str".to_string(), Value::str(wordcased));
     Value::mixin(zero_numeric, new_mixins)
 }

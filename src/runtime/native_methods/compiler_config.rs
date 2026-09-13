@@ -3,6 +3,7 @@
 
 use crate::runtime::*;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// `$*RAKU.compiler` native methods. Everything the identity object
@@ -31,9 +32,9 @@ impl Interpreter {
     /// so a consumer can walk it the same way; the key set legitimately differs
     /// because the underlying build systems differ.
     fn compiler_verbose_config() -> Value {
-        let mut sections: HashMap<String, Value> = HashMap::new();
+        let mut sections: ValueMap = ValueMap::default();
 
-        let mut raku_section: HashMap<String, Value> = HashMap::new();
+        let mut raku_section: ValueMap = ValueMap::default();
         raku_section.insert(
             "implementation".to_string(),
             Value::str_from(Self::COMPILER_NAME),
@@ -52,7 +53,7 @@ impl Interpreter {
             Value::hash_with_data(Value::hash_arc(raku_section)),
         );
 
-        let mut mutsu_section: HashMap<String, Value> = HashMap::new();
+        let mut mutsu_section: ValueMap = ValueMap::default();
         mutsu_section.insert(
             "version".to_string(),
             Value::str_from(env!("CARGO_PKG_VERSION")),
@@ -95,7 +96,7 @@ impl Interpreter {
     /// Project the named attributes of a native info object into a flat
     /// string-valued config map, skipping any the instance does not carry.
     fn instance_attrs_as_config(instance: &Value, keys: &[&str]) -> Value {
-        let mut out: HashMap<String, Value> = HashMap::new();
+        let mut out: ValueMap = ValueMap::default();
         if let ValueView::Instance { attributes, .. } = instance.view() {
             for key in keys {
                 if let Some(val) = attributes.as_map().get(*key) {

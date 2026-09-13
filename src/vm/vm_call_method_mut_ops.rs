@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
@@ -148,7 +149,7 @@ impl Interpreter {
                 if let Some(b) = batch
                     && b <= 0
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("method".to_string(), Value::str(method.clone()));
                     attrs.insert("name".to_string(), Value::str("batch".to_string()));
                     attrs.insert("value".to_string(), Value::int(b));
@@ -161,7 +162,7 @@ impl Interpreter {
                 if let Some(d) = degree
                     && d <= 0
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("method".to_string(), Value::str(method.clone()));
                     attrs.insert("name".to_string(), Value::str("degree".to_string()));
                     attrs.insert("value".to_string(), Value::int(d));
@@ -1639,7 +1640,7 @@ impl Interpreter {
             if let Some(b) = batch
                 && b <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
                 attrs.insert("value".to_string(), Value::int(b));
@@ -1652,7 +1653,7 @@ impl Interpreter {
             if let Some(d) = degree
                 && d <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
                 attrs.insert("value".to_string(), Value::int(d));
@@ -1865,7 +1866,7 @@ impl Interpreter {
                         if data.key_type.is_some() {
                             let which = crate::runtime::utils::value_which_key(&args[0]);
                             data.original_keys
-                                .get_or_insert_with(std::collections::HashMap::new)
+                                .get_or_insert_with(ValueMap::default)
                                 .insert(which.clone(), args[0].clone());
                             Value::hash_insert_through(&mut data.map, which, value.clone());
                         } else {
@@ -1988,7 +1989,7 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Nil | ValueView::Package(_) => {
-                        let mut hash = std::collections::HashMap::new();
+                        let mut hash = ValueMap::default();
                         hash.insert(key, value.clone());
                         self.env_mut().insert(
                             target_name.to_string(),
@@ -2184,7 +2185,7 @@ impl Interpreter {
                             let which = crate::runtime::utils::value_which_key(&args[0]);
                             new_map
                                 .original_keys
-                                .get_or_insert_with(std::collections::HashMap::new)
+                                .get_or_insert_with(ValueMap::default)
                                 .insert(which.clone(), args[0].clone());
                             which
                         } else {
@@ -2237,7 +2238,7 @@ impl Interpreter {
                             .as_ref()
                             .and_then(|s| s.get(1))
                             .and_then(|s| s.clone());
-                        let mut new_map = std::collections::HashMap::new();
+                        let mut new_map = ValueMap::default();
                         let mut bind_source_install: Option<(String, Value)> = None;
                         if let Some(var_name) = source_var {
                             let cell = match self.env().get(&var_name).map(Value::view) {

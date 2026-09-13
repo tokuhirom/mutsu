@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn collect_doc_comments(&mut self, input: &str) {
@@ -1195,10 +1196,7 @@ impl Interpreter {
     }
 
     /// Add Pod::Block::Declarator entries to $=pod from doc_comment_list.
-    pub(super) fn add_declarator_pod_entries(
-        &mut self,
-        declarants: Option<&HashMap<String, Value>>,
-    ) {
+    pub(super) fn add_declarator_pod_entries(&mut self, declarants: Option<&ValueMap>) {
         use super::DocDeclKind;
         // Get existing $=pod entries
         let mut pod_entries: Vec<Value> =

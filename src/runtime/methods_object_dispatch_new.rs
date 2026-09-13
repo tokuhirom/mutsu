@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 
 fn is_datetime_constructor_named_arg(key: &str) -> bool {
@@ -141,12 +142,7 @@ impl Interpreter {
     /// failing TWEAK, say) is passed through untouched. `extra` carries the
     /// markers only a *parameterised* pun needs (the type arguments, the matched
     /// candidate's role id and its bound parameters).
-    fn mark_punned_role_instance(
-        &mut self,
-        role: Symbol,
-        value: Value,
-        extra: HashMap<String, Value>,
-    ) -> Value {
+    fn mark_punned_role_instance(&mut self, role: Symbol, value: Value, extra: ValueMap) -> Value {
         let role_name = role.resolve();
         let attrs: Vec<(String, Value)> = match value.view() {
             ValueView::Instance {
@@ -566,7 +562,7 @@ impl Interpreter {
             }
             if let Some(role) = selected_role {
                 let role_id = role.role_id;
-                let mut mixins = HashMap::new();
+                let mut mixins = ValueMap::default();
                 mixins.insert(MetaNs::Role.owned_key(base_name), Value::TRUE);
                 mixins.insert(
                     MetaNs::RoleSeq.owned_key(base_name),
@@ -691,7 +687,7 @@ impl Interpreter {
                         embedded_attributes: HashSet::new(),
                         wildcard_handles: Vec::new(),
                         alias_attributes: HashSet::new(),
-                        class_level_attrs: HashMap::new(),
+                        class_level_attrs: ValueMap::default(),
                     },
                 );
             }
@@ -1483,11 +1479,11 @@ impl Interpreter {
                     for arg in &args {
                         flat.extend(Self::value_to_list(arg));
                     }
-                    let mut map = HashMap::new();
+                    let mut map = ValueMap::default();
                     // Record non-Str key objects so a parameterized object hash
                     // (`Hash[Int,Int].new(1 => 2)`) re-keys by `.WHICH` from the
                     // real key when `tag_container_metadata` runs below.
-                    let mut original_keys: HashMap<String, Value> = HashMap::new();
+                    let mut original_keys: ValueMap = ValueMap::default();
                     let mut iter = flat.into_iter();
                     while let Some(item) = iter.next() {
                         match item.view() {
@@ -1583,7 +1579,7 @@ impl Interpreter {
                             } = result.view()
                                 && result_class.resolve() == role_name
                             {
-                                let mut mixins = HashMap::new();
+                                let mut mixins = ValueMap::default();
                                 mixins.insert(
                                     MetaNs::Role.owned_key_for_str(&role_name),
                                     Value::TRUE,
@@ -1655,7 +1651,7 @@ impl Interpreter {
                 return Ok(self.mark_punned_role_instance(
                     *class_name,
                     constructed?,
-                    HashMap::new(),
+                    ValueMap::default(),
                 ));
             }
             // CUnion repr classes use byte-overlay construction
@@ -2452,14 +2448,14 @@ impl Interpreter {
                                     self.call_method_with_values(type_obj, "new", vec![])
                                         .unwrap_or_else(|_| match sigil {
                                             '@' => Value::real_array(Vec::new()),
-                                            '%' => Value::hash(HashMap::new()),
+                                            '%' => Value::hash(ValueMap::default()),
                                             _ => Value::NIL,
                                         })
                                 }
                             } else {
                                 match sigil {
                                     '@' => Value::real_array(Vec::new()),
-                                    '%' => Value::hash(HashMap::new()),
+                                    '%' => Value::hash(ValueMap::default()),
                                     _ => Value::NIL,
                                 }
                             }

@@ -46,6 +46,7 @@ use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::env::Env;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Install every `END` declared anywhere in the main compunit, in source
@@ -164,7 +165,7 @@ impl Interpreter {
     fn unassigned_lexical_value(name: &str) -> crate::value::Value {
         match name.chars().next() {
             Some('@') => crate::value::Value::real_array(Vec::new()),
-            Some('%') => crate::value::Value::hash(std::collections::HashMap::new()),
+            Some('%') => crate::value::Value::hash(ValueMap::default()),
             // Scalars are stored under their BARE name (no `$`), the same
             // convention `Stmt::VarDecl::name` uses — see `push_lexical`.
             _ => crate::value::Value::package(crate::symbol::wk::any()),
@@ -461,7 +462,7 @@ impl EndWalker<'_> {
         // rather than a type object (`if False { our @a }; OUR::<@a>` is `[]`).
         let value = match name.chars().next() {
             Some('@') => crate::value::Value::real_array(Vec::new()),
-            Some('%') => crate::value::Value::hash(std::collections::HashMap::new()),
+            Some('%') => crate::value::Value::hash(ValueMap::default()),
             // `&` names are routines, which are installed by their own
             // declaration walk; leave them alone.
             Some('&') => return,

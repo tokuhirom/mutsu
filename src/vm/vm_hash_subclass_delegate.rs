@@ -21,6 +21,7 @@
 //! existing native Hash dispatch under a different receiver.
 
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Methods delegated to `__mutsu_hash_storage`. Broader than the Array
@@ -139,7 +140,7 @@ impl Interpreter {
             .as_map()
             .get("__mutsu_hash_storage")
             .cloned()
-            .unwrap_or_else(|| Value::hash(std::collections::HashMap::new()));
+            .unwrap_or_else(|| Value::hash(ValueMap::default()));
         // `%h = pairs` / `my %h is Bar = pairs` (the tied-variable declaration
         // and reassignment paths — `vm_var_trait_ops.rs`/`vm_var_assign_local.rs`
         // — both dispatch a `STORE(list, :INITIALIZE)` call): wholesale-replace
@@ -150,7 +151,7 @@ impl Interpreter {
         // to — see the module doc comment).
         if method == "STORE" {
             let items = args.first().map(crate::runtime::utils::value_to_list);
-            let mut map = std::collections::HashMap::new();
+            let mut map = ValueMap::default();
             if let Some(items) = items {
                 let mut iter = items.into_iter();
                 while let Some(item) = iter.next() {
@@ -286,7 +287,7 @@ impl Interpreter {
             .as_map()
             .get("__mutsu_hash_storage")
             .cloned()
-            .unwrap_or_else(|| Value::hash(std::collections::HashMap::new()));
+            .unwrap_or_else(|| Value::hash(ValueMap::default()));
         self.try_native_method(&storage, method_sym, args)
     }
 

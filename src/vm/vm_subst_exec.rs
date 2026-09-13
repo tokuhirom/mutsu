@@ -1,5 +1,6 @@
 use super::vm_subst_repl::{SubstMatchCaps, SubstReplPlan};
 use super::*;
+use crate::value::ValueMap;
 
 /// Everything a substitution op needs from the bytecode operands, resolved once.
 pub(super) struct SubstOp {
@@ -298,7 +299,7 @@ impl Interpreter {
         result: Value,
     ) -> Result<(), RuntimeError> {
         if self.is_readonly("_") {
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert(
                 "message".to_string(),
                 Value::str("Cannot modify an immutable Str".to_string()),

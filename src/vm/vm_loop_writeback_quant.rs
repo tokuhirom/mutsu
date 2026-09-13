@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Set a single weight on a mutable QuantHash bound to a scalar `source`,
@@ -66,8 +67,7 @@ impl Interpreter {
         elem: Option<&Value>,
         value: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
-        let record = |originals: &mut Option<std::collections::HashMap<String, Value>>,
-                      key: &str| {
+        let record = |originals: &mut Option<ValueMap>, key: &str| {
             if let Some(el) = elem {
                 crate::runtime::utils::record_quanthash_original(
                     originals.get_or_insert_with(Default::default),
@@ -76,8 +76,7 @@ impl Interpreter {
                 );
             }
         };
-        let forget = |originals: &mut Option<std::collections::HashMap<String, Value>>,
-                      key: &str| {
+        let forget = |originals: &mut Option<ValueMap>, key: &str| {
             if let Some(ok) = originals.as_mut() {
                 ok.remove(key);
             }

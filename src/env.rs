@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueMap;
 
 /// The lexical environment's backing map. Keyed by interned `Symbol` (an 8-byte
 /// `(u32, u32)`-free `u32` handle), looked up on every variable read/write — the
@@ -2217,10 +2218,10 @@ impl Env {
     /// overlay (overlay shadows base). Used where a complete view of every
     /// reachable name is required (serialization / cross-context copy), unlike
     /// `iter`/`keys`/`values`, which expose only the mutable overlay.
-    pub fn flatten(&self) -> HashMap<String, Value> {
+    pub fn flatten(&self) -> ValueMap {
         // Build the parent view first (the chain tail seeds GLOBAL_BASE), then
         // layer this frame's tombstones and overlay on top.
-        let mut out: HashMap<String, Value> = match &self.parent {
+        let mut out: ValueMap = match &self.parent {
             Some(parent) => parent.flatten(),
             None => match &self.dyn_base {
                 Some(base) => base.iter().map(|(k, v)| (k.resolve(), v.clone())).collect(),
@@ -2451,8 +2452,8 @@ impl Default for Env {
     }
 }
 
-impl From<HashMap<String, Value>> for Env {
-    fn from(map: HashMap<String, Value>) -> Self {
+impl From<ValueMap> for Env {
+    fn from(map: ValueMap) -> Self {
         let sym_map: SymMap = map
             .into_iter()
             .map(|(k, v)| (Symbol::intern(&k), v))

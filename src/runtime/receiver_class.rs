@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn hash_chain_includes_map() {
         let mut i = interp();
-        let chain = i.dispatch_mro(&Value::hash(std::collections::HashMap::new()));
+        let chain = i.dispatch_mro(&Value::hash(ValueMap::default()));
         let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
         assert_eq!(names, vec!["Hash", "Map", "Cool", "Any", "Mu"]);
     }

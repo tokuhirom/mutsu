@@ -20,6 +20,7 @@
 
 use super::Value;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -326,13 +327,16 @@ impl<'a> IntoIterator for &'a AttrMap {
     }
 }
 
-impl From<HashMap<String, Value>> for AttrMap {
-    fn from(map: HashMap<String, Value>) -> Self {
+/// Hasher-agnostic: the cold construction sites build their attribute map with
+/// whichever `String`-keyed map is handy (std's, [`ValueMap`]'s seeded fast
+/// hasher, `FxHashMap`), and all of them intern into the same `Symbol` keys here.
+impl<S: std::hash::BuildHasher> From<HashMap<String, Value, S>> for AttrMap {
+    fn from(map: HashMap<String, Value, S>) -> Self {
         map.into_iter().collect()
     }
 }
 
-impl From<&AttrMap> for HashMap<String, Value> {
+impl From<&AttrMap> for ValueMap {
     fn from(map: &AttrMap) -> Self {
         map.iter().map(|(k, v)| (k.resolve(), v.clone())).collect()
     }
@@ -361,7 +365,7 @@ mod tests {
 
     #[test]
     fn from_string_hashmap_roundtrips() {
-        let mut src: HashMap<String, Value> = HashMap::new();
+        let mut src: ValueMap = ValueMap::default();
         src.insert("beta".to_string(), Value::int(7));
         let m: AttrMap = src.into();
         assert_eq!(m.get("beta"), Some(&Value::int(7)));

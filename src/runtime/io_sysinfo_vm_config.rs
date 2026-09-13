@@ -17,7 +17,7 @@
 //! Everything is a `Str`, matching MoarVM (even `be`, which is `"0"`/`"1"`).
 
 use crate::value::Value;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 /// The `osname` MoarVM reports: its own build-time OS name, not uname's.
 pub(crate) fn osname() -> &'static str {
@@ -36,7 +36,7 @@ fn env_or(key: &str, fallback: &str) -> String {
 }
 
 /// Build the `$*VM.config` hash.
-pub(crate) fn vm_config() -> HashMap<String, Value> {
+pub(crate) fn vm_config() -> ValueMap {
     let os = std::env::consts::OS;
     let is_darwin = os == "macos";
     let is_windows = os == "windows";
@@ -59,7 +59,7 @@ pub(crate) fn vm_config() -> HashMap<String, Value> {
         ("cc", "-fPIC", "-shared -fPIC", ".o", "-o ")
     };
 
-    let mut config = HashMap::new();
+    let mut config = ValueMap::default();
     let mut set = |k: &str, v: String| {
         config.insert(k.to_string(), Value::str(v));
     };

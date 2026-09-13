@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(crate) fn push_caller_env(&mut self) {
@@ -272,8 +273,8 @@ impl Interpreter {
     /// find a dynamic bound in ANY caller — including one `:=`-bound to a value
     /// with no Scalar container (roast pseudo-6c "Bound dynamics"). Innermost
     /// frame wins: the current env overlays older callers.
-    pub(crate) fn dynamic_pseudo_stash_entries(&self) -> HashMap<String, Value> {
-        let mut entries: HashMap<String, Value> = HashMap::new();
+    pub(crate) fn dynamic_pseudo_stash_entries(&self) -> ValueMap {
+        let mut entries: ValueMap = ValueMap::default();
         // oldest caller first, current env last, so the nearest binding wins.
         let frames = self
             .caller_env_stack

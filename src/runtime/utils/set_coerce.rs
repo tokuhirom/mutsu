@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 /// The Set-element store key for a hash entry, recording the key object in
 /// `originals` when it is not a plain Str: an object hash stores `.WHICH`
@@ -7,7 +8,7 @@ use super::*;
 pub(crate) fn hash_elem_key(
     h: &crate::value::HashData,
     k: &str,
-    originals: &mut HashMap<String, Value>,
+    originals: &mut ValueMap,
 ) -> String {
     if h.has_typed_keys() {
         let (key, obj) = quanthash_elem_entry(&h.typed_key(k));
@@ -95,15 +96,8 @@ pub(crate) fn strip_quanthash_mixin_elem(val: &Value) -> &Value {
     if spills { stripped } else { val }
 }
 
-pub(crate) fn coerce_to_set(
-    val: &Value,
-    originals: &mut HashMap<String, Value>,
-) -> HashSet<String> {
-    fn insert_set_elem(
-        elems: &mut HashSet<String>,
-        originals: &mut HashMap<String, Value>,
-        value: &Value,
-    ) {
+pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<String> {
+    fn insert_set_elem(elems: &mut HashSet<String>, originals: &mut ValueMap, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
         let value = strip_quanthash_mixin_elem(value);
         match value.view() {
@@ -236,7 +230,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => val.clone(),
         ValueView::Hash(h) => {
             let mut set = HashSet::new();
-            let mut originals = HashMap::new();
+            let mut originals = ValueMap::default();
             for (k, v) in h.iter() {
                 if v.truthy() {
                     let key = hash_elem_key(&h, k, &mut originals);
@@ -247,7 +241,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         }
         _ if val.as_list_items().is_some() => {
             let mut set = HashSet::new();
-            let mut originals = HashMap::new();
+            let mut originals = ValueMap::default();
             for item in val.as_list_items().unwrap().iter() {
                 match item.view() {
                     ValueView::Pair(k, v) => {
@@ -301,7 +295,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         // single positional-flavour Pair coerced directly to a QuantHash.
         ValueView::ValuePair(k, v) => {
             let mut set = HashSet::new();
-            let mut originals = HashMap::new();
+            let mut originals = ValueMap::default();
             if v.truthy() {
                 match k.view() {
                     ValueView::Str(s) => {
@@ -321,7 +315,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         // catch-all and became a one-element Set of the string "1..49".
         _ if val.is_range() => {
             let mut set = HashSet::new();
-            let mut originals = HashMap::new();
+            let mut originals = ValueMap::default();
             for item in value_to_list(val) {
                 quanthash_insert_set(&mut set, &mut originals, &item);
             }
@@ -329,7 +323,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         }
         _ => {
             let mut set = HashSet::new();
-            let mut originals = HashMap::new();
+            let mut originals = ValueMap::default();
             let (key, elem) = quanthash_elem_entry(val);
             if !elem.to_string_value().is_empty() {
                 record_quanthash_original(&mut originals, &key, &elem);
@@ -350,10 +344,7 @@ pub(crate) fn set_type_level(v: &Value) -> u8 {
 }
 
 /// Convert a value to a Mix-level HashMap (key → f64 count)
-pub(crate) fn to_mix_map(
-    v: &Value,
-    originals: &mut HashMap<String, Value>,
-) -> HashMap<String, f64> {
+pub(crate) fn to_mix_map(v: &Value, originals: &mut ValueMap) -> HashMap<String, f64> {
     let v = strip_quanthash_mixin(v);
     match v.view() {
         ValueView::Mix(m, _) => {
@@ -453,10 +444,7 @@ pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<Str
 }
 
 /// Convert a value to a Bag-level HashMap (key → arbitrary-precision count)
-pub(crate) fn to_bag_map(
-    v: &Value,
-    originals: &mut HashMap<String, Value>,
-) -> HashMap<String, BigInt> {
+pub(crate) fn to_bag_map(v: &Value, originals: &mut ValueMap) -> HashMap<String, BigInt> {
     let v = strip_quanthash_mixin(v);
     match v.view() {
         ValueView::Bag(b, _) => {

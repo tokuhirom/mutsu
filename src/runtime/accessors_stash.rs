@@ -1,5 +1,6 @@
 //! Symbolic stash member lookup and package/indirect-type-name resolution.
 use super::*;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::types::is_stash_class_name;
 
@@ -249,7 +250,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
+    pub(crate) fn make_stash_instance(package: &str, symbols: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
         attrs.insert("symbols".to_string(), Value::hash(symbols));
@@ -296,7 +297,7 @@ impl Interpreter {
         // CALLER stash enumeration is intentionally empty in mutsu.  Existing
         // EVAL-context behavior depends on that reflection surface; the hidden
         // depth below is enough for addressed container operations.
-        let stash = Self::make_stash_instance(name, HashMap::new());
+        let stash = Self::make_stash_instance(name, ValueMap::default());
         if let ValueView::Instance { attributes, .. } = stash.view() {
             attributes.insert(
                 Self::STASH_CALLER_DEPTH_ATTR.to_string(),
@@ -660,7 +661,7 @@ impl Interpreter {
         // `DYNAMIC::`) instead of only scanning `self.env`, which silently
         // dropped every outer-frame dynamic once called from a sub.
         if package_name == "PROCESS" {
-            let mut symbols: HashMap<String, Value> = HashMap::new();
+            let mut symbols: ValueMap = ValueMap::default();
             for (key, val) in self.dynamic_pseudo_stash_entries() {
                 // `dynamic_pseudo_stash_entries` spells entries with the `*`
                 // twigil (`$*NAME`/`@*NAME`/`%*NAME`); PROCESS::'s stash keys
@@ -680,14 +681,14 @@ impl Interpreter {
         // Bool is a built-in enum whose members are not registered through the
         // usual enum path; its stash still exposes them (`Bool::.values`).
         if package_name == "Bool" {
-            let mut symbols: HashMap<String, Value> = HashMap::new();
+            let mut symbols: ValueMap = ValueMap::default();
             symbols.insert("False".to_string(), Value::FALSE);
             symbols.insert("True".to_string(), Value::TRUE);
             return Self::make_stash_instance(package, symbols);
         }
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
-            let mut symbols: HashMap<String, Value> = HashMap::new();
+            let mut symbols: ValueMap = ValueMap::default();
             if let Some(subs) = self.exported_subs.get(module) {
                 for (name, tags) in subs {
                     if tag != "ALL" && !tags.contains(tag) {
@@ -737,7 +738,7 @@ impl Interpreter {
             // `::('Mod::EXPORT::ALL')` (resolved one component at a time) fail on
             // the last step even though the whole name resolves.
             tags.insert("ALL".to_string());
-            let mut symbols: HashMap<String, Value> = HashMap::new();
+            let mut symbols: ValueMap = ValueMap::default();
             for tag in tags {
                 symbols.insert(
                     tag.clone(),
@@ -750,7 +751,7 @@ impl Interpreter {
             return Self::make_stash_instance(package, symbols);
         }
 
-        let mut symbols: HashMap<String, Value> = HashMap::new();
+        let mut symbols: ValueMap = ValueMap::default();
 
         // Top-level `our` variables live in GLOBAL. They persist in the flat
         // `our_vars` store (keyed by bare name), separate from the env, so the

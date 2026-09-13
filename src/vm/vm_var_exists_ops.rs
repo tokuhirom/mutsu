@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
@@ -170,7 +171,7 @@ impl Interpreter {
                 // argument list mints the positional flavour by default, so
                 // accept `ValuePair` identically.
                 ValueView::Pair(key, value) => {
-                    let mut m = std::collections::HashMap::new();
+                    let mut m = ValueMap::default();
                     m.insert((*key).clone(), (*value).clone());
                     match Value::hash(m).view() {
                         ValueView::Hash(map) => Some(map.clone()),
@@ -178,7 +179,7 @@ impl Interpreter {
                     }
                 }
                 ValueView::ValuePair(key, value) => {
-                    let mut m = std::collections::HashMap::new();
+                    let mut m = ValueMap::default();
                     m.insert(key.to_string_value(), (*value).clone());
                     match Value::hash(m).view() {
                         ValueView::Hash(map) => Some(map.clone()),

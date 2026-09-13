@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) -> Vec<Value> {
     // A variable passed by reference (e.g. `f(@a)` / `f($items)`) arrives as a
@@ -364,8 +365,8 @@ pub(in crate::runtime) use crate::runtime::utils::{sigilless_alias_key, sigilles
 
 /// Collect the `Pair`/`ValuePair` elements of a list into a named map. Used
 /// when a list of pairs is destructured by named sub-signature params.
-fn pairs_in_list_to_named(items: &[Value]) -> std::collections::HashMap<String, Value> {
-    let mut out = std::collections::HashMap::new();
+fn pairs_in_list_to_named(items: &[Value]) -> ValueMap {
+    let mut out = ValueMap::default();
     for item in items {
         match item.view() {
             ValueView::Pair(key, val) => {
@@ -380,9 +381,7 @@ fn pairs_in_list_to_named(items: &[Value]) -> std::collections::HashMap<String, 
     out
 }
 
-pub(in crate::runtime) fn named_values_from_unpack_target(
-    value: &Value,
-) -> std::collections::HashMap<String, Value> {
+pub(in crate::runtime) fn named_values_from_unpack_target(value: &Value) -> ValueMap {
     // Unwrap a varref Capture (a by-reference variable argument) to the real
     // value before extracting named entries.
     if let Some((_, inner)) = varref_from_value(value) {
@@ -392,7 +391,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         ValueView::Capture { named, .. } => (*named).clone(),
         ValueView::Hash(map) => map.map.clone(),
         ValueView::Pair(key, val) => {
-            let mut out = std::collections::HashMap::new();
+            let mut out = ValueMap::default();
             out.insert(key.clone(), val.clone());
             out.insert("key".to_string(), Value::str(key.clone()));
             out.insert("value".to_string(), val.clone());
@@ -403,7 +402,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         // nothing to do with `Pair.Capture`. A hash entry (`%h.map(-> (:$k) {...})`)
         // arrives as a ValuePair, so without this arm it bound nothing.
         ValueView::ValuePair(key, val) => {
-            let mut out = std::collections::HashMap::new();
+            let mut out = ValueMap::default();
             out.insert(key.to_string_value(), (*val).clone());
             out.insert("key".to_string(), (*key).clone());
             out.insert("value".to_string(), (*val).clone());
@@ -415,7 +414,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         ValueView::Seq(items) => pairs_in_list_to_named(&items),
         ValueView::Slip(items) => pairs_in_list_to_named(&items),
         ValueView::Instance { attributes, .. } => HashMap::from(&*attributes.as_map()),
-        _ => std::collections::HashMap::new(),
+        _ => ValueMap::default(),
     }
 }
 
@@ -719,7 +718,7 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         // type error.
         if matches!(value.view(), ValueView::Package(_)) {
             if bind_name.starts_with('%') {
-                let empty = Value::hash(std::collections::HashMap::new());
+                let empty = Value::hash(ValueMap::default());
                 if let Some(nested) = &sub_pd.sub_signature {
                     bind_named_rename_sub_signature(interpreter, nested, &empty)?;
                 } else {
@@ -1156,7 +1155,7 @@ pub(in crate::runtime) fn sub_signature_target_from_remaining_args(args: &[Value
         return args[0].clone();
     }
     let mut positional = Vec::new();
-    let mut named = std::collections::HashMap::new();
+    let mut named = ValueMap::default();
     for arg in args {
         match arg.view() {
             ValueView::Pair(key, val) => {

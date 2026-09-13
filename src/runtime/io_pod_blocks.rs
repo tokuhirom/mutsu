@@ -285,7 +285,7 @@ impl Interpreter {
                 }
 
                 let (numbered, rest_after) = Self::extract_numbered_alias(rest);
-                let mut config = HashMap::new();
+                let mut config = ValueMap::default();
                 if numbered {
                     config.insert("numbered".to_string(), Value::TRUE);
                 }

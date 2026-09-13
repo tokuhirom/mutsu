@@ -339,8 +339,16 @@ pub(crate) struct FunctionDef {
     pub(crate) is_cached: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
-    /// True when this routine represents an `our method` code reference.
-    pub(crate) is_method: bool,
+    /// Which declarator this routine was written with. `Method` / `Submethod`
+    /// make the `&name` code reference report that type instead of `Sub`; it is
+    /// how a `my method foo` keeps its declarator, and how an `our method` code
+    /// reference has always reported one. Never `Block` -- a block is not a
+    /// registered routine.
+    ///
+    /// (This was `is_method: bool`, which could not tell `submethod` from
+    /// `method`, so every named `my submethod` registered as a plain `Sub`.)
+    #[serde(default = "declarator_sub")]
+    pub(crate) declarator: RoutineDeclarator,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
     /// Whether the declaration body is a yada stub (`...`, `!!!`, or `???`).
@@ -582,6 +590,10 @@ pub(crate) enum PhaserKind {
 /// and types its parameters `Mu`, while all three routine spellings are and
 /// type them `Any`. A new construction site must record what the source
 /// actually wrote.
+fn declarator_sub() -> RoutineDeclarator {
+    RoutineDeclarator::Sub
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RoutineDeclarator {
     /// No routine declarator: a pointy block (`-> $a, $b { }`), a placeholder
@@ -614,6 +626,35 @@ impl RoutineDeclarator {
         match self {
             RoutineDeclarator::Method => Some(METHOD_LITERAL_MARKER),
             RoutineDeclarator::Submethod => Some(SUBMETHOD_LITERAL_MARKER),
+            RoutineDeclarator::Block | RoutineDeclarator::Sub => None,
+        }
+    }
+
+    /// Recover the declarator from the markers [`RoutineDeclarator::literal_marker`]
+    /// left on a pooled declaration's `custom_traits`. `Sub` when no marker is
+    /// present, which is what an unmarked routine declaration is.
+    ///
+    /// Both routine paths read the markers through this: the closure-building
+    /// opcode for a `method (...) { }` literal, and `register_sub` for a named
+    /// `my method foo` / `my submethod foo` declaration.
+    pub(crate) fn from_markers<'a>(markers: impl IntoIterator<Item = &'a str>) -> Self {
+        for marker in markers {
+            match marker {
+                METHOD_LITERAL_MARKER => return RoutineDeclarator::Method,
+                SUBMETHOD_LITERAL_MARKER => return RoutineDeclarator::Submethod,
+                _ => {}
+            }
+        }
+        RoutineDeclarator::Sub
+    }
+
+    /// The `__mutsu_callable_type` this declarator installs, which is what
+    /// `.^name` / `.WHAT` report (see `value::types_isa`). `None` for the two
+    /// spellings whose compile path already produces the right type.
+    pub(crate) fn callable_type(self) -> Option<&'static str> {
+        match self {
+            RoutineDeclarator::Method => Some("Method"),
+            RoutineDeclarator::Submethod => Some("Submethod"),
             RoutineDeclarator::Block | RoutineDeclarator::Sub => None,
         }
     }

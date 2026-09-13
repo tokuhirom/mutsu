@@ -15,8 +15,9 @@
 //! must thread `original_keys` alongside the string keys (copy entries via
 //! `typed_key` + `record_quanthash_original`).
 
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Storage key + decontainerized element for a QuantHash element.
 pub(crate) fn quanthash_elem_entry(v: &Value) -> (String, Value) {
@@ -32,11 +33,7 @@ pub(crate) fn str_elem_key(s: &str) -> String {
 
 /// Record `key -> elem` in an original-keys map unless the element is a plain
 /// `Str` (whose key decodes losslessly, see module doc).
-pub(crate) fn record_quanthash_original(
-    originals: &mut HashMap<String, Value>,
-    key: &str,
-    elem: &Value,
-) {
+pub(crate) fn record_quanthash_original(originals: &mut ValueMap, key: &str, elem: &Value) {
     if !matches!(elem.view(), ValueView::Str(_)) && !originals.contains_key(key) {
         originals.insert(key.to_string(), elem.clone());
     }
@@ -53,10 +50,7 @@ pub(crate) fn quanthash_typed_pair(elem: Value, v: Value) -> Value {
 /// (set-operator results keep the element objects of both operands; extra
 /// entries for keys dropped from the result are harmless — `typed_key` only
 /// looks up keys that exist).
-pub(crate) fn extend_quanthash_originals(
-    dst: &mut HashMap<String, Value>,
-    src: &Option<HashMap<String, Value>>,
-) {
+pub(crate) fn extend_quanthash_originals(dst: &mut ValueMap, src: &Option<ValueMap>) {
     if let Some(m) = src {
         for (k, v) in m {
             dst.entry(k.clone()).or_insert_with(|| v.clone());
@@ -67,7 +61,7 @@ pub(crate) fn extend_quanthash_originals(
 /// Insert one element into a Set store (key + original in one step).
 pub(crate) fn quanthash_insert_set(
     elems: &mut HashSet<String>,
-    originals: &mut HashMap<String, Value>,
+    originals: &mut ValueMap,
     item: &Value,
 ) {
     let (key, elem) = quanthash_elem_entry(item);

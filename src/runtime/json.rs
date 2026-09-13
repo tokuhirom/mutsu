@@ -13,8 +13,8 @@
 //! no exponent. Decoding maps `true`/`false` to `Bool`, `null` to the `Any` type
 //! object, integers to `Int`, decimals to `Rat`, and exponential forms to `Num`.
 
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView, make_rat};
-use std::collections::HashMap;
 
 /// Options controlling `to-json` rendering. Mirrors the JSON::Fast named params.
 pub(crate) struct ToJsonOpts {
@@ -391,7 +391,7 @@ struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Wrap a decoded JSON object: mutable `Hash` by default, `Map` with
     /// `:immutable` (a Hash whose `declared_type` is "Map", mutsu's Map repr).
-    fn finish_object(&self, map: HashMap<String, Value>) -> Value {
+    fn finish_object(&self, map: ValueMap) -> Value {
         if self.immutable {
             let mut data: crate::value::HashData = map.into();
             data.declared_type = Some("Map".to_string());
@@ -402,7 +402,7 @@ impl<'a> Parser<'a> {
             // hash value -- `from-json('{"a":[1,2]}')<a>.raku` is `$[1, 2]`.
             // (The `:immutable` form is a `Map`, whose values are not
             // containers, so it is deliberately left alone.)
-            let map: HashMap<String, Value> = map
+            let map: ValueMap = map
                 .into_iter()
                 .map(|(k, v)| (k, v.itemize_for_element_store()))
                 .collect();
@@ -484,7 +484,7 @@ impl<'a> Parser<'a> {
 
     fn parse_object(&mut self) -> Result<Value, String> {
         self.pos += 1; // consume '{'
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         self.skip_ws();
         if self.peek() == Some(b'}') {
             self.pos += 1;

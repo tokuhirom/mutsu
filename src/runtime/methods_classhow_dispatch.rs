@@ -1149,7 +1149,7 @@ impl Interpreter {
                             native_methods: HashSet::new(),
                             mro: sym_mro(&[&class_name]),
                             wildcard_handles: vec![],
-                            class_level_attrs: HashMap::new(),
+                            class_level_attrs: ValueMap::default(),
                         },
                     );
                 }
@@ -1554,7 +1554,7 @@ impl Interpreter {
                 let Some(variants) = self.enum_how_variants(&args[0]) else {
                     return Err(Self::enum_how_method_missing("enum_values", &args[0]));
                 };
-                let mut map = HashMap::new();
+                let mut map = ValueMap::default();
                 for (key, val) in &variants {
                     map.insert(key.clone(), val.to_value());
                 }
@@ -1661,7 +1661,7 @@ impl Interpreter {
                 // instead of `class_def.methods.keys()` (zero-mismatch
                 // shadow-checked across the full local `t/` suite).
                 let type_name = self.mop_receiver_owner(&args[0]);
-                let mut table = HashMap::new();
+                let mut table = ValueMap::default();
                 let registry = self.registry();
                 for name in registry.owner_method_names(&type_name) {
                     let name = name.resolve();

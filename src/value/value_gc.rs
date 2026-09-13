@@ -679,6 +679,7 @@ impl SharedChannel {
 mod tests {
     use super::super::SeqBody;
     use super::*;
+    use crate::value::ValueMap;
     use std::sync::Arc;
 
     struct CountingVisitor {
@@ -707,7 +708,7 @@ mod tests {
 
     #[test]
     fn hash_children_include_map_values() {
-        let mut map = std::collections::HashMap::new();
+        let mut map = ValueMap::default();
         map.insert("a".to_string(), Value::Int(1));
         map.insert("b".to_string(), Value::Int(2));
         let data = HashData {
@@ -772,7 +773,7 @@ mod tests {
             is_raw: false,
             env,
             assumed_positional: vec![],
-            assumed_named: std::collections::HashMap::new(),
+            assumed_named: ValueMap::default(),
             id,
             empty_sig: false,
             is_bare_block: false,
@@ -813,7 +814,7 @@ mod tests {
         // shared env map below.
         let hash = crate::gc::Gc::new(HashData {
             map: {
-                let mut m = std::collections::HashMap::new();
+                let mut m = ValueMap::default();
                 m.insert("alive".to_string(), Value::Int(42));
                 m
             },
@@ -976,7 +977,7 @@ mod tests {
     /// (`todo/tickets/mixin-overrides-aliased-write-is-still-arc.md`).
     #[test]
     fn a_mixin_overrides_write_is_visible_through_every_alias() {
-        let value = Value::mixin(Value::Int(42), std::collections::HashMap::new());
+        let value = Value::mixin(Value::Int(42), ValueMap::default());
         let alias = value.clone();
 
         let ValueView::Mixin(_, overrides) = value.view() else {
@@ -1004,13 +1005,13 @@ mod tests {
     /// `Arc` shape needed was working around.
     #[test]
     fn mixin_traces_its_overrides_node() {
-        let value = Value::mixin(Value::Int(1), std::collections::HashMap::new());
+        let value = Value::mixin(Value::Int(1), ValueMap::default());
         assert_eq!(gc_trace_node_count(&value), 1);
 
         // A nested `Gc` node inside the map is reached through the node's own
         // `Trace` impl, not by inlining it here — so the mixin still yields
         // exactly one edge.
-        let mut overrides = std::collections::HashMap::new();
+        let mut overrides = ValueMap::default();
         overrides.insert("Bool".to_string(), fresh_hash_node());
         let with_child = Value::mixin(Value::Int(1), overrides);
         assert_eq!(gc_trace_node_count(&with_child), 1);
@@ -1027,7 +1028,7 @@ mod tests {
 
     #[test]
     fn mixin_role_cell_aliases_value_clones_but_deep_clone_detaches() {
-        let mut overrides = std::collections::HashMap::new();
+        let mut overrides = ValueMap::default();
         overrides.insert("__mutsu_role__R".to_string(), Value::Bool(true));
         overrides.insert("__mutsu_attr__n".to_string(), Value::Int(1));
         let value = Value::mixin(Value::Int(0), overrides);

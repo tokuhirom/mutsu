@@ -31,7 +31,7 @@ impl Interpreter {
                     embedded_attributes: HashSet::new(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
-                    class_level_attrs: HashMap::new(),
+                    class_level_attrs: ValueMap::default(),
                 },
             );
         }
@@ -469,7 +469,7 @@ impl Interpreter {
                 )))
             } else {
                 let mut positional = Vec::new();
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 for a in args {
                     if let ValueView::Pair(k, v) = a.view() {
                         match k.as_str() {

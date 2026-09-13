@@ -3769,10 +3769,23 @@ impl Compiler {
                 multi,
                 is_rw,
                 return_type,
+                is_submethod,
                 ..
             } => {
                 // Top-level/package method declarations should still produce callable
                 // code objects (&name), so lower them through sub registration.
+                //
+                // The lowering is to a `SubDecl`, so the declarator has to ride
+                // along as a marker or it is lost here -- which is what made
+                // `my method foo` and `my submethod foo` both register as a
+                // plain `Sub`. `register_sub` reads it back with
+                // `RoutineDeclarator::from_markers`, the same way the closure
+                // opcode does for a `method (...) { }` literal.
+                let declarator = if *is_submethod {
+                    crate::ast::RoutineDeclarator::Submethod
+                } else {
+                    crate::ast::RoutineDeclarator::Method
+                };
                 let lowered = Stmt::SubDecl {
                     name: *name,
                     name_expr: name_expr.clone(),
@@ -3790,7 +3803,13 @@ impl Compiler {
                     export_tags: Vec::new(),
                     is_test_assertion: false,
                     supersede: false,
-                    custom_traits: vec![("__mutsu_method_decl".to_string(), None)],
+                    custom_traits: {
+                        let mut traits = vec![("__mutsu_method_decl".to_string(), None)];
+                        if let Some(marker) = declarator.literal_marker() {
+                            traits.push((marker.to_string(), None));
+                        }
+                        traits
+                    },
                 };
                 let idx = self.add_sub_decl_plan(&lowered);
                 self.code.emit(OpCode::RegisterDecl(idx));

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use std::cell::RefCell;
 
 thread_local! {
@@ -22,8 +23,8 @@ impl Interpreter {
     /// Parse Pod config adverbs from a directive tail.
     /// Supports all Raku Pod config value forms including `:key<str>`, `:key(val)`,
     /// `:key[val]`, `:key{k=>v}`, `:!key`, `:NNNkey`, lists, hashes, typed scalars.
-    pub(crate) fn parse_pod_config(input: &str) -> (HashMap<String, Value>, &str) {
-        let mut config: HashMap<String, Value> = HashMap::new();
+    pub(crate) fn parse_pod_config(input: &str) -> (ValueMap, &str) {
+        let mut config: ValueMap = ValueMap::default();
         let mut s = input.trim_start();
         loop {
             if !s.starts_with(':') {
@@ -354,7 +355,7 @@ impl Interpreter {
     }
 
     fn parse_pod_config_hash(inner: &str) -> Value {
-        let mut map: HashMap<String, Value> = HashMap::new();
+        let mut map: ValueMap = ValueMap::default();
         let items = Self::split_pod_config_top_level(inner, ',');
         let mut pending_key: Option<String> = None;
         for item in items {

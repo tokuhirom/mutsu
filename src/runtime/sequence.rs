@@ -314,7 +314,7 @@ impl Interpreter {
                             break;
                         }
                         if param.starts_with('%') && slurps_rest {
-                            let mut map = std::collections::HashMap::new();
+                            let mut map = ValueMap::default();
                             for item in args.iter().skip(i) {
                                 if let ValueView::Pair(k, v) = item.view() {
                                     map.insert(k.clone(), v.clone());

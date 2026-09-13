@@ -504,7 +504,7 @@ impl Interpreter {
                 } if custom_traits.iter().any(|(t, _)| t == "__our_scoped") => {
                     let n = name.resolve().to_string();
                     if !n.is_empty() && !seen.insert(n.clone()) {
-                        let mut attrs = std::collections::HashMap::new();
+                        let mut attrs = ValueMap::default();
                         attrs.insert("symbol".to_string(), Value::str(n.clone()));
                         attrs.insert("what".to_string(), Value::str("routine".to_string()));
                         attrs.insert(

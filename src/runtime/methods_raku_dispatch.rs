@@ -19,6 +19,7 @@ use crate::builtins::methods_0arg::raku_repr::{
     RAKU_SCALAR_ITEMIZED_KEY, needs_raku_dispatch, raku_leaf_is_iterable, raku_raw,
     raku_raw_iterable, raku_scalar_itemized,
 };
+use crate::value::ValueMap;
 use crate::value::{ArrayData, HashData, RuntimeError, Value, ValueView};
 
 /// Depth cap for the walk. Cycles are caught by container identity (below);
@@ -36,7 +37,7 @@ fn container_id(value: &Value) -> Option<usize> {
 }
 
 fn typed_keys_contain(
-    original_keys: &Option<std::collections::HashMap<String, Value>>,
+    original_keys: &Option<ValueMap>,
     seen: &mut std::collections::HashSet<usize>,
     depth: usize,
 ) -> bool {
@@ -302,10 +303,10 @@ impl Interpreter {
 
     fn expand_typed_keys(
         &mut self,
-        original_keys: Option<std::collections::HashMap<String, Value>>,
+        original_keys: Option<ValueMap>,
         active: &mut Vec<usize>,
         depth: usize,
-    ) -> Option<std::collections::HashMap<String, Value>> {
+    ) -> Option<ValueMap> {
         original_keys.map(|keys| {
             keys.into_iter()
                 .map(|(k, v)| {

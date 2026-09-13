@@ -282,7 +282,13 @@ impl Interpreter {
     pub(super) fn exec_int_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // ADR-0071: the native implementation is one candidate of
+            // `&infix:<div>`, so a user `multi` that out-narrows it takes the
+            // call. Free unless such a routine is in scope.
+            if let Some(result) = vm.try_user_infix("infix:<div>", &l, &r)? {
+                return Ok(result);
+            }
             let val = match (l.view(), r.view()) {
                 (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
                     Value::int(num_integer::Integer::div_floor(&a, &b))
@@ -326,7 +332,11 @@ impl Interpreter {
     pub(super) fn exec_int_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
+        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // ADR-0071, as for `div` above.
+            if let Some(result) = vm.try_user_infix("infix:<mod>", &l, &r)? {
+                return Ok(result);
+            }
             let val = match (l.view(), r.view()) {
                 (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
                     Value::int(num_integer::Integer::mod_floor(&a, &b))
@@ -363,18 +373,31 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_gcd_op(&mut self) {
+    pub(super) fn exec_gcd_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // ADR-0071, as for `div` above. `gcd` reduces both operands to `Int`,
+        // so a user candidate is the only way to give it another type at all
+        // (Math::NumberTheory's `(10 + 15i) gcd 25` over Gaussian integers).
+        if let Some(result) = self.try_user_infix("infix:<gcd>", &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
+        }
         let a = left.to_bigint().abs();
         let b = right.to_bigint().abs();
         let g = num_integer::Integer::gcd(&a, &b);
         self.stack.push(Value::from_bigint(g));
+        Ok(())
     }
 
-    pub(super) fn exec_lcm_op(&mut self) {
+    pub(super) fn exec_lcm_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // ADR-0071, as for `gcd` above.
+        if let Some(result) = self.try_user_infix("infix:<lcm>", &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
+        }
         let a = left.to_bigint().abs();
         let b = right.to_bigint().abs();
         let result = if a.is_zero() && b.is_zero() {
@@ -384,56 +407,69 @@ impl Interpreter {
             Value::from_bigint(&a / &g * &b)
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_infix_min_op(&mut self) {
+    pub(super) fn exec_infix_min_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // ADR-0071, as for `gcd` above.
+        if let Some(result) = self.try_user_infix("infix:<min>", &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
+        }
         if matches!(left.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(right);
-            return;
+            return Ok(());
         }
         if matches!(right.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(left);
-            return;
+            return Ok(());
         }
         let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         if left_is_failure {
             self.stack.push(left);
-            return;
+            return Ok(());
         }
         if right_is_failure {
             self.stack.push(right);
-            return;
+            return Ok(());
         }
         let ord = cmp_values(&left, &right);
         self.stack.push(if ord.is_le() { left } else { right });
+        Ok(())
     }
 
-    pub(super) fn exec_infix_max_op(&mut self) {
+    pub(super) fn exec_infix_max_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // ADR-0071, as for `gcd` above.
+        if let Some(result) = self.try_user_infix("infix:<max>", &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
+        }
         if matches!(left.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(right);
-            return;
+            return Ok(());
         }
         if matches!(right.view(), ValueView::Package(name) if name == "Any") {
             self.stack.push(left);
-            return;
+            return Ok(());
         }
         let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
         if left_is_failure {
             self.stack.push(left);
-            return;
+            return Ok(());
         }
         if right_is_failure {
             self.stack.push(right);
-            return;
+            return Ok(());
         }
         let ord = cmp_values(&left, &right);
         self.stack.push(if ord.is_ge() { left } else { right });
+        Ok(())
     }
 
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {

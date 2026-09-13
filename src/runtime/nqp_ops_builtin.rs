@@ -232,7 +232,7 @@ impl Interpreter {
                     };
                     if holds(&reg.vmhash_classes) {
                         return Some(Ok(Value::hash_with_data(Value::hash_arc(
-                            std::collections::HashMap::new(),
+                            ValueMap::default(),
                         ))));
                     }
                     if holds(&reg.vmarray_classes) {

@@ -149,6 +149,65 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
     }
 }
 
+/// Read the body of a `{ ... }` regex code block from `chars`, the opening
+/// brace already consumed, stopping at the `}` that closes it.
+///
+/// Braces inside `'…'` / `"…"` string literals are code, not block delimiters,
+/// which is the whole point: a naive depth count reads the `}` in
+/// `{ say "a}b" }` as the end of the block, truncating the code and leaving the
+/// rest of the string to be parsed as pattern text. The quote rule is the same
+/// one [`scan_code_assertion_body`] applies to `<{ … }>`; this spelling exists
+/// because these callers hold an iterator rather than a `&[char]` slice.
+fn read_code_block_body(chars: &mut impl Iterator<Item = char>) -> String {
+    let mut code = String::new();
+    let mut depth = 1usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in chars {
+        if let Some(closer) = quote {
+            code.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == closer {
+                quote = None;
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            code.push(ch);
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            code.push(ch);
+            continue;
+        }
+        if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
+            quote = Some(closer);
+            code.push(ch);
+            continue;
+        }
+        match ch {
+            '{' => {
+                depth += 1;
+                code.push(ch);
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+                code.push(ch);
+            }
+            _ => code.push(ch),
+        }
+    }
+    code
+}
+
 /// Scan the body of a `{ ... }` code assertion, having already consumed the
 /// opening brace. Braces inside quoted strings are code, not block delimiters.
 fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
@@ -353,22 +412,7 @@ fn try_consume_quantifier(
                 }
                 if chars.peek() == Some(&'{') {
                     chars.next();
-                    let mut code = String::new();
-                    let mut depth = 1usize;
-                    for ch in chars.by_ref() {
-                        if ch == '{' {
-                            depth += 1;
-                            code.push(ch);
-                        } else if ch == '}' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            code.push(ch);
-                        } else {
-                            code.push(ch);
-                        }
-                    }
+                    let code = read_code_block_body(chars.by_ref());
                     RegexQuant::RepeatCode(code)
                 } else {
                     let mut count_str = String::new();
@@ -3783,7 +3827,7 @@ impl Interpreter {
                     if depth > 0 {
                         PENDING_REGEX_ERROR.with(|e| {
                             *e.borrow_mut() = Some(RuntimeError::typed("X::Comp::Group", {
-                                let mut attrs = std::collections::HashMap::new();
+                                let mut attrs = ValueMap::default();
                                 attrs.insert(
                                     "message".to_string(),
                                     Value::str("Unmatched ( in regex".to_string()),
@@ -4037,22 +4081,7 @@ impl Interpreter {
                 }
                 '{' => {
                     // Code block in regex: { ... }
-                    let mut code = String::new();
-                    let mut depth = 1usize;
-                    for ch in chars.by_ref() {
-                        if ch == '{' {
-                            depth += 1;
-                            code.push(ch);
-                        } else if ch == '}' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            code.push(ch);
-                        } else {
-                            code.push(ch);
-                        }
-                    }
+                    let code = read_code_block_body(chars.by_ref());
                     // Validate mode: an embedded code block may not interpolate
                     // an attribute (`{ $!attr }`).
                     if mode == RegexParseMode::Validate
@@ -4193,22 +4222,7 @@ impl Interpreter {
                             if chars.peek() == Some(&'{') {
                                 // `** {code}` — code block quantifier
                                 chars.next(); // skip '{'
-                                let mut code = String::new();
-                                let mut depth = 1usize;
-                                for ch in chars.by_ref() {
-                                    if ch == '{' {
-                                        depth += 1;
-                                        code.push(ch);
-                                    } else if ch == '}' {
-                                        depth -= 1;
-                                        if depth == 0 {
-                                            break;
-                                        }
-                                        code.push(ch);
-                                    } else {
-                                        code.push(ch);
-                                    }
-                                }
+                                let code = read_code_block_body(chars.by_ref());
                                 RegexQuant::RepeatCode(code)
                             } else {
                                 // Parse the count/range: N, N..M, N..*, with

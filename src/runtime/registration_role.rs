@@ -359,7 +359,7 @@ impl Interpreter {
         self.clear_private_zeroarg_method_cache();
 
         if let Some(decl) = our_scope_violation {
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("declaration".to_string(), Value::str(decl.to_string()));
             attrs.insert(
                 "message".to_string(),

@@ -127,3 +127,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 filed; Stage 2/3 deferred — see §8) |
 | [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented) |
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Proposed |
+| [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |

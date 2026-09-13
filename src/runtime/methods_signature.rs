@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Coerce a value bound to a `%`-sigil target (variable or attribute) to a
@@ -90,7 +91,7 @@ impl Interpreter {
                 ValueView::Hash(_) => val.clone(),
                 ValueView::Pair(k, v) => {
                     // A single Pair coerces to a one-element hash
-                    let mut map = HashMap::new();
+                    let mut map = ValueMap::default();
                     map.insert(k.clone(), v.clone());
                     Value::hash(map)
                 }
@@ -98,7 +99,7 @@ impl Interpreter {
                 // interned-Str-key Pair variant) coerces the same way, with the
                 // hash-key stringification `build_hash_from_items` uses.
                 ValueView::ValuePair(k, v) => {
-                    let mut map = HashMap::new();
+                    let mut map = ValueMap::default();
                     map.insert(Value::hash_key_encode(k), v.clone());
                     Value::hash(map)
                 }
@@ -132,7 +133,7 @@ impl Interpreter {
     pub(super) fn assumed_signature_param_defs(
         data: &crate::value::SubData,
         assumed_positional: &[Value],
-        assumed_named: &std::collections::HashMap<String, Value>,
+        assumed_named: &ValueMap,
     ) -> Option<Vec<ParamDef>> {
         if data.param_defs.is_empty() {
             return None;
@@ -217,10 +218,7 @@ impl Interpreter {
 /// on the parameter's primary name or any of its alias names (`:b(:c($a))` can
 /// be bound as either `b` or `c`). Mirrors `collect_named_names`: only nested
 /// named sub-signature params contribute alias names.
-fn assumed_named_binding(
-    pd: &ParamDef,
-    assumed_named: &std::collections::HashMap<String, Value>,
-) -> Option<Value> {
+fn assumed_named_binding(pd: &ParamDef, assumed_named: &ValueMap) -> Option<Value> {
     fn strip_sigil(name: &str) -> &str {
         name.strip_prefix(['@', '%', '&']).unwrap_or(name)
     }

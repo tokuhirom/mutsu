@@ -72,7 +72,7 @@ pub(in crate::value) struct CaptureBox {
     #[allow(clippy::box_collection)]
     pub(in crate::value) positional: Box<Vec<Value>>,
     #[allow(clippy::box_collection)]
-    pub(in crate::value) named: Box<HashMap<String, Value>>,
+    pub(in crate::value) named: Box<ValueMap>,
 }
 
 /// Payload of `VarRef`: a call argument (or pair value / bind RHS) that carries

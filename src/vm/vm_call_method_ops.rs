@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 /// True when a method call on `Nil` is absorbed by Raku's `Nil.FALLBACK` — i.e.
@@ -213,7 +214,7 @@ impl Interpreter {
                 positional.push(a.clone());
             }
         }
-        let capture = Value::capture(positional, std::collections::HashMap::new());
+        let capture = Value::capture(positional, ValueMap::default());
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
         attrs.insert("capture".to_string(), capture);
@@ -1555,7 +1556,7 @@ impl Interpreter {
             if let Some(b) = batch
                 && b <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
                 attrs.insert("value".to_string(), Value::int(b));
@@ -1569,7 +1570,7 @@ impl Interpreter {
             if let Some(d) = degree
                 && d <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
                 attrs.insert("value".to_string(), Value::int(d));

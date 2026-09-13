@@ -2,6 +2,7 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
+use crate::value::ValueMap;
 use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_integer::Integer;
@@ -385,10 +386,7 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
 /// through copy-on-write — replacing the old Arc-pointer-keyed side tables, so
 /// no `migrate`/`by_id` pointer bookkeeping is needed across COW. Callers must
 /// use the returned value (store it back into its slot).
-pub(crate) fn set_hash_original_keys(
-    mut value: Value,
-    original_keys: HashMap<String, Value>,
-) -> Value {
+pub(crate) fn set_hash_original_keys(mut value: Value, original_keys: ValueMap) -> Value {
     if original_keys.is_empty() {
         return value;
     }
@@ -426,8 +424,8 @@ pub(crate) fn ensure_object_hash_which_keys(value: &mut crate::gc::Gc<crate::val
     let data = crate::gc::Gc::make_mut(value);
     let old_map = std::mem::take(&mut data.map);
     let old_orig = data.original_keys.take().unwrap_or_default();
-    let mut new_map = HashMap::with_capacity(old_map.len());
-    let mut new_orig = HashMap::with_capacity(old_map.len());
+    let mut new_map = crate::value::user_key_map::with_capacity(old_map.len());
+    let mut new_orig = crate::value::user_key_map::with_capacity(old_map.len());
     for (key, val) in old_map {
         let key_obj = old_orig
             .get(&key)
@@ -455,7 +453,7 @@ pub(crate) fn into_object_hash(mut value: Value, key_type: &str) -> Value {
 }
 
 /// Snapshot the original keys embedded in an object hash, if any.
-pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String, Value>> {
+pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<ValueMap> {
     if let ValueView::Hash(arc) = hash.view() {
         return arc.original_keys.clone();
     }

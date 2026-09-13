@@ -291,7 +291,7 @@ impl Interpreter {
         let mut own_compiled_fns = own_compiled_fns;
         own_compiled_fns.stamp_source_file(def.source_file.clone());
         let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
-            let kind = if def.is_method { "Method" } else { "Sub" };
+            let kind = def.declarator.callable_type().unwrap_or("Sub");
             (
                 kind.to_string(),
                 def.name.resolve(),

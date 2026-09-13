@@ -601,7 +601,7 @@ impl Interpreter {
         let msg = format!(
             "Variable '{symbol}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?"
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("symbol".to_string(), Value::str(symbol));
         attrs.insert("what".to_string(), Value::str_from("Variable"));
         attrs.insert("line".to_string(), Value::int(self.cur_source_line));
@@ -685,7 +685,7 @@ impl Interpreter {
         let mutating = op == "++" || op == "--";
         // Handle hashes: apply the operation to values, preserving hash structure
         if let ValueView::Hash(map) = args[1].view() {
-            let mut result_map = std::collections::HashMap::new();
+            let mut result_map = ValueMap::default();
             for (k, v) in map.iter() {
                 let new_val = apply_hyper_prefix(self, &routine, v.clone())?;
                 result_map.insert(k.clone(), new_val);

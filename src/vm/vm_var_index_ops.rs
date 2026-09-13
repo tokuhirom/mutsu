@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use crate::value::value_buf::{buf_elems, buf_elems_in, buf_len_or_zero};
 
 impl Interpreter {
@@ -246,7 +247,7 @@ impl Interpreter {
                     }
                     None => {
                         let key = Value::hash_key_encode(&index);
-                        let new_hash = Value::hash(std::collections::HashMap::new());
+                        let new_hash = Value::hash(ValueMap::default());
                         target.hash_entry_write(new_hash.clone());
                         new_hash.hash_autovivify_cell(&key)
                     }

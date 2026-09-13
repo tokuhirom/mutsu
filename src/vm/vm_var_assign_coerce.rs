@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Type-check a `:=` bind to a typed-array variable.
@@ -455,8 +456,8 @@ impl Interpreter {
         // re-keys by `.WHICH` when `tag_container_metadata` runs below.
         let value = match value.view() {
             ValueView::Hash(h) if h.has_typed_keys() => {
-                let mut map = std::collections::HashMap::with_capacity(h.len());
-                let mut orig = std::collections::HashMap::new();
+                let mut map = crate::value::user_key_map::with_capacity(h.len());
+                let mut orig = ValueMap::default();
                 for (k, v) in h.iter() {
                     let key_obj = h.typed_key(k);
                     let str_key = Value::hash_key_encode(&key_obj);

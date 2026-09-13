@@ -1,6 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Reset capture env vars left over from a previous match: numeric keys
@@ -63,16 +63,19 @@ impl Interpreter {
 
     pub(in crate::runtime) fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
         let make_capture_match = |capture: &str, from: usize, to: usize| {
-            let mut attrs = HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("str".to_string(), Value::str(capture.to_string()));
             attrs.insert("from".to_string(), Value::int(from as i64));
             attrs.insert("to".to_string(), Value::int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
-            attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
+            attrs.insert(
+                "named".to_string(),
+                Value::hash_bare_values(ValueMap::default()),
+            );
             Value::make_instance(Symbol::intern("Match"), attrs)
         };
 
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("str".to_string(), Value::str(captures.matched_text()));
         attrs.insert("from".to_string(), Value::int(captures.from as i64));
         attrs.insert("to".to_string(), Value::int(captures.to as i64));
@@ -95,7 +98,7 @@ impl Interpreter {
                 .collect()
         };
         attrs.insert("list".to_string(), Value::array(positional));
-        let mut named = HashMap::new();
+        let mut named = ValueMap::default();
         for (k, v) in &captures.named {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
@@ -113,7 +116,7 @@ impl Interpreter {
         }
         // Add hash captures from %<name>=(...) aliasing
         for (hash_name, entries) in captures.hash_captures() {
-            let mut hash_map: HashMap<String, Value> = HashMap::new();
+            let mut hash_map: ValueMap = ValueMap::default();
             for (key, value) in entries {
                 let val: Value = match value {
                     Some(v) => Value::str(v.clone()),

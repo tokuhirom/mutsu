@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use std::collections::HashMap as StdHashMap;
 
 /// Public wrapper for `collect_minmax_candidates` usable from builtins crate.
@@ -56,7 +57,7 @@ pub(crate) fn builtin_val(args: &[Value]) -> Value {
     }
 
     fn make_allomorphic(val: Value, original: &str) -> Value {
-        let mut mixins = StdHashMap::new();
+        let mut mixins = ValueMap::default();
         // Store the original string (with whitespace) as the Str component
         mixins.insert("Str".to_string(), Value::str(original.to_string()));
         Value::mixin(val, mixins)
@@ -157,13 +158,12 @@ impl Interpreter {
             }
         }
         let mut elems = HashSet::new();
-        let mut original_keys = HashMap::new();
+        let mut original_keys = ValueMap::default();
 
-        let insert_value = |val: &Value,
-                            elems: &mut HashSet<String>,
-                            original_keys: &mut HashMap<String, Value>| {
-            crate::runtime::utils::quanthash_insert_set(elems, original_keys, val);
-        };
+        let insert_value =
+            |val: &Value, elems: &mut HashSet<String>, original_keys: &mut ValueMap| {
+                crate::runtime::utils::quanthash_insert_set(elems, original_keys, val);
+            };
 
         for arg in &args {
             match arg.view() {
@@ -259,13 +259,9 @@ impl Interpreter {
         // Unlike .Bag coercion, `bag` does NOT decompose pairs into key=>count.
         // Each element (including pairs) is treated as an opaque value to count.
         let mut counts: HashMap<String, i64> = HashMap::new();
-        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut original_keys: ValueMap = ValueMap::default();
 
-        fn add_item(
-            counts: &mut HashMap<String, i64>,
-            original_keys: &mut HashMap<String, Value>,
-            item: &Value,
-        ) {
+        fn add_item(counts: &mut HashMap<String, i64>, original_keys: &mut ValueMap, item: &Value) {
             let (key, elem) = crate::runtime::utils::quanthash_elem_entry(item);
             crate::runtime::utils::record_quanthash_original(original_keys, &key, &elem);
             *counts.entry(key).or_insert(0) += 1;
@@ -319,15 +315,14 @@ impl Interpreter {
             }
         }
         let mut weights: HashMap<String, f64> = HashMap::new();
-        let mut original_keys: HashMap<String, Value> = HashMap::new();
+        let mut original_keys: ValueMap = ValueMap::default();
 
-        let insert_value = |val: &Value,
-                            weights: &mut HashMap<String, f64>,
-                            original_keys: &mut HashMap<String, Value>| {
-            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(val);
-            crate::runtime::utils::record_quanthash_original(original_keys, &key, &elem);
-            *weights.entry(key).or_insert(0.0) += 1.0;
-        };
+        let insert_value =
+            |val: &Value, weights: &mut HashMap<String, f64>, original_keys: &mut ValueMap| {
+                let (key, elem) = crate::runtime::utils::quanthash_elem_entry(val);
+                crate::runtime::utils::record_quanthash_original(original_keys, &key, &elem);
+                *weights.entry(key).or_insert(0.0) += 1.0;
+            };
 
         for arg in &args {
             match arg.view() {

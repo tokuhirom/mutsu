@@ -1,15 +1,16 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(crate) fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
-        Self::make_pod_named_with_config(name, contents, HashMap::new())
+        Self::make_pod_named_with_config(name, contents, ValueMap::default())
     }
 
     pub(crate) fn make_pod_named_with_config(
         name: &str,
         contents: Vec<Value>,
-        config: HashMap<String, Value>,
+        config: ValueMap,
     ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
@@ -19,13 +20,13 @@ impl Interpreter {
     }
 
     pub(crate) fn make_pod_heading(level: &str, contents: Vec<Value>) -> Value {
-        Self::make_pod_heading_with_config(level, contents, HashMap::new())
+        Self::make_pod_heading_with_config(level, contents, ValueMap::default())
     }
 
     pub(crate) fn make_pod_heading_with_config(
         level: &str,
         contents: Vec<Value>,
-        config: HashMap<String, Value>,
+        config: ValueMap,
     ) -> Value {
         let mut attrs = HashMap::new();
         // `Pod::Heading.level` is an `Int` in rakudo (`=head2` -> `level => 2`),
@@ -65,7 +66,7 @@ impl Interpreter {
             "contents".to_string(),
             Value::real_array(vec![Value::str(content)]),
         );
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
         Value::make_instance(Symbol::intern("Pod::Block::Comment"), attrs)
     }
 
@@ -75,7 +76,7 @@ impl Interpreter {
             "contents".to_string(),
             Value::real_array(lines.into_iter().map(Value::str).collect::<Vec<_>>()),
         );
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
     }
 
@@ -85,7 +86,7 @@ impl Interpreter {
         let contents = Self::parse_formatting_codes(text);
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::real_array(contents));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
     }
 
@@ -93,10 +94,10 @@ impl Interpreter {
     /// joined string in `contents` (roast S26-documentation/04-code.t pins
     /// `is $r.contents[1].contents, "While this is not\nThis is a code block"`).
     pub(crate) fn make_pod_code(text: String) -> Value {
-        Self::make_pod_code_with_config(text, HashMap::new())
+        Self::make_pod_code_with_config(text, ValueMap::default())
     }
 
-    pub(crate) fn make_pod_code_with_config(text: String, config: HashMap<String, Value>) -> Value {
+    pub(crate) fn make_pod_code_with_config(text: String, config: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         let contents = if config.contains_key("allow") {
             Self::parse_formatting_codes(&text)
@@ -114,10 +115,7 @@ impl Interpreter {
     /// block's trailing newline survives `Pod::To::Text`'s
     /// `$pod.contents>>.&pod2text.join`. With `:allow`, each line is parsed
     /// for the permitted formatting codes first.
-    pub(crate) fn make_pod_code_block(
-        code_lines: Vec<String>,
-        config: HashMap<String, Value>,
-    ) -> Value {
+    pub(crate) fn make_pod_code_block(code_lines: Vec<String>, config: ValueMap) -> Value {
         let allow = config.contains_key("allow");
         let mut contents: Vec<Value> = Vec::new();
         for line in code_lines {
@@ -186,7 +184,7 @@ impl Interpreter {
         (out, idx)
     }
 
-    pub(crate) fn make_pod_config(type_name: &str, config: HashMap<String, Value>) -> Value {
+    pub(crate) fn make_pod_config(type_name: &str, config: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("type".to_string(), Value::str(type_name.to_string()));
         attrs.insert("config".to_string(), Value::hash(config));
@@ -196,12 +194,12 @@ impl Interpreter {
     pub(crate) fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::real_array(contents));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("config".to_string(), Value::hash(ValueMap::default()));
         attrs.insert("level".to_string(), Value::int(level));
         Value::make_instance(Symbol::intern("Pod::Item"), attrs)
     }
 
-    fn make_pod_defn(term: String, contents: Vec<Value>, config: HashMap<String, Value>) -> Value {
+    fn make_pod_defn(term: String, contents: Vec<Value>, config: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("term".to_string(), Value::str(term));
         attrs.insert("contents".to_string(), Value::real_array(contents));
@@ -218,7 +216,7 @@ impl Interpreter {
         lines: &[&str],
         start_idx: usize,
         inline: &str,
-        mut config: HashMap<String, Value>,
+        mut config: ValueMap,
         end_target: Option<&str>,
     ) -> (Value, usize) {
         // Collect the paragraph lines (until blank line / pod directive).
@@ -275,7 +273,7 @@ impl Interpreter {
     pub(crate) fn build_pod_defn_delimited(
         lines: &[&str],
         start_idx: usize,
-        config: HashMap<String, Value>,
+        config: ValueMap,
     ) -> (Value, usize) {
         let mut idx = start_idx;
         // Collect paragraphs until `=end defn`.

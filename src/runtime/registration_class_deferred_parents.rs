@@ -127,7 +127,7 @@ impl Interpreter {
                 .map(|(b, _)| b)
                 .unwrap_or(resolved.as_str());
             if base == user_facing {
-                let mut attrs = HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("name".to_string(), Value::str(user_facing.clone()));
                 attrs.insert(
                     "message".to_string(),

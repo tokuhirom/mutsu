@@ -4,6 +4,7 @@ use crate::ast::{Expr, ParamDef, Stmt};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -533,8 +534,8 @@ fn resolve_subset_base(name: &str, interp: Option<&Interpreter>) -> Option<Strin
     resolved.then_some(current)
 }
 
-fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> HashMap<String, Value> {
-    let mut attrs = HashMap::new();
+fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap {
+    let mut attrs = ValueMap::default();
     // .name returns the sigiled name (e.g., "$x", "@pos", "%named")
     // For named params with aliases (:x($a)), resolve the inner variable name
     let display_name = if !p.named_names.is_empty() {

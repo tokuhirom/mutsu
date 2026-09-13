@@ -104,7 +104,7 @@ pub(crate) fn attribute_default_never_assign_error(
             got, repr, attr_name, constraint
         )
     };
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
     attrs.insert(
         "expected".to_string(),
@@ -204,7 +204,7 @@ pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> Run
             expected, got_type, repr
         )
     };
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert(
         "expected".to_string(),
         crate::value::expected_type_object(expected),
@@ -221,7 +221,7 @@ pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> Run
 /// sigil+twigil form (e.g. `$*an_undeclared_dynvar`).
 pub(crate) fn dynamic_not_found_error(display_name: &str) -> RuntimeError {
     let msg = format!("Dynamic variable {} not found", display_name);
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("name".to_string(), Value::str(display_name.to_string()));
     attrs.insert("symbol".to_string(), Value::str(display_name.to_string()));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -237,7 +237,7 @@ pub(crate) fn caller_not_dynamic_error(name: &str) -> RuntimeError {
     let symbol = format!("${name}");
     let msg =
         format!("Cannot access '{symbol}' through CALLER, because it is not declared as dynamic");
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     attrs.insert("symbol".to_string(), Value::str(symbol));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     RuntimeError::typed("X::Caller::NotDynamic", attrs)
@@ -263,7 +263,7 @@ fn assignment_error_with_message(
     msg: String,
 ) -> RuntimeError {
     let display_name = format_var_name_for_error(var_name);
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     // raku exposes `.expected` as the expected type OBJECT and `.got` as the
     // offending VALUE (not its type name), so `throws-like` matchers like
     // `expected => Int` / `got => 'foo'` succeed.
@@ -304,7 +304,7 @@ pub(crate) fn type_check_element_typed_error(
 ) -> RuntimeError {
     let msg = type_check_element_error(var_name, expected, val);
     let display_name = format_var_name_for_error(var_name);
-    let mut attrs = std::collections::HashMap::new();
+    let mut attrs = ValueMap::default();
     // `.expected` is the expected TYPE OBJECT, as raku's X::TypeCheck exposes
     // it (`$!.expected.^name` is `Int`, not `Str`) -- matching the sibling
     // `RuntimeError::typecheck_assignment`, which has always used it.

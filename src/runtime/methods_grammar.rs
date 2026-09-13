@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 
 /// One live grammar-rule dynamic-variable frame. The marker is kept alive
@@ -860,7 +861,7 @@ impl Interpreter {
                     updates.push(("sym_variant", Value::str(sym.clone())));
                 }
                 if !alias_map.is_empty() {
-                    let alias_hash: HashMap<String, Value> = alias_map
+                    let alias_hash: ValueMap = alias_map
                         .iter()
                         .map(|(k, v)| (k.as_str().to_string(), Value::str(v.as_str().to_string())))
                         .collect();
@@ -1909,7 +1910,10 @@ impl Interpreter {
         attrs.insert("pos".to_string(), Value::int(-1));
         attrs.insert("orig".to_string(), Value::str(text.to_string()));
         attrs.insert("list".to_string(), Value::array(Vec::new()));
-        attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
+        attrs.insert(
+            "named".to_string(),
+            Value::hash_bare_values(ValueMap::default()),
+        );
         attrs.insert("__failed_match__".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Match"), attrs)
     }

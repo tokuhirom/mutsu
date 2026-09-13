@@ -71,7 +71,7 @@ impl Interpreter {
                 && !type_name.starts_with("::")
                 && !self.is_resolvable_type(type_name)
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("type".to_string(), Value::str(type_name.to_string()));
                 attrs.insert(
                     "message".to_string(),

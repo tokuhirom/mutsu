@@ -353,7 +353,7 @@ impl Interpreter {
                 Ok(Value::array(result))
             }
             ValueView::Hash(map) => {
-                let mut result = std::collections::HashMap::new();
+                let mut result = ValueMap::default();
                 for (k, v) in map.iter() {
                     match self.duckmap_element(block, v, true) {
                         Ok(mapped) => {
@@ -530,7 +530,7 @@ impl Interpreter {
                 }
             }
             ValueView::Hash(map) => {
-                let mut result = std::collections::HashMap::new();
+                let mut result = ValueMap::default();
                 for (k, v) in map.iter() {
                     let is_leaf = deepmap_element_is_leaf(v);
                     if is_leaf {
@@ -645,7 +645,7 @@ impl Interpreter {
             // On an Associative, nodemap acts on the values, keeping the keys
             // (raku: "it will act on the values"), and returns a Hash.
             ValueView::Hash(map) => {
-                let mut result = std::collections::HashMap::new();
+                let mut result = ValueMap::default();
                 for (k, v) in map.iter() {
                     match self.call_sub_value(block.clone(), vec![v.clone()], false) {
                         Ok(mapped) => {
@@ -738,7 +738,7 @@ impl Interpreter {
                         Ok(with_kind(result, list_kind(itemize)))
                     }
                     ValueView::Hash(map) => {
-                        let mut result = std::collections::HashMap::new();
+                        let mut result = ValueMap::default();
                         for (k, v) in map.iter() {
                             result.insert(k.clone(), self.duckmap_element(block, v, true)?);
                         }

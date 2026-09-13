@@ -32,7 +32,7 @@ impl Interpreter {
         let items: Vec<Value> = args.iter().map(Self::adhoc_slurpy_unwrap_failure).collect();
         let message: String = items.iter().map(|v| v.to_string_value()).collect();
         let payload = self.eval_does_values(
-            Value::capture(items, std::collections::HashMap::new()),
+            Value::capture(items, ValueMap::default()),
             Value::package(Symbol::intern(SLURPY_SENTRY_ROLE)),
         )?;
         let mut attrs = std::collections::HashMap::new();

@@ -11,6 +11,7 @@
 //! are written in these ops — see `docs/batteries/json-fast.md`.
 
 use crate::runtime::{Interpreter, RuntimeError};
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView};
 
 /// The attribute an `IterationBuffer` instance keeps its elements in. Spelled
@@ -340,7 +341,7 @@ impl Interpreter {
             // key/value arguments — the associative twin of `nqp::list`. An
             // odd trailing argument binds to Nil, as nqp does.
             "hash" => {
-                let mut map = std::collections::HashMap::new();
+                let mut map = ValueMap::default();
                 for pair in args.chunks(2) {
                     let key = pair[0].to_string_value();
                     let val = pair.get(1).cloned().unwrap_or(Value::NIL);

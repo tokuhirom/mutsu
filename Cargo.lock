@@ -744,6 +744,7 @@ dependencies = [
  "emojis",
  "encoding_rs",
  "fancy-regex",
+ "foldhash",
  "icu_collator",
  "icu_collator_data",
  "libc",

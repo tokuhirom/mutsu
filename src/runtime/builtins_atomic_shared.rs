@@ -77,7 +77,7 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 } else {
-                    Value::hash_with_data(Value::hash_arc(HashMap::new()))
+                    Value::hash_with_data(Value::hash_arc(ValueMap::default()))
                 }
             }
         };

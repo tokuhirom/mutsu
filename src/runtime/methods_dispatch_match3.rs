@@ -1072,7 +1072,7 @@ impl Interpreter {
         let key = if data.key_type.is_some() {
             let which = crate::runtime::utils::value_which_key(&args[0]);
             data.original_keys
-                .get_or_insert_with(std::collections::HashMap::new)
+                .get_or_insert_with(ValueMap::default)
                 .insert(which.clone(), args[0].clone());
             which
         } else {

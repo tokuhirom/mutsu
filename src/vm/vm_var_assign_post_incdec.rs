@@ -1,6 +1,6 @@
 use super::*;
+use crate::value::ValueMap;
 use crate::vm::vm_arith_ops::seed_meta_assign_identity;
-use std::collections::HashMap;
 
 impl Interpreter {
     /// Read a Hash element as a value for an increment/decrement operation.
@@ -57,10 +57,10 @@ impl Interpreter {
             B::BitShiftRight => self.exec_bit_shift_right_op()?,
             B::IntDiv => self.exec_int_div_op()?,
             B::IntMod => self.exec_int_mod_op()?,
-            B::Gcd => self.exec_gcd_op(),
-            B::Lcm => self.exec_lcm_op(),
-            B::InfixMin => self.exec_infix_min_op(),
-            B::InfixMax => self.exec_infix_max_op(),
+            B::Gcd => self.exec_gcd_op()?,
+            B::Lcm => self.exec_lcm_op()?,
+            B::InfixMin => self.exec_infix_min_op()?,
+            B::InfixMax => self.exec_infix_max_op()?,
             B::StringRepeat => self.exec_string_repeat_op()?,
         }
         Ok(self.stack.pop().unwrap())
@@ -733,7 +733,7 @@ impl Interpreter {
                 .as_map()
                 .get("__mutsu_hash_storage")
                 .cloned()
-                .unwrap_or_else(|| Value::hash(std::collections::HashMap::new()));
+                .unwrap_or_else(|| Value::hash(ValueMap::default()));
             let old = match storage.view() {
                 ValueView::Hash(map) => map
                     .get(&key)
@@ -1090,7 +1090,7 @@ impl Interpreter {
                     // wrapper above is transport for the subscript, not part of
                     // the key rakudo hands back from `.keys` / `.kv` / `.raku`.
                     data.original_keys
-                        .get_or_insert_with(std::collections::HashMap::new)
+                        .get_or_insert_with(ValueMap::default)
                         .insert(key.clone(), Self::object_hash_key_value(&idx_val));
                 }
                 Value::hash_insert_through(&mut data.map, key.clone(), new_val.clone());
@@ -1215,8 +1215,8 @@ impl Interpreter {
                 let type_name = sym.resolve();
                 match type_name.as_str() {
                     "MixHash" => {
-                        let mut weights = HashMap::new();
-                        let mut originals = HashMap::new();
+                        let mut weights = std::collections::HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,
@@ -1232,8 +1232,8 @@ impl Interpreter {
                         true
                     }
                     "BagHash" => {
-                        let mut counts = HashMap::new();
-                        let mut originals = HashMap::new();
+                        let mut counts = std::collections::HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,
@@ -1251,7 +1251,7 @@ impl Interpreter {
                     }
                     "SetHash" => {
                         let mut items = std::collections::HashSet::new();
-                        let mut originals = HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,
@@ -1296,8 +1296,8 @@ impl Interpreter {
             {
                 let new_container = match type_name {
                     "MixHash" => {
-                        let mut weights = HashMap::new();
-                        let mut originals = HashMap::new();
+                        let mut weights = std::collections::HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,
@@ -1312,8 +1312,8 @@ impl Interpreter {
                         Value::mix_hash_with_original_keys(weights, originals)
                     }
                     "BagHash" => {
-                        let mut counts = HashMap::new();
-                        let mut originals = HashMap::new();
+                        let mut counts = std::collections::HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,
@@ -1330,7 +1330,7 @@ impl Interpreter {
                     }
                     "SetHash" => {
                         let mut items = std::collections::HashSet::new();
-                        let mut originals = HashMap::new();
+                        let mut originals = ValueMap::default();
                         if let Some(el) = &quanthash_elem {
                             crate::runtime::utils::record_quanthash_original(
                                 &mut originals,

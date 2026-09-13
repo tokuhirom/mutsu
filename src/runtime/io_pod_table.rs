@@ -1,11 +1,12 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(crate) fn make_pod_table_full(
         headers: Vec<Vec<String>>,
         rows: Vec<Vec<String>>,
-        config: HashMap<String, Value>,
+        config: ValueMap,
     ) -> Value {
         let mut attrs = HashMap::new();
         let contents = rows

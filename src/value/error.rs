@@ -1,6 +1,7 @@
 use super::Value;
 use super::ValueView;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeErrorCode {
@@ -574,7 +575,7 @@ impl RuntimeError {
     /// what [`Self::is_illegal_control`] reads to stop `try` passing it through
     /// the way it passes a signal that some loop is waiting for.
     pub(crate) fn control_flow_illegal(control: Control, illegal: &str, enclosing: &str) -> Self {
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("illegal".to_string(), Value::str(illegal.to_string()));
         attrs.insert("enclosing".to_string(), Value::str(enclosing.to_string()));
         attrs.insert(
@@ -705,7 +706,7 @@ impl RuntimeError {
     /// correct type; [`Self::is_illegal_control`] is what makes `try` convert
     /// it into a caught exception immediately instead of passing it through.
     pub(crate) fn react_done_signal() -> Self {
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("illegal".to_string(), Value::str("done".to_string()));
         attrs.insert(
             "enclosing".to_string(),
@@ -744,7 +745,7 @@ impl RuntimeError {
         // When CX::Take propagates unhandled (no CONTROL block catches it),
         // it becomes X::ControlFlow with illegal=>"take", enclosing=>"gather".
         // Pre-set the exception so throws-like can match the correct type.
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("illegal".to_string(), Value::str("take".to_string()));
         attrs.insert("enclosing".to_string(), Value::str("gather".to_string()));
         attrs.insert(
@@ -771,7 +772,7 @@ impl RuntimeError {
         // react". Pre-set the exception so throws-like / CATCH can match the
         // correct type; the supply/react runtime consumes the `is_emit` flag
         // before this exception is ever observed.
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("illegal".to_string(), Value::str("emit".to_string()));
         attrs.insert(
             "enclosing".to_string(),
