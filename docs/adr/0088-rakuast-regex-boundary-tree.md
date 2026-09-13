@@ -1,9 +1,9 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
-  static-value-provenance, declaration-provenance, and positional-capture
-  slices implemented 2026-09-12; dynamic contents and the complete
-  execution-tree migration remain)
+  static-value-provenance, declaration-provenance, positional-capture, and
+  scalar-interpolation slices implemented 2026-09-12/13; other dynamic
+  contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -360,10 +360,10 @@ tree provenance alongside it. Declaration-normalized values and the remaining
 string-only entry points must still migrate without rediscovering source trees
 from normalized declaration text.
 
-The following remain intentionally open: dynamic assertions and interpolation,
-captures and subrules, adverbs with runtime arguments, declaration-normalized
-values, and replacing string-only regex inputs with parser-produced tree
-provenance throughout the remaining matcher entry points.
+The following remain intentionally open: dynamic assertions and non-scalar
+interpolation, captures and subrules, adverbs with runtime arguments,
+declaration-normalized values, and replacing string-only regex inputs with
+parser-produced tree provenance throughout the remaining matcher entry points.
 
 ## 8. Static execution-lowering slice (2026-09-12)
 
@@ -444,9 +444,31 @@ slots therefore keep the matcher's established sub-Match and positional
 numbering semantics without executing user code during conversion.
 
 This slice intentionally covers only the ordinary `( ... )` form. Named
-capture aliases, subrule assertions, variable interpolation, code
-assertions, and other runtime-valued regex nodes remain explicit follow-up
-boundaries. The focused regressions are in
+capture aliases, subrule assertions, scalar interpolation, code assertions,
+and other runtime-valued regex nodes remain explicit follow-up boundaries. The
+focused regressions are in
 `t/rakuast/rakuast-regex.t` and `t/regex/regex-tree-captures.t`; they pin the
 model shape, constructor/EVAL lowering, capture spans, and quantified capture
 iteration values.
+
+## 12. Scalar interpolation source and execution slice (2026-09-13)
+
+Ordinary lexical scalar interpolation (`$name` and `${name}`) now has a shared
+`RegexNode::Interpolation` representation. The read direction emits
+`RakuAST::Regex::Interpolation` with `sequential => False` and a
+`RakuAST::Var::Lexical`; the write direction accepts only that scalar form and
+keeps array/hash and code-bearing interpolation as explicit boundaries.
+
+The execution lowerer maps the node to the existing match-time
+`RegexAtom::VarInterp` path. That preserves the current closure-scope and
+match-time lookup behavior while avoiding a source-tree-to-string reparse for
+parser-created values. Token declarations retain their source tree while the
+normalized execution body continues to apply declaration policy exactly once.
+Type-sensitive values and modifier-bearing patterns deliberately retain the
+legacy parser path until their value-aware Unicode and runtime semantics are
+part of a later slice.
+
+The focused regressions are in `t/rakuast/rakuast-regex.t` and
+`t/regex/regex-tree-interpolation.t`. They pin Rakudo's interpolation node
+shape, constructed-tree lowering, stored-value lookup after lexical mutation,
+type-sensitive fallback, and the declaration boundary.

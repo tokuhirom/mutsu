@@ -152,6 +152,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         RegexLiteral => &[("text", Absent::Required)],
         RegexQuote => &[("quoted", Absent::Required)],
         RegexGroup | RegexCapturingGroup | RegexWithWhitespace => &[("regex", Absent::Required)],
+        RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
         RegexQuantifiedAtom => &[
             ("atom", Absent::Required),
             ("quantifier", Absent::Required),

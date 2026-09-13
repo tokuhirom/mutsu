@@ -1595,6 +1595,30 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexCapturingGroup => Ok(RegexNode::CapturingGroup(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,
         ))),
+        RakuAstClass::RegexInterpolation => {
+            let sequential = bool_field(node, "sequential")?;
+            if sequential {
+                return Err(unsupported(node));
+            }
+            let var = named_child(node, "var")?;
+            if var.class != RakuAstClass::VarLexical {
+                return Err(unsupported(node));
+            }
+            let name_value = positional_leaf(var)?;
+            let ValueView::Str(name) = name_value.view() else {
+                return Err(unsupported(node));
+            };
+            let Some(name) = name.strip_prefix('$') else {
+                return Err(unsupported(node));
+            };
+            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+                return Err(unsupported(node));
+            }
+            Ok(RegexNode::Interpolation {
+                name: name.to_string(),
+                sequential,
+            })
+        }
         RakuAstClass::RegexWithWhitespace => Ok(RegexNode::WithWhitespace(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,
         ))),

@@ -1528,8 +1528,9 @@ impl Interpreter {
     }
 
     /// Parse a regex value while retaining parser-produced source provenance.
-    /// Static values use the shared `RegexTree` directly; values synthesized by
-    /// runtime code, and trees outside the current execution subset, retain the
+    /// Values with a supported source tree use it directly, including the
+    /// match-time scalar interpolation node. Values synthesized by runtime
+    /// code, and trees outside the current execution subset, retain the
     /// established string parser path.
     pub(super) fn parse_regex_value(&self, value: &Value) -> Option<std::sync::Arc<RegexPattern>> {
         let pattern = match value.view() {
@@ -1540,10 +1541,43 @@ impl Interpreter {
         let Some(tree) = value.regex_source_tree() else {
             return self.parse_regex(&pattern);
         };
-        if !regex_pattern_is_static(&pattern) {
+        let interpolation_names = tree.interpolation_names();
+        // The direct tree plan's VarInterp atom intentionally handles the
+        // plain scalar case. Regex values, collections, and other objects
+        // retain the established parser path because their interpolation has
+        // type-specific semantics (a Regex is recompiled, a Hash is
+        // rejected, and a Junction becomes alternatives). Do this before the
+        // tree-plan cache lookup because the lexical may change type between
+        // matches.
+        // Case-folding and ignore-mark also stay on the parser path: their
+        // value-aware Unicode expansion needs the interpolated text to join
+        // the pattern's fold/remapping pass.
+        if (!interpolation_names.is_empty()
+            && static_execution_policy(&pattern)
+                .is_some_and(|(_, ignore_case, ignore_mark, _)| ignore_case || ignore_mark))
+            || interpolation_names.iter().any(|name| {
+                self.env
+                    .get(name)
+                    .or_else(|| self.env.get(&format!("${name}")))
+                    .is_some_and(|value| {
+                        !matches!(
+                            value.deref_container().view(),
+                            ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Num(_)
+                                | ValueView::Str(_)
+                                | ValueView::Bool(_)
+                                | ValueView::Rat(_, _)
+                                | ValueView::FatRat(_, _)
+                                | ValueView::BigRat(_, _)
+                                | ValueView::Complex(_, _)
+                                | ValueView::Nil
+                        )
+                    })
+            })
+        {
             return self.parse_regex(&pattern);
         }
-
         // Include the tree fingerprint in the existing plan-cache key. This
         // keeps the cache honest if a future parser creates two source trees
         // with the same compatibility spelling.

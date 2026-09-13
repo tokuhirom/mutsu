@@ -5,10 +5,10 @@ use Test;
 
 # RakuAST regex tree support (ADR-0088, issue #8033). The parser keeps a
 # source-level static regex tree and the converter maps it to the same node
-# shapes Rakudo exposes. These examples are intentionally static: dynamic
-# assertions and interpolations remain explicit follow-up boundaries.
+# shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
+# remain explicit follow-up boundaries.
 
-plan 17;
+plan 21;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -83,6 +83,27 @@ is Q[/(a)/].AST.gist, q:to/END/.chomp, 'a capture group remains a CapturingGroup
         expression => RakuAST::QuotedRegex.new(
           body => RakuAST::Regex::CapturingGroup.new(
             RakuAST::Regex::Literal.new("a")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/a $x b/].AST.gist, q:to/END/.chomp, 'a scalar interpolation remains an Interpolation node';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("a")
+            ),
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Interpolation.new(
+                sequential => False,
+                var        => RakuAST::Var::Lexical.new("\$x")
+              )
+            ),
+            RakuAST::Regex::Literal.new("b")
           )
         )
       )
@@ -200,6 +221,13 @@ my $literal = RakuAST::Regex::Literal.new("a");
 is $literal.text, 'a', 'regex literal text is available through its accessor';
 ok $literal ~~ RakuAST::Regex::Atom, 'regex atoms retain their semantic type';
 ok $literal ~~ RakuAST::Regex, 'regex nodes retain their Regex type';
+my $interpolation = RakuAST::Regex::Interpolation.new(
+    sequential => False,
+    var => RakuAST::Var::Lexical.new(q[$x]),
+);
+is $interpolation.var.name, '$x', 'interpolation exposes its lexical variable';
+ok $interpolation ~~ RakuAST::Regex::Atom, 'interpolation retains its regex atom type';
+is $interpolation.sequential, False, 'scalar interpolation is non-sequential';
 my $constructed = RakuAST::QuotedRegex.new(
     match-immediately => True,
     body              => RakuAST::Regex::Literal.new("test"),
