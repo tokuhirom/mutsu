@@ -189,6 +189,21 @@ impl Interpreter {
         ) {
             return Err(err);
         }
+        // The one shape the refusal above lets through: the Pair's value is a
+        // real container, so the subscript addresses it and rakudo STOREs into
+        // it (`Crane::At.at($root, @path){$step} = $value` landing on a
+        // colonpair chain's leaf array, which is every nested `Crane.add`).
+        if !index_is_positional
+            && let Some(aggregate) =
+                Self::pair_subscript_aggregate(&current, Some(index_key.as_str()))
+        {
+            self.store_into_aggregate_lvalue(&aggregate, value.clone());
+            if let Some(root) = method_args.first() {
+                self.env
+                    .insert(var_name.clone(), Self::detached_lvalue_value(root));
+            }
+            return Ok(value);
+        }
 
         // Package-level `is rw` accessors with arguments (for example
         // `Crane::At.at($root, @path)`) return the selected container itself.
