@@ -473,6 +473,18 @@ impl Interpreter {
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
     pub(super) fn eval_truthy(&mut self, val: &Value) -> bool {
+        // A successful lazy Match already knows its truth value, and reading
+        // it through `view()` would force the capture map. Plain regex
+        // Matches have no user-defined Bool method, so answer directly before
+        // entering the general instance-dispatch path. Grammar cursors can
+        // define their own Bool method; retain that override by probing only
+        // those cursor classes.
+        if val.is_lazy_match_value() {
+            let owner = val.match_dispatch_class();
+            if owner == "Match" || !self.has_user_method(owner, "Bool") {
+                return val.truthy();
+            }
+        }
         // ADR-0058: `Value::truthy` cannot pull, so it reports a not-yet-run
         // `.map`/`.grep` Seq as TRUE rather than reading its still-empty seed
         // (see the `is_map_grep_source` arm there). This IS the boolean

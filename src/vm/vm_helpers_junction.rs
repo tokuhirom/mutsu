@@ -221,13 +221,13 @@ impl Interpreter {
             // A bare block may hold its lexically captured `$/` in a shared
             // cell. Smartmatch returns the Match value, never the container
             // implementing that lexical binding.
-            let slash = self
-                .env()
-                .get("/")
-                .cloned()
-                .unwrap_or(Value::NIL)
-                .deref_container();
-            if matches!(slash.view(), ValueView::Junction { .. }) {
+            let slash = self.env().get("/").cloned().unwrap_or(Value::NIL);
+            let slash = if slash.is_container_ref() {
+                slash.into_deref()
+            } else {
+                slash
+            };
+            if slash.is_junction_value() {
                 Ok(Value::truth(matched))
             } else if matched {
                 // For regex smartmatch, return the Match object (from $/) or Nil
