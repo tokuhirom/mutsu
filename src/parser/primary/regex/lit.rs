@@ -257,7 +257,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
             return Ok((
                 rest,
-                static_regex_expr(Value::regex(pattern.clone()), &pattern, false),
+                static_regex_expr(
+                    build_regex_with_adverbs(pattern.clone(), &adverbs),
+                    &pattern,
+                    false,
+                ),
             ));
         }
         if delim_commits_to_regex(open_ch) {

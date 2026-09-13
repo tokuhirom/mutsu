@@ -55,6 +55,7 @@ impl Interpreter {
         };
         let pat: String = match pattern.view() {
             ValueView::Regex(p) => p.to_string(),
+            ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
             // Str patterns are treated as literal strings in Raku regex,
             // so wrap them in quotes to prevent regex metachar interpretation
             // (e.g., spaces are insignificant in Raku regex but significant in literals)

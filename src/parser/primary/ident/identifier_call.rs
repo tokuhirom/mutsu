@@ -103,6 +103,25 @@ fn starts_slip_prefix_arg(s: &str) -> bool {
         })
 }
 
+/// Strip a bare `::` *null routine/method name* marker that is not glued to
+/// `(`, so `sub :: ($x) {...}` / `anon method :: (Self: *@a) {...}` parse
+/// exactly like the already-nameless `sub ($x) {...}` / `anon method (Self:
+/// *@a) {...}` forms. Verified against rakudo (#8294): `sub :: (...)` (a
+/// space before the paren) declares a nameless sub whose signature is the
+/// following `(...)`, while `sub ::(...)` (glued) is the unrelated indirect-
+/// declarator-name form (`parse_indirect_decl_name`) — so a `::` glued to `(`
+/// is left untouched here and falls through to whatever already handles (or
+/// rejects) that form.
+fn strip_null_decl_name_marker(input: &str) -> &str {
+    let Some(after_colons) = input.strip_prefix("::") else {
+        return input;
+    };
+    if after_colons.starts_with('(') {
+        return input;
+    }
+    ws(after_colons).map(|(r, _)| r).unwrap_or(after_colons)
+}
+
 /// When `do STMT` parses its inner statement via the full statement parser, a
 /// statement modifier (`do $_ for @list`) or assignment consumes the trailing
 /// `;`. In expression context the `;` belongs to the *outer* statement, so if it
@@ -893,6 +912,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // (MetamodelX::Dataclass writes exactly that).
             if let Some((after_method, declarator)) = anon_method_declarator_keyword(r_ws) {
                 let (r, _) = ws(after_method)?;
+                // `anon method :: (...)`: a bare `::` is a null-name marker,
+                // so strip it and let the nameless form below handle it
+                // (#8294).
+                let r = strip_null_decl_name_marker(r);
                 // `anon method NAME ...`: raku keeps the name on the routine,
                 // which a method literal has nowhere to carry, so it is read
                 // and dropped rather than left to fail the parse.
@@ -923,6 +946,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if let Some(after_sub) = keyword("sub", r_ws) {
                 // `anon sub { }` — no return type
                 let (r_sub, _) = ws(after_sub)?;
+                let r_sub = strip_null_decl_name_marker(r_sub);
                 if r_sub.starts_with('{') {
                     let (r, body) = parse_block_body_routine(r_sub)?;
                     return Ok((
@@ -1017,6 +1041,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         "sub" => {
             let (r, _) = ws(rest)?;
+            let r = strip_null_decl_name_marker(r);
             if r.starts_with('{') {
                 let (r, body) = parse_block_body_routine(r)?;
                 // `sub { }` is a routine boundary (unlike bare blocks)
@@ -1166,6 +1191,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 RoutineDeclarator::Method
             };
             let (r, _) = ws(rest)?;
+            let r = strip_null_decl_name_marker(r);
             if r.starts_with('(') {
                 // Try parsing as anonymous method. If it fails (e.g. no block
                 // after params), fall through to treat `method` as a regular
