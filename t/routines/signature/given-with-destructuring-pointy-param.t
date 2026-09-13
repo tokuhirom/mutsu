@@ -14,7 +14,7 @@ use Test;
 # From ASTQuery::Match's `given $m -> ::?CLASS:D (:@list, :%hash, |) { ... }`
 # (#7988).
 
-plan 17;
+plan 21;
 
 class Node {
     has @.list;
@@ -80,6 +80,23 @@ my $nothing;
 my $ran = 0;
 without $nothing -> (:$x, |) { $ran = 1; nok $x.defined, 'without destructure of an undefined topic' }
 is $ran, 1, 'without -> (:$x, |) runs for an undefined topic';
+
+# A COERCION type on a sub-parameter coerces the extracted value. `with` was
+# the only one of the three that did this; the shared lowering does it for all
+# of them now.
+given (1, 2) -> (Str() $a, $b) {
+    is $a.^name, 'Str', 'given destructure applies a coercion type';
+}
+with (a => 1) -> (:key($k), Str() :value($v)) {
+    is $v.^name, 'Str', 'with destructure applies a coercion type to a named sub-parameter';
+}
+for ((3, 4),) -> (Str() $a, $b) {
+    is $a.^name, 'Str', 'for destructure applies a coercion type';
+}
+# A plain nominal constraint is not a coercion and must not convert.
+for ((5, 6),) -> (Int $a, $b) {
+    is $a.^name, 'Int', 'a plain type constraint on a sub-parameter does not coerce';
+}
 
 # The non-destructuring pointy parameter is untouched: it still aliases the
 # topic source, so a mutation through it writes back.

@@ -76,6 +76,34 @@ pub(crate) fn decl_stmt(name: String, expr: Expr) -> Stmt {
     }
 }
 
+/// Apply a sub-parameter's COERCION type to the value extracted for it.
+///
+/// A coercion constraint is recorded by the parameter parser as `Target()` or
+/// `Target(Source)`, so the target is whatever precedes the `(`. A plain
+/// nominal constraint (`-> (Int $a)`) is left alone: rakudo type-CHECKS that,
+/// it does not coerce, and calling `.Int` on the value would silently convert
+/// what should have been a binding error.
+fn apply_coercion(sub: &crate::ast::ParamDef, value: Expr) -> Expr {
+    let Some(tc) = sub.type_constraint.as_deref() else {
+        return value;
+    };
+    let Some(target) = tc.strip_suffix(')').and_then(|t| t.split('(').next()) else {
+        return value;
+    };
+    // An indirect type constraint is recorded as `::(EXPR)`, which also ends
+    // in `)`; its "target" would be `::`. Only a real type name coerces.
+    if !target.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+        return value;
+    }
+    Expr::MethodCall {
+        target: Box::new(value),
+        name: Symbol::intern(target),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    }
+}
+
 /// Unpack the value bound to `target_name` into the sub-signature's lexicals,
 /// appending one statement per sub-parameter to `bind_stmts`.
 pub(crate) fn destructure_binds(
@@ -135,6 +163,7 @@ pub(crate) fn destructure_binds(
                 then_expr: Box::new(method_call),
                 else_expr: Box::new(hash_lookup),
             };
+            let method_result = apply_coercion(sub, method_result);
             // If the named param has a sub_signature (e.g. :key($k)),
             // bind to the sub_signature variable instead of the param name.
             if let Some(inner_params) = &sub.sub_signature {
@@ -194,6 +223,7 @@ pub(crate) fn destructure_binds(
                 index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                 is_positional: false,
             };
+            let element_expr = apply_coercion(sub, element_expr);
             // An optional destructure param (`-> ($a, $b?)`) seeds its
             // type object (Mu for untyped — this is a block) when the
             // source has no element at this slot; a default binds the
