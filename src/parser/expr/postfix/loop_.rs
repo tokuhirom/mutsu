@@ -759,6 +759,47 @@ fn brace_is_postcircumfix(expr: &Expr, term_ends_with_ws: bool) -> bool {
         && !matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
 }
 
+/// Build the expression for an empty angle subscript (`<>`, `«»`, or `<<>>`).
+///
+/// All three spellings are zen slices when their contents contain no words.
+/// The adverbs are postfixes on the resulting collection, so consume them here
+/// together with the synthetic `__mutsu_zen_angle` call.
+fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
+    let indexed_expr = match &expr {
+        Expr::HashVar(_) => expr,
+        _ => Expr::MethodCall {
+            target: Box::new(expr),
+            name: Symbol::intern("__mutsu_zen_angle"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        },
+    };
+    let zen_adverb = [
+        (":kv", "kv"),
+        (":k", "keys"),
+        (":v", "values"),
+        (":p", "pairs"),
+    ]
+    .into_iter()
+    .find(|(adv, _)| {
+        rest.starts_with(adv) && !is_ident_char(rest.as_bytes().get(adv.len()).copied())
+    });
+    if let Some((adv, method)) = zen_adverb {
+        return (
+            Expr::MethodCall {
+                target: Box::new(indexed_expr),
+                name: Symbol::intern(method),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+            &rest[adv.len()..],
+        );
+    }
+    (indexed_expr, rest)
+}
+
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false)
 }
@@ -1916,53 +1957,18 @@ fn postfix_expr_loop_from(
                         .collect(),
                 )
             };
-            let indexed_expr = if is_zen_angle {
-                match &expr {
-                    Expr::HashVar(_) => expr.clone(),
-                    _ => Expr::MethodCall {
-                        target: Box::new(expr.clone()),
-                        name: Symbol::intern("__mutsu_zen_angle"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    },
-                }
+            let (indexed_expr, r) = if is_zen_angle {
+                parse_zen_angle(expr, r)
             } else {
-                Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(index_expr),
-                    is_positional: false,
-                }
+                (
+                    Expr::Index {
+                        target: Box::new(expr),
+                        index: Box::new(index_expr),
+                        is_positional: false,
+                    },
+                    r,
+                )
             };
-            // Zen-slice `:k`/`:v`/`:kv`/`:p` adverbs map to the keys/values/kv/pairs
-            // method (`%h<>:k` is `%h.keys`, `%h<>:v` is `%h.values`). Probe the
-            // two-letter `:kv` before the one-letter `:k`/`:v` so `:kv` is not read
-            // as `:k` + a stray `v`.
-            let zen_adverb = is_zen_angle
-                .then(|| {
-                    [
-                        (":kv", "kv"),
-                        (":k", "keys"),
-                        (":v", "values"),
-                        (":p", "pairs"),
-                    ]
-                    .into_iter()
-                    .find(|(adv, _)| {
-                        r.starts_with(adv) && !is_ident_char(r.as_bytes().get(adv.len()).copied())
-                    })
-                })
-                .flatten();
-            if let Some((adv, method)) = zen_adverb {
-                expr = Expr::MethodCall {
-                    target: Box::new(indexed_expr),
-                    name: Symbol::intern(method),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                };
-                rest = &r[adv.len()..];
-                continue;
-            }
             // Check for :exists / :!exists / :delete adverbs
             if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r, indexed_expr.clone()) {
                 expr = exists_expr;
@@ -1981,13 +1987,28 @@ fn postfix_expr_loop_from(
             if let Some(end) = r.find('\u{00BB}') {
                 let content = &r[..end];
                 let r = &r[end + '\u{00BB}'.len_utf8()..];
-                expr = Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(crate::parser::primary::angle_words_subscript_index_expr(
-                        content,
-                    )),
-                    is_positional: false,
+                let (indexed_expr, r) = if split_angle_words(content).is_empty() {
+                    parse_zen_angle(expr, r)
+                } else {
+                    (
+                        Expr::Index {
+                            target: Box::new(expr),
+                            index: Box::new(
+                                crate::parser::primary::angle_words_subscript_index_expr(content),
+                            ),
+                            is_positional: false,
+                        },
+                        r,
+                    )
                 };
+                if let Some((r_after, exists_expr)) =
+                    try_parse_exists_adverb(r, indexed_expr.clone())
+                {
+                    expr = exists_expr;
+                    rest = r_after;
+                    continue;
+                }
+                expr = indexed_expr;
                 rest = r;
                 continue;
             }
@@ -2002,13 +2023,28 @@ fn postfix_expr_loop_from(
             if let Some(end) = r.find(">>") {
                 let content = &r[..end];
                 let r = &r[end + 2..];
-                expr = Expr::Index {
-                    target: Box::new(expr),
-                    index: Box::new(crate::parser::primary::angle_words_subscript_index_expr(
-                        content,
-                    )),
-                    is_positional: false,
+                let (indexed_expr, r) = if split_angle_words(content).is_empty() {
+                    parse_zen_angle(expr, r)
+                } else {
+                    (
+                        Expr::Index {
+                            target: Box::new(expr),
+                            index: Box::new(
+                                crate::parser::primary::angle_words_subscript_index_expr(content),
+                            ),
+                            is_positional: false,
+                        },
+                        r,
+                    )
                 };
+                if let Some((r_after, exists_expr)) =
+                    try_parse_exists_adverb(r, indexed_expr.clone())
+                {
+                    expr = exists_expr;
+                    rest = r_after;
+                    continue;
+                }
+                expr = indexed_expr;
                 rest = r;
                 continue;
             }
