@@ -454,6 +454,14 @@ pub(crate) fn stmt_list_with_mode(
                 // a semicolon, newline, closing brace, or end-of-input is required
                 // before the next statement.  `sub f { 3 } sub g { 3 }` on a
                 // single line is a syntax error.
+                // A modifier chain that ended early left the offending keyword
+                // for an enclosing statement to take (`do STMT unless A if B`).
+                // Reaching it here means nothing did, so the statement really
+                // was missing its `;` — see `pending_extra_modifier_error`.
+                let (r_ws, _) = ws(r)?;
+                if let Some(err) = super::modifier::pending_extra_modifier_error(r_ws) {
+                    return Err(err);
+                }
                 if is_block_ending_stmt(&stmt) && !has_statement_separator(r) {
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"

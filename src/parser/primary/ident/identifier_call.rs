@@ -607,13 +607,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
                 let (r_ws, _) = ws(r)?;
-                for kw in &["while", "until", "for", "given"] {
-                    if keyword(kw, r_ws).is_some() {
-                        return Err(PError::obsolete_at(
-                            &format!("do...{kw}"),
-                            "repeat...while or repeat...until",
-                            r_ws,
-                        ));
+                // A `}` that ends its line ends the statement, so a loop
+                // keyword on a later line opens a new one; only the same-line
+                // spelling is the Perl 5 `do BLOCK while ...` idiom.
+                let skipped = &r[..r.len() - r_ws.len()];
+                if !skipped.contains('\n') {
+                    for kw in &["while", "until", "for", "given"] {
+                        if keyword(kw, r_ws).is_some() {
+                            return Err(PError::obsolete_at(
+                                &format!("do...{kw}"),
+                                "repeat...while or repeat...until",
+                                r_ws,
+                            ));
+                        }
                     }
                 }
                 // The one site that parses the `do` keyword's own braces, and
@@ -1748,6 +1754,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // Skip when directly followed by '.' — `func.method` is `(func()).method`,
     // but `func .method` is a listop call with topic-method-call argument.
     if is_listop(&name)
+        // A lexical enum value shadows the core routine of the same name, and a
+        // value is a complete nullary term: Pakku's `my enum LogLevel <... all>`
+        // makes `all ≤ $!verbose` a comparison, not a call to the junction
+        // builtin with `≤ $!verbose` demanded as its argument.
+        && !crate::parser::stmt::simple::is_user_declared_enum_value(&name)
         && !r.is_empty()
         && !r.starts_with(';')
         && !r.starts_with('}')
@@ -2134,7 +2145,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // genuinely need an argument are absent from the table and keep falling
     // through to the bareword/X::Obsolete path below. See
     // [`is_zero_arg_callable_builtin`] for how the table was measured.
-    if is_terminator_or_dot && is_zero_arg_callable_builtin(&name) {
+    // …unless a lexical enum value shadows the routine, in which case the name is
+    // that value: with `my enum Dir <asc sort desc>` in scope, `sort.value` is the
+    // enum value's `.value`, not `sort().value` on an empty sort.
+    if is_terminator_or_dot
+        && is_zero_arg_callable_builtin(&name)
+        && !crate::parser::stmt::simple::is_user_declared_enum_value(&name)
+    {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

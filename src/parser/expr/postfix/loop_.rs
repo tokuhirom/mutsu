@@ -1368,10 +1368,19 @@ fn postfix_expr_loop_from(
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
                         // Handle a trailing comma before a statement terminator
-                        // (`;` / `}`) or the close of an enclosing group (`)` / `]`)
-                        // — Raku allows `(obj.m: 1, 2,)` and `[obj.m: 1, 2,]`; the
-                        // closer belongs to the surrounding group, not the arg list.
-                        if r4.starts_with([';', '}', ')', ']']) || r4.is_empty() {
+                        // (`;` / `}`), the close of an enclosing group (`)` / `]`),
+                        // or a statement modifier — Raku allows `(obj.m: 1, 2,)`,
+                        // `[obj.m: 1, 2,]` and `obj.m: 1, unless $x` alike: the
+                        // comma is an empty list slot and what follows belongs to
+                        // the enclosing group or statement, not to the arg list.
+                        // (`self.set-from-file: $!browser, #`[ $.debug ] unless
+                        // $driver;` — WebDriver2.)
+                        if r4.starts_with([';', '}', ')', ']'])
+                            || r4.is_empty()
+                            || crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma(
+                                r4,
+                            )
+                        {
                             r_inner = r4;
                             break;
                         }
@@ -1577,10 +1586,19 @@ fn postfix_expr_loop_from(
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
                         // Handle a trailing comma before a statement terminator
-                        // (`;` / `}`) or the close of an enclosing group (`)` / `]`)
-                        // — Raku allows `(obj.m: 1, 2,)` and `[obj.m: 1, 2,]`; the
-                        // closer belongs to the surrounding group, not the arg list.
-                        if r4.starts_with([';', '}', ')', ']']) || r4.is_empty() {
+                        // (`;` / `}`), the close of an enclosing group (`)` / `]`),
+                        // or a statement modifier — Raku allows `(obj.m: 1, 2,)`,
+                        // `[obj.m: 1, 2,]` and `obj.m: 1, unless $x` alike: the
+                        // comma is an empty list slot and what follows belongs to
+                        // the enclosing group or statement, not to the arg list.
+                        // (`self.set-from-file: $!browser, #`[ $.debug ] unless
+                        // $driver;` — WebDriver2.)
+                        if r4.starts_with([';', '}', ')', ']'])
+                            || r4.is_empty()
+                            || crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma(
+                                r4,
+                            )
+                        {
                             r_inner = r4;
                             break;
                         }

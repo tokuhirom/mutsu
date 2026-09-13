@@ -1285,6 +1285,15 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             },
         ));
     }
+    // `.<>` / `.«»` — the zen slice on the topic. There are no keys to parse, so
+    // rather than restate the zero-width case (and, after it, the `:k`/`:v`/`:kv`
+    // adverbs it may carry), hand the subscript back to the undotted postfix
+    // branches by yielding the bare topic with the opener unconsumed: `.<>` is
+    // exactly `$_<>`. Test::Describe's `prepare-param($_, %pars).() for .<>` is
+    // the shape that found this.
+    if r.starts_with("<>") || r.starts_with("\u{ab}\u{bb}") {
+        return Ok((r, Expr::Var("_".to_string())));
+    }
     // .<key> topical hash/associative lookup: equivalent to $_<key>
     if r.starts_with('<') && !r.starts_with("<=") && !r.starts_with("<<") && !r.starts_with("<=>") {
         let r2 = &r[1..];

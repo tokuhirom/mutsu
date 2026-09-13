@@ -10,6 +10,52 @@ use crate::value::Value;
 use super::super::helpers::is_raku_identifier_start;
 use super::{keyword, parse_comma_or_expr};
 
+thread_local! {
+    /// The "Missing semicolon" error for a modifier chain this thread stopped
+    /// short of, keyed by the address of the offending keyword.
+    ///
+    /// A statement takes at most one conditional modifier and then at most one
+    /// loop modifier; a further one is not this statement's business, it is the
+    /// *enclosing* statement's. `do STMT` is the construct that has one:
+    /// `do return False unless %h<auth> ~~ $!auth if $!auth;` (Pakku::Spec) is a
+    /// `do`-wrapped statement carrying `unless …`, and the `if …` modifies the
+    /// `do` statement itself. Raising the error where the chain is detected
+    /// therefore rejects legal code, so the chain merely *ends* there and the
+    /// error is handed to whoever discovers the keyword is unconsumable — the
+    /// statement list, see `pending_extra_modifier_error`.
+    static PENDING_EXTRA_MODIFIER: std::cell::RefCell<Option<(crate::parser::memo::MemoKey, PError)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The deferred "Missing semicolon" error iff it belongs to `at`, i.e. the
+/// statement really did end leaving a modifier keyword nobody could consume.
+///
+/// Reading it does NOT consume the record: a block body is parsed more than once
+/// (speculatively as a hash composer first, then as a block, the second time as a
+/// pure memo hit that re-runs no modifier loop), so a record taken by the
+/// discarded attempt would be missing from the one that survives. Only an
+/// enclosing statement actually consuming the keyword clears it, in
+/// `clear_pending_extra_modifier`.
+pub(crate) fn pending_extra_modifier_error(at: &str) -> Option<PError> {
+    let key = crate::parser::memo::memo_key(at);
+    PENDING_EXTRA_MODIFIER.with(|p| match p.borrow().as_ref() {
+        Some((k, e)) if *k == key => Some(e.clone()),
+        _ => None,
+    })
+}
+
+/// Drop the deferred error once an enclosing statement has consumed the keyword
+/// it was recorded for.
+fn clear_pending_extra_modifier(at: &str) {
+    let key = crate::parser::memo::memo_key(at);
+    PENDING_EXTRA_MODIFIER.with(|p| {
+        let mut slot = p.borrow_mut();
+        if slot.as_ref().is_some_and(|(k, _)| *k == key) {
+            *slot = None;
+        }
+    });
+}
+
 /// After parsing a postfix modifier condition, check if the remaining input
 /// starts on a new line with a bare word that is not a statement modifier.
 /// This detects "two terms in a row across lines" errors like:
@@ -311,7 +357,17 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     // statement modifier.
     if stmt_ends_with_block(&stmt) {
         let consumed_len = input.len().saturating_sub(rest.len());
-        if input[..consumed_len].contains('\n') {
+        // …and only when the `}` really does end the line. The AST test answers
+        // "does this statement's last expression *contain* a trailing block",
+        // which is also true of `@a = @a.grep({ ... })` — there the line ends in
+        // `)`, so the statement is unfinished and the next line's `if` IS its
+        // modifier (App::Moneymoor writes ten modules that way). Read the source
+        // text before the statement's end to tell the two apart; with no source
+        // recorded (a nested/EVAL buffer), keep the conservative old answer.
+        if input[..consumed_len].contains('\n')
+            && crate::parser::primary::source_span_at(input)
+                .is_none_or(|(pre, _)| pre.trim_end().ends_with('}'))
+        {
             return Ok((input, stmt));
         }
     }
@@ -343,10 +399,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             return Ok((rest, current_stmt));
         }
 
+        // An enclosing statement that can take this keyword has consumed it, so
+        // the deferred error recorded for it is moot.
+        clear_pending_extra_modifier(rest);
+
         // A second modifier is only legal as `conditional THEN loop`
         // (`EXPR if COND for LIST`). Any other chain — two conditionals, two
-        // loops, a loop then a conditional, or a third modifier — needs a `;`
-        // and so is X::Syntax::Confused ("Missing semicolon").
+        // loops, a loop then a conditional, or a third modifier — ends this
+        // statement, and needs a `;` unless an enclosing statement takes it.
         if let Some(next_kw) = leading_modifier_keyword(rest)
             && let Some(&first) = parsed_kinds.first()
             && (parsed_kinds.len() >= 2 || !second_modifier_allowed(first, next_kw))
@@ -370,10 +430,14 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
                 crate::symbol::Symbol::intern("X::Syntax::Confused"),
                 attrs,
             );
-            return Err(PError::fatal_with_exception(
-                "Missing semicolon".to_string(),
-                Box::new(ex),
-            ));
+            let mut err =
+                PError::fatal_with_exception("Missing semicolon".to_string(), Box::new(ex));
+            err.remaining_len = Some(rest.len());
+            let key = crate::parser::memo::memo_key(rest);
+            PENDING_EXTRA_MODIFIER.with(|p| {
+                *p.borrow_mut() = Some((key, err));
+            });
+            return Ok((rest, current_stmt));
         }
 
         let kw = leading_modifier_keyword(rest);
