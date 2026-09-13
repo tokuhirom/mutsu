@@ -382,7 +382,13 @@ impl Interpreter {
                 let mut inner_vars = crate::runtime::RegexVarMap::default();
                 let matched = if *is_behind {
                     let mut found = false;
-                    for start in 0..=pos {
+                    // A start earlier than `pos` minus the most the pattern can
+                    // consume cannot end at `pos`, so the search begins there
+                    // rather than at 0 — what made one look-behind O(pos) and a
+                    // per-line look-behind O(n^2) (#7576).
+                    let floor =
+                        super::regex_lookbehind::lookbehind_start_floor(pattern, chars, pos);
+                    for start in floor..=pos {
                         if let Some((end, mut inner)) =
                             self.regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
                             && end == pos
