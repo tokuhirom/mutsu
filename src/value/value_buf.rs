@@ -263,7 +263,15 @@ pub(crate) fn buf_elems_in(map: &AttrMap) -> Option<Vec<Value>> {
     Some(decode_elems(&node))
 }
 
-/// Run `f` over the elements without copying them.
+/// Run `f` over the elements without the caller owning them.
+///
+/// This still *decodes* the whole buffer into a fresh `Vec<Value>` first — the
+/// elements live as packed bytes, so there is no existing slice to hand out.
+/// What it saves the caller is the ownership, not the work, so it is the wrong
+/// tool inside a loop over one buffer: reach for [`buf_elem_at`] and
+/// [`buf_len`], which decode one element and none at all. Reading this comment
+/// as a promise of no copying is what left `nqp::elems`/`nqp::atpos_i`
+/// quadratic (see `news/2026-09/nqp-uni-element-access-was-quadratic.md`).
 ///
 /// The borrow is held by an attribute read guard for the duration of the call,
 /// so `f` must not re-enter the same instance's attribute cell for writing.
