@@ -125,3 +125,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
 | [0098](0098-if-pragma-actions-slang.md) | mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name (the `if` pragma) | Accepted (implemented 2026-09-13) |
 | [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 filed; Stage 2/3 deferred — see §8) |
+| [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented) |

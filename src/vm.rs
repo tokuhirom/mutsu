@@ -245,6 +245,7 @@ mod vm_set_arith_ops;
 mod vm_set_ops;
 pub(crate) mod vm_smart_match;
 mod vm_smartmatch_ops;
+pub(crate) mod vm_stack_guard;
 pub(crate) mod vm_stats;
 pub(crate) mod vm_string_regex_ops;
 mod vm_subscript_invocant_ref;

@@ -107,6 +107,9 @@ OVERRIDES: dict[str, str] = {
     "generics-nominalizable-class": "types",
     # `is-eqv` compares values structurally: an equivalence-semantics test.
     "is-eqv": "types",
+    # Running out of native stack is a VM-execution property (mutsu runs a Raku
+    # call as a Rust call), not a property of recursion as a language feature.
+    "deep-recursion-raises-instead-of-aborting": "vm",
     # A `my $x = $x` style alias must not leak its name outward: scoping.
     "nested-alias-name-no-leak": "vm",
     # A nested `Any` type constraint on a parameter.

@@ -3586,6 +3586,17 @@ pub struct Interpreter {
     /// `GetLocal` read of the outer name sees the loop's last iteration value.
     pub(crate) for_param_restore_stack: Vec<(String, Option<Value>, Option<u32>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
+    /// Calls left before the next ADR-0100 native-stack headroom check.
+    ///
+    /// Reading the stack pointer at every call boundary cost ~4% on a
+    /// call-dominated workload (`fib(32)`), because the address-of forces a
+    /// stack slot and acts as an optimization barrier in the hottest
+    /// functions mutsu has. Counting down an integer field instead keeps the
+    /// hot path to a decrement and a predictable branch, and the real check
+    /// runs once per [`crate::vm::vm_stack_guard::STACK_CHECK_INTERVAL`]
+    /// calls -- which is why the guard's reserve has to absorb a whole
+    /// interval's worth of frames. See `vm::vm_stack_guard`.
+    pub(crate) stack_check_countdown: u32,
     /// Active CONTROL handlers on the dynamic call stack (one per executing
     /// `CONTROL { }` block). Kept in lock-step with `control_handler_depth` so
     /// a `warn` raised deep inside a protected body can find the innermost

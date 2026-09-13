@@ -20,6 +20,10 @@ impl Interpreter {
         invocant: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        self.guard_native_stack()?;
         crate::alloc_scope!("call-compiled-method");
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
@@ -1514,6 +1518,10 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         can_skip_merge: bool,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        self.guard_native_stack()?;
         crate::alloc_scope!("mfast");
         crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
         let attrs_cell = self.method_attr_cell(&base, owner_class);
