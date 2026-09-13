@@ -64,6 +64,7 @@ pub enum RakuAstClass {
     RegexWithWhitespace,
     RegexGroup,
     RegexCapturingGroup,
+    RegexInterpolation,
     RegexAlternation,
     RegexQuantifiedAtom,
     RegexQuantifierZeroOrMore,
@@ -267,6 +268,7 @@ impl RakuAstClass {
             RegexWithWhitespace => "RakuAST::Regex::WithWhitespace",
             RegexGroup => "RakuAST::Regex::Group",
             RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
+            RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
             RegexQuantifierZeroOrMore => "RakuAST::Regex::Quantifier::ZeroOrMore",
@@ -476,7 +478,12 @@ impl RakuAstClass {
             // through this list.
             | TermSelf => TERM,
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
-            RegexLiteral | RegexQuote | RegexGroup | RegexCapturingGroup | RegexWithWhitespace => &[
+            RegexLiteral
+            | RegexQuote
+            | RegexGroup
+            | RegexCapturingGroup
+            | RegexInterpolation
+            | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
@@ -607,6 +614,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Quote"
         | "RakuAST::Regex::Group"
         | "RakuAST::Regex::CapturingGroup"
+        | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
@@ -691,6 +699,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexWithWhitespace,
     RakuAstClass::RegexGroup,
     RakuAstClass::RegexCapturingGroup,
+    RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexQuantifiedAtom,
     RakuAstClass::RegexQuantifierZeroOrMore,
@@ -1314,6 +1323,34 @@ pub fn construct(
             fields,
         }))));
     }
+    if class_name == "RakuAST::Regex::Interpolation" && method == "new" {
+        let var = named_arg(args, "var")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Regex::Interpolation.new requires `var`"))?;
+        require_rakuast_class(
+            &var,
+            RakuAstClass::VarLexical,
+            "RakuAST::Regex::Interpolation.new",
+        )?;
+        let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
+        if !matches!(sequential.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Interpolation.new expects `sequential` to be Bool",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexInterpolation,
+            fields: vec![
+                RakuAstField {
+                    name: Some("sequential"),
+                    value: RakuAstFieldValue::Node(sequential),
+                },
+                RakuAstField {
+                    name: Some("var"),
+                    value: RakuAstFieldValue::Node(var),
+                },
+            ],
+        }))));
+    }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
@@ -1529,6 +1566,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexWithWhitespace
                     | RakuAstClass::RegexGroup
                     | RakuAstClass::RegexCapturingGroup
+                    | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
                     | RakuAstClass::RegexCharClassDigit
@@ -1835,6 +1873,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexWithWhitespace
             | RakuAstClass::RegexGroup
             | RakuAstClass::RegexCapturingGroup
+            | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore
             | RakuAstClass::RegexQuantifierOneOrMore

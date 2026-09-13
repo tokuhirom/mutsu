@@ -2313,6 +2313,13 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             RakuAstClass::RegexCapturingGroup,
             vec![node_field(None, regex_node(child)?)],
         ),
+        RegexNode::Interpolation { name, sequential } => (
+            RakuAstClass::RegexInterpolation,
+            vec![
+                leaf_field(Some("sequential"), Value::truth(*sequential)),
+                node_field(Some("var"), var_lexical("$", name)),
+            ],
+        ),
         RegexNode::Quantified { atom, quantifier } => {
             let quantifier = match quantifier {
                 RegexQuantifier::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,

@@ -45,6 +45,10 @@ pub(crate) enum RegexNode {
     Alternation(Vec<RegexNode>),
     Group(Box<RegexNode>),
     CapturingGroup(Box<RegexNode>),
+    Interpolation {
+        name: String,
+        sequential: bool,
+    },
     Quantified {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
@@ -61,10 +65,10 @@ pub(crate) enum RegexQuantifier {
 }
 
 impl RegexTree {
-    /// Parse the static subset whose source shape is currently needed by the
-    /// RakuAST boundary. Returning `None` is intentional: execution still
-    /// receives the original pattern, while the converter reports an honest
-    /// unsupported boundary for a construct without a source tree.
+    /// Parse the supported source subset whose shape is currently needed by
+    /// the RakuAST boundary. Returning `None` is intentional: execution
+    /// still receives the original pattern, while the converter reports an
+    /// honest unsupported boundary for a construct without a source tree.
     pub(crate) fn parse_static(source: &str, declaration: bool) -> Option<Self> {
         let mut parser = Parser {
             chars: source.chars().collect(),
@@ -85,12 +89,22 @@ impl RegexTree {
         self.body.to_source()
     }
 
-    /// Lower the static source tree into the execution matcher plan.
+    /// Return the scalar variables whose values are read by interpolation
+    /// nodes. The execution boundary uses this to preserve Regex-valued
+    /// interpolation, whose value is itself a regex rather than literal text.
+    pub(crate) fn interpolation_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        self.body.collect_interpolation_names(&mut names);
+        names
+    }
+
+    /// Lower the supported source tree into the execution matcher plan.
     ///
     /// The runtime parser still owns every construct that needs package state,
-    /// interpolation, or code evaluation.  This deliberately small bridge is
-    /// for the source forms that `parse_static` can prove are structural only;
-    /// returning `None` keeps those forms on the established parser path.
+    /// type-sensitive interpolation, or code evaluation. This deliberately
+    /// small bridge is for the source forms that `parse_static` can prove are
+    /// structurally representable; returning `None` keeps other forms on the
+    /// established parser path.
     pub(crate) fn lower_execution(
         &self,
         ratchet: bool,
@@ -272,6 +286,16 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
+                RegexNode::Interpolation { name, sequential } => {
+                    if *sequential {
+                        return None;
+                    }
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::VarInterp(name.clone()),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -314,6 +338,22 @@ impl RegexTree {
 }
 
 impl RegexNode {
+    fn collect_interpolation_names(&self, names: &mut Vec<String>) {
+        match self {
+            Self::Interpolation { name, .. } => names.push(name.clone()),
+            Self::Sequence(nodes) | Self::Alternation(nodes) => {
+                for node in nodes {
+                    node.collect_interpolation_names(names);
+                }
+            }
+            Self::Group(child)
+            | Self::CapturingGroup(child)
+            | Self::Quantified { atom: child, .. }
+            | Self::WithWhitespace(child) => child.collect_interpolation_names(names),
+            Self::Literal(_) | Self::Quote(_) | Self::CharClassDigit => {}
+        }
+    }
+
     fn to_source(&self) -> String {
         match self {
             Self::Literal(text) => text
@@ -359,6 +399,7 @@ impl RegexNode {
             }
             Self::Group(child) => format!("[{}]", child.to_source()),
             Self::CapturingGroup(child) => format!("({})", child.to_source()),
+            Self::Interpolation { name, .. } => format!("${name}"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
                     RegexQuantifier::ZeroOrMore => '*',
@@ -510,8 +551,10 @@ impl Parser {
                     sequence_for_multichar_literal(inner),
                 )))
             }
+            '$' => self.parse_interpolation(),
+            '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
-            '|' | '+' | '*' | '?' | '.' | '^' | '$' | '<' | '>' => None,
+            '|' | '+' | '*' | '?' | '.' | '^' | '<' | '>' => None,
             _ => self.parse_literal(),
         }
     }
@@ -523,6 +566,11 @@ impl Parser {
             self.pos += 1;
             match ch {
                 c if c == quote => return Some(RegexNode::Quote(text)),
+                // A double-quoted regex term has its own qq interpolation
+                // segments. Keep that form on the explicit follow-up path
+                // until the shared tree can retain those segments instead of
+                // pretending that `$name` was part of one quoted literal.
+                '$' | '@' | '%' if quote == '"' => return None,
                 // Quoted escapes can decode codepoints (`\\x20`) or alter
                 // quoting (`\\"`).  The current Quote node stores only the
                 // decoded-looking text, so it cannot preserve that source
@@ -548,14 +596,76 @@ impl Parser {
     }
 
     fn parse_literal(&mut self) -> Option<RegexNode> {
+        // Regex declarators contain Main-slang code rather than regex source
+        // terms.  Keeping a partial tree for one would route a declaration
+        // through the value-aware matcher and change its writeback semantics
+        // (notably for :temp and :constant).  The legacy parser remains the
+        // execution and RakuAST boundary for these forms.
+        if self.declaration && self.starts_embedded_declaration() {
+            return None;
+        }
         let start = self.pos;
         while let Some(ch) = self.chars.get(self.pos).copied() {
-            if ch.is_whitespace() || matches!(ch, '|' | '+' | '*' | '?' | '(' | ')' | '[' | ']') {
+            if ch.is_whitespace()
+                || matches!(
+                    ch,
+                    '|' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '$' | '@' | '%'
+                )
+            {
                 break;
             }
             self.pos += 1;
         }
         (self.pos > start).then(|| RegexNode::Literal(self.chars[start..self.pos].iter().collect()))
+    }
+
+    fn starts_embedded_declaration(&self) -> bool {
+        if self.chars.get(self.pos) != Some(&':') {
+            return false;
+        }
+        let rest: String = self.chars[self.pos + 1..].iter().collect();
+        ["my ", "our ", "state ", "constant ", "temp ", "let "]
+            .iter()
+            .any(|keyword| rest.starts_with(keyword))
+    }
+
+    fn parse_interpolation(&mut self) -> Option<RegexNode> {
+        self.pos += 1; // '$'
+        let name = if self.consume_if('{') {
+            let name = self.parse_variable_name()?;
+            if !self.consume_if('}') {
+                return None;
+            }
+            name
+        } else {
+            self.parse_variable_name()?
+        };
+        Some(RegexNode::Interpolation {
+            name,
+            sequential: false,
+        })
+    }
+
+    fn parse_variable_name(&mut self) -> Option<String> {
+        let start = self.pos;
+        let first = self.chars.get(self.pos).copied()?;
+        if !first.is_alphabetic() && first != '_' {
+            return None;
+        }
+        self.pos += 1;
+        while let Some(ch) = self.chars.get(self.pos).copied() {
+            let hyphen = ch == '-'
+                && self
+                    .chars
+                    .get(self.pos + 1)
+                    .is_some_and(|next| next.is_alphabetic() || *next == '_');
+            if ch.is_alphanumeric() || ch == '_' || hyphen {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        Some(self.chars[start..self.pos].iter().collect())
     }
 
     fn parse_quantifier(&mut self) -> Option<RegexQuantifier> {
