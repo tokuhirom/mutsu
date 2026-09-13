@@ -122,3 +122,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0094](0094-closure-capture-kept-set-is-not-narrowed.md) | The closure capture's kept set is not narrowed — its cost is the call-time merge | Accepted |
 | [0095](0095-native-mut-publish-before-wake.md) | A mutable native instance method publishes before it wakes another thread | Accepted (implemented) |
 | [0096](0096-batteries-adoption-policy.md) | A battery is the real upstream module; the interpreter is what grows (rung-3 native provision banned; a performance measurement justifies an optimization, never a substitution) | Accepted |
+| [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
