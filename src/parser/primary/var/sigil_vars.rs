@@ -892,7 +892,12 @@ fn parse_operator_code_ref_suffix<'a>(
 /// validate the `&[word]` operator-reference form. Symbolic infixes (`&[+]`)
 /// and uppercase meta-ops (`&[Z]`, `&[Xcmp]`) are handled separately and are
 /// never checked against this list.
-fn is_known_word_infix(name: &str) -> bool {
+///
+/// Also reused by `parser::expr::operators::parse_prefix_unary_op`'s `!!`
+/// double-negation check: a word infix's own name can never be a term, so
+/// `!!eq`/`!!and`/`!!div` etc. are illegal (`X::Syntax::Confused`), not
+/// double negation of a bareword call.
+pub(in crate::parser) fn is_known_word_infix(name: &str) -> bool {
     matches!(
         name,
         "div"
