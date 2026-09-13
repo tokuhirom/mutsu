@@ -505,6 +505,15 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     // operator: `+!$x` is `+(!$x)`, `-?$x` is `-(?$x)`. Without this the leading
     // `+`/`-`/`~` falls through to numeric-literal parsing and fails on the `!`.
     let starts_another_prefix = |s: &str| parse_prefix_unary_op(s.trim_start()).is_some();
+    // A word infix operator's own name (`eq`, `and`, `div`, ...) can never be
+    // a term, so `!!eq`/`!!and`/`!!div` are illegal ("doubled prefix:<!>",
+    // `X::Syntax::Confused`) rather than double negation of a bareword call
+    // (roast/S03-metaops/not.t). Only the whole glued word matters, not a
+    // longer identifier merely starting with one (`!!equals` is fine).
+    let glued_word_is_infix_op = |s: &str| {
+        let word_len = s.bytes().take_while(|&b| is_ident_char(Some(b))).count();
+        word_len > 0 && crate::parser::primary::var::is_known_word_infix(&s[..word_len])
+    };
     if input.starts_with('!')
         && !input.starts_with("!~~")
         && !input.starts_with("!%%")
@@ -514,15 +523,18 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         // own atomic 3-char marker, matched first), so `!!` is a
         // double-negation prefix (`!!$x` == `!(!$x)`, raku's idiomatic
         // "boolify") only when glued directly onto its term with no
-        // whitespace and the third character is not itself `!` -- exactly
-        // the distinction raku makes (`!!$x` is `True`; `!! $x`, with a
-        // space, and `!!!x`, three bangs, are each raku's own "Two terms in
-        // a row" error, never double negation). A ternary's `!!` marker
-        // always has a space on both sides, so this glued-only check can
-        // never mistake it for one (#8206).
+        // whitespace, the third character is not itself `!`, and the glued
+        // word (if any) is not itself a word infix operator's name --
+        // exactly the distinctions raku makes (`!!$x` is `True`; `!! $x`
+        // with a space, `!!!x` with three bangs, and `!!eq` are each raku's
+        // own "Confused"/"Two terms in a row" error, never double
+        // negation). A ternary's `!!` marker always has a space on both
+        // sides, so this glued-only check can never mistake it for one
+        // (#8206).
         && (!input.starts_with("!!")
             || (!input.starts_with("!!!")
-                && matches!(input[2..].chars().next(), Some(c) if unary_term_start(c) || c == '.')))
+                && matches!(input[2..].chars().next(), Some(c) if unary_term_start(c) || c == '.')
+                && !glued_word_is_infix_op(&input[2..])))
     {
         Some((PrefixUnaryOp::Not, 1))
     } else if input.starts_with("?^") {

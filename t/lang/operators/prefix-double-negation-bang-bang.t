@@ -9,7 +9,7 @@ use Test;
 # ("Two terms in a row"), and a ternary's `!!` marker always has a space on
 # both sides in valid Raku, so the two can never collide.
 
-plan 11;
+plan 14;
 
 my $x = 1;
 my $zero = 0;
@@ -44,3 +44,14 @@ is (True ?? Int !! Str), Int, 'ternary with a type-object then-branch';
 
 # Plain single negation is unaffected.
 is !$x, False, 'plain single ! negation is unaffected';
+
+# A word infix operator's own name can never be a term, so `!!eq`/`!!and`
+# must stay illegal rather than parse as double negation of a bareword call
+# (roast/S03-metaops/not.t: "Doubled prefix:<!> is illegal").
+throws-like '"a" !!eq "a"', X::Syntax::Confused, '!!eq is illegal, not double negation';
+throws-like 'True !!and False', X::Syntax::Confused, '!!and is illegal too';
+
+# A bareword that is NOT a word infix operator's name is still a legitimate
+# glued term, so double negation of it still works.
+sub truthy { True }
+is !!truthy, True, '!!bareword-call is still double negation when the word is not an infix op';

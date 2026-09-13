@@ -26,6 +26,7 @@ pub(crate) use perl5::detect_perl5_scalar_var;
 pub(crate) use perl5::{brace_deref_text, is_brace_contextualizer};
 pub(in crate::parser) use scalar::mint_anon_state_name;
 pub(in crate::parser) use scalar::parse_symbolic_deref_segments;
+pub(in crate::parser) use sigil_vars::is_known_word_infix;
 
 // ── pub(super): accessible from parser::primary (the parent of `var`)
 //    and all its descendants via `crate::parser::primary::var::` paths ──────
