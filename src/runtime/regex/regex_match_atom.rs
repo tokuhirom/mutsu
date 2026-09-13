@@ -532,8 +532,9 @@ impl Interpreter {
             // `find_method` routes subrule dispatch through it (the
             // Metamodel::GrammarHOW protocol); `None` falls through to the
             // normal engine path.
-            if !candidates.is_empty()
-                && !self.registry().grammar_custom_how.is_empty()
+            let custom_how =
+                !candidates.is_empty() && !self.registry().grammar_custom_how.is_empty();
+            if custom_how
                 && let Some(result) =
                     self.try_custom_how_subrule_dispatch(&spec, chars, pos, pkg, &arg_values)
             {
@@ -564,7 +565,18 @@ impl Interpreter {
                     }
                     n.into_boxed_str()
                 });
-                let lr_key = LrKey::new(spec.lookup_sym, lr_args, chars.len() - pos);
+                // ... unless nothing can re-enter the key at all. The rule call
+                // graph decides that (`subrule_needs_no_lr_bookkeeping`), and
+                // when it does the whole activation — create the entry, read
+                // `false` out of it, remove it again — is provably a no-op, so
+                // the key is never built and the three map operations never
+                // happen. An argument-bearing call keeps the bookkeeping: its
+                // arguments are part of the key, and they are runtime data the
+                // walk does not model.
+                let lr_key = (!arg_values.is_empty()
+                    || custom_how
+                    || !self.subrule_needs_no_lr_bookkeeping(spec.lookup_sym, pkg))
+                .then(|| LrKey::new(spec.lookup_sym, lr_args, chars.len() - pos));
 
                 // Is this call already active (left recursion), and if not,
                 // start its activation — one map operation for both, since
@@ -579,20 +591,23 @@ impl Interpreter {
                 // (= no match yet). This key starts out un-consulted for THIS
                 // activation; a stale entry from an earlier activation at the
                 // same key must not be read as "left-recursive" here.
-                let outer_seed_read = match super::regex_lr_state::lr_begin_or_reenter(&lr_key) {
-                    super::regex_lr_state::LrBegin::Reentry(seed) => {
-                        // Wrap seed into outer captures.
-                        // build_named_candidates_from_inner returns items in the
-                        // same order as input (HIGHEST FIRST). Caller expects
-                        // LOWEST FIRST, so reverse.
-                        let mut result = Self::build_named_candidates_from_inner(
-                            seed, pos, &spec, None, // no sym_key for seed
-                        );
-                        result.reverse();
-                        return result;
+                let mut outer_seed_read = false;
+                if let Some(lr_key) = &lr_key {
+                    match super::regex_lr_state::lr_begin_or_reenter(lr_key) {
+                        super::regex_lr_state::LrBegin::Reentry(seed) => {
+                            // Wrap seed into outer captures.
+                            // build_named_candidates_from_inner returns items in
+                            // the same order as input (HIGHEST FIRST). Caller
+                            // expects LOWEST FIRST, so reverse.
+                            let mut result = Self::build_named_candidates_from_inner(
+                                seed, pos, &spec, None, // no sym_key for seed
+                            );
+                            result.reverse();
+                            return result;
+                        }
+                        super::regex_lr_state::LrBegin::Began(outer) => outer_seed_read = outer,
                     }
-                    super::regex_lr_state::LrBegin::Began(outer_seed_read) => outer_seed_read,
-                };
+                }
 
                 // best_inner_max: max inner_end seen so far (None = nothing matched yet).
                 let mut best_inner_max: Option<usize> = None;
@@ -740,7 +755,7 @@ impl Interpreter {
                     // identical set — and since every nested subrule did the same,
                     // that redundant second pass compounded to 2^depth over a
                     // precedence-climbing grammar (99problems-41-to-50.t P47).
-                    let seed_was_consulted = lr_seed_was_consulted(&lr_key);
+                    let seed_was_consulted = lr_key.as_ref().is_some_and(lr_seed_was_consulted);
                     if !seed_was_consulted {
                         best_raw = deduped_raw;
                         break;
@@ -772,7 +787,9 @@ impl Interpreter {
                         // Seed grew: store the raw matches (HIGHEST FIRST) as the seed.
                         best_inner_max = new_max;
                         best_raw = deduped_raw.clone();
-                        lr_store_seed(&lr_key, deduped_raw);
+                        if let Some(lr_key) = &lr_key {
+                            lr_store_seed(lr_key, deduped_raw);
+                        }
                     } else {
                         // No growth: done.
                         break;
@@ -782,7 +799,9 @@ impl Interpreter {
                 // Clean up this activation, restoring the enclosing one's
                 // consulted flag: an inner activation of the same key must not
                 // mask the outer one's.
-                lr_end_activation(&lr_key, outer_seed_read);
+                if let Some(lr_key) = &lr_key {
+                    lr_end_activation(lr_key, outer_seed_read);
+                }
 
                 // Wrap best_raw into outer captures and return.
                 // best_raw is HIGHEST FIRST; build_named_candidates_from_inner returns in

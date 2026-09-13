@@ -14,6 +14,16 @@
 //! left-recursive ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
 //! One map of one entry struct, keyed by the *interned* rule name, does the
 //! same work in one hash lookup per operation and no allocation at all.
+//!
+//! Round 21 asks the prior question instead: does this call need an activation
+//! at all? A `<subrule>` call can only ever re-enter its own key through a call
+//! to a rule of the same name, and the rule call graph
+//! ([`super::regex_call_graph`]) already decides whether one is reachable. When
+//! it proves none is, AND no rule in the call cone runs user code that could
+//! name one by hand, AND no activation of that name is live further up the
+//! stack, the three map operations are provably a no-op and are skipped
+//! outright. The gate itself is the memoized verdict plus one `Vec` index, in
+//! the same thread-local the state lives in.
 
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
@@ -57,6 +67,59 @@ impl LrKey {
     }
 }
 
+/// Everything the left-recursion machinery keeps per thread.
+///
+/// One thread-local rather than three: `lr_begin_or_reenter` and
+/// `lr_end_activation` touch the key map and the per-name activation count
+/// together, and the gate reads the count and the memoized verdict together, so
+/// splitting them would only buy extra [`std::thread::LocalKey`]
+/// accesses on the hottest path in the matcher.
+struct LrState {
+    /// Per-key state for the calls currently in flight.
+    keys: HashMap<LrKey, LrEntry>,
+    /// How many activations of each rule NAME are live, indexed by
+    /// [`Symbol::id`]. A name with no live activation cannot be re-entered by
+    /// anything, which is what lets a proven-safe call skip `keys` entirely —
+    /// and answering it by array index keeps the gate cheaper than the one hash
+    /// lookup it replaces.
+    active: Vec<u32>,
+    /// The token generation [`LrState::skip`] was computed under. Rule bodies
+    /// can be redefined (`TOKEN_DEFS_GEN`), which invalidates every verdict.
+    generation: u64,
+    /// `(package, rule name) -> this call provably needs no bookkeeping`, as
+    /// decided by [`super::regex_call_graph`]'s cone walk.
+    skip: HashMap<(Symbol, Symbol), bool>,
+}
+
+impl LrState {
+    /// Const-constructible so the thread-local needs no lazy-initialization
+    /// check on every access — this is the matcher's hottest thread-local.
+    const fn new() -> Self {
+        LrState {
+            keys: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            active: Vec::new(),
+            generation: 0,
+            skip: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+        }
+    }
+
+    #[inline]
+    fn bump(&mut self, name: Symbol) {
+        let idx = name.id() as usize;
+        if idx >= self.active.len() {
+            self.active.resize(idx + 1, 0);
+        }
+        self.active[idx] += 1;
+    }
+
+    #[inline]
+    fn unbump(&mut self, name: Symbol) {
+        if let Some(slot) = self.active.get_mut(name.id() as usize) {
+            *slot = slot.saturating_sub(1);
+        }
+    }
+}
+
 /// One key's left-recursion state.
 #[derive(Default)]
 struct LrEntry {
@@ -83,18 +146,20 @@ impl LrEntry {
 }
 
 thread_local! {
-    /// Per-key left-recursion state for the calls currently in flight.
+    /// Per-key left-recursion state for the calls currently in flight, the
+    /// per-name activation counts, and the memoized "needs no bookkeeping"
+    /// verdicts.
     ///
-    /// Fx-hashed rather than SipHash-hashed: this map is probed several times
-    /// per `<subrule>` call at every position, and a grammar rule name is not
-    /// adversarial input.
-    static LR_STATE: RefCell<HashMap<LrKey, LrEntry>> = RefCell::new(HashMap::default());
+    /// Fx-hashed rather than SipHash-hashed: these maps are probed several
+    /// times per `<subrule>` call at every position, and a grammar rule name is
+    /// not adversarial input.
+    static LR_STATE: RefCell<LrState> = const { RefCell::new(LrState::new()) };
 }
 
 /// `true` when this key is already being evaluated further up the stack, i.e.
 /// entering it again would be a left-recursive re-entry.
 pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
-    LR_STATE.with(|s| s.borrow().get(key).is_some_and(|e| e.seed.is_some()))
+    LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()))
 }
 
 /// Mark `key` as under evaluation with an empty seed, returning the enclosing
@@ -102,10 +167,48 @@ pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
 pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
     LR_STATE.with(|s| {
         let mut s = s.borrow_mut();
-        let entry = s.entry(key.clone()).or_default();
+        s.bump(key.name);
+        let entry = s.keys.entry(key.clone()).or_default();
         entry.seed = Some(Vec::new());
         std::mem::take(&mut entry.seed_read)
     })
+}
+
+/// The gate [`super::regex_call_graph`] decides and this module caches: may a
+/// `<name>` call in `pkg` skip its activation entirely?
+///
+/// `None` means "not decided for this token generation" and asks the caller to
+/// run the cone walk and report back through [`lr_record_skip_verdict`]. A live
+/// activation of the same NAME answers `Some(false)` outright, whatever the
+/// walk says: the verdict is about what this call's own cone can reach, and an
+/// *enclosing* call of the same name is not in it (two grammars that define the
+/// same rule name share a key, while the walk is per package). That case keeps
+/// the full bookkeeping, so the skip is observationally identical to taking it.
+#[inline]
+pub(super) fn lr_skip_verdict(name: Symbol, pkg: Symbol, generation: u64) -> Option<bool> {
+    LR_STATE.with(|s| {
+        let s = s.borrow();
+        if s.active.get(name.id() as usize).is_some_and(|&n| n > 0) {
+            return Some(false);
+        }
+        if s.generation != generation {
+            return None;
+        }
+        s.skip.get(&(pkg, name)).copied()
+    })
+}
+
+/// Record what the cone walk decided, discarding every verdict from an earlier
+/// token generation.
+pub(super) fn lr_record_skip_verdict(name: Symbol, pkg: Symbol, generation: u64, verdict: bool) {
+    LR_STATE.with(|s| {
+        let mut s = s.borrow_mut();
+        if s.generation != generation {
+            s.generation = generation;
+            s.skip.clear();
+        }
+        s.skip.insert((pkg, name), verdict);
+    });
 }
 
 /// What a `<subrule>` call found when it asked to start an activation.
@@ -133,13 +236,15 @@ pub(super) enum LrBegin {
 pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
     LR_STATE.with(|s| {
         let mut s = s.borrow_mut();
-        let entry = s.entry(key.clone()).or_default();
+        let entry = s.keys.entry(key.clone()).or_default();
         if let Some(seed) = entry.seed.as_ref() {
             entry.seed_read = true;
             return LrBegin::Reentry(seed.clone());
         }
         entry.seed = Some(Vec::new());
-        LrBegin::Began(std::mem::take(&mut entry.seed_read))
+        let outer_seed_read = std::mem::take(&mut entry.seed_read);
+        s.bump(key.name);
+        LrBegin::Began(outer_seed_read)
     })
 }
 
@@ -148,7 +253,8 @@ pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
 pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
     LR_STATE.with(|s| {
         let mut s = s.borrow_mut();
-        match s.entry(key.clone()) {
+        s.unbump(key.name);
+        match s.keys.entry(key.clone()) {
             Entry::Occupied(mut occupied) => {
                 let entry = occupied.get_mut();
                 entry.seed = None;
@@ -174,14 +280,14 @@ pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
 
 /// Has anything read `key`'s seed?
 pub(super) fn lr_seed_was_consulted(key: &LrKey) -> bool {
-    LR_STATE.with(|s| s.borrow().get(key).is_some_and(|e| e.seed_read))
+    LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed_read))
 }
 
 /// Replace the seed of the activation that owns `key` (one iteration of the
 /// growing-seed loop).
 pub(super) fn lr_store_seed(key: &LrKey, seed: Vec<(usize, RegexCaptures)>) {
     LR_STATE.with(|s| {
-        s.borrow_mut().entry(key.clone()).or_default().seed = Some(seed);
+        s.borrow_mut().keys.entry(key.clone()).or_default().seed = Some(seed);
     });
 }
 
@@ -202,7 +308,7 @@ mod tests {
         assert!(lr_key_is_active(&k));
         assert!(!lr_end_activation(&k, outer));
         assert!(!lr_key_is_active(&k));
-        LR_STATE.with(|s| assert!(!s.borrow().contains_key(&k)));
+        LR_STATE.with(|s| assert!(!s.borrow().keys.contains_key(&k)));
     }
 
     #[test]
@@ -223,7 +329,7 @@ mod tests {
         assert!(!lr_end_activation(&k, inner));
         assert!(lr_seed_was_consulted(&k));
         assert!(lr_end_activation(&k, outer));
-        LR_STATE.with(|s| assert!(!s.borrow().contains_key(&k)));
+        LR_STATE.with(|s| assert!(!s.borrow().keys.contains_key(&k)));
     }
 
     #[test]
@@ -242,7 +348,48 @@ mod tests {
         assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Began(_)));
         assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Reentry(seed) if seed.is_empty()));
         lr_end_activation(&k, false);
-        LR_STATE.with(|s| assert!(!s.borrow().contains_key(&k)));
+        LR_STATE.with(|s| assert!(!s.borrow().keys.contains_key(&k)));
+    }
+
+    #[test]
+    fn a_live_activation_of_the_name_closes_the_skip_gate() {
+        let name = Symbol::intern("lr_gate_name");
+        let pkg = Symbol::intern("lr_gate_pkg");
+        // Undecided until someone runs the cone walk.
+        assert_eq!(lr_skip_verdict(name, pkg, 1), None);
+        lr_record_skip_verdict(name, pkg, 1, true);
+        assert_eq!(lr_skip_verdict(name, pkg, 1), Some(true));
+
+        // An activation of the same NAME — at any position, in any package —
+        // makes the key re-enterable from outside this call's own cone, which
+        // is the one thing the walk cannot see. The gate closes while it lives.
+        let k = key("lr_gate_name", 11);
+        let outer = lr_begin_activation(&k);
+        assert_eq!(lr_skip_verdict(name, pkg, 1), Some(false));
+        lr_end_activation(&k, outer);
+        assert_eq!(lr_skip_verdict(name, pkg, 1), Some(true));
+
+        // A new token generation retires every verdict.
+        assert_eq!(lr_skip_verdict(name, pkg, 2), None);
+        lr_record_skip_verdict(name, pkg, 2, false);
+        assert_eq!(lr_skip_verdict(name, pkg, 2), Some(false));
+    }
+
+    #[test]
+    fn a_reentry_does_not_count_as_a_second_activation() {
+        // `lr_begin_or_reenter` bumps the name count only on the branch that
+        // actually begins an activation: the re-entry branch returns the seed
+        // and its caller never calls `lr_end_activation`, so counting it would
+        // leak a live activation and wedge the gate shut for the rest of the
+        // run.
+        let name = Symbol::intern("lr_gate_reentry");
+        let pkg = Symbol::intern("lr_gate_pkg2");
+        let k = LrKey::new(name, None, 4);
+        lr_record_skip_verdict(name, pkg, 1, true);
+        let outer = lr_begin_activation(&k);
+        assert!(matches!(lr_begin_or_reenter(&k), LrBegin::Reentry(_)));
+        lr_end_activation(&k, outer);
+        assert_eq!(lr_skip_verdict(name, pkg, 1), Some(true));
     }
 
     #[test]

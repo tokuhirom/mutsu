@@ -79,8 +79,17 @@ impl Interpreter {
             return decline(reason);
         }
         let spec = name.spec();
-        let lr_key = super::regex_lr_state::LrKey::new(spec.lookup_sym, None, chars.len() - pos);
-        if super::regex_lr_state::lr_key_is_active(&lr_key) {
+        // The same gate the eager arm uses: when the call graph proves nothing
+        // in the cone can re-enter this key — not by a rule call and not by
+        // hand from user code — the activation below is dead weight and is
+        // skipped outright, `lr_key` and all. `seed_consulted` is then `false`
+        // by construction, which is exactly what the skip asserts.
+        let lr_key = (!self.subrule_needs_no_lr_bookkeeping(spec.lookup_sym, pkg))
+            .then(|| super::regex_lr_state::LrKey::new(spec.lookup_sym, None, chars.len() - pos));
+        if lr_key
+            .as_ref()
+            .is_some_and(super::regex_lr_state::lr_key_is_active)
+        {
             return decline(StreamDecline::LrKeyActive);
         }
         // Same resolution the eager arm performs (memoized for a static body,
@@ -99,7 +108,9 @@ impl Interpreter {
         let parsed = std::sync::Arc::clone(parsed);
         let sub_pkg = *sub_pkg;
 
-        let outer_seed_read = super::regex_lr_state::lr_begin_activation(&lr_key);
+        let outer_seed_read = lr_key
+            .as_ref()
+            .is_some_and(super::regex_lr_state::lr_begin_activation);
         // Ends are deduplicated the way the eager arm does it: the first (=
         // highest-priority) path to reach an end wins, later ones are dropped.
         let mut seen_ends: Vec<usize> = Vec::new();
@@ -135,10 +146,14 @@ impl Interpreter {
                 // across the continuation and restore it for the rest of the
                 // body walk; the code-block re-entry the activation exists to
                 // catch happens inside the body, which is still covered.
-                *seed_consulted_in_cont |=
-                    super::regex_lr_state::lr_end_activation(&lr_key, outer_seed_read);
+                if let Some(lr_key) = &lr_key {
+                    *seed_consulted_in_cont |=
+                        super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read);
+                }
                 let stop = on(interp, store, end, delta);
-                super::regex_lr_state::lr_begin_activation(&lr_key);
+                if let Some(lr_key) = &lr_key {
+                    super::regex_lr_state::lr_begin_activation(lr_key);
+                }
                 if stop {
                     *unwind = true;
                     return true;
@@ -158,8 +173,9 @@ impl Interpreter {
                 &mut MatchSink::Cont(&mut cont),
             );
         }
-        let seed_consulted = super::regex_lr_state::lr_end_activation(&lr_key, outer_seed_read)
-            || seed_consulted_in_cont;
+        let seed_consulted = lr_key.as_ref().is_some_and(|lr_key| {
+            super::regex_lr_state::lr_end_activation(lr_key, outer_seed_read)
+        }) || seed_consulted_in_cont;
         if seed_consulted && !unwind {
             // A `{ ... }` block re-entered this key after all, so the single
             // pass above is not the growing-seed loop's answer. Nothing has
