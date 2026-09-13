@@ -419,7 +419,10 @@ impl Interpreter {
         name: &str,
         name_sym: Symbol,
     ) -> Result<(), RuntimeError> {
-        debug_assert_eq!(name_sym, Symbol::intern(name));
+        // String compare, not a re-intern: interning is injective, so this is the
+        // same assertion without a debug-only `Symbol::intern` call (see
+        // `Env::get_for`).
+        debug_assert_eq!(name_sym.as_str(), name);
         match self.readonly_kind_sym(name_sym) {
             None => Ok(()),
             Some(ReadonlyKind::Alias) => Err(RuntimeError::readonly_variable()),
@@ -726,7 +729,10 @@ impl Interpreter {
         // and would freeze a spawned block's view of it at the first spawn's
         // value (`reduce -> $h, @words { $h + await start { [+] @words } }`).
         self.note_param_bound_aggregate(name, &value);
-        debug_assert_eq!(name_sym, Symbol::intern(name));
+        // String compare, not a re-intern: interning is injective, so this is the
+        // same assertion without a debug-only `Symbol::intern` call (see
+        // `Env::get_for`).
+        debug_assert_eq!(name_sym.as_str(), name);
         // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
         // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
         self.env.insert_sym_noting(name_sym, value.clone());

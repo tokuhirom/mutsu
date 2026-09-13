@@ -703,10 +703,14 @@ impl Interpreter {
         // otherwise a same-named core builtin (notably `skip`) wins an
         // indirect call such as `.&skip`.
         if let ValueView::Sub(data) = target.view()
-            && data.env.contains_key("__mutsu_multi_dispatch_candidates")
+            && data
+                .env
+                .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
         {
-            if let Some(ValueView::Str(name)) =
-                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+            if let Some(ValueView::Str(name)) = data
+                .env
+                .get_sym(crate::symbol::well_known::multi_dispatch_name())
+                .map(Value::view)
                 && self.has_proto_cached(&name)
                 && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
             {

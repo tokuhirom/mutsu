@@ -226,15 +226,33 @@ impl Interpreter {
     /// with the first argument as the invocant. Returns the method name when
     /// `data` has that dispatcher shape.
     pub(crate) fn sub_multi_method_dispatcher_name(data: &crate::value::SubData) -> Option<String> {
-        if data.env.get("__mutsu_lookup_candidate_idx").is_some() {
+        // Symbol-keyed throughout: this runs on EVERY indirect call
+        // (`$code(...)`, `.&meth`) on the way to the compiled closure path, and
+        // the string-keyed `Env::get` re-interned each literal per call -- three
+        // thread-local string hashes for a probe that misses for every ordinary
+        // block (#8302).
+        if data
+            .env
+            .get_sym(crate::symbol::well_known::lookup_candidate_idx())
+            .is_some()
+        {
             return None;
         }
-        match data.env.get("__mutsu_callable_type").map(Value::view) {
+        match data
+            .env
+            .get_sym(crate::symbol::well_known::callable_type())
+            .map(Value::view)
+        {
             Some(ValueView::Str(t)) if t.as_str() == "Method" || t.as_str() == "Submethod" => {}
             _ => return None,
         }
-        data.env.get("__mutsu_lookup_class")?;
-        match data.env.get("__mutsu_lookup_method").map(Value::view) {
+        data.env
+            .get_sym(crate::symbol::well_known::lookup_class())?;
+        match data
+            .env
+            .get_sym(crate::symbol::well_known::lookup_method())
+            .map(Value::view)
+        {
             Some(ValueView::Str(m)) => Some(m.to_string()),
             _ => None,
         }
@@ -777,6 +795,8 @@ impl Interpreter {
                 authoritative_captures: data.authoritative_captures.clone(),
                 upvalues: data.upvalues.clone(),
                 captured_fatal_mode: data.captured_fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

@@ -367,6 +367,12 @@ impl Interpreter {
             Some(data) if data.source_file.is_none() => {
                 let mut new_data = data.clone();
                 new_data.source_file = Some(file.to_string());
+                // `source_file_sym` memoizes the interned path, and the clone
+                // carried the original's (necessarily `None`, per the guard
+                // above) memo with it. Re-arm it so the new file is what the
+                // call path records. Same discipline as
+                // `CompiledFunction::stamp_source_file`.
+                new_data.source_file_sym_cache = std::sync::OnceLock::new();
                 Value::from_sub_data(new_data)
             }
             _ => sub,

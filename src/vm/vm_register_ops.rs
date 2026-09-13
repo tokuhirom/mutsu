@@ -685,6 +685,8 @@ impl Interpreter {
                 // `def_file`, which stays correct regardless of who is calling.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -810,6 +812,8 @@ impl Interpreter {
                 // each time an already-loaded module's routine runs, after
                 // the module's own `?FILE` scope has long since reverted.
                 source_file: self.executing_source_file(),
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())

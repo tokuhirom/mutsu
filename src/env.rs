@@ -1746,10 +1746,30 @@ impl Env {
     pub(crate) fn get_for(&self, key: &str, key_sym: Option<Symbol>) -> Option<&Value> {
         match key_sym {
             Some(sym) => {
-                debug_assert_eq!(sym, Symbol::intern(key));
+                // Compared as strings, not by re-interning `key`: interning is
+                // injective, so `sym.as_str() == key` is exactly
+                // `Symbol::intern(key) == sym` -- and it does not add a
+                // debug-only `Symbol::intern` call that the release build never
+                // makes, which would distort `symbol::intern_calls()` (the
+                // counter `tests/closure_call_intern_budget.rs` pins).
+                debug_assert_eq!(sym.as_str(), key);
                 self.get_sym(sym)
             }
             None => self.get(key),
+        }
+    }
+
+    /// [`Self::contains_key`] for a caller that *may* already hold the key's
+    /// `Symbol` — the [`Self::get_for`] treatment for the membership probe.
+    #[inline]
+    pub(crate) fn contains_key_for(&self, key: &str, key_sym: Option<Symbol>) -> bool {
+        match key_sym {
+            Some(sym) => {
+                // See `get_for` for why this compares strings.
+                debug_assert_eq!(sym.as_str(), key);
+                self.contains_key_sym(sym)
+            }
+            None => self.contains_key(key),
         }
     }
 
@@ -1934,7 +1954,26 @@ impl Env {
         self.insert_sym(key, value)
     }
 
+    /// [`Self::insert`] for a caller that *may* already hold the key's
+    /// `Symbol` — the [`Self::get_for`] treatment for the write side. The
+    /// `Symbol` arm also skips the `key.to_string()` the by-name form needs.
     #[inline]
+    pub(crate) fn insert_for(
+        &mut self,
+        key: &str,
+        key_sym: Option<Symbol>,
+        value: Value,
+    ) -> Option<Value> {
+        match key_sym {
+            Some(sym) => {
+                // See `get_for` for why this compares strings.
+                debug_assert_eq!(sym.as_str(), key);
+                self.insert_sym(sym, value)
+            }
+            None => self.insert(key.to_string(), value),
+        }
+    }
+
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
         if key == file_key() {
             self.file_sym = file_sym_of(&value);

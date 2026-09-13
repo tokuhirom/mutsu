@@ -658,7 +658,7 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(param_defs, params, args, None, &[])
+        self.bind_function_args_values_with_syms(param_defs, params, args, None, &[], &[])
     }
 
     /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
@@ -693,7 +693,43 @@ impl Interpreter {
         args: &[Value],
         reads_args_array: Option<bool>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(param_defs, params, args, reads_args_array, &[])
+        self.bind_function_args_values_with_syms(
+            param_defs,
+            params,
+            args,
+            reads_args_array,
+            &[],
+            &[],
+        )
+    }
+
+    /// [`Interpreter::bind_function_args_values_with_argspec`] plus the
+    /// callee's pre-interned *placeholder* parameter names, index-parallel to
+    /// `params`.
+    ///
+    /// This is the `param_name_syms` treatment for the LEGACY binding path. A
+    /// pointy block (`-> $a { }`) and a placeholder block (`$^a`) arrive here
+    /// with an empty `param_defs` and their names only as `String`s, so every
+    /// one of them was interned afresh on every call — the largest
+    /// `Symbol::intern` bucket in #8302's closure-call profile.
+    /// `SubData::param_name_syms` holds the interned twin, built once per code
+    /// object.
+    pub(crate) fn bind_function_args_values_with_legacy_syms(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        params_syms: &[Symbol],
+        args: &[Value],
+        reads_args_array: Option<bool>,
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
+        self.bind_function_args_values_with_syms(
+            param_defs,
+            params,
+            args,
+            reads_args_array,
+            &[],
+            params_syms,
+        )
     }
 
     /// [`Interpreter::bind_function_args_values_with_argspec`] plus the callee's
@@ -720,6 +756,7 @@ impl Interpreter {
         args: &[Value],
         reads_args_array: Option<bool>,
         param_name_syms: &[Symbol],
+        params_syms: &[Symbol],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         let result = self.bind_function_args_values_inner(
             param_defs,
@@ -727,6 +764,7 @@ impl Interpreter {
             args,
             reads_args_array,
             param_name_syms,
+            params_syms,
         );
         let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
             // The legacy binding path: a single pointy-block parameter
@@ -745,7 +783,23 @@ impl Interpreter {
         args: &[Value],
         reads_args_array: Option<bool>,
         param_name_syms: &[Symbol],
+        params_syms: &[Symbol],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        // Index-parallel or nothing, exactly as for `param_name_syms` below:
+        // the legacy path indexes this by the `params` position it is binding,
+        // so a slice that does not describe THIS signature would bind a
+        // placeholder under another one's name.
+        let legacy_name_syms: &[Symbol] = if params_syms.len() == params.len() {
+            params_syms
+        } else {
+            debug_assert!(
+                params_syms.is_empty(),
+                "params_syms ({}) is neither empty nor parallel to params ({})",
+                params_syms.len(),
+                params.len(),
+            );
+            &[]
+        };
         // Index-parallel or nothing: a length mismatch means the slice does not
         // describe THIS signature (a caller that passed a sibling's vector, or a
         // `param_defs` mutated after the precompute), and indexing it would bind
@@ -970,7 +1024,10 @@ impl Interpreter {
                 })
                 .count();
             let mut positional_idx = 0usize;
-            for param in params.iter() {
+            for (param_idx, param) in params.iter().enumerate() {
+                // The pre-interned name for this `params` slot, when the caller
+                // supplied one (#8302); `None` falls back to the lazy intern.
+                let param_sym = legacy_name_syms.get(param_idx).copied();
                 // Named placeholder: $:f, @:f, %:f -- match by Pair key
                 let named_key = param
                     .strip_prefix(':')
@@ -979,7 +1036,10 @@ impl Interpreter {
                 if let Some(key) = named_key {
                     // Use rfind so the rightmost named argument wins
                     if let Some((_, val)) = named_args.iter().rfind(|(k, _)| k == key) {
-                        self.bind_param_value(param, val.clone());
+                        match param_sym {
+                            Some(sym) => self.bind_param_value_sym(param, sym, val.clone()),
+                            None => self.bind_param_value(param, val.clone()),
+                        }
                         // Also bind the bare :key for GetArrayVar/GetHashVar fallback
                         self.env.insert(format!(":{}", key), val.clone());
                         consumed_named.insert(key.to_string());
@@ -1019,7 +1079,10 @@ impl Interpreter {
                     } else {
                         value
                     };
-                    self.bind_param_value(param, value);
+                    match param_sym {
+                        Some(sym) => self.bind_param_value_sym(param, sym, value),
+                        None => self.bind_param_value(param, value),
+                    }
                     positional_idx += 1;
                 } else if param.starts_with('^')
                     || param.starts_with("@^")
@@ -1083,8 +1146,11 @@ impl Interpreter {
                     positional_args.len()
                 )));
             }
-            self.env.insert(
-                "@_".to_string(),
+            // Pre-interned key (#7736 / #8302): this is the legacy binding path
+            // EVERY pointy-block and placeholder call takes, so a by-name insert
+            // re-hashed `"@_"` -- and allocated a `String` for it -- per call.
+            self.env.insert_sym(
+                crate::symbol::wk::positional_slurpy(),
                 Value::array(positional_args[positional_idx..].to_vec()),
             );
             // Insert %_ if explicitly listed in params, if named placeholders

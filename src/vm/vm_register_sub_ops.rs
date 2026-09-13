@@ -166,6 +166,8 @@ impl Interpreter {
                 // block could not reach its own compunit's private routines.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -236,6 +238,8 @@ impl Interpreter {
                 // block could not reach its own compunit's private routines.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
