@@ -3,6 +3,12 @@ use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn mark_failure_handled_on_stack(stack: &mut [Value]) {
+        // A lazy Match can be tested for truthiness without materializing its
+        // capture map. Do not inspect it as an Instance just to determine
+        // whether it is a Failure.
+        if stack.last().is_some_and(Value::is_lazy_match_value) {
+            return;
+        }
         if let Some(ValueView::Instance {
             class_name,
             id,

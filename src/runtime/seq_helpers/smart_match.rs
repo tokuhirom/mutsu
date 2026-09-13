@@ -997,7 +997,7 @@ impl Interpreter {
                         captures.to as i64,
                         &captures.positional,
                         &named_with_hash,
-                        starget,
+                        starget.clone(),
                     );
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures().is_empty()
@@ -1043,19 +1043,42 @@ impl Interpreter {
                             .match_with_attrs_keeping_id(updates)
                             .unwrap_or(match_obj)
                     };
-                    // Upgrade positional capture env vars ($0, $1, ...) to Match objects
-                    let list_v = match_obj.match_list();
-                    if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
-                        for (i, v) in list.iter().enumerate() {
-                            self.env.insert(i.to_string(), v.clone());
+                    // Upgrade positional and named capture env vars to Match
+                    // objects without forcing the parent capture map. Hash
+                    // captures still use the materialized map because their
+                    // values are rewritten above from the capture payload.
+                    if captures.hash_captures().is_empty() {
+                        let visible_len = captures
+                            .positional
+                            .iter()
+                            .rposition(|slot| !slot.alternation_padding)
+                            .map_or(0, |idx| idx + 1);
+                        for (i, slot) in captures.positional[..visible_len].iter().enumerate() {
+                            self.env
+                                .insert(i.to_string(), Value::pos_slot_value(slot, &starget));
                         }
-                    }
-                    // Set named capture env vars from the match object's named hash
-                    // so subcapture-aware Match objects are used (not plain strings)
-                    let named_v = match_obj.match_named();
-                    if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
-                        for (k, v) in named_hash.iter() {
-                            self.env.insert(format!("<{}>", k), v.clone());
+                        for (k, slot) in &named_with_hash {
+                            if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                                continue;
+                            }
+                            self.env.insert(
+                                format!("<{}>", k.resolve()),
+                                Value::named_slot_value(slot, &starget),
+                            );
+                        }
+                    } else {
+                        let list_v = match_obj.match_list();
+                        if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
+                            for (i, v) in list.iter().enumerate() {
+                                self.env.insert(i.to_string(), v.clone());
+                            }
+                        }
+                        let named_v = match_obj.match_named();
+                        if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view)
+                        {
+                            for (k, v) in named_hash.iter() {
+                                self.env.insert(format!("<{}>", k), v.clone());
+                            }
                         }
                     }
                     self.env.insert("/".to_string(), match_obj);
