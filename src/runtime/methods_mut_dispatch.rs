@@ -1383,35 +1383,10 @@ impl Interpreter {
                             }
                         }
                     }
-                    let mut resolved_args = args.clone();
-                    // Resolve callable for offset (arg 0) with array length
-                    if let Some(arg) = args.first()
-                        && matches!(arg.view(), ValueView::Sub(..) | ValueView::WeakSub(..))
-                        && let Ok(result) =
-                            self.call_sub_value(arg.clone(), vec![Value::int(arr_len as i64)], true)
-                    {
-                        resolved_args[0] = result;
-                    }
-                    // Resolve callable for count (arg 1) with (array_len - offset)
-                    if let Some(arg) = args.get(1)
-                        && matches!(arg.view(), ValueView::Sub(..) | ValueView::WeakSub(..))
-                    {
-                        let resolved_start = resolved_args
-                            .first()
-                            .and_then(|v| match v.view() {
-                                ValueView::Int(i) => Some(i.max(0) as usize),
-                                ValueView::Whatever => Some(arr_len),
-                                _ => None,
-                            })
-                            .unwrap_or(0)
-                            .min(arr_len);
-                        let remaining = arr_len.saturating_sub(resolved_start) as i64;
-                        if let Ok(result) =
-                            self.call_sub_value(arg.clone(), vec![Value::int(remaining)], true)
-                        {
-                            resolved_args[1] = result;
-                        }
-                    }
+                    // Resolve a callable offset/count (`*-1`) against the array's
+                    // length. Shared with the by-value invocant path so the two
+                    // cannot drift.
+                    let resolved_args = self.resolve_splice_callable_args(arr_len, &args);
                     // Type-check the offset/size arguments. splice's candidates
                     // take `Int` (plus `Whatever`/`Callable`, already resolved
                     // above) for the start and elems positions — a `Num`, `Str`,

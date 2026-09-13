@@ -228,6 +228,54 @@ impl Interpreter {
         Ok(Some(Value::truth(super::to_int(&count) > 0)))
     }
 
+    /// Resolve `splice`'s start/elems arguments when they are `Callable`s —
+    /// which is what a from-the-end index (`*-1`, a `WhateverCode`) is.
+    ///
+    /// Rakudo's `splice` candidates take `Int`, `Whatever` or `Callable` in
+    /// those two positions, and a `Callable` is called with the number of
+    /// elements still available: `len` for the start, and `len - start` for the
+    /// count. Nothing downstream can do this — `splice_array_data` and
+    /// `do_splice` hold the array's items mutably and have no interpreter to
+    /// call a sub with — so it has to happen here, before the borrow. A
+    /// callable left unresolved read as index 0, so `f().splice(*-1, 1)` cut
+    /// the array's FIRST element instead of its last.
+    ///
+    /// Returns the arguments with positions 0/1 replaced by their results; a
+    /// callable that fails to run is left as is, for the arity/type check that
+    /// follows to reject.
+    pub(crate) fn resolve_splice_callable_args(
+        &mut self,
+        arr_len: usize,
+        args: &[Value],
+    ) -> Vec<Value> {
+        let is_callable =
+            |v: &Value| matches!(v.view(), ValueView::Sub(..) | ValueView::WeakSub(..));
+        let mut resolved = args.to_vec();
+        if let Some(arg) = args.first().filter(|a| is_callable(a))
+            && let Ok(result) =
+                self.call_sub_value(arg.clone(), vec![Value::int(arr_len as i64)], true)
+        {
+            resolved[0] = result;
+        }
+        if let Some(arg) = args.get(1).filter(|a| is_callable(a)) {
+            let resolved_start = resolved
+                .first()
+                .and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i.max(0) as usize),
+                    ValueView::Whatever => Some(arr_len),
+                    _ => None,
+                })
+                .unwrap_or(0)
+                .min(arr_len);
+            let remaining = arr_len.saturating_sub(resolved_start) as i64;
+            if let Ok(result) = self.call_sub_value(arg.clone(), vec![Value::int(remaining)], true)
+            {
+                resolved[1] = result;
+            }
+        }
+        resolved
+    }
+
     /// Mutate an Array value in place for push/pop/shift/unshift/append/
     /// prepend/splice on a by-value invocant (function results, element
     /// reads, literals). Container identity (§3.2): the mutation writes

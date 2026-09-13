@@ -3217,7 +3217,43 @@ impl Interpreter {
         }
     }
 
+    /// Both nested-store ops invalidate the target's local slot to `Nil` before
+    /// walking (so the env root's `Gc` refcount is 1 and the in-place mutation
+    /// does not COW-detach), and refresh it from `env` when they finish. A
+    /// REFUSED store — `my %h = :x(:y(1)); %h<x><y> = 2` now dies, as rakudo
+    /// does — returned before that refresh, leaving the caller's `%h` reading
+    /// `Nil`: the failed assignment destroyed the variable. Restore the slot on
+    /// the error path too, so a refusal changes nothing.
+    fn restore_nested_store_local(&mut self, code: &CompiledCode, name_idx: u32) {
+        let var_name = Self::const_str(code, name_idx).to_string();
+        if let Some(slot) = self.find_local_slot(code, &var_name)
+            && matches!(self.locals[slot].view(), ValueView::Nil)
+            && let Some(updated) = self.env().get(&var_name).cloned()
+        {
+            self.locals[slot] = updated;
+        }
+    }
+
     pub(super) fn exec_index_assign_expr_nested_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        outer_positional: bool,
+        inner_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let result = self.exec_index_assign_expr_nested_op_body(
+            code,
+            name_idx,
+            outer_positional,
+            inner_positional,
+        );
+        if result.is_err() {
+            self.restore_nested_store_local(code, name_idx);
+        }
+        result
+    }
+
+    fn exec_index_assign_expr_nested_op_body(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -3602,9 +3638,11 @@ impl Interpreter {
                     // A slot that already holds a DEFINED non-container value
                     // is not autovivifiable: rakudo refuses the store instead
                     // of clobbering the value.
-                    if let Some(err) =
-                        Self::subscript_descent_refusal(&arr[inner_i], outer_positional)
-                    {
+                    if let Some(err) = Self::subscript_descent_refusal_at(
+                        &arr[inner_i],
+                        outer_positional,
+                        Some(&outer_key),
+                    ) {
                         return Err(err);
                     }
                     // Autovivify the slot if it's not already a container. A
@@ -3720,8 +3758,11 @@ impl Interpreter {
                     // `a => 1` dies in rakudo, and mutsu used to drop the
                     // write silently (`assign_into_nested_container` no-ops on
                     // a non-container target).
-                    if let Some(err) = Self::subscript_descent_refusal(inner_val, outer_positional)
-                    {
+                    if let Some(err) = Self::subscript_descent_refusal_at(
+                        inner_val,
+                        outer_positional,
+                        Some(&outer_key),
+                    ) {
                         return Err(err);
                     }
                     Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
@@ -3841,6 +3882,45 @@ impl Interpreter {
         slot: &Value,
         outer_positional: bool,
     ) -> Option<RuntimeError> {
+        Self::subscript_descent_refusal_at(slot, outer_positional, None)
+    }
+
+    /// [`Interpreter::subscript_descent_refusal`] told which key the next
+    /// subscript addresses, so a `Pair` slot can name the value the store would
+    /// have had to modify (see the `Pair` arm below).
+    pub(crate) fn subscript_descent_refusal_at(
+        slot: &Value,
+        outer_positional: bool,
+        next_key: Option<&str>,
+    ) -> Option<RuntimeError> {
+        // A `Pair` DOES `Associative`, so rakudo descends into it and refuses at
+        // the VALUE the next subscript reaches — `my %h = :x(:y(1)); %h<x><y> = 2`
+        // is "Cannot modify an immutable Int (1)", and Crane's
+        // `:a(:pair(:is(:not(:a<hash>))))` chain is "Cannot modify an immutable
+        // Pair (a => hash)". Refusing on the SLOT's type instead produced
+        // `X::AdHoc` "Type Pair does not support associative indexing", which is
+        // what rakudo raises for a genuinely non-Associative slot (an `Int`,
+        // a `Seq`) and which Crane's `CATCH { when X::Assignment::RO }` cannot
+        // map to `X::Crane::OpSet::RO`.
+        let pair_parts = match slot.view() {
+            ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
+            ValueView::ValuePair(key, value) => Some((key.to_string_value(), value.clone())),
+            _ => None,
+        };
+        if let Some((pair_key, pair_value)) = pair_parts {
+            let addressed = match next_key {
+                Some(k) if k == pair_key => pair_value,
+                // Any other key is absent from a one-entry Pair; rakudo's
+                // `Any.AT-KEY` hands back an undefined value, and storing into
+                // that is "Cannot modify an immutable Nil value".
+                Some(_) => Value::NIL,
+                None => slot.clone(),
+            };
+            return Some(RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(&addressed),
+                &crate::runtime::utils::gist_value(&addressed),
+            ));
+        }
         let view = slot.view();
         let descendable = matches!(
             view,
@@ -4238,6 +4318,22 @@ impl Interpreter {
         depth: u32,
         positional_flags_idx: u32,
     ) -> Result<(), RuntimeError> {
+        let result =
+            self.exec_index_assign_deep_nested_op_body(code, name_idx, depth, positional_flags_idx);
+        if result.is_err() {
+            // See `restore_nested_store_local`.
+            self.restore_nested_store_local(code, name_idx);
+        }
+        result
+    }
+
+    fn exec_index_assign_deep_nested_op_body(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        depth: u32,
+        positional_flags_idx: u32,
+    ) -> Result<(), RuntimeError> {
         // As in the two-level op: a deferred token target has no container at
         // any level, so walk-create the whole chain from the token's path.
         let flags_for_token: Vec<bool> = match code.constants[positional_flags_idx as usize].view()
@@ -4521,6 +4617,20 @@ impl Interpreter {
                     }) {
                         current = next;
                     } else {
+                        // Neither a Positional nor an Associative step target.
+                        // Only a genuinely UNDEFINED value autovivifies here; a
+                        // defined one is refused, exactly as the two-level chain
+                        // refuses it. Overwriting it instead silently replaced
+                        // the value with a fresh container and reported success —
+                        // `my %h = :x(:y(1)); %h<x><y> = 2` rebuilt the Pair
+                        // chain as nested Hashes (and left `%h` itself holding
+                        // the discarded root), where rakudo dies with
+                        // "Cannot modify an immutable Int (1)".
+                        if let Some(err) =
+                            Self::subscript_descent_refusal_at(cur, next_positional, Some(key))
+                        {
+                            return Err(err);
+                        }
                         // Autovivify the root itself if needed
                         if is_positional {
                             *cur = Value::real_array(Vec::new());

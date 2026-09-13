@@ -328,33 +328,49 @@ impl Interpreter {
         if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
             return assigned;
         }
-        // A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for
-        // `sub f(\x) is raw { x }` is a *list assignment into it* — the same
-        // rule `@a = (7, 8)` follows — not a rebinding of the routine's result.
-        // Replacing the contents in place keeps every other share of the
-        // container (the caller's `@a`) pointing at the new elements. An
-        // immutable `List`/`ItemList` is deliberately excluded: Rakudo refuses
-        // `f((1, 2)) = 3` with "Cannot modify an immutable List".
+        if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
+            return Ok(stored);
+        }
+        let typename = crate::runtime::utils::value_type_name(&result);
+        // Rakudo renders the refused value with `.gist`, so a `Pair` reads
+        // `a => hash` rather than its tab-joined string coercion (`a\thash`),
+        // and a `List` reads `(1 2)`.
+        let repr = crate::runtime::utils::gist_value(&result);
+        Err(RuntimeError::assignment_ro_typename(typename, &repr))
+    }
+
+    /// A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for
+    /// `sub f(\x) is raw { x }` is a *list assignment into it* — the same rule
+    /// `@a = (7, 8)` follows — not a rebinding of the routine's result.
+    /// Replacing the contents in place keeps every other share of the container
+    /// (the caller's `@a`) pointing at the new elements. An immutable
+    /// `List`/`ItemList` is deliberately excluded: Rakudo refuses `f((1, 2)) = 3`
+    /// with "Cannot modify an immutable List".
+    ///
+    /// `None` when `result` is not such an aggregate, so a caller that has a
+    /// further chain to try can go on trying it.
+    pub(crate) fn store_into_aggregate_lvalue(
+        &mut self,
+        result: &Value,
+        value: Value,
+    ) -> Option<Value> {
         match result.view() {
             ValueView::Array(_, kind)
                 if kind.is_real_array() || kind == crate::value::ArrayKind::Shaped =>
             {
                 let coerced = crate::runtime::utils::coerce_to_array(value);
-                if result.replace_container_contents(&coerced) {
-                    return Ok(result);
-                }
+                result
+                    .replace_container_contents(&coerced)
+                    .then(|| result.clone())
             }
             ValueView::Hash(_) => {
                 let coerced = self.coerce_object_to_hash(value);
-                if result.replace_container_contents(&coerced) {
-                    return Ok(result);
-                }
+                result
+                    .replace_container_contents(&coerced)
+                    .then(|| result.clone())
             }
-            _ => {}
+            _ => None,
         }
-        let typename = crate::runtime::utils::value_type_name(&result);
-        let repr = result.to_string_value();
-        Err(RuntimeError::assignment_ro_typename(typename, &repr))
     }
 
     pub(crate) fn assign_proxy_lvalue(

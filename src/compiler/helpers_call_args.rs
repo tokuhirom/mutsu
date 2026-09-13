@@ -116,11 +116,11 @@ impl Compiler {
     /// of the frame being compiled. That is exactly what `local_map` records, so
     /// consult it rather than guessing from the spelling.
     ///
-    /// Scoped to the `return-rw` / rw-tail site (`return_rw_container_name`) and
-    /// deliberately NOT folded into `scalar_container_alias_name`, whose other
-    /// callers (List literal elements, fat-arrow Pair values) see barewords that
-    /// are type names in ordinary code.
-    fn sigilless_local_container_name(&self, arg: &Expr) -> Option<String> {
+    /// Deliberately NOT folded into `scalar_container_alias_name`: that is an
+    /// associated function, and only the `local_map` probe here can tell a
+    /// sigilless *variable* from the type name / enum value / listop-less call a
+    /// bareword otherwise spells.
+    pub(super) fn sigilless_local_container_name(&self, arg: &Expr) -> Option<String> {
         let Expr::BareWord(name) = arg else {
             return None;
         };

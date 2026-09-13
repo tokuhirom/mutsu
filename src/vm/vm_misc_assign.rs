@@ -798,6 +798,25 @@ impl Interpreter {
             self.stack.push(inner.into_deref());
             return;
         }
+        // A real `Array`/`Hash` IS the container. Raku gives an `@`/`%` variable
+        // no Scalar of its own, and a sigilless alias of one (`\c` bound to
+        // `%a`) names that aggregate directly — `c = {...}` is `%a.STORE(...)`,
+        // seen by every holder. Boxing it into a fresh scalar cell mints a
+        // container nobody else shares: `sub hop(\c) is rw { return-rw leaf(c) };
+        // hop(%a) = {...}` assigned into a cell owned by a frame that had
+        // already returned, so `%a` never changed (one hop happened to work;
+        // two did not). `assign_through_rw_result` already knows what to do with
+        // a bare aggregate — replace its contents in place.
+        //
+        // This is the same aggregate exclusion `exec_attr_container_ref_op`
+        // makes, for the same reason: an `@`/`%`-shaped value is already a
+        // shared container and a scalar cell would disagree with that storage.
+        if matches!(inner.view(), ValueView::Hash(..))
+            || matches!(inner.view(), ValueView::Array(_, kind) if kind.is_real_array())
+        {
+            self.stack.push(inner);
+            return;
+        }
         let slot_hint = val.varref_slot();
         let captured =
             self.capture_var_cell_inner(code, &source_name, inner.clone(), true, slot_hint);

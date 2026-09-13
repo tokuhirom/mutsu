@@ -371,9 +371,24 @@ impl Compiler {
                         // Consumers that decontainerize (`@arr = (...)`, param
                         // binding, single-scalar push) deref the cell to its value.
                         if let Some(name) = Self::scalar_container_alias_name(elem)
+                            .map(str::to_string)
+                            // A SIGILLESS lexical (`\c`, `my \y := ...`) names the
+                            // same kind of storage a `$`-sigiled one does, but the
+                            // parser spells it `Expr::BareWord` — which is also how
+                            // a type name is spelled, so only its presence in
+                            // `local_map` settles it. Without the tag, an lvalue
+                            // call's argument list (`leaf(c) = 1`, lowered to
+                            // `__mutsu_assign_named_sub_lvalue("leaf", (c), 1)`)
+                            // handed `leaf`'s `\c` a bare value with no source
+                            // name, so the binder marked it a readonly non-lvalue
+                            // and the assignment died with "Cannot modify an
+                            // immutable Int (0)" — the `$`-sigiled spelling of the
+                            // same call worked. Crane reaches this on every
+                            // `Crane::In.in(container, @path) = $value` inside a
+                            // `\container` routine.
+                            .or_else(|| c.sigilless_local_container_name(elem))
                             && !c.suppress_list_var_alias
                         {
-                            let name = name.to_string();
                             c.emit_wrap_var_ref(&name);
                         } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
