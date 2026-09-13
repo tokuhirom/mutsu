@@ -431,6 +431,33 @@ Two decisions were tested by the implementation rather than only argued:
 rollup over a handful of hand-picked distributions reads like a KPI and is not
 one.
 
+## 11. Campaign slice: inline modifiers in bracket subscripts (2026-09-14)
+
+The next confirmed long-tail lead from #7988 was a statement modifier inside a
+hash subscript: `%meta{S/…/ with $n.name}`. The minimised form is
+`my %m; my $n = "ab"; %m{S/b/c/ with $n} = 1`, which rakudo evaluates with
+`{:ac(1)}` while mutsu rejected the modifier as a second term.
+
+The shared `parse_bracket_indices_inner` parser now hands its first expression
+to the existing `try_inline_modifier` helper. This covers both hash and array
+subscripts and reuses the same lowering already used by array and
+parenthesised composers; no runtime dispatch special case is involved. The
+regression is in
+`t/collections/hash/hash-subscript-inline-modifier.t`.
+
+The targeted `App::Ebread` remeasurement on 2026-09-14 (mutsu
+`54ac7cb2a`, rakudo 2026.07, bubblewrap) changed all four provided modules from
+the previous `blocked_load`/`raku_also_fails` state to `ok`. Its record is now
+`red`, because `t/00-use.rakutest` triggers mutsu's separate exported-`MAIN`
+usage dispatch after the `use-ok` assertion, while rakudo passes; the other two
+test files had no rakudo baseline because their temporary-directory setup
+failed. That runtime issue is outside this parser slice and remains for a
+separate ticket.
+
+The Red → `Red::Operators` import chain remains unclassified and is left for a
+later #7988 slice. #8340 is a separate, already-closed issue and is not part of
+this record.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
