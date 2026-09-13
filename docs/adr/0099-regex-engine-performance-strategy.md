@@ -268,10 +268,12 @@ Ordered by measured size:
 3. **A `Match` answers `Bool` from its own span** — no user-method lookup, no `materialize_map`
    (§2.5, 14.4%). [#8263](https://github.com/tokuhirom/mutsu/issues/8263).
 4. **The smartmatch path stops interning `$_` / `made` / `$0…$N` per match** (§2.5, 16.4%) —
-   pre-interned symbols and symbol-keyed `Env` access, per `src/symbol.rs:762`.
+   pre-interned symbols and symbol-keyed `Env` access, per `src/symbol.rs:762`; and stops cloning
+   the subject into `$_`. [#8269](https://github.com/tokuhirom/mutsu/issues/8269).
 5. **Parse-cache repairs** (§2.6, §2.7): a non-allocating cache key, `regex_pattern_is_static`
-   without a per-call `Vec<char>`, and a cache that does not simply give up on an interpolated
-   pattern.
+   without a per-call `Vec<char>`, and a second cache level keyed on the interpolated pattern so a
+   runtime-interpolated pattern in a loop parses once rather than per iteration.
+   [#8270](https://github.com/tokuhirom/mutsu/issues/8270).
 
 Every one of these is a defect or waste with no design risk, and together they address both
 measured losses. **They gate everything below**: Stage 1's value cannot be assessed against a
@@ -378,7 +380,21 @@ only the costs it is shaped to see, and this one was shaped around one-shot cost
 
 ## 8. Implementation status
 
-Nothing implemented. Stage 0 items filed as #8262, #8263, #8264; items 4 and 5 not yet filed.
+Nothing implemented. Stage 0 is fully filed, ordered as in §4:
+
+| item | issue | measured cost |
+|---|---|---|
+| 1. `<sym>` kills the proto-candidate memo | [#8265](https://github.com/tokuhirom/mutsu/issues/8265) | 3.3x on a grammar parse |
+| 2. `:ignoremark` re-strips per invocation | [#8262](https://github.com/tokuhirom/mutsu/issues/8262) | O(n²) |
+| 3. Match truthiness forces `materialize_map` | [#8263](https://github.com/tokuhirom/mutsu/issues/8263) | 14.4% of a boolean `~~` |
+| 4. smartmatch interns `$_` twice per match | [#8269](https://github.com/tokuhirom/mutsu/issues/8269) | 16.4% of a boolean `~~` |
+| 5. parse-cache key, scan, and interpolated bypass | [#8270](https://github.com/tokuhirom/mutsu/issues/8270) | 4.5% of `bench-regex-match` |
+
+Stage 1 is deliberately **not** filed while this ADR is `Proposed`: it is the one part of the plan
+that is a design commitment rather than a defect, and filing an implementation ticket for an
+unaccepted decision would put it in the `todo:ticket` queue for an agent to pick up. File it as
+`todo:deep` when this ADR moves to `Accepted`. Stage 2 is a question, not work, until Stage 0
+lands and grammars are re-profiled.
 
 Revision history: first draft 2026-09-13, reviewed the same day. The review inverted §2.2 (the
 grammar claim had been measured on a simplified grammar over five iterations including rakudo's
