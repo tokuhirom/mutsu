@@ -609,7 +609,7 @@ impl Interpreter {
             }
             if declared.contains(&name)
                 || self.has_function(&name)
-                || self.has_multi_function(&name)
+                || self.has_multi_function_unindexed(&name)
                 || self.has_proto(&name)
                 || Self::is_builtin_function(&name)
                 || EVAL_KNOWN_ROUTINE_NAMES.contains(&name.as_str())
@@ -905,7 +905,7 @@ impl Interpreter {
                 if self.has_type(name)
                     || self.has_class(name)
                     || self.has_function(name)
-                    || self.has_multi_function(name)
+                    || self.has_multi_function_unindexed(name)
                     || self.env().contains_key(name)
                     // `our`-scoped constants/variables installed in the package
                     // survive in `our_vars` even after their lexical block exits.

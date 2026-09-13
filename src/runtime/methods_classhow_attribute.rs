@@ -381,7 +381,8 @@ impl Interpreter {
     /// ancestors, ending at the current package's registry view of GLOBAL) that
     /// has a proto or multi candidates for `name`. None when no package in the
     /// chain has a handler.
-    fn nearest_package_with_trait_handler(&self, name: &str) -> Option<String> {
+    fn nearest_package_with_trait_handler(&mut self, name: &str) -> Option<String> {
+        let base_keys = self.fn_keys_for_base(name);
         let current = self.current_package();
         let mut pkg = current.as_str();
         // Local candidates only at each level — has_proto/has_multi_candidates
@@ -394,8 +395,12 @@ impl Interpreter {
             let local_proto = self
                 .registry()
                 .proto_subs_contains(&format!("{}::{}", pkg, name));
-            let probe = [pkg.to_string()];
-            if local_proto || self.registry().has_multi_function(&probe, name) {
+            let probe = [Symbol::intern(pkg)];
+            if local_proto
+                || self
+                    .registry()
+                    .has_multi_function(Some(&base_keys), &probe, name)
+            {
                 return Some(pkg.to_string());
             }
             match pkg.rsplit_once("::") {
@@ -403,9 +408,11 @@ impl Interpreter {
                 None => break,
             }
         }
-        let global = ["GLOBAL".to_string()];
+        let global = [Symbol::intern("GLOBAL")];
         (self.registry().has_proto("GLOBAL", name)
-            || self.registry().has_multi_candidates(&global, name))
+            || self
+                .registry()
+                .has_multi_candidates(Some(&base_keys), &global, name))
         .then(|| current.clone())
     }
 

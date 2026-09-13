@@ -3388,6 +3388,7 @@ impl Interpreter {
             multi_fn_cache_gen: 0,
             fn_keys_by_base: Default::default(),
             fn_keys_by_base_gen: 0,
+            bare_name_packages_memo: Default::default(),
             multi_dispatch_candidates_memo: Default::default(),
             multi_dispatch_candidates_memo_gen: (0, 0),
             light_call_cache: Default::default(),

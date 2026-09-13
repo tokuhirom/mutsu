@@ -2,6 +2,32 @@
 use super::*;
 
 impl Interpreter {
+    /// Announce that the registry's **functions** map changed, invalidating
+    /// every name-keyed dispatch cache built over it.
+    ///
+    /// This is the single entry point for `fn_resolve_gen`; six caches
+    /// self-refresh off it at their own read sites — `fn_resolve_cache` and
+    /// `multi_compiled_key_cache` (`find_compiled_function_inner`'s compiled-key
+    /// probes), `multi_candidates_cache`, `declared_fn_cache`, `multi_fn_cache`
+    /// (the three bare-name existence probes) and `fn_keys_by_base` (the
+    /// base-name key index every candidate gather runs on). Each drops
+    /// **wholesale**, so a bump is not a cheap marker: it is an
+    /// O(registered routines) string re-scan spread across the next few
+    /// dispatches.
+    ///
+    /// Call it for any insert, remove or `retain` on `Registry::functions`, and
+    /// do NOT call it for a registration that left the map byte-identical — a
+    /// bump per *call* rather than per *declaration* is the pathology
+    /// [#8300](https://github.com/tokuhirom/mutsu/issues/8300) is about, and
+    /// `MUTSU_VM_STATS=1`'s `fn-resolve-gen-bumps` line attributes every bump to
+    /// its source location so a new one is visible.
+    #[track_caller]
+    #[inline]
+    pub(crate) fn invalidate_fn_resolution(&mut self) {
+        self.fn_resolve_gen += 1;
+        crate::vm::vm_stats::record_fn_resolve_gen_bump(std::panic::Location::caller());
+    }
+
     pub(crate) fn routine_stack_top(&self) -> Option<&super::RoutineFrame> {
         self.routine_stack.last()
     }
@@ -655,46 +681,85 @@ impl Interpreter {
     /// a precise registration-time record exists — see
     /// `Registry::compound_declared_types`.
     pub(crate) fn bare_name_packages(&self) -> Vec<String> {
-        let cur = self.current_package();
-        let lexical = self
+        self.bare_name_packages_syms()
+            .iter()
+            .map(|s| s.as_str().to_string())
+            .collect()
+    }
+
+    /// [`Self::bare_name_packages`] as interned symbols, memoized on the only
+    /// two inputs it reads (see [`Interpreter::bare_name_packages_memo`]).
+    ///
+    /// This is the form every hot caller should use: the answer is an `Arc`
+    /// clone rather than a fresh `Vec<String>` with a `String` per enclosing
+    /// package, and the symbols compare by id instead of by `memcmp`. The
+    /// `Vec<String>` wrapper above stays for the handful of callers that hand
+    /// the names to something wanting owned strings.
+    pub(crate) fn bare_name_packages_syms(&self) -> crate::runtime::BareNamePackages {
+        let cur_sym = self.current_package_sym();
+        let lexical_sym = self
             .routine_stack
             .last()
-            .and_then(|frame| frame.lexical_package)
-            .map(|s| s.as_str());
+            .and_then(|frame| frame.lexical_package);
+        if let Some(hit) = self
+            .bare_name_packages_memo
+            .borrow()
+            .get(&(cur_sym, lexical_sym))
+        {
+            return hit.clone();
+        }
+        let computed: crate::runtime::BareNamePackages =
+            Self::compute_bare_name_packages(cur_sym, lexical_sym);
+        self.bare_name_packages_memo
+            .borrow_mut()
+            .insert((cur_sym, lexical_sym), computed.clone());
+        computed
+    }
+
+    /// The pure derivation behind [`Self::bare_name_packages_syms`]: everything
+    /// it reads is in its two arguments, which is what makes the memo need no
+    /// invalidation.
+    fn compute_bare_name_packages(
+        cur_sym: Symbol,
+        lexical_sym: Option<Symbol>,
+    ) -> crate::runtime::BareNamePackages {
+        let global = Symbol::intern("GLOBAL");
+        let cur = cur_sym.as_str();
+        let lexical = lexical_sym.map(|s| s.as_str());
         if cur == "GLOBAL" {
-            return match lexical {
-                Some(pkg) if pkg != "GLOBAL" => vec![pkg.to_string(), cur],
-                _ => vec![cur],
+            return match (lexical_sym, lexical) {
+                (Some(sym), Some(pkg)) if pkg != "GLOBAL" => vec![sym, cur_sym].into(),
+                _ => vec![cur_sym].into(),
             };
         }
         // A `state`-variable scope key is not a package at all; treat it as
         // GLOBAL-only rather than walking its mangled segments.
         if cur.starts_with("__state_") {
-            return vec![cur, "GLOBAL".to_string()];
+            return vec![cur_sym, global].into();
         }
         // A mangled sub/closure scope (`Pkg::&name/2`, `Pkg::&<closure>/7`)
         // carries its real package as the part before `::&`. Walk outwards from
         // that, not from the mangled key.
-        let head = cur.split("::&").next().unwrap_or("").to_string();
-        let mut out = vec![cur];
-        if let Some(pkg) = lexical
+        let head = cur.split("::&").next().unwrap_or("");
+        let mut out = vec![cur_sym];
+        if let (Some(sym), Some(pkg)) = (lexical_sym, lexical)
             && pkg != "GLOBAL"
-            && !out.iter().any(|candidate| candidate == pkg)
+            && !out.contains(&sym)
         {
-            out.push(pkg.to_string());
+            out.push(sym);
         }
         let mut probe = head;
         while !probe.is_empty() && probe != "GLOBAL" {
-            if probe != out[0] {
-                out.push(probe.clone());
+            if probe != cur {
+                out.push(Symbol::intern(probe));
             }
             match probe.rsplit_once("::") {
-                Some((outer, _)) => probe = outer.to_string(),
+                Some((outer, _)) => probe = outer,
                 None => break,
             }
         }
-        out.push("GLOBAL".to_string());
-        out
+        out.push(global);
+        out.into()
     }
 
     /// Interior-mutable variant for the `&self` regex matcher: the package is

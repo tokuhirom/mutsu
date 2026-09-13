@@ -108,7 +108,7 @@ impl Interpreter {
             && !self.env().contains_key(name)
             && !self.has_class(name)
             && !self.has_function(name)
-            && !self.has_multi_function(name)
+            && !self.has_multi_function_unindexed(name)
             && !matches!(name.as_str(), "NaN" | "Inf" | "Empty")
     }
 

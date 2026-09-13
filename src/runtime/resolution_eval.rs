@@ -667,7 +667,7 @@ impl Interpreter {
                 reg.proto_functions = saved_proto_functions;
             }
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
             self.operator_assoc = saved_operator_assoc;
             self.user_declared_infix_ops = saved_user_declared_infix_ops;
         }

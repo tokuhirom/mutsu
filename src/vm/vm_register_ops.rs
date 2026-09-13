@@ -1209,7 +1209,8 @@ impl Interpreter {
         }
         for name in cc.bare_callee_names() {
             let resolved_name = name.resolve();
-            if self.has_proto(&resolved_name) || self.has_multi_candidates(&resolved_name) {
+            if self.has_proto(&resolved_name) || self.has_multi_candidates_unindexed(&resolved_name)
+            {
                 continue;
             }
             let code_name = name.with_str(|name| format!("&{name}"));

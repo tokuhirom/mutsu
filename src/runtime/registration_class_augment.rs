@@ -378,7 +378,7 @@ impl Interpreter {
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
-                        self.fn_resolve_gen += 1;
+                        self.invalidate_fn_resolution();
                     }
                     if decl.is_my {
                         let (my_params, my_param_defs) =
@@ -415,7 +415,7 @@ impl Interpreter {
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
-                        self.fn_resolve_gen += 1;
+                        self.invalidate_fn_resolution();
                         self.mark_my_scoped_package_item(qualified_name);
                     }
                     // ADR-0019 D3-6: `is export` on an augmented method,

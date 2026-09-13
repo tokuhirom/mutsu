@@ -36,6 +36,7 @@ use crate::ast::FunctionDef;
 use crate::symbol::Symbol;
 use crate::value::{EnumValue, RuntimeError, Value};
 
+use super::dispatch_key;
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
@@ -1342,28 +1343,77 @@ impl Registry {
         if name.contains("::") {
             return self.proto_subs.contains(name);
         }
-        let local = format!("{}::{}", current_package, name);
-        if self.proto_subs.contains(&local) {
+        if dispatch_key::with_qualified(current_package, name, |k| self.proto_subs.contains(k)) {
             return true;
         }
-        self.proto_subs.contains(&format!("GLOBAL::{}", name))
+        dispatch_key::with_qualified("GLOBAL", name, |k| self.proto_subs.contains(k))
     }
 
     /// Whether any `multi` candidate (any arity) exists for `name`, visible from
     /// any of the bare-name search `packages` (see
     /// `Interpreter::bare_name_packages`). Pure registry+scope read, shared by
     /// `Interpreter::has_multi_candidates` and the VM's native dispatch path.
-    /// Takes the whole search list so the registry is scanned once, not once per
-    /// enclosing package.
-    pub(crate) fn has_multi_candidates(&self, packages: &[String], name: &str) -> bool {
-        let prefixes: Vec<String> = packages
-            .iter()
-            .map(|pkg| format!("{}::{}/", pkg, name))
-            .collect();
-        self.functions.keys().any(|k| {
-            let ks = k.as_str();
-            prefixes.iter().any(|p| ks.starts_with(p))
-        })
+    /// Takes the whole search list so the candidate keys are examined once, not
+    /// once per enclosing package.
+    pub(crate) fn has_multi_candidates(
+        &self,
+        base_keys: Option<&[Symbol]>,
+        packages: &[Symbol],
+        name: &str,
+    ) -> bool {
+        self.any_candidate_key_of(base_keys, packages, name)
+    }
+
+    /// Whether any registered key spells an arity-keyed candidate of `name` in
+    /// one of `packages` — the shared body of [`Registry::has_multi_candidates`]
+    /// and [`Registry::has_multi_function`], which ask the identical question
+    /// for two different callers.
+    ///
+    /// `base_keys` is [`super::Interpreter::fn_keys_for_base`]'s answer for
+    /// `name`, and narrowing to it (rather than walking every registered key,
+    /// resolving each through the interner and prefix-comparing it against a
+    /// `format!`ed `String` per package) is the whole point: both probes ran
+    /// several times per dispatch and each was O(registered routines)
+    /// ([#8300](https://github.com/tokuhirom/mutsu/issues/8300)). `None` means
+    /// the caller could not reach the index — it fills lazily and so needs
+    /// `&mut self`, which the cold `&self` EVAL-time probes do not have — and
+    /// asks for the full scan.
+    ///
+    /// The narrowing is sound because every key this predicate can match —
+    /// `{pkg}::{name}/…` — reduces under `function_key_base_name` to the same
+    /// base name the index filed it under: the arity suffix that function
+    /// strips is the `/<digit>` immediately after `{name}`, which registration
+    /// always writes, and the package prefix it strips is `{pkg}::`. The query
+    /// name goes through the same extraction, so a qualified `Foo::bar` and a
+    /// bare `bar` land in the same bucket as the keys that answer them. In
+    /// debug builds that argument is checked rather than trusted: the full scan
+    /// still runs and must agree.
+    fn any_candidate_key_of(
+        &self,
+        base_keys: Option<&[Symbol]>,
+        packages: &[Symbol],
+        name: &str,
+    ) -> bool {
+        let matches = |ks: &str| {
+            packages
+                .iter()
+                .any(|p| dispatch_key::key_is_candidate_of(ks, p.as_str(), name))
+        };
+        let full_scan = || self.functions.keys().any(|k| matches(k.as_str()));
+        let Some(base_keys) = base_keys else {
+            return full_scan();
+        };
+        let narrowed = base_keys.iter().any(|k| matches(k.as_str()));
+        #[cfg(debug_assertions)]
+        assert_eq!(
+            narrowed,
+            full_scan(),
+            "fn_keys_for_base index missed a candidate key for {name:?} in \
+             {packages:?}: the base-name narrowing in \
+             Registry::any_candidate_key_of is not equivalent to the full \
+             functions-map scan"
+        );
+        narrowed
     }
 
     /// Whether a (non-multi) function `name` is declared, visible from the
@@ -1371,24 +1421,23 @@ impl Registry {
     /// or as a bare global name. Pure registry+scope read, shared by
     /// `Interpreter::has_declared_function` and the VM's native dispatch path.
     pub(crate) fn has_declared_function(&self, current_package: &str, name: &str) -> bool {
-        let fq = format!("{}::{}", current_package, name);
-        self.functions.contains_key(&Symbol::intern(&fq))
-            || self.functions.contains_key(&Symbol::intern(name))
+        dispatch_key::qualified_lookup(current_package, name)
+            .is_some_and(|fq| self.functions.contains_key(&fq))
+            || Symbol::lookup(name).is_some_and(|n| self.functions.contains_key(&n))
     }
 
     /// Whether a `multi`-dispatched function `name` exists at any arity, visible
     /// from any of the bare-name search `packages`. Pure registry+scope read,
     /// shared by `Interpreter::has_multi_function` and the VM's native dispatch
-    /// path. Takes the whole search list so the registry is scanned once.
-    pub(crate) fn has_multi_function(&self, packages: &[String], name: &str) -> bool {
-        let prefixes: Vec<String> = packages
-            .iter()
-            .map(|pkg| format!("{}::{}/", pkg, name))
-            .collect();
-        self.functions.keys().any(|k| {
-            let ks = k.as_str();
-            prefixes.iter().any(|p| ks.starts_with(p))
-        })
+    /// path. Takes the whole search list so the candidate keys are examined
+    /// once, not once per enclosing package.
+    pub(crate) fn has_multi_function(
+        &self,
+        base_keys: Option<&[Symbol]>,
+        packages: &[Symbol],
+        name: &str,
+    ) -> bool {
+        self.any_candidate_key_of(base_keys, packages, name)
     }
 
     /// Whether `name` is marked `is hidden` (excluded from `.^mro` etc.).

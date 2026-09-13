@@ -1248,7 +1248,7 @@ impl Interpreter {
             // hidden.
             self.restore_toplevel_global_routines(hidden_toplevel);
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope. The
             // enclosing compunit's hook comes back either way -- an aborted
