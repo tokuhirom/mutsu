@@ -7,7 +7,7 @@ use Test;
 # this from X::Immutable; roast S02-types/{bag,mix}.t and S32-basics/xxKEY.t
 # were updated to match.
 
-plan 15;
+plan 18;
 
 my $b = <a a b>.Bag;
 my $s = <a b>.Set;
@@ -43,3 +43,16 @@ is %h.elems, 1, 'plain Hash key removed';
 
 my $sh = <a b>.SetHash;
 lives-ok { $sh.DELETE-KEY('a') }, 'SetHash.DELETE-KEY lives';
+
+# --- direct keyed assignment (subscript store, not :delete/DELETE-KEY) -----
+# rakudo's message here names the whole value and its .gist, not just the
+# type: "Cannot modify an immutable Bag (Bag(a b))".
+throws-like { $b<a> = 42 }, X::Assignment::RO,
+    message => "Cannot modify an immutable Bag (Bag(a(2) b))",
+    'Bag $b<a> = ... message names value';
+throws-like { $s<a> = False }, X::Assignment::RO,
+    message => "Cannot modify an immutable Set (Set(a b))",
+    'Set $s<a> = ... message names value';
+throws-like { $m<a> = 3 }, X::Assignment::RO,
+    message => "Cannot modify an immutable Mix (Mix(a(1.5) b(2)))",
+    'Mix $m<a> = ... message names value';
