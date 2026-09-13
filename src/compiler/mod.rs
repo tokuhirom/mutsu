@@ -3050,235 +3050,22 @@ impl Compiler {
         params_def: &[crate::ast::ParamDef],
         rw_block: bool,
     ) -> Vec<Stmt> {
-        let bind_stmt = |name: String, expr: Expr| {
-            // A destructured signature parameter DECLARES its target, so a
-            // dynamic-twigil target (`:value($*PATH)`) must be introduced as a
-            // fresh dynamic var (VarDecl with is_dynamic), not treated as a bare
-            // assignment to a pre-existing dynamic var (which would wrongly throw
-            // X::Dynamic::NotFound). `&` targets likewise declare.
-            let is_dynamic_target = name
-                .trim_start_matches(['$', '@', '%', '&'])
-                .starts_with('*');
-            if name.starts_with('&') || is_dynamic_target {
-                Stmt::VarDecl {
-                    name,
-                    expr,
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: is_dynamic_target,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                }
-            } else {
-                Stmt::Assign {
-                    name,
-                    expr,
-                    op: AssignOp::Assign,
-                }
-            }
-        };
-
-        // A destructured sub-signature target (`-> % [:@dists]`, `-> @ ($a,@b)`)
-        // is a fresh block-scoped lexical that must SHADOW any outer variable of
-        // the same name -- a plain `Stmt::Assign` would instead resolve up the
-        // scope chain and clobber the outer var (e.g. zef's
-        // `my Candidate @dists = gather for @x -> % [:@dists] {...}`, where the
-        // inner `:@dists` collided with the outer typed `@dists`). Declare it.
-        let decl_stmt = |name: String, expr: Expr| {
-            let is_dynamic_target = name
-                .trim_start_matches(['$', '@', '%', '&'])
-                .starts_with('*');
-            Stmt::VarDecl {
-                name,
-                expr,
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: is_dynamic_target,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            }
-        };
-
+        use crate::param_destructure::{bind_stmt, decl_stmt, destructure_binds};
         let mut bind_stmts = Vec::new();
         if let Some(single_param) = param
             && param_idx.is_none()
         {
             bind_stmts.push(bind_stmt(single_param.clone(), Expr::Var("_".to_string())));
         }
-        // Unpack a destructuring pattern out of the value already bound to
-        // `target_name`. Used both for the single-pattern pointy block
+        // Unpack a destructuring pattern out of the value already bound to the
+        // target name. Used both for the single-pattern pointy block
         // (`-> [$a, $b]`, whose target is the whole iteration value) and for each
         // pattern of a multi-parameter one (`-> [$a, $b], [$c, $d]`, whose
         // targets are the per-element synthetic params bound further below).
-        let destructure_binds = |target_name: String,
-                                 sub_params: &[crate::ast::ParamDef],
-                                 bind_stmts: &mut Vec<Stmt>| {
-            let mut positional_index = 0usize;
-            for sub in sub_params {
-                if sub.name.is_empty() {
-                    continue;
-                }
-                if sub.named {
-                    // Named destructuring `:$key` binds via the accessor method
-                    // when the object provides one (Pair.key/.value, object
-                    // attribute readers), otherwise by hash key (Hash/Map, which
-                    // have no method named after an arbitrary key). Decide at
-                    // runtime: `$_.^can("key") ?? $_.key !! $_<key>`.
-                    //
-                    // A scalar named sub-param `:$curi` stores its name sigil-
-                    // stripped ("curi"), but an `@`/`%` named sub-param `:@dists`
-                    // keeps its sigil in `sub.name` ("@dists"). The accessor and
-                    // hash key must use the *key* name ("dists"), so strip a
-                    // leading array/hash sigil (and any twigil) before looking up;
-                    // the sigil is kept only for the bind target below so the
-                    // value lands in an `@`/`%` container.
-                    let after_sigil = sub
-                        .name
-                        .strip_prefix('@')
-                        .or_else(|| sub.name.strip_prefix('%'))
-                        .unwrap_or(&sub.name);
-                    let lookup_name = after_sigil
-                        .strip_prefix('!')
-                        .or_else(|| after_sigil.strip_prefix('.'))
-                        .unwrap_or(after_sigil)
-                        .to_string();
-                    let method_call = Expr::MethodCall {
-                        target: Box::new(Expr::Var(target_name.clone())),
-                        name: Symbol::intern(&lookup_name),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                    };
-                    let hash_lookup = Expr::Index {
-                        target: Box::new(Expr::Var(target_name.clone())),
-                        index: Box::new(Expr::Literal(Value::str(lookup_name.clone()))),
-                        is_positional: false,
-                    };
-                    let method_result = Expr::Ternary {
-                        cond: Box::new(Expr::MethodCall {
-                            target: Box::new(Expr::Var(target_name.clone())),
-                            name: Symbol::intern("can"),
-                            args: vec![Expr::Literal(Value::str(lookup_name.clone()))],
-                            modifier: Some('^'),
-                            quoted: false,
-                        }),
-                        then_expr: Box::new(method_call),
-                        else_expr: Box::new(hash_lookup),
-                    };
-                    // If the named param has a sub_signature (e.g. :key($k)),
-                    // bind to the sub_signature variable instead of the param name.
-                    if let Some(inner_params) = &sub.sub_signature {
-                        for inner in inner_params {
-                            if !inner.name.is_empty() {
-                                bind_stmts
-                                    .push(decl_stmt(inner.name.clone(), method_result.clone()));
-                            }
-                        }
-                    } else {
-                        // An `@`-sigil named sub-param binds like a signature
-                        // parameter: it flattens the (Positional) value's elements
-                        // into the array (shallow), unlike plain `my @x = $val`
-                        // assignment which keeps an itemized List as one element.
-                        // e.g. zef's `-> % [:@dists]` over `dists => $repo.installed`
-                        // (a 1-element List) must yield `@dists[0]` = the dist, not
-                        // a List wrapping it. `.list` gives the shallow flatten.
-                        let target_expr = if sub.name.starts_with('@') {
-                            Expr::MethodCall {
-                                target: Box::new(method_result),
-                                name: Symbol::intern("list"),
-                                args: Vec::new(),
-                                modifier: None,
-                                quoted: false,
-                            }
-                        } else {
-                            method_result
-                        };
-                        bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
-                    }
-                } else if sub.slurpy && sub.sigilless {
-                    // |rest capture parameter: collect remaining elements into a Capture
-                    // Generates: rest = \(|target[positional_index..*])
-                    let slice_expr = Expr::Index {
-                        target: Box::new(Expr::Var(target_name.clone())),
-                        index: Box::new(Expr::Binary {
-                            left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
-                            op: crate::token_kind::TokenKind::DotDot,
-                            right: Box::new(Expr::Whatever),
-                        }),
-                        is_positional: true,
-                    };
-                    let capture_expr = Expr::CaptureLiteral(vec![Expr::Unary {
-                        op: crate::token_kind::TokenKind::Pipe,
-                        expr: Box::new(slice_expr),
-                    }]);
-                    // Positional destructure targets keep `Stmt::Assign` binding:
-                    // a fresh `my` declaration would copy an `is raw` / `is default`
-                    // container and drop its `.VAR.default` (roast
-                    // S02-names/is_default.t `-> (..., %a is raw, ...)`). Only the
-                    // NAMED branch above declares (to shadow an outer same-named
-                    // var, which positional destructure does not need).
-                    bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
-                    // No need to increment positional_index; capture consumes all remaining
-                } else {
-                    let element_expr = Expr::Index {
-                        target: Box::new(Expr::Var(target_name.clone())),
-                        index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
-                        is_positional: false,
-                    };
-                    // An optional destructure param (`-> ($a, $b?)`) seeds its
-                    // type object (Mu for untyped — this is a block) when the
-                    // source has no element at this slot; a default binds the
-                    // default expression instead.
-                    let value_expr = if sub.default.is_some() || sub.optional_marker {
-                        let fallback = match &sub.default {
-                            Some(default_expr) => default_expr.clone(),
-                            None => {
-                                let mut marked = sub.clone();
-                                marked.mark_block_param();
-                                Expr::Literal(
-                                    crate::runtime::Interpreter::missing_optional_param_value(
-                                        &marked,
-                                    ),
-                                )
-                            }
-                        };
-                        Expr::Ternary {
-                            cond: Box::new(Expr::Binary {
-                                left: Box::new(Expr::MethodCall {
-                                    target: Box::new(Expr::Var(target_name.clone())),
-                                    name: Symbol::intern("elems"),
-                                    args: Vec::new(),
-                                    modifier: None,
-                                    quoted: false,
-                                }),
-                                op: crate::token_kind::TokenKind::Gt,
-                                right: Box::new(Expr::Literal(Value::int(positional_index as i64))),
-                            }),
-                            then_expr: Box::new(element_expr),
-                            else_expr: Box::new(fallback),
-                        }
-                    } else {
-                        element_expr
-                    };
-                    bind_stmts.push(bind_stmt(sub.name.clone(), value_expr));
-                    positional_index += 1;
-                }
-            }
-        };
         if let Some(def) = param_def
             && let Some(sub_params) = &def.sub_signature
         {
-            destructure_binds(
-                param.as_deref().unwrap_or("_").to_string(),
-                sub_params,
-                &mut bind_stmts,
-            );
+            destructure_binds(param.as_deref().unwrap_or("_"), sub_params, &mut bind_stmts);
         }
         // `_.elems` on the per-iteration chunk array — the number of source
         // elements that actually flowed into this batch.
@@ -3507,7 +3294,7 @@ impl Compiler {
                 && let Some(name) = params.get(i)
             {
                 destructure_binds(
-                    name.strip_prefix('\\').unwrap_or(name).to_string(),
+                    name.strip_prefix('\\').unwrap_or(name),
                     sub_params,
                     &mut bind_stmts,
                 );

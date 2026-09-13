@@ -275,6 +275,17 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.traits
                 .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
             return Ok((r, p));
+        } else if r.starts_with('(') {
+            // A `(` after the pseudo-type is not this branch's business: it
+            // opens either a coercion (`::?CLASS()`) or an anonymous destructure
+            // (`method m(::?CLASS:D (:$a))`, ASTQuery), and the general
+            // type-constraint path below already parses every spelling of both —
+            // together with the `?`/`!` marker, `is` traits, `where` clause and
+            // default that may follow. `parse_type_constraint_expr` reads
+            // `::?CLASS` and its smiley itself, so leaving `rest` where it was
+            // hands the whole parameter to that path intact. Consuming it here
+            // as a type-only parameter instead left the `(` unread and failed
+            // the enclosing signature.
         } else {
             // Neither a variable nor an invocant marker follows: this is an
             // ANONYMOUS POSITIONAL parameter typed by the pseudo-type, exactly as

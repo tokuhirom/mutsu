@@ -141,7 +141,12 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             });
         } else if let Some(ref pdef) = param_def {
             if let Some(ref sub_params) = pdef.sub_signature {
-                // Declare the unpack variable holding the condition value
+                // A destructuring parameter unpacks the condition value into the
+                // sub-signature's lexicals. The unpack is the shared lowering
+                // `for` and `given` use; the copy that used to live here called a
+                // method named after the sub-parameter *with its sigil attached*
+                // (`$obj.@list`), and knew nothing of hash fallback, `|`
+                // captures, renames or defaults.
                 with_body.push(Stmt::VarDecl {
                     name: pname.clone(),
                     expr: tmp_var.clone(),
@@ -154,59 +159,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                     custom_traits: Vec::new(),
                     where_constraint: None,
                 });
-                // Destructure each positional parameter from the unpack variable
-                let mut positional_index = 0usize;
-                for sub in sub_params {
-                    if sub.name.is_empty() {
-                        continue;
-                    }
-                    let extract_expr = if sub.named {
-                        Expr::MethodCall {
-                            target: Box::new(Expr::Var(pname.clone())),
-                            name: Symbol::intern(&sub.name),
-                            args: Vec::new(),
-                            modifier: None,
-                            quoted: false,
-                        }
-                    } else {
-                        let idx_expr = Expr::Index {
-                            target: Box::new(Expr::Var(pname.clone())),
-                            index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
-                            is_positional: true,
-                        };
-                        positional_index += 1;
-                        idx_expr
-                    };
-                    // Apply type coercion if present (e.g. Int())
-                    let coerced_expr = if let Some(ref tc) = sub.type_constraint {
-                        // Strip trailing "()" from coercion types like "Int()"
-                        let method_name = tc.strip_suffix("()").unwrap_or(tc);
-                        Expr::MethodCall {
-                            target: Box::new(extract_expr),
-                            name: Symbol::intern(method_name),
-                            args: Vec::new(),
-                            modifier: None,
-                            quoted: false,
-                        }
-                    } else {
-                        extract_expr
-                    };
-                    // `is copy` on a sub-signature parameter is handled
-                    // implicitly: the VarDecl creates a fresh writable variable,
-                    // so no explicit trait is needed.
-                    with_body.push(Stmt::VarDecl {
-                        name: sub.name.clone(),
-                        expr: coerced_expr,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    });
-                }
+                crate::param_destructure::destructure_binds(pname, sub_params, &mut with_body);
             } else {
                 // Simple parameter with possible traits from parse_for_params
                 with_body.push(simple_pointy_bind(pname, &tmp_var, pdef.sigilless));

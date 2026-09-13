@@ -176,6 +176,35 @@ fn p5_foreach_error() -> PError {
 /// written back. The compiler only treats a `:=`-to-`$_` head as a pointy alias.
 fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
     let topic = Expr::Var("_".to_string());
+    if let Some(sub_params) = &pd.sub_signature {
+        // A destructuring parameter (`given $obj -> (:@list, |) { ... }`,
+        // ASTQuery::Match) binds nothing under its own name: it unpacks the
+        // topic into the sub-signature's lexicals. That unpack is the same
+        // operation `for` performs, so it is the shared lowering that does it
+        // here — the topic is declared under the parameter's synthetic name
+        // first, exactly as `for` declares `__for_unpack`, and the binds read
+        // from that name. Dropping the sub-signature (which is what this
+        // function did before) left `@list` unbound and silently empty.
+        let target = if pd.name.is_empty() {
+            "__subsig__"
+        } else {
+            pd.name.as_str()
+        };
+        let mut stmts = vec![Stmt::VarDecl {
+            name: target.to_string(),
+            expr: topic,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        }];
+        crate::param_destructure::destructure_binds(target, sub_params, &mut stmts);
+        return Stmt::SyntheticBlock(stmts);
+    }
     if pd.traits.iter().any(|t| t == "copy") {
         // `is copy` is a fresh, writable copy with no link to the source. Use a
         // plain assignment (not `:=`, so the compiler does not treat it as a

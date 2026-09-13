@@ -17,6 +17,7 @@ mod interpreter;
 pub(crate) mod method_signature_shared;
 mod opcode;
 mod opcode_param_fills;
+mod param_destructure;
 mod parse_dispatch;
 mod parser;
 mod placeholder_order;
