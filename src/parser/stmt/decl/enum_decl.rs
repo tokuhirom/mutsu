@@ -1,8 +1,8 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::super::parse_result::{PError, PResult, parse_char, take_while1};
-use super::super::{ident, keyword, qualified_ident};
-use super::helpers::{has_export_tag_argument, parse_export_trait_tags};
+use super::super::{keyword, qualified_ident};
+use super::enum_decl_traits::{parse_enum_trait_clauses, skip_trailing_enum_does_clause};
 use super::take_while_opt;
 use crate::ast::{EnumVariantForm, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -77,7 +77,7 @@ fn register_dynamic_enum_values(body: &Expr) {
 
 /// Skip a balanced `[...]` role-parameterization argument. Returns the input
 /// past the closing `]`, or `None` when the input does not start with `[`.
-fn skip_balanced_brackets(input: &str) -> Option<&str> {
+pub(super) fn skip_balanced_brackets(input: &str) -> Option<&str> {
     let mut rest = input.strip_prefix('[')?;
     let mut depth = 1u32;
     while depth > 0 {
@@ -345,69 +345,12 @@ pub(super) fn parse_enum_decl_body_with_type(
     super::super::simple::register_user_type(&name_str);
     let (rest, _) = ws(rest)?;
 
-    // Parse the declaration's trait clauses — `is <trait>` (e.g. `is export`)
-    // and `does <Role>` — which may appear in any order and repeat
-    // (`enum E does A does B is export <x y>`). Without the `does` arm the
-    // clause was left unconsumed, the `(...)`/`<...>` body was never read as the
-    // enum's value list, and the leftover `does Role (A => 1, B => 2)` parsed as
-    // a plain expression statement — which is where the spurious
-    // "Useless use of '=>' in sink context" warning came from, and why the enum
-    // ended up with no values at all.
-    let mut rest = rest;
+    // Parse the declaration's trait clauses (`is export`, `does Role`) that
+    // precede the value list -- see `parse_enum_trait_clauses`.
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut roles: Vec<String> = Vec::new();
-    loop {
-        if let Some(r) = keyword("is", rest) {
-            let (r, _) = ws1(r)?;
-            let (r, trait_name) = ident(r)?;
-            if trait_name == "export" {
-                is_export = true;
-                let (r, tags) = if has_export_tag_argument(r) {
-                    parse_export_trait_tags(r)?
-                } else {
-                    (r, Vec::new())
-                };
-                if tags.is_empty() {
-                    if !export_tags.iter().any(|t| t == "DEFAULT") {
-                        export_tags.push("DEFAULT".to_string());
-                    }
-                } else {
-                    for tag in tags {
-                        if !export_tags.iter().any(|t| t == &tag) {
-                            export_tags.push(tag);
-                        }
-                    }
-                }
-                let (r, _) = ws(r)?;
-                rest = r;
-                continue;
-            }
-            // Consume an optional parenthesized argument for other traits.
-            let r = skip_balanced_parens(r);
-            let (r, _) = ws(r)?;
-            rest = r;
-            continue;
-        }
-        if let Some(r) = keyword("does", rest) {
-            let (r, _) = ws1(r)?;
-            let (r, role_name) = qualified_ident(r)?;
-            // A parameterized role (`does R[Int]`) keeps its argument list in
-            // the recorded name, the same spelling class composition uses.
-            let (r, role_name) = match skip_balanced_brackets(r) {
-                Some(after) => {
-                    let consumed = &r[..r.len() - after.len()];
-                    (after, format!("{role_name}{consumed}"))
-                }
-                None => (r, role_name),
-            };
-            roles.push(role_name);
-            let (r, _) = ws(r)?;
-            rest = r;
-            continue;
-        }
-        break;
-    }
+    let rest = parse_enum_trait_clauses(rest, &mut is_export, &mut export_tags, &mut roles)?;
 
     // Enum variants in << >>, « », <> or ()
     let (rest, variants, variant_form) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
@@ -472,6 +415,11 @@ pub(super) fn parse_enum_decl_body_with_type(
     };
 
     let (rest, _) = ws(rest)?;
+    // A `does` clause AFTER the value list (#8216) is consumed and discarded,
+    // not composed -- see `skip_trailing_enum_does_clause` for why that
+    // (rather than genuinely composing it, as the BEFORE-the-value-list loop
+    // above does) is what actually matches rakudo here.
+    let (rest, ()) = skip_trailing_enum_does_clause(rest)?;
     // See parse_anon_enum_body: leave the trailing `;` for the statement layer
     // so `enum` in expression context does not swallow the next statement.
     register_enum_values(&variants);

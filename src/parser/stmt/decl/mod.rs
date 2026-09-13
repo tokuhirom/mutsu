@@ -1,6 +1,7 @@
 mod constant_subset;
 mod destructure;
 mod enum_decl;
+mod enum_decl_traits;
 mod handles;
 mod has_decl;
 mod helpers;
