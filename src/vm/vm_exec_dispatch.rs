@@ -2740,19 +2740,19 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::Gcd => {
-                self.exec_gcd_op();
+                self.exec_gcd_op()?;
                 *ip += 1;
             }
             OpCode::Lcm => {
-                self.exec_lcm_op();
+                self.exec_lcm_op()?;
                 *ip += 1;
             }
             OpCode::InfixMin => {
-                self.exec_infix_min_op();
+                self.exec_infix_min_op()?;
                 *ip += 1;
             }
             OpCode::InfixMax => {
-                self.exec_infix_max_op();
+                self.exec_infix_max_op()?;
                 *ip += 1;
             }
 

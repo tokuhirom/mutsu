@@ -206,6 +206,12 @@ impl Value {
             _ => None,
         }
     }
+    /// Is this a `ValueRepr::VarRef` (the container wrapper a call site puts
+    /// around a plain-variable argument so an `is rw` parameter can bind it)?
+    /// A tag probe only — no `view()`, so it is free to ask on a hot path.
+    pub fn is_varref(&self) -> bool {
+        self.0.is_varref()
+    }
     /// The value a `ValueRepr::VarRef` wraps, or `self` when it is not one.
     /// The binder strips the wrapper here once it has taken the name it needs.
     pub fn unwrap_varref(&self) -> &Value {

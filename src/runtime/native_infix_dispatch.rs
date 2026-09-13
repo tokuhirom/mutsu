@@ -183,6 +183,12 @@ fn core_infix_shape(name: &str) -> Option<CoreInfixShape> {
         "%%" => (&[&[("Int:D", "Int:D")]], Some("Mu")),
         "div" => (&[&[("Int:D", "Int:D")]], Some("Any")),
         "mod" => (&[REAL_D_PAIR], Some("Any")),
+        // `gcd`/`lcm` reduce their operands to `Int`: rakudo's two-positional
+        // candidates are `(Int:D, Int:D)` and the `(\a, \b)` catch-all.
+        "gcd" | "lcm" => (&[&[("Int:D", "Int:D")]], Some("Mu")),
+        // `min`/`max` add `(Num:D, Num:D)` to that, and their catch-all is
+        // `(Mu:D \a, Mu:D \b)`.
+        "min" | "max" => (&[INT_NUM], Some("Mu")),
         "~" => (&[CONCAT, BLOB_PAIR], None),
         "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg" => (&[STR_PAIR, BLOB_PAIR], Some("Mu")),
         "cmp" => (
