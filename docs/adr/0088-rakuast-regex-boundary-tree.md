@@ -514,5 +514,37 @@ path or evaluate any dynamic regex content.
 The focused regression is
 `t/regex/match/regex-tree-array-captures.t`. It covers source accessors and
 gist parity, single and quantified parser-created aliases, and constructed
-`RakuAST::Regex::NamedCapture` EVAL. Hash aliases, subrules, and code-bearing
-regex nodes remain explicit follow-up boundaries.
+`RakuAST::Regex::NamedCapture` EVAL. Hash aliases, remaining subrule forms,
+and code-bearing regex nodes remain explicit follow-up boundaries.
+
+## 15. Ordinary subrule alias slice (2026-09-13)
+
+Ordinary subrule aliases (`<alias=name>`) now retain their source shape in the
+shared tree as `RegexNode::SubruleAlias`. The read direction emits
+`RakuAST::Regex::Assertion::Alias` with an ordinary capturing
+`RakuAST::Regex::Assertion::Named` child; the child `capturing` field is
+present, matching Rakudo's constructor-form gist. The alias child is an
+ordinary capturing named assertion, so its two capture names remain observable
+through the existing model and matcher behavior.
+
+The model and write direction also support the standalone Named assertion node
+needed by the alias child and by constructed RakuAST trees. Bare and
+dot-suppressed source assertions (`<name>` and `<.name>`) remain on the
+existing parser path for now. This is deliberate: that path owns special
+subrules such as `<same>` and grammar-local shadowing, which must not be
+reduced to a generic static name lookup before those dispatch semantics have a
+dedicated tree representation.
+
+The execution lowerer maps these nodes directly to the existing
+`RegexAtom::Named` path. Runtime subrule resolution, alias/original capture
+sharing, dot-suppressed captures, and the Parser -> Compiler -> VM execution
+pipeline therefore remain unchanged. Conversion and RakuAST construction do
+not look up or execute a subrule.
+
+This bounded slice accepts only simple, unqualified names without arguments in
+the alias form. Qualified names, argumented subrules, code assertions, and
+alias forms with explicit capture suppression remain fallback boundaries until
+the model can retain their name-part and argument semantics. The focused
+regression is `t/rakuast/rakuast-regex.t`, which pins the alias source shape,
+assertion hierarchy and accessors, model construction, alias/original captures,
+and end-to-end grammar EVAL execution.

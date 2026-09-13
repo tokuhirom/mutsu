@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 21;
+plan 33;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -236,3 +236,53 @@ my $constructed = RakuAST::QuotedRegex.new(
 $_ = 'TEST';
 is EVAL($constructed).raku, 'Match.new(:orig("TEST"), :from(0), :pos(4))',
     'a constructed match-immediate regex uses the existing matcher';
+
+is Q[/<alias=foo>/].AST.gist, q:to/END/.chomp, 'a subrule alias retains its assertion child';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Assertion::Alias.new(
+            name      => "alias",
+            assertion => RakuAST::Regex::Assertion::Named.new(
+              name      => RakuAST::Name.from-identifier("foo"),
+              capturing => True
+            )
+          )
+        )
+      )
+    )
+    END
+
+my $named-subrule = RakuAST::Regex::Assertion::Named.new(
+    name => RakuAST::Name.from-identifier('part'),
+    capturing => True,
+);
+ok $named-subrule ~~ RakuAST::Regex::Assertion,
+    'named subrule assertions retain their abstract assertion type';
+is $named-subrule.name.raku, 'RakuAST::Name.from-identifier("part")',
+    'named subrule assertions expose their Name child';
+is $named-subrule.capturing, True,
+    'named subrule assertions expose their capturing flag';
+
+my $alias-subrule = RakuAST::Regex::Assertion::Alias.new(
+    name => 'word',
+    assertion => $named-subrule,
+);
+ok $alias-subrule ~~ RakuAST::Regex::Assertion,
+    'subrule aliases retain their abstract assertion type';
+is $alias-subrule.name, 'word', 'subrule aliases expose their alias name';
+is $alias-subrule.assertion.name.raku, 'RakuAST::Name.from-identifier("part")',
+    'subrule aliases expose the named assertion child';
+
+my $subrule-grammar = EVAL(Q[grammar GRegexSubruleAlias {
+    token TOP { <word=part> };
+    token part { "a" };
+}].AST);
+is $subrule-grammar.^name, 'GRegexSubruleAlias',
+    'a grammar with a subrule alias lowers through the existing pipeline';
+my $subrule-match = $subrule-grammar.parse('a');
+ok $subrule-match, 'a lowered subrule alias matches its target token';
+is ~$subrule-match<word>, 'a', 'a subrule alias captures under its alias name';
+is ~$subrule-match<part>, 'a', 'a subrule alias retains the original capture name';
+is $subrule-match.hash.keys.sort.join(','), 'part,word',
+    'a subrule alias retains both alias and original captures';
