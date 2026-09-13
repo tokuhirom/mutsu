@@ -36,4 +36,18 @@ the short direction; `t/routines/closure/pointy-block-light-bind.t`'s arity
 assertion, previously only checking that a short call dies at all, now
 checks the exact message too.
 
+A first version of the check compared against `positional_args` directly and
+regressed `.sort(-*.value)` over a `Hash`/`Bag`/`Mix`: a bare WhateverCode's
+`params` is the sentinel `["_"]`, which reads its implicit argument through
+the dynamically-scoped topic `$_` rather than a real positional bind, so a
+Pair-shaped element (promoted to a `ValuePair` by `pair_as_positional`) is
+deliberately excluded from `positional_args` for that shape and was
+miscounted as "0 positionals supplied" -- rejecting every per-element call
+and collapsing every sort key to the same fallback value, non-deterministically
+scrambling the result order (`.sort`'s hash-iteration order varies by run).
+The check now compares against a separate `arity_positional_count` that
+still counts a `ValuePair` regardless of that promotion rule, so a genuinely
+empty call (`(* + 1)()`) is still caught while a `.sort`-fed Pair argument is
+not. `t/routines/closure/whatevercode-pair-arg-arity.t` pins this interaction.
+
 [#8353](https://github.com/tokuhirom/mutsu/issues/8353)

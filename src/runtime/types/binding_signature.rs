@@ -1026,13 +1026,35 @@ impl Interpreter {
             // A params list made ENTIRELY of plain (non-placeholder, non-named)
             // identifiers is the shape a bare pointy block (`-> $a { }`,
             // compiled via `Expr::Lambda`) or a non-mutating WhateverCode
-            // (`*+1`) takes: every param requires exactly one positional
-            // argument, with no `@_`/`%_` overflow to catch a short call (that
-            // combination is rejected at compile time -- see the "too many"
-            // check below). Computed before the bind loop so a short call can
-            // reject up front, atomically, rather than partially binding the
-            // params the caller did supply and leaving the trailing one(s)
-            // unbound for the body to read as an undeclared variable (#8353).
+            // (`*+1`) takes: every REAL identifier requires exactly one
+            // positional argument, with no `@_`/`%_` overflow to catch a
+            // short call (that combination is rejected at compile time --
+            // see the "too many" check below). Computed before the bind loop
+            // so a short call can reject up front, atomically, rather than
+            // partially binding the params the caller did supply and leaving
+            // the trailing one(s) unbound for the body to read as an
+            // undeclared variable (#8353).
+            //
+            // Checked against `arity_positional_count`, NOT `positional_args`:
+            // for a bare WhateverCode's `["_"]` sentinel, `positional_args`
+            // excludes a Pair-shaped argument that `pair_as_positional`
+            // promoted to a `ValuePair` (`promote_valuepair_positional` above
+            // is false for that shape -- such a block reads its implicit
+            // argument through the dynamically-scoped topic `$_`, set by
+            // whatever topicalizes it, e.g. `.sort`'s per-element call, not
+            // through a real positional bind). Counting it as "0 positionals
+            // supplied" there is a false "too few": one argument WAS
+            // supplied, this binder's `_`-shape just does not bind it
+            // positionally by design. `arity_positional_count` counts
+            // anything that is not a genuinely-named `Pair` (a `ValuePair`
+            // included, whether or not this shape promotes it), so a truly
+            // empty call (`(* + 1)()`) still correctly reports "too few"
+            // while a `.sort(-*.value)`-style Pair-element call does not
+            // (`t/routines/closure/whatevercode-pair-arg-arity.t`).
+            let arity_positional_count = plain_args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .count();
             let has_placeholder = |p: &String| {
                 p.starts_with('^')
                     || p.starts_with("@^")
@@ -1044,7 +1066,7 @@ impl Interpreter {
             let all_plain_positional = params
                 .iter()
                 .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
-            if all_plain_positional && positional_args.len() < required_positional_count {
+            if all_plain_positional && arity_positional_count < required_positional_count {
                 return Err(RuntimeError::new(format!(
                     "Too few positionals passed; expected {} argument{} but got {}",
                     required_positional_count,
@@ -1053,7 +1075,7 @@ impl Interpreter {
                     } else {
                         "s"
                     },
-                    positional_args.len()
+                    arity_positional_count
                 )));
             }
             let mut positional_idx = 0usize;
