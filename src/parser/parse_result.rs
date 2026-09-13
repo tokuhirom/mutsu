@@ -24,6 +24,17 @@ pub(super) const FATAL_PREFIX: &str = "FATAL:";
 /// specially by [`PError::typed_convention_message`].
 pub(crate) const MISSING_BLOCK: &str = "X::Syntax::Missing: Missing block";
 
+/// The diagnosis `check_two_terms_across_lines` (`parser::stmt::modifier`)
+/// raises. Shared with `render_parse_error` (#8329): rakudo's `------>`
+/// snippet for this specific failure points at the *end of the previous
+/// line* (the statement that is actually missing its semicolon), not at the
+/// second term that triggered detection -- a position `render_parse_error`
+/// has to compute itself from this exact message, since nothing else about a
+/// `fatal_at` error distinguishes "echo a different line than the one
+/// reported" from the ordinary case.
+pub(crate) const TWO_TERMS_ACROSS_LINES: &str =
+    "Confused. Two terms in a row across lines (missing semicolon or comma?)";
+
 impl PError {
     /// Check if this is a fatal (non-recoverable) parse error.
     pub fn is_fatal(&self) -> bool {
