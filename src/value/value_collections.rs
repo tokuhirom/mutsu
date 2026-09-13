@@ -188,6 +188,14 @@ impl ArrayData {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
+    /// Whether this array has been promoted to ADR-0015/ADR-0030 native
+    /// storage, so `items` is only a seed and every read has to go through
+    /// [`ArrayData::items`]'s sync chokepoint. Read by the `@a[$i]` fast path
+    /// (#8308), which reads the element vector directly and must not.
+    pub(crate) fn has_native_backing(&self) -> bool {
+        self.native.is_some()
+    }
+
     /// Adopt `src`'s entire state while keeping this node's `.WHICH` identity.
     ///
     /// This is the "same container, new contents" half of a Raku list
