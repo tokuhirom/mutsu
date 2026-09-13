@@ -558,9 +558,11 @@ impl Interpreter {
 
     pub(super) fn format_named_regex_arg_value(value: &Value) -> String {
         match value.view() {
+            // Rendered back into the pattern text as `<rule("…")>` and
+            // re-parsed, so every interpolation trigger has to be escaped —
+            // not just the backslash and the closing quote.
             ValueView::Str(s) => {
-                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-                format!("\"{escaped}\"")
+                format!("\"{}\"", Self::escape_for_double_quoted(&s))
             }
             ValueView::Bool(true) => "True".to_string(),
             ValueView::Bool(false) => "False".to_string(),
