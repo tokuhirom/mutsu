@@ -1457,6 +1457,14 @@ pub(crate) struct Compiler {
     /// (`class A {...}`) followed by its real definition is NOT a redeclaration,
     /// and a same-named class in an inner block shadows rather than redeclares.
     class_names_current_scope: std::collections::HashSet<String>,
+    /// The subset of `class_names_current_scope` declared with `my`. A lexical
+    /// class may shadow an outer package class with the same qualified source
+    /// name, while two lexical declarations in one scope still redeclare.
+    lexical_class_names_current_scope: std::collections::HashSet<String>,
+    /// The declarations in the current scope whose source spelling was
+    /// qualified. This allows a bare lexical declaration inside a package to
+    /// shadow an earlier outer `class Pkg::Name`, the shape Rakudo permits.
+    qualified_class_names_current_scope: std::collections::HashSet<String>,
     /// Names of constants declared in an *enclosing* compiler (i.e. visible at a
     /// nested closure's definition point). Propagated into child closure
     /// compilers (which otherwise start with empty constant state). Used ONLY to
@@ -1697,6 +1705,8 @@ impl Compiler {
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
             class_names_current_scope: std::collections::HashSet::new(),
+            lexical_class_names_current_scope: std::collections::HashSet::new(),
+            qualified_class_names_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),

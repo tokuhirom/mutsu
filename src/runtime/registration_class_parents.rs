@@ -112,6 +112,7 @@ impl Interpreter {
         // Foobar { }` never trips X::Inheritance::SelfInherit because the
         // mangled storage name can never equal the bare parent name it is
         // supposed to collide with.
+        let storage_name = name;
         let name = crate::value::user_facing_type_name(name);
         let self_short = short_of(&name);
         let mut non_inheritance_parents: HashSet<String> = HashSet::new();
@@ -142,7 +143,11 @@ impl Interpreter {
                 non_inheritance_parents.insert(parent.clone());
                 continue;
             }
-            if resolved_parent == name.as_ref() {
+            let lexical_class_shadows_package_type = storage_name.contains('\u{0}')
+                && (self.registry().classes.contains_key(name.as_ref())
+                    || self.registry().roles.contains_key(name.as_ref())
+                    || self.registry().enum_types.contains_key(name.as_ref()));
+            if resolved_parent == name.as_ref() && !lexical_class_shadows_package_type {
                 let mut attrs = HashMap::new();
                 attrs.insert("name".to_string(), Value::str(name.to_string()));
                 attrs.insert(

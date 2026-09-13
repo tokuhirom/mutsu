@@ -731,6 +731,22 @@ impl Interpreter {
         {
             return format!("{}{}", lookup, suffix);
         }
+        // A lexical class can shadow a package class with the same
+        // source-facing qualified name (`module M { my class C is M::C {} }`).
+        // For a qualified parent spelling, prefer the actual package member
+        // over the lexical env binding that the declaration installed for its
+        // own source name. Bare parent names still go through the lexical env
+        // remapping in the VM, so explicit `my class C is C` remains a genuine
+        // self-inheritance error.
+        if lookup.contains("::") {
+            let registry = self.registry();
+            if registry.classes.contains_key(lookup)
+                || registry.roles.contains_key(lookup)
+                || registry.enum_types.contains_key(lookup)
+            {
+                return format!("{}{}", lookup, suffix);
+            }
+        }
         if let ValueView::Package(pkg) = self.resolve_indirect_type_name(lookup).view() {
             return format!("{}{}", pkg.resolve(), suffix);
         }
