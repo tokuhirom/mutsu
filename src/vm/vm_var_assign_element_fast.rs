@@ -154,15 +154,16 @@ impl Interpreter {
     /// It never returns `Some(Err(_))`.
     ///
     /// Preconditions (all must hold):
-    /// - a positional subscript on an `@`-sigiled name, with no `:=` bindings in
-    ///   scope and no pending `=`-element share;
+    /// - a positional subscript on an `@`-sigiled name, with no SCALAR `:=`
+    ///   binding pair recorded in this frame and no pending `=`-element share;
     /// - a plain non-negative `Int` index that is already **in range** (an
     ///   autovivifying store needs the full path's native-fill and hole
     ///   bookkeeping);
     /// - a plain rvalue (not a bind marker, not `Nil`);
     /// - the variable resolves, in env, to a plain mutable `Array`/`ItemArray`
     ///   with no embedded type metadata, no declared shape, no `is default`,
-    ///   and not readonly;
+    ///   and not readonly -- either held directly, or through exactly one
+    ///   `:=` `ContainerCell` (`my @alias := @a`), which the lane descends;
     /// - the destination slot is not itself a container (`ContainerRef` /
     ///   `Scalar` / `Proxy` / a varref / a `__mutsu_bound*` marker), which would
     ///   mean the store must write *through* it;
@@ -274,10 +275,48 @@ impl Interpreter {
         // below, and the commit, needs `&mut self`. (The clone is what makes the
         // node's `strong_count` unusable as an aliasing signal afterwards -- see
         // the in-place write at the bottom, which does not consult it.)
-        let (items, kind) = self.env().get_sym(var_sym).and_then(|v| match v.view() {
-            ValueView::Array(items, kind) => Some((items.clone(), kind)),
-            _ => None,
-        })?;
+        //
+        // A `:=`-bound container (`my @alias := @a`) is reached through a
+        // `ContainerCell`, so env hands out a `ContainerRef` rather than the
+        // `Array` itself and this match used to end the lane there. That is the
+        // ONE thing that declined for the bound shape -- measured, neither the
+        // `unit_lexical_container_cell` guard in the early wrapper nor
+        // `is_readonly_sym` fires for it -- and it cost 3,823 ns per store
+        // against a plain array's 782 ns, where rakudo charges 226 vs 224
+        // ([#8307](https://github.com/tokuhirom/mutsu/issues/8307)).
+        //
+        // Descending exactly one cell is sound for this lane because the write
+        // at the bottom mutates the backing node IN PLACE: the cell's inner
+        // `Value` keeps pointing at that node, so every alias sharing the cell
+        // observes the store, which is precisely what the cell is for. The cell
+        // itself is never replaced, so nothing here needs to hold its lock past
+        // reading the handle out. `cell` is carried to the coherence check
+        // below, which has to compare a different thing for a bound target.
+        let (items, kind, cell) = {
+            let v = self.env().get_sym(var_sym)?;
+            match v.view() {
+                ValueView::Array(items, kind) => (items.clone(), kind, None),
+                // A holder-local itemization flavour makes a read of this cell
+                // yield something other than its contents
+                // (`Value::into_deref`), a rule this lane does not reproduce.
+                ValueView::ContainerRef(arc) if !v.container_ref_is_itemized() => {
+                    let arc = crate::gc::Gc::clone(&arc);
+                    // `ok()?`, not `unwrap()`: a poisoned cell is one more thing
+                    // this lane is not certain about, and declining is what it
+                    // does with those. It also keeps the panic-surface ratchet
+                    // (#8186) where it was.
+                    let inner = match arc.lock().ok()?.view() {
+                        ValueView::Array(items, kind) => Some((items.clone(), kind)),
+                        _ => None,
+                    };
+                    match inner {
+                        Some((items, kind)) => (items, kind, Some(arc)),
+                        None => return None,
+                    }
+                }
+                _ => return None,
+            }
+        };
         // A `List`/`ItemList` is immutable as a container (its element slots
         // cannot be replaced), and `Shaped`/`Lazy` have their own store rules.
         if !matches!(
@@ -329,13 +368,24 @@ impl Interpreter {
             return None;
         }
         // Dual-store coherence: if this frame has a local slot for the name, it
-        // must hold the same backing node, so the single in-place write below is
-        // seen by both halves. A diverged slot (a stale COW copy) falls through
-        // to the slow path, which has the machinery to reconcile it.
+        // must name the same container as env did, so the single in-place write
+        // below is seen by both halves. A diverged slot (a stale COW copy) falls
+        // through to the slow path, which has the machinery to reconcile it.
+        //
+        // What "the same container" means differs by shape. For a plain array it
+        // is the same backing node. For a `:=`-bound one the slot holds the
+        // CELL, not the node, and the cell is the one thing every alias of the
+        // binding genuinely shares -- so cell identity is what makes the write
+        // visible to both halves, and a slot holding a bare `Array` while env
+        // holds a cell (or the reverse) is exactly the divergence to refuse.
         if let Some(slot) = self.resolve_local_slot(code, target_slot, var_name) {
             match self.locals[slot].view() {
                 ValueView::Array(local_items, ..)
-                    if crate::gc::Gc::ptr_eq(&items, &local_items) => {}
+                    if cell.is_none() && crate::gc::Gc::ptr_eq(&items, &local_items) => {}
+                ValueView::ContainerRef(local_cell)
+                    if cell
+                        .as_ref()
+                        .is_some_and(|c| crate::gc::Gc::ptr_eq(c, &local_cell)) => {}
                 // An untouched/absent slot is fine: nothing there to diverge.
                 ValueView::Nil => {}
                 _ => return None,
