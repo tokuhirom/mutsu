@@ -123,6 +123,10 @@ pub(super) enum StreamDecline {
     /// A `$*`-twigil rule parameter is declared somewhere in the program, so
     /// the call has to install and tear down a dynamic scope around itself.
     DynamicRuleParam,
+    /// The rule declares a match-scoped grammar dynamic variable. The eager
+    /// path owns the frame boundary; streaming would otherwise expose one
+    /// frame across the caller continuation.
+    GrammarDynvar,
     /// The grammar has a custom HOW, so dispatch is not static.
     CustomHow,
     /// This `(name, position)` key is already left-recursion-active.
@@ -149,6 +153,7 @@ impl StreamDecline {
             Self::CalleeEdgeUnresolvable => "callee-edge-unresolvable",
             Self::ReachableSetTooLarge => "reachable-set-too-large",
             Self::DynamicRuleParam => "dynamic-rule-param",
+            Self::GrammarDynvar => "grammar-dynvar",
             Self::CustomHow => "custom-how-grammar",
             Self::LrKeyActive => "lr-key-active",
             Self::SeedConsulted => "seed-consulted",

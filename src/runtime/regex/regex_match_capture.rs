@@ -149,7 +149,36 @@ impl Interpreter {
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
-        let out = self.regex_match_atom_with_capture_in_pkg_inner(
+        let mut preinstalled_arg_values = None;
+        // The single-candidate matcher is used by quantified named subrules
+        // (`<part>+`) and has its own direct named-rule path. Give it the same
+        // rule frame as the plural matcher so a declaration is scoped during
+        // that path too.
+        let grammar_frame = match atom {
+            RegexAtom::Named(name)
+                if !LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+                    && self
+                        .grammar_rule_dynvar_decls
+                        .contains_key(&name.spec().lookup_name) =>
+            {
+                let spec = name.spec();
+                let arg_values = if spec.arg_exprs.is_empty() {
+                    Some(Vec::new())
+                } else {
+                    self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
+                };
+                if let Some(arg_values) = arg_values {
+                    dyn_saved =
+                        self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                    preinstalled_arg_values = Some(arg_values);
+                    self.enter_grammar_rule_dynvars(&spec.lookup_name)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let mut out = self.regex_match_atom_with_capture_in_pkg_inner(
             atom,
             chars,
             pos,
@@ -157,7 +186,14 @@ impl Interpreter {
             pkg,
             ignore_case,
             &mut dyn_saved,
+            preinstalled_arg_values,
         );
+        if let Some(frame) = grammar_frame {
+            let values = self.exit_grammar_rule_dynvars(frame);
+            if let Some((_, caps)) = out.as_mut() {
+                Self::attach_grammar_dynvars_to_named_caps(caps, atom, &values);
+            }
+        }
         if let Some(saved) = dyn_saved {
             self.restore_subrule_dynamic_params(saved);
         }
@@ -174,6 +210,7 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
+        preinstalled_arg_values: Option<Vec<Value>>,
     ) -> Option<(usize, RegexCaptures)> {
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
@@ -677,6 +714,36 @@ impl Interpreter {
                 let source = format!("{};", code);
                 if let Some(stmts) = self.parse_regex_code_cached(&source) {
                     let mut new_caps = RegexCaptures::default();
+                    // Grammar-rule dynamic declarations are initialized by the
+                    // rule-entry frame. Keep the declaration zero-width here,
+                    // and carry the installed value into the capture delta,
+                    // rather than evaluating the initializer once per LTM
+                    // candidate/end (or a second time on the winning path).
+                    let declared_dynamic_keys: Vec<String> = stmts
+                        .iter()
+                        .filter_map(|stmt| match stmt {
+                            Stmt::VarDecl { name, .. } if crate::env::is_dynamic_var_name(name) => {
+                                Some(
+                                    Self::grammar_dynvar_env_keys(name)
+                                        .into_iter()
+                                        .next()
+                                        .unwrap_or_else(|| name.clone()),
+                                )
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    if declared_dynamic_keys
+                        .iter()
+                        .any(|name| super::regex_helpers::grammar_dynvar_scope_active(name))
+                    {
+                        for name in declared_dynamic_keys {
+                            if let Some(value) = self.env.get(&name).cloned() {
+                                new_caps.regex_vars_mut().insert(name, value);
+                            }
+                        }
+                        return Some((pos, new_caps));
+                    }
                     // The initializer may reference the regex's own
                     // in-progress match state — `:my $c = ~$0;` needs `$0`
                     // bound to the capture matched so far, exactly like a
@@ -844,14 +911,20 @@ impl Interpreter {
                     .into_iter()
                     .last();
             }
-            let arg_values = if spec.arg_exprs.is_empty() {
+            let preinstalled = preinstalled_arg_values.is_some();
+            let arg_values = if let Some(values) = preinstalled_arg_values {
+                values
+            } else if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
                 self.eval_regex_arg_list(&spec.arg_exprs, current_caps)?
             };
             // Establish the subrule's `$*`-twigil parameters for the whole
             // resolve-and-match (see `regex_dynparams`); the wrapper restores.
-            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+            if !preinstalled {
+                *dyn_saved =
+                    self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+            }
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case). Patterns are matched in place with
             // `self` against the whole `chars` starting at `pos` (ADR-0016 P1) —

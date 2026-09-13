@@ -10,11 +10,9 @@ use Test;
 # other half's stale value in place, and `$*LAST` was still visible to the
 # caller after `.parse` returned (GH #8096).
 #
-# The narrower "established for the whole parse rather than only the
-# declaring rule's own match" half of #8096 (a `:my` in a losing LTM
-# candidate still runs and is visible to actions of unrelated/sibling rules)
-# is NOT fixed here and is NOT asserted below -- see the issue for that
-# remaining, deeper gap.
+# The proto-candidate visibility half of this behavior is covered separately in
+# grammar-dynvar-rule-scope.t (#8148); this file remains focused on restoration
+# after the parse returns to its caller.
 
 plan 4;
 

@@ -22,13 +22,35 @@ impl Value {
         named: &crate::runtime::NamedCaptureMap,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        let has_children = !named.is_empty() || !positional.is_empty();
+        Self::make_match_object_full_with_regex_vars(
+            from,
+            to,
+            positional,
+            named,
+            &crate::runtime::RegexVarMap::default(),
+            target,
+        )
+    }
+
+    /// Create a Match object and retain per-match regex variables for a grammar
+    /// action walk. Ordinary regex callers have none; grammar captures with a
+    /// rule-local dynamic declaration use this path so the action sees the
+    /// value recorded by the winning match.
+    pub(crate) fn make_match_object_full_with_regex_vars(
+        from: i64,
+        to: i64,
+        positional: &[crate::runtime::PosSlot],
+        named: &crate::runtime::NamedCaptureMap,
+        regex_vars: &crate::runtime::RegexVarMap,
+        target: crate::runtime::MatchTarget,
+    ) -> Self {
+        let has_children = !named.is_empty() || !positional.is_empty() || !regex_vars.is_empty();
         let children = has_children.then(|| {
             Box::new(crate::runtime::CapChildren {
                 named: named.clone(),
                 capture_alias_map: Default::default(),
                 positional: positional.to_vec(),
-                regex_vars: Default::default(),
+                regex_vars: regex_vars.clone(),
             })
         });
         let cap = crate::runtime::CapNode {

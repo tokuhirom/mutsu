@@ -183,7 +183,36 @@ impl Interpreter {
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
-        let out = self.regex_match_atom_all_with_capture_in_pkg_inner(
+        let mut preinstalled_arg_values = None;
+        // A named atom is one grammar-rule invocation. Keep its declaration
+        // frame around the complete resolve/match operation so a failed proto
+        // candidate cannot leave a `$*` binding in the caller. LTM and failure
+        // probes return no frame and therefore remain side-effect free.
+        let grammar_frame = match atom {
+            RegexAtom::Named(name)
+                if !LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+                    && self
+                        .grammar_rule_dynvar_decls
+                        .contains_key(&name.spec().lookup_name) =>
+            {
+                let spec = name.spec();
+                let arg_values = if spec.arg_exprs.is_empty() {
+                    Some(Vec::new())
+                } else {
+                    self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
+                };
+                if let Some(arg_values) = arg_values {
+                    dyn_saved =
+                        self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                    preinstalled_arg_values = Some(arg_values);
+                    self.enter_grammar_rule_dynvars(&spec.lookup_name)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        let mut out = self.regex_match_atom_all_with_capture_in_pkg_inner(
             atom,
             chars,
             pos,
@@ -192,11 +221,62 @@ impl Interpreter {
             ignore_case,
             subrule_first_only,
             &mut dyn_saved,
+            preinstalled_arg_values,
         );
+        if let Some(frame) = grammar_frame {
+            let values = self.exit_grammar_rule_dynvars(frame);
+            for (_, caps) in out.iter_mut() {
+                Self::attach_grammar_dynvars_to_named_caps(caps, atom, &values);
+            }
+        }
         if let Some(saved) = dyn_saved {
             self.restore_subrule_dynamic_params(saved);
         }
         out
+    }
+
+    /// Keep a rule frame's final values on the subrule's own capture node. They
+    /// must not remain in the caller's delta: the subrule's action needs them,
+    /// but its caller's action runs after the subrule frame has ended.
+    pub(super) fn attach_grammar_dynvars_to_named_caps(
+        caps: &mut RegexCaptures,
+        atom: &RegexAtom,
+        values: &[(String, Value)],
+    ) {
+        let RegexAtom::Named(name) = atom else {
+            return;
+        };
+        let spec = name.spec();
+        let capture_symbols = if spec.silent {
+            vec![Symbol::intern(&format!(
+                "{}{}",
+                crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                spec.lookup_name
+            ))]
+        } else {
+            let mut symbols = Vec::with_capacity(2);
+            if let Some(capture_sym) = spec.capture_sym {
+                symbols.push(capture_sym);
+            }
+            if !spec.alias_replaces_original && !symbols.contains(&spec.lookup_sym) {
+                symbols.push(spec.lookup_sym);
+            }
+            symbols
+        };
+        for capture_sym in capture_symbols {
+            let Some(slot) = caps.named.get_mut(&capture_sym) else {
+                continue;
+            };
+            for node in &mut slot.nodes {
+                let node = std::sync::Arc::make_mut(node);
+                let node_vars = &mut node.kids_mut().regex_vars;
+                for (key, value) in values {
+                    node_vars
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -210,6 +290,7 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
+        preinstalled_arg_values: Option<Vec<Value>>,
     ) -> Vec<(usize, RegexCaptures)> {
         // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
         // (the engine iterates the vec in reverse, trying the highest-priority
@@ -502,7 +583,10 @@ impl Interpreter {
                     subrule_first_only,
                 );
             }
-            let arg_values = if spec.arg_exprs.is_empty() {
+            let preinstalled = preinstalled_arg_values.is_some();
+            let arg_values = if let Some(values) = preinstalled_arg_values {
+                values
+            } else if spec.arg_exprs.is_empty() {
                 Vec::new()
             } else {
                 let Some(values) = self.eval_regex_arg_list(&spec.arg_exprs, current_caps) else {
@@ -514,7 +598,10 @@ impl Interpreter {
             // dynamic scope *before* its pattern is resolved (the pattern may
             // interpolate it) and stays there for the whole match, so nested
             // subrules and code blocks see it. The caller tears it back down.
-            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+            if !preinstalled {
+                *dyn_saved =
+                    self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+            }
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case — see PARSED_TOKEN_CANDIDATES).
             let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);
