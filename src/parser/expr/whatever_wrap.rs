@@ -65,7 +65,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         is_rw: false,
                         is_raw: false,
                         is_whatever_code: false,
-                        is_sub: false,
+                        declarator: crate::ast::RoutineDeclarator::Block,
                     };
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {

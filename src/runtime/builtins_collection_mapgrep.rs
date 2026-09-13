@@ -213,6 +213,14 @@ impl Interpreter {
                 ValueView::Seq(items) => {
                     list_items.extend(items.iter().cloned());
                 }
+                // A bare Hash in list context contributes its key-value Pairs,
+                // so a matcher can use Pair methods such as `.value`. This is
+                // the listop counterpart of the hash handling in `builtin_map`.
+                ValueView::Hash(map) if !arg.hash_is_itemized() => {
+                    for (key, value) in map.iter() {
+                        list_items.push(map.typed_pair(key, value.clone()));
+                    }
+                }
                 _ if arg.is_range() => {
                     // Route ranges through the unified pull iterator so an
                     // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
@@ -371,9 +379,8 @@ impl Interpreter {
     /// Check if a value matches a snip matcher (Callable or type object).
     fn snip_matches(&mut self, item: &Value, matcher: &Value) -> Result<bool, RuntimeError> {
         if matches!(matcher.view(), ValueView::Sub(_)) {
-            Ok(self
-                .call_sub_value(matcher.clone(), vec![item.clone()], true)?
-                .truthy())
+            let pred = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
+            Ok(self.eval_predicate_truthy(&pred))
         } else {
             Ok(self.smart_match(item, matcher))
         }

@@ -2,6 +2,7 @@
 //! `nextsame` / `callwith` redispatch from, and the input to the
 //! value-dependency analysis behind `func_multi_resolve_cache`.
 
+use super::dispatch_key;
 use super::*;
 
 impl Interpreter {
@@ -76,7 +77,7 @@ impl Interpreter {
     /// candidate key set to filter; `None` means walk the whole functions map.
     fn multi_candidates_over(&self, name: &str, keys: Option<&[Symbol]>) -> Vec<Arc<FunctionDef>> {
         let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
-        let mut packages = self.bare_name_packages();
+        let mut packages: Vec<Symbol> = self.bare_name_packages_syms().to_vec();
         // An imported proto is registered under the importing lexical scope,
         // while its multi candidates remain in the defining module. Include
         // that owner so a first-class `&name` can materialize the same
@@ -84,26 +85,25 @@ impl Interpreter {
         // real Test's `proto sub skip(|)`: `.&skip` must invoke Test::skip,
         // not the core list builtin of the same name.
         if let Some(proto) = self.resolve_proto_function(name) {
-            let owner = proto.package.resolve();
-            if !packages.iter().any(|pkg| pkg == &owner) {
+            let owner = proto.package;
+            if !packages.contains(&owner) {
                 packages.insert(0, owner);
             }
         }
-        let prefixes: Vec<String> = packages
-            .iter()
-            .map(|pkg| format!("{}::{}/", pkg, name))
-            .collect();
         let mut seen_fps = Vec::new();
-        for prefix in &prefixes {
+        for pkg in &packages {
             // `as_str` (a `&'static str` out of the interner) rather than
             // `resolve()`: the filter runs over every candidate key on every
             // multi call (`push_multi_dispatch_frame`), and `resolve()` copied
-            // each one into a fresh `String` just to test a prefix.
+            // each one into a fresh `String` just to test a prefix. The prefix
+            // itself is never materialized either — `key_is_candidate_of`
+            // compares the three pieces in place (#8300).
+            let pkg = pkg.as_str();
             let registry = self.registry();
             let candidates: Vec<(String, Arc<FunctionDef>)> = match keys {
                 Some(keys) => keys
                     .iter()
-                    .filter(|k| k.as_str().starts_with(prefix.as_str()))
+                    .filter(|k| dispatch_key::key_is_candidate_of(k.as_str(), pkg, name))
                     .filter_map(|k| {
                         registry
                             .functions
@@ -114,7 +114,7 @@ impl Interpreter {
                 None => registry
                     .functions
                     .iter()
-                    .filter(|(k, _)| k.as_str().starts_with(prefix.as_str()))
+                    .filter(|(k, _)| dispatch_key::key_is_candidate_of(k.as_str(), pkg, name))
                     .map(|(k, def)| (k.resolve(), def.clone()))
                     .collect(),
             };

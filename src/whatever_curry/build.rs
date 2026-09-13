@@ -92,7 +92,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             is_rw: false,
             is_raw: false,
             is_whatever_code: true,
-            is_sub: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
         };
     }
 
@@ -122,7 +122,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             is_rw: false,
             is_raw: false,
             is_whatever_code: true,
-            is_sub: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
         }
     } else {
         // Multi-arg: use AnonSubParams with numbered params
@@ -137,7 +137,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             is_rw: false,
             is_raw: false,
             is_whatever_code: true,
-            is_sub: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
         }
     }
 }

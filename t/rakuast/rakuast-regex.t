@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 70;
+plan 72;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -303,6 +303,61 @@ is Q[/foo <.after bar>/].AST.gist, q:to/END/.chomp, 'a dot-suppressed lookbehind
               name      => RakuAST::Name.from-identifier("after"),
               regex-arg => RakuAST::Regex::Sequence.new(
                 RakuAST::Regex::Literal.new("bar")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <?before [<?before bar>]> bar/].AST.gist, q:to/END/.chomp, 'a nested static lookahead retains both assertion layers';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Assertion::Lookahead.new(
+                assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                  name      => RakuAST::Name.from-identifier("before"),
+                  regex-arg => RakuAST::Regex::Group.new(
+                    RakuAST::Regex::Assertion::Lookahead.new(
+                      assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                        name      => RakuAST::Name.from-identifier("before"),
+                        regex-arg => RakuAST::Regex::Sequence.new(
+                          RakuAST::Regex::Literal.new("bar")
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            ),
+            RakuAST::Regex::Literal.new("bar")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <?before \d+>/].AST.gist, q:to/END/.chomp, 'an escaped digit class remains structural inside a lookahead';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Lookahead.new(
+              assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                name      => RakuAST::Name.from-identifier("before"),
+                regex-arg => RakuAST::Regex::QuantifiedAtom.new(
+                  atom       => RakuAST::Regex::CharClass::Digit.new,
+                  quantifier => RakuAST::Regex::Quantifier::OneOrMore.new
+                )
               )
             )
           )

@@ -175,7 +175,7 @@ impl Interpreter {
             self.apply_registry_entry(entry.key, entry.displaced);
         }
         if !undo.is_empty() {
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         self.begin_time_hidden.push(undo);
     }
@@ -192,7 +192,7 @@ impl Interpreter {
         for (key, def) in undo {
             self.apply_registry_entry(key, def);
         }
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     fn apply_registry_entry(&mut self, key: Symbol, def: Option<Arc<FunctionDef>>) {

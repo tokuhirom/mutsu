@@ -2807,7 +2807,7 @@ impl Interpreter {
                     }
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
-                self.fn_resolve_gen += 1;
+                self.invalidate_fn_resolution();
                 // A second `.restore()` on an already-restored handle is a
                 // no-op that answers `False`, not `True` again (raku).
                 return Ok(Value::truth(removed));

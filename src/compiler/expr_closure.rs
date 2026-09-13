@@ -193,7 +193,7 @@ impl Compiler {
         is_rw: bool,
         is_raw: bool,
         is_whatever_code: bool,
-        is_sub: bool,
+        declarator: crate::ast::RoutineDeclarator,
     ) {
         // Validate for placeholder conflicts
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
@@ -264,20 +264,23 @@ impl Compiler {
             self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
-        // Check if this is a pointy block (-> { }) vs a named anonymous sub.
+        // Check if this is a pointy block (-> { }) vs an anonymous routine.
         //
-        // `is_sub` is the source spelling the parser recorded: true only when
-        // the `sub` declarator was actually written. Every other closure that
-        // lands on this node -- a pointy block, a PLACEHOLDER block (`{ $^a }`),
-        // a `method (...) { }` literal -- is a `Block` in raku, so it must take
-        // the block path: `Mu`-typed params, no `return` boundary, and a
-        // `Block` gist (`-> $a { ... }`, not `sub ($^a) { ... }`).
+        // `declarator` is the source spelling the parser recorded: a routine
+        // spelling only when `sub`, `method` or `submethod` was actually
+        // written. Every other closure that lands on this node -- a pointy
+        // block, a PLACEHOLDER block (`{ $^a }`) -- is a `Block` in raku, so it
+        // must take the block path: `Mu`-typed params, no `return` boundary,
+        // and a `Block` gist (`-> $a { ... }`, not `sub ($^a) { ... }`). A
+        // `method (...) { }` literal is NOT one of them: raku makes it a
+        // `Method`, which is a `Routine` — `return` returns from it and
+        // `.^name` answers `Method`.
         //
         // The `SetLine` probe below is the older heuristic ("pointy blocks
         // inject a SetLine as the first body statement"). It is kept as a
         // fallback for the closures the compiler and runtime synthesize, which
         // reach here without a source spelling to record.
-        let is_pointy = !is_sub
+        let is_pointy = !declarator.is_routine()
             || body
                 .first()
                 .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
@@ -348,7 +351,16 @@ impl Compiler {
             export_tags: Vec::new(),
             is_test_assertion: false,
             supersede: false,
-            custom_traits: Vec::new(),
+            // A `method`/`submethod` literal is a Routine like a `sub`, but it
+            // reports its own type. The declarator rides the pooled decl as a
+            // `__mutsu_callable_type::<Type>` marker, which is what the
+            // closure-building opcode installs in the captured environment —
+            // the same marker a class-body method declaration sets.
+            custom_traits: declarator
+                .literal_marker()
+                .map(|marker| (marker.to_string(), None))
+                .into_iter()
+                .collect(),
         });
         self.code.emit(OpCode::MakeAnonSubParams(
             idx,

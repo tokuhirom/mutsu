@@ -263,6 +263,8 @@ fn sample_sub() -> Gc<SubData> {
         authoritative_captures: vec![],
         upvalues: vec![],
         captured_fatal_mode: false,
+        param_name_syms_cache: std::sync::OnceLock::new(),
+        source_file_sym_cache: std::sync::OnceLock::new(),
     })
 }
 
@@ -487,6 +489,7 @@ fn every_variant_roundtrips_losslessly() {
                     .collect::<std::collections::HashMap<_, _>>(),
             )),
             source_tree: None,
+            signature: None,
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

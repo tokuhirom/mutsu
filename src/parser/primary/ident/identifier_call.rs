@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::ast::{Expr, RoutineDeclarator, Stmt, make_anon_sub};
 use crate::parser::expr::{
     expression, expression_no_sequence, parse_fat_arrow_value, should_wrap_whatevercode, term_expr,
 };
@@ -28,6 +28,19 @@ use crate::parser::primary::misc::{
     parse_block_body_routine, parse_tracked_block_body,
 };
 use crate::parser::stmt::keyword;
+
+/// Read a `method` / `submethod` declarator keyword, returning what follows it
+/// and which routine type a literal written with it produces.
+///
+/// The two spellings are identical everywhere a method *literal* is accepted —
+/// only the resulting `Method` / `Submethod` type differs — so every site that
+/// accepts one accepts the other through this.
+fn anon_method_declarator_keyword(input: &str) -> Option<(&str, RoutineDeclarator)> {
+    if let Some(rest) = keyword("submethod", input) {
+        return Some((rest, RoutineDeclarator::Submethod));
+    }
+    keyword("method", input).map(|rest| (rest, RoutineDeclarator::Method))
+}
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -815,22 +828,24 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             return Ok(res);
                         }
                         // `my method (...) { ... }` / `my method { ... }` used as
-                        // a TERM (`$obj.&(my method (List:D:) { ... })`). The
-                        // named-declarator parser cannot parse the no-name form,
-                        // so fall through to the anonymous-method term parser the
-                        // bare `method` arm below uses.
-                        if let Some(after_method) = keyword("method", after_kw)
+                        // a TERM (`$obj.&(my method (List:D:) { ... })`), and the
+                        // `my submethod` spelling of both. The named-declarator
+                        // parser cannot parse the no-name form, so fall through to
+                        // the anonymous-method term parser the bare `method` arm
+                        // below uses.
+                        if let Some((after_method, declarator)) =
+                            anon_method_declarator_keyword(after_kw)
                             && let Ok((r_ws, _)) = ws(after_method)
                         {
                             if r_ws.starts_with('(')
-                                && let Ok(res) = parse_anon_method_with_params(r_ws)
+                                && let Ok(res) = parse_anon_method_with_params(r_ws, declarator)
                             {
                                 return Ok(res);
                             }
                             if r_ws.starts_with('{')
                                 && let Ok((r, body)) = parse_block_body_routine(r_ws)
                             {
-                                return Ok((r, make_anon_method(body)));
+                                return Ok((r, make_anon_method(body, declarator)));
                             }
                         }
                     }
@@ -886,45 +901,45 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 mark_anon_package_decl(&mut expr);
                 return Ok((r, expr));
             }
-            if let Some(after_method) = keyword("method", r_ws) {
+            // `anon method [NAME] (...) { ... }` / `anon submethod [NAME] ...`.
+            // `anon` only means "install no symbol", which a routine literal
+            // already does — so every spelling here is the ordinary method
+            // literal the `method` term arm builds, and delegating to it is
+            // what gives these forms an invocant and a `Method`/`Submethod`
+            // type. The copy this replaced routed them through the anonymous
+            // *sub* parser instead, so `anon method ($x) { self }` had no
+            // receiver, and `anon submethod` reached no branch at all
+            // (MetamodelX::Dataclass writes exactly that).
+            if let Some((after_method, declarator)) = anon_method_declarator_keyword(r_ws) {
                 let (r, _) = ws(after_method)?;
+                // `anon method :: (...)`: a bare `::` is a null-name marker,
+                // so strip it and let the nameless form below handle it
+                // (#8294).
                 let r = strip_null_decl_name_marker(r);
-                if r.starts_with('(') {
-                    let (r, params_body) = parse_anon_sub_with_params(r).map_err(|err| PError {
-                        messages: merge_expected_messages(
-                            "expected anonymous method parameter list/body",
-                            &err.messages,
-                        ),
-                        remaining_len: err.remaining_len.or(Some(r.len())),
-                        exception: None,
-                    })?;
+                // `anon method NAME ...`: raku keeps the name on the routine,
+                // which a method literal has nowhere to carry, so it is read
+                // and dropped rather than left to fail the parse.
+                let r_after_name = crate::parser::parse_result::take_while1(r, |c: char| {
+                    c.is_alphanumeric() || c == '_' || c == '-'
+                })
+                .map(|(r, _name)| r)
+                .and_then(|r| ws(r).map(|(r, _)| r))
+                .unwrap_or(r);
+                if r_after_name.starts_with('(') {
+                    let (r, params_body) = parse_anon_method_with_params(r_after_name, declarator)
+                        .map_err(|err| PError {
+                            messages: merge_expected_messages(
+                                "expected anonymous method parameter list/body",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r_after_name.len())),
+                            exception: None,
+                        })?;
                     return Ok((r, params_body));
                 }
-                // anon method name (...) { ... } or anon method name { ... }
-                if let Ok((r, _name)) = crate::parser::parse_result::take_while1(r, |c: char| {
-                    c.is_alphanumeric() || c == '_' || c == '-'
-                }) {
-                    let (r, _) = ws(r)?;
-                    if r.starts_with('(') {
-                        let (r, params_body) =
-                            parse_anon_sub_with_params(r).map_err(|err| PError {
-                                messages: merge_expected_messages(
-                                    "expected anonymous method parameter list/body",
-                                    &err.messages,
-                                ),
-                                remaining_len: err.remaining_len.or(Some(r.len())),
-                                exception: None,
-                            })?;
-                        return Ok((r, params_body));
-                    }
-                    if r.starts_with('{') {
-                        let (r, body) = parse_block_body_routine(r)?;
-                        return Ok((r, make_anon_sub(body)));
-                    }
-                }
-                if r.starts_with('{') {
-                    let (r, body) = parse_block_body_routine(r)?;
-                    return Ok((r, make_anon_sub(body)));
+                if r_after_name.starts_with('{') {
+                    let (r, body) = parse_block_body_routine(r_after_name)?;
+                    return Ok((r, make_anon_method(body, declarator)));
                 }
             }
             // anon [Type] sub { ... } — anonymous sub with return type
@@ -996,7 +1011,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 // Sub compile path, so `(anon Str sub {}).^name`
                                 // stays `Sub+{Callable[Str]}` rather than
                                 // becoming a `Block`.
-                                is_sub: true,
+                                declarator: crate::ast::RoutineDeclarator::Sub,
                             },
                         ));
                     }
@@ -1140,7 +1155,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         is_raw,
                         is_whatever_code: false,
                         // One candidate of an anonymous `multi sub` -- still a sub.
-                        is_sub: true,
+                        declarator: crate::ast::RoutineDeclarator::Sub,
                     };
                     return Ok((r2, Expr::desugar_block(vec![stmt, Stmt::Expr(anon_sub)])));
                 }
@@ -1164,28 +1179,59 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // multi(...) could be a function call if `sub multi` was defined;
             // don't emit fatal — fall through to normal call parsing.
         }
-        "method" => {
-            // Anonymous method in expression context: method () { ... } or method { ... }
+        "method" | "submethod" => {
+            // Anonymous method literal in expression context:
+            // `method () { ... }` / `method { ... }`, and the `submethod`
+            // spelling of both. They differ only in the type the closure
+            // reports, so one arm serves both rather than a second copy that
+            // would (as `submethod`'s absence did) support fewer forms.
+            let declarator = if name == "submethod" {
+                RoutineDeclarator::Submethod
+            } else {
+                RoutineDeclarator::Method
+            };
             let (r, _) = ws(rest)?;
             let r = strip_null_decl_name_marker(r);
             if r.starts_with('(') {
                 // Try parsing as anonymous method. If it fails (e.g. no block
                 // after params), fall through to treat `method` as a regular
                 // function call (for cases like `sub method {}; method();`).
-                if let Ok((r, params_body)) = parse_anon_method_with_params(r) {
+                if let Ok((r, params_body)) = parse_anon_method_with_params(r, declarator) {
                     return Ok((r, params_body));
                 }
             } else if r.starts_with('{') {
                 let (r, body) = parse_block_body_routine(r)?;
-                return Ok((r, make_anon_method(body)));
+                return Ok((r, make_anon_method(body, declarator)));
             }
         }
         "token" | "regex" | "rule" => {
-            // token/rule term literal: token { ... } / rule { ... }
+            // Anonymous declarator term: `token { ... }`, and — since rakudo's
+            // `regex_def` is `<deflongname>? <signature>? '{' <p6regex> '}'`,
+            // with the name and the signature independently optional —
+            // `token ( $x ) { ... }` too. The signature rides on the produced
+            // Regex value (there is no named `token_defs` entry to hang it on),
+            // so a `<&$re('a')>` subrule reference can bind it.
+            let kind = match name.as_str() {
+                "rule" => crate::regex_tree::RegexDeclKind::Rule,
+                "regex" => crate::regex_tree::RegexDeclKind::Regex,
+                _ => crate::regex_tree::RegexDeclKind::Token,
+            };
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, pat) = parse_raw_braced_regex_body(r)?;
+                let pat = finalize_anon_regex_pattern(&pat, kind);
                 return Ok((r, Expr::Literal(Value::regex(pat))));
+            }
+            if r.starts_with('(')
+                && let Ok((r, param_defs)) = parse_anon_regex_signature(r)
+                && r.starts_with('{')
+            {
+                let (r, pat) = parse_raw_braced_regex_body(r)?;
+                let pat = finalize_anon_regex_pattern(&pat, kind);
+                return Ok((
+                    r,
+                    Expr::Literal(Value::regex_with_signature(pat, param_defs)),
+                ));
             }
         }
         "gather" => {
@@ -1600,8 +1646,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // error in Raku: "Two terms in a row".  e.g., `foo'bar'` or `foo"bar"`.
     // The only valid forms are `foo(...)` (handled above) or `foo 'bar'` (with space).
     if rest.starts_with('\'') || rest.starts_with('"') {
-        return Err(PError::fatal(
+        return Err(PError::fatal_at(
             "X::Syntax::Confused: Two terms in a row".to_string(),
+            rest,
         ));
     }
 
@@ -2256,4 +2303,29 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Method-like: .new, .elems etc. is handled at expression level
     Ok((rest, Expr::BareWord(name)))
+}
+
+/// The optional `<signature>` of an anonymous `token`/`regex`/`rule` term
+/// (`token ( Str:D $text! where { … } ) { … }`). Mirrors the named
+/// declarator's signature parse in `grammar_module::token_decl`; the caller
+/// only commits to the declarator reading once a `{` body follows, so a
+/// parse failure here simply falls through to the ordinary term handling.
+fn parse_anon_regex_signature(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
+    let (r, _) = parse_char(input, '(')?;
+    let (r, _) = ws(r)?;
+    let (r, param_defs) = crate::parser::stmt::parse_param_list_pub(r)?;
+    let (r, _) = ws(r)?;
+    let (r, _) = parse_char(r, ')')?;
+    let (r, _) = ws(r)?;
+    Ok((r, param_defs))
+}
+
+/// The execution pattern of an anonymous `token`/`regex`/`rule` term: the
+/// body normalized the way a named declarator's is, then given that
+/// declarator's implicit `rule` whitespace and ratchet semantics.
+fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKind) -> String {
+    use crate::parser::stmt::class::token_body::{
+        finalize_anon_declarator_pattern, normalize_token_pattern,
+    };
+    finalize_anon_declarator_pattern(&normalize_token_pattern(body), kind)
 }

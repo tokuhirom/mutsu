@@ -1,4 +1,5 @@
 use super::regex_parse::*;
+use super::regex_parse_grapheme::merge_grapheme_literal_tokens;
 use super::*;
 
 /// Result of scanning the body of a `< ... >` regex assertion (the opening `<`
@@ -4097,9 +4098,15 @@ impl Interpreter {
                     // (residual alternation/conjunction markers); `.`, `~`, `«`,
                     // `»` are handled in their own arms above. Reproduces the
                     // former validator's UnrecognizedMetachar check.
+                    // A combining mark is never an atom of its own in
+                    // Rakudo's grapheme-level grammar — it is part of the
+                    // literal grapheme its base character starts — so it is
+                    // not a metacharacter either. `merge_grapheme_literal_tokens`
+                    // re-joins it with that base below.
                     if mode == RegexParseMode::Validate
                         && !other.is_alphanumeric()
                         && other != '_'
+                        && !unicode_normalization::char::is_combining_mark(other)
                         && !matches!(other, '=' | ',' | '|' | '&')
                     {
                         // If an earlier sorrow was already recorded for this
@@ -4437,6 +4444,7 @@ impl Interpreter {
                 });
             }
         }
+        let tokens = merge_grapheme_literal_tokens(tokens);
         let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {
             Ok(tokens) => tokens,
             Err(err) => {

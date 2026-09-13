@@ -2270,6 +2270,19 @@ impl Interpreter {
                 self.exec_make_slip_op()?;
                 *ip += 1;
             }
+            OpCode::NormalizeReturnSlip => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let normalized = match val.view() {
+                    ValueView::Slip(items) => match items.len() {
+                        0 => val.clone(),
+                        1 => items[0].clone(),
+                        _ => Value::array(items.to_vec()),
+                    },
+                    _ => val,
+                };
+                self.stack.push(normalized);
+                *ip += 1;
+            }
             OpCode::DeSlip => {
                 // A `.Slip`/`slip(...)` VALUE handed to a `**@`-slurpy consumer
                 // (say/put/print/note) stays a single argument and gists as a

@@ -1,3 +1,4 @@
+use super::dispatch_key;
 use super::*;
 
 /// A registry function key minus its arity/type suffix: `"Pkg::foo/2:Int,Str"` →
@@ -77,9 +78,8 @@ impl Interpreter {
         let registry = self.registry();
         let mut out = Vec::with_capacity(pkgs.len());
         for pkg in pkgs {
-            let owns_proto = registry
-                .proto_functions
-                .contains_key(&Symbol::intern(&format!("{}::{}", pkg, name)));
+            let owns_proto = dispatch_key::qualified_lookup(&pkg, name)
+                .is_some_and(|key| registry.proto_functions.contains_key(&key));
             out.push(pkg);
             if owns_proto {
                 break;
@@ -148,7 +148,9 @@ impl Interpreter {
     /// Filled lazily per base name and dropped wholesale when `fn_resolve_gen`
     /// moves, which every function registration/removal bumps.
     pub(crate) fn fn_keys_for_base(&mut self, name: &str) -> std::sync::Arc<[Symbol]> {
+        crate::vm::vm_stats::record_fn_keys_base_lookup();
         if self.fn_keys_by_base_gen != self.fn_resolve_gen {
+            crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
             self.fn_keys_by_base.clear();
             self.fn_keys_by_base_gen = self.fn_resolve_gen;
         }
@@ -165,7 +167,9 @@ impl Interpreter {
     }
 
     fn collect_fn_keys_for_base(&self, base: &str) -> std::sync::Arc<[Symbol]> {
-        self.registry()
+        let registry = self.registry();
+        crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
+        registry
             .functions
             .keys()
             .filter(|k| function_key_base_name(k.as_str()) == base)
@@ -488,11 +492,8 @@ impl Interpreter {
         // `candidate_search_packages`).
         let search_pkgs = self.candidate_search_packages(name);
         for pkg in &search_pkgs {
-            if let Some(def) = self
-                .registry()
-                .functions
-                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
-                .cloned()
+            if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
+                .and_then(|key| self.registry().functions.get(&key).cloned())
             {
                 return Some(def);
             }

@@ -308,7 +308,7 @@ impl Interpreter {
         // self-refreshes off one of these two counters at its own read site,
         // per the same by-construction reasoning as F5's `exec_register_sub_op`
         // cutover), not a corpus-sampled cutover.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     pub(crate) fn block_scope_depth(&self) -> usize {

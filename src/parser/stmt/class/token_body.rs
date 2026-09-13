@@ -506,3 +506,30 @@ pub(crate) fn normalize_token_pattern(pattern: &str) -> String {
         pattern.trim_start().to_string()
     }
 }
+
+/// Turn an already-[`normalize_token_pattern`]d `token`/`regex`/`rule` body
+/// into the pattern the engine executes: `rule`-flavoured whitespace injected
+/// and the ratchet prefix added for the two ratcheting declarators.
+///
+/// This is the *anonymous* declarator's finalizer (`token ($x) { … }` in
+/// `primary::ident::identifier_call`), which previously built only the
+/// normalized text — so an anonymous `rule` got none of its implicit `<.ws>`
+/// and an anonymous `token` did not ratchet. The named declarator
+/// (`grammar_module::token_decl`) does the same steps inline, with one extra
+/// of its own that only a name can trigger (the `<.ws>?` a `:sym<…>` rule
+/// ends with).
+pub(crate) fn finalize_anon_declarator_pattern(
+    normalized: &str,
+    kind: crate::regex_tree::RegexDeclKind,
+) -> String {
+    use crate::regex_tree::RegexDeclKind;
+    let mut pattern = normalized.to_string();
+    if kind == RegexDeclKind::Rule {
+        pattern = inject_implicit_rule_ws(&pattern);
+        pattern = inject_separator_ws(&pattern);
+    }
+    if kind != RegexDeclKind::Regex {
+        pattern = format!(":ratchet {pattern}");
+    }
+    pattern
+}

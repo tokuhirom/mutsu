@@ -1232,9 +1232,88 @@ pub struct SubData {
     /// into the closure so that Failures produced inside it (even via sub-closures
     /// evaluated lazily after the creating scope has exited) still throw.
     pub(crate) captured_fatal_mode: bool,
+    /// Lazily-built [`ParamNameSyms`] for this code object — see
+    /// [`SubData::param_name_syms`].
+    pub(crate) param_name_syms_cache: std::sync::OnceLock<Arc<ParamNameSyms>>,
+    /// Lazily-interned [`Self::source_file`] — see [`SubData::source_file_sym`].
+    /// Mirrors `CompiledFunction::source_file_sym_cache`.
+    ///
+    /// Both caches memoize a pure function of fields that are immutable once a
+    /// code object is shared. A construction site that assigns `source_file`,
+    /// `params` or `param_defs` *after* `Self::new_code_object` — notably
+    /// `sub_with_source_file`, which clones a `SubData` to stamp a `whenever`
+    /// body's defining file — must re-arm the matching cache, exactly as
+    /// `CompiledFunction::stamp_source_file` does.
+    pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
+}
+
+/// A code object's parameter names, interned once.
+///
+/// Every closure call names its parameters twice over: the binder binds each
+/// one, and the exit writeback needs the set of names that are strictly
+/// call-local so it never writes one back to the caller. Both used to work from
+/// the `String` spellings, so a `-> $a { $a }` called in a loop re-interned
+/// `"a"` on every single call — the largest single `Symbol::intern` bucket in
+/// the closure-call profile of #8302.
+///
+/// A code object's signature is immutable after construction (`params` and
+/// `param_defs` are pool-owned `Arc`s), so this is a pure function of it and is
+/// built at most once per `SubData`.
+#[derive(Debug)]
+pub(crate) struct ParamNameSyms {
+    /// Interned [`SubData::params`], index-parallel to it. Used by the legacy
+    /// placeholder/pointy-block binding path, which has no `ParamDef`s to read
+    /// `CompiledFunction::param_name_syms` from.
+    pub(crate) params: Vec<Symbol>,
+    /// Every name this signature binds call-locally: [`Self::params`], each
+    /// `param_defs[i].name`, and the names bound by sub-signatures
+    /// (`|c(Str $x)`). The exit writeback probes env keys against this set.
+    pub(crate) call_local: rustc_hash::FxHashSet<Symbol>,
+}
+
+/// The `Symbol`-keyed twin of `Interpreter::collect_sub_signature_names`: every
+/// name a sub-signature (`|c(Str $x)`) binds, including nested ones.
+fn collect_sub_signature_syms(
+    sub_sig: &Option<Vec<ParamDef>>,
+    names: &mut rustc_hash::FxHashSet<Symbol>,
+) {
+    if let Some(params) = sub_sig {
+        for sp in params {
+            if !sp.name.is_empty() {
+                names.insert(Symbol::intern(&sp.name));
+            }
+            collect_sub_signature_syms(&sp.sub_signature, names);
+        }
+    }
 }
 
 impl SubData {
+    /// This code object's [`ParamNameSyms`], built on first use and shared
+    /// thereafter.
+    pub(crate) fn param_name_syms(&self) -> &Arc<ParamNameSyms> {
+        self.param_name_syms_cache.get_or_init(|| {
+            let params: Vec<Symbol> = self.params.iter().map(|p| Symbol::intern(p)).collect();
+            let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
+            for pd in self.param_defs.iter() {
+                if !pd.name.is_empty() {
+                    call_local.insert(Symbol::intern(&pd.name));
+                }
+                collect_sub_signature_syms(&pd.sub_signature, &mut call_local);
+            }
+            Arc::new(ParamNameSyms { params, call_local })
+        })
+    }
+
+    /// The declaring source file as a `Symbol` (`None` = the main script),
+    /// interned once per code object. Every closure call records it on the
+    /// routine frame it pushes, so interning the path string per call was pure
+    /// waste (#8302). Mirrors `CompiledFunction::source_file_sym`.
+    pub(crate) fn source_file_sym(&self) -> Option<Symbol> {
+        *self
+            .source_file_sym_cache
+            .get_or_init(|| self.source_file.as_deref().map(Symbol::intern))
+    }
+
     /// Whether calling this code object hands its return value back as a
     /// **container** rather than decontainerizing it — i.e. whether a `Proxy`
     /// it produced must reach the caller un-FETCHed.
@@ -2293,6 +2372,13 @@ pub struct RegexClosure {
     /// has no defining lexical scope, so `scope` is `None`; code-bearing
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
     pub source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+    /// The signature an *anonymous* declarator term carried
+    /// (`token ($x) { $x \\d+ }`). A regex is a routine, so its parameters
+    /// have to ride along with the value: there is no named `token_defs`
+    /// entry to look them up on, and a subrule reference (`<&$re('a')>`)
+    /// binds them at match time — see
+    /// `Interpreter::instantiate_regex_value_with_args`.
+    pub signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

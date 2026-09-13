@@ -166,6 +166,8 @@ impl Interpreter {
                 // block could not reach its own compunit's private routines.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -236,6 +238,8 @@ impl Interpreter {
                 // block could not reach its own compunit's private routines.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -405,7 +409,7 @@ impl Interpreter {
                 // This mirrors the fast re-install path just above (the
                 // `prepared_fn_defs` branch), which already only bumps
                 // `fn_resolve_gen` for the identical "install a sub" event.
-                self.fn_resolve_gen += 1;
+                self.invalidate_fn_resolution();
                 // Record `&`-sigil parameter names so calls to a same-named routine
                 // inside this sub bypass the name-keyed light-call caches (the param
                 // can shadow a package sub of the same name).

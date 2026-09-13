@@ -537,6 +537,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
     match atom {
         // Matches text or asserts on its own; reaches no dispatcher.
         RegexAtom::Literal(_)
+        | RegexAtom::LiteralGrapheme(_)
         | RegexAtom::Any
         | RegexAtom::CharClass(_)
         | RegexAtom::Newline

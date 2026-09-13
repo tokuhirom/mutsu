@@ -842,11 +842,36 @@ mod tests {
 
     #[test]
     fn parse_token_term_literal() {
+        // An anonymous `token` ratchets, exactly like a named one.
         let (rest, expr) = primary("token { <foo> }").unwrap();
+        assert_eq!(rest, "");
+        assert!(
+            matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str() == ":ratchet <foo>"))
+        );
+    }
+
+    #[test]
+    fn parse_regex_term_literal_does_not_ratchet() {
+        let (rest, expr) = primary("regex { <foo> }").unwrap();
         assert_eq!(rest, "");
         assert!(
             matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str() == "<foo>"))
         );
+    }
+
+    #[test]
+    fn parse_token_term_with_signature() {
+        // `<deflongname>? <signature>? '{' <p6regex> '}'` — the name and the
+        // signature are independently optional (#8293).
+        let (rest, expr) = primary("token ($x) { $x \\d+ }").unwrap();
+        assert_eq!(rest, "");
+        let Expr::Literal(lit) = &expr else {
+            panic!("expected a literal, got {expr:?}");
+        };
+        assert!(matches!(lit.view(), ValueView::Regex(_)));
+        let sig = lit.regex_signature().expect("signature is carried");
+        assert_eq!(sig.len(), 1);
+        assert_eq!(sig[0].name, "x");
     }
 
     #[test]

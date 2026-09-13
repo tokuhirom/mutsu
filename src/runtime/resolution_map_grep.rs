@@ -1045,7 +1045,7 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
-                            if pred.truthy() {
+                            if vm.eval_predicate_truthy(&pred) {
                                 found = Some((idx, item.clone()));
                             }
                             break 'body_redo;
@@ -1065,7 +1065,7 @@ impl Interpreter {
                         Err(e) if e.is_succeed() => {
                             vm.set_when_matched(saved_when_matched);
                             let pred = e.return_value.unwrap_or(Value::NIL);
-                            if pred.truthy() {
+                            if vm.eval_predicate_truthy(&pred) {
                                 found = Some((idx, item.clone()));
                             }
                             break 'body_redo;
@@ -1127,10 +1127,10 @@ impl FirstMatcher for InterpFirstMatcher<'_> {
             // otherwise bind as a named arg, leaving the block with zero
             // positionals (`%h.first({ .value > 1 })`).
             let call_item = crate::runtime::utils::pair_as_positional(item);
-            Ok(self
+            let pred = self
                 .0
-                .call_sub_value(pattern.clone(), vec![call_item], true)?
-                .truthy())
+                .call_sub_value(pattern.clone(), vec![call_item], true)?;
+            Ok(self.0.eval_predicate_truthy(&pred))
         } else {
             Ok(self.0.smart_match(item, pattern))
         }

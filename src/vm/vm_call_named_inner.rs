@@ -217,7 +217,8 @@ impl Interpreter {
                     &cf.params,
                     &args,
                     None,
-                    &cf.param_name_syms
+                    &cf.param_name_syms,
+                    &[]
                 )
             ) {
                 Ok(bindings) => bindings,

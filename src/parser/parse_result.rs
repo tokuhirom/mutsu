@@ -155,6 +155,27 @@ impl PError {
         }
     }
 
+    /// [`PError::fatal_with_exception`] carrying the failure position, the way
+    /// [`PError::fatal_at`] does for a plain fatal (`input` is the unconsumed
+    /// rest at the error site).
+    ///
+    /// A structured exception does not otherwise record where it was raised, so
+    /// without this the diagnosis renders with no `line`/`column` and no
+    /// `------>` echo — and `render_parse_error` also copies the computed
+    /// position onto the exception's own attributes, so `$!.line` / `$!.column`
+    /// stay unset too.
+    pub fn fatal_with_exception_at(
+        message: String,
+        exception: Box<crate::value::Value>,
+        input: &str,
+    ) -> Self {
+        PError {
+            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            remaining_len: Some(input.len()),
+            exception: Some(exception),
+        }
+    }
+
     /// Build the fatal `X::Syntax::Malformed` rakudo throws when a construct is
     /// recognised but its body cannot be read — `Malformed initializer`,
     /// `Malformed class-qualified postfix call`, ... `what` is both the tail of

@@ -38,12 +38,33 @@ impl Value {
     pub(crate) fn regex_closure(
         pattern: Arc<String>,
         scope: Arc<std::collections::HashMap<String, Value>>,
+        signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern,
             scope: Some(scope),
             source_tree: None,
+            signature,
         }))
+    }
+
+    /// A regex value that carries the signature of the anonymous
+    /// `token`/`regex`/`rule` declarator term it came from. `<&$re('a')>`
+    /// binds these parameters before the pattern is matched — without them
+    /// the declarator's arguments would be silently discarded.
+    pub(crate) fn regex_with_signature(pattern: String, params: Vec<crate::ast::ParamDef>) -> Self {
+        Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
+            pattern: Arc::new(pattern),
+            scope: None,
+            source_tree: None,
+            signature: Some(Arc::new(params)),
+        }))
+    }
+
+    /// The parameters an anonymous regex declarator term declared, or `None`
+    /// for every regex value that carries no signature.
+    pub(crate) fn regex_signature(&self) -> Option<Arc<Vec<crate::ast::ParamDef>>> {
+        self.0.regex_signature().cloned()
     }
 
     /// Attach parser-produced source provenance to a regex value while
@@ -57,6 +78,7 @@ impl Value {
                     pattern: Arc::new(pattern.to_string()),
                     scope: None,
                     source_tree: Some(Box::new(tree)),
+                    signature: self.regex_signature(),
                 }))
             }
             ValueView::RegexWithAdverbs(adverbs) => {

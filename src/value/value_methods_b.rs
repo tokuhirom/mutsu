@@ -527,6 +527,8 @@ impl Value {
             authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
             captured_fatal_mode: false,
+            param_name_syms_cache: std::sync::OnceLock::new(),
+            source_file_sym_cache: std::sync::OnceLock::new(),
         }
     }
 

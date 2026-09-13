@@ -115,7 +115,13 @@ impl Interpreter {
         }
         let scope = std::sync::Arc::new(scope);
         match base.view() {
-            ValueView::Regex(p) => Value::regex_closure(std::sync::Arc::clone(&p), scope),
+            ValueView::Regex(p) => Value::regex_closure(
+                std::sync::Arc::clone(&p),
+                scope,
+                // An anonymous declarator term's signature rides on the value;
+                // attaching the defining scope must not drop it.
+                base.regex_signature(),
+            ),
             ValueView::RegexWithAdverbs(a) => {
                 let mut adv = a.clone();
                 adv.captured = Some(scope);
@@ -679,6 +685,8 @@ impl Interpreter {
                 // `def_file`, which stays correct regardless of who is calling.
                 source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -699,6 +707,7 @@ impl Interpreter {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,
+            custom_traits,
             param_defs,
             return_type,
             // The body and the signature both come from the shared per-pool-slot
@@ -745,6 +754,21 @@ impl Interpreter {
                     Value::str_from("WhateverCode"),
                 );
             }
+            // A `method`/`submethod` literal compiles down this same routine
+            // path; the declarator the parser recorded reaches here as a
+            // marker on the pooled decl, and is what makes the closure answer
+            // `Method`/`Submethod` rather than the `Sub` every other routine
+            // literal is.
+            if let Some(callable_type) = custom_traits.iter().find_map(|(t, _)| match t.as_str() {
+                crate::ast::METHOD_LITERAL_MARKER => Some("Method"),
+                crate::ast::SUBMETHOD_LITERAL_MARKER => Some("Submethod"),
+                _ => None,
+            }) {
+                env.insert_sym(
+                    crate::symbol::well_known::callable_type(),
+                    Value::str(callable_type.to_string()),
+                );
+            }
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)
@@ -788,6 +812,8 @@ impl Interpreter {
                 // each time an already-loaded module's routine runs, after
                 // the module's own `?FILE` scope has long since reverted.
                 source_file: self.executing_source_file(),
+                param_name_syms_cache: std::sync::OnceLock::new(),
+                source_file_sym_cache: std::sync::OnceLock::new(),
             }));
             self.stack.push(val);
             Ok(())
@@ -1209,7 +1235,8 @@ impl Interpreter {
         }
         for name in cc.bare_callee_names() {
             let resolved_name = name.resolve();
-            if self.has_proto(&resolved_name) || self.has_multi_candidates(&resolved_name) {
+            if self.has_proto(&resolved_name) || self.has_multi_candidates_unindexed(&resolved_name)
+            {
                 continue;
             }
             let code_name = name.with_str(|name| format!("&{name}"));

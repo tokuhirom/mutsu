@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::dispatch_key;
 use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::symbol::Symbol;
 
@@ -224,13 +225,13 @@ impl Interpreter {
         {
             return None;
         }
-        let ampname = format!("&{}", name);
-        let candidate = code
-            .and_then(|c| self.locals_get_by_name(c, &ampname))
-            .or_else(|| self.env().get(&ampname).cloned())
-            // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
-            // filter below must classify the CALLABLE, not the cell.
-            .map(|v| v.into_deref());
+        let candidate = dispatch_key::with_amp_name(name, |ampname| {
+            code.and_then(|c| self.locals_get_by_name(c, ampname))
+                .or_else(|| self.env().get(ampname).cloned())
+        })
+        // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
+        // filter below must classify the CALLABLE, not the cell.
+        .map(|v| v.into_deref());
         candidate.filter(|v| {
             matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
                 || matches!(v.view(), ValueView::Routine { .. })
@@ -250,10 +251,10 @@ impl Interpreter {
         code: &CompiledCode,
         infix_name: &str,
     ) -> Option<Value> {
-        let ampname = format!("&{}", infix_name);
-        let candidate = self
-            .locals_get_by_name(code, &ampname)
-            .or_else(|| self.env().get(&ampname).cloned());
+        let candidate = dispatch_key::with_amp_name(infix_name, |ampname| {
+            self.locals_get_by_name(code, ampname)
+                .or_else(|| self.env().get(ampname).cloned())
+        });
         candidate.filter(|v| {
             matches!(
                 v.view(),
@@ -1038,10 +1039,11 @@ impl Interpreter {
             {
                 None
             } else {
-                let ampname = format!("&{}", name_str);
-                // First check local slots (parameter bindings live here).
-                let from_local = self.locals_get_by_name(code, &ampname);
-                let candidate = from_local.or_else(|| self.env().get(&ampname).cloned());
+                let candidate = dispatch_key::with_amp_name(name_str, |ampname| {
+                    // First check local slots (parameter bindings live here).
+                    self.locals_get_by_name(code, ampname)
+                        .or_else(|| self.env().get(ampname).cloned())
+                });
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
             }
         };
@@ -1207,10 +1209,8 @@ impl Interpreter {
         }
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override =
-            self.env()
-                .get(&format!("&{}", name))
-                .cloned()
-                .and_then(|callable| {
+            dispatch_key::with_amp_name(&name, |amp| self.env().get(amp).cloned()).and_then(
+                |callable| {
                     let has_call_me = if let ValueView::Mixin(_, mixins) = callable.view() {
                         mixins.keys().any(|key| {
                             key.strip_prefix("__mutsu_role__")
@@ -1220,7 +1220,8 @@ impl Interpreter {
                         false
                     };
                     if has_call_me { Some(callable) } else { None }
-                });
+                },
+            );
         // Junction auto-threading for function call arguments:
         // If any positional arg is a Junction and the function parameter doesn't accept
         // Junction (i.e., not typed as Mu or Junction), auto-thread over the junction.
@@ -2063,7 +2064,7 @@ impl Interpreter {
                     // grammar-action walk, is one per action), forcing a full
                     // registry rescan per call.
                     if self.registry_write_generation() != reg_gen_before {
-                        self.fn_resolve_gen += 1;
+                        self.invalidate_fn_resolution();
                     }
                     // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
                     let auto_fetch = name != "substr-rw";

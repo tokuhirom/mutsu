@@ -621,10 +621,11 @@ impl Interpreter {
         // in. They must be in the dynamic scope before the rule's own pattern is
         // built, because that pattern may interpolate them — and they stay there
         // for the whole parse, so every subrule sees them.
-        let saved_start_rule_dynvars = self.install_subrule_dynamic_params(
+        let saved_start_rule_dynvars = self.install_subrule_dynamic_params_named(
             &start_rule,
             crate::symbol::Symbol::intern(package_name),
             &rule_args,
+            None,
         );
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         // The start rule is an ordinary rule invocation too. Its frame must

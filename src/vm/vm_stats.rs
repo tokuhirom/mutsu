@@ -324,6 +324,67 @@ pub(crate) fn record_registry_cow_clone() {
     }
 }
 
+// Base-name function-key index (`Interpreter::fn_keys_for_base`, #8300). Every
+// name-keyed dispatch asks it for the registry keys carrying a base name;
+// `lookups` counts those asks, `scans` the ones that had to rebuild the entry
+// by walking the whole functions map, and `scan_keys` the keys those walks
+// examined. A `scans` count that tracks `lookups` rather than the number of
+// distinct base names means the index is being invalidated faster than it is
+// used, and `scan_keys` is the O(registered routines) price of that.
+static FN_KEYS_BASE_LOOKUPS: AtomicU64 = AtomicU64::new(0);
+static FN_KEYS_BASE_SCANS: AtomicU64 = AtomicU64::new(0);
+static FN_KEYS_BASE_SCAN_KEYS: AtomicU64 = AtomicU64::new(0);
+static FN_KEYS_BASE_INVALIDATIONS: AtomicU64 = AtomicU64::new(0);
+
+/// Record one [`crate::runtime::Interpreter::fn_keys_for_base`] lookup.
+#[inline]
+pub(crate) fn record_fn_keys_base_lookup() {
+    if enabled() {
+        FN_KEYS_BASE_LOOKUPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one full functions-map walk taken to rebuild a base-name entry,
+/// together with the number of registry keys it examined.
+#[inline]
+pub(crate) fn record_fn_keys_base_scan(keys: usize) {
+    if enabled() {
+        FN_KEYS_BASE_SCANS.fetch_add(1, Ordering::Relaxed);
+        FN_KEYS_BASE_SCAN_KEYS.fetch_add(keys as u64, Ordering::Relaxed);
+    }
+}
+
+/// Record one entry dropped from the base-name index by an invalidation.
+#[inline]
+pub(crate) fn record_fn_keys_base_invalidation(entries: usize) {
+    if enabled() {
+        FN_KEYS_BASE_INVALIDATIONS.fetch_add(entries as u64, Ordering::Relaxed);
+    }
+}
+
+/// Per-site histogram of `fn_resolve_gen` bumps — every one of which drops SIX
+/// name-keyed dispatch caches wholesale (`fn_resolve_cache`,
+/// `multi_compiled_key_cache`, `multi_candidates_cache`, `declared_fn_cache`,
+/// `multi_fn_cache`, `fn_keys_by_base`). A steady-state program should bump
+/// this only while it is actually declaring routines; a count that grows with
+/// the number of CALLS means some registration path re-registers an unchanged
+/// routine and pays the whole cache rebuild for it (#8300).
+fn fn_resolve_gen_by_site() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_SITE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_SITE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one `fn_resolve_gen` bump, attributed to the caller's source location.
+#[inline]
+pub(crate) fn record_fn_resolve_gen_bump(site: &std::panic::Location<'static>) {
+    if enabled()
+        && let Ok(mut map) = fn_resolve_gen_by_site().lock()
+    {
+        *map.entry(format!("{}:{}", site.file(), site.line()))
+            .or_insert(0) += 1;
+    }
+}
+
 /// Program-global symbol tables (the `Arc<...>` group on `Interpreter`, plus the
 /// copy-on-write registry tables `functions` / `proto_functions` / `proto_subs`
 /// -- see `Interpreter`'s doc comment) deep-copied by a write taken while
@@ -1290,6 +1351,13 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let fn_keys_lookups = FN_KEYS_BASE_LOOKUPS.load(Ordering::Relaxed);
+    let fn_keys_scans = FN_KEYS_BASE_SCANS.load(Ordering::Relaxed);
+    let fn_keys_scan_keys = FN_KEYS_BASE_SCAN_KEYS.load(Ordering::Relaxed);
+    let fn_keys_invalidations = FN_KEYS_BASE_INVALIDATIONS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] fn-keys-by-base: lookups={fn_keys_lookups} scans={fn_keys_scans} scan_keys={fn_keys_scan_keys} invalidated_entries={fn_keys_invalidations}"
+    );
     let program_table_cow_clones = PROGRAM_TABLE_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] program-table-cow: clones={program_table_cow_clones}");
     let carrier_hits = CARRIER_COMPILE_HITS.load(Ordering::Relaxed);
@@ -1616,6 +1684,24 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] function-full-resolve total={} by name (top {}): {}",
+            total,
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = fn_resolve_gen_by_site().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(15)
+            .map(|(site, count)| format!("{site}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] fn-resolve-gen-bumps total={} by site (top {}): {}",
             total,
             top.len(),
             top.join(" ")

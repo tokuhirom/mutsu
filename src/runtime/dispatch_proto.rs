@@ -13,15 +13,28 @@ impl Interpreter {
         if self.qualified_name_hidden_here(name) {
             return false;
         }
-        self.bare_name_packages()
+        self.bare_name_packages_syms()
             .iter()
-            .any(|pkg| self.registry().has_proto(pkg, name))
+            .any(|pkg| self.registry().has_proto(pkg.as_str(), name))
     }
 
     /// Check if any multi candidates exist for this function name (any arity).
-    pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
+    ///
+    /// `&mut self` because the answer is narrowed to the base-name key index
+    /// (`fn_keys_for_base`), which fills lazily — the probe itself reads only
+    /// the registry and the package context.
+    pub(crate) fn has_multi_candidates(&mut self, name: &str) -> bool {
+        let base_keys = self.fn_keys_for_base(name);
+        let packages = self.bare_name_packages_syms();
         self.registry()
-            .has_multi_candidates(&self.bare_name_packages(), name)
+            .has_multi_candidates(Some(&base_keys), &packages, name)
+    }
+
+    /// [`Self::has_multi_candidates`] for a `&self` caller — see
+    /// [`Self::has_multi_function_unindexed`].
+    pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
+        let packages = self.bare_name_packages_syms();
+        self.registry().has_multi_candidates(None, &packages, name)
     }
 
     pub(super) fn resolve_proto_function_with_alias(
@@ -60,13 +73,11 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .map(|def| (**def).clone());
         }
-        for pkg in self.bare_name_packages() {
-            if let Some(def) = self
-                .registry()
-                .proto_functions
-                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
+        for pkg in self.bare_name_packages_syms().iter() {
+            if let Some(def) = dispatch_key::qualified_lookup(pkg.as_str(), name)
+                .and_then(|key| self.registry().proto_functions.get(&key).cloned())
             {
-                return Some((**def).clone());
+                return Some((*def).clone());
             }
         }
         None

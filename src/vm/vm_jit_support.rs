@@ -101,6 +101,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MakeAnonSub(..)
             | OpCode::MakeAnonSubParams(..)
             | OpCode::MakeGather(..)
+            | OpCode::NormalizeReturnSlip
             // Calls through a code variable (re-entrant, like CallMethod)
             | OpCode::CallOnCodeVar { .. }
             | OpCode::ExecCallPairs { .. }

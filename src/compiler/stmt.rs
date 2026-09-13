@@ -2728,6 +2728,18 @@ impl Compiler {
             Stmt::Return(expr) => {
                 // A returned closure escapes the routine frame (escape analysis).
                 self.with_escape(true, |c| c.compile_expr(expr));
+                // `return |EXPR` flattens the return value before it reaches
+                // the caller. Keep this distinct from returning a first-class
+                // `.Slip`/`slip(...)` value, which must remain a Slip.
+                if matches!(
+                    expr,
+                    Expr::Unary {
+                        op: TokenKind::Pipe,
+                        ..
+                    }
+                ) {
+                    self.code.emit(OpCode::NormalizeReturnSlip);
+                }
                 if self.is_routine {
                     self.code.emit(OpCode::Return);
                 } else {

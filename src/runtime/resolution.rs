@@ -1,3 +1,4 @@
+use super::dispatch_key;
 use super::*;
 use crate::symbol::Symbol;
 
@@ -128,8 +129,10 @@ impl Interpreter {
         }
         let cur_pkg = self.current_package();
         // Innermost package first, then each enclosing one, ending at GLOBAL.
-        for pkg in self.bare_name_packages() {
-            let key = Symbol::intern(&format!("{}::{}", pkg, name));
+        for pkg in self.bare_name_packages_syms().iter() {
+            let Some(key) = dispatch_key::qualified_lookup(pkg.as_str(), name) else {
+                continue;
+            };
             if let Some(def) = self.registry().functions.get(&key).cloned() {
                 // A prelude splice is registered under `GLOBAL::` for every
                 // package to reach, but is lexical to the compunits it was
@@ -180,11 +183,8 @@ impl Interpreter {
                 .module_owned_exports
                 .get(probe)
                 .is_some_and(|owned| owned.contains_key(name))
-                && let Some(def) = self
-                    .registry()
-                    .functions
-                    .get(&Symbol::intern(&format!("{}::{}", probe, name)))
-                    .cloned()
+                && let Some(def) = dispatch_key::qualified_lookup(probe, name)
+                    .and_then(|key| self.registry().functions.get(&key).cloned())
             {
                 return Some(def);
             }
@@ -196,7 +196,7 @@ impl Interpreter {
     }
 
     pub(super) fn insert_token_def(&mut self, name: &str, mut def: FunctionDef, multi: bool) {
-        let key = Symbol::intern(&format!("{}::{}", self.current_package(), name));
+        let key = dispatch_key::qualified_intern(&self.current_package(), name);
         // Stamp declaration order: grammar bodies register their `token`s
         // top-to-bottom, so a monotonic counter captures declaration order,
         // which is Rakudo's tie-break for an equal-length LTM tie between

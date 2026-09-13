@@ -152,7 +152,7 @@ impl Compiler {
                     is_rw: rw_block,
                     is_raw: false,
                     is_whatever_code: false,
-                    is_sub: false,
+                    declarator: crate::ast::RoutineDeclarator::Block,
                 }
             };
             self.compile_expr(&closure);

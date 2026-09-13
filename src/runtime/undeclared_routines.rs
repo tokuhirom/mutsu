@@ -759,7 +759,7 @@ impl Interpreter {
             // Everything beyond the static tables is per-interpreter registry
             // state, which is why the analysis frontend can skip it entirely.
             if self.has_function(name)
-                || self.has_multi_function(name)
+                || self.has_multi_function_unindexed(name)
                 || self.has_proto(name)
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())

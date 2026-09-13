@@ -181,6 +181,18 @@ impl RegexTree {
             }
         }
 
+        /// A combining mark (or a `\r`, which joins a following `\n`) means the
+        /// literal spans a grapheme cluster, and a cluster can straddle two
+        /// source-tree nodes (`/क्ष+/` is `Literal("क्")` followed by a
+        /// quantified `Literal("ष")`, yet the whole cluster is the atom the
+        /// `+` applies to). Only the runtime parser re-joins tokens across
+        /// that boundary, so hand such a pattern back to it rather than
+        /// lowering it codepoint by codepoint here.
+        fn spans_a_grapheme_cluster(text: &str) -> bool {
+            text.chars()
+                .any(|c| c == '\r' || unicode_normalization::char::is_combining_mark(c))
+        }
+
         fn lower_node(
             node: &RegexNode,
             ratchet: bool,
@@ -232,6 +244,9 @@ impl RegexTree {
                     }) {
                         return None;
                     }
+                    if spans_a_grapheme_cluster(text) {
+                        return None;
+                    }
                     Some(
                         text.chars()
                             .map(|ch| {
@@ -244,17 +259,22 @@ impl RegexTree {
                             .collect(),
                     )
                 }
-                RegexNode::Quote(text) => Some(
-                    text.chars()
-                        .map(|ch| {
-                            token(
-                                crate::runtime::RegexAtom::Literal(ch),
-                                crate::runtime::RegexQuant::One,
-                                ratchet,
-                            )
-                        })
-                        .collect(),
-                ),
+                RegexNode::Quote(text) => {
+                    if spans_a_grapheme_cluster(text) {
+                        return None;
+                    }
+                    Some(
+                        text.chars()
+                            .map(|ch| {
+                                token(
+                                    crate::runtime::RegexAtom::Literal(ch),
+                                    crate::runtime::RegexQuant::One,
+                                    ratchet,
+                                )
+                            })
+                            .collect(),
+                    )
+                }
                 RegexNode::CharClassDigit => Some(vec![token(
                     crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
                         negated: false,
@@ -875,12 +895,13 @@ impl Parser {
         }
     }
 
-    /// Parse static lookaround forms whose source and execution shapes are
-    /// currently shared: the explicit `<?before body>`, `<!before body>`,
-    /// `<?after body>`, and `<!after body>` forms, plus the unprefixed and
-    /// dot-prefixed named forms. The latter retain their capture policy in a
-    /// separate tree node because their RakuAST shape omits the Lookahead
-    /// wrapper.
+    /// Parse lookaround forms whose source and execution shapes are currently
+    /// shared: the explicit `<?before body>`, `<!before body>`, `<?after
+    /// body>`, and `<!after body>` forms, plus the unprefixed and dot-prefixed
+    /// named forms. The latter retain their capture policy in a separate tree
+    /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
+    /// characters are accepted when the nested tree already has a source and
+    /// execution representation.
     fn parse_lookaround(&mut self) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1; // '<'
@@ -922,6 +943,7 @@ impl Parser {
         self.skip_whitespace();
         let body_start = self.pos;
         let mut quote = None;
+        let mut nested_assertions = 0usize;
         while let Some(ch) = self.chars.get(self.pos).copied() {
             if let Some(closer) = quote {
                 self.pos += 1;
@@ -932,27 +954,40 @@ impl Parser {
             }
             match ch {
                 '\\' => {
-                    // The current source tree does not retain escape spelling
-                    // inside a lookaround argument. Let the legacy parser own
-                    // those forms rather than emitting a misleading AST.
-                    self.pos = start;
-                    return None;
+                    // Skip the escaped character while looking for the
+                    // closing angle bracket. The nested parser will decide
+                    // whether the escape has a shared-tree representation;
+                    // this also prevents an escaped `>` from ending the
+                    // assertion prematurely.
+                    self.pos += 1;
+                    if self.pos < self.chars.len() {
+                        self.pos += 1;
+                    }
                 }
                 '"' | '\'' => {
                     quote = Some(ch);
                     self.pos += 1;
                 }
+                '>' if nested_assertions > 0 => {
+                    nested_assertions -= 1;
+                    self.pos += 1;
+                }
                 '>' => break,
                 '<' => {
-                    // Nested assertions/subrules need their own source
-                    // representation and are a later ADR-0088 slice.
-                    self.pos = start;
-                    return None;
+                    // A nested lookaround can contain another assertion in a
+                    // static group, for example
+                    // `<?before [<?before bar>]>`. Keep scanning through the
+                    // inner terminator so the body parser receives the whole
+                    // source-level tree. Unsupported angle-bracket forms are
+                    // still rejected by `parse_static` below rather than
+                    // being mistaken for literals.
+                    nested_assertions += 1;
+                    self.pos += 1;
                 }
                 _ => self.pos += 1,
             }
         }
-        if self.chars.get(self.pos) != Some(&'>') || quote.is_some() {
+        if self.chars.get(self.pos) != Some(&'>') || quote.is_some() || nested_assertions != 0 {
             self.pos = start;
             return None;
         }
@@ -1260,13 +1295,14 @@ fn is_static_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
         | RegexNode::SubruleAlias { .. }
-        | RegexNode::Lookaround { .. }
-        | RegexNode::NamedLookaround { .. }
         | RegexNode::Interpolation { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine => false,
+        RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
+            is_static_lookaround_body(assertion)
+        }
     }
 }
 

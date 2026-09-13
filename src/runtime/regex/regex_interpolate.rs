@@ -1,5 +1,15 @@
 use super::super::*;
 
+/// Where in a regex code block's Raku source the parameter-baking scan
+/// currently is. A `Code` frame carries the brace depth it has opened, so the
+/// `}` that closes an interpolation block inside a `"..."` can be told from
+/// one that merely closes a nested block.
+enum BakeCtx {
+    Code { depth: usize },
+    Single,
+    Double,
+}
+
 impl Interpreter {
     /// Heuristic: returns true if a regex subrule arg expression syntactically
     /// looks like a fat-arrow Pair (`a => 1`), a colonpair (`:b(2)`), or a
@@ -127,6 +137,24 @@ impl Interpreter {
         Some(inner.split_at(head))
     }
 
+    /// Split a code assertion (`<?{ … }>`, `<!{ … }>`, `<{ … }>`) into its
+    /// `?`/`!` marker and the `{ … }` block itself.
+    ///
+    /// Such a body is Raku code that runs at match time, in the *caller's*
+    /// env — so a rule's parameters have to be baked into it exactly like a
+    /// bare `{ … }` block's. Without this, `token t($x) { <?{ $x eq 'a' }> }`
+    /// saw `Nil` for its own parameter (raku prints the bound value), and an
+    /// anonymous `token ($text) { <?{ … $text … }> }` — the shape
+    /// HomoGlypher's `tokenize` returns — could never see its argument.
+    fn split_code_assertion_body(inner: &str) -> Option<(&str, &str)> {
+        let head = match inner.as_bytes().first() {
+            Some(b'{') => 0,
+            Some(b'?') | Some(b'!') if inner.as_bytes().get(1) == Some(&b'{') => 1,
+            _ => return None,
+        };
+        Some(inner.split_at(head))
+    }
+
     /// Walk a regex pattern source and, inside each top-level `{ ... }` code
     /// block, replace bare `$name` references for `param_names` with a
     /// parenthesised literal of the value bound in `self.env`. This lets
@@ -153,7 +181,9 @@ impl Interpreter {
                 let (inner, closed, next) = Self::scan_angle_construct(&chars, i);
                 i = next;
                 out.push('<');
-                match Self::split_lookaround_body(&inner) {
+                match Self::split_lookaround_body(&inner)
+                    .or_else(|| Self::split_code_assertion_body(&inner))
+                {
                     Some((keyword, body)) => {
                         out.push_str(keyword);
                         out.push_str(
@@ -177,22 +207,11 @@ impl Interpreter {
                 continue;
             }
             if ch == '{' {
-                // Capture body of code block.
-                let mut depth = 1usize;
+                // Capture body of code block. The end is found quote-aware:
+                // a brace inside a string literal (`{ say "a}b" }`) is not a
+                // block delimiter.
+                let j = Self::find_matching_brace_end_in_chars(&chars, i).unwrap_or(chars.len());
                 let body_start = i + 1;
-                let mut j = i + 1;
-                while j < chars.len() && depth > 0 {
-                    let c = chars[j];
-                    if c == '{' {
-                        depth += 1;
-                    } else if c == '}' {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
                 let body: String = chars[body_start..j].iter().collect();
                 let baked = self.bake_params_in_code_text(&body, param_names);
                 out.push('{');
@@ -215,57 +234,178 @@ impl Interpreter {
         let chars: Vec<char> = code.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
-        // Track quote state but allow $-substitution inside double-quoted
-        // strings (Raku interpolates them too).
-        let mut in_squote = false;
-        let mut escaped = false;
+        // Raku code and a Raku string are different substitution positions, and
+        // a code block nested in a `"..."` is a code position again, so the
+        // scan carries a stack rather than a pair of flags. Each `Code` frame
+        // counts its own brace depth to know which `}` returns it to the
+        // string that opened it.
+        let mut stack: Vec<BakeCtx> = vec![BakeCtx::Code { depth: 0 }];
         while i < chars.len() {
             let ch = chars[i];
-            if in_squote {
-                out.push(ch);
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == '\'' {
-                    in_squote = false;
-                }
-                i += 1;
-                continue;
-            }
-            if ch == '\'' {
-                in_squote = true;
-                out.push(ch);
-                i += 1;
-                continue;
-            }
-            // Skip backslash escapes outside of single-quoted strings.
-            if ch == '\\' && i + 1 < chars.len() {
-                out.push(ch);
-                out.push(chars[i + 1]);
-                i += 2;
-                continue;
-            }
-            if ch == '$' && i + 1 < chars.len() {
-                let next = chars[i + 1];
-                if next.is_alphabetic() || next == '_' {
-                    let mut j = i + 1;
-                    while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
-                        j += 1;
+            let Some(frame) = stack.last_mut() else {
+                // The bottom `Code` frame is never popped, so this is
+                // unreachable; copying the tail keeps it a no-op rather than a
+                // panic if that ever stops holding.
+                out.extend(chars[i..].iter());
+                break;
+            };
+            match frame {
+                BakeCtx::Single => {
+                    out.push(ch);
+                    i += 1;
+                    if ch == '\\' && i < chars.len() {
+                        out.push(chars[i]);
+                        i += 1;
+                    } else if ch == '\'' {
+                        stack.pop();
                     }
-                    let name: String = chars[i + 1..j].iter().collect();
-                    if param_names.iter().any(|p| p == &name)
-                        && let Some(val) = self.env.get(&name).cloned()
-                        && let Some(literal) = Self::value_to_raku_literal(&val)
-                    {
-                        out.push_str(&literal);
-                        i = j;
+                }
+                BakeCtx::Double => {
+                    if ch == '\\' && i + 1 < chars.len() {
+                        out.push(ch);
+                        out.push(chars[i + 1]);
+                        i += 2;
                         continue;
                     }
+                    if ch == '"' {
+                        out.push(ch);
+                        stack.pop();
+                        i += 1;
+                        continue;
+                    }
+                    if ch == '{' {
+                        out.push(ch);
+                        stack.push(BakeCtx::Code { depth: 0 });
+                        i += 1;
+                        continue;
+                    }
+                    // A parameter read inside a string interpolates to the
+                    // *value*, not to its `.raku`. Splicing the literal form
+                    // here left the quotes visible — and worse, the spliced
+                    // text was re-read by the enclosing string's own
+                    // interpolation rules, so a value holding `$`, `@`, `{` or
+                    // `"` did not survive the round trip.
+                    match Self::param_read_at(&chars, i, param_names) {
+                        Some((name, next)) => match self.env.get(&name) {
+                            Some(value) => {
+                                out.push_str(&Self::escape_for_double_quoted(
+                                    &value.clone().to_string_value(),
+                                ));
+                                i = next;
+                            }
+                            None => {
+                                out.push(ch);
+                                i += 1;
+                            }
+                        },
+                        None => {
+                            out.push(ch);
+                            i += 1;
+                        }
+                    }
+                }
+                BakeCtx::Code { depth } => {
+                    if ch == '\\' && i + 1 < chars.len() {
+                        out.push(ch);
+                        out.push(chars[i + 1]);
+                        i += 2;
+                        continue;
+                    }
+                    match ch {
+                        '\'' => {
+                            out.push(ch);
+                            stack.push(BakeCtx::Single);
+                            i += 1;
+                            continue;
+                        }
+                        '"' => {
+                            out.push(ch);
+                            stack.push(BakeCtx::Double);
+                            i += 1;
+                            continue;
+                        }
+                        '{' => {
+                            *depth += 1;
+                            out.push(ch);
+                            i += 1;
+                            continue;
+                        }
+                        '}' => {
+                            out.push(ch);
+                            if *depth > 0 {
+                                *depth -= 1;
+                            } else if stack.len() > 1 {
+                                // Closes the interpolation block a `"..."`
+                                // opened; the string resumes.
+                                stack.pop();
+                            }
+                            i += 1;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    match Self::param_read_at(&chars, i, param_names) {
+                        Some((name, next)) => match self
+                            .env
+                            .get(&name)
+                            .cloned()
+                            .and_then(|v| Self::value_to_raku_literal(&v))
+                        {
+                            Some(literal) => {
+                                out.push_str(&literal);
+                                i = next;
+                            }
+                            None => {
+                                out.push(ch);
+                                i += 1;
+                            }
+                        },
+                        None => {
+                            out.push(ch);
+                            i += 1;
+                        }
+                    }
                 }
             }
+        }
+        out
+    }
+
+    /// The `$name` of a bound parameter starting at `chars[i]`, with the index
+    /// just past it. `None` when this is not a `$`, or names something the
+    /// caller did not bind.
+    fn param_read_at(chars: &[char], i: usize, param_names: &[String]) -> Option<(String, usize)> {
+        if chars[i] != '$' {
+            return None;
+        }
+        let next = *chars.get(i + 1)?;
+        if !(next.is_alphabetic() || next == '_') {
+            return None;
+        }
+        let mut j = i + 1;
+        while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+            j += 1;
+        }
+        let name: String = chars[i + 1..j].iter().collect();
+        param_names.contains(&name).then_some((name, j))
+    }
+
+    /// Escape a value for splicing into a double-quoted Raku string, so that
+    /// what it holds is what the string yields. Every character that would
+    /// otherwise start an interpolation (`$`, `@`, `%`, `&`, `{`) or end the
+    /// string (`"`), plus the escape character itself, is backslashed.
+    ///
+    /// Escaping only `\\` and `"` — which is what both splice sites used to do
+    /// — loses any value containing `$`, `@` or `{`: the spliced text is read
+    /// back by the enclosing string's own interpolation rules, silently
+    /// yielding a *different* string (or `Nil`) rather than the value.
+    pub(in crate::runtime::regex) fn escape_for_double_quoted(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        for ch in text.chars() {
+            if matches!(ch, '\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}') {
+                out.push('\\');
+            }
             out.push(ch);
-            i += 1;
         }
         out
     }
@@ -297,19 +437,15 @@ impl Interpreter {
         while i < chars.len() {
             let ch = chars[i];
             if ch == '{' {
-                let mut depth = 1usize;
-                out.push(ch);
-                i += 1;
-                while i < chars.len() && depth > 0 {
-                    let c = chars[i];
-                    if c == '{' {
-                        depth += 1;
-                    } else if c == '}' {
-                        depth -= 1;
-                    }
-                    out.push(c);
-                    i += 1;
-                }
+                // A code block is opaque to text interpolation. Its end is
+                // found quote-aware, so a brace inside a string literal — one
+                // the baking pass may itself have written there, escaping a
+                // parameter value that contains a brace — does not end it
+                // early and leave the rest to be rewritten as pattern text.
+                let end = Self::find_matching_brace_end_in_chars(&chars, i)
+                    .map_or(chars.len(), |j| j + 1);
+                out.extend(chars[i..end].iter());
+                i = end;
                 continue;
             }
             // As in `bake_bound_params_into_regex_code_blocks`: opaque except for
@@ -663,10 +799,31 @@ impl Interpreter {
     }
 
     pub(super) fn find_matching_brace_end(text: &str, open_idx: usize) -> Option<usize> {
+        Self::matching_brace_end(text.char_indices().skip_while(|(i, _)| *i < open_idx))
+    }
+
+    /// [`Self::find_matching_brace_end`] for a caller that already holds the
+    /// text as a `char` slice and counts in chars rather than bytes.
+    pub(super) fn find_matching_brace_end_in_chars(
+        chars: &[char],
+        open_idx: usize,
+    ) -> Option<usize> {
+        Self::matching_brace_end(chars.iter().copied().enumerate().skip(open_idx))
+    }
+
+    /// The rule both spellings above share: the index of the `}` closing the
+    /// `{` the iterator starts on, with braces inside `'…'` / `"…"` string
+    /// literals ignored.
+    ///
+    /// The quote awareness is the point. A naive depth count reads the `}` in
+    /// `{ say "a}b" }` as the end of the code block, slicing the body in the
+    /// middle of a string literal — and the baking pass then rewrites what is
+    /// left of it as if it were pattern text.
+    fn matching_brace_end(it: impl Iterator<Item = (usize, char)>) -> Option<usize> {
         let mut depth = 0usize;
         let mut quote: Option<char> = None;
         let mut escaped = false;
-        for (idx, ch) in text.char_indices().skip_while(|(i, _)| *i < open_idx) {
+        for (idx, ch) in it {
             if let Some(q) = quote {
                 if escaped {
                     escaped = false;

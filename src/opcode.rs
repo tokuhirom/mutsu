@@ -2550,6 +2550,14 @@ pub(crate) enum OpCode {
 
     // -- Functions --
     Return,
+    /// Normalize the `Slip` produced by a `return |EXPR` before the return
+    /// signal is raised. A pipe in a return expression is list flattening, not
+    /// the first-class Slip value returned by `.Slip` or `slip(...)`: one value
+    /// becomes that value and multiple values become a plain List. Keeping
+    /// this as a separate opcode lets ordinary Slip-valued returns retain their
+    /// identity; an empty Slip remains empty for the caller's context to
+    /// handle.
+    NormalizeReturnSlip,
     /// Return used outside a routine.
     /// The first `bool` payload is `true` if the op is lexically nested inside
     /// a routine (a closure/block in a sub) — in that case `return` should
