@@ -1,5 +1,5 @@
 use super::super::*;
-use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
+use super::regex_helpers::{map_pos, strip_marks_pattern};
 
 /// One match's span plus every capture text it produced: the positional list
 /// (`$0`, `$1`, ...) and the per-name list (`$<name>`, which is a list because a
@@ -35,11 +35,12 @@ impl Interpreter {
         let orig_chars = target.chars();
 
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             let mut matches =
-                self.regex_match_ends_stop_at_full(&stripped_parsed, &stripped_chars, 0, pkg);
+                self.regex_match_ends_stop_at_full(&stripped_parsed, stripped_chars, 0, pkg);
             if matches.is_empty() {
                 return None;
             }
@@ -55,7 +56,7 @@ impl Interpreter {
                 .find(|(end, _)| *end == stripped_chars.len())?;
             caps.from = caps.capture_start.unwrap_or(0);
             caps.to = caps.capture_end.unwrap_or(end);
-            super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+            super::regex_helpers::remap_caps_spans(&mut caps, stripped.stripped_map(), orig_len);
             caps.set_target(Some(target));
             return Some(caps);
         }
@@ -108,28 +109,30 @@ impl Interpreter {
             return None;
         }
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             // Find the stripped position corresponding to `pos`
-            let stripped_pos = pos_map
-                .iter()
-                .position(|&p| p >= pos)
-                .unwrap_or(stripped_chars.len());
+            let stripped_pos = stripped.original_to_stripped(pos);
             if stripped_pos > stripped_chars.len() {
                 return None;
             }
             return self
                 .regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
-                    &stripped_chars,
+                    stripped_chars,
                     stripped_pos,
                     pkg,
                 )
                 .map(|(end, mut caps)| {
                     caps.from = caps.capture_start.unwrap_or(stripped_pos);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    super::regex_helpers::remap_caps_spans(
+                        &mut caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                    );
                     caps.set_target(Some(target.clone()));
                     caps
                 });
@@ -183,13 +186,11 @@ impl Interpreter {
             return None;
         }
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
-            let stripped_from = pos_map
-                .iter()
-                .position(|&p| p >= from_pos)
-                .unwrap_or(stripped_chars.len());
+            let stripped_from = stripped.original_to_stripped(from_pos);
             let start_pos = if stripped_parsed.anchor_start {
                 0
             } else {
@@ -198,13 +199,17 @@ impl Interpreter {
             for start in start_pos..=stripped_chars.len() {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
-                    &stripped_chars,
+                    stripped_chars,
                     start,
                     pkg,
                 ) {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    super::regex_helpers::remap_caps_spans(
+                        &mut caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                    );
                     caps.set_target(Some(target.clone()));
                     return Some(caps);
                 }
@@ -277,7 +282,8 @@ impl Interpreter {
         let orig_chars = target.chars();
 
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             let mut out = Vec::new();
@@ -300,7 +306,7 @@ impl Interpreter {
                 let ends = if canonical_only {
                     self.regex_match_end_from_caps_in_pkg(
                         &stripped_parsed,
-                        &stripped_chars,
+                        stripped_chars,
                         start,
                         pkg,
                     )
@@ -309,7 +315,7 @@ impl Interpreter {
                 } else {
                     self.regex_match_ends_from_caps_in_pkg(
                         &stripped_parsed,
-                        &stripped_chars,
+                        stripped_chars,
                         start,
                         pkg,
                     )
@@ -317,7 +323,11 @@ impl Interpreter {
                 for (end, mut caps) in ends {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    super::regex_helpers::remap_caps_spans(
+                        &mut caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                    );
                     caps.set_target(Some(target.clone()));
                     if skip_covered {
                         if caps.from < last_end {
@@ -401,18 +411,17 @@ impl Interpreter {
     ) -> Option<MatchWithAllCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package_sym();
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
         if parsed.anchor_start && min_pos > 0 {
             return None;
         }
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
-            let stripped_min = pos_map
-                .iter()
-                .position(|&p| p >= min_pos)
-                .unwrap_or(stripped_chars.len());
+            let stripped_min = stripped.original_to_stripped(min_pos);
             let search_start = if stripped_parsed.anchor_start {
                 0
             } else {
@@ -421,7 +430,7 @@ impl Interpreter {
             for start in search_start..=stripped_chars.len() {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
-                    &stripped_chars,
+                    stripped_chars,
                     start,
                     pkg,
                 ) {
@@ -429,11 +438,24 @@ impl Interpreter {
                     // the derived texts keep their combining marks (pre-P4 the
                     // stored text axis returned mark-stripped text here).
                     for slot in caps.positional.iter_mut() {
-                        super::regex_helpers::remap_pos_slot(slot, &pos_map, orig_len, 0);
+                        super::regex_helpers::remap_pos_slot(
+                            slot,
+                            stripped.stripped_map(),
+                            orig_len,
+                            0,
+                        );
                     }
                     return Some((
-                        map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len),
-                        map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len),
+                        map_pos(
+                            caps.capture_start.unwrap_or(start),
+                            stripped.stripped_map(),
+                            orig_len,
+                        ),
+                        map_pos(
+                            caps.capture_end.unwrap_or(end),
+                            stripped.stripped_map(),
+                            orig_len,
+                        ),
                         super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
                         super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
                     ));
@@ -466,32 +488,35 @@ impl Interpreter {
     pub(crate) fn regex_find_first(&mut self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package_sym();
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
 
         // When :m (ignoremark) is set, strip combining marks from both text and
         // pattern literals, match on stripped forms, then map positions back.
         if parsed.ignore_mark {
-            let orig_chars: Vec<char> = text.chars().collect();
-            let (stripped_chars, pos_map) = strip_marks_text(&orig_chars);
+            let orig_chars = target.chars();
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
 
             if stripped_parsed.anchor_start {
                 return self
-                    .regex_match_end_from_in_pkg(&stripped_parsed, &stripped_chars, 0, pkg)
+                    .regex_match_end_from_in_pkg(&stripped_parsed, stripped_chars, 0, pkg)
                     .map(|end| {
                         (
-                            map_pos(0, &pos_map, orig_len),
-                            map_pos(end, &pos_map, orig_len),
+                            map_pos(0, stripped.stripped_map(), orig_len),
+                            map_pos(end, stripped.stripped_map(), orig_len),
                         )
                     });
             }
             for start in 0..=stripped_chars.len() {
                 if let Some(end) =
-                    self.regex_match_end_from_in_pkg(&stripped_parsed, &stripped_chars, start, pkg)
+                    self.regex_match_end_from_in_pkg(&stripped_parsed, stripped_chars, start, pkg)
                 {
                     return Some((
-                        map_pos(start, &pos_map, orig_len),
-                        map_pos(end, &pos_map, orig_len),
+                        map_pos(start, stripped.stripped_map(), orig_len),
+                        map_pos(end, stripped.stripped_map(), orig_len),
                     ));
                 }
             }

@@ -1,6 +1,6 @@
 use super::super::*;
 use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
-use super::regex_helpers::{strip_marks_pattern, strip_marks_text};
+use super::regex_helpers::strip_marks_pattern;
 
 impl Interpreter {
     /// Write the current (never-restored) values of a `:my`/`:constant`
@@ -243,16 +243,21 @@ impl Interpreter {
         // Every recorded span (including sub-captures) is remapped from the
         // stripped space so captured text derives from the original subject.
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
+            let stripped = target.stripped();
+            let stripped_chars = stripped.chars();
             let stripped_parsed = strip_marks_pattern(parsed);
             let orig_len = orig_chars.len();
             if stripped_parsed.anchor_start {
                 return self
-                    .regex_match_end_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, pkg)
+                    .regex_match_end_from_caps_in_pkg(&stripped_parsed, stripped_chars, 0, pkg)
                     .map(|(end, mut caps)| {
                         caps.from = caps.capture_start.unwrap_or(0);
                         caps.to = caps.capture_end.unwrap_or(end);
-                        super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                        super::regex_helpers::remap_caps_spans(
+                            &mut caps,
+                            stripped.stripped_map(),
+                            orig_len,
+                        );
                         caps.set_target(Some(target.clone()));
                         caps
                     });
@@ -260,13 +265,17 @@ impl Interpreter {
             for start in 0..=stripped_chars.len() {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
-                    &stripped_chars,
+                    stripped_chars,
                     start,
                     pkg,
                 ) {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    super::regex_helpers::remap_caps_spans(
+                        &mut caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                    );
                     caps.set_target(Some(target.clone()));
                     return Some(caps);
                 }

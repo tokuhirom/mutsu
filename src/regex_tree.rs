@@ -147,6 +147,7 @@ impl RegexTree {
                 anchor_end: false,
                 ignore_case,
                 ignore_mark,
+                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
             }
         }
 

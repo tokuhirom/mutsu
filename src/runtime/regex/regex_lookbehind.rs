@@ -165,6 +165,7 @@ mod tests {
             anchor_end: false,
             ignore_case: false,
             ignore_mark: false,
+            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
         }
     }
 
