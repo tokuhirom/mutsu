@@ -23,9 +23,21 @@ pub(crate) fn non_variable_dollar_perror() -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
+/// The `List` a word-quoting construct (`qw<a b c>`, `<a b c>`, `qqw//`, `q:w//`)
+/// evaluates to.
+///
+/// Spelled with a RESERVED name rather than `list`, because a word list is a
+/// LITERAL, not a call the program can intercept: `sub list` is an ordinary
+/// routine name a Raku program may declare (`Crane::List` declares a whole
+/// `multi sub list` set), and emitting a plain `list(...)` call made every word
+/// list in that compilation unit resolve to the user's routine —
+/// `sub list($a, $b) { }; my $x = qw<a b c>` died with
+/// "Too many positionals passed; expected 2 arguments but got 3". Every other
+/// lowering the parser synthesizes already uses a `__mutsu_`-prefixed name for
+/// exactly this reason (`__mutsu_qw_result` right below).
 pub(crate) fn make_list_expr(items: Vec<Expr>) -> Expr {
     Expr::Call {
-        name: Symbol::intern("list"),
+        name: Symbol::intern("__mutsu_word_list"),
         args: items,
     }
 }

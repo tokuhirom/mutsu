@@ -905,7 +905,9 @@ impl Interpreter {
                     Ok(Value::array(args.clone()).item())
                 }
             }
-            "list" => self.builtin_list(&args),
+            // See `make_list_expr`: the word-quoting literal's reserved
+            // spelling, so a user's own `sub list` cannot capture it.
+            "list" | "__mutsu_word_list" => self.builtin_list(&args),
             "cache" => self.builtin_cache(&args),
             "circumfix:<[ ]>" => Ok(Value::real_array(args.clone())),
             "lol" => Ok(Value::array(args.clone())),
