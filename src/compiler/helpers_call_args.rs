@@ -433,6 +433,26 @@ impl Compiler {
     /// Promise and run later on another thread), so the locals it captures and
     /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
     pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // `f(++$p)` where `$p` is one of THIS routine's native `is rw`
+        // parameters: `$p` is a native reference to the caller's location, and
+        // rakudo's native `prefix:<++>` writes through it and hands the
+        // reference back, so the callee's own `is rw` parameter binds the
+        // caller's storage (`sub inner(int $p is rw) { --$p }` cancels the
+        // increment two frames up). Compiling the increment as an ordinary
+        // expression loses that: it leaves the incremented *value* on the
+        // stack, and the callee rejects it as "a value without a container".
+        //
+        // Split it into the two things it means — perform the increment, then
+        // pass the variable — so the argument takes the plain `Expr::Var`
+        // path, which already binds a parameter through correctly. The gate in
+        // `native_rw_param_incdec_operand` keeps every operand shape rakudo
+        // rejects on the old value path, so those still error.
+        if let Some(name) = self.native_rw_param_incdec_operand(arg) {
+            self.compile_expr(arg);
+            self.code.emit(OpCode::Pop);
+            self.compile_call_arg_with_escape(&Expr::Var(name), escaping);
+            return;
+        }
         // Read-and-clear immediately: this call is the *direct* bind-target
         // compile iff the caller just set the flag for us. Clearing it up
         // front (before any nested `compile_expr`/`compile_call_arg`
@@ -1171,6 +1191,73 @@ impl Compiler {
         None
     }
 
+    /// Whether a parameter's declared type is one of Raku's *native* types —
+    /// the ones whose storage is a machine value rather than a `Scalar`, so an
+    /// `is rw` parameter of that type binds a native reference.
+    pub(crate) fn is_native_type_constraint(constraint: &str) -> bool {
+        matches!(
+            constraint,
+            "int"
+                | "int8"
+                | "int16"
+                | "int32"
+                | "int64"
+                | "uint"
+                | "uint8"
+                | "uint16"
+                | "uint32"
+                | "uint64"
+                | "num"
+                | "num32"
+                | "num64"
+                | "str"
+        )
+    }
+
+    /// Record this routine's native-typed `is rw` parameters, which
+    /// [`Compiler::native_rw_param_incdec_operand`] gates on. See the field
+    /// doc on `native_rw_params`.
+    pub(crate) fn seed_native_rw_params(&mut self, param_defs: &[crate::ast::ParamDef]) {
+        self.native_rw_params = param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.name.is_empty()
+                    && pd
+                        .type_constraint
+                        .as_deref()
+                        .is_some_and(Self::is_native_type_constraint)
+                    && pd.traits.iter().any(|t| t == "rw")
+            })
+            .map(|pd| pd.name.clone())
+            .collect();
+    }
+
+    /// A call argument spelled `++$p` / `--$p` whose operand is one of the
+    /// enclosing routine's native `is rw` parameters — the one shape rakudo
+    /// lets bind through to another native `is rw` parameter. Returns the
+    /// operand's name.
+    ///
+    /// Deliberately NOT matched: the postfix forms (`$p++` yields the old
+    /// value, and rakudo rejects it here with "Expected a modifiable native
+    /// int argument"), and any operand that is not such a parameter (a plain
+    /// `my int $x`, or a non-native `$p is rw`, both of which rakudo also
+    /// rejects). Keeping those on the existing value path preserves the error.
+    pub(super) fn native_rw_param_incdec_operand(&self, arg: &Expr) -> Option<String> {
+        let Expr::Unary { op, expr } = arg else {
+            return None;
+        };
+        if !matches!(
+            op,
+            crate::token_kind::TokenKind::PlusPlus | crate::token_kind::TokenKind::MinusMinus
+        ) {
+            return None;
+        }
+        let Expr::Var(name) = expr.as_ref() else {
+            return None;
+        };
+        self.native_rw_params.contains(name).then(|| name.clone())
+    }
+
     /// Check for assignment to native-typed read-only parameters inside a
     /// sub/method/block body. Returns an X::Assignment::RO::Comp error value
     /// if such an assignment is found.
@@ -1182,25 +1269,10 @@ impl Compiler {
         let readonly_native_params: std::collections::HashSet<&str> = param_defs
             .iter()
             .filter(|pd| {
-                let is_native = pd.type_constraint.as_deref().is_some_and(|c| {
-                    matches!(
-                        c,
-                        "int"
-                            | "int8"
-                            | "int16"
-                            | "int32"
-                            | "int64"
-                            | "uint"
-                            | "uint8"
-                            | "uint16"
-                            | "uint32"
-                            | "uint64"
-                            | "num"
-                            | "num32"
-                            | "num64"
-                            | "str"
-                    )
-                });
+                let is_native = pd
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(Self::is_native_type_constraint);
                 let has_rw_or_copy = pd
                     .traits
                     .iter()
