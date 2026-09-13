@@ -3,7 +3,7 @@ use Test;
 # An immutable Map (Capture.hash, .Map coercion, Map.new) must report its type
 # as `Map` and render as `Map.new((...))`, not as a mutable `Hash` / typed-hash.
 
-plan 16;
+plan 17;
 
 # --- Capture.hash returns a Map ---
 is \(a => 1).hash.^name, 'Map', 'Capture.hash is a Map';
@@ -17,6 +17,10 @@ is (a => 1, b => 2).Map.^name, 'Map', 'list.Map is a Map';
 
 # --- Map.new ---
 is Map.new('a', 1).^name, 'Map', 'Map.new is a Map';
+
+# --- callable Map constructor ---
+is Map((:a(1), :b(2)).map: { .key => .value }).raku,
+   'Map.new((:a(1),:b(2)))', 'callable Map materializes a mapped pair sequence';
 
 # --- .WHAT agrees with .^name ---
 is %(a => 1).Map.WHAT.^name, 'Map', '.WHAT.^name agrees';

@@ -569,7 +569,7 @@ impl Interpreter {
         // the builtin funnel does this -- a USER routine must keep receiving
         // an unforced Seq, which is why the pass is gated on the name being a
         // real builtin rather than applied to every call.
-        if Self::is_builtin_function(name) {
+        if Self::is_builtin_function(name) || name == "Map" {
             self.reify_map_grep_seq_args(&args)?;
         }
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
@@ -663,6 +663,7 @@ impl Interpreter {
             "Int" | "Num" | "Str" | "Bool" | "Uni" | "Rat" | "FatRat" | "Complex" | "Real"
             | "Numeric" => self.builtin_coerce(name, &args),
             "Array" | "List" | "Hash" => self.builtin_container_coerce(name, &args),
+            "Map" => self.builtin_map_coerce(&args),
             "UNBASE" => self.builtin_unbase(&args),
             "RADIX_LIST" => self.builtin_radix_list(&args),
             // Grammar helpers

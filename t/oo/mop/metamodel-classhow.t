@@ -1,5 +1,5 @@
 use Test;
-plan 7;
+plan 9;
 
 # Metamodel::ClassHOW.new_type creates a usable type
 {
@@ -46,4 +46,27 @@ plan 7;
     $type.^compose;
     my $obj = $type.new(greeting => "hello");
     is $obj.greeting, 'hello', 'accessor works on dynamically added attribute';
+}
+
+# `add_role` composes a role into a dynamically-created class.
+{
+    role DynamicMopRole {
+        method dynamic-value { 42 }
+    }
+    my $type = Metamodel::ClassHOW.new_type(name => 'WithDynamicRole');
+    $type.^add_role(DynamicMopRole);
+    $type.^compose;
+    is $type.new.dynamic-value, 42, 'dynamically added role method is available';
+}
+
+# The core `is rw` trait marks an Attribute before ClassHOW consumes it.
+{
+    my $type = Metamodel::ClassHOW.new_type(name => 'WithDynamicRw');
+    my $attr = Attribute.new(name => '$!value', type => Int, package => $type, :has_accessor);
+    trait_mod:<is>($attr, :rw);
+    $type.^add_attribute($attr);
+    $type.^compose;
+    my $obj = $type.new(value => 1);
+    $obj.value = 2;
+    is $obj.value, 2, 'dynamically added rw attribute has a writable accessor';
 }

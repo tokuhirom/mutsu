@@ -945,6 +945,18 @@ impl Interpreter {
                 }
                 Ok(coerced)
             }
+            "add_role" if args.len() >= 2 => {
+                let class_name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    _ => {
+                        return Err(RuntimeError::new("add_role target must be a type object"));
+                    }
+                };
+                let role_name = super::registration_class::type_value_name(&args[1]);
+                self.add_role_to_class(&class_name, &role_name)?;
+                Ok(Value::NIL)
+            }
             "add_method" if args.len() >= 3 => {
                 let class_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
@@ -1317,9 +1329,10 @@ impl Interpreter {
                         .get("has_accessor")
                         .map(|v| v.truthy())
                         .unwrap_or(false);
-                    let is_rw = attr_attrs
-                        .as_map()
+                    let attr_map = attr_attrs.as_map();
+                    let is_rw = attr_map
                         .get("rw")
+                        .or_else(|| attr_map.get("is_rw"))
                         .map(|v| v.truthy())
                         .unwrap_or(false);
                     let type_constraint =

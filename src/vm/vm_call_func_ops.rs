@@ -154,6 +154,7 @@ impl Interpreter {
                 | "Array"
                 | "List"
                 | "Hash"
+                | "Map"
                 | "Set"
                 | "SetHash"
                 | "Bag"

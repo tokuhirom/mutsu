@@ -3,6 +3,42 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Handle the core Attribute trait that marks a dynamically-created
+    /// attribute read-write. User trait_mod candidates are tried first; this
+    /// native arm supplies the core candidate when no user candidate matches.
+    pub(crate) fn try_native_attribute_trait(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if name != "trait_mod:<is>" || args.len() < 2 {
+            return None;
+        }
+        let attribute: &Value = match args[0].view() {
+            ValueView::VarRef { value, .. } => value,
+            _ => &args[0],
+        };
+        let is_attribute = matches!(
+            attribute.view(),
+            ValueView::Instance { class_name, .. } if class_name == "Attribute"
+        );
+        let is_rw = args[1..].iter().any(|arg| {
+            matches!(arg.view(), ValueView::Pair(key, _) if key == "rw")
+                || matches!(
+                    arg.view(),
+                    ValueView::ValuePair(key, _) if key.to_string_value() == "rw"
+                )
+        });
+        if !is_attribute || !is_rw {
+            return None;
+        }
+        if let ValueView::Instance { attributes, .. } = attribute.view() {
+            attributes.insert("is_rw".to_string(), Value::TRUE);
+            attributes.insert("rw".to_string(), Value::TRUE);
+        }
+        Some(Ok(Value::NIL))
+    }
+
     pub(crate) fn collect_attribute_objects(
         &self,
         class_name: &str,

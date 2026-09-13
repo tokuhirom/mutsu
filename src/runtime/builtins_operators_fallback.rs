@@ -364,6 +364,9 @@ impl Interpreter {
             {
                 return native_result;
             }
+            if let Some(native_result) = self.try_native_attribute_trait(name, args) {
+                return native_result;
+            }
         }
         if name == "substr"
             && let Some((target, rest)) = args.split_first()

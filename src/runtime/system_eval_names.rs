@@ -30,6 +30,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "HOW",
     "Inf",
     "Int",
+    "Map",
     "Mix",
     "MixHash",
     "NaN",

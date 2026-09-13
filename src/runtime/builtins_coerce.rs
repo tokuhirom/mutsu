@@ -32,6 +32,24 @@ impl Interpreter {
         })
     }
 
+    /// Build a Map from call-position arguments. Unlike Hash(...), the
+    /// immutable map constructor keeps its values unitemized, so share the
+    /// same flattening and metadata-aware implementation as Map.new(...).
+    pub(crate) fn builtin_map_coerce(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.is_empty() {
+            return Ok(Value::package(Symbol::intern("Map(Any)")));
+        }
+        if args.len() == 1
+            && let ValueView::Package(sym) = args[0].view()
+        {
+            return Ok(Value::package(Symbol::intern(&format!(
+                "Map({})",
+                sym.resolve()
+            ))));
+        }
+        self.try_native_hash_construct(Symbol::intern("Map"), &None, args)
+    }
+
     pub(super) fn builtin_coerce(
         &mut self,
         name: &str,

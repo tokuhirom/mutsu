@@ -969,8 +969,14 @@ impl Interpreter {
     /// other than the recognised continuations may follow the initial
     /// identifier of a `<ident...>` subrule. Returns a malformed-regex error
     /// when, for example, a bare regex metacharacter (`*`, `|`, `&`, ...)
-    /// immediately follows the identifier (e.g. `<test*>`).
+    /// immediately follows the identifier (e.g. `<test*>`). A proto-regex
+    /// candidate reference such as `<value:sym<number>>` or
+    /// `<value:<number>>` is the one additional valid continuation: the
+    /// variant name is enclosed in its own angle brackets.
     pub(super) fn check_subrule_name_tail(name: &str) -> Option<RuntimeError> {
+        let proto_variant = name.find('<').is_some_and(|open| {
+            name.ends_with('>') && (name[..open].ends_with(":sym") || name[..open].ends_with(':'))
+        });
         let mut chars = name.chars().peekable();
         // The leading identifier must start with an alphabetic char or `_`.
         match chars.peek() {
@@ -992,6 +998,7 @@ impl Interpreter {
             // End of name, argument list, alias, method-args, or a passed regex.
             None | Some('(') | Some('=') => None,
             Some(c) if c.is_whitespace() => None,
+            Some('<') if proto_variant => None,
             Some(_) => {
                 let msg = "Unable to parse regex; couldn't find delimiter";
                 let mut attrs = std::collections::HashMap::new();
