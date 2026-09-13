@@ -36,11 +36,21 @@ impl Compiler {
             Expr::Index { .. } | Expr::MultiDimIndex { .. } => {
                 let saved_av = self.scalar_bind_autovivify;
                 let saved_terminal = self.bind_terminal;
+                let saved_raw_list_elem = self.raw_list_elem_terminal;
                 self.scalar_bind_autovivify = true;
                 self.bind_terminal = true;
+                // The caller writes through whatever comes back, so an
+                // immutable `List`'s scalar element must arrive raw: rakudo
+                // refuses `sub g(\c) is rw { return-rw c[0] }; g((1, 2)) = 9`
+                // with "Cannot modify an immutable Int (1)", where promoting the
+                // element to a private cell made the write silently succeed and
+                // reach nobody (`Crane::In`'s `Positional:D` descent, and hence
+                // `Crane.set` on an immutable `List`).
+                self.raw_list_elem_terminal = true;
                 self.compile_expr(arg);
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
+                self.raw_list_elem_terminal = saved_raw_list_elem;
             }
             // `$flag ?? c<x> !! c<y>`: the condition is an ordinary value read;
             // each arm is itself a location the routine may hand back, so both

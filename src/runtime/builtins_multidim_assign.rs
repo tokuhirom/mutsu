@@ -102,8 +102,15 @@ impl Interpreter {
         {
             let mut selected = root.clone();
             for step in steps.iter() {
+                // Unwrap the containers a step may be wrapped in FIRST: an
+                // itemized root (`my $root = %h.deepmap(...)`, which is how every
+                // non-in-place Crane operation builds its copy) is a `Scalar`
+                // around the Hash, and an element promoted by an earlier bind is
+                // a `ContainerRef`. Unwrapping inside the step match instead
+                // consumed the step without descending, so the walk came up one
+                // level short and answered `Nil`.
+                selected = Self::deref_lvalue_value(selected);
                 selected = match selected.view() {
-                    ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
                     ValueView::Hash(hash) => hash
                         .get(&step.to_string_value())
                         .cloned()
@@ -114,6 +121,18 @@ impl Interpreter {
                         .ok()
                         .and_then(|index| array.get(index).cloned())
                         .unwrap_or(Value::NIL),
+                    // A `Pair` DOES `Associative`, so the accessor's own descent
+                    // steps through it by key — a colonpair chain
+                    // (`:a(:b(:c(True)))`, Crane's own fixture shape) is a
+                    // nested `Pair`, not a nested `Hash`. Without this the walk
+                    // answered `Nil` at the first Pair and the store below
+                    // silently invented a container.
+                    ValueView::Pair(key, val) if *key == step.to_string_value() => val.clone(),
+                    ValueView::ValuePair(key, val)
+                        if key.to_string_value() == step.to_string_value() =>
+                    {
+                        val.clone()
+                    }
                     _ => Value::NIL,
                 };
             }
@@ -145,6 +164,31 @@ impl Interpreter {
                 &current,
             )
         });
+
+        // The accessor landed on a `Pair`. A `Pair` DOES `Associative`, so an
+        // associative subscript descends into it and rakudo refuses at the value
+        // it reaches — the same rule the chained-store walk and the
+        // computed-target store follow, and the one Crane's
+        // `CATCH { when X::Assignment::RO }` maps to `X::Crane::Replace::RO` /
+        // `X::Crane::Remove::RO` (`Crane::At.at($root, @path){$step} = $value`,
+        // the shape every non-in-place `Crane.replace`/`Crane.remove` is built
+        // on). Falling through instead found neither a Hash nor an Array to
+        // store into, reported success, and wrote a detached `Any` back over the
+        // caller's variable.
+        let index_is_positional = matches!(index.view(), ValueView::Int(_));
+        let index_key = match index.view() {
+            ValueView::Array(items, _) if items.len() == 1 => items[0].to_string_value(),
+            ValueView::Seq(items) if items.len() == 1 => items[0].to_string_value(),
+            ValueView::Slip(items) if items.len() == 1 => items[0].to_string_value(),
+            _ => index.to_string_value(),
+        };
+        if let Some(err) = Self::pair_subscript_store_refusal(
+            &current,
+            index_is_positional,
+            Some(index_key.as_str()),
+        ) {
+            return Err(err);
+        }
 
         // Package-level `is rw` accessors with arguments (for example
         // `Crane::At.at($root, @path)`) return the selected container itself.

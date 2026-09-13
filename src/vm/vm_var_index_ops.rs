@@ -297,25 +297,28 @@ impl Interpreter {
         terminal: bool,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
-        self.exec_index_autovivify_lazy_op_decl_bind(terminal, is_positional, false)
+        self.exec_index_autovivify_lazy_op_raw_list_elem(terminal, is_positional, false)
     }
 
-    /// [`Self::exec_index_autovivify_lazy_op`] told whether this subscript is
-    /// the source of a `:=` DECLARATION.
+    /// [`Self::exec_index_autovivify_lazy_op`] told whether this subscript's
+    /// consumer settles its own writability from the element it receives.
     ///
-    /// `decl_bind` is set only by `OpCode::IndexAutovivifyLazyTerminal` for a
-    /// `my \a := ...` / `my $x := ...` bind (see that opcode's docs). It
-    /// suppresses the scalar-leaf promotion when the container is an immutable
-    /// `List`, so `my (\a, \b) := (5, 6); a = 10` and `my $x := (5, 6)[0];
-    /// $x = 10` die the way rakudo does instead of writing into a cell nothing
-    /// else can see. An element that already IS a container is handed back
-    /// untouched and stays writable, which is how `my (\a, \b) := ($x, $y)`
-    /// aliases `$x`/`$y`.
-    pub(super) fn exec_index_autovivify_lazy_op_decl_bind(
+    /// `raw_list_elem` is set only by `OpCode::IndexAutovivifyLazyTerminal`, for
+    /// a `my \a := ...` / `my $x := ...` declaration bind and for a `return-rw`
+    /// operand (see that opcode's docs). It suppresses the scalar-leaf
+    /// promotion when the container is an immutable `List`, so
+    /// `my (\a, \b) := (5, 6); a = 10`, `my $x := (5, 6)[0]; $x = 10` and
+    /// `sub g(\c) is rw { return-rw c[0] }; g((1, 2)) = 9` all die the way
+    /// rakudo does instead of writing into a cell nothing else can see. An
+    /// element that already IS a container is handed back untouched and stays
+    /// writable, which is how `my (\a, \b) := ($x, $y)` aliases `$x`/`$y` and
+    /// how an `is rw` routine still writes through a `List` that holds live
+    /// cells (`take-rw`).
+    pub(super) fn exec_index_autovivify_lazy_op_raw_list_elem(
         &mut self,
         terminal: bool,
         is_positional: bool,
-        decl_bind: bool,
+        raw_list_elem: bool,
     ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
@@ -378,11 +381,12 @@ impl Interpreter {
             }
             // Terminal bind index into an Array leaf: promote the element to a
             // shared `ContainerRef` cell (container-valued leaves included).
-            // A DECLARATION bind of a single `List` element: hand back the raw
-            // element rather than promoting it (see the doc comment above).
+            // A single `List` element whose own writability is what the
+            // consumer sees: hand back the raw element rather than promoting it
+            // (see the doc comment above).
             ValueView::Array(ref items, kind)
                 if terminal
-                    && decl_bind
+                    && raw_list_elem
                     && kind.is_immutable_list()
                     && Self::index_to_usize(&index).is_some() =>
             {

@@ -1803,19 +1803,28 @@ pub(crate) enum OpCode {
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
     /// `ContainerRef` cell — not kept as a traversal back-reference.
     ///
-    /// `decl_bind` marks this terminal subscript as the source of a `:=`
-    /// DECLARATION — `my \a := (5, 6)[0]` (including each sigilless target of a
-    /// list-destructuring bind) and `my $x := (5, 6)[0]`. Such a name is bound
-    /// to whatever the element denotes, so rakudo settles its mutability from
-    /// the bound thing: an `Array` element is a container and writes through,
-    /// while a `List` element is a plain value and a later `a = 10` / `$x = 10`
-    /// dies. Promoting a `List`'s scalar leaf to a fresh cell would make the
-    /// second case look writable, so this flag suppresses the promotion for an
-    /// immutable `List` — an element that already IS a container (a captured
-    /// source cell from `($x, $y)`, a nested `Array`/`Hash`) is handed back
-    /// unchanged and stays writable.
+    /// `raw_list_elem` marks this terminal subscript as one whose CONSUMER
+    /// settles its own writability from the element it receives, so an
+    /// immutable `List`'s scalar leaf must be handed back raw rather than
+    /// promoted to a private cell. Two shapes qualify:
     ///
-    /// The flag is deliberately restricted to a declaration bind. The same
+    /// - a `:=` DECLARATION — `my \a := (5, 6)[0]` (including each sigilless
+    ///   target of a list-destructuring bind) and `my $x := (5, 6)[0]`. Such a
+    ///   name is bound to whatever the element denotes, so rakudo settles its
+    ///   mutability from the bound thing: an `Array` element is a container and
+    ///   writes through, while a `List` element is a plain value and a later
+    ///   `a = 10` / `$x = 10` dies.
+    /// - a `return-rw` OPERAND — `sub g(\c) is rw { return-rw c[0] }`. The
+    ///   caller's `g(...) = 9` writes through whatever came back, and for a
+    ///   `List` element rakudo refuses with "Cannot modify an immutable
+    ///   Int (1)". `Crane::In`'s `Positional:D` descent is this shape, and the
+    ///   promotion made `Crane.set` on an immutable `List` silently succeed.
+    ///
+    /// In both cases an element that already IS a container (a captured source
+    /// cell from `($x, $y)`, a `take-rw` cell, a nested `Array`/`Hash`) is
+    /// handed back unchanged and stays writable.
+    ///
+    /// The flag is deliberately NOT set for a loop-parameter bind. The same
     /// over-promotion also makes a `List`-element loop parameter wrongly
     /// writable, but suppressing it there breaks consumers that lean on the
     /// promotion (a chunked `for @flat -> \a, \b` binding, `.kv` on a mutable
@@ -1823,7 +1832,7 @@ pub(crate) enum OpCode {
     /// `news/2026-09/immutable-element-store-and-bind.md`.
     IndexAutovivifyLazyTerminal {
         is_positional: bool,
-        decl_bind: bool,
+        raw_list_elem: bool,
     },
     /// `%h<k>:delete` / `@a[i]:delete`. First field is the container variable's
     /// name (const-pool index); the optional second is its compile-time-resolved

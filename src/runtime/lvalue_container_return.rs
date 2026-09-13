@@ -157,20 +157,23 @@ impl Interpreter {
         let Ok(result) = result else {
             return Ok(None);
         };
-        if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
-            return assigned.map(Some);
-        }
-        // An rw method whose tail names an `@`/`%` container hands back the
-        // aggregate itself, not a cell — there is no Scalar around an `@`/`%`
-        // variable to hand back. That is still an lvalue: the assignment stores
-        // into it, exactly as the sub form does. Without this the legacy
-        // setter/attribute chain below took over and quietly dropped the write
-        // (`Crane::In.in(%h, ()) = $value`, the root-path case of every
-        // `Crane.set`/`add`/`replace`).
-        if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
-            return Ok(Some(stored));
-        }
-        Ok(None)
+        // The write half, shared with the sub form: store through a container or
+        // into an `@`/`%` aggregate the tail named (there is no Scalar around an
+        // `@`/`%` variable to hand back), and otherwise refuse with rakudo's
+        // `Cannot modify an immutable <Type> (<value>)`.
+        //
+        // The refusal is not a fallback to the legacy setter/attribute chain.
+        // That chain re-calls the method with the ASSIGNED VALUE as its only
+        // argument — `Crane::In.in(%h, @path) = 9` called `in(9)`, whose `\c`
+        // received `9` and whose `*@steps` was empty, so the `.elems == 0`
+        // candidate handed `9` straight back and the assignment reported success
+        // while writing nowhere. A method this far in is rw-capable and computes
+        // its location (`method_lvalue_returns_container`), so a plain value
+        // coming back IS raku's refusal, which is what
+        // `Crane::Set`'s `CATCH { when X::Assignment::RO }` maps to
+        // `X::Crane::OpSet::RO`.
+        self.assign_through_rw_result(result, value.clone())
+            .map(Some)
     }
 
     /// `Class.m($arg) = $v` where `m` is a declared method that is **not**
