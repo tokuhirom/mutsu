@@ -301,6 +301,32 @@ impl Interpreter {
         }
     }
 
+    /// Resolve the value behind a statically exported variable. Most exports
+    /// live in the qualified environment, but a `my constant` in a unit class
+    /// is persisted in that class's package-lexical store when its body exits.
+    /// Keep both import-time and EXPORT-stash reads on the same lookup path.
+    pub(crate) fn exported_var_value(&self, module: &str, name: &str) -> Option<Value> {
+        let (sigil, bare) = match name.chars().next() {
+            Some(sigil @ ('$' | '@' | '%' | '&')) => (Some(sigil), &name[1..]),
+            _ => (None, name),
+        };
+        let qualified = match sigil {
+            Some(sigil) => format!("{sigil}{module}::{bare}"),
+            None => format!("{module}::{name}"),
+        };
+        self.env
+            .get(&qualified)
+            .cloned()
+            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| {
+                self.package_lexicals
+                    .get(module)
+                    .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
+                    .cloned()
+            })
+            .or_else(|| self.env.get(name).cloned())
+    }
+
     /// Publish `NativeCall`'s export list.
     ///
     /// mutsu implements NativeCall inside the VM, so `use NativeCall` loads no
@@ -671,15 +697,8 @@ impl Interpreter {
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
-            let (source, target) = if let Some(sigil) = name.chars().next()
-                && matches!(sigil, '$' | '@' | '%' | '&')
-            {
-                let bare = &name[1..];
-                (format!("{sigil}{module}::{bare}"), name.clone())
-            } else {
-                (format!("{module}::{name}"), name.clone())
-            };
-            if let Some(value) = self.env.get(&source).cloned() {
+            let target = name.clone();
+            if let Some(value) = self.exported_var_value(module, &name) {
                 // An imported ENUM KEY is a package symbol/term, not a `$`-scalar,
                 // so it goes into the enum-key namespace rather than under its own
                 // plain `env` key — which, being sigil-less, is where a same-named

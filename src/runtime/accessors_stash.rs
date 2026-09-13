@@ -712,17 +712,7 @@ impl Interpreter {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
                     }
-                    let fq = format!("{module}::{name}");
-                    let val = self
-                        .env
-                        .get(&fq)
-                        .cloned()
-                        // An enum key's bare spelling lives in its own key
-                        // namespace (#7914), so the bare `env` probe cannot see
-                        // it — ask that namespace before giving up.
-                        .or_else(|| self.enum_bare_value(name).cloned())
-                        .or_else(|| self.env.get(name).cloned())
-                        .unwrap_or(Value::NIL);
+                    let val = self.exported_var_value(module, name).unwrap_or(Value::NIL);
                     symbols.insert(name.clone(), val);
                 }
             }
