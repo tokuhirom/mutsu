@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::{map_pos, strip_marks_pattern};
+use super::regex_prefilter::regex_scan_positions;
 
 /// One match's span plus every capture text it produced: the positional list
 /// (`$0`, `$1`, ...) and the per-name list (`$<name>`, which is a list because a
@@ -196,7 +197,7 @@ impl Interpreter {
             } else {
                 stripped_from
             };
-            for start in start_pos..=stripped_chars.len() {
+            for start in regex_scan_positions(&stripped_parsed, stripped_chars, start_pos) {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     stripped_chars,
@@ -217,7 +218,7 @@ impl Interpreter {
             return None;
         }
         let start_pos = if parsed.anchor_start { 0 } else { from_pos };
-        for start in start_pos..=orig_chars.len() {
+        for start in regex_scan_positions(&parsed, orig_chars, start_pos) {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
             {
@@ -291,7 +292,7 @@ impl Interpreter {
             if stripped_parsed.anchor_start {
                 starts.push(0usize);
             } else {
-                starts.extend(0..=stripped_chars.len());
+                starts.extend(regex_scan_positions(&stripped_parsed, stripped_chars, 0));
             }
             let mut last_end = 0usize;
             for start in starts {
@@ -350,7 +351,7 @@ impl Interpreter {
         if parsed.anchor_start {
             starts.push(0usize);
         } else {
-            starts.extend(0..=orig_chars.len());
+            starts.extend(regex_scan_positions(&parsed, orig_chars, 0));
         }
         let mut last_end = 0usize;
         for start in starts {
@@ -427,7 +428,7 @@ impl Interpreter {
             } else {
                 stripped_min
             };
-            for start in search_start..=stripped_chars.len() {
+            for start in regex_scan_positions(&stripped_parsed, stripped_chars, search_start) {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     stripped_chars,
@@ -464,7 +465,7 @@ impl Interpreter {
             return None;
         }
         let search_start = if parsed.anchor_start { 0 } else { min_pos };
-        for start in search_start..=orig_chars.len() {
+        for start in regex_scan_positions(&parsed, orig_chars, search_start) {
             if let Some((end, caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
             {
@@ -510,7 +511,7 @@ impl Interpreter {
                         )
                     });
             }
-            for start in 0..=stripped_chars.len() {
+            for start in regex_scan_positions(&stripped_parsed, stripped_chars, 0) {
                 if let Some(end) =
                     self.regex_match_end_from_in_pkg(&stripped_parsed, stripped_chars, start, pkg)
                 {
@@ -529,7 +530,7 @@ impl Interpreter {
                 .regex_match_end_from_in_pkg(&parsed, &chars, 0, pkg)
                 .map(|end| (0, end));
         }
-        for start in 0..=chars.len() {
+        for start in regex_scan_positions(&parsed, &chars, 0) {
             if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, start, pkg) {
                 return Some((start, end));
             }
