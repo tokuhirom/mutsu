@@ -100,6 +100,10 @@ is_doc_path() {
     .github/*) return 0 ;;
     # `make check-t-layout` (a `make test` prerequisite and a CI step) runs it.
     scripts/migrate-t-layout.py) return 1 ;;
+    # `make check-panic-surface` (likewise a `make test` prerequisite and a CI
+    # step, #8186) runs it -- and it carries the ratchet's own baseline, so a
+    # change to it must never skip the suite that enforces it.
+    scripts/check-panic-surface.py) return 1 ;;
     scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
@@ -345,6 +349,7 @@ self_test() {
   check true  'reporting python'        scripts/plot_roast_history.py
   check true  'ecosystem tooling'       scripts/ecosystem-sweep.py scripts/ecosystem_common.py
   check false 'a python make test runs' scripts/migrate-t-layout.py
+  check false 'the panic ratchet'       scripts/check-panic-surface.py
   check false 'shell script'            scripts/run-t-test.sh
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv
