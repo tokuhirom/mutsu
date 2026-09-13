@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::MultiCompiledKey;
+use crate::runtime::dispatch_key;
 
 impl Interpreter {
     pub(super) fn find_compiled_function<'a>(
@@ -161,12 +162,16 @@ impl Interpreter {
             }
         }
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
-        // Probe a candidate key string. The map is keyed by `Symbol`; every real
-        // key was interned at compile time, so `Symbol::lookup` (no interning)
-        // finds it, and a candidate that turns out not to exist never grows the
-        // global symbol table. Returns the matched key's `Symbol`.
-        let probe = |key: &str| -> Option<Symbol> {
-            let sym = Symbol::lookup(key)?;
+        // Probe a candidate key. The map is keyed by `Symbol`; every real key
+        // was interned at compile time, so a *lookup* (no interning) finds it,
+        // and a candidate that turns out not to exist never grows the global
+        // symbol table. The key text itself is spelled by `dispatch_key`, which
+        // builds it in a reusable scratch buffer — this chain is up to fifteen
+        // candidates per unmemoized dispatch, and `format!`ing a fresh `String`
+        // for each was the largest single caller of `alloc::fmt::format`
+        // ([#8300](https://github.com/tokuhirom/mutsu/issues/8300)).
+        let probe = |sym: Option<Symbol>| -> Option<Symbol> {
+            let sym = sym?;
             compiled_fns
                 .get(&sym)
                 .filter(|cf| matches_resolved(cf))
@@ -176,10 +181,16 @@ impl Interpreter {
         // Try all key patterns and remember which one matched for caching
         let mut found_key: Option<Symbol>;
         if name.contains("::") {
-            found_key = probe(&format!("{name}/{arity}:{}", type_sig.join(",")))
-                .or_else(|| probe(&format!("{name}/{}#{:x}", arity, expected_fingerprint)))
-                .or_else(|| probe(&format!("{name}/{arity}")))
-                .or_else(|| probe(name));
+            found_key = probe(dispatch_key::arity_types_lookup(name, arity, &type_sig))
+                .or_else(|| {
+                    probe(dispatch_key::arity_fingerprint_lookup(
+                        name,
+                        arity,
+                        expected_fingerprint,
+                    ))
+                })
+                .or_else(|| probe(dispatch_key::arity_lookup(name, arity)))
+                .or_else(|| probe(Symbol::lookup(name)));
             // If not found directly, try qualifying with the current package
             // when the prefix package is visible in the current scope.
             if found_key.is_none() && pkg != "GLOBAL" {
@@ -193,11 +204,19 @@ impl Interpreter {
                     false
                 };
                 if prefix_visible {
-                    let qname = format!("{}::{}", pkg, name);
-                    found_key = probe(&format!("{qname}/{arity}:{}", type_sig.join(",")))
-                        .or_else(|| probe(&format!("{qname}/{}#{:x}", arity, expected_fingerprint)))
-                        .or_else(|| probe(&format!("{qname}/{arity}")))
-                        .or_else(|| probe(&qname));
+                    found_key = probe(dispatch_key::qualified_arity_types_lookup(
+                        &pkg, name, arity, &type_sig,
+                    ))
+                    .or_else(|| {
+                        probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                            &pkg,
+                            name,
+                            arity,
+                            expected_fingerprint,
+                        ))
+                    })
+                    .or_else(|| probe(dispatch_key::qualified_arity_lookup(&pkg, name, arity)))
+                    .or_else(|| probe(dispatch_key::qualified_lookup(&pkg, name)));
                 }
             }
         } else {
@@ -206,15 +225,20 @@ impl Interpreter {
             // compiled routine (see `bare_name_packages`). The GLOBAL fallback
             // below stays as it was — the walk only fills in the packages
             // between the current one and GLOBAL, which used to be skipped.
-            found_key = self.bare_name_packages().iter().find_map(|p| {
-                probe(&format!("{}::{}/{}:{}", p, name, arity, type_sig.join(",")))
-                    .or_else(|| {
-                        probe(&format!(
-                            "{}::{}/{}#{:x}",
-                            p, name, arity, expected_fingerprint
-                        ))
-                    })
-                    .or_else(|| probe(&format!("{}::{}/{}", p, name, arity)))
+            found_key = self.bare_name_packages_syms().iter().find_map(|p| {
+                let p = p.as_str();
+                probe(dispatch_key::qualified_arity_types_lookup(
+                    p, name, arity, &type_sig,
+                ))
+                .or_else(|| {
+                    probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                        p,
+                        name,
+                        arity,
+                        expected_fingerprint,
+                    ))
+                })
+                .or_else(|| probe(dispatch_key::qualified_arity_lookup(p, name, arity)))
             });
             if found_key.is_none() {
                 // `key_simple` (`Pkg::name`) and the positional-only-arity key are
@@ -222,28 +246,35 @@ impl Interpreter {
                 // original control flow gates the global fallback on their result
                 // and then discards it (the `else { found_key = None }` below).
                 // Behaviour-preserving — the def-arity fallback re-resolves.
-                let simple_or_pos = probe(&format!("{}::{}", pkg, name)).or_else(|| {
-                    if pos_arity != arity {
-                        probe(&format!(
-                            "{}::{}/{}#{:x}",
-                            pkg, name, pos_arity, expected_fingerprint
-                        ))
-                    } else {
-                        None
-                    }
-                });
+                let simple_or_pos =
+                    probe(dispatch_key::qualified_lookup(&pkg, name)).or_else(|| {
+                        if pos_arity != arity {
+                            probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                                &pkg,
+                                name,
+                                pos_arity,
+                                expected_fingerprint,
+                            ))
+                        } else {
+                            None
+                        }
+                    });
                 found_key = if simple_or_pos.is_none() && pkg != "GLOBAL" {
-                    probe(&format!(
-                        "GLOBAL::{}/{}#{:x}",
-                        name, arity, expected_fingerprint
+                    probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                        "GLOBAL",
+                        name,
+                        arity,
+                        expected_fingerprint,
                     ))
-                    .or_else(|| probe(&format!("GLOBAL::{}", name)))
+                    .or_else(|| probe(dispatch_key::qualified_lookup("GLOBAL", name)))
                     .or_else(|| {
                         // Try with positional-only arity (excluding Pair named args)
                         if pos_arity != arity {
-                            probe(&format!(
-                                "GLOBAL::{}/{}#{:x}",
-                                name, pos_arity, expected_fingerprint
+                            probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                                "GLOBAL",
+                                name,
+                                pos_arity,
+                                expected_fingerprint,
                             ))
                         } else {
                             None
@@ -257,15 +288,19 @@ impl Interpreter {
         // Fallback: when call arity differs from definition arity (e.g. optional
         // params), try the definition's param count to find the compiled function.
         if found_key.is_none() && def_arity != arity {
-            found_key = probe(&format!(
-                "{}::{}/{}#{:x}",
-                pkg, name, def_arity, expected_fingerprint
+            found_key = probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                &pkg,
+                name,
+                def_arity,
+                expected_fingerprint,
             ))
             .or_else(|| {
                 if pkg != "GLOBAL" {
-                    probe(&format!(
-                        "GLOBAL::{}/{}#{:x}",
-                        name, def_arity, expected_fingerprint
+                    probe(dispatch_key::qualified_arity_fingerprint_lookup(
+                        "GLOBAL",
+                        name,
+                        def_arity,
+                        expected_fingerprint,
                     ))
                 } else {
                     None

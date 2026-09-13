@@ -610,6 +610,7 @@ pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
 mod dispatch_candidates;
+pub(crate) mod dispatch_key;
 mod dispatch_proto;
 mod dispatch_proto_call;
 mod dispatch_proto_candidates;
@@ -1832,6 +1833,22 @@ pub(crate) mod end_order {
         }
     }
 }
+
+/// The package chain a bare name is looked up in, innermost first — the value
+/// [`Interpreter::bare_name_packages_syms`] hands out and
+/// [`Interpreter::bare_name_packages_memo`] stores.
+///
+/// Shared behind an `Arc` because the callers that need it most are `&self`
+/// probes that then call back into `&mut self` resolution, so lending a
+/// borrow out of the memo is not an option; an `Arc` clone is a refcount bump
+/// where the old `Vec<String>` was one allocation per enclosing package.
+pub(crate) type BareNamePackages = std::sync::Arc<[Symbol]>;
+
+/// [`Interpreter::bare_name_packages_memo`]'s table: the `(current package,
+/// innermost lexical package)` pair a search list is derived from, to that
+/// list.
+pub(crate) type BareNamePackagesMemo =
+    Box<std::cell::RefCell<rustc_hash::FxHashMap<(Symbol, Option<Symbol>), BareNamePackages>>>;
 
 /// Key of [`Interpreter::multi_compiled_key_cache`]: everything
 /// `find_compiled_function_inner`'s probe chain reads for a bare `multi` name.
@@ -3839,6 +3856,33 @@ pub struct Interpreter {
     /// its generation bump fails CI rather than silently mis-dispatching).
     pub(crate) fn_keys_by_base: rustc_hash::FxHashMap<Symbol, std::sync::Arc<[Symbol]>>,
     pub(crate) fn_keys_by_base_gen: u64,
+    /// Memo for [`Interpreter::bare_name_packages_syms`], keyed by the only two
+    /// inputs that list is derived from: the current package and the innermost
+    /// routine frame's lexical package.
+    ///
+    /// The derivation is a pure string walk (split the mangled sub/closure
+    /// scope at `::&`, then peel `::` segments outwards), so the memo needs no
+    /// invalidation at all — nothing but that pair can change the answer. It is
+    /// worth memoizing because the walk allocates a `Vec<String>` plus a
+    /// `String` per enclosing package and runs several times per dispatch:
+    /// [`Interpreter::has_multi_candidates`], [`Interpreter::has_multi_function`],
+    /// [`Interpreter::has_proto`], the candidate gather and
+    /// `find_compiled_function_inner`'s probe chain each ask for it
+    /// ([#8300](https://github.com/tokuhirom/mutsu/issues/8300)).
+    ///
+    /// Interior-mutable (and in its own `Box`ed allocation, for the same
+    /// aliasing reason as [`Interpreter::readonly_vars`]) because the callers
+    /// hold `&self`: the package itself lives behind an `RwLock` precisely so
+    /// a temporary switch does not need `&mut self`.
+    ///
+    /// Having no invalidation, it is never pruned — which is fine because both
+    /// key components are drawn from the program's *static* structure, not from
+    /// its execution. A package name is a declared package, a `Pkg::&name/2`
+    /// routine scope is a declared routine, and a `__state_<pkg>::<name>@<ip>`
+    /// scope is a compiled instruction address. So the table is bounded by
+    /// program size, like the registry itself, and cannot grow with iteration
+    /// count.
+    pub(crate) bare_name_packages_memo: BareNamePackagesMemo,
     /// Memo of `resolve_all_multi_candidates_indexed` -- the FULL candidate
     /// list a multi dispatch frame carries for `callsame`/`nextsame` -- keyed by
     /// `(name, current package, frame lexical package)`, the three inputs the

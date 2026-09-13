@@ -108,7 +108,7 @@ impl Interpreter {
             changed = true;
         }
         if changed {
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
     }
 
@@ -171,7 +171,7 @@ impl Interpreter {
                 snapshot.shadowed_proto_functions.insert(proto_key, def);
             }
         }
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
@@ -625,7 +625,7 @@ impl Interpreter {
             }
             // Function set changed: invalidate the name-keyed resolution caches
             // (multi_candidates_cache / fn_keys_by_base).
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
 
             let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()

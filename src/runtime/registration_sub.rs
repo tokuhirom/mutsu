@@ -204,25 +204,34 @@ impl Interpreter {
     /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
     fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
         let def = std::sync::Arc::new(def);
-        let mut registry = self.registry_mut();
-        let funcs = registry.functions_mut();
-        if let std::collections::hash_map::Entry::Vacant(entry) =
-            funcs.entry(Symbol::intern(base_key))
         {
-            entry.insert(def);
-            return;
-        }
-        let mut idx = 1usize;
-        loop {
-            let key = format!("{}__m{}", base_key, idx);
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                funcs.entry(Symbol::intern(&key))
-            {
-                entry.insert(def);
-                return;
+            let mut registry = self.registry_mut();
+            let funcs = registry.functions_mut();
+            let mut key = Symbol::intern(base_key);
+            let mut idx = 1usize;
+            loop {
+                if let std::collections::hash_map::Entry::Vacant(entry) = funcs.entry(key) {
+                    entry.insert(def);
+                    break;
+                }
+                key = Symbol::intern(&format!("{}__m{}", base_key, idx));
+                idx += 1;
             }
-            idx += 1;
         }
+        // This adds a KEY to the functions map, so every name-keyed cache built
+        // over it — the base-name key index above all — is stale until it is
+        // told. It was not told: the registration path that calls this bumps
+        // `fn_resolve_gen` only on its *single*-sub branch, so a `multi`
+        // declaration left the index holding a key set that no longer matched
+        // the registry, and a probe running before the next unrelated bump
+        // answered from it. Caught by the debug audit in
+        // `Registry::any_candidate_key_of` the moment the existence probes
+        // started consulting the index
+        // ([#8300](https://github.com/tokuhirom/mutsu/issues/8300)):
+        // `preregister_inline_package_subs` registers a `multi trait_mod:<is>`
+        // and then asks `has_multi_candidates("trait_mod:<is>")` about the
+        // candidate it has just inserted.
+        self.invalidate_fn_resolution();
     }
 
     /// If `name` is an operator (`infix:<…>`/`prefix:<…>`/`postfix:<…>`) that was
@@ -893,7 +902,7 @@ impl Interpreter {
                     .functions_mut()
                     .insert(fq_sym, cached.clone());
                 // Invalidate name-keyed resolution caches.
-                self.fn_resolve_gen += 1;
+                self.invalidate_fn_resolution();
                 self.registered_fn_fingerprints
                     .insert(fq_sym, (site_fp, cached));
                 if pkg != "GLOBAL" {
@@ -1307,7 +1316,7 @@ impl Interpreter {
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         // A `multi` that lexically shadows a same-named *single* takes the name
         // over completely, exactly as the `!multi` case above does — otherwise
@@ -1324,7 +1333,7 @@ impl Interpreter {
         {
             let lexical_single = Symbol::intern(&format!("{}::{}", self.current_package(), name));
             self.registry_mut().functions_mut().remove(&lexical_single);
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         if let Some(assoc) = associativity {
             crate::runtime::cow_table_mut(&mut self.operator_assoc)
@@ -1384,6 +1393,9 @@ impl Interpreter {
                         .functions_mut()
                         .entry(Symbol::intern(&fq))
                         .or_insert(std::sync::Arc::new(def.clone()));
+                    // Same missed invalidation as `insert_multi_overload`: this
+                    // arm also adds a key (#8300).
+                    self.invalidate_fn_resolution();
                 }
             }
         } else {
@@ -1425,7 +1437,7 @@ impl Interpreter {
             }
             self.registry_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         // A prelude splice declared as a `multi` registers under arity-suffixed
         // keys (`GLOBAL::name/2`, and the chained `…__mN` slots
@@ -1921,7 +1933,7 @@ impl Interpreter {
                 resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers)
             });
         // Invalidate name-keyed resolution caches.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
         self.registry_mut().proto_subs_insert(key);
         let fq = format!("{}::{}", self.current_package(), name);
         // `proto bar {*}` declares an empty signature; record it so dispatch

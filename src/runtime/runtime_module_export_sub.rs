@@ -272,7 +272,7 @@ impl Interpreter {
             }
         }
         // Invalidate name-keyed resolution caches.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
         hidden
     }
 
@@ -289,7 +289,7 @@ impl Interpreter {
             self.registry_mut().functions_mut().insert(key, def);
         }
         // Invalidate name-keyed resolution caches.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     /// Whether a registry key names the magic `EXPORT` hook. The module body
@@ -307,7 +307,7 @@ impl Interpreter {
             .functions_mut()
             .retain(|key, _| !Self::is_export_routine_key(&key.resolve()));
         // Invalidate name-keyed resolution caches.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     /// Install the symbols named by an `EXPORT` return value. Accepts a single
@@ -395,6 +395,6 @@ impl Interpreter {
             self.record_imported_routine_alias(&package, &env_key[1..]);
         }
         self.env.insert(env_key, value);
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 }

@@ -242,7 +242,7 @@ impl Interpreter {
             // scope exits — e.g. `{ use Foo } EVAL('foo()')` must die, not hit
             // the stale cache (roast/S11-modules/lexical.t). Registration bumps
             // fn_resolve_gen; the matching un-registration here must too.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
     }
 
@@ -714,7 +714,7 @@ impl Interpreter {
                         .copied()
                         .collect();
                     // Invalidate name-keyed resolution caches (keys renamed).
-                    self.fn_resolve_gen += 1;
+                    self.invalidate_fn_resolution();
                     for mk in multi_keys {
                         let removed = self.registry_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
@@ -783,7 +783,7 @@ impl Interpreter {
                 self.registry_mut().functions_mut().remove(&k);
             }
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
 
             // Remove GLOBAL:: sub aliases that were leaked by sub hoisting during
             // this module load, are NOT exported, and shadow a core builtin.
@@ -834,7 +834,7 @@ impl Interpreter {
                     self.registry_mut().functions_mut().remove(&k);
                 }
                 // Invalidate name-keyed resolution caches.
-                self.fn_resolve_gen += 1;
+                self.invalidate_fn_resolution();
             }
 
             crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.to_string());

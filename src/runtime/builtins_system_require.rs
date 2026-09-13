@@ -198,7 +198,7 @@ impl Interpreter {
         }
         self.restore_toplevel_global_routines(hidden_toplevel);
         // Invalidate name-keyed resolution caches.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
         run_result?;
 
         if let Some(pkg) = package_hint
@@ -224,7 +224,7 @@ impl Interpreter {
                 self.registry_mut().functions_mut().insert(alias, def);
             }
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
 
             let mut env_aliases: Vec<(String, Value)> = Vec::new();
             for (name, value) in &self.env {
@@ -410,7 +410,7 @@ impl Interpreter {
             }
         }
         if !functions.is_empty() || !amp_env.is_empty() {
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         HiddenToplevelRoutines { functions, amp_env }
     }
@@ -427,7 +427,7 @@ impl Interpreter {
             for (k, v) in functions {
                 self.registry_mut().functions_mut().insert(k, v);
             }
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
         }
         for (k, v) in amp_env {
             self.env.insert(k, v);
@@ -519,7 +519,7 @@ impl Interpreter {
                 self.registry_mut().functions_mut().insert(k, v);
             }
             // Invalidate name-keyed resolution caches.
-            self.fn_resolve_gen += 1;
+            self.invalidate_fn_resolution();
             return found
                 || self
                     .registry()

@@ -134,7 +134,7 @@ impl Interpreter {
         }
         // Invalidate name-keyed resolution caches: these names now resolve
         // differently depending on the unit asking.
-        self.fn_resolve_gen += 1;
+        self.invalidate_fn_resolution();
     }
 
     /// Every routine name any loaded module has exported, in any form.

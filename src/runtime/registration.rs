@@ -1064,10 +1064,11 @@ impl Interpreter {
         // allocation — for the overwhelmingly common case of a program that
         // spliced no prelude at all.
         let gate = !self.prelude_registered_functions.is_empty();
-        self.bare_name_packages().iter().any(|pkg| {
-            self.registry().has_declared_function(pkg, name)
+        self.bare_name_packages_syms().iter().any(|pkg| {
+            self.registry().has_declared_function(pkg.as_str(), name)
                 && (!gate
-                    || self.prelude_visible_here(Symbol::intern(&format!("{}::{}", pkg, name))))
+                    || self
+                        .prelude_visible_here(dispatch_key::qualified_intern(pkg.as_str(), name)))
         })
     }
 
@@ -1076,9 +1077,23 @@ impl Interpreter {
     }
 
     /// Check if a multi-dispatched function with the given name exists (any arity).
-    pub(crate) fn has_multi_function(&self, name: &str) -> bool {
+    ///
+    /// `&mut self` for the same reason as [`Self::has_multi_candidates`]: the
+    /// probe is narrowed to the lazily-filled base-name key index.
+    pub(crate) fn has_multi_function(&mut self, name: &str) -> bool {
+        let base_keys = self.fn_keys_for_base(name);
+        let packages = self.bare_name_packages_syms();
         self.registry()
-            .has_multi_function(&self.bare_name_packages(), name)
+            .has_multi_function(Some(&base_keys), &packages, name)
+    }
+
+    /// [`Self::has_multi_function`] for a `&self` caller, which cannot fill the
+    /// lazy base-name index and so pays the full functions-map scan. Only the
+    /// EVAL-time undeclared-name checks use it — a per-compilation-unit cost,
+    /// not a per-call one.
+    pub(crate) fn has_multi_function_unindexed(&self, name: &str) -> bool {
+        let packages = self.bare_name_packages_syms();
+        self.registry().has_multi_function(None, &packages, name)
     }
 
     /// Check if a user-defined function with the given name can accept the
