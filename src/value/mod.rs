@@ -1271,6 +1271,50 @@ pub(crate) struct ParamNameSyms {
     /// `param_defs[i].name`, and the names bound by sub-signatures
     /// (`|c(Str $x)`). The exit writeback probes env keys against this set.
     pub(crate) call_local: rustc_hash::FxHashSet<Symbol>,
+    /// Whether the **light closure bind** may serve this signature
+    /// (`vm_closure_light_bind.rs`, #8335): every parameter is a bare
+    /// identifier and there are no `ParamDef`s at all — the shape a pointy
+    /// block (`-> $a { … }`) reaches the general binder's *legacy placeholder*
+    /// branch with.
+    ///
+    /// For that shape the whole general bind reduces to "itemize the argument
+    /// and store it under the parameter's key". Every other spelling has a
+    /// branch of its own that the light bind does not reproduce, so each is
+    /// refused here:
+    ///
+    /// * `^a` / `@^a` / `%^a` / `&^a` (positional placeholders) and `:a` /
+    ///   `@:a` / `%:a` (named placeholders) take the placeholder arms, which
+    ///   type-check, consume named arguments and publish twigil-less aliases;
+    /// * `@x` / `%x` / `&x` / `\x` bind raw (no itemization), and `@x`
+    ///   re-homes its value
+    ///   ([`crate::runtime::Interpreter::normalize_positional_param_value`]);
+    /// * `_` is the topic: exempt from itemization, and bound by the
+    ///   implicit-topic machinery rather than here;
+    /// * `@_` / `%_` are the legacy argument aggregates the binder publishes
+    ///   itself;
+    /// * `self` makes the binder mirror the binding onto the reserved lexical
+    ///   key ([`crate::ast::param_names_declare_self_lexical`]);
+    /// * a `__mutsu`-prefixed synthetic name (the `supply` block emitter) is
+    ///   itemization-exempt.
+    ///
+    /// A signature carrying any `ParamDef` is out of scope by construction: it
+    /// takes the general binder's *real* path, with defaults, type
+    /// constraints, `where` clauses, traits and sub-signatures.
+    pub(crate) light_bindable: bool,
+}
+
+/// Whether a legacy-path parameter name is a bare identifier the light closure
+/// bind may serve. See [`ParamNameSyms::light_bindable`] for what each rejected
+/// shape would have needed instead.
+fn is_light_bindable_param_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    // Requiring an alphabetic first character covers the topic `_` and every
+    // `__mutsu` synthetic name in one test, along with every sigil and twigil.
+    match chars.next() {
+        Some(c) if c.is_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_') && name != "self"
 }
 
 /// The `Symbol`-keyed twin of `Interpreter::collect_sub_signature_names`: every
@@ -1302,7 +1346,14 @@ impl SubData {
                 }
                 collect_sub_signature_syms(&pd.sub_signature, &mut call_local);
             }
-            Arc::new(ParamNameSyms { params, call_local })
+            let light_bindable = !self.params.is_empty()
+                && self.param_defs.is_empty()
+                && self.params.iter().all(|p| is_light_bindable_param_name(p));
+            Arc::new(ParamNameSyms {
+                params,
+                call_local,
+                light_bindable,
+            })
         })
     }
 
@@ -2951,5 +3002,60 @@ mod hash_chokepoint_tests {
         ));
         // ...and the alias observes the new value through the cell.
         assert_eq!(cell.lock().unwrap().as_int(), Some(99));
+    }
+}
+
+#[cfg(test)]
+mod light_bindable_param_name_tests {
+    use super::is_light_bindable_param_name;
+
+    /// The admitted set is exactly "bare identifier": what a pointy block's
+    /// parameter (`-> $a { … }`, stored sigil-less as `"a"`) looks like.
+    #[test]
+    fn a_bare_identifier_is_light_bindable() {
+        for name in ["a", "cb", "x1", "some_name", "Ω"] {
+            assert!(
+                is_light_bindable_param_name(name),
+                "{name:?} is a bare identifier and must be light-bindable"
+            );
+        }
+    }
+
+    /// Every rejected shape reaches a general-binder branch the light bind does
+    /// not reproduce — see `ParamNameSyms::light_bindable` for which one.
+    #[test]
+    fn every_other_spelling_is_refused() {
+        for name in [
+            // positional and named placeholders
+            "^a",
+            "@^a",
+            "%^a",
+            "&^a",
+            ":a",
+            "@:a",
+            "%:a",
+            // sigils that do not bind an itemized scalar
+            "@x",
+            "%x",
+            "&x",
+            "\\x",
+            "$x",
+            // the topic, the legacy aggregates, the invocant
+            "_",
+            "@_",
+            "%_",
+            "self",
+            // synthetic names (the `supply` block emitter) and attributives
+            "__mutsu_supply_emitter_0",
+            "!attr",
+            ".attr",
+            "*dyn",
+            "",
+        ] {
+            assert!(
+                !is_light_bindable_param_name(name),
+                "{name:?} must not be light-bindable"
+            );
+        }
     }
 }
