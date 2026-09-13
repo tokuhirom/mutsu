@@ -24,7 +24,7 @@ declarator name from [#8294](https://github.com/tokuhirom/mutsu/issues/8294) —
 `UI::HTMLWindow` actually uses, `&routine.wrap(anon method :: (Window: *@_, *%_) { ... })` — was
 likewise unpinned.
 
-`t/oo/method/method-literal-invocant-is-not-slurped.t` adds 10 tests for exactly that gap, with no
+`t/oo/method/method-literal-invocant-excluded-from-positionals.t` adds 10 tests for exactly that gap, with no
 overlap against the existing file: the `W:` marker in front of `*@a` across the `method`,
 `submethod`, `anon method` and `anon method ::` spellings; a named slurpy beside a positional one;
 ordinary positionals binding from the *second* argument on; `self` being the receiver rather than
