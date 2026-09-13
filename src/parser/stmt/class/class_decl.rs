@@ -666,7 +666,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
     }
-    let class_stmt = Stmt::ClassDecl {
+    let mut class_stmt = Stmt::ClassDecl {
         name: Symbol::intern(&name),
         name_expr,
         parents,
@@ -686,6 +686,15 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         parent_args,
         body_parents,
     };
+    if is_export && is_lexical {
+        // A lexical `my class` cannot be wrapped with the runtime export marker:
+        // the synthetic block would make the class itself block-local. Keep an
+        // internal marker on the declaration instead so module loading can
+        // distinguish an exported lexical type from a private one.
+        if let Stmt::ClassDecl { custom_traits, .. } = &mut class_stmt {
+            custom_traits.push(("__mutsu_export_type".to_string(), None));
+        }
+    }
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
         if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {

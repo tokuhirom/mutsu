@@ -1045,6 +1045,7 @@ impl Interpreter {
                 )
                 .cloned()
                 .collect();
+            let exported_type_names = Self::collect_exported_type_names(&stmts);
             let leaked_packages: Vec<String> = module_scope_names
                 .iter()
                 .filter(|(name, value)| {
@@ -1061,7 +1062,8 @@ impl Interpreter {
                             // the storage name belongs to this module: doing so
                             // lets a private type shadow a same-named declaration
                             // in the importing compunit (#8120).
-                            self.is_my_scoped_package_item(&target)
+                            (!exported_type_names.contains(*name)
+                                && self.is_my_scoped_package_item(&target))
                                 || (!Self::package_is_owned_by(&target, module)
                                     && !registered_here.contains(&target))
                         }
@@ -1488,6 +1490,16 @@ impl Interpreter {
         fn walk(stmts: &[crate::ast::Stmt], out: &mut HashSet<String>) {
             for s in stmts {
                 match s {
+                    crate::ast::Stmt::ClassDecl {
+                        name,
+                        custom_traits,
+                        ..
+                    } if custom_traits
+                        .iter()
+                        .any(|(trait_name, _)| trait_name == "__mutsu_export_type") =>
+                    {
+                        out.insert(name.resolve());
+                    }
                     // The parser wraps a type declaration and its export marker
                     // in one `Block`, so the markers are never at file level.
                     crate::ast::Stmt::Block(inner) | crate::ast::Stmt::SyntheticBlock(inner) => {

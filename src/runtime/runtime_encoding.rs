@@ -387,7 +387,10 @@ impl Interpreter {
             .chain(registry.roles.keys())
             .chain(registry.enum_types.keys())
             .chain(registry.subsets.keys())
-            .any(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
+            .any(|key| {
+                (key.starts_with(&prefix) || key.as_str() == fq_name)
+                    && self.is_my_scoped_package_item(key)
+            })
     }
 
     /// Whether a lexically scoped type's source-facing name is visible from
@@ -406,7 +409,10 @@ impl Interpreter {
             registry
                 .classes
                 .keys()
-                .find(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
+                .find(|key| {
+                    (key.starts_with(&prefix) || key.as_str() == fq_name)
+                        && self.is_my_scoped_package_item(key)
+                })
                 .cloned()
         };
         let Some(key) = key else {
