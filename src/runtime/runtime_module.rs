@@ -805,7 +805,11 @@ impl Interpreter {
                         let base =
                             crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(name);
                         // Only remove operator subs (infix:<...>, prefix:<...>, etc.)
-                        base.contains(":<") && !exported_op_names.contains(base)
+                        // An OUR-bound code alias is package-owned too, even when
+                        // the source routine was not marked `is export` here.
+                        base.contains(":<")
+                            && !exported_op_names.contains(base)
+                            && !self.registry().our_scoped_functions.contains_key(k)
                     } else {
                         false
                     }
