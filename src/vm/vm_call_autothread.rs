@@ -381,19 +381,60 @@ impl Interpreter {
         // answered `any(elem, elem)` instead of the two matching elements).
         // A method we cannot resolve — a native method, a non-instance receiver —
         // keeps the previous "thread every junction argument" behaviour.
-        let junction_indices = match target.view() {
-            ValueView::Instance { class_name, .. } => {
-                let resolved_args: Vec<Value> =
-                    args.iter().map(Self::unwrap_junction_deep).collect();
-                match self.resolve_method_with_owner(&class_name.resolve(), method, &resolved_args)
-                {
-                    Some((_, def)) => {
-                        self.autothread_indices_for_params(args, &junction_indices, &def.param_defs)
+        //
+        // `new`/`bless` are special-cased the other way (#8355): their
+        // receiver is normally the TYPE OBJECT (`ValueView::Package`), which
+        // the arm below never touched, so a junction named argument threaded
+        // unconditionally. But rakudo's *default* constructor is not a
+        // dispatch position at all -- `new`/`bless` collect their named
+        // arguments straight into `*%attrinit`, so a junction there is a
+        // plain VALUE to store, never an autothreading trigger. A CLASS THAT
+        // DEFINES ITS OWN `new`/`bless` is an ordinary method dispatch, so it
+        // still follows the ordinary per-parameter rules above (a
+        // `self.bless(x => $x)` inside a custom `new` targets the type
+        // object the same way the default constructor does, so the class
+        // name is read off `ValueView::Package` here, not just `Instance`).
+        let junction_indices = if matches!(method, "new" | "bless") {
+            let class_name_sym = match target.view() {
+                ValueView::Package(name) => Some(name),
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                _ => None,
+            };
+            match class_name_sym {
+                Some(name) => {
+                    let resolved_args: Vec<Value> =
+                        args.iter().map(Self::unwrap_junction_deep).collect();
+                    match self.resolve_method_with_owner(&name.resolve(), method, &resolved_args) {
+                        Some((_, def)) => self.autothread_indices_for_params(
+                            args,
+                            &junction_indices,
+                            &def.param_defs,
+                        ),
+                        std::option::Option::None => Vec::new(),
                     }
-                    std::option::Option::None => junction_indices,
                 }
+                std::option::Option::None => junction_indices,
             }
-            _ => junction_indices,
+        } else {
+            match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    let resolved_args: Vec<Value> =
+                        args.iter().map(Self::unwrap_junction_deep).collect();
+                    match self.resolve_method_with_owner(
+                        &class_name.resolve(),
+                        method,
+                        &resolved_args,
+                    ) {
+                        Some((_, def)) => self.autothread_indices_for_params(
+                            args,
+                            &junction_indices,
+                            &def.param_defs,
+                        ),
+                        std::option::Option::None => junction_indices,
+                    }
+                }
+                _ => junction_indices,
+            }
         };
         if junction_indices.is_empty() {
             return Ok(None);
