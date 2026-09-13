@@ -2313,6 +2313,13 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             RakuAstClass::RegexCapturingGroup,
             vec![node_field(None, regex_node(child)?)],
         ),
+        RegexNode::NamedCapture { name, regex } => (
+            RakuAstClass::RegexNamedCapture,
+            vec![
+                leaf_field(Some("name"), Value::str(name.clone())),
+                node_field(Some("regex"), regex_node(regex)?),
+            ],
+        ),
         RegexNode::Interpolation { name, sequential } => (
             RakuAstClass::RegexInterpolation,
             vec![

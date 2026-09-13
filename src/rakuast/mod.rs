@@ -64,6 +64,7 @@ pub enum RakuAstClass {
     RegexWithWhitespace,
     RegexGroup,
     RegexCapturingGroup,
+    RegexNamedCapture,
     RegexInterpolation,
     RegexAlternation,
     RegexQuantifiedAtom,
@@ -268,6 +269,7 @@ impl RakuAstClass {
             RegexWithWhitespace => "RakuAST::Regex::WithWhitespace",
             RegexGroup => "RakuAST::Regex::Group",
             RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
+            RegexNamedCapture => "RakuAST::Regex::NamedCapture",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -482,6 +484,7 @@ impl RakuAstClass {
             | RegexQuote
             | RegexGroup
             | RegexCapturingGroup
+            | RegexNamedCapture
             | RegexInterpolation
             | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
@@ -614,6 +617,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Quote"
         | "RakuAST::Regex::Group"
         | "RakuAST::Regex::CapturingGroup"
+        | "RakuAST::Regex::NamedCapture"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
@@ -699,6 +703,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexWithWhitespace,
     RakuAstClass::RegexGroup,
     RakuAstClass::RegexCapturingGroup,
+    RakuAstClass::RegexNamedCapture,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexQuantifiedAtom,
@@ -1351,6 +1356,43 @@ pub fn construct(
             ],
         }))));
     }
+    if class_name == "RakuAST::Regex::NamedCapture" && method == "new" {
+        let name = named_arg(args, "name")
+            .ok_or_else(|| RuntimeError::new("RakuAST::Regex::NamedCapture.new requires `name`"))?;
+        if !matches!(name.view(), ValueView::Str(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new expects `name` to be Str",
+            ));
+        }
+        let regex = named_arg(args, "regex").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::NamedCapture.new requires `regex`")
+        })?;
+        require_regex_node(&regex, class_name)?;
+        let array = named_arg(args, "array").unwrap_or_else(|| Value::truth(false));
+        if !matches!(array.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new expects `array` to be Bool",
+            ));
+        }
+        let mut fields = vec![RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(name),
+        }];
+        if matches!(array.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("array"),
+                value: RakuAstFieldValue::Node(array),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("regex"),
+            value: RakuAstFieldValue::Node(regex),
+        });
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexNamedCapture,
+            fields,
+        }))));
+    }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
@@ -1566,6 +1608,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexWithWhitespace
                     | RakuAstClass::RegexGroup
                     | RakuAstClass::RegexCapturingGroup
+                    | RakuAstClass::RegexNamedCapture
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
@@ -1873,6 +1916,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexWithWhitespace
             | RakuAstClass::RegexGroup
             | RakuAstClass::RegexCapturingGroup
+            | RakuAstClass::RegexNamedCapture
             | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore

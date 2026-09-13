@@ -45,6 +45,10 @@ pub(crate) enum RegexNode {
     Alternation(Vec<RegexNode>),
     Group(Box<RegexNode>),
     CapturingGroup(Box<RegexNode>),
+    NamedCapture {
+        name: String,
+        regex: Box<RegexNode>,
+    },
     Interpolation {
         name: String,
         sequential: bool,
@@ -286,6 +290,34 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
+                RegexNode::NamedCapture { name, regex } => {
+                    // A scalar alias around a non-capturing quantified atom
+                    // captures the whole run as one Match. This mirrors the
+                    // legacy parser's user-alias wrapper; an aliased
+                    // CapturingGroup intentionally stays per-iteration.
+                    if let RegexNode::Quantified { atom, .. } = regex.as_ref()
+                        && !matches!(atom.as_ref(), RegexNode::CapturingGroup(_))
+                    {
+                        let inner =
+                            lower_node(regex, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                        let mut outer = token(
+                            crate::runtime::RegexAtom::Group(pattern(
+                                inner,
+                                ignore_case,
+                                ignore_mark,
+                            )),
+                            crate::runtime::RegexQuant::One,
+                            ratchet,
+                        );
+                        outer.named_capture = Some(name.clone());
+                        return Some(vec![outer]);
+                    }
+                    let mut tokens =
+                        lower_node(regex, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    let first = tokens.first_mut()?;
+                    first.named_capture = Some(name.clone());
+                    Some(tokens)
+                }
                 RegexNode::Interpolation { name, sequential } => {
                     if *sequential {
                         return None;
@@ -350,6 +382,7 @@ impl RegexNode {
             | Self::CapturingGroup(child)
             | Self::Quantified { atom: child, .. }
             | Self::WithWhitespace(child) => child.collect_interpolation_names(names),
+            Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
             Self::Literal(_) | Self::Quote(_) | Self::CharClassDigit => {}
         }
     }
@@ -399,6 +432,9 @@ impl RegexNode {
             }
             Self::Group(child) => format!("[{}]", child.to_source()),
             Self::CapturingGroup(child) => format!("({})", child.to_source()),
+            Self::NamedCapture { name, regex } => {
+                format!("$<{name}> = {}", regex.to_source())
+            }
             Self::Interpolation { name, .. } => format!("${name}"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
@@ -551,6 +587,7 @@ impl Parser {
                     sequence_for_multichar_literal(inner),
                 )))
             }
+            '$' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(),
             '$' => self.parse_interpolation(),
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
@@ -643,6 +680,68 @@ impl Parser {
         Some(RegexNode::Interpolation {
             name,
             sequential: false,
+        })
+    }
+
+    fn parse_named_capture(&mut self) -> Option<RegexNode> {
+        self.pos += 2; // '$<'
+        let start = self.pos;
+        while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
+            self.pos += 1;
+        }
+        if self.pos == start || !self.consume_if('>') {
+            return None;
+        }
+        let name: String = self.chars[start..self.pos - 1].iter().collect();
+        self.skip_whitespace();
+        if !self.consume_if('=') {
+            return None;
+        }
+        self.skip_whitespace();
+        let mut regex = self.parse_atom(&[])?;
+        let quantifier = self.parse_quantifier();
+        if let RegexNode::Literal(text) = &mut regex
+            && text.chars().count() > 1
+        {
+            // The alias binds to the first atom. A trailing quantifier still
+            // belongs to the final character (`$<x>=ab+` is `$<x>=a` then
+            // `b+`), matching the ordinary regex parser's literal splitting.
+            let mut chars = text.chars();
+            let Some(first) = chars.next() else {
+                return None;
+            };
+            let rest: String = chars.collect();
+            let mut nodes = vec![RegexNode::NamedCapture {
+                name,
+                regex: Box::new(RegexNode::Literal(first.to_string())),
+            }];
+            if let Some(quantifier) = quantifier {
+                let mut rest_chars = rest.chars();
+                let Some(last) = rest_chars.next_back() else {
+                    return None;
+                };
+                let prefix: String = rest_chars.collect();
+                if !prefix.is_empty() {
+                    nodes.push(RegexNode::Literal(prefix));
+                }
+                nodes.push(RegexNode::Quantified {
+                    atom: Box::new(RegexNode::Literal(last.to_string())),
+                    quantifier,
+                });
+            } else {
+                nodes.push(RegexNode::Literal(rest));
+            }
+            return Some(RegexNode::Sequence(nodes));
+        }
+        if let Some(quantifier) = quantifier {
+            regex = RegexNode::Quantified {
+                atom: Box::new(regex),
+                quantifier,
+            };
+        }
+        Some(RegexNode::NamedCapture {
+            name,
+            regex: Box::new(regex),
         })
     }
 
