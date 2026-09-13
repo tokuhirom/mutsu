@@ -709,6 +709,9 @@ impl Interpreter {
         if !list_is_noop && let Err(e) = self.reify_map_grep_seq_args(args) {
             return Some(Err(e));
         }
+        if let Some(result) = self.try_native_attribute_trait(name_sym.resolve().as_str(), args) {
+            return Some(result);
+        }
         if args
             .iter()
             .any(|arg| matches!(arg.view(), ValueView::Instance { .. }))
@@ -723,6 +726,15 @@ impl Interpreter {
             if !matches!(name.as_str(), "any" | "all" | "one" | "none" | "unpack") {
                 return None;
             }
+        }
+        // Map(...) is the callable form of the immutable map constructor.
+        // Keep it on the VM-native path beside Map.new(...) so lazy map
+        // results are materialized once and callers need not spell the
+        // constructor differently.
+        if name_sym.with_str(|name| name == "Map")
+            && !self.user_declared_classes.contains(&name_sym.resolve())
+        {
+            return Some(self.builtin_map_coerce(args));
         }
         // For functions that need to iterate their arguments (e.g. flat),
         // force any LazyList arguments first so the pure builtin can process them.

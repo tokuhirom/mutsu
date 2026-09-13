@@ -7,11 +7,104 @@ use super::registration_class::{
     parse_role_type_args, resolve_role_pseudo_types_in_method, substitute_type_params_in_method,
     type_value_name,
 };
-use super::registration_class_compose::RoleCompositionCx;
+use super::registration_class_compose::{RoleCompositionCx, RoleCompositionOutcome};
+use super::registration_class_decl::{BUILTIN_INHERITABLE_TYPES, BUILTIN_PARENT_TYPES};
 use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Apply a role through the ClassHOW add_role MOP operation.
+    ///
+    /// Dynamically-created classes (the metamodel pattern used by
+    /// ASN::META) are already registered as empty class shells. Reuse the
+    /// same role composition machinery as a class-header does declaration,
+    /// then publish the updated class metadata and MRO.
+    pub(crate) fn add_role_to_class(
+        &mut self,
+        class_name: &str,
+        role_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let role_name = self.resolve_declared_type_name(role_name);
+        let base_role_name = role_name
+            .split_once('[')
+            .map(|(base, _)| base)
+            .unwrap_or(role_name.as_str());
+        if !self.registry().roles.contains_key(base_role_name)
+            && crate::runtime::types::is_builtin_role_name(base_role_name)
+        {
+            let mut class_def = self
+                .registry()
+                .classes
+                .get(class_name)
+                .cloned()
+                .ok_or_else(|| RuntimeError::new(format!("Unknown class: {class_name}")))?;
+            if !class_def.parents.iter().any(|parent| parent == &role_name) {
+                class_def.parents.push(role_name);
+                class_def.mro = [].into();
+            }
+            self.registry_mut()
+                .classes
+                .insert(class_name.to_string(), class_def);
+            return Ok(());
+        }
+        let resolved = self
+            .resolve_role_candidate(&role_name)?
+            .ok_or_else(|| RuntimeError::new(format!("Unknown role: {role_name}")))?;
+        let old_composed = self
+            .registry()
+            .class_composed_roles
+            .get(class_name)
+            .cloned()
+            .unwrap_or_default();
+        let old_direct = self
+            .registry()
+            .class_direct_composed_roles
+            .get(class_name)
+            .cloned()
+            .unwrap_or_default();
+        let mut class_def = self
+            .registry()
+            .classes
+            .get(class_name)
+            .cloned()
+            .ok_or_else(|| RuntimeError::new(format!("Unknown class: {class_name}")))?;
+        let outcome = {
+            let mut cx = RoleCompositionCx {
+                name: class_name,
+                class_lang_rev: "c",
+                class_def: &mut class_def,
+                out: RoleCompositionOutcome::default(),
+                is_hoisted_shell: false,
+            };
+            self.compose_role_into_class(&mut cx, &role_name, base_role_name, false, resolved)?;
+            cx.out
+        };
+        let mut outcome = outcome;
+        let role_param_bindings = std::mem::take(&mut outcome.class_role_param_bindings);
+        self.registry_mut()
+            .class_role_param_bindings
+            .entry(class_name.to_string())
+            .or_default()
+            .extend(role_param_bindings);
+        outcome.composed_roles_list.splice(0..0, old_composed);
+        outcome.direct_composed_roles.splice(0..0, old_direct);
+        self.record_class_composed_roles(
+            class_name,
+            &mut class_def,
+            &outcome.composed_roles_list,
+            &outcome.direct_composed_roles,
+        );
+        self.registry_mut()
+            .classes
+            .insert(class_name.to_string(), class_def);
+        let mro = self.class_mro(class_name);
+        if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
+            class_def.mro = mro;
+        }
+        self.native_ctor_plan_cache.clear();
+        Ok(())
+    }
+
     /// Rename a class declared inside a parametric role body to its
     /// per-composition parameterized name. `old_name` is the registry key it was
     /// registered under while running the role's deferred body (`G::A` for a
@@ -463,7 +556,9 @@ impl Interpreter {
                             registry.push_user_method(owner, method_sym, def);
                         }
                     }
-                } else if self.registry().classes.contains_key(parent_base)
+                } else if (self.registry().classes.contains_key(parent_base)
+                    || BUILTIN_PARENT_TYPES.contains(&parent_base)
+                    || BUILTIN_INHERITABLE_TYPES.contains(&parent_base))
                     && !self.is_role_type_name(parent_base)
                     && !cx.class_def.parents.iter().any(|p| p == &resolved_parent)
                 {
@@ -506,7 +601,10 @@ impl Interpreter {
                                     punned_composed_roles.push(rp.clone());
                                 }
                                 role_stack.push(rp_base.to_string());
-                            } else if self.registry().classes.contains_key(rp_base)
+                            } else if (self.registry().classes.contains_key(rp_base)
+                                || BUILTIN_PARENT_TYPES.contains(&rp_base)
+                                || BUILTIN_INHERITABLE_TYPES.contains(&rp_base))
+                                && !self.is_role_type_name(rp_base)
                                 && !punned_class_parents.contains(&rp)
                             {
                                 // It's a class - add as parent

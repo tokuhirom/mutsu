@@ -95,6 +95,7 @@ impl Interpreter {
                 | "add_attribute"
                 | "add_method"
                 | "add_multi_method"
+                | "add_role"
                 | "add_fallback"
                 | "add_parent"
                 | "compose"

@@ -6,6 +6,7 @@ use super::registration_class::{
     parse_role_type_args, should_treat_role_arg_as_type_expr, substitute_type_params_in_method,
     type_value_name,
 };
+use super::registration_class_decl::{BUILTIN_INHERITABLE_TYPES, BUILTIN_PARENT_TYPES};
 use super::registration_role_decl::RoleDeclCx;
 use super::*;
 
@@ -260,6 +261,8 @@ impl Interpreter {
             .unwrap_or(role_name_str.as_str());
         if cx.type_params.iter().any(|tp| tp == base_role_name)
             || crate::runtime::types::is_builtin_role_name(base_role_name)
+            || BUILTIN_PARENT_TYPES.contains(&base_role_name)
+            || BUILTIN_INHERITABLE_TYPES.contains(&base_role_name)
         {
             self.registry_mut()
                 .role_parents
