@@ -1079,9 +1079,10 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             attrs.insert("post".to_string(), Value::str(post));
         }
         let ex = Value::make_instance(Symbol::intern("X::Syntax::Confused"), attrs);
-        return Err(PError::fatal_with_exception(
+        return Err(PError::fatal_with_exception_at(
             "Confused. Two terms in a row".to_string(),
             Box::new(ex),
+            rest,
         ));
     }
 

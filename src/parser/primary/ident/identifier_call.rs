@@ -1646,8 +1646,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // error in Raku: "Two terms in a row".  e.g., `foo'bar'` or `foo"bar"`.
     // The only valid forms are `foo(...)` (handled above) or `foo 'bar'` (with space).
     if rest.starts_with('\'') || rest.starts_with('"') {
-        return Err(PError::fatal(
+        return Err(PError::fatal_at(
             "X::Syntax::Confused: Two terms in a row".to_string(),
+            rest,
         ));
     }
 

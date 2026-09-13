@@ -403,8 +403,9 @@ pub(crate) fn reduction_op(input: &str) -> PResult<'_, Expr> {
             || r.starts_with('\r')
             || r.starts_with('#'))
     {
-        return Err(PError::fatal(
+        return Err(PError::fatal_at(
             "X::Syntax::Confused: Two terms in a row".to_string(),
+            r,
         ));
     }
     let (r, _) = ws(r)?;

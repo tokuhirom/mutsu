@@ -93,8 +93,11 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
     }
     let first_ch = trimmed.chars().next().unwrap_or('\0');
     if is_raku_identifier_start(first_ch) {
-        return Err(PError::fatal(
+        // `trimmed` is the unconsumed rest at the offending second term, so the
+        // reported position lands on that term rather than on the whole file.
+        return Err(PError::fatal_at(
             "Confused. Two terms in a row across lines (missing semicolon or comma?)".to_string(),
+            trimmed,
         ));
     }
     Ok(())
@@ -663,7 +666,10 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             && !is_stmt_modifier_keyword(r)
             && starts_with_term_char(r)
         {
-            return Err(PError::fatal("Confused. Two terms in a row".to_string()));
+            return Err(PError::fatal_at(
+                "Confused. Two terms in a row".to_string(),
+                r,
+            ));
         }
         // Do not consume full loop headers as statement modifiers.
         // This preserves parsing of:
