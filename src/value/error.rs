@@ -140,6 +140,17 @@ pub struct RuntimeErrorCold {
     /// matched. That region recognises its own token while unwinding and applies
     /// the verdict instead of running the handler a second time.
     pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
+    /// The source position the CLI's `------>` snippet should point at, when
+    /// it differs from `line`/`column` (the position reported in `at
+    /// FILE:LINE`). Only "Two terms in a row across lines" sets this: rakudo
+    /// reports the failure at the line that *introduced* the second term but
+    /// echoes the *end of the previous line* with the caret there ("this
+    /// statement never got its semicolon") -- two different positions from
+    /// one failure, which `line`/`column` alone cannot represent (#8329).
+    /// `None` means "same as `line`/`column`", the case for every other
+    /// parse error.
+    pub echo_line: Option<usize>,
+    pub echo_column: Option<usize>,
     /// Source text immediately before a parse failure's eject point (current
     /// line only, matching rakudo's `X::Comp.pre`). Set alongside `line`/
     /// `column` by `parse_program` when the full source and offset are known.
@@ -233,6 +244,14 @@ impl RuntimeError {
     pub fn column(&self) -> Option<usize> {
         self.cold.as_ref().and_then(|c| c.column)
     }
+    /// The `------>` snippet's own line, when it differs from [`Self::line`]
+    /// (currently only "Two terms in a row across lines", #8329).
+    pub fn echo_line(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.echo_line)
+    }
+    pub fn echo_column(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.echo_column)
+    }
     pub fn hint(&self) -> Option<&str> {
         self.cold.as_ref().and_then(|c| c.hint.as_deref())
     }
@@ -284,6 +303,13 @@ impl RuntimeError {
     }
     pub(crate) fn set_column(&mut self, v: Option<usize>) {
         self.cold_mut().column = v;
+    }
+    /// Set the `------>` snippet's own line/column, distinct from `line`/
+    /// `column` (see [`Self::echo_line`]).
+    pub(crate) fn set_echo_position(&mut self, line: usize, column: usize) {
+        let cold = self.cold_mut();
+        cold.echo_line = Some(line);
+        cold.echo_column = Some(column);
     }
     pub(crate) fn set_hint(&mut self, v: Option<String>) {
         self.cold_mut().hint = v;

@@ -469,6 +469,22 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
             let (line_num, col_num) = line_col_at_offset(source, near_offset);
             err.set_line(Some(line_num));
             err.set_column(Some(col_num));
+            // "Two terms in a row across lines" reports the failure at the
+            // line that introduced the second term (matching rakudo's own
+            // `at FILE:LINE`), but rakudo's `------>` snippet echoes the END
+            // of the PREVIOUS line instead -- the statement actually missing
+            // its semicolon -- with the caret placed right after its last
+            // real character (#8329). `consumed` is exactly the start of that
+            // second term, so trimming trailing whitespace off everything
+            // before it lands on the previous line's true end.
+            if e.messages
+                .first()
+                .is_some_and(|m| m.ends_with(crate::parser::parse_result::TWO_TERMS_ACROSS_LINES))
+            {
+                let echo_offset = source[..consumed].trim_end().len();
+                let (echo_line, echo_col) = line_col_at_offset(source, echo_offset);
+                err.set_echo_position(echo_line, echo_col);
+            }
         }
         if let Some(ex) = e.exception {
             // A fatal diagnosis's own exception (built far from here,

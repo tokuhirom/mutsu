@@ -48,13 +48,9 @@ CODE
 
 # src/parser/stmt/modifier.rs -- a bare word starting the next line.
 #
-# Both implementations report line 4, but they echo different text for it:
-# rakudo points at the line the statement BEGAN on (`------> 42 if 23<HERE>`)
-# while mutsu echoes the continuation line (`------>is 50; 1`). That is a real
-# divergence, tracked as #8329 -- this file is about the position
-# being present at all, so the pattern accepts either echo rather than freezing
-# mutsu's choice as if it were the spec.
-reports-position(q:to/CODE/, 4, rx/'42 if 23' | 'is 50'/, 'two terms across lines');
+# Both implementations report line 4 (the line the second term is ON), but
+# echo line 3 (the line that is actually missing its semicolon) -- #8329.
+reports-position(q:to/CODE/, 4, '42 if 23', 'two terms across lines');
 my $y = 1;
 say $y;
 42 if 23

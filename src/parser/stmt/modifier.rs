@@ -1,6 +1,8 @@
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PError, PResult, merge_expected_messages};
+use super::super::parse_result::{
+    PError, PResult, TWO_TERMS_ACROSS_LINES, merge_expected_messages,
+};
 
 use crate::ast::{CallArg, Expr, GivenWithKind, ParamDef, Stmt};
 use crate::symbol::Symbol;
@@ -95,8 +97,10 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
     if is_raku_identifier_start(first_ch) {
         // `trimmed` is the unconsumed rest at the offending second term, so the
         // reported position lands on that term rather than on the whole file.
+        // `render_parse_error` separately re-derives the `------>` echo's own
+        // (different) position from this exact message (#8329).
         return Err(PError::fatal_at(
-            "Confused. Two terms in a row across lines (missing semicolon or comma?)".to_string(),
+            TWO_TERMS_ACROSS_LINES.to_string(),
             trimmed,
         ));
     }

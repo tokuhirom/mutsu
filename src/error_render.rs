@@ -113,10 +113,16 @@ pub fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) 
     if let Some(line) = err.line() {
         out.push_str(&format!("at {}:{}\n", program_name, line));
 
+        // The `------>` snippet normally echoes the same position as `at
+        // FILE:LINE`, but "Two terms in a row across lines" is the one
+        // failure where rakudo's own snippet points somewhere else (the end
+        // of the previous line, not the line just reported) -- see
+        // `RuntimeErrorCold::echo_line` (#8329).
+        let echo_line = err.echo_line().unwrap_or(line);
         let source_lines: Vec<&str> = source.lines().collect();
-        if line >= 1 && line <= source_lines.len() {
-            let src_line = source_lines[line - 1];
-            let col = err.column().unwrap_or(1);
+        if echo_line >= 1 && echo_line <= source_lines.len() {
+            let src_line = source_lines[echo_line - 1];
+            let col = err.echo_column().or(err.column()).unwrap_or(1);
             // `col` is a 1-based character column, so split the line by
             // character position (not byte offset) to avoid slicing inside a
             // multi-byte UTF-8 character.
