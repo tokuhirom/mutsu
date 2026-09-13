@@ -2595,6 +2595,19 @@ pub(crate) enum OpCode {
     NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
+    /// BEGIN-time preload of a module `use`d inside a nested block.
+    ///
+    /// Raku performs `use` at BEGIN time, so the packages a module installs are
+    /// visible to *every* statement of the compunit, including the ones that run
+    /// before the block holding the `use` is ever entered. mutsu's `UseModule` is
+    /// a runtime op, so the compiler additionally emits one of these at the head
+    /// of the unit for each nested `use` (see `Compiler::emit_begin_preloads`).
+    /// It performs only the *load* half — the lexical import stays at the `use`'s
+    /// own run position, where Raku scopes it. A load failure is swallowed: the
+    /// in-position `UseModule` reports it if control ever reaches it, so a
+    /// never-run block referring to an absent module stays as non-fatal as it is
+    /// today.
+    PreloadModule(u32),
     UseLibPath,
     /// Save current function/class registries for lexical import scoping.
     PushImportScope,

@@ -5455,6 +5455,11 @@ impl Interpreter {
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;
             }
+            OpCode::PreloadModule(name_idx) => {
+                self.sync_source_line(code, *ip);
+                self.exec_preload_module_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::UseLibPath => {
                 self.exec_use_lib_path_op(code)?;
                 *ip += 1;

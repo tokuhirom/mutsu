@@ -4389,6 +4389,15 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
     pub(crate) monkey_typing: bool,
+    /// Whether the pop also rolls the class registry back to `classes`.
+    ///
+    /// True for a `use`-containing block, whose class imports are lexical to it.
+    /// False for the BEGIN-time preload scope (`push_preload_scope`), which
+    /// exists only to contain the `GLOBAL::` routine and proto aliases mutsu's
+    /// sub hoisting installs while a module body loads: a package a module
+    /// declares is installed into GLOBAL by the load itself in raku, and it is
+    /// precisely what the preload is hoisting the load in order to publish.
+    pub(crate) scope_classes: bool,
 }
 
 impl Default for Interpreter {

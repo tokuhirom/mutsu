@@ -1103,6 +1103,7 @@ mod declaration_plan_tests {
     }
 }
 mod adverb_interp;
+mod begin_use;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_scope;
@@ -1603,6 +1604,16 @@ pub(crate) struct Compiler {
     /// True only for the compiler that owns `fold_ctx` (the unit-level one).
     /// Child compilers inherit the Arc and must not trigger the refold pass.
     fold_root: bool,
+    /// The modules `use`d anywhere in this compilation unit, shared with every
+    /// child compiler alongside `fold_ctx`. Drives the BEGIN-time preload
+    /// prologue — see [`begin_use`].
+    unit_use_ctx: std::sync::Arc<begin_use::UnitUseCtx>,
+    /// Modules whose load this unit hoists to its head (GH-8201). Populated
+    /// only on the second compile pass, from the first pass's record.
+    begin_preloads: Vec<String>,
+    /// Literal `use lib` specs replayed ahead of `begin_preloads` so a hoisted
+    /// load resolves against the search path the unit sets up.
+    begin_preload_lib_paths: Vec<String>,
     /// Compile-time values of in-scope `constant`s whose initializer is itself a
     /// constant scalar (ADR-0006 §2.2). Reads of these compile to `LoadConst`
     /// instead of a package lookup, and an `if`/`unless` on one resolves its
@@ -1709,6 +1720,9 @@ impl Compiler {
             next_try_is_bare_block: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
             fold_root: true,
+            unit_use_ctx: std::sync::Arc::new(begin_use::UnitUseCtx::default()),
+            begin_preloads: Vec::new(),
+            begin_preload_lib_paths: Vec::new(),
             constant_values: HashMap::new(),
             outer_constant_values: HashMap::new(),
         }
@@ -3871,17 +3885,34 @@ impl Compiler {
     /// something had already been folded. Only files that declare operators pay
     /// the second pass.
     pub(crate) fn compile(self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
-        if !self.fold_root || !self.fold_ctx.is_enabled() {
+        if !self.fold_root {
             return self.compile_unit(stmts);
         }
         let pristine = self.clone();
         let ctx = std::sync::Arc::clone(&self.fold_ctx);
+        let uses = std::sync::Arc::clone(&self.unit_use_ctx);
         let compiled = self.compile_unit(stmts);
-        if !ctx.needs_refold_pass() {
+        let needs_refold = ctx.is_enabled() && ctx.needs_refold_pass();
+        // The same second pass also carries the BEGIN-time preload prologue
+        // (GH-8201): a `use` nested in a block is only discovered once that
+        // block has been compiled, which is after the head of the unit has
+        // been emitted. Only a unit that actually holds a nested `use` — or
+        // that folded against a later operator declaration — pays for it.
+        let preloads = uses.nested_modules(stmts);
+        if !needs_refold && preloads.is_empty() {
             return compiled;
         }
         let mut retry = pristine;
-        retry.fold_ctx = std::sync::Arc::new(const_fold::FoldCtx::disabled());
+        retry.fold_ctx = std::sync::Arc::new(if needs_refold {
+            const_fold::FoldCtx::disabled()
+        } else {
+            const_fold::FoldCtx::enabled()
+        });
+        retry.unit_use_ctx = std::sync::Arc::new(begin_use::UnitUseCtx::default());
+        if !preloads.is_empty() {
+            retry.begin_preload_lib_paths = begin_use::literal_lib_paths(stmts);
+            retry.begin_preloads = preloads;
+        }
         retry.compile_unit(stmts)
     }
 
@@ -3978,6 +4009,10 @@ impl Compiler {
         // If the top-level body contains a CATCH or CONTROL block, wrap in
         // an implicit try so the phaser can observe exceptions / control
         // signals from the surrounding statements.
+        // Raku loads every `use`d compunit at BEGIN time. A `use` nested in a
+        // block compiles to a runtime load at the block's own position, so its
+        // packages are hoisted here instead — see [`begin_use`].
+        self.emit_begin_preloads();
         let has_catch = stmts
             .iter()
             .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));

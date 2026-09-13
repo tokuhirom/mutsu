@@ -290,6 +290,10 @@ impl Compiler {
     pub(super) fn inherit_fold_ctx(&self, child: &mut Compiler) {
         child.fold_ctx = Arc::clone(&self.fold_ctx);
         child.fold_root = false;
+        // The unit's `use` record travels with the fold state, and for the same
+        // reason: a `use` compiled into a closure or sub body belongs to this
+        // unit's BEGIN-time preload set (GH-8201).
+        child.unit_use_ctx = Arc::clone(&self.unit_use_ctx);
         child.outer_constant_values = self
             .outer_constant_values
             .iter()

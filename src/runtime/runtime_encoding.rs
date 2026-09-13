@@ -616,6 +616,20 @@ impl Interpreter {
     /// before it. This is `use lib`'s semantics: Raku unshifts the repository onto
     /// `$*REPO`'s chain, so a `use lib` outranks `-I`/`MUTSULIB` and the installed
     /// repositories, and within one statement the last-listed path ends up first.
+    /// Whether `path` is already the *front* entry of the search chain, so
+    /// prepending it again would change nothing.
+    ///
+    /// This is what makes the BEGIN-time preload prologue's replay of a unit's
+    /// literal `use lib` specs invisible: the prologue puts the spec at the head
+    /// of the chain, and the `use lib` at its own position then recognizes it
+    /// rather than adding a second copy. Deliberately NOT "present anywhere":
+    /// `use lib` outranks `-I` and `MUTSULIB`, so re-specifying a path that is
+    /// already deeper in the chain must still promote it to the front
+    /// (`t/modules/compunit/lib-path-precedence.t`).
+    pub(crate) fn lib_path_is_front(&self, path: &str) -> bool {
+        self.lib_paths.first().is_some_and(|p| p == path)
+    }
+
     pub fn prepend_lib_path(&mut self, path: String) {
         if !path.is_empty() {
             crate::runtime::cow_table_mut(&mut self.lib_paths).insert(0, path);
