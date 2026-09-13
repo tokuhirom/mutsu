@@ -707,9 +707,7 @@ impl Parser {
             // belongs to the final character (`$<x>=ab+` is `$<x>=a` then
             // `b+`), matching the ordinary regex parser's literal splitting.
             let mut chars = text.chars();
-            let Some(first) = chars.next() else {
-                return None;
-            };
+            let first = chars.next()?;
             let rest: String = chars.collect();
             let mut nodes = vec![RegexNode::NamedCapture {
                 name,
@@ -717,9 +715,7 @@ impl Parser {
             }];
             if let Some(quantifier) = quantifier {
                 let mut rest_chars = rest.chars();
-                let Some(last) = rest_chars.next_back() else {
-                    return None;
-                };
+                let last = rest_chars.next_back()?;
                 let prefix: String = rest_chars.collect();
                 if !prefix.is_empty() {
                     nodes.push(RegexNode::Literal(prefix));
