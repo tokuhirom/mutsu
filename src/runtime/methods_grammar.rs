@@ -2,16 +2,25 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+/// One live grammar-rule dynamic-variable frame. The marker is kept alive
+/// until the caller has copied the final values into the rule's capture data.
+pub(crate) struct GrammarDynvarFrame {
+    saved: Vec<(String, Option<Value>)>,
+    keys: Vec<String>,
+    scope: super::regex::regex_helpers::GrammarDynvarScopeGuard,
+}
+
 impl Interpreter {
     /// A rule/token body may declare a *dynamic* variable inline
-    /// (`rule deal { :my %*PLAYED = (); … }`). Such a variable lives in the
-    /// dynamic scope of the whole parse, so an action method invoked while the
-    /// grammar matches (`method card($/) { … %*PLAYED{$card}++ … }`) must see and
-    /// mutate the same one. Scan every rule of the grammar being parsed (its
-    /// package, MRO-walked) for `:my $*/%*/@*NAME = INIT;` declarations, evaluate
-    /// them into `self.env` (where dynamic-var lookup finds them), and return the
-    /// prior values so the caller can restore them when the parse ends.
-    fn establish_grammar_dynamic_vars(&mut self, package: &str) -> Vec<(String, Option<Value>)> {
+    /// (`rule deal { :my %*PLAYED = (); … }`). Collect those declarations by
+    /// rule so a real rule invocation can install them for its own dynamic
+    /// extent. The old implementation evaluated the union of every rule's
+    /// declarations here, before matching started; that made an unvisited rule
+    /// visible to sibling actions and losing proto candidates (#8148).
+    ///
+    /// Returns the previous declaration table so nested/re-entrant parses can
+    /// restore the enclosing grammar's table when they finish.
+    fn establish_grammar_dynamic_vars(&mut self, package: &str) -> HashMap<String, Vec<String>> {
         // Collect the grammar's rule patterns (this package + ancestors).
         let mut patterns: Vec<(String, String)> = Vec::new();
         {
@@ -49,63 +58,117 @@ impl Interpreter {
                 }
             }
         }
-        // Extract `:my $*/%*/@*NAME = INIT;` declarations from the patterns, and
-        // at the same time remember which RULE declared what, so the reduce walk
-        // can give each match of a declaring rule its own binding instead of
-        // letting every match share the one parse-wide slot established below.
-        // Keyed by the bare rule name, which is what a capture is stored under.
-        // One scan feeds both: the per-rule map used to re-scan every pattern a
-        // second time for the identical answer.
-        let mut decls: Vec<String> = Vec::new();
-        {
-            let mut per_rule: HashMap<String, Vec<String>> = HashMap::new();
-            for (rule, pat) in &patterns {
-                let mut rule_decls: Vec<String> = Vec::new();
-                Self::collect_dynamic_var_decls(pat, &mut rule_decls);
-                if rule_decls.is_empty() {
-                    continue;
-                }
-                decls.extend(rule_decls.iter().cloned());
+        let mut per_rule: HashMap<String, Vec<String>> = HashMap::new();
+        for (rule, pat) in &patterns {
+            let mut rule_decls: Vec<String> = Vec::new();
+            Self::collect_dynamic_var_decls(pat, &mut rule_decls);
+            if !rule_decls.is_empty() {
                 per_rule.entry(rule.clone()).or_default().extend(rule_decls);
             }
-            self.grammar_rule_dynvar_decls = per_rule;
         }
-        // Evaluate each declaration in `self.env`, saving the prior value.
-        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
-        for (code, raw_key) in decls
-            .iter()
-            .filter_map(|d| Self::dynamic_decl_var_key(d).map(|k| (d, k)))
+        std::mem::replace(&mut self.grammar_rule_dynvar_decls, per_rule)
+    }
+
+    /// The environment keys occupied by one grammar dynamic variable. Scalar
+    /// dynamics have both the sigil-less matcher key (`*x`) and the sigiled
+    /// compatibility alias (`$*x`); array/hash dynamics have only their full
+    /// sigiled key.
+    pub(crate) fn grammar_dynvar_env_keys(raw_key: &str) -> Vec<String> {
+        let key = if raw_key.starts_with('$') && raw_key[1..].starts_with('*') {
+            raw_key[1..].to_string()
+        } else {
+            raw_key.to_string()
+        };
+        let mut keys = vec![key.clone()];
+        if key.starts_with('*') {
+            keys.push(format!("${key}"));
+        }
+        keys
+    }
+
+    /// Enter one grammar rule's dynamic-variable frame. Initializers are run
+    /// only for a real match, never during LTM measurement or the diagnostic
+    /// failure probe. The frame marker makes the corresponding `VarDecl` atom
+    /// record the installed value without evaluating its initializer a second
+    /// time.
+    pub(crate) fn enter_grammar_rule_dynvars(
+        &mut self,
+        rule_name: &str,
+    ) -> Option<GrammarDynvarFrame> {
+        if super::regex::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+            || super::regex::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get)
         {
-            // A `$`-sigil dynamic variable lives in env under TWO keys kept in
-            // sync as an alias pair by `set_env_with_main_alias_inner`'s
-            // `twigil_dynamic_alias`: the bare form (`$*S` -> `*S`, what a
-            // `my $*x = ...;` declaration and the reduce-time
-            // `install_fresh_rule_dynvars` write and read) and the sigil-kept
-            // form (`$*S`) that a plain `$*x` read can also resolve through.
-            // `@*A` / `%*H` have no such pair -- only their sigil-kept key
-            // exists. Saving/restoring only one half of the pair left the
-            // other one untouched by the restore below, so a `$*`-sigil
-            // declaration leaked past `.parse` into the caller's scope
-            // (#8096).
-            let is_scalar_dynvar = raw_key.starts_with('$');
-            let var_key = match raw_key.strip_prefix('$') {
-                Some(rest) => rest.to_string(),
-                None => raw_key,
-            };
-            if saved.iter().any(|(k, _)| k == &var_key) {
+            return None;
+        }
+        let decls = self.grammar_rule_dynvar_decls.get(rule_name)?.clone();
+        let mut keys = Vec::new();
+        let mut saved = Vec::new();
+        for decl in &decls {
+            let Some(raw_key) = Self::dynamic_decl_var_key(decl) else {
                 continue;
+            };
+            let env_keys = Self::grammar_dynvar_env_keys(&raw_key);
+            for key in &env_keys {
+                if !saved.iter().any(|(saved_key, _)| saved_key == key) {
+                    saved.push((key.clone(), self.env.get(key).cloned()));
+                }
             }
-            saved.push((var_key.clone(), self.env.get(&var_key).cloned()));
-            if is_scalar_dynvar {
-                let alias_key = format!("${var_key}");
-                saved.push((alias_key.clone(), self.env.get(&alias_key).cloned()));
+            let main_key = env_keys[0].clone();
+            if !keys.contains(&main_key) {
+                keys.push(main_key);
             }
-            let source = format!("{code};");
-            if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
+            if let Some(stmts) = self.parse_regex_code_cached(&format!("{decl};")) {
                 let _ = self.eval_block_value(&stmts);
             }
         }
-        saved
+        if keys.is_empty() {
+            return None;
+        }
+        let scope = super::regex::regex_helpers::GrammarDynvarScopeGuard::enter(keys.clone());
+        Some(GrammarDynvarFrame { saved, keys, scope })
+    }
+
+    /// Leave a grammar rule's frame and return the values held by its declared
+    /// variables at the end of matching. Callers attach these values to the
+    /// rule's capture node before restoring the caller's environment.
+    pub(crate) fn exit_grammar_rule_dynvars(
+        &mut self,
+        frame: GrammarDynvarFrame,
+    ) -> Vec<(String, Value)> {
+        let GrammarDynvarFrame { saved, keys, scope } = frame;
+        let values = keys
+            .iter()
+            .filter_map(|key| self.env.get(key).cloned().map(|value| (key.clone(), value)))
+            .collect();
+        drop(scope);
+        for (key, prior) in saved.into_iter().rev() {
+            match prior {
+                Some(value) => {
+                    self.env.insert(key, value);
+                }
+                None => {
+                    self.env.remove(&key);
+                }
+            }
+        }
+        values
+    }
+
+    /// Snapshot a still-live rule frame into its top-level capture before the
+    /// reduce walk starts. The start rule stays live through its action, so it
+    /// cannot use the consuming `exit_grammar_rule_dynvars` helper yet.
+    pub(crate) fn record_live_grammar_rule_dynvars(
+        &self,
+        frame: &GrammarDynvarFrame,
+        caps: &mut RegexCaptures,
+    ) {
+        for key in &frame.keys {
+            if !caps.regex_vars().contains_key(key)
+                && let Some(value) = self.env.get(key).cloned()
+            {
+                caps.regex_vars_mut().insert(key.clone(), value);
+            }
+        }
     }
 
     /// A grammar body may declare a plain lexical (`grammar G { my @opts =
@@ -564,6 +627,10 @@ impl Interpreter {
             &rule_args,
         );
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
+        // The start rule is an ordinary rule invocation too. Its frame must
+        // remain live through reduction and its own action, then be restored
+        // before the parse returns to the caller.
+        let mut active_start_dynvars = None;
         let result = (|| -> Result<Value, RuntimeError> {
             let candidates =
                 match self.eval_token_call_candidates_at(&start_rule, &rule_args, candidate_from) {
@@ -622,6 +689,7 @@ impl Interpreter {
             let mut partial_match: Option<RegexCaptures> = None;
             let mut matched: Option<(RegexCaptures, Option<String>)> = None;
             for (pattern, sym) in candidates {
+                let candidate_dynvars = self.enter_grammar_rule_dynvars(&start_rule);
                 // Candidate selection above may have run a preliminary match that
                 // evolved the reduce-time dyn-var overlay (e.g. fired a delimiter
                 // finalizer). Each real candidate match must begin from the initial
@@ -657,11 +725,16 @@ impl Interpreter {
                 // into a lower-ranked proto candidate. Only a candidate that
                 // failed to match at all may fall through to the next one.
                 if is_full_parse && had_partial {
+                    active_start_dynvars = candidate_dynvars;
                     break;
                 }
                 if let Some(captures) = captures {
+                    active_start_dynvars = candidate_dynvars;
                     matched = Some((captures, sym));
                     break;
+                }
+                if let Some(frame) = candidate_dynvars {
+                    let _ = self.exit_grammar_rule_dynvars(frame);
                 }
             }
             let Some((mut captures, start_rule_sym)) = matched else {
@@ -678,8 +751,15 @@ impl Interpreter {
                 if let Some(ref mut actions) = actions_obj {
                     match partial_match.take() {
                         Some(mut caps) => {
+                            if let Some(frame) = active_start_dynvars.as_ref() {
+                                self.record_live_grammar_rule_dynvars(frame, &mut caps);
+                            }
                             let pt = caps.target_or_new(&text);
-                            self.reduce_regex_captures_made(&mut caps, Some(&pt));
+                            self.reduce_regex_captures_made_for_rule(
+                                &mut caps,
+                                Some(&pt),
+                                Some(&start_rule),
+                            );
                             self.dispatch_partial_parse_actions(
                                 &caps,
                                 actions,
@@ -712,7 +792,14 @@ impl Interpreter {
             // cursor tree at once (`set_cursor_class` writes a shared cell), so
             // no class has to be threaded through the regex engine.
             gtarget.set_cursor_class(crate::symbol::Symbol::intern(package_name));
-            self.reduce_regex_captures_made(&mut captures, Some(&gtarget));
+            if let Some(frame) = active_start_dynvars.as_ref() {
+                self.record_live_grammar_rule_dynvars(frame, &mut captures);
+            }
+            self.reduce_regex_captures_made_for_rule(
+                &mut captures,
+                Some(&gtarget),
+                Some(&start_rule),
+            );
             // A subparse must begin at the requested offset (0, or `:pos(N)`);
             // `:c(N)` allows any start >= N, so it is exempt from the check.
             let required_from = start_pos.or(if continue_pos.is_some() {
@@ -749,11 +836,12 @@ impl Interpreter {
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
             let alias_map = captures.take_capture_alias_map();
-            let match_obj = Value::make_match_object_full(
+            let match_obj = Value::make_match_object_full_with_regex_vars(
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
+                captures.regex_vars(),
                 gtarget,
             );
             let match_obj = {
@@ -831,21 +919,18 @@ impl Interpreter {
             Ok(match_obj)
         })();
 
+        if let Some(frame) = active_start_dynvars.take() {
+            let _ = self.exit_grammar_rule_dynvars(frame);
+        }
+
         // Tear down the start rule's dynamically-scoped parameters.
         if let Some(saved) = saved_start_rule_dynvars {
             self.restore_subrule_dynamic_params(saved);
         }
-        // Restore any dynamic vars the grammar's rules established for this parse.
-        for (key, prev) in saved_grammar_dynvars {
-            match prev {
-                Some(v) => {
-                    self.env.insert(key, v);
-                }
-                None => {
-                    self.env.remove(&key);
-                }
-            }
-        }
+        // Restore the enclosing parse's declaration table. Rule frames own the
+        // actual environment bindings, so there is no parse-wide dynamic env
+        // restore here anymore.
+        self.grammar_rule_dynvar_decls = saved_grammar_dynvars;
         // Restore whatever `establish_grammar_body_statics` overwrote.
         for (key, prev) in saved_grammar_body_statics {
             match prev {
@@ -898,11 +983,12 @@ impl Interpreter {
     /// Build the Match object a capture node describes, with `orig` set to the
     /// whole parse text so `.orig`/`.prematch` work on it.
     fn match_object_from_captures(caps: &RegexCaptures, text: &str) -> Value {
-        Value::make_match_object_full(
+        Value::make_match_object_full_with_regex_vars(
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
             &caps.named,
+            caps.regex_vars(),
             caps.target_or_new(text),
         )
     }
@@ -910,11 +996,12 @@ impl Interpreter {
     /// [`Self::match_object_from_captures`] for a stored capture node.
     fn match_object_from_cap_node(node: &CapNode, target: &MatchTarget) -> Value {
         let kids = node.kids();
-        Value::make_match_object_full(
+        Value::make_match_object_full_with_regex_vars(
             node.from as i64,
             node.to as i64,
             &kids.positional,
             &kids.named,
+            &kids.regex_vars,
             target.clone(),
         )
     }
@@ -1079,13 +1166,16 @@ impl Interpreter {
         let saved_reduce_vars: Vec<(String, Option<Value>)> = match_obj
             .match_reduce_time_vars_lazy()
             .map(|vars| {
-                vars.into_iter()
-                    .map(|(k, v)| {
-                        let prev = self.env.get(&k).cloned();
-                        self.env.insert(k.clone(), v);
-                        (k, prev)
-                    })
-                    .collect()
+                let mut saved = Vec::new();
+                for (k, v) in vars {
+                    for env_key in Self::grammar_dynvar_env_keys(&k) {
+                        if !saved.iter().any(|(saved_key, _)| saved_key == &env_key) {
+                            saved.push((env_key.clone(), self.env.get(&env_key).cloned()));
+                        }
+                        self.env.insert(env_key, v.clone());
+                    }
+                }
+                saved
             })
             .unwrap_or_default();
 
@@ -1274,6 +1364,19 @@ impl Interpreter {
         Ok(updated)
     }
 
+    fn restore_action_reduce_vars(&mut self, saved: &[(String, Option<Value>)]) {
+        for (key, previous) in saved {
+            match previous {
+                Some(value) => {
+                    self.env.insert(key.clone(), value.clone());
+                }
+                None => {
+                    self.env.remove(key);
+                }
+            }
+        }
+    }
+
     pub(crate) fn invoke_grammar_actions(
         &mut self,
         match_obj: Value,
@@ -1359,8 +1462,42 @@ impl Interpreter {
             return Ok(match_obj);
         };
 
-        // First, recursively process child named captures (bottom-up order)
+        // Re-install this match's own `:my $*x` bindings before descending into
+        // children. A parent-owned binding (for example `:my %*PLAYED = ();`
+        // in `deal`) must remain live while child actions accumulate into it;
+        // the child walk restores only bindings owned by the child itself.
+        let saved_reduce_vars: Vec<(String, Option<Value>)> = if let Some(ValueView::Hash(vars)) =
+            attributes.as_map().get("reduce_time_vars").map(Value::view)
+        {
+            let mut saved = Vec::new();
+            for (k, v) in vars.iter() {
+                for env_key in Self::grammar_dynvar_env_keys(k) {
+                    if !saved.iter().any(|(saved_key, _)| saved_key == &env_key) {
+                        saved.push((env_key.clone(), self.env.get(&env_key).cloned()));
+                    }
+                    self.env.insert(env_key, v.clone());
+                }
+            }
+            saved
+        } else {
+            Vec::new()
+        };
+
+        // First, recursively process child named captures (bottom-up order).
+        // Keep the parent frame installed for that entire walk so child action
+        // methods can read and mutate parent-owned dynamic variables.
         let updated_attrs = attributes.clone();
+        macro_rules! restore_on_error {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.restore_action_reduce_vars(&saved_reduce_vars);
+                        return Err(error);
+                    }
+                }
+            };
+        }
         if let Some(ValueView::Hash(named_hash)) = attributes.as_map().get("named").map(Value::view)
         {
             let mut updated_named = named_hash.as_ref().clone();
@@ -1386,24 +1523,24 @@ impl Interpreter {
                 if child_match.is_match_instance() {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child = self.invoke_grammar_actions_once(
+                    let updated_child = restore_on_error!(self.invoke_grammar_actions_once(
                         &mut seen,
                         child_match,
                         actions,
                         &dispatch_name,
-                    )?;
+                    ));
                     updated_named.insert(child_name, updated_child);
                 } else if let ValueView::Array(items, meta) = child_match.view() {
                     let mut updated_items = Vec::with_capacity(items.len());
                     for item in items.as_ref() {
                         let dispatch_name =
                             Self::get_action_name(item).unwrap_or_else(|| child_name.clone());
-                        let updated_item = self.invoke_grammar_actions_once(
+                        let updated_item = restore_on_error!(self.invoke_grammar_actions_once(
                             &mut seen,
                             item.clone(),
                             actions,
                             &dispatch_name,
-                        )?;
+                        ));
                         updated_items.push(updated_item);
                     }
                     updated_named.insert(
@@ -1416,12 +1553,12 @@ impl Interpreter {
                 } else {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child = self.invoke_grammar_actions_once(
+                    let updated_child = restore_on_error!(self.invoke_grammar_actions_once(
                         &mut seen,
                         child_match,
                         actions,
                         &dispatch_name,
-                    )?;
+                    ));
                     updated_named.insert(child_name, updated_child);
                 }
             }
@@ -1444,7 +1581,11 @@ impl Interpreter {
                 // Probe Match first (non-materializing, covers lazy children).
                 let updated_item = if item.is_match_instance() {
                     let dispatch_name = Self::get_action_name(item).unwrap_or_default();
-                    self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
+                    restore_on_error!(self.invoke_grammar_actions(
+                        item.clone(),
+                        actions,
+                        &dispatch_name,
+                    ))
                 } else {
                     match item.view() {
                         // A quantified group `(...)*`: an Array of per-iteration Matches.
@@ -1452,11 +1593,11 @@ impl Interpreter {
                             let mut updated_items = Vec::with_capacity(items.len());
                             for it in items.as_ref() {
                                 let dispatch_name = Self::get_action_name(it).unwrap_or_default();
-                                let updated = self.invoke_grammar_actions(
+                                let updated = restore_on_error!(self.invoke_grammar_actions(
                                     it.clone(),
                                     actions,
                                     &dispatch_name,
-                                )?;
+                                ));
                                 updated_items.push(updated);
                             }
                             Value::array_with_kind(
@@ -1466,7 +1607,11 @@ impl Interpreter {
                         }
                         ValueView::Instance { .. } => {
                             let dispatch_name = Self::get_action_name(item).unwrap_or_default();
-                            self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
+                            restore_on_error!(self.invoke_grammar_actions(
+                                item.clone(),
+                                actions,
+                                &dispatch_name,
+                            ))
                         }
                         _ => item.clone(),
                     }
@@ -1496,7 +1641,7 @@ impl Interpreter {
         // children (the named-children walk above already handles those; firing
         // them again double-dispatches, see t/grammar-reduce-time-dynvar.t).
         // Results are not stored back: silent captures are never read by user code.
-        self.dispatch_silent_action_caps(&attributes.as_map(), actions)?;
+        restore_on_error!(self.dispatch_silent_action_caps(&attributes.as_map(), actions));
 
         // Rebuild match_obj with updated children
         let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
@@ -1529,6 +1674,7 @@ impl Interpreter {
                 }
             };
             if no_own_action {
+                self.restore_action_reduce_vars(&saved_reduce_vars);
                 return Ok(match_obj);
             }
         }
@@ -1564,28 +1710,6 @@ impl Interpreter {
         // Also set $_ to the match (for `.make:` syntax)
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), match_obj.clone());
-
-        // Re-install this match's own `:my $*x` bindings with the values they
-        // held when IT reduced. Actions run in a second pass over the finished
-        // tree, so without this every match of a declaring rule would read the
-        // value the last-reducing one left in the shared env (rakudo runs an
-        // action the moment its subrule reduces, so each sees its own).
-        let saved_reduce_vars: Vec<(String, Option<Value>)> = if let Some(ValueView::Hash(vars)) =
-            updated_attrs
-                .as_map()
-                .get("reduce_time_vars")
-                .map(Value::view)
-        {
-            vars.iter()
-                .map(|(k, v)| {
-                    let prev = self.env.get(k).cloned();
-                    self.env.insert(k.clone(), v.clone());
-                    (k.clone(), prev)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
 
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
@@ -1687,16 +1811,7 @@ impl Interpreter {
             self.env.remove("_");
         }
         // Restore whatever this match's `:my` bindings shadowed
-        for (k, prev) in saved_reduce_vars {
-            match prev {
-                Some(v) => {
-                    self.env.insert(k, v);
-                }
-                None => {
-                    self.env.remove(&k);
-                }
-            }
-        }
+        self.restore_action_reduce_vars(&saved_reduce_vars);
         // Restore named and positional capture env vars from parent scope
         self.restore_action_named_captures(saved_named_captures);
         self.restore_action_positional_captures(saved_positional);

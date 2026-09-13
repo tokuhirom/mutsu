@@ -79,6 +79,16 @@ impl Interpreter {
             return decline(reason);
         }
         let spec = name.spec();
+        // A grammar-rule declaration must be restored before the caller's
+        // continuation. The eager path has an explicit scope around its whole
+        // candidate set; this streamed path would otherwise keep the frame
+        // alive while `on` explores the caller, so decline it.
+        if self
+            .grammar_rule_dynvar_decls
+            .contains_key(&spec.lookup_name)
+        {
+            return decline(StreamDecline::GrammarDynvar);
+        }
         // The same gate the eager arm uses: when the call graph proves nothing
         // in the cone can re-enter this key — not by a rule call and not by
         // hand from user code — the activation below is dead weight and is

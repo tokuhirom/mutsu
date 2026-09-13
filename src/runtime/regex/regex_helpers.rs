@@ -55,6 +55,16 @@ thread_local! {
     /// probe wants the longest prefix the pattern's declarative skeleton accepts, so
     /// both kinds of code atom simply become no-ops.
     pub(crate) static CODE_ATOMS_INERT: Cell<bool> = const { Cell::new(false) };
+    /// Names declared by the currently executing grammar-rule dynamic-variable
+    /// frames.  A `RegexAtom::VarDecl` normally evaluates its initializer when
+    /// the cursor reaches it; grammar rule declarations are initialized by the
+    /// rule-entry frame instead, so that the initializer runs once per
+    /// invocation and is restored when that invocation leaves.  This stack is
+    /// deliberately thread-local: the matcher can re-enter a nested parse on
+    /// the same OS thread, and a frame must not make an unrelated interpreter's
+    /// regex declaration look already initialized.
+    pub(crate) static GRAMMAR_DYNVAR_SCOPE_KEYS: RefCell<Vec<std::collections::HashSet<String>>> =
+        const { RefCell::new(Vec::new()) };
     /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
     /// action methods that run at *reduce time* (during matching). The regex
     /// match engine is `&self`, so an action's dyn-var write (e.g.
@@ -100,6 +110,32 @@ thread_local! {
     /// non-inline atom — a subrule reference above all — which is what keeps a
     /// different regex's backreferences scoped to itself.
     pub(crate) static INLINE_OUTER_CAPS_SEED: RefCell<Option<std::sync::Arc<OuterBackrefCaps>>> = const { RefCell::new(None) };
+}
+
+/// Marker for one live grammar-rule dynamic-variable frame.
+pub(crate) struct GrammarDynvarScopeGuard;
+
+impl GrammarDynvarScopeGuard {
+    pub(crate) fn enter(keys: impl IntoIterator<Item = String>) -> Self {
+        GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
+            stack.borrow_mut().push(keys.into_iter().collect());
+        });
+        Self
+    }
+}
+
+impl Drop for GrammarDynvarScopeGuard {
+    fn drop(&mut self) {
+        GRAMMAR_DYNVAR_SCOPE_KEYS.with(|stack| {
+            stack.borrow_mut().pop();
+        });
+    }
+}
+
+/// Whether a dynamic declaration is owned by a live grammar-rule frame.
+pub(crate) fn grammar_dynvar_scope_active(name: &str) -> bool {
+    GRAMMAR_DYNVAR_SCOPE_KEYS
+        .with(|stack| stack.borrow().iter().rev().any(|keys| keys.contains(name)))
 }
 
 /// Set the first time the regex parser lowers a `$0` / `$<name>` backreference

@@ -304,12 +304,10 @@ impl Interpreter {
 
     /// [`Self::reduce_regex_captures_made`] with the name of the rule this node
     /// matched, which the parent knows (it is the capture key the node is stored
-    /// under). A rule that declares `:my $*x` gets a **fresh binding per match**
-    /// here: installed before its subtree reduces, read back onto the node
-    /// afterwards, and carried to that node's action. Without it every match
-    /// shares the one parse-wide slot `establish_grammar_dynamic_vars` set up, so
-    /// the last code block to write wins for every reader
-    /// (`t/grammar-per-match-dynvar-action.t`).
+    /// under). A rule that declares `:my $*x` gets its recorded per-match value
+    /// installed before its subtree reduces and carried to that node's action.
+    /// Without that value each match would inherit the last binding left by a
+    /// sibling (`t/grammar-per-match-dynvar-action.t`).
     pub(in crate::runtime) fn reduce_regex_captures_made_for_rule(
         &mut self,
         caps: &mut RegexCaptures,
@@ -320,7 +318,7 @@ impl Interpreter {
         // child's *action* accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
         let recorded = caps.regex_vars().clone();
-        let declared_keys = self.install_fresh_rule_dynvars(rule_name, &recorded);
+        let (declared_keys, saved_dynvars) = self.install_fresh_rule_dynvars(rule_name, &recorded);
         self.reduce_child_axes(&mut caps.named, &mut caps.positional, target);
         // A declaring match whose value had to be re-derived must record what its
         // binding holds — its action still reads it, and a sibling that declares
@@ -332,6 +330,7 @@ impl Interpreter {
         if let Some(v) = caps.ast.clone() {
             self.env.insert("made".to_string(), v);
         }
+        self.restore_subrule_dynamic_params(saved_dynvars);
     }
 
     /// [`Self::reduce_regex_captures_made_for_rule`] for a stored capture node
@@ -343,7 +342,7 @@ impl Interpreter {
         rule_name: Option<&str>,
     ) {
         let recorded = node.kids().regex_vars.clone();
-        let declared_keys = self.install_fresh_rule_dynvars(rule_name, &recorded);
+        let (declared_keys, saved_dynvars) = self.install_fresh_rule_dynvars(rule_name, &recorded);
         if let Some(kids) = node.children.as_deref_mut() {
             self.reduce_child_axes(&mut kids.named, &mut kids.positional, target);
         }
@@ -352,6 +351,7 @@ impl Interpreter {
         if !declared_keys.is_empty() {
             self.record_cap_node_dynvars(node, &declared_keys);
         }
+        self.restore_subrule_dynamic_params(saved_dynvars);
     }
 
     /// The children-first part of the reduce walk, shared between the top-level
@@ -423,48 +423,52 @@ impl Interpreter {
     /// afterwards (`record_rule_dynvars`) — only the fallback ones. A key
     /// installed *from* the node is already correct there, and re-reading the env
     /// would let a child's leftover binding of the same name overwrite it.
+    /// The second return value restores the parent frame immediately after the
+    /// node's children have reduced.
     ///
-    /// The previous values are deliberately NOT restored afterwards: a rule that
-    /// declares nothing still reads the parse-wide slot in its own action, and
-    /// that behaviour is load-bearing (t/grammar-reduce-time-dynvar.t). It is
-    /// also what makes the outer-declaration accumulation shape work — the
-    /// binding this leaves in the env is the one a *child's* action mutates
-    /// (`:my %*PLAYED = (); <card>+`), and the declaring node holds the same
-    /// container, so its own action sees those mutations.
+    /// The saved parent values are restored by the reduce caller after the
+    /// subtree has reduced. A child action therefore mutates its declaring
+    /// parent's live binding, while a completed child rule cannot leak its own
+    /// binding into the parent's action (`t/grammar-dynvar-rule-scope.t`).
     fn install_fresh_rule_dynvars(
         &mut self,
         rule_name: Option<&str>,
         recorded: &crate::runtime::RegexVarMap,
-    ) -> Vec<String> {
+    ) -> (Vec<String>, super::regex_dynparams::SavedDynParams) {
         if self.grammar_rule_dynvar_decls.is_empty() {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         let Some(decls) = rule_name
             .and_then(|r| self.grammar_rule_dynvar_decls.get(r))
             .cloned()
         else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let mut keys = Vec::new();
+        let mut saved = Vec::new();
         for decl in &decls {
             let Some(key) = Self::dynamic_decl_var_key(decl) else {
                 continue;
             };
-            // A `$`-sigil dynamic variable lives in env WITHOUT its sigil
-            // (`$*S` -> `*S`), while `@*A` / `%*H` keep theirs — match what a
-            // `my $*x` declaration actually stores, or the install below writes
-            // a key nothing reads.
-            let key = key.strip_prefix('$').unwrap_or(&key).to_string();
-            if let Some(v) = recorded.get(&key) {
-                self.env.insert(key, v.clone());
+            let env_keys = Self::grammar_dynvar_env_keys(&key);
+            for env_key in &env_keys {
+                if !saved.iter().any(|(saved_key, _)| saved_key == env_key) {
+                    saved.push((env_key.clone(), self.env.get(env_key).cloned()));
+                }
+            }
+            let main_key = env_keys[0].clone();
+            if let Some(v) = recorded.get(&main_key) {
+                for env_key in &env_keys {
+                    self.env.insert(env_key.clone(), v.clone());
+                }
                 continue;
             }
             if let Some(stmts) = self.parse_regex_code_cached(&format!("{decl};")) {
                 let _ = self.eval_block_value(&stmts);
             }
-            keys.push(key);
+            keys.push(main_key);
         }
-        keys
+        (keys, saved)
     }
 
     /// Copy the current value of each key [`Self::install_fresh_rule_dynvars`]
