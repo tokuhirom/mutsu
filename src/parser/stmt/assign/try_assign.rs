@@ -118,8 +118,16 @@ pub(crate) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
         }
         let r2 = &r2[1..];
         let (r2, _) = ws(r2)?;
-        // Trailing comma before `;` or `}`.
-        if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
+        // Trailing comma before `;`, `}`, or a statement modifier — the comma is
+        // an empty list slot, exactly as in the listop argument path (see
+        // `is_stmt_modifier_after_trailing_comma`). Without the modifier case,
+        // `self.set-from-file: $!browser, #`[ $.debug ] unless $driver;`
+        // (WebDriver2) demanded one more argument and read `unless …` as it.
+        if r2.starts_with(';')
+            || r2.starts_with('}')
+            || r2.is_empty()
+            || crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma(r2)
+        {
             r_inner = r2;
             break;
         }

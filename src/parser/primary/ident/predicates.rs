@@ -593,7 +593,13 @@ pub(crate) fn is_infix_word_op(name: &str) -> bool {
 
 /// Check if input starts with a statement modifier keyword.
 pub(crate) fn is_stmt_modifier_ahead(input: &str) -> bool {
-    let input = input.trim_start();
+    // `ws`, not `trim_start`: a comment is whitespace too, and an *embedded*
+    // one can sit between a statement's last argument and its modifier —
+    // `self.set-from-file: $!browser, #`[ $.debug ] unless $driver;`
+    // (WebDriver2). Trimming only spaces left the comment in front of the
+    // keyword, so the argument parser tried to read `unless $driver` as one
+    // more argument.
+    let input = crate::parser::helpers::ws(input).map_or(input, |(r, ())| r);
     for kw in &["if", "unless", "for", "while", "until", "given", "when"] {
         if input.starts_with(kw)
             && !input

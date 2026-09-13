@@ -35,6 +35,20 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
+    // Anonymous destructure with no type constraint at all: `-> $c, ($a, $b)`
+    // and `-> $_, $content, (:$label, :$screen, |)` (Selkie::UI's
+    // `&.set-content`, and Grammar::Editor through it). A *first* parameter
+    // spelled that way is unpacked by the pointy header itself, so only a later
+    // one reaches here — where the type-constraint branches above do not match
+    // (there is no type) and the sigil branches below cannot start at a `(`.
+    // Same delegation as the two branches below: `sub ($c, (:$label))` already
+    // builds exactly this parameter.
+    if input.starts_with('(') {
+        let (r, mut p) = crate::parser::stmt::sub_param::parse_single_param(input)?;
+        p.block_param = true;
+        return Ok((r, p));
+    }
+
     // Anonymous parameter carrying BOTH a type constraint and an unpacking
     // sub-signature: `-> Pair (:key($k), :value($v)) { ... }`, and its bracket
     // spelling `-> List [$a, $b]`. Only the *named* form (`-> Pair $p (:$key)`)
