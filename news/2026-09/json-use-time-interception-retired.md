@@ -66,6 +66,9 @@ resting on:
   after the ladder comes up empty. A new `json_native_provider` flag is set only
   on that fallback, and it is what gates native dispatch;
   `json_module_loaded()` (which read `loaded_modules`) is gone.
+  **Superseded 2026-09-13**: `JSON::Fast` is a vendored battery now and the
+  fallback, including that flag, is deleted — see
+  `news/2026-09/json-fast-is-a-battery-and-the-provider-is-deleted.md`.
 - Both dispatch sites now sit strictly after routine resolution. The
   statement-position override that matched on a def's package name is deleted,
   so a resolved def always wins.

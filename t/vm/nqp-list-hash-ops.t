@@ -10,7 +10,7 @@ use nqp;
 # these, and `nqp::push` / `nqp::hash` / `nqp::p6bindattrinvres` were also the
 # whole of #8215 (13 zef distributions). See #8226.
 
-plan 35;
+plan 43;
 
 # -- nqp::push / nqp::pop / nqp::shift, untyped --------------------------------
 
@@ -68,6 +68,38 @@ my %descriptor-source;
 my $descriptor := nqp::getattr(%descriptor-source, Hash, '$!descriptor');
 is nqp::decont(nqp::p6scalarwithvalue($descriptor, 7)), 7,
     'nqp::p6scalarwithvalue yields the value it was given';
+
+# ... and it ITEMIZES an aggregate, which is the observable half of rakudo's
+# "wrap it in a fresh Scalar". A value bound in through raw `nqp::bindkey`
+# never reaches the store-side hook that itemizes an ordinary `%h<k> = [1,2]`,
+# so without this `JSON::Fast`'s decoded objects came back un-itemized:
+# `from-json('{"a":[1,2]}')<a>.raku` answered `[1, 2]` where rakudo, running
+# that same module, answers `$[1, 2]`.
+#
+# Which kinds itemize is measured against rakudo, and is narrower than mutsu's
+# own element-store itemization -- a Range does NOT itemize here.
+is nqp::p6scalarwithvalue($descriptor, [1, 2]).raku, '$[1, 2]',
+    'nqp::p6scalarwithvalue itemizes an Array';
+is nqp::p6scalarwithvalue($descriptor, {:c(3)}).raku, '${:c(3)}',
+    'nqp::p6scalarwithvalue itemizes a Hash';
+is nqp::p6scalarwithvalue($descriptor, (1, 2)).raku, '$(1, 2)',
+    'nqp::p6scalarwithvalue itemizes a List';
+is nqp::p6scalarwithvalue($descriptor, (1, 2).Seq).raku, '$((1, 2).Seq)',
+    'nqp::p6scalarwithvalue itemizes a Seq';
+is nqp::p6scalarwithvalue($descriptor, 1 .. 3).raku, '1..3',
+    'nqp::p6scalarwithvalue leaves a Range alone';
+is nqp::p6scalarwithvalue($descriptor, (a => 1)).raku, ':a(1)',
+    'nqp::p6scalarwithvalue leaves a Pair alone';
+is nqp::p6scalarwithvalue($descriptor, True).raku, 'Bool::True',
+    'nqp::p6scalarwithvalue leaves a Bool alone';
+is nqp::p6scalarwithvalue($descriptor, Any).raku, 'Any',
+    'nqp::p6scalarwithvalue leaves a type object alone';
+
+# The end-to-end shape this came from -- a decoded JSON object's values
+# itemizing -- is pinned by t/collections/element-store-itemization.t, which is
+# where the regression surfaced. It is not repeated here: this file is kept
+# runnable under `prove -e raku` for parity, and rakudo has no JSON::Fast
+# installed.
 
 class Chainable {
     has $!x;
