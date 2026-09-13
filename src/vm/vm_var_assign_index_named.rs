@@ -1149,15 +1149,25 @@ impl Interpreter {
         }
         // A Pair value (either flavour) answers `<key>` element access
         // (`(a => 1)<a>` reads its own `.value`, any other key reads Nil).
-        // Unlike the `.value` *accessor*, which writes through a `key =>
-        // $var` capture's shared container, Raku's Associative subscript
-        // protocol on a Pair has no writable element slot at all — even a
-        // captured value's `<key> = ...` dies (verified against raku: only
-        // `.value = ...` writes through). Assigning through any key
-        // (existing or absent) dies, and binding into one is rejected
+        // Raku's Associative subscript protocol on a Pair has no writable
+        // element SLOT — `AT-KEY` hands back `.value` itself — so the store is
+        // that value's own business: an `Array`/`Hash` takes it (the arm just
+        // below), and everything else dies. Binding into one is rejected
         // outright, regardless of whether the binding itself is `constant`.
         // `my $p = a => 1; $p<a> = 9` dies with "Cannot modify an immutable
         // Int (1)" in raku for a completely ordinary (non-constant) `my $p`.
+        // `my $p = (c => [1,2]); $p<c> = [3,4]` STOREs into the Array the Pair
+        // holds, leaving the Pair itself (and every other alias of that Array)
+        // in place.
+        if !bind_mode
+            && let Some(aggregate) = self.env().get(&var_name).and_then(|t| {
+                Self::pair_subscript_aggregate(t, Some(idx.to_string_value().as_str()))
+            })
+        {
+            Self::store_into_pair_aggregate(&aggregate, val.clone());
+            self.stack.push(val);
+            return Ok(());
+        }
         if let Some(target_val) = self.env().get(&var_name)
             && let Some((pair_key, pair_value)) = match target_val.view() {
                 ValueView::Pair(k, v) => Some((k.clone(), v.clone())),
@@ -3352,6 +3362,10 @@ impl Interpreter {
         // value — and so is a slice/junction inner subscript, whose RHS the
         // sites below split per element (itemizing it whole would change the
         // arity).
+        // Kept un-itemized for the one destination that is NOT an element slot:
+        // a `Pair`'s value takes a whole-container STORE (`@a = LIST`), where
+        // itemizing would nest the assigned list one level deeper.
+        let val_unitemized = val.clone();
         let val = if matches!(
             inner_idx.view(),
             ValueView::Junction { .. } | ValueView::Array(..)
@@ -3507,6 +3521,37 @@ impl Interpreter {
         };
         let outer_key = outer_idx.to_string_value();
 
+        // The ROOT is itself a `Pair` (`my $p = (c => [1,2]); $p<c>[0] = 9`).
+        // The inner subscript addresses the Pair's value, and the outer one
+        // then indexes THAT — neither arm below recognizes a Pair as a root, so
+        // the whole store used to be dropped while reporting success.
+        if let Some(root) = self.env().get(&var_name).cloned() {
+            let inner_key_for_pair = (!inner_positional).then_some(inner_key.as_str());
+            if let Some(mut aggregate) = Self::pair_subscript_aggregate(&root, inner_key_for_pair) {
+                Self::assign_into_nested_container(&mut aggregate, &outer_key, val.clone())?;
+                self.stack.push(val);
+                return Ok(());
+            }
+            if let Some(err) =
+                Self::pair_subscript_store_refusal(&root, inner_positional, inner_key_for_pair)
+            {
+                return Err(err);
+            }
+            // The INNER step lands on a `Pair` and the OUTER subscript addresses
+            // its value (`%h<x><y> = v`, `@a[0]<c> = v`). That is a STORE into
+            // the container the Pair holds, so it takes the un-itemized rvalue
+            // and bypasses the element-store arms below — which recognize no
+            // Pair and would clobber it with a fresh container.
+            if !outer_positional
+                && let Some(step) = Self::subscript_peek_step(&root, &inner_key, inner_positional)
+                && let Some(aggregate) = Self::pair_subscript_aggregate(&step, Some(&outer_key))
+            {
+                Self::store_into_pair_aggregate(&aggregate, val_unitemized);
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
+
         // If the outer hash has a value type constraint, nested autovivification
         // would need to create a Hash value which won't match the constraint
         // (e.g. `my Int %h; %h<z><t> = 3` should die because %h<z> can't be a Hash).
@@ -3644,6 +3689,17 @@ impl Interpreter {
                         Some(&outer_key),
                     ) {
                         return Err(err);
+                    }
+                    // `@a[0]<c> = v` where `@a[0]` is the Pair `c => [...]`:
+                    // the subscript addresses the Pair's value, which takes the
+                    // store. Checked before `needs_viv` below, which does not
+                    // recognize a Pair as an existing container and would
+                    // clobber it with a fresh one.
+                    if let Some(aggregate) =
+                        Self::pair_subscript_aggregate(&arr[inner_i], Some(&outer_key))
+                    {
+                        Self::store_into_pair_aggregate(&aggregate, val.clone());
+                        return Ok(true);
                     }
                     // Autovivify the slot if it's not already a container. A
                     // `:=`-bound element is a shared `ContainerRef` cell holding a
@@ -3902,6 +3958,11 @@ impl Interpreter {
     /// Positional — and rakudo names the Pair itself there
     /// (`my @a = (a => 1), 3; @a[0][0] = 9` is "Cannot modify an immutable
     /// Pair (a => 1)"), so this answers `None` and leaves that to the caller.
+    ///
+    /// The value the subscript reaches is not ALWAYS immutable, so this answers
+    /// `None` for the one shape that is not — see
+    /// [`Interpreter::pair_subscript_aggregate`], whose `Some` is exactly this
+    /// function's `None`.
     pub(crate) fn pair_subscript_store_refusal(
         slot: &Value,
         outer_positional: bool,
@@ -3915,6 +3976,11 @@ impl Interpreter {
             ValueView::ValuePair(key, value) => (key.to_string_value(), value.clone()),
             _ => return None,
         };
+        // The addressed value is a real container: the write is its own
+        // business, not the Pair's, and rakudo takes it.
+        if Self::pair_subscript_aggregate(slot, next_key).is_some() {
+            return None;
+        }
         let addressed = match next_key {
             Some(k) if k == pair_key => pair_value,
             Some(_) => Value::NIL,
@@ -3932,6 +3998,65 @@ impl Interpreter {
         })
     }
 
+    /// The writable half of [`Interpreter::pair_subscript_store_refusal`].
+    ///
+    /// `Pair.AT-KEY` hands back `.value` ITSELF — a `Pair` gives its value no
+    /// `Scalar` of its own — so the subscript is not a location and the write
+    /// through it is the reached value's own business. An `Array`/`Hash` IS a
+    /// container and takes it, exactly as `@a = LIST` / `%h = LIST` does:
+    ///
+    /// ```text
+    /// my $p = (c => [1, 2]);  $p<c> = [3, 4];   # rakudo: :c([3, 4])
+    /// my $p = (c => [1, 2]);  $p<c> = 5;        # rakudo: :c([5])   (Array.STORE)
+    /// my $p = (c => [1, 2]);  $p<c>[0] = 9;     # rakudo: :c([9, 2])
+    /// my $p = (c => 1);       $p<c> = 9;        # Cannot modify an immutable Int (1)
+    /// ```
+    ///
+    /// Every other value — including an immutable `List`, a `Map` and a `Seq` —
+    /// is refused by the function above. Returns the addressed aggregate, which
+    /// shares the `Pair`'s node, so mutating it writes through the `Pair` and
+    /// through every other alias of that container.
+    pub(crate) fn pair_subscript_aggregate(slot: &Value, next_key: Option<&str>) -> Option<Value> {
+        let next_key = next_key?;
+        let (pair_key, pair_value) = match slot.view() {
+            ValueView::Pair(key, value) => (key.to_string(), value.clone()),
+            ValueView::ValuePair(key, value) => (key.to_string_value(), value.clone()),
+            _ => return None,
+        };
+        if next_key != pair_key {
+            return None;
+        }
+        let addressed = pair_value.deref_container();
+        match addressed.view() {
+            ValueView::Array(_, kind)
+                if kind.is_real_array() || kind == crate::value::ArrayKind::Shaped =>
+            {
+                Some(addressed)
+            }
+            ValueView::Hash(_) => Some(addressed),
+            _ => None,
+        }
+    }
+
+    /// Replace `aggregate`'s contents with `val`, the way rakudo's `.STORE`
+    /// does for the `Array`/`Hash` an associative subscript on a `Pair` reaches
+    /// (see [`Interpreter::pair_subscript_aggregate`]). The node is mutated in
+    /// place so the holding `Pair` — which cannot be replaced — sees it.
+    ///
+    /// The `self`-free twin of
+    /// [`Interpreter::store_into_aggregate_lvalue`](crate::runtime::Interpreter::store_into_aggregate_lvalue):
+    /// several of the callers are inside a container borrow and cannot reach
+    /// `&mut self`. It coerces with the same free functions the `&mut self`
+    /// form ends up in for everything but a user object.
+    pub(crate) fn store_into_pair_aggregate(aggregate: &Value, val: Value) -> bool {
+        let coerced = match aggregate.view() {
+            ValueView::Array(..) => crate::runtime::utils::coerce_to_array(val),
+            ValueView::Hash(_) => crate::runtime::utils::coerce_to_hash(val),
+            _ => return false,
+        };
+        aggregate.replace_container_contents(&coerced)
+    }
+
     /// [`Interpreter::subscript_descent_refusal`] told which key the next
     /// subscript addresses, so a `Pair` slot can name the value the store would
     /// have had to modify (see the `Pair` arm below).
@@ -3942,6 +4067,12 @@ impl Interpreter {
     ) -> Option<RuntimeError> {
         if let Some(err) = Self::pair_subscript_store_refusal(slot, outer_positional, next_key) {
             return Some(err);
+        }
+        // A `Pair` holding a real container IS descendable through that
+        // container; the type-based arm below does not know the shape and would
+        // answer "Type Pair does not support associative indexing".
+        if !outer_positional && Self::pair_subscript_aggregate(slot, next_key).is_some() {
+            return None;
         }
         let view = slot.view();
         let descendable = matches!(
@@ -4051,6 +4182,12 @@ impl Interpreter {
             let cell = cell.clone();
             let mut guard = cell.lock().unwrap();
             Self::assign_into_nested_container(&mut guard, outer_key, val)?;
+        } else if let Some(aggregate) = Self::pair_subscript_aggregate(target, Some(outer_key)) {
+            // `%h<x><y> = v` where `%h<x>` is the Pair `y => [...]`. The
+            // subscript addresses the Pair's value, which is a real container,
+            // so this is a STORE into it — not an element store, and not the
+            // clobber-with-a-fresh-Hash the fallthrough below would do.
+            Self::store_into_pair_aggregate(&aggregate, val);
         } else if Self::write_buf_element_if_buf_instance(target, outer_key, val.clone())? {
             // A Buf/Blob's element storage lives in a shared attribute cell,
             // not a raw Array/Hash payload -- write through it directly
@@ -4497,6 +4634,9 @@ impl Interpreter {
         // like any other (see the two-level op's hook above). A `:=` bind keeps
         // its bare source value, and a slice/junction innermost subscript is
         // split per element by the store sites below.
+        // See the two-level op: a `Pair`'s value takes a whole-container STORE,
+        // not an element store, so that one destination wants the raw rvalue.
+        let val_unitemized = val.clone();
         let val = if bind_cell.is_some()
             || matches!(
                 indices_val[0].view(),
@@ -4648,10 +4788,28 @@ impl Interpreter {
                         // chain as nested Hashes (and left `%h` itself holding
                         // the discarded root), where rakudo dies with
                         // "Cannot modify an immutable Int (1)".
-                        if let Some(err) =
-                            Self::subscript_descent_refusal_at(cur, next_positional, Some(key))
-                        {
+                        // `positional_flags[level]` — not `next_positional` —
+                        // is the subscript actually applied to `cur`, which is
+                        // what decides whether a `Pair` here is being indexed
+                        // associatively (a descent into its value) or
+                        // positionally (a refusal naming the Pair).
+                        if let Some(err) = Self::subscript_descent_refusal_at(
+                            cur,
+                            positional_flags[level],
+                            Some(key),
+                        ) {
                             return Err(err);
+                        }
+                        // A `Pair` whose value is a real container: the
+                        // subscript addresses that container, so descend INTO
+                        // it rather than clobbering the Pair with a fresh one.
+                        // It shares the Pair's node, so the deeper levels below
+                        // write through to the original.
+                        if let Some(aggregate) = Self::pair_subscript_aggregate(cur, Some(key)) {
+                            object_step_containers.push(Box::new(aggregate));
+                            current =
+                                &mut **object_step_containers.last_mut().unwrap() as *mut Value;
+                            continue;
                         }
                         // Autovivify the root itself if needed
                         if is_positional {
@@ -4724,6 +4882,16 @@ impl Interpreter {
                         })
                         .is_none()
                     {
+                        // The leaf is a `Pair` whose value is a real container
+                        // (`my %h = :x({:y(:z([1,2]))}); %h<x><y><z> = [3,4]`):
+                        // STORE into it. Autovivifying instead rebuilt the Pair
+                        // chain as nested Hashes and reported success.
+                        if let Some(aggregate) = Self::pair_subscript_aggregate(cur, Some(key))
+                            && bind_cell.is_none()
+                        {
+                            Self::store_into_pair_aggregate(&aggregate, val_unitemized.clone());
+                            continue;
+                        }
                         // Autovivify at final level
                         if is_positional {
                             let mut arr = Vec::new();
@@ -4871,6 +5039,22 @@ impl Interpreter {
             }
             _ => (raw_val, None, false),
         };
+
+        // The expression landed on a `Pair` whose value is a real container
+        // (`id($p)<c> = [3,4]`): the subscript addresses that container and
+        // rakudo STOREs into it. The refusal above already let this shape
+        // through; without this arm the generic path below would autovivify a
+        // throwaway container and report success.
+        if !was_bind
+            && let Some(aggregate) = Self::pair_subscript_aggregate(
+                target.deref_container().descalarize(),
+                (!is_positional).then_some(key.as_str()),
+            )
+        {
+            self.store_into_aggregate_lvalue(&aggregate, val.clone());
+            self.stack.push(val);
+            return Ok(());
+        }
 
         // A `CArray[T]` *native handle* produced by an expression -- a sub
         // call, a method call, an attribute accessor -- rather than bound to

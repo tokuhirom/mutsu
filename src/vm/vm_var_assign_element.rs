@@ -826,6 +826,36 @@ impl Interpreter {
         // per-target element needs its OWN store-time itemization applied
         // deeper in the slow path, not a single itemization of the whole
         // RHS list here.
+        // A `Pair` destination is the one shape whose subscript is NOT an
+        // element slot: `Pair.AT-KEY` hands back `.value` itself, so
+        // `my $p = (c => [1,2]); $p<c> = [3,4]` is a whole-container STORE into
+        // the Array the Pair holds. Handled ABOVE the itemization hook below,
+        // which exists for element slots and would nest the assigned list one
+        // level deeper (`:c([[3, 4],])`).
+        if !is_positional
+            && self.stack.len() >= 2
+            && matches!(self.stack[self.stack.len() - 1].view(), ValueView::Str(_))
+            // A `:=` bind installs a container and is rejected outright further
+            // down; it must not be read as a store.
+            && !matches!(
+                self.stack[self.stack.len() - 2].view(),
+                ValueView::Pair(n, _) if n.as_str() == "__mutsu_bind_index_value"
+            )
+            && let Some(target) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+            && let Some(aggregate) = Self::pair_subscript_aggregate(
+                target.deref_container().descalarize(),
+                Some(self.stack[self.stack.len() - 1].to_string_value().as_str()),
+            )
+        {
+            self.stack.pop();
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let val = self.fetch_proxy_for_store(val)?;
+            Self::store_into_pair_aggregate(&aggregate, val.clone());
+            self.stack.push(val);
+            return Ok(());
+        }
         {
             let stack_len = self.stack.len();
             if stack_len >= 2
