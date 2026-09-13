@@ -34,8 +34,15 @@ of completeness:
 - **`given`** had no copy at all. `pointy_topic_bind` bound the topic to the parameter's synthetic
   name and dropped the sub-signature on the floor.
 
-The `for` copy is now the only one: it moved to `src/param_destructure.rs`, and `given` and `with`
-call it. `given` declares the topic under the parameter's synthetic name first — exactly as `for`
+The `with` copy was not strictly weaker, though: it was the only one of the three that applied a
+sub-parameter's **coercion** type, so `with (1, 2) -> (Str() $a, $b)` bound a `Str` where `for` and
+`given` bound an `Int`. The shared lowering does that too now, so the other two gained it. Only a
+real coercion coerces — the constraint is recorded as `Target()` or `Target(Source)`, a plain
+nominal constraint is left alone (rakudo type-checks it rather than converting), and an indirect
+`::(EXPR)` constraint, which also ends in `)`, is excluded.
+
+The `for` copy is otherwise the only one: it moved to `src/param_destructure.rs`, and `given` and
+`with` call it. `given` declares the topic under the parameter's synthetic name first — exactly as `for`
 declares `__for_unpack` — and the binds read from that name, so the two constructs differ only in
 where the value comes from.
 
@@ -69,10 +76,11 @@ consume, and the parameter reaches the path that can read all of it.
 
 ## Tests
 
-- `t/routines/signature/given-with-destructuring-pointy-param.t` — 17 assertions over both
+- `t/routines/signature/given-with-destructuring-pointy-param.t` — 21 assertions over both
   constructs: attribute accessors, hash-key fallback, renames, defaults, optional sub-parameters,
-  `|` captures, `without`, and the plain (non-destructuring) pointy parameter's topic aliasing,
-  which must keep working.
+  `|` captures, `without`, coercion types (and a plain nominal constraint, which must *not*
+  coerce), and the plain (non-destructuring) pointy parameter's topic aliasing, which must keep
+  working.
 - `t/routines/signature/destructure-pseudo-type-constraint.t` — 10 assertions over the
   pseudo-type parameter forms, including the invocant and bare-parameter spellings the branch
   already handled.
