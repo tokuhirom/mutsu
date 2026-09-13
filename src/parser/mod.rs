@@ -11,7 +11,7 @@ pub(crate) use expr::{
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::next_anon_role_name;
 pub(crate) mod helpers;
-mod memo;
+pub(in crate::parser) mod memo;
 mod outer_redecl;
 mod parse_result;
 mod primary;

@@ -335,7 +335,7 @@ pub(crate) fn parse_sub_name_inner(input: &str, allow_dispatch: bool) -> PResult
                 '>' => {
                     depth -= 1;
                     if depth == 0 {
-                        let op_symbol = &after_open[..i];
+                        let op_symbol = unescape_operator_symbol(&after_open[..i]);
                         let after_close = &after_open[i + 1..];
                         let full_name = format!("{}:<{}>", base, op_symbol);
                         return Ok((after_close, full_name));
@@ -436,6 +436,38 @@ pub(crate) fn validate_categorical_parts(name: &str) -> Result<(), PError> {
         }
     }
     Ok(())
+}
+
+/// Unescape the angle-quoted symbol of an operator name (`infix:<...>`).
+///
+/// `<...>` is a Q-style quote whose ONLY escapes are the backslash itself and
+/// the delimiters, so `infix:<\\\\>` names the one-character operator `\\` while
+/// `infix:<\\n>` keeps both characters (checked against rakudo's own
+/// `&infix:<...>.name`). The scanner already skips a backslashed character so
+/// the closing `>` is found correctly; without this the escape survived into
+/// the registered name, so MIDI::Make's `sub infix:<\\\\>` declared a TWO-character
+/// operator and its `4\\4` default never matched it (#7954).
+fn unescape_operator_symbol(raw: &str) -> String {
+    if !raw.contains('\\') {
+        return raw.to_string();
+    }
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some(esc @ ('\\' | '<' | '>')) => out.push(esc),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 /// Resolve compile-time constants in operator symbol names.

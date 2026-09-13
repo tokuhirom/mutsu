@@ -20,7 +20,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         (rest, None, None)
     };
 
-    let (rest, body) = block(rest)?;
+    let (rest, body) = block_with_pointy_params(rest, param_def.as_slice())?;
 
     // Use a temp variable in the condition to evaluate cond_expr exactly once.
     // This is important for expressions like `Failure.new` where evaluating
@@ -209,32 +209,10 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 }
             } else {
                 // Simple parameter with possible traits from parse_for_params
-                with_body.push(Stmt::VarDecl {
-                    name: pname.clone(),
-                    expr: tmp_var.clone(),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                });
+                with_body.push(simple_pointy_bind(pname, &tmp_var, pdef.sigilless));
             }
         } else {
-            with_body.push(Stmt::VarDecl {
-                name: pname.clone(),
-                expr: tmp_var.clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            });
+            with_body.push(simple_pointy_bind(pname, &tmp_var, false));
         }
     }
     // Tag the scaffold `given` so the RakuAST converter can tell it from a
@@ -320,23 +298,37 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             let r = keyword("else", rest).unwrap();
             let (r, _) = ws(r)?;
             // Check for optional pointy block on else: else -> $param { ... }
+            // A sigilless `else -> \\v { ... }` names a term, not a lexical: it
+            // has to reach `simple_pointy_bind` (and the body's parse scope) the
+            // same way the `with` branch's own parameter does.
             let (r, else_param) = if let Some(r2) = r.strip_prefix("->") {
                 let (r2, _) = ws(r2)?;
-                if let Some(r_after_sigil) = r2.strip_prefix('$') {
+                let sigilless = r2.starts_with('\\');
+                let after_sigil = r2.strip_prefix('$').or_else(|| r2.strip_prefix('\\'));
+                if let Some(r_after_sigil) = after_sigil {
                     let end = r_after_sigil
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                         .unwrap_or(r_after_sigil.len());
                     let name = &r_after_sigil[..end];
                     let r2 = &r_after_sigil[end..];
                     let (r2, _) = ws(r2)?;
-                    (r2, Some(name.to_string()))
+                    (r2, Some((name.to_string(), sigilless)))
                 } else {
                     (r, None)
                 }
             } else {
                 (r, None)
             };
-            let (r, else_body) = block(r)?;
+            let else_scope_params: Vec<ParamDef> = else_param
+                .iter()
+                .filter(|(_, sigilless)| *sigilless)
+                .map(|(name, _)| {
+                    let mut pd = crate::parser::stmt::sub_param::make_param(name.clone());
+                    pd.sigilless = true;
+                    pd
+                })
+                .collect();
+            let (r, else_body) = block_with_pointy_params(r, &else_scope_params)?;
             // Topicalize $_ in else branch to the with/without condition, via `given`
             // (a fresh topic scope) so it is not blocked by an enclosing `for`'s
             // read-only `$_` (see the orwith branch above).
@@ -344,21 +336,10 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             // `else -> $_` names the topic the enclosing `given` already
             // installs; declaring it as an ordinary lexical would leave the
             // value behind after the block (same reason as `pointy_is_topic`).
-            if let Some(ref pname) = else_param
-                && pname.trim_start_matches('$') != "_"
+            if let Some((ref pname, sigilless)) = else_param
+                && (sigilless || pname.trim_start_matches('$') != "_")
             {
-                else_given_body.push(Stmt::VarDecl {
-                    name: pname.clone(),
-                    expr: tmp_var.clone(),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                });
+                else_given_body.push(simple_pointy_bind(pname, &tmp_var, sigilless));
             }
             else_given_body.extend(else_body);
             let else_with_topic = vec![Stmt::Given {

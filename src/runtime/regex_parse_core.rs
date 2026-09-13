@@ -3685,8 +3685,19 @@ impl Interpreter {
                     let mut group_pattern = String::new();
                     let mut depth = 1;
                     let mut in_comment = false;
-                    let mut angle_depth = 0u32;
+                    // One entry per open `<...>`, true when it is a character
+                    // CLASS (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`)
+                    // rather than an assertion or subrule call. The two read
+                    // their contents by opposite rules and this scanner has to
+                    // honour both: a class's members are literal, so a quote in
+                    // `<-['"]>` opens nothing; an assertion holds a nested
+                    // regex, so the quote in `<!before '>}}'>` does open a
+                    // string and the `>` inside it does NOT close the assertion
+                    // (Blogin). Tracking one `angle_depth` and keying both rules
+                    // off it could only ever get one of the two right.
+                    let mut angle_kinds: Vec<bool> = Vec::new();
                     while let Some(ch) = chars.next() {
+                        let in_char_class = angle_kinds.last().copied().unwrap_or(false);
                         if in_comment {
                             group_pattern.push(ch);
                             if ch == '\n' {
@@ -3695,16 +3706,16 @@ impl Interpreter {
                             continue;
                         }
                         if ch == '<' {
-                            angle_depth += 1;
+                            angle_kinds.push(matches!(chars.peek(), Some('[' | '-' | '+' | ':')));
                             group_pattern.push(ch);
                             continue;
                         }
-                        if ch == '>' && angle_depth > 0 {
-                            angle_depth -= 1;
+                        if ch == '>' && !angle_kinds.is_empty() {
+                            angle_kinds.pop();
                             group_pattern.push(ch);
                             continue;
                         }
-                        if ch == '#' && angle_depth == 0 {
+                        if ch == '#' && angle_kinds.is_empty() {
                             in_comment = true;
                             group_pattern.push(ch);
                             continue;
@@ -3717,11 +3728,11 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '\'' && angle_depth == 0 {
+                        if ch == '\'' && !in_char_class {
                             // Single-quoted string — skip until closing quote.
-                            // Inside a `<...>` assertion / char class (angle_depth>0)
-                            // a quote is a literal member (e.g. `<-['"]>`), not a
-                            // string delimiter, so it must not swallow the group.
+                            // Inside a character CLASS a quote is a literal member
+                            // (e.g. `<-['"]>`), not a string delimiter, so it must
+                            // not swallow the group.
                             group_pattern.push(ch);
                             for sq in chars.by_ref() {
                                 group_pattern.push(sq);
@@ -3731,12 +3742,12 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '"' && angle_depth == 0 {
+                        if ch == '"' && !in_char_class {
                             // Double-quoted string — skip until closing quote.
-                            // Inside a `<...>` assertion / char class (angle_depth>0)
-                            // a `"` is a literal member (e.g. `<-["]>`), not a string
-                            // delimiter — without this guard it swallowed the closing
-                            // `)` and produced a spurious "Unmatched ( in regex".
+                            // Inside a character CLASS a `"` is a literal member
+                            // (e.g. `<-["]>`), not a string delimiter — without this
+                            // guard it swallowed the closing `)` and produced a
+                            // spurious "Unmatched ( in regex".
                             group_pattern.push(ch);
                             for dq in chars.by_ref() {
                                 group_pattern.push(dq);
@@ -3746,16 +3757,24 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        if ch == '(' {
+                        if ch == '(' && !in_char_class {
                             depth += 1;
                             group_pattern.push(ch);
-                        } else if ch == ')' {
+                        } else if ch == ')' && !in_char_class {
                             depth -= 1;
                             if depth == 0 {
                                 break;
                             }
                             group_pattern.push(ch);
                         } else {
+                            // Inside a `<...>` assertion / char class a paren is a
+                            // literal member, not a nesting bracket — the same rule
+                            // the `'` and `"` guards above already follow. Counting
+                            // it ended the group at the `)` of `<[.)]>`, so
+                            // `( \d+ <[.)]> )` died on the leftover `]`
+                            // (Markdown::Lex, Blogin — #7954). Balanced parens in a
+                            // `<{ ... }>` code assertion are unaffected: they cancel
+                            // out either way.
                             group_pattern.push(ch);
                         }
                     }
