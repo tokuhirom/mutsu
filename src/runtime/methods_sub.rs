@@ -908,13 +908,9 @@ impl Interpreter {
             // differs from what was stored at first-wrap time, the sub was redefined.
             let func_name = data.name.resolve();
             let current_callable_id = if !func_name.is_empty() {
-                let key = format!(
-                    "__mutsu_callable_id::{}::{}",
-                    self.current_package(),
-                    func_name
-                );
+                let key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), &func_name);
                 self.env
-                    .get(&key)
+                    .get_sym(key)
                     .and_then(|v| {
                         if let ValueView::Int(n) = v.view() {
                             Some(n)

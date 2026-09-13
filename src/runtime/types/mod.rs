@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 mod args_matching;
@@ -802,7 +803,7 @@ impl Interpreter {
     /// later `T` resolution — a `--> T` return constraint above all — fell back
     /// to the literal name `T` (#7984).
     pub(in crate::runtime) fn type_capture_marker_key(name: &str) -> String {
-        format!("__mutsu_type_capture_bound__{}", name)
+        MetaNs::TypeCaptureBound.owned_key_for_str(name)
     }
 }
 

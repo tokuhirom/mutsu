@@ -4,6 +4,7 @@
 //! in `class`; instance-method dispatch in `class_dispatch`.
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 /// Winner of the per-MRO-level race between an explicit user method and a
 /// public attribute accessor (see `resolve_user_method_or_accessor`).
@@ -574,7 +575,7 @@ impl Interpreter {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr_name in &class_def.alias_attributes {
                     attrs.insert(
-                        format!("__mutsu_attr_alias::{}", attr_name),
+                        MetaNs::AttrAlias.owned_key_for_str(attr_name),
                         Value::str(attr_name.to_string()),
                     );
                 }

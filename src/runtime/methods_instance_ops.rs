@@ -3,6 +3,7 @@ use super::methods_signature_errors::{
     make_private_unqualified_error,
 };
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueView;
@@ -1097,8 +1098,8 @@ impl Interpreter {
                             .to_string_lossy()
                             .to_string();
                         // Check cache first
-                        let cache_key =
-                            format!("__mutsu_compunit::{}::{}", canonical_prefix, short_name_str);
+                        let cache_key = MetaNs::Compunit
+                            .owned_key_pair_for_strs(&canonical_prefix, &short_name_str);
                         if let Some(existing) = self.env.get(&cache_key).cloned() {
                             return Ok(existing);
                         }

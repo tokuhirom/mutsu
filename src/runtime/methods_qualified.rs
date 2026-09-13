@@ -2,6 +2,7 @@ use super::methods_signature_errors::{
     make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
 };
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 /// Byte offset of the first extended-name adverb in a method name (`:sym<…>`,
@@ -751,7 +752,7 @@ impl Interpreter {
                     })
             })
         });
-        let role_applied = mixins.contains_key(&format!("__mutsu_role__{qualifier}"))
+        let role_applied = mixins.contains_key(MetaNs::Role.str_key_for_str(qualifier))
             || mixins.contains_key(qualifier)
             || composed_on_inner;
         if role_applied
@@ -812,7 +813,7 @@ impl Interpreter {
                     }
                 }
                 return Some(res.map(|(result, updated)| {
-                    if mixins.contains_key(&format!("__mutsu_role__{qualifier}")) {
+                    if mixins.contains_key(MetaNs::Role.str_key_for_str(qualifier)) {
                         let inner_cell = Self::self_instance_attrs(inner.as_ref());
                         self.commit_mixin_role_method_attrs(
                             mixins,

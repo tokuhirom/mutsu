@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
@@ -1116,12 +1117,9 @@ impl Interpreter {
             && self.is_role_type_name(&constraint_base)
             && let ValueView::Mixin(_, mixins) = value.view()
         {
-            let key = format!(
-                "__mutsu_role_typeargs__{}",
-                Symbol::intern(&constraint_base)
-            );
+            let key = MetaNs::RoleTypeargs.str_key_for_str(&constraint_base);
             if value.does_check(&constraint_base)
-                && let Some(ValueView::Array(actual_args, ..)) = mixins.get(&key).map(Value::view)
+                && let Some(ValueView::Array(actual_args, ..)) = mixins.get(key).map(Value::view)
             {
                 let expected_args = constraint_args
                     .iter()

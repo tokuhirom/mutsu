@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
@@ -243,7 +244,7 @@ impl Interpreter {
         for _ in 0..8 {
             match current.view() {
                 ValueView::Mixin(inner_value, mixins) => {
-                    let marker = format!("__mutsu_role__{owner}");
+                    let marker = MetaNs::Role.owned_key_for_str(owner);
                     if mixins.contains_key(&marker) {
                         return (Some(mixins.attributes().clone()), inner);
                     }
@@ -283,7 +284,7 @@ impl Interpreter {
         for _ in 0..8 {
             match current.view() {
                 ValueView::Mixin(inner_value, mixins) => {
-                    let marker = format!("__mutsu_role__{owner}");
+                    let marker = MetaNs::Role.owned_key_for_str(owner);
                     if mixins.contains_key(&marker) {
                         return Some(mixins.role_attribute_key(owner, bare.as_str()));
                     }

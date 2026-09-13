@@ -148,7 +148,7 @@ impl Interpreter {
     }
 
     fn var_meta_value_key(name: &str) -> String {
-        format!("__mutsu_var_meta::{}", name)
+        MetaNs::VarMeta.owned_key_for_str(name)
     }
 
     pub(crate) fn set_var_dynamic(&mut self, name: &str, dynamic: bool) {

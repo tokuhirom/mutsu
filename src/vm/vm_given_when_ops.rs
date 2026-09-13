@@ -1,5 +1,6 @@
 use super::*;
 use crate::opcode::WhenMatcherKind;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn exec_given_op(
@@ -188,7 +189,7 @@ impl Interpreter {
                 this.env_mut()
                     .remove_sym(crate::runtime::sigilless_readonly_key(p));
                 this.env_mut()
-                    .remove(&format!("__mutsu_bound_decont::{}", p));
+                    .remove_sym(MetaNs::BoundDecont.key_for_str(p));
                 this.unmark_readonly(p);
                 // A pointy param (`-> @p`) is block-scoped: its aliased container
                 // value must NOT linger in `@p`'s env/local slot past the block.

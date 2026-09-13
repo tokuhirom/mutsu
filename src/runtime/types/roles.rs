@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -67,12 +68,12 @@ impl Interpreter {
             _ => (sub_val, HashMap::new().into()),
         };
         for role_name in &roles {
-            mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
+            mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
             // Preserve an already-stamped application order across rebuilds
             // (a routine rebuilds its mixin markers on every call/`&name`
             // mention); only stamp when this is the first time.
             mixins
-                .entry(format!("__mutsu_role_seq__{role_name}"))
+                .entry(MetaNs::RoleSeq.owned_key_for_str(role_name))
                 .or_insert_with(|| Value::int(crate::value::next_instance_id() as i64));
             let role_id = self
                 .registry()
@@ -81,7 +82,7 @@ impl Interpreter {
                 .map_or(0, |r| r.role_id);
             if role_id != 0 {
                 mixins.insert(
-                    format!("__mutsu_role_id__{role_name}"),
+                    MetaNs::RoleId.owned_key_for_str(role_name),
                     Value::int(role_id as i64),
                 );
             }
@@ -95,7 +96,7 @@ impl Interpreter {
         role_name: &str,
     ) -> Option<RoleDef> {
         let role_id = mixins
-            .get(&format!("__mutsu_role_id__{role_name}"))
+            .get(MetaNs::RoleId.str_key_for_str(role_name))
             .and_then(|value| match value.view() {
                 ValueView::Int(id) if id > 0 => Some(id as u64),
                 _ => None,
@@ -239,7 +240,7 @@ impl Interpreter {
                 }
                 if target_method == method_name {
                     let attr_name = attr_var_name.trim_start_matches(['.', '!']);
-                    return Some(format!("__mutsu_attr__{attr_name}"));
+                    return Some(MetaNs::Attr.owned_key_for_str(attr_name));
                 }
             }
         }
@@ -273,7 +274,7 @@ impl Interpreter {
                     continue;
                 }
                 let attr_name = attr_var_name.trim_start_matches(['.', '!']);
-                let marker = format!("__mutsu_attr__{attr_name}");
+                let marker = MetaNs::Attr.owned_key_for_str(attr_name);
                 if !mixins.contains_key(&marker) {
                     continue;
                 }
@@ -400,7 +401,7 @@ impl Interpreter {
         };
         for name in role_names {
             mixins
-                .entry(format!("__mutsu_role_group__{name}"))
+                .entry(MetaNs::RoleGroup.owned_key_for_str(name))
                 .or_insert_with(|| Value::int(group));
         }
         Value::mixin_with_state(inner.as_ref().clone(), mixins)
@@ -744,7 +745,7 @@ impl Interpreter {
         } else {
             (left, HashMap::new().into())
         };
-        mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
         // A monotonic application-order stamp: Rakudo resolves a method-name
         // collision between two mixed-in roles by later-wins precedence
         // (`(0 but A) but B).m` answers from B), not alphabetically. The
@@ -753,7 +754,7 @@ impl Interpreter {
         // this instead of by name. See
         // todo/tickets/mixin-role-order-not-tracked.md.
         mixins.insert(
-            format!("__mutsu_role_seq__{}", role_name),
+            MetaNs::RoleSeq.owned_key_for_str(role_name),
             Value::int(crate::value::next_instance_id() as i64),
         );
         // The role's type parameters, bound to the values this composition
@@ -771,7 +772,7 @@ impl Interpreter {
         // `(1 but R(2)).WHAT =:= (1 but R(3)).WHAT` False.
         if is_parameterisation && !role_args.is_empty() {
             mixins.insert(
-                format!("__mutsu_role_typeargs__{}", role_name),
+                MetaNs::RoleTypeargs.owned_key_for_str(role_name),
                 Value::array(role_args.to_vec()),
             );
             // Store per-parameter bindings so that methods with type-parameterized
@@ -791,7 +792,7 @@ impl Interpreter {
             let type_arg_values = resolved_type_arg_values.as_deref().unwrap_or(role_args);
             for (param_name, type_arg) in param_names.iter().zip(type_arg_values.iter()) {
                 mixins.insert(
-                    format!("__mutsu_role_param__{}", param_name),
+                    MetaNs::RoleParam.owned_key_for_str(param_name),
                     type_arg.clone(),
                 );
                 param_bindings.push((param_name.clone(), type_arg.clone()));
@@ -802,7 +803,10 @@ impl Interpreter {
             // but the parameters ARE bound — and a default that raises rejects
             // the composition right here.
             for (param_name, value) in self.role_default_type_param_bindings(role_name)? {
-                mixins.insert(format!("__mutsu_role_param__{}", param_name), value.clone());
+                mixins.insert(
+                    MetaNs::RoleParam.owned_key_for_str(&param_name),
+                    value.clone(),
+                );
                 param_bindings.push((param_name, value));
             }
         }
@@ -816,7 +820,7 @@ impl Interpreter {
         let role_id = role.as_ref().map_or(0, |r| r.role_id);
         if role_id != 0 {
             mixins.insert(
-                format!("__mutsu_role_id__{}", role_name),
+                MetaNs::RoleId.owned_key_for_str(role_name),
                 Value::int(role_id as i64),
             );
         }
@@ -890,7 +894,7 @@ impl Interpreter {
                         _ => Value::package(crate::symbol::wk::any()),
                     }
                 };
-                mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                mixins.insert(MetaNs::Attr.owned_key_for_str(attr_name), value);
             }
             if let Some(saved) = saved_env {
                 self.env = saved;
@@ -975,7 +979,7 @@ impl Interpreter {
             .collect();
         if let ValueView::Mixin(_, mixins) = target.view() {
             for (attr_name, sigil) in &attr_names {
-                let key = format!("__mutsu_attr__{}", attr_name);
+                let key = MetaNs::Attr.owned_key_for_str(attr_name);
                 if let Some(val) = mixins
                     .role_attribute(role_name, attr_name)
                     .or_else(|| mixins.get(&key).cloned())
@@ -1004,7 +1008,7 @@ impl Interpreter {
             && let ValueView::Mixin(_, mixins) = target.view()
         {
             for param_name in &role_param_names {
-                let key = format!("__mutsu_role_param__{}", param_name);
+                let key = MetaNs::RoleParam.owned_key_for_str(param_name);
                 if let Some(val) = mixins.get(&key) {
                     saved_role_params.push((param_name.clone(), self.env.get(param_name).cloned()));
                     self.env.insert(param_name.clone(), val.clone());
@@ -1039,7 +1043,7 @@ impl Interpreter {
                 let env_key = attr_env_key(*sigil, attr_name);
                 if let Some(val) = self.env.get(&env_key) {
                     mixins.set_role_attribute(role_name, attr_name, val.clone());
-                    mixins.insert(format!("__mutsu_attr__{}", attr_name), val.clone());
+                    mixins.insert(MetaNs::Attr.owned_key_for_str(attr_name), val.clone());
                 }
             }
             // Clean up env vars

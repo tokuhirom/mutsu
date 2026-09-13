@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 /// The "no such method" answer of `Metamodel::MethodContainer`'s `.^lookup`
@@ -806,7 +807,7 @@ impl Interpreter {
                 {
                     let base = base_name.resolve();
                     if let ValueView::Mixin(_, mixins) = invocant.view() {
-                        let key = format!("__mutsu_role_typeargs__{}", base);
+                        let key = MetaNs::RoleTypeargs.owned_key_for_str(&base);
                         let has_role = invocant.does_check(&base);
                         let args_match = if let Some(ValueView::Array(actual_args, ..)) =
                             mixins.get(&key).map(Value::view)

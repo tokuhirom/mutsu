@@ -1,5 +1,6 @@
 use super::types::allomorph_type_name;
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Value {
     /// Check if this value is an instance of the given type name (Raku `isa` operator).
@@ -570,7 +571,7 @@ impl Value {
     /// Check if this value does (composes) the given role name.
     pub(crate) fn does_check(&self, role_name: &str) -> bool {
         if let ValueView::Mixin(inner, mixins) = self.view() {
-            let key = format!("__mutsu_role__{}", role_name);
+            let key = MetaNs::Role.owned_key_for_str(role_name);
             if mixins.contains_key(&key) {
                 return true;
             }

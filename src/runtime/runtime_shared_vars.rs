@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::value::ValueView;
 
@@ -148,7 +149,7 @@ impl Interpreter {
         if is_thread_clone {
             // Mark dirty once per key (a per-key env marker avoids re-locking the
             // dirty set on every element write).
-            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            let dirty_marker = MetaNs::SharedDirty.owned_key_for_str(key);
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(key);
                 self.env.insert(dirty_marker, Value::TRUE);
@@ -243,7 +244,7 @@ impl Interpreter {
             })
             .flatten()?;
         if is_thread_clone {
-            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            let dirty_marker = MetaNs::SharedDirty.owned_key_for_str(key);
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(key);
                 self.env.insert(dirty_marker, Value::TRUE);
@@ -650,7 +651,7 @@ impl Interpreter {
             for key in &dirty_keys {
                 // Atomic ops store the value under an internal shared key, while
                 // dirty tracking also marks the user-visible variable name.
-                let name_key = format!("__mutsu_atomic_name::{key}");
+                let name_key = MetaNs::AtomicName.owned_key_for_str(key);
                 let value_key = sv
                     .get(&name_key)
                     .or_else(|| self.env.get(&name_key).cloned())
@@ -834,7 +835,7 @@ impl Interpreter {
         if !Self::atomic_var_seen_anywhere() {
             return;
         }
-        let name_key = format!("__mutsu_atomic_name::{name}");
+        let name_key = MetaNs::AtomicName.owned_key_for_str(name);
         // The name -> value_key mapping is authoritative in `shared_vars`
         // (it survives across frames), while `env` only mirrors it for the
         // frame that first registered the atomic. A plain assignment
@@ -874,7 +875,7 @@ impl Interpreter {
         if !Self::atomic_var_seen_anywhere() {
             return;
         }
-        let name_key = format!("__mutsu_atomic_name::{name}");
+        let name_key = MetaNs::AtomicName.owned_key_for_str(name);
         self.env.remove(&name_key);
         let value_key = self
             .shared_vars

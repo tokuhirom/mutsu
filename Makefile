@@ -64,10 +64,11 @@ check-t-layout:
 	scripts/check-t-layout.sh
 	python3 scripts/migrate-t-layout.py --check
 
-# Hand-built `format!("__mutsu_...::{name}")` env keys may only go down, never
-# up (#8087). Build them with `MetaNs` (src/runtime/meta_ns.rs) instead, which
-# memoizes the key per (namespace, name). Re-cut the baseline after converting
-# sites with: scripts/check-magic-keys.sh --update
+# Hand-built `format!("__mutsu_...::{name}")` metadata keys are banned (#8087).
+# Build them with `MetaNs` (src/runtime/meta_ns.rs) instead, which memoizes the
+# key per (namespace, name). This was a shrinking per-file ratchet while the
+# 276 pre-existing sites were worked through; they are all converted now, so
+# the baseline file is gone and any new site simply fails.
 check-magic-keys:
 	scripts/check-magic-keys.sh
 

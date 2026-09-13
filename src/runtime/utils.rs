@@ -1,3 +1,4 @@
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
@@ -41,7 +42,7 @@ pub(crate) const MAX_LAZY_RANGE_PREFIX: i64 = 100_000;
 /// that run per store and per closure call: the caller probes the env with
 /// `get_sym` / `contains_key_sym` / `remove_sym` and writes with
 /// `insert_sym_noting`, so neither the key string nor its hash is rebuilt
-/// (#8087). [`MetaNs`](crate::runtime::meta_ns::MetaNs) memoizes the mapping.
+/// (#8087). [`MetaNs`] memoizes the mapping.
 pub(crate) fn sigilless_alias_key(name: &str) -> crate::symbol::Symbol {
     crate::runtime::meta_ns::MetaNs::SigillessAlias.key_for_str(name)
 }
@@ -58,7 +59,7 @@ pub(crate) fn sigilless_readonly_key(name: &str) -> crate::symbol::Symbol {
 /// redeclaration clears it so a fresh variable cannot inherit an earlier
 /// same-named one's holes.
 pub(crate) fn deleted_index_key(name: &str) -> String {
-    format!("__mutsu_deleted_index::{name}")
+    MetaNs::DeletedIndex.owned_key_for_str(name)
 }
 
 /// The env key marking `name` as a genuine bound array SLICE (`@slice :=
@@ -66,7 +67,7 @@ pub(crate) fn deleted_index_key(name: &str) -> String {
 /// only at the bind moment that produces them, and cleared on every
 /// redeclaration of the same name.
 pub(crate) fn bound_array_slice_key(name: &str) -> String {
-    format!("__mutsu_bound_array_slice::{name}")
+    MetaNs::BoundArraySlice.owned_key_for_str(name)
 }
 
 /// The env key recording that a `$` name was `:=`-bound straight to a value and
@@ -78,10 +79,7 @@ pub(crate) fn bound_array_slice_key(name: &str) -> String {
 /// The `$` is trimmed because the compiler stores scalars under their bare name,
 /// but a caller that still holds the sigiled spelling must land on the same key.
 pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
-    format!(
-        "__mutsu_scalar_bind_no_container::{}",
-        name.trim_start_matches('$')
-    )
+    MetaNs::ScalarBindNoContainer.owned_key_for_str(name.trim_start_matches('$'))
 }
 
 /// True for the per-call-site internal temp names of the Index-argument `is rw`

@@ -24,6 +24,7 @@
 
 use super::*;
 use crate::builtins::builtin_type_catalog::{builtin_type_info, builtin_type_mro_ids};
+use crate::runtime::meta_ns::MetaNs;
 use crate::type_id::{TypeId, well_known_types};
 use crate::value::ValueView;
 use std::borrow::Cow;
@@ -377,7 +378,7 @@ impl Interpreter {
             .filter_map(|k| k.strip_prefix("__mutsu_role__"))
             .map(|name| {
                 let seq = mixins
-                    .get(&format!("__mutsu_role_seq__{}", name))
+                    .get(MetaNs::RoleSeq.str_key_for_str(name))
                     .and_then(|v| match v.view() {
                         ValueView::Int(n) => Some(n),
                         _ => None,

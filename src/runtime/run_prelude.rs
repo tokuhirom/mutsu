@@ -5,6 +5,7 @@ use super::run::{
 };
 use super::source_code_text::CodeText;
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Prepend builtin prelude role definitions to `stmts` when the source
@@ -538,7 +539,7 @@ impl Interpreter {
             // one, so a genuine duplicate `our proto` in the body still errors.
             if result.is_ok() {
                 self.env.insert(
-                    format!("__mutsu_inline_package_proto_preregistered::{package}::{name_str}"),
+                    MetaNs::InlinePackageProto.owned_key_pair_for_strs(package, &name_str),
                     Value::TRUE,
                 );
             }
@@ -689,10 +690,11 @@ impl Interpreter {
             self.set_current_package(saved_package);
             if installed {
                 self.env_mut().insert(
-                    format!(
-                        "__mutsu_inline_package_sub_preregistered::{package}::{}::{site_fingerprint}",
-                        name.resolve()
-                    ),
+                    MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                        &package,
+                        &name.resolve(),
+                        &site_fingerprint.to_string(),
+                    ]),
                     Value::TRUE,
                 );
             }

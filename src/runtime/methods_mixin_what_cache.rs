@@ -8,6 +8,7 @@
 //! other.
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Build the `.WHAT` value for a role-mixed (`Mixin`) value: the base
@@ -97,7 +98,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.ensure_role_punned_to_class(role_name)?;
         let mut mixins: crate::value::MixinOverrides = HashMap::new().into();
-        mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
+        mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
         // Mirrors `mark_punned_role_instance`'s own role-id lookup so a
         // punned instance's `.WHAT` and `^pun`'s return value key to the
         // SAME cache entry (both omit the marker when a role carries no
@@ -109,7 +110,7 @@ impl Interpreter {
             .map_or(0, |r| r.role_id);
         if role_id != 0 {
             mixins.insert(
-                format!("__mutsu_role_id__{role_name}"),
+                MetaNs::RoleId.owned_key_for_str(role_name),
                 Value::int(role_id as i64),
             );
         }

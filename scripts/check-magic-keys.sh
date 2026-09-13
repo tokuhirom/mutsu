@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ratchet on hand-built `__mutsu_*` metadata env keys (issue #8087).
+# Ban on hand-built `__mutsu_*` metadata keys (issue #8087).
 #
 # `format!("__mutsu_<ns>::{name}")` followed by an `Env` probe has been the
 # profiling finding in five separate perf campaigns (#7571, #7766, the two
@@ -8,98 +8,90 @@
 # profile happened to walk through, and the pattern grew back, because nothing
 # stopped the next site being written.
 #
-# `MetaNs` (src/runtime/meta_ns.rs) is the memoizing constructor that should
-# build every one of these keys. This script is what keeps the sites that have
-# NOT moved to it from multiplying: it counts the hand-built sites per file and
-# compares against a checked-in baseline. A count may go DOWN (that is the
-# work) or stay the same; it may never go up, and a file not in the baseline may
-# not introduce one at all.
+# `MetaNs` (src/runtime/meta_ns.rs) is the memoizing constructor that builds
+# every one of these keys, and as of stage 3 of #8087 it builds ALL of them:
+# this script started life as a ratchet over a 276-site baseline, which stage 2
+# took to 174 and stage 3 to zero. With the debt gone the baseline file went
+# with it, and what is left is the simpler rule -- there is no hand-built form
+# any more, so a new one is a build failure, not a number to compare.
 #
-# So this is a ratchet, not a ban. The debt stays visible and shrinking, and
-# nobody has to know a site is hot before they are told not to add another.
+#   scripts/check-magic-keys.sh      # `make check-magic-keys`, a `make test`
+#                                    # prerequisite and a CI step
 #
-#   scripts/check-magic-keys.sh              # check against the baseline
-#   scripts/check-magic-keys.sh --update     # re-baseline after converting sites
-#
-# `make check-magic-keys` runs the check, and it is a `make test` prerequisite.
-#
-# The endgame is that the baseline reaches zero and these keys stop existing
-# altogether, because the metadata moves onto the binding's own descriptor
-# (#8069 §4.1) or off the per-frame env (#7817 / ADR-0084). Until then, down
-# only.
+# The endgame is that these keys stop existing altogether, because the metadata
+# moves onto the binding's own descriptor (#8069 §4.1) or off the per-frame env
+# (#7817 / ADR-0084). This gate is what keeps the ground from being lost while
+# that happens.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-BASELINE=scripts/magic-keys-baseline.tsv
-
-# One hand-built key site = a `format!` whose literal starts a `__mutsu_`
-# namespace. Deliberately narrow: it matches construction, not the many places
-# that legitimately MENTION a key (comments, `starts_with` probes, tests).
+# One hand-built key site = a format-string LITERAL that opens a `__mutsu_`
+# namespace and then interpolates: `"__mutsu_<ns>::{"` or `"__mutsu_<ns>__{"`.
+#
+# Matching the literal rather than `format!("__mutsu_` is deliberate, and was
+# the fix for a hole this gate shipped with: a `format!` whose literal sits on
+# the NEXT line -- which is how rustfmt writes any call that does not fit on one
+# -- was invisible to it. Eight real sites were hiding behind that,
+# `__mutsu_callable_id::` among them, in the very namespace the previous stage
+# had just declared clear.
+#
+# The `::` / `__` in the pattern is what separates a key from a compiler
+# temporary, and the distinction is a convention the codebase already keeps
+# without exception:
+#
+#   `__mutsu_<ns>::<name>`  an ENV key, derived from a binding's name
+#   `__mutsu_<ns>__<name>`  a MIXIN-REGISTRY key, derived from a role/attr name
+#   `__mutsu_<kind>_<n>`    a gensym: one fresh unique local name per compile
+#                           site, with a counter, not a name, after the `_`
+#
+# Only the first two are what this issue is about. They are *probed* -- built
+# from a name that something else also has, over and over at runtime, which is
+# why memoizing them pays and why a spelling mismatch between the writer and
+# the reader silently loses the metadata. A gensym is built once at compile
+# time and handed straight to `alloc_local`; nothing ever looks it up by
+# rebuilding it, so there is nothing to memoize and nothing to get out of step.
+#
+# So: a new namespace key must go through `MetaNs`, and a new temporary is free
+# to keep its `format!` -- but it must keep the single-underscore shape, or this
+# gate will (correctly) start counting it.
 #
 # src/runtime/meta_ns.rs is exempt -- it is the constructor those sites are
 # supposed to be using, and its own `format!` is the one that is allowed.
-count_sites() {
-    grep -rn 'format!("__mutsu_' src/ --include='*.rs' \
+# Comment lines are skipped: prose that quotes a key is not a call site.
+sites=$(
+    grep -rnE '"__mutsu_[A-Za-z0-9_]*(::|__)\{' src/ --include='*.rs' \
         | grep -v '^src/runtime/meta_ns.rs:' \
-        | cut -d: -f1 | sort | uniq -c \
-        | awk '{printf "%s\t%s\n", $2, $1}' | LC_ALL=C sort
-}
+        | grep -vE '^[^:]*:[0-9]+: *(//|\*)' \
+        || true
+)
 
-if [ "${1:-}" = "--update" ]; then
-    {
-        echo "# Hand-built __mutsu_* key sites per file. Ratcheted by"
-        echo "# scripts/check-magic-keys.sh: these counts may go down, never up."
-        echo "# Regenerate with: scripts/check-magic-keys.sh --update"
-        count_sites
-    } > "$BASELINE"
-    echo "check-magic-keys: baseline updated ($(grep -vc '^#' "$BASELINE") files, $(count_sites | awk -F'\t' '{n+=$2} END {print n+0}') sites)"
-    exit 0
-fi
+if [ -n "$sites" ]; then
+    echo "check-magic-keys: hand-built __mutsu_* metadata key(s):" >&2
+    echo "$sites" | sed 's/^/  /' >&2
+    cat >&2 <<'MSG'
 
-if [ ! -f "$BASELINE" ]; then
-    echo "check-magic-keys: $BASELINE missing; run scripts/check-magic-keys.sh --update" >&2
+  Build these with MetaNs instead (src/runtime/meta_ns.rs):
+
+      MetaNs::Type.key(sym)               -> Symbol, memoized; probe with
+                                             Env::get_sym / contains_key_sym
+      MetaNs::Role.str_key_for_str(name)  -> &'static str, for the String-keyed
+                                             mixin registry
+      MetaNs::CallableId.key_pair(a, b)   -> a two-part key
+
+  Add a variant for a namespace that has none yet, and pin its spelling in
+  meta_ns.rs's `every_namespace_spells_its_key_exactly_as_the_format_sites_did`.
+
+  A WRITE must go through Env::insert_sym_noting, not insert_sym: insert_sym
+  skips note_env_key, which leaves the reader's `*_possible()` fast-path probe
+  switched off for the rest of the process -- no error, just metadata that is
+  never found again.
+
+  See https://github.com/tokuhirom/mutsu/issues/8087.
+MSG
+    count=$(echo "$sites" | wc -l | tr -d ' ')
+    echo "check-magic-keys: FAILED ($count site(s))" >&2
     exit 1
 fi
 
-current=$(mktemp)
-trap 'rm -f "$current"' EXIT
-count_sites > "$current"
-
-fail=0
-total_now=0
-total_base=0
-
-while IFS=$'\t' read -r file n; do
-    total_now=$((total_now + n))
-    base=$(awk -F'\t' -v f="$file" '$1==f {print $2}' "$BASELINE")
-    if [ -z "$base" ]; then
-        echo "check-magic-keys: $file introduces $n hand-built __mutsu_* key(s)." >&2
-        echo "  Build them with MetaNs::<Namespace>.key(sym) instead (src/runtime/meta_ns.rs)," >&2
-        echo "  and probe the env with get_sym / contains_key_sym. See #8087." >&2
-        fail=1
-    elif [ "$n" -gt "$base" ]; then
-        echo "check-magic-keys: $file went from $base to $n hand-built __mutsu_* key(s)." >&2
-        echo "  This count is a ratchet and may only go down. Use MetaNs; see #8087." >&2
-        fail=1
-    fi
-done < "$current"
-
-# A file whose sites are all gone drops out of the current list entirely; that
-# is progress, but leaving it in the baseline lets it silently grow back to the
-# old number later. Report it so the baseline is re-cut.
-while IFS=$'\t' read -r file n; do
-    case "$file" in \#*) continue ;; esac
-    total_base=$((total_base + n))
-    now=$(awk -F'\t' -v f="$file" '$1==f {print $2}' "$current")
-    if [ -z "$now" ] || [ "$now" -lt "$n" ]; then
-        echo "check-magic-keys: $file is now at ${now:-0} (baseline $n) — re-cut with --update." >&2
-        fail=1
-    fi
-done < "$BASELINE"
-
-if [ "$fail" = 1 ]; then
-    echo "check-magic-keys: FAILED ($total_now sites now, baseline $total_base)" >&2
-    exit 1
-fi
-echo "check-magic-keys: ok ($total_now hand-built __mutsu_* key sites, baseline $total_base)"
+echo "check-magic-keys: ok (no hand-built __mutsu_* metadata keys)"

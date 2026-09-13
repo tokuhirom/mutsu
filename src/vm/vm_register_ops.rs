@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 /// Take the next unclaimed capture env recorded for `key`. Each compiled body
@@ -169,7 +170,7 @@ impl Interpreter {
                         });
                     if is_forward_aggregate {
                         sym.with_str(|name| {
-                            env.insert(format!("__mutsu_gather_self_ref::{name}"), Value::TRUE);
+                            env.insert(MetaNs::GatherSelfRef.owned_key_for_str(name), Value::TRUE);
                         });
                     }
                 }
@@ -1020,7 +1021,7 @@ impl Interpreter {
             // it back regardless of any later same-name overwrite.
             for name in &cc.outer_ref_names {
                 if let Some(val) = flat.get(name).cloned() {
-                    flat.insert(format!("__mutsu_outer::{name}"), val);
+                    flat.insert(MetaNs::Outer.owned_key_for_str(name), val);
                 }
             }
             // Drop the closure's own params/locals (e.g. a WhateverCode's `_`

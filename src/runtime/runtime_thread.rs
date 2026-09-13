@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
@@ -1246,7 +1247,7 @@ impl Interpreter {
             })
             .flatten()?;
         if is_thread_clone {
-            let dirty_marker = format!("__mutsu_shared_dirty::{key}");
+            let dirty_marker = MetaNs::SharedDirty.owned_key_for_str(key);
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(key);
                 self.env.insert(dirty_marker, Value::TRUE);

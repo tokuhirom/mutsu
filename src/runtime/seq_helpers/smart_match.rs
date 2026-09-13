@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::{extract_sig_info, signature_smartmatch};
@@ -1403,7 +1404,7 @@ impl Interpreter {
                 }
                 let lhs_args = if let ValueView::Mixin(_, mixins) = left_value.view() {
                     match mixins
-                        .get(&format!("__mutsu_role_typeargs__{}", rhs_base))
+                        .get(MetaNs::RoleTypeargs.str_key(rhs_base))
                         .map(Value::view)
                     {
                         Some(ValueView::Array(items, ..)) => Some(items.as_ref().clone()),
@@ -1483,7 +1484,7 @@ impl Interpreter {
             (_, ValueView::Mixin(pun_inner, pun_mixins))
                 if pun_mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
                     && !matches!(left.view(), ValueView::Package(name)
-                        if pun_mixins.contains_key(&format!("__mutsu_role__{}", name.resolve()))) =>
+                        if pun_mixins.contains_key(MetaNs::Role.str_key_for_str(name.resolve()))) =>
             {
                 self.smart_match_inner(left, pun_inner.as_ref())
             }

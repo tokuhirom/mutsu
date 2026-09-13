@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 impl Interpreter {
     /// Whether the role attribute backing a mixin override key
     /// (`__mutsu_attr__{method}`) is declared `is rw`. Scans the mixin's
@@ -141,7 +142,7 @@ impl Interpreter {
         // over an immutable type like Mix/Set/Bag), disallow method-based
         // mutation such as .value = ... on pairs.
         if let Some(var_name) = target_var {
-            let deep_key = format!("__mutsu_deep_readonly::{}", var_name);
+            let deep_key = MetaNs::DeepReadonly.owned_key_for_str(var_name);
             if matches!(
                 self.env.get(&deep_key).map(Value::view),
                 Some(ValueView::Bool(true))
@@ -936,7 +937,7 @@ impl Interpreter {
         if let ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) = target.view() {
             let inner = cell.lock().unwrap().clone();
             if let ValueView::Mixin(minner, mixins) = inner.view() {
-                let mixin_attr_key = format!("__mutsu_attr__{}", method);
+                let mixin_attr_key = MetaNs::Attr.owned_key_for_str(method);
                 if mixins.contains_key(&mixin_attr_key) {
                     if !self.mixin_attr_is_rw(mixins, method) {
                         return Err(RuntimeError::new(format!(
@@ -965,7 +966,7 @@ impl Interpreter {
         // Handle Mixin-wrapped instances (e.g. from role punning) by updating
         // the mixin attribute entry directly.
         if let ValueView::Mixin(inner, mixins) = target.view() {
-            let mixin_attr_key = format!("__mutsu_attr__{}", method);
+            let mixin_attr_key = MetaNs::Attr.owned_key_for_str(method);
             if mixins.contains_key(&mixin_attr_key) && self.mixin_has_public_attr(mixins, method) {
                 if !self.mixin_attr_is_rw(mixins, method) {
                     return Err(RuntimeError::new(format!(

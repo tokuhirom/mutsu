@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::value::AttrMap;
 
 pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
@@ -1901,7 +1902,7 @@ impl Interpreter {
             let role_state = if self.is_role(owner_class) {
                 match base.view() {
                     ValueView::Mixin(_, mixins)
-                        if mixins.contains_key(&format!("__mutsu_role__{owner_class}")) =>
+                        if mixins.contains_key(MetaNs::Role.str_key_for_str(owner_class)) =>
                     {
                         Some(mixins.clone())
                     }
