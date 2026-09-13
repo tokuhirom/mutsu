@@ -903,6 +903,10 @@ impl Interpreter {
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
                 .collect();
+            // The module's own `my $*x` file-scope declarations (#8241) --
+            // collected regardless of `unit_name`, since a bare-file module
+            // leaks these the same way. See `collect_module_own_dynamic_names`.
+            let module_own_dynamic_names = Self::collect_module_own_dynamic_names(&stmts);
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.registry().functions.keys().copied().collect();
             // Capture the module's compiled sub bodies (keyed by fingerprint) so a
@@ -1162,14 +1166,47 @@ impl Interpreter {
                 // scope, not to the module that assigned it: a mainline
                 // `$*PACKAGE_LOADED++` is how a module reports a load-time
                 // fact, and reverting it here threw that write away along with
-                // the module's own lexicals (#8229). A dynamic the module
-                // declared for itself never entered `saved_plain_env` (it is a
-                // compunit lexical, extracted into `unit_lexicals` above), so
-                // it still dies with the load.
-                if key.is_dynamic_var_env_key() {
+                // the module's own lexicals (#8229). But a `$*x` the module
+                // DECLARED FOR ITSELF (`my $*x = ...`, `module_own_dynamic_names`)
+                // is not that -- it is not a compunit lexical either (dynamics
+                // are excluded from `unit_lex_names` by definition), so restore
+                // it like any other plain name: back to whatever the importer had
+                // before (or removed entirely below if the importer had nothing,
+                // #8241).
+                if key.is_dynamic_var_env_key()
+                    && !module_own_dynamic_names
+                        .iter()
+                        .any(|n| Self::dynamic_var_names_match(n, &key.resolve()))
+                {
                     continue;
                 }
                 self.env.insert_sym(*key, value.clone());
+            }
+            // A dynamic the module declared for itself (`my $*x = ...`) that
+            // the importer never had is not restored by the loop above (it
+            // only walks `saved_plain_env`, which never held that key) --
+            // remove it outright so it does not survive as a permanent
+            // binding in the importer's scope (#8241). The actual `env` key a
+            // top-level `my $*x` writes under keeps its `$` sigil (`$*x`),
+            // unlike a plain `my $x`'s sigil-less key -- while `VarDecl.name`
+            // (what `module_own_dynamic_names` holds) is already sigil-less
+            // for a scalar. Comparing by `Self::dynamic_var_names_match`
+            // (both sides stripped of `$@%&`) avoids relying on either
+            // spelling exactly.
+            let stale_own_dynamic_keys: Vec<crate::symbol::Symbol> = self
+                .env
+                .keys()
+                .filter(|key| {
+                    key.is_dynamic_var_env_key()
+                        && module_own_dynamic_names
+                            .iter()
+                            .any(|n| Self::dynamic_var_names_match(n, &key.resolve()))
+                        && !saved_plain_env.contains_key(key)
+                })
+                .copied()
+                .collect();
+            for key in stale_own_dynamic_keys {
+                self.env.remove_sym(key);
             }
             match saved_qfile {
                 Some(f) => {
@@ -1410,6 +1447,17 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether `decl_name` (a `VarDecl.name`, sigil-less for a scalar -- see
+    /// [`Self::collect_module_own_dynamic_names`]) and `env_key` (an actual
+    /// `env` storage key, which keeps a scalar dynamic's `$` sigil at file
+    /// scope, e.g. `$*x` rather than `*x`) name the same dynamic variable.
+    /// Comparing both with every sigil character stripped sidesteps that
+    /// spelling difference instead of assuming either one (#8241).
+    fn dynamic_var_names_match(decl_name: &str, env_key: &str) -> bool {
+        decl_name.trim_start_matches(['$', '@', '%', '&'])
+            == env_key.trim_start_matches(['$', '@', '%', '&'])
+    }
+
     /// The env keys of a `unit` compunit's own file-scope `my`/`state` variables.
     /// These are lexical to the compunit, so they must not be left sharing an env
     /// key with the loading scope — see [`Interpreter::unit_lexicals`].
@@ -1480,6 +1528,51 @@ impl Interpreter {
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '@' || c == '%')
             {
+                continue;
+            }
+            if !names.iter().any(|n| n == name) {
+                names.push(name.clone());
+            }
+        }
+        names
+    }
+
+    /// The env keys of a compunit's own file-scope `my $*name`/`my @*name`/
+    /// `my %*name` declarations (#8241) -- the dynamic-variable mirror of
+    /// [`Self::collect_unit_lexical_names`], which explicitly EXCLUDES these
+    /// (a `$*dynamic` is "dynamically scoped by definition", so a plain `my`
+    /// vs `unit_lexicals` split does not apply to it).
+    ///
+    /// That exclusion is right for a module that only WRITES an existing
+    /// dynamic the *caller* already declared (`$*PACKAGE_LOADED++` mutating a
+    /// caller-owned `my $*PACKAGE_LOADED`, #8229) -- the write must survive
+    /// the load. But a module's OWN `my $*x = ...` declaration is a different
+    /// case entirely: the module body runs against the CALLER's `env` (see
+    /// the big comment above `saved_plain_env`), so with no cleanup at all a
+    /// dynamic the module declares for ITSELF is simply left behind as a
+    /// permanent binding in the importer's scope once the load returns --
+    /// `EVAL q[use Own]; say $*MODULE_PRIVATE` printed the module's value
+    /// forever after, when real Raku says the name was never declared in the
+    /// importing scope at all.
+    ///
+    /// Collected unconditionally (unlike `unit_lex_names`, which only matters
+    /// for a `unit`-declared compunit): a bare-file module with no `unit`
+    /// statement leaks its own dynamics the same way, for the same reason
+    /// (the whole body still runs against the caller's `env`).
+    fn collect_module_own_dynamic_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for s in stmts {
+            let crate::ast::Stmt::VarDecl {
+                name,
+                is_our,
+                is_dynamic,
+                is_export,
+                ..
+            } = s
+            else {
+                continue;
+            };
+            if !*is_dynamic || *is_our || *is_export || name.contains("::") {
                 continue;
             }
             if !names.iter().any(|n| n == name) {
