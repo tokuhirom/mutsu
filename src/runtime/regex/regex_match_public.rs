@@ -220,6 +220,14 @@ impl Interpreter {
         {
             return self.regex_match_with_captures(&pattern, text);
         }
+        // The value-aware parse cache is keyed by the source tree, but the
+        // legacy parser substitutes outer lexical interpolation while it
+        // builds its plan. Keep anchored interpolation on that established
+        // path until the tree can carry the lexical cell identity; otherwise
+        // the first value can be reused for later loop iterations.
+        if tree.contains_anchor() && !tree.interpolation_names().is_empty() {
+            return self.regex_match_with_captures(&pattern, text);
+        }
         let parsed = self.parse_regex_value(regex)?;
         let result = self.regex_match_with_parsed_captures(&parsed, text);
         if let Some(caps) = &result {

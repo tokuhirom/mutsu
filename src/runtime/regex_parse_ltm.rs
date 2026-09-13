@@ -65,6 +65,14 @@ fn lower_static_execution_pattern(pattern: &str) -> Option<RegexPattern> {
 /// the body is no longer reparsed when the tree can provide the static plan.
 fn lower_static_execution_tree(pattern: &str, tree: &RegexTree) -> Option<RegexPattern> {
     let (ratchet, ignore_case, ignore_mark, _) = static_execution_policy(pattern)?;
+    // The direct VarInterp plan reads the match environment, while the
+    // established parser resolves an outer lexical at each regex evaluation.
+    // Keep the combination on that path until the tree carries lexical-cell
+    // identity; otherwise a pattern such as `m/^ $value $/` can retain the
+    // first loop iteration's value.
+    if tree.contains_anchor() && !tree.interpolation_names().is_empty() {
+        return None;
+    }
     tree.lower_execution(ratchet, ignore_case, ignore_mark)
 }
 

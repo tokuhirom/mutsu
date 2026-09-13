@@ -67,6 +67,10 @@ pub(crate) enum RegexNode {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
     },
+    AnchorBeginningOfString,
+    AnchorBeginningOfLine,
+    AnchorEndOfString,
+    AnchorEndOfLine,
     CharClassDigit,
     WithWhitespace(Box<RegexNode>),
 }
@@ -110,6 +114,14 @@ impl RegexTree {
         let mut names = Vec::new();
         self.body.collect_interpolation_names(&mut names);
         names
+    }
+
+    /// Anchored patterns with outer lexical interpolation retain the legacy
+    /// parser path until the execution plan can resolve the lexical cell
+    /// rather than the environment snapshot. This keeps repeated assignments
+    /// (for example, interpolation inside a loop) dynamic.
+    pub(crate) fn contains_anchor(&self) -> bool {
+        self.body.contains_anchor()
     }
 
     /// Lower the supported source tree into the execution matcher plan.
@@ -165,6 +177,8 @@ impl RegexTree {
             ignore_case: bool,
             ignore_mark: bool,
             rule_sigspace: bool,
+            root: bool,
+            anchor_start: &mut bool,
         ) -> Option<Vec<crate::runtime::RegexToken>> {
             match node {
                 RegexNode::Literal(text) => {
@@ -239,6 +253,29 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                RegexNode::AnchorBeginningOfString => {
+                    if root {
+                        *anchor_start = true;
+                        Some(Vec::new())
+                    } else {
+                        None
+                    }
+                }
+                RegexNode::AnchorBeginningOfLine => Some(vec![token(
+                    crate::runtime::RegexAtom::StartOfLine,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::AnchorEndOfString => Some(vec![token(
+                    crate::runtime::RegexAtom::EndOfString,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::AnchorEndOfLine => Some(vec![token(
+                    crate::runtime::RegexAtom::EndOfLine,
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
                 RegexNode::Sequence(nodes) => {
                     let mut tokens = Vec::new();
                     for (index, child) in nodes.iter().enumerate() {
@@ -248,6 +285,8 @@ impl RegexTree {
                             ignore_case,
                             ignore_mark,
                             rule_sigspace,
+                            root && index == 0,
+                            anchor_start,
                         )?);
                         // WithWhitespace marks whitespace after its child.
                         // A final wrapper is the RakuAST model's implicit
@@ -269,8 +308,16 @@ impl RegexTree {
                     let alternatives = branches
                         .iter()
                         .map(|branch| {
-                            lower_node(branch, ratchet, ignore_case, ignore_mark, rule_sigspace)
-                                .map(|tokens| pattern(tokens, ignore_case, ignore_mark))
+                            lower_node(
+                                branch,
+                                ratchet,
+                                ignore_case,
+                                ignore_mark,
+                                rule_sigspace,
+                                false,
+                                anchor_start,
+                            )
+                            .map(|tokens| pattern(tokens, ignore_case, ignore_mark))
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some(vec![token(
@@ -280,8 +327,15 @@ impl RegexTree {
                     )])
                 }
                 RegexNode::Group(child) => {
-                    let tokens =
-                        lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    let tokens = lower_node(
+                        child,
+                        ratchet,
+                        ignore_case,
+                        ignore_mark,
+                        rule_sigspace,
+                        false,
+                        anchor_start,
+                    )?;
                     Some(vec![token(
                         crate::runtime::RegexAtom::Group(pattern(tokens, ignore_case, ignore_mark)),
                         crate::runtime::RegexQuant::One,
@@ -289,8 +343,15 @@ impl RegexTree {
                     )])
                 }
                 RegexNode::CapturingGroup(child) => {
-                    let tokens =
-                        lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    let tokens = lower_node(
+                        child,
+                        ratchet,
+                        ignore_case,
+                        ignore_mark,
+                        rule_sigspace,
+                        false,
+                        anchor_start,
+                    )?;
                     Some(vec![token(
                         crate::runtime::RegexAtom::CaptureGroup(pattern(
                             tokens,
@@ -309,8 +370,15 @@ impl RegexTree {
                     if let RegexNode::Quantified { atom, .. } = regex.as_ref()
                         && !matches!(atom.as_ref(), RegexNode::CapturingGroup(_))
                     {
-                        let inner =
-                            lower_node(regex, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                        let inner = lower_node(
+                            regex,
+                            ratchet,
+                            ignore_case,
+                            ignore_mark,
+                            rule_sigspace,
+                            false,
+                            anchor_start,
+                        )?;
                         let mut outer = token(
                             crate::runtime::RegexAtom::Group(pattern(
                                 inner,
@@ -325,8 +393,15 @@ impl RegexTree {
                             *array && matches!(atom.as_ref(), RegexNode::CapturingGroup(_));
                         return Some(vec![outer]);
                     }
-                    let mut tokens =
-                        lower_node(regex, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    let mut tokens = lower_node(
+                        regex,
+                        ratchet,
+                        ignore_case,
+                        ignore_mark,
+                        rule_sigspace,
+                        false,
+                        anchor_start,
+                    )?;
                     let first = tokens.first_mut()?;
                     first.named_capture = Some(name.clone());
                     first.force_list_capture = *array
@@ -367,8 +442,15 @@ impl RegexTree {
                         RegexQuantifier::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
                         RegexQuantifier::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
                     };
-                    let mut tokens =
-                        lower_node(atom, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
+                    let mut tokens = lower_node(
+                        atom,
+                        ratchet,
+                        ignore_case,
+                        ignore_mark,
+                        rule_sigspace,
+                        false,
+                        anchor_start,
+                    )?;
                     if tokens.len() == 1 {
                         tokens[0].quant = quant;
                         return Some(tokens);
@@ -382,23 +464,31 @@ impl RegexTree {
                 // `WithWhitespace` is a source/model wrapper for ordinary,
                 // token, and regex trees. Rule declaration policy consumes it
                 // as `WsRule` between terms in the enclosing sequence.
-                RegexNode::WithWhitespace(child) => {
-                    lower_node(child, ratchet, ignore_case, ignore_mark, rule_sigspace)
-                }
+                RegexNode::WithWhitespace(child) => lower_node(
+                    child,
+                    ratchet,
+                    ignore_case,
+                    ignore_mark,
+                    rule_sigspace,
+                    false,
+                    anchor_start,
+                ),
             }
         }
 
-        Some(pattern(
-            lower_node(
-                &self.body,
-                ratchet,
-                ignore_case,
-                ignore_mark,
-                self.declaration_kind == Some(RegexDeclKind::Rule),
-            )?,
+        let mut anchor_start = false;
+        let tokens = lower_node(
+            &self.body,
+            ratchet,
             ignore_case,
             ignore_mark,
-        ))
+            self.declaration_kind == Some(RegexDeclKind::Rule),
+            true,
+            &mut anchor_start,
+        )?;
+        let mut result = pattern(tokens, ignore_case, ignore_mark);
+        result.anchor_start = anchor_start;
+        Some(result)
     }
 }
 
@@ -420,7 +510,34 @@ impl RegexNode {
             | Self::Quote(_)
             | Self::Subrule { .. }
             | Self::SubruleAlias { .. }
+            | Self::AnchorBeginningOfString
+            | Self::AnchorBeginningOfLine
+            | Self::AnchorEndOfString
+            | Self::AnchorEndOfLine
             | Self::CharClassDigit => {}
+        }
+    }
+
+    fn contains_anchor(&self) -> bool {
+        match self {
+            Self::AnchorBeginningOfString
+            | Self::AnchorBeginningOfLine
+            | Self::AnchorEndOfString
+            | Self::AnchorEndOfLine => true,
+            Self::Sequence(nodes) | Self::Alternation(nodes) => {
+                nodes.iter().any(Self::contains_anchor)
+            }
+            Self::Group(child)
+            | Self::CapturingGroup(child)
+            | Self::Quantified { atom: child, .. }
+            | Self::WithWhitespace(child) => child.contains_anchor(),
+            Self::NamedCapture { regex, .. } => regex.contains_anchor(),
+            Self::Literal(_)
+            | Self::Quote(_)
+            | Self::Subrule { .. }
+            | Self::SubruleAlias { .. }
+            | Self::Interpolation { .. }
+            | Self::CharClassDigit => false,
         }
     }
 
@@ -487,6 +604,10 @@ impl RegexNode {
                 };
                 format!("{}{}", atom.to_source(), suffix)
             }
+            Self::AnchorBeginningOfString => "^".to_string(),
+            Self::AnchorBeginningOfLine => "^^".to_string(),
+            Self::AnchorEndOfString => "$".to_string(),
+            Self::AnchorEndOfLine => "$$".to_string(),
             Self::CharClassDigit => "\\d".to_string(),
             Self::WithWhitespace(child) => child.to_source(),
         }
@@ -549,7 +670,7 @@ impl Parser {
                 }
                 break;
             }
-            let mut atom = self.parse_atom(stops)?;
+            let mut atom = self.parse_atom(stops, nodes.is_empty())?;
             if let Some(quantifier) = self.parse_quantifier() {
                 // A quantifier binds to the final atom, not to a run of
                 // adjacent literal characters (`ab+` means `a` then `b+`).
@@ -605,7 +726,7 @@ impl Parser {
         }
     }
 
-    fn parse_atom(&mut self, stops: &[char]) -> Option<RegexNode> {
+    fn parse_atom(&mut self, stops: &[char], at_sequence_start: bool) -> Option<RegexNode> {
         let ch = *self.chars.get(self.pos)?;
         match ch {
             '"' | '\'' => self.parse_quote(ch),
@@ -632,6 +753,25 @@ impl Parser {
             }
             '$' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(false),
             '@' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(true),
+            '^' if self.chars.get(self.pos + 1) == Some(&'^') => {
+                self.pos += 2;
+                Some(RegexNode::AnchorBeginningOfLine)
+            }
+            '^' if at_sequence_start => {
+                self.pos += 1;
+                Some(RegexNode::AnchorBeginningOfString)
+            }
+            '$' if self.chars.get(self.pos + 1) == Some(&'$') => {
+                self.pos += 2;
+                Some(RegexNode::AnchorEndOfLine)
+            }
+            '$' if self.chars.get(self.pos + 1).is_none_or(|next| {
+                next.is_whitespace() || stops.contains(next) || *next == '|'
+            }) =>
+            {
+                self.pos += 1;
+                Some(RegexNode::AnchorEndOfString)
+            }
             '$' => self.parse_interpolation(),
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
@@ -743,7 +883,7 @@ impl Parser {
             return None;
         }
         self.skip_whitespace();
-        let mut regex = self.parse_atom(&[])?;
+        let mut regex = self.parse_atom(&[], true)?;
         let quantifier = self.parse_quantifier();
         // Aggregate aliases have their own list-context semantics in the
         // legacy matcher. Keep subrule-containing forms there until the
@@ -900,6 +1040,10 @@ fn contains_subrule(node: &RegexNode) -> bool {
         RegexNode::Literal(_)
         | RegexNode::Quote(_)
         | RegexNode::Interpolation { .. }
+        | RegexNode::AnchorBeginningOfString
+        | RegexNode::AnchorBeginningOfLine
+        | RegexNode::AnchorEndOfString
+        | RegexNode::AnchorEndOfLine
         | RegexNode::CharClassDigit => false,
     }
 }
