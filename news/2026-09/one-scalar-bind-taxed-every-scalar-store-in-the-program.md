@@ -89,7 +89,7 @@ marginal cost against rakudo's ~39 ns, and a `:=`-bound array's element *store* 
 against a plain array's ~800 ns, because #8151's fast store lane declines for a celled container.
 Both are filed separately.
 
-Pinned by `t/vm/scalar-bind-unrelated-store-semantics.t`, which exercises the stores that now reach
+Pinned by `t/vm/writeback/scalar-bind-unrelated-store-semantics.t`, which exercises the stores that now reach
 the fast path for the first time — typed lexicals, `is default`, `state`, readonly and `is rw`
 parameter binds, sigilless aliases, three-name bind groups and redeclaration — in a file that has a
 scalar `:=` in scope.
