@@ -215,12 +215,15 @@ impl Interpreter {
                 ValueView::Seq(values) => items.extend(values.iter().cloned()),
                 ValueView::Slip(values) => items.extend(values.iter().cloned()),
                 ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(&ll)?),
-                // Hash/Set/Bag/Mix classify their pairs (elem => True for Set,
-                // elem => count/weight for Bag/Mix), same as for-iteration.
-                ValueView::Hash(_)
-                | ValueView::Set(..)
-                | ValueView::Bag(..)
-                | ValueView::Mix(..) => items.extend(crate::runtime::utils::value_to_list(arg)),
+                // A Hash receiver iterates its own pairs even when the hash is
+                // held in a scalar and therefore carries itemization metadata.
+                // Set/Bag/Mix classify their elements as usual.
+                ValueView::Hash(_) => {
+                    items.extend(crate::runtime::utils::value_to_list_for_receiver(arg))
+                }
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    items.extend(crate::runtime::utils::value_to_list(arg))
+                }
                 _ if arg.is_range() => items.extend(crate::runtime::utils::value_to_list(arg)),
                 _ => items.push(arg.clone()),
             }

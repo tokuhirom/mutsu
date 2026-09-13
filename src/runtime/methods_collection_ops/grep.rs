@@ -442,8 +442,14 @@ impl Interpreter {
             ValueView::Slip(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
-            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) | ValueView::Hash(..) => {
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                 let items = crate::runtime::utils::value_to_list(&target);
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
+            }
+            ValueView::Hash(..) => {
+                // A Hash held in a scalar is itemized as an element, but a
+                // Hash receiver still iterates its own key-value pairs.
+                let items = crate::runtime::utils::value_to_list_for_receiver(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             _ => {

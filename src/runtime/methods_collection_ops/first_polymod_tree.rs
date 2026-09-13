@@ -122,7 +122,7 @@ impl Interpreter {
         // `Seq`, a native or multi-dimensional array) keeps the bare-item scan.
         let items = Self::buf_as_byte_items(&target)
             .or_else(|| Self::array_element_cells(&target))
-            .unwrap_or_else(|| crate::runtime::utils::value_to_list(&target));
+            .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(&target));
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::super::builtins_collection::format_first_result(
                 idx,
