@@ -1,9 +1,10 @@
 # ADR-0088: RakuAST and execution share a source-level regex tree
 
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
-  static-value-provenance, declaration-provenance, positional-capture, and
-  scalar-interpolation slices implemented 2026-09-12/13; other dynamic
-  contents and the complete execution-tree migration remain)
+  static-value-provenance, declaration-provenance, positional-capture,
+  scalar-interpolation, named-capture, and array-capture slices implemented
+  2026-09-12/13; other dynamic contents and the complete execution-tree
+  migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -492,3 +493,26 @@ The focused regression is `t/regex/match/regex-tree-named-captures.t`. It pins t
 source whitespace and quantified AST shapes, capture spans, constructor
 accessors, and constructed-tree EVAL execution. Subrule aliases, array/hash
 aliases, and code-bearing regex nodes remain separate follow-up slices.
+
+## 14. Array-sigil capture-alias slice (2026-09-13)
+
+Array-sigil aliases written as `@<name> = atom` now retain their list-context
+bit in the shared `RegexNode::NamedCapture` tree. The read direction emits the
+existing `RakuAST::Regex::NamedCapture` node with `array => True`; its accessor
+remains observable even though Rakudo omits this implementation detail from
+the constructor-form gist. The write direction accepts the same field and
+lowers it through the existing regex value and compiler pipeline.
+
+Execution preserves the matcher’s established distinction between aliasing a
+plain atom and aliasing a positional capture group. An array alias around a
+plain atom still produces one `Match`, while an alias around `( ... )` forces a
+list, and a quantified capturing group produces one `Match` per iteration. The
+tree lowerer pins this by setting the existing `RegexToken::force_list_capture`
+only for the capturing-group forms; it does not introduce a separate matcher
+path or evaluate any dynamic regex content.
+
+The focused regression is
+`t/regex/match/regex-tree-array-captures.t`. It covers source accessors and
+gist parity, single and quantified parser-created aliases, and constructed
+`RakuAST::Regex::NamedCapture` EVAL. Hash aliases, subrules, and code-bearing
+regex nodes remain explicit follow-up boundaries.
