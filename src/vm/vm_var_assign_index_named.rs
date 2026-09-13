@@ -2823,54 +2823,69 @@ impl Interpreter {
                             }
                             _ => unreachable!(),
                         }
-                    } else if let Some(res) = container.with_set_mut(|set, is_mutable| {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Set")));
-                        }
-                        let s = crate::value::gc_data_mut(set);
-                        let present = val.truthy();
-                        if present {
-                            s.insert(key.clone());
-                            Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
-                        } else {
-                            s.remove(&key);
-                            Self::forget_quanthash_object_key(&mut s.original_keys, &key);
-                        }
-                        setty_bool_result = Some(Value::truth(present));
-                        Ok(())
-                    }) {
+                    } else if let Some(res) = {
+                        let container_snapshot = container.clone();
+                        container.with_set_mut(|set, is_mutable| {
+                            if !*is_mutable {
+                                return Err(RuntimeError::assignment_ro_value(
+                                    container_snapshot.clone(),
+                                ));
+                            }
+                            let s = crate::value::gc_data_mut(set);
+                            let present = val.truthy();
+                            if present {
+                                s.insert(key.clone());
+                                Self::record_quanthash_object_key(&mut s.original_keys, &key, &idx);
+                            } else {
+                                s.remove(&key);
+                                Self::forget_quanthash_object_key(&mut s.original_keys, &key);
+                            }
+                            setty_bool_result = Some(Value::truth(present));
+                            Ok(())
+                        })
+                    } {
                         res?;
-                    } else if let Some(res) = container.with_bag_mut(|bag, is_mutable| {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Bag")));
-                        }
-                        let b = crate::value::gc_data_mut(bag);
-                        let count = Self::bag_assignment_count(&val)?;
-                        if count == num_bigint::BigInt::from(0) {
-                            b.remove(&key);
-                            Self::forget_quanthash_object_key(&mut b.original_keys, &key);
-                        } else {
-                            b.insert(key.clone(), count);
-                            Self::record_quanthash_object_key(&mut b.original_keys, &key, &idx);
-                        }
-                        Ok(())
-                    }) {
+                    } else if let Some(res) = {
+                        let container_snapshot = container.clone();
+                        container.with_bag_mut(|bag, is_mutable| {
+                            if !*is_mutable {
+                                return Err(RuntimeError::assignment_ro_value(
+                                    container_snapshot.clone(),
+                                ));
+                            }
+                            let b = crate::value::gc_data_mut(bag);
+                            let count = Self::bag_assignment_count(&val)?;
+                            if count == num_bigint::BigInt::from(0) {
+                                b.remove(&key);
+                                Self::forget_quanthash_object_key(&mut b.original_keys, &key);
+                            } else {
+                                b.insert(key.clone(), count);
+                                Self::record_quanthash_object_key(&mut b.original_keys, &key, &idx);
+                            }
+                            Ok(())
+                        })
+                    } {
                         res?;
-                    } else if let Some(res) = container.with_mix_mut(|mix, is_mutable| {
-                        if !*is_mutable {
-                            return Err(RuntimeError::assignment_ro(Some("Mix")));
-                        }
-                        let m = crate::value::gc_data_mut(mix);
-                        let weight = Self::mix_assignment_weight(&val)?;
-                        if weight == 0.0 {
-                            m.remove(&key);
-                            Self::forget_quanthash_object_key(&mut m.original_keys, &key);
-                        } else {
-                            m.insert(key.clone(), weight);
-                            Self::record_quanthash_object_key(&mut m.original_keys, &key, &idx);
-                        }
-                        Ok(())
-                    }) {
+                    } else if let Some(res) = {
+                        let container_snapshot = container.clone();
+                        container.with_mix_mut(|mix, is_mutable| {
+                            if !*is_mutable {
+                                return Err(RuntimeError::assignment_ro_value(
+                                    container_snapshot.clone(),
+                                ));
+                            }
+                            let m = crate::value::gc_data_mut(mix);
+                            let weight = Self::mix_assignment_weight(&val)?;
+                            if weight == 0.0 {
+                                m.remove(&key);
+                                Self::forget_quanthash_object_key(&mut m.original_keys, &key);
+                            } else {
+                                m.insert(key.clone(), weight);
+                                Self::record_quanthash_object_key(&mut m.original_keys, &key, &idx);
+                            }
+                            Ok(())
+                        })
+                    } {
                         res?;
                     } else {
                         // Autovivify Nil/uninitialized container: pick
