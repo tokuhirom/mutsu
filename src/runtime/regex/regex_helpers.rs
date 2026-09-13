@@ -1071,7 +1071,7 @@ pub(super) fn class_has_only_exact_chars(class: &CharClass) -> bool {
 /// After matching the base character at `pos`, this skips any trailing
 /// combining marks (Unicode category M) so that a single regex atom
 /// consumes the full grapheme, matching Raku's grapheme-level semantics.
-pub(super) fn grapheme_end(chars: &[char], pos: usize) -> usize {
+pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
     // \r\n is a single grapheme cluster in Raku
     if pos < chars.len() && chars[pos] == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
         return pos + 2;

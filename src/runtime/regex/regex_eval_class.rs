@@ -46,6 +46,11 @@ impl Interpreter {
                         break;
                     }
                 }
+                // A multi-codepoint grapheme can never equal one `char`. The
+                // whole-grapheme comparison happens at the atom, which is the
+                // only place that has the subject text to compare against; see
+                // the `CharClass` arm in `regex_match_atom_simple`.
+                ClassItem::Grapheme(_) => {}
                 ClassItem::Char(ch) => {
                     if *ch == c {
                         matched = true;
