@@ -1917,7 +1917,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 is_rw: false,
                 is_raw: false,
                 is_whatever_code: false,
-                is_sub: true,
+                declarator: crate::ast::RoutineDeclarator::Sub,
             })
         }
         // A pointy block in expression position (`-> $x { … }`) is a closure. A
@@ -1943,7 +1943,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     is_rw: false,
                     is_raw: false,
                     is_whatever_code: false,
-                    is_sub: false,
+                    declarator: crate::ast::RoutineDeclarator::Block,
                 }),
             }
         }

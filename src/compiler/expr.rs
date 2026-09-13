@@ -1125,11 +1125,11 @@ impl Compiler {
                 is_rw,
                 is_raw,
                 is_whatever_code,
-                // `is_sub` records the source spelling. It selects the Block
-                // vs Sub compile path (see `compile_expr_anon_sub_params`), so
-                // a placeholder block `{ $^a }` is a `Block` like raku's, not
-                // an anonymous `Sub`.
-                is_sub,
+                // `declarator` records the source spelling. It selects the
+                // Block vs Routine compile path (see
+                // `compile_expr_anon_sub_params`), so a placeholder block
+                // `{ $^a }` is a `Block` like raku's, not an anonymous `Sub`.
+                declarator,
             } => {
                 self.compile_expr_anon_sub_params(
                     params,
@@ -1139,7 +1139,7 @@ impl Compiler {
                     *is_rw,
                     *is_raw,
                     *is_whatever_code,
-                    *is_sub,
+                    *declarator,
                 );
             }
             Expr::Lambda {

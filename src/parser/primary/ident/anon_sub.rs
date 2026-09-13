@@ -30,7 +30,12 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     }
 }
 
-pub(crate) fn make_anon_method(body: Vec<crate::ast::Stmt>) -> Expr {
+/// Build a bodied `method { ... }` / `submethod { ... }` literal — the form
+/// with no parameter list, whose only parameter is the implicit invocant.
+pub(crate) fn make_anon_method(
+    body: Vec<crate::ast::Stmt>,
+    declarator: crate::ast::RoutineDeclarator,
+) -> Expr {
     Expr::AnonSubParams {
         params: vec!["self".to_string()],
         param_defs: vec![invocant_param_def()],
@@ -39,11 +44,14 @@ pub(crate) fn make_anon_method(body: Vec<crate::ast::Stmt>) -> Expr {
         is_rw: false,
         is_raw: false,
         is_whatever_code: false,
-        is_sub: false,
+        declarator,
     }
 }
 
-pub(crate) fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
+pub(crate) fn parse_anon_method_with_params(
+    input: &str,
+    declarator: crate::ast::RoutineDeclarator,
+) -> PResult<'_, Expr> {
     let (r, _) = parse_char(input, '(')?;
     let (r, _) = ws(r)?;
     let (r, (param_defs, return_type)) = crate::parser::stmt::parse_param_list_with_return_pub(r)?;
@@ -87,7 +95,7 @@ pub(crate) fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
     params.extend(rest_params.iter().map(|p| p.name.clone()));
     let mut method_param_defs = vec![invocant];
     method_param_defs.extend(rest_params);
-    let (r, expr) = parse_anon_sub_rest(r, params, method_param_defs, return_type, false)?;
+    let (r, expr) = parse_anon_sub_rest(r, params, method_param_defs, return_type, declarator)?;
     Ok((r, bind_invocant_aliases(expr, &invocant_aliases)))
 }
 
@@ -106,7 +114,7 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         is_rw,
         is_raw,
         is_whatever_code,
-        is_sub,
+        declarator,
     } = expr
     else {
         return expr;
@@ -141,21 +149,21 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         is_rw,
         is_raw,
         is_whatever_code,
-        is_sub,
+        declarator,
     }
 }
 
 /// The shared tail of a parenthesised anonymous routine literal: the closing
-/// `)`, its traits, and its block body. `is_sub` records which declarator the
-/// source wrote — `sub (...)` sets it, a `method (...)` literal does not — so
-/// the RakuAST converter can tell `RakuAST::Sub` from `RakuAST::PointyBlock`
-/// without guessing. It carries no execution meaning.
+/// `)`, its traits, and its block body. `declarator` records which declarator
+/// the source wrote — `sub (...)`, `method (...)`, `submethod (...)`, or none
+/// of them — which selects the compile path and the closure's runtime type as
+/// well as the node the RakuAST converter emits.
 pub(crate) fn parse_anon_sub_rest(
     input: &str,
     params: Vec<String>,
     param_defs: Vec<crate::ast::ParamDef>,
     return_type: Option<String>,
-    is_sub: bool,
+    declarator: crate::ast::RoutineDeclarator,
 ) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     let (r, _) = parse_char(r, ')')?;
@@ -172,7 +180,7 @@ pub(crate) fn parse_anon_sub_rest(
             is_rw: traits.is_rw,
             is_raw: traits.is_raw,
             is_whatever_code: false,
-            is_sub,
+            declarator,
         },
     ))
 }
@@ -183,7 +191,13 @@ pub(crate) fn parse_anon_sub_with_params(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(r)?;
     let (r, (param_defs, return_type)) = crate::parser::stmt::parse_param_list_with_return_pub(r)?;
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
-    parse_anon_sub_rest(r, params, param_defs, return_type, true)
+    parse_anon_sub_rest(
+        r,
+        params,
+        param_defs,
+        return_type,
+        crate::ast::RoutineDeclarator::Sub,
+    )
 }
 
 pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
@@ -206,7 +220,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             body,
             is_raw,
             is_whatever_code,
-            is_sub,
+            declarator,
             ..
         } => Expr::AnonSubParams {
             params,
@@ -216,7 +230,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             is_rw,
             is_raw,
             is_whatever_code,
-            is_sub,
+            declarator,
         },
         other => other,
     }

@@ -699,6 +699,7 @@ impl Interpreter {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,
+            custom_traits,
             param_defs,
             return_type,
             // The body and the signature both come from the shared per-pool-slot
@@ -743,6 +744,21 @@ impl Interpreter {
                 env.insert_sym(
                     crate::symbol::well_known::callable_type(),
                     Value::str_from("WhateverCode"),
+                );
+            }
+            // A `method`/`submethod` literal compiles down this same routine
+            // path; the declarator the parser recorded reaches here as a
+            // marker on the pooled decl, and is what makes the closure answer
+            // `Method`/`Submethod` rather than the `Sub` every other routine
+            // literal is.
+            if let Some(callable_type) = custom_traits.iter().find_map(|(t, _)| match t.as_str() {
+                crate::ast::METHOD_LITERAL_MARKER => Some("Method"),
+                crate::ast::SUBMETHOD_LITERAL_MARKER => Some("Submethod"),
+                _ => None,
+            }) {
+                env.insert_sym(
+                    crate::symbol::well_known::callable_type(),
+                    Value::str(callable_type.to_string()),
                 );
             }
             let cc_source_line = compiled_code

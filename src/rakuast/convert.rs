@@ -1941,7 +1941,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw,
             is_whatever_code,
             return_type,
-            is_sub,
+            declarator,
             ..
         } => {
             if *is_whatever_code {
@@ -1950,11 +1950,12 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_rw {
                 return Err(unsupported("`is rw` pointy block"));
             }
-            if *is_sub {
-                // `sub ($x) { }` — an anonymous *routine*, not a block. raku
-                // renders it as a nameless `RakuAST::Sub` whose parameters
-                // carry the implicit `type => Type::Setting(Any)` that every
-                // sub/method signature has, where a pointy block's do not.
+            if declarator.is_routine() {
+                // `sub ($x) { }` / `method ($x) { }` — an anonymous *routine*,
+                // not a block. raku renders it as a nameless `RakuAST::Sub`
+                // whose parameters carry the implicit
+                // `type => Type::Setting(Any)` that every sub/method signature
+                // has, where a pointy block's do not.
                 return anon_routine_node(param_defs, body, return_type.as_deref());
             }
             pointy_block(param_defs, body, return_type.as_deref())
