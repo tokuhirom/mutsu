@@ -122,23 +122,44 @@ impl Interpreter {
     /// is the overwhelmingly common case.
     pub(crate) fn install_subrule_dynamic_params(
         &mut self,
-        name: &str,
+        spec: &crate::runtime::regex::regex_helpers::NamedRegexLookupSpec,
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<SavedDynParams> {
+        // A `<&$re(...)>` reference to a lexical Regex brings its own defining
+        // scope, which has to be live for the same window: the value's code
+        // blocks run at match time in this env, and the lexicals they close
+        // over exist nowhere else. Same install/restore discipline, same
+        // saved-shadow list.
+        let lexical = self.install_lexical_regex_closure_scope(spec, pkg);
+        self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, arg_values, lexical)
+    }
+
+    /// [`Self::install_subrule_dynamic_params`] for a rule named directly
+    /// rather than through a `<…>` reference — a grammar's start rule, whose
+    /// `$*` parameters `.parse(:args(...))` fills in. `prior` carries bindings
+    /// an earlier install in the same window made, so one restore undoes both.
+    pub(crate) fn install_subrule_dynamic_params_named(
+        &mut self,
+        name: &str,
+        pkg: Symbol,
+        arg_values: &[Value],
+        prior: Option<SavedDynParams>,
+    ) -> Option<SavedDynParams> {
         if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) {
-            return None;
+            return prior;
         }
         let params = self.subrule_dynamic_params(name, pkg);
         if params.is_empty() {
-            return None;
+            return prior;
         }
+        let mut saved = prior.unwrap_or_default();
         // Named arguments (`:args(:x(1),)`) never fill a positional slot.
         let positional: Vec<&Value> = arg_values
             .iter()
             .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .collect();
-        let mut saved: SavedDynParams = Vec::with_capacity(params.len());
+        saved.reserve(params.len());
         for (idx, pd) in params.iter() {
             let value = match positional.get(*idx) {
                 Some(v) => (*v).clone(),

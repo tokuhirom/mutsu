@@ -9,7 +9,7 @@ mod class_decl;
 mod grammar_module;
 mod package_decl;
 mod role_decl;
-mod token_body;
+pub(crate) mod token_body;
 
 // Shared attribute / body validation helpers used across submodules.
 pub(crate) use attr_checks::{

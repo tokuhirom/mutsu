@@ -276,6 +276,19 @@ impl NanBox {
             .as_deref()
     }
 
+    /// The signature carried by an anonymous `token`/`regex`/`rule` term.
+    #[inline]
+    pub(in crate::value) fn regex_signature(&self) -> Option<&Arc<Vec<crate::ast::ParamDef>>> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        // SAFETY: kind-checked above; the word is live for this borrow.
+        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+            .signature
+            .as_ref()
+    }
+
     /// Whether this word is a `Proxy` — a pure tag probe (same motivation as
     /// [`Self::is_junction`]).
     #[inline]

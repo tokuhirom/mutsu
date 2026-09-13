@@ -525,7 +525,7 @@ impl Interpreter {
             };
             // Establish the subrule's `$*`-twigil parameters for the whole
             // resolve-and-match (see `regex_dynparams`); the wrapper restores.
-            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+            *dyn_saved = self.install_subrule_dynamic_params(spec, pkg, &arg_values);
             let candidates = self.resolve_named_regex_candidates_in_pkg(spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();

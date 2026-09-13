@@ -202,8 +202,7 @@ impl Interpreter {
                     self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
                 };
                 if let Some(arg_values) = arg_values {
-                    dyn_saved =
-                        self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                    dyn_saved = self.install_subrule_dynamic_params(spec, pkg, &arg_values);
                     preinstalled_arg_values = Some(arg_values);
                     self.enter_grammar_rule_dynvars(&spec.lookup_name)
                 } else {
@@ -599,8 +598,7 @@ impl Interpreter {
             // interpolate it) and stays there for the whole match, so nested
             // subrules and code blocks see it. The caller tears it back down.
             if !preinstalled {
-                *dyn_saved =
-                    self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                *dyn_saved = self.install_subrule_dynamic_params(&spec, pkg, &arg_values);
             }
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case — see PARSED_TOKEN_CANDIDATES).

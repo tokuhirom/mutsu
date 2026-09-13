@@ -115,7 +115,13 @@ impl Interpreter {
         }
         let scope = std::sync::Arc::new(scope);
         match base.view() {
-            ValueView::Regex(p) => Value::regex_closure(std::sync::Arc::clone(&p), scope),
+            ValueView::Regex(p) => Value::regex_closure(
+                std::sync::Arc::clone(&p),
+                scope,
+                // An anonymous declarator term's signature rides on the value;
+                // attaching the defining scope must not drop it.
+                base.regex_signature(),
+            ),
             ValueView::RegexWithAdverbs(a) => {
                 let mut adv = a.clone();
                 adv.captured = Some(scope);

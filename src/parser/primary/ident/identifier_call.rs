@@ -1181,11 +1181,33 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "token" | "regex" | "rule" => {
-            // token/rule term literal: token { ... } / rule { ... }
+            // Anonymous declarator term: `token { ... }`, and — since rakudo's
+            // `regex_def` is `<deflongname>? <signature>? '{' <p6regex> '}'`,
+            // with the name and the signature independently optional —
+            // `token ( $x ) { ... }` too. The signature rides on the produced
+            // Regex value (there is no named `token_defs` entry to hang it on),
+            // so a `<&$re('a')>` subrule reference can bind it.
+            let kind = match name.as_str() {
+                "rule" => crate::regex_tree::RegexDeclKind::Rule,
+                "regex" => crate::regex_tree::RegexDeclKind::Regex,
+                _ => crate::regex_tree::RegexDeclKind::Token,
+            };
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, pat) = parse_raw_braced_regex_body(r)?;
+                let pat = finalize_anon_regex_pattern(&pat, kind);
                 return Ok((r, Expr::Literal(Value::regex(pat))));
+            }
+            if r.starts_with('(')
+                && let Ok((r, param_defs)) = parse_anon_regex_signature(r)
+                && r.starts_with('{')
+            {
+                let (r, pat) = parse_raw_braced_regex_body(r)?;
+                let pat = finalize_anon_regex_pattern(&pat, kind);
+                return Ok((
+                    r,
+                    Expr::Literal(Value::regex_with_signature(pat, param_defs)),
+                ));
             }
         }
         "gather" => {
@@ -2256,4 +2278,29 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Method-like: .new, .elems etc. is handled at expression level
     Ok((rest, Expr::BareWord(name)))
+}
+
+/// The optional `<signature>` of an anonymous `token`/`regex`/`rule` term
+/// (`token ( Str:D $text! where { … } ) { … }`). Mirrors the named
+/// declarator's signature parse in `grammar_module::token_decl`; the caller
+/// only commits to the declarator reading once a `{` body follows, so a
+/// parse failure here simply falls through to the ordinary term handling.
+fn parse_anon_regex_signature(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
+    let (r, _) = parse_char(input, '(')?;
+    let (r, _) = ws(r)?;
+    let (r, param_defs) = crate::parser::stmt::parse_param_list_pub(r)?;
+    let (r, _) = ws(r)?;
+    let (r, _) = parse_char(r, ')')?;
+    let (r, _) = ws(r)?;
+    Ok((r, param_defs))
+}
+
+/// The execution pattern of an anonymous `token`/`regex`/`rule` term: the
+/// body normalized the way a named declarator's is, then given that
+/// declarator's implicit `rule` whitespace and ratchet semantics.
+fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKind) -> String {
+    use crate::parser::stmt::class::token_body::{
+        finalize_anon_declarator_pattern, normalize_token_pattern,
+    };
+    finalize_anon_declarator_pattern(&normalize_token_pattern(body), kind)
 }
