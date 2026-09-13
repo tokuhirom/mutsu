@@ -133,6 +133,12 @@ fn handle_negated_long_option(
     })
 }
 
+/// Stack for the `mutsu-main` thread the interpreter actually runs on. Matches
+/// `builtins_system::USER_THREAD_STACK_SIZE`, the stack a `start`/Promise
+/// worker gets, so the ADR-0100 recursion guard fires at a comparable depth
+/// wherever user code runs.
+const MAIN_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
+
 fn main() {
     // Before anything else: a fatal signal from here on writes a crash report
     // (tmp/crash/<pid>.txt) naming the signal, fault address, pid and argv,
@@ -146,7 +152,7 @@ fn main() {
     // 120-deep directory tree — needs far more than the default 8MB).
     let builder = std::thread::Builder::new()
         .name("mutsu-main".to_string())
-        .stack_size(256 * 1024 * 1024);
+        .stack_size(MAIN_THREAD_STACK_SIZE);
     let handler = builder
         .spawn(run_main)
         .expect("failed to spawn main thread");
@@ -157,6 +163,11 @@ fn main() {
 }
 
 fn run_main() {
+    // ADR-0100: arm the deep-recursion guard for this thread, from the top of
+    // its stack and with the size the spawn above asked for. Without it, deep
+    // Raku recursion walks off the end of the stack and the Rust runtime
+    // aborts, which no `try` can contain and no `END` phaser survives.
+    mutsu::arm_stack_guard(MAIN_THREAD_STACK_SIZE);
     // GC STW accounting: this big-stack thread is the interpreter's main
     // mutator; register it so a worker-side collector can count its
     // quiescence (blocked in await/.finish/sleep) toward the rendezvous.

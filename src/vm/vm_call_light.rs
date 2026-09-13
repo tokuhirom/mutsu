@@ -103,6 +103,10 @@ impl Interpreter {
         func_name: &str,
         func_name_sym: Symbol,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        self.guard_native_stack()?;
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
         // so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);

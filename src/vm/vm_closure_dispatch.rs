@@ -208,6 +208,10 @@ impl Interpreter {
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        self.guard_native_stack()?;
         // RAII (`MarkContextGuard`,
         // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
         // isolate the "mark context" one-shot flag family (bind_context et

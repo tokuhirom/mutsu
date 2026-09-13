@@ -39,6 +39,19 @@ pub(crate) mod with_desugar;
 pub use interpreter::Interpreter;
 pub use value::{HashKey, RuntimeError, RuntimeErrorCode, Value};
 
+/// Arm the deep-recursion guard (ADR-0100) for the calling thread, which must
+/// have `stack_size` bytes of stack and must call this near the *top* of it.
+///
+/// mutsu runs a Raku call as a Rust call, so Raku recursion is native
+/// recursion; once armed, a call made with too little stack left raises an
+/// ordinary catchable exception instead of letting the guard page abort the
+/// process. The `mutsu` binary and the `start`/Promise workers arm themselves;
+/// an embedder driving an [`Interpreter`] on its own thread opts in here.
+/// A thread that never calls this keeps the unguarded behaviour.
+pub fn arm_stack_guard(stack_size: usize) {
+    vm::vm_stack_guard::init_thread_stack_floor(stack_size);
+}
+
 /// Print VM -> interpreter fallback statistics to stderr.
 ///
 /// No-op unless the `MUTSU_VM_STATS` environment variable is set. Used to track

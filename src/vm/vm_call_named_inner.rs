@@ -9,6 +9,10 @@ impl Interpreter {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        self.guard_native_stack()?;
         // Slice 6.3 step 2: signal env_dirty *precisely* (like
         // call_compiled_function_fast) instead of relying on a blanket post-call
         // mark at the call site. Save the caller's incoming dirtiness; the body's

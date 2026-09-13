@@ -3324,6 +3324,7 @@ impl Interpreter {
             quanthash_bind_params: Vec::new(),
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
+            stack_check_countdown: 0,
             control_handlers: Vec::new(),
             catch_handlers: Vec::new(),
             catch_handler_seq: 0,
