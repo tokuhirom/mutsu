@@ -1,68 +1,23 @@
-//! VM-side dispatch for the `JSON::Fast` `to-json` / `from-json` routines.
+//! VM-side dispatch for `Rakudo::Internals::JSON.to-json` / `.from-json`.
 //!
-//! These are not Raku core builtins — they are provided by the JSON modules.
-//! The real `JSON::Fast` is not vendored yet (#8226), so mutsu ships a native
-//! Rust implementation (`runtime/json.rs`) as
-//! a **last-resort provider**: it runs only when `use JSON::Fast` resolved to
-//! nothing on the module ladder. A real `JSON::Fast` reached through `use lib`
-//! / `-I` / `MUTSULIB` / the site repo loads and runs instead.
+//! This is a **core Rakudo class**, not an ecosystem module: `raku -e 'say
+//! Rakudo::Internals::JSON.to-json({a => 1})'` resolves with no `use`, so
+//! answering it from Rust is ordinary core surface, not a BATTERIES.md rung-3
+//! provider. zef reaches for it on every metadata read
+//! (`vendor/zef/lib/Zef.rakumod`), and so do OpenSSL's `%?RESOURCES` loading
+//! and JSON::JWT.
 //!
-//! `JSON::Tiny` used to be answered here too. It is a vendored battery
-//! (`modules/JSON-Tiny/`) that runs unmodified on mutsu, so `use JSON::Tiny`
-//! loads the real module like any other (#8183). (`Test` went the same way in
-//! #7566.)
+//! The `JSON::Fast` / `JSON::Tiny` name-keyed providers that used to live here
+//! are **gone**. Both are vendored batteries now and run their own upstream
+//! source like any other module: `JSON::Tiny` since #8183/#8203,
+//! `JSON::Fast` since #8226 (`modules/JSON-Fast/`). (`Test` went the same way
+//! in #7566.)
 
 use super::*;
 use crate::runtime::json::{self, ToJsonOpts};
 use crate::value::Value;
 
 impl Interpreter {
-    /// Dispatch `to-json` / `from-json` to the native JSON implementation when
-    /// the `JSON::Fast` fallback provider is active. Returns `Some(result)`
-    /// when handled, `None` to let the caller fall through unchanged (so a
-    /// user-defined `sub to-json { … }`, or a real `JSON::Fast`/`JSON::Tiny`
-    /// loaded off the module ladder, still wins — user resolution runs before
-    /// this).
-    pub(crate) fn try_native_json_function(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(name, "to-json" | "from-json") || !self.json_native_provider_active() {
-            return None;
-        }
-        // Strip the synthetic `__test_callsite_line` trailer (and any other
-        // call-site bookkeeping) the same way the Test path does. Unwrap
-        // VarRef-wrapped args (a statement-position call compiles its variable
-        // args through `compile_call_arg`, which wraps them for rw detection)
-        // — the serializer would otherwise hit its opaque-value fallback and
-        // emit the *stringification* of the wrapped Hash.
-        let (clean_args, _callsite_line) = self.sanitize_call_args(args);
-        let clean_args: Vec<Value> = clean_args
-            .into_iter()
-            .map(crate::runtime::types::unwrap_varref_value)
-            // A scalar assigned from an array/hash keeps an itemization
-            // wrapper for list and `.raku` contexts. A normal value argument
-            // still fetches the shared cell before the native serializer sees
-            // it, just as the pre-itemization representation did.
-            .map(|value| match value.view() {
-                ValueView::Scalar(inner) if inner.is_container_ref() => inner.deref_container(),
-                _ => value,
-            })
-            .collect();
-        match name {
-            "to-json" => {
-                let clean_args = self.prepare_to_json_args(clean_args);
-                Some(native_to_json(&clean_args, self.base_to_json_opts()))
-            }
-            "from-json" => Some(native_from_json(
-                &clean_args,
-                self.json_import_defaults.immutable,
-            )),
-            _ => None,
-        }
-    }
-
     /// Pre-convert to-json subject args: user instances doing Associative
     /// (or Positional) serialize via their `.list` (JSON::Fast's
     /// pretty/unpretty-associative and -positional iterate exactly that), so
@@ -182,16 +137,13 @@ impl Interpreter {
         }
     }
 
-    /// Base `to-json` options for this call site: the import-list defaults of
-    /// the latest `use JSON::Fast <...>`, plus the `$*JSON_NAN_INF_SUPPORT`
-    /// dynamic variable. Explicit named args override these in
-    /// `native_to_json`.
+    /// Base `to-json` options for this call site. The `use JSON::Fast
+    /// <immutable !pretty ...>` import list used to seed these; that provider
+    /// is gone (#8226), and `Rakudo::Internals::JSON` has no import list of its
+    /// own, so only the `$*JSON_NAN_INF_SUPPORT` dynamic variable remains.
+    /// Explicit named args override these in `native_to_json`.
     fn base_to_json_opts(&self) -> ToJsonOpts {
-        let d = self.json_import_defaults;
         ToJsonOpts {
-            pretty: !d.not_pretty,
-            sorted_keys: d.sorted_keys,
-            enums_as_value: d.enums_as_value,
             nan_inf_support: self
                 .get_dynamic_var("*JSON_NAN_INF_SUPPORT")
                 .map(|v| v.truthy())
@@ -223,8 +175,12 @@ impl Interpreter {
         }
         let (clean_args, _) = self.sanitize_call_args(args);
         Some(match method {
-            "to-json" => native_to_json(&clean_args, self.base_to_json_opts()),
-            "from-json" => native_from_json(&clean_args, self.json_import_defaults.immutable),
+            "to-json" => {
+                let clean_args = self.prepare_to_json_args(clean_args);
+                native_to_json(&clean_args, self.base_to_json_opts())
+            }
+            // `Rakudo::Internals::JSON.from-json(Str)` takes no `:immutable`.
+            "from-json" => native_from_json(&clean_args, false),
             _ => unreachable!(),
         })
     }

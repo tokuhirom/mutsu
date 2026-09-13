@@ -68,24 +68,14 @@ Two facts the original record did not have also turned out to matter:
   grammar engine is ~15x off rakudo, not off the scale. That 15x is the real
   bill and is worth paying; it is not a reason to keep a substitution.
 
-## `JSON::Fast` is a different case, and is still native
+## `JSON::Fast` went the same way
 
-`JSON::Fast` is **not vendored** yet. Five bundled batteries (`Cro::HTTP`,
-`JSON::JWT`, `Log::Timeline`, …) `use` it, so `use JSON::Fast` must keep
-working, and the native `to-json`/`from-json` answer it.
-
-It is a **last-resort provider, not an override**:
-
-- `use JSON::Fast` runs the normal module search first. Only when nothing
-  resolves does `json_native_provider` flip on and the native routines become
-  reachable (`runtime/runtime_module.rs`). A real `JSON::Fast` on the ladder
-  loads and runs instead — pinned by `t/modules/batteries/json-module-ladder.t`.
-- The dispatch sites (`runtime/calls.rs` for statement position,
-  `vm/vm_call_func_ops.rs` for the expression path) now sit strictly *after*
-  routine resolution, so a resolved def always wins. Neither one matches on a
-  module name any more.
-- `from-json`'s failure is JSON::Fast's own plain `X::AdHoc` `die`,
-  unconditionally. Nothing guesses.
+`JSON::Fast` is a vendored battery too now — `modules/JSON-Fast/`, upstream tag
+0.20.1, all 14 of its own test files passing — and the last-resort native
+provider that answered its name is **deleted**
+([#8226](https://github.com/tokuhirom/mutsu/issues/8226)). Its own record is
+[json-fast.md](json-fast.md); the section below is the history of the blocker
+both modules were held behind, which is why it stays here.
 
 ### The recorded "~50 missing `nqp::` ops" blocker was wrong, and is gone
 
@@ -122,21 +112,16 @@ Those nine are implemented, and so is what they turned out to be hiding:
   `nqp::strfromcodes("bå".NFD)` is the *composed* two graphemes. Without that,
   every string `JSON::Fast` round-tripped through `.NFD` came back decomposed.
 
-With those in place, **13 of the 14 upstream `JSON::Fast` test files pass
-whole**. `t/01-parse.t` is 337/674 on two blockers that have nothing to do with
-JSON:
-
-- a `Q«[{"":» x 10_000` input recurses ~20,000 routines deep, which aborts the
-  process on a Rust stack overflow rather than raising a catchable error (mutsu's
-  ceiling is between 5,000 and 10,000 frames) —
-  [#8232](https://github.com/tokuhirom/mutsu/issues/8232);
-- `nom-comment($text, ++$pos)` passes `++$pos` to an `int $pos is rw`
-  parameter, which mutsu refuses with "expects a writable container" where
-  rakudo binds the native reference —
-  [#8233](https://github.com/tokuhirom/mutsu/issues/8233).
-
-Vendoring the distribution, retiring the native provider, and the ADR-0096 §D4
-ledger row all wait on those two.
+With those in place, 13 of the 14 upstream `JSON::Fast` test files passed. The
+last one, `t/01-parse.t`, was held by two blockers with nothing to do with JSON
+— a ~20,000-frame recursion that aborted the process on a Rust stack overflow
+instead of raising ([#8232](https://github.com/tokuhirom/mutsu/issues/8232)) and
+`++$pos` passed to an `int $pos is rw` parameter
+([#8233](https://github.com/tokuhirom/mutsu/issues/8233)) — plus three more
+general gaps found when the whole suite was re-measured
+([#8282](https://github.com/tokuhirom/mutsu/issues/8282)). All are fixed, all 14
+files pass, the distribution is vendored, and the ADR-0096 §D4 ledger row is
+closed.
 
 ## Upstream test suite
 

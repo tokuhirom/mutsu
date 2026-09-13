@@ -14,16 +14,6 @@ impl Interpreter {
         self.loaded_modules.contains(module)
     }
 
-    /// True once a `use JSON::Fast` found no `JSON::Fast` anywhere on the
-    /// module-resolution ladder and fell back to the native `to-json` /
-    /// `from-json` (see `vm/vm_native_json.rs`). It is a *last-resort
-    /// provider for a module mutsu does not ship*, never an override: a
-    /// `JSON::Fast` reachable via `use lib` / `-I` / `MUTSULIB` / the site
-    /// repo loads and runs normally, and this stays false.
-    pub(crate) fn json_native_provider_active(&self) -> bool {
-        self.json_native_provider
-    }
-
     /// True while some module compunit's mainline is currently running
     /// (`load_module`'s `run_block` is on the Rust call stack, tracked by
     /// `module_load_stack` for the whole nested chain, not just the outermost
@@ -356,14 +346,6 @@ impl Interpreter {
         tags: &[String],
         import: bool,
     ) -> Result<(), RuntimeError> {
-        // `use JSON::Fast <immutable !pretty>`: the import list selects
-        // per-scope defaults for the native provider. Every `use` re-selects
-        // them — including re-uses of the already-loaded module below — so this
-        // must run before the loaded_modules early return.
-        if module == "JSON::Fast" {
-            self.json_import_defaults =
-                crate::runtime::json::JsonImportDefaults::from_import_words(tags);
-        }
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
@@ -543,25 +525,6 @@ impl Interpreter {
                     self.write_warn_to_stderr(&format!(
                         "WARNING: could not find module {module} to use, ignoring"
                     ));
-                    Ok(())
-                }
-                Err(err) => Err(err),
-            }
-        } else if module == "JSON::Fast" {
-            // `JSON::Fast` is the one JSON module mutsu still provides natively
-            // (`runtime/json.rs`): the real distribution is not vendored yet, so
-            // nothing would resolve. (The "~50 missing `nqp::` ops" this comment
-            // used to give as the reason was never measured; see #8226 and
-            // `docs/batteries/json-tiny.md` for what the real bill is.) It is a
-            // *fallback*, not an override — the ladder runs first, so a real
-            // `JSON::Fast` reached through `use lib` / `-I` / `MUTSULIB` / the
-            // site repo wins (BATTERIES.md §6). `JSON::Tiny` is no longer on
-            // this path at all: it is a vendored battery that loads like any
-            // other module (see docs/batteries/json-tiny.md).
-            match self.load_module(module) {
-                Ok(()) => Ok(()),
-                Err(err) if err.is_unsatisfied_dependency() => {
-                    self.json_native_provider = true;
                     Ok(())
                 }
                 Err(err) => Err(err),

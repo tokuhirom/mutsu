@@ -568,6 +568,7 @@ mod builtins_multidim_subscript;
 mod builtins_multidim_subscript_adverb;
 mod builtins_postcircumfix;
 mod catch_inline;
+pub(crate) mod json;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
@@ -643,7 +644,6 @@ mod io_sysinfo_kernel;
 mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
 mod iterator_protocol;
-pub(crate) mod json;
 mod list_element_stringify;
 mod listop_functions;
 pub(crate) mod locals;
@@ -3496,14 +3496,6 @@ pub struct Interpreter {
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     pub(crate) monkey_typing: bool,
-    /// Defaults selected by the import list of the latest
-    /// `use JSON::Fast <...>` (see `runtime/json.rs`).
-    pub(crate) json_import_defaults: crate::runtime::json::JsonImportDefaults,
-    /// True once a `use JSON::Fast` resolved to nothing on the module ladder
-    /// and fell back to the native provider (`runtime/json.rs`). Gates the
-    /// native `to-json`/`from-json` dispatch; see
-    /// [`Interpreter::json_native_provider_active`].
-    pub(crate) json_native_provider: bool,
 
     // === Merged VM execution registers (CP-3 collapse: the bytecode VM was
     // dissolved into the Interpreter; these were the per-execution fields of the
