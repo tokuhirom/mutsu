@@ -11,18 +11,42 @@
     "unresolved": []
   },
   "dist": "TCP::LowLevel",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'listen' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic-compat.t",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 11.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "TCP::LowLevel": "Runtime error: Failed to parse module 'TCP::LowLevel': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
+    "TCP::LowLevel": "ok",
     "TCP::LowLevel::Socket-Connection-Linux": "ok",
     "TCP::LowLevel::Socket-Linux": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -33,13 +57,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/CP/TCP_LOWLEVEL/d39c1ed6bab9f622efa37aa23cd7deda0e674555.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 7,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.1.2"
 }

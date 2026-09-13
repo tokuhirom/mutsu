@@ -7,16 +7,86 @@
     "unresolved": []
   },
   "dist": "BigRoot",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot modify an immutable Int (30)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-first-sqrt2-sqrt3-high-precision.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 7.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for return value; expected FatRat but got Any (Any)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-basic-tests.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot modify an immutable Int (30)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-rational-roots.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "BigRoot": "expected statement: expected expected statement: expected angle index key or expression statement [at BigRoot-0.1.1/lib/BigRoot.rakumod:26]"
+    "BigRoot": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +97,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/IG/BIGROOT/a2c2139d9444da7338796af28afb123defdfd399.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 11,
+    "baseline_files": 3,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }

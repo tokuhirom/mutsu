@@ -18,20 +18,134 @@
     "unresolved": []
   },
   "dist": "Arithmetic::PaperAndPencil",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 21.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-test-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 22.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'html' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-html.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-mult.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Two terms in a row",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-mult.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Arithmetic::PaperAndPencil": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at Arithmetic/PaperAndPencil/Number.rakumod:244]",
+    "Arithmetic::PaperAndPencil": "ok",
     "Arithmetic::PaperAndPencil::Action": "ok",
     "Arithmetic::PaperAndPencil::Char": "ok",
     "Arithmetic::PaperAndPencil::Label": "ok",
-    "Arithmetic::PaperAndPencil::Number": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at Arithmetic/PaperAndPencil/Number.rakumod:244]"
+    "Arithmetic::PaperAndPencil::Number": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -42,13 +156,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/RI/ARITHMETIC_PAPERANDPENCIL/a445736fbea200e6b2d816d67cbb52feca82d438.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 18,
+    "baseline_files": 5,
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 3
   },
   "version": "0.0.1"
 }

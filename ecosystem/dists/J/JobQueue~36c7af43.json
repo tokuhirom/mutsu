@@ -11,22 +11,116 @@
     "unresolved": []
   },
   "dist": "JobQueue",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "flaky": true,
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 24,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-queue.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 6.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-coordinator.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-failed-registry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: uuid-v4",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-injection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "JobQueue": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
-    "JobQueue::Coordinator": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
+    "JobQueue": "ok",
+    "JobQueue::Coordinator": "ok",
     "JobQueue::EventSink": "ok",
     "JobQueue::FailedRegistry": "ok",
-    "JobQueue::Job": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
+    "JobQueue::Job": "ok",
     "JobQueue::Observability": "ok",
-    "JobQueue::Queue": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'"
+    "JobQueue::Queue": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -37,13 +131,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/OB/JOBQUEUE/7ddc5816bf1db6f0ccd69c417dd354229fa003f3.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 27,
+    "baseline_files": 3,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }

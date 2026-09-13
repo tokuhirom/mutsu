@@ -22,11 +22,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@chromosome'; expected Positional but got Hash ({19 => (Any), 20 => (Any), 21 => (Any), 22 => (Any), 23 => (Any), 24 => (An",
-        "nok": 31,
-        "ok": 6,
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@chromosome'; expected Positional but got Hash ({10 => (Any), 11 => (Any), 12 => (Any), 13 => (Any), 14 => (Any), 15 => (An",
+        "nok": 32,
+        "ok": 5,
         "plan": null,
-        "secs": 0.57,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 3.64,
+        "secs": 3.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.18,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 1.61,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 172.0,
+        "secs": 172.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 13.52,
+        "secs": 13.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.76,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +126,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.52,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.74,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,10 +161,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -179,7 +179,7 @@
   "totals": {
     "baseline_assertions": 4397,
     "baseline_files": 6,
-    "mutsu_assertions": 4073,
+    "mutsu_assertions": 4072,
     "parity_files": 3,
     "regressed_files": 3
   },

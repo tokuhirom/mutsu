@@ -19,7 +19,7 @@
   "load": {
     "Intl::Format::DateTime": "raku_also_fails",
     "Intl::Format::DateTime::Constants": "ok",
-    "Intl::Format::DateTime::ExemplarCities": "ok",
+    "Intl::Format::DateTime::ExemplarCities": "The following packages were stubbed but not defined:",
     "Intl::Format::DateTime::FieldMeta": "ok",
     "Intl::Format::DateTime::Formatters::A-uc": "raku_also_fails",
     "Intl::Format::DateTime::Formatters::B-uc": "raku_also_fails",
@@ -71,10 +71,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

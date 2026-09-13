@@ -11,69 +11,69 @@
   "dist": "Cookie::Jar",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Could not find symbol '&to-json' in 'GLOBAL::JSON::Fast'",
-        "nok": 1,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.23,
+        "first_failure": "simple key=value",
+        "nok": 14,
+        "ok": 5,
+        "plan": 19,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/add.t",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 4.43,
+        "secs": 3.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Could not find symbol '&to-json' in 'GLOBAL::JSON::Fast'",
-        "nok": 0,
+        "first_failure": "delete cookies for missing domain",
+        "nok": 6,
         "ok": 1,
-        "plan": null,
-        "secs": 0.24,
+        "plan": 7,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/clear.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.01,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Could not find symbol '&to-json' in 'GLOBAL::JSON::Fast'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.22,
+        "first_failure": "get cookies for domain",
+        "nok": 6,
+        "ok": 1,
+        "plan": 7,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/get-header.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.11,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,30 +86,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.6,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Could not find symbol '&to-json' in 'GLOBAL::JSON::Fast'",
-        "nok": 0,
+        "first_failure": "Roundtrip",
+        "nok": 1,
         "ok": 5,
-        "plan": null,
-        "secs": 0.17,
+        "plan": 6,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/save-load.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.11,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -121,10 +121,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -139,7 +139,7 @@
   "totals": {
     "baseline_assertions": 39,
     "baseline_files": 4,
-    "mutsu_assertions": 7,
+    "mutsu_assertions": 12,
     "parity_files": 0,
     "regressed_files": 4
   },

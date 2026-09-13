@@ -7,7 +7,30 @@
     "unresolved": []
   },
   "dist": "Lang::Transliterate",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 23.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Lang::Transliterate": "ok",
     "Lang::Transliterate::Ar::ALALC": "ok",
@@ -63,7 +86,7 @@
     "Lang::Transliterate::Egy::Lepsius1874": "ok",
     "Lang::Transliterate::El::DIN31634": "ok",
     "Lang::Transliterate::El::ISO843": "ok",
-    "Lang::Transliterate::En::TolkienRunic": "expected statement: expected expected statement: expected expected statement: expected expected statement: expected expected statement: expected right-hand expression after compound assignment or angl [at Transliterate/En/TolkienRunic.rakumod:200]",
+    "Lang::Transliterate::En::TolkienRunic": "ok",
     "Lang::Transliterate::Fa::ALALC": "ok",
     "Lang::Transliterate::Fa::BGNPCGN": "ok",
     "Lang::Transliterate::Fa::DMG": "ok",
@@ -110,7 +133,7 @@
     "Lang::Transliterate::Ru::YandexMaps": "ok",
     "Lang::Transliterate::Ru::YandexMoney": "ok",
     "Lang::Transliterate::Rue::Sci": "ok",
-    "Lang::Transliterate::Sa::IAST": "Failed to parse module 'Lang::Transliterate::Sa::IAST': Unrecognized regex metacharacter ् (must be quoted to match literally) [at Transliterate/Sa/IAST.rakumod:1223]",
+    "Lang::Transliterate::Sa::IAST": "ok",
     "Lang::Transliterate::Sr::Sci": "ok",
     "Lang::Transliterate::Tlh::PIqaD": "ok",
     "Lang::Transliterate::Uk::ALALC": "ok",
@@ -134,10 +157,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -148,12 +171,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/AN/LANG_TRANSLITERATE/d936c36f3c47dd00040b9c9c2d899a207a10c786.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 16,
+    "baseline_files": 1,
+    "mutsu_assertions": 16,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.0"

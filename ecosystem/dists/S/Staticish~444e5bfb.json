@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.14,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 0.6,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.59,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,11 +55,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'add_role' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "first_failure": "Cannot look up attributes in a Foo type object. Did you forget a '.new'?",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": null,
-        "secs": 0.11,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,30 +69,29 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.82,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "can use an externally defined module",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/030-ext.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.46,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,10 +103,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -122,9 +121,9 @@
   "totals": {
     "baseline_assertions": 18,
     "baseline_files": 4,
-    "mutsu_assertions": 2,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 7,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.0.9"
 }

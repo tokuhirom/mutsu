@@ -13,7 +13,30 @@
     "unresolved": []
   },
   "dist": "Pray",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basics.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 27.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Pray": "ok",
     "Pray::Geometry::Cone": "ok",
@@ -22,7 +45,7 @@
     "Pray::Geometry::Matrix3D": "ok",
     "Pray::Geometry::Object": "ok",
     "Pray::Geometry::Ray": "ok",
-    "Pray::Geometry::Sphere": "expected statement: expected expected statement: expected return value expression or '.' or digits or generic radix literal or unicode numeric literal or ... [at Pray/Geometry/Sphere.rakumod:10]",
+    "Pray::Geometry::Sphere": "ok",
     "Pray::Geometry::Vector3D": "ok",
     "Pray::Input::JSON": "ok",
     "Pray::Output": "ok",
@@ -38,10 +61,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,12 +75,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RA/PRAY/a297770e4d98dcb4b0651b72f3a03c1002c6d30b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.2"

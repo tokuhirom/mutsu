@@ -16,11 +16,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unsupported nqp:: op: nqp::const::STAT_EXISTS",
+        "first_failure": "Undeclared name:",
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.74,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 50.34,
+        "secs": 54.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,10 +43,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

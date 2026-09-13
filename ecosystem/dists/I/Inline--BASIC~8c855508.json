@@ -7,16 +7,63 @@
     "unresolved": []
   },
   "dist": "Inline::BASIC",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Variables and addition work",
+        "nok": 9,
+        "ok": 6,
+        "plan": 15,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 3.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Guessing game logic works",
+        "nok": 3,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-examples.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Inline::BASIC": "Runtime error: Failed to parse module 'Inline::BASIC': Unrecognized regex metacharacter ] (must be quoted to match literally)"
+    "Inline::BASIC": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/NL/INLINE_BASIC/233eb407111ca093e7a3981692c4ea24c78d5be4.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 18,
+    "baseline_files": 2,
+    "mutsu_assertions": 6,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.0.2"
 }

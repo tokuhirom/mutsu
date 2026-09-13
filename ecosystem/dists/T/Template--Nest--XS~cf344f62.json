@@ -13,11 +13,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'deref' for invocant of type 'NativeCall::Types::Pointer[Str]'",
+        "first_failure": "Unknown function: to-json",
         "nok": 0,
         "ok": 1,
         "plan": 70,
-        "secs": 0.18,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 70,
         "plan": 70,
-        "secs": 5.48,
+        "secs": 5.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.19,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 5.46,
+        "secs": 6.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,11 +59,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'deref' for invocant of type 'NativeCall::Types::Pointer[Str]'",
+        "first_failure": "Unknown function: to-json",
         "nok": 0,
         "ok": 1,
         "plan": 5,
-        "secs": 0.16,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.23,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.17,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 7.07,
+        "secs": 6.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +108,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.16,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.43,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +131,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.16,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.56,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +154,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 2,
-        "secs": 0.18,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -164,7 +164,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.09,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.15,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,7 +187,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.49,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -199,10 +199,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
