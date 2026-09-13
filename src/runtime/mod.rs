@@ -791,7 +791,7 @@ mod registration_class_body_attr;
 mod registration_class_body_does;
 mod registration_class_body_exit;
 mod registration_class_body_method;
-mod registration_class_body_method_forms;
+pub(crate) mod registration_class_body_method_forms;
 mod registration_class_compose;
 mod registration_class_compose_body;
 pub(crate) mod registration_class_compose_record;

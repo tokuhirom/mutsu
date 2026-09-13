@@ -3770,6 +3770,8 @@ impl Compiler {
                 is_rw,
                 return_type,
                 is_submethod,
+                is_my,
+                is_our,
                 ..
             } => {
                 // Top-level/package method declarations should still produce callable
@@ -3786,11 +3788,48 @@ impl Compiler {
                 } else {
                     crate::ast::RoutineDeclarator::Method
                 };
+                // The registered signature has to match what the BODY is
+                // compiled against, a few lines below: `method_params` prepends
+                // `self`, so a plan carrying only the declared parameters is a
+                // slot short and `&name` has no invocant to bind -- a body that
+                // mentions `self` then dies with "Variable '$self' is not
+                // declared", and `.arity` / `.signature` are short by one.
+                //
+                // `method_sub_form_params` is the same rule a class body's
+                // `our method` already registers its sub form with, so both
+                // paths agree on what a named method value's signature is.
+                //
+                // Only the `my` / `our` spellings. A bare `method foo { }` at
+                // unit or inner scope is `===SORRY!===` in rakudo, so it has no
+                // reference signature to match -- and mutsu accepts it, with
+                // `t/oo/method/nested-method-captured-writeback-coherence.t`
+                // calling one with no arguments. Prepending an invocant there
+                // would only break a spelling this ticket has no baseline for.
+                let (sub_params, mut sub_param_defs) = if *is_my || *is_our {
+                    crate::runtime::registration_class_body_method_forms::method_sub_form_params(
+                        params, param_defs,
+                    )
+                } else {
+                    (params.clone(), param_defs.clone())
+                };
+                // That helper builds a SUB form, whose point is that the
+                // invocant becomes an ordinary first positional. A named
+                // `my method` is a `Method`, so its leading parameter is a real
+                // invocant: rakudo renders `&m.signature` as `(Mu $:: $x, *%_)`,
+                // which is the shape a class-body method already reports here.
+                // Binding is unchanged either way -- an invocant binds the first
+                // positional too.
+                if let Some(first) = sub_param_defs.first_mut()
+                    && first.name == "self"
+                    && !first.is_invocant
+                {
+                    first.is_invocant = true;
+                }
                 let lowered = Stmt::SubDecl {
                     name: *name,
                     name_expr: name_expr.clone(),
-                    params: params.clone(),
-                    param_defs: param_defs.clone(),
+                    params: sub_params,
+                    param_defs: sub_param_defs,
                     return_type: return_type.clone(),
                     associativity: None,
                     precedence_trait: None,

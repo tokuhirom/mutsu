@@ -17,7 +17,7 @@ use Test;
 # separately and are pinned by `method-literal-is-a-routine.t`; this file is the
 # named declarator statement.
 
-plan 12;
+plan 19;
 
 # --- the type each named declarator reports -------------------------------
 
@@ -51,13 +51,30 @@ is &n2.WHAT.^name, 'Sub', 'a plain `sub` is still a Sub';
 our sub n3($x) { 1 }
 is &n3.WHAT.^name, 'Sub', '`our sub` is still a Sub';
 
-# --- deliberately NOT tested here: calling one ----------------------------
+# --- the invocant is part of the signature (#8348) -------------------------
 #
-# The declarator rides on the captured environment of the very value `&name`
-# resolves to, so it would be natural to check here that the routine still runs.
-# It cannot be checked portably, because mutsu and rakudo disagree about the
-# signature a named method value has -- rakudo's is `(Mu $:: $x, *%_)` and
-# mutsu's is `($x)`, so every call that works in one is an arity error in the
-# other, including `5.&m(21)`. That is a separate defect, tracked as
-# tokuhirom/mutsu#8348; it survives this file's fix and is out of #8313's scope.
-# Add the call / `.arity` / `.signature` assertions here once it is fixed.
+# A named method value carries an invocant, so it takes the receiver as its
+# first argument. mutsu registered it with only the DECLARED parameters, while
+# compiling the body against a leading `self` -- so the two disagreed by a slot:
+# `.arity` was short by one, `&m($obj, ...)` and `$obj.&m(...)` were arity
+# errors, and a body that mentioned `self` died with "Variable '$self' is not
+# declared".
+
+class Obj { }
+
+my method call-me($x) { "{self.^name}/$x" }
+
+is &call-me.arity, 2, 'a named method value counts its invocant';
+is &call-me(Obj, 3), 'Obj/3', 'it takes the receiver as its first argument';
+is Obj.&call-me(3), 'Obj/3', '...which is what `$obj.&name(...)` passes';
+dies-ok { &call-me(3) }, 'and omitting the receiver is an arity error';
+
+my submethod sub-call-me($x) { "{self.^name}/$x" }
+is &sub-call-me(Obj, 4), 'Obj/4', 'a named submethod value binds its invocant too';
+
+our method our-call-me($x) { "{self.^name}/$x" }
+is &our-call-me(Obj, 5), 'Obj/5', 'and the `our` spelling';
+
+# The body really does see the receiver, not just a positional named `self`.
+my method reads-self() { self.^name }
+is &reads-self(Obj), 'Obj', 'the body reads the receiver through `self`';
