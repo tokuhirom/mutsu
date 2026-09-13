@@ -1,6 +1,6 @@
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PError, PResult, opt_char, parse_char};
+use super::super::parse_result::{MISSING_BLOCK, PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{
@@ -14,6 +14,67 @@ use crate::value::Value;
 use super::decl::parse_array_shape_suffix;
 use super::sub;
 use super::{block, block_inner, ident, keyword, parse_comma_or_expr, statement, var_name};
+/// Parse a control statement's `{ ... }` body with the pointy block's own
+/// parameters in scope.
+///
+/// A sigilless parameter (`-> \index { ... }`) declares a TERM: inside the body
+/// a bare `index` IS that binding, so the parse scope has to carry it — exactly
+/// as `for`'s own header already does. Without it the body is parsed against
+/// whatever the name means OUTSIDE the block, and a name that also spells a
+/// listop (`index`, `join`, ...) reads as a call and swallows the rest of the
+/// statement, so it is the ENCLOSING construct that fails to parse — which is
+/// why `Hash::Ordered` (and `Archive::Ar` / `BSON::Simple` / `Terminal::Tests`
+/// through it) reported its error at a `method ... (` several lines away
+/// (#7954).
+///
+/// A `&name` parameter is registered for the same reason `for` registers it:
+/// `-> &m { m() }` must read `m()` as a call to the bound routine, not as an
+/// `m//` match.
+pub(crate) fn block_with_pointy_params<'a>(
+    input: &'a str,
+    params: &[ParamDef],
+) -> PResult<'a, Vec<Stmt>> {
+    let mut code_names: Vec<&str> = Vec::new();
+    let mut term_names: Vec<&str> = Vec::new();
+    for pd in params {
+        let name = pd.name.trim_start_matches('\\');
+        if name.is_empty() {
+            continue;
+        }
+        if pd.sigilless {
+            term_names.push(name);
+        } else if let Some(bare) = name.strip_prefix('&') {
+            code_names.push(bare);
+        }
+    }
+    if code_names.is_empty() && term_names.is_empty() {
+        return block(input);
+    }
+    let (rest, _) =
+        parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
+    // The parse memo is keyed by the input slice alone, so an entry made while
+    // the header was being parsed — before these names existed — would be
+    // handed straight back here, and the body would be re-used at its OLD
+    // meaning. That is not hypothetical: `if`'s header runs the full parameter
+    // list parser, which speculates over the `{ ... }` that follows, so
+    // `if 1 -> \index { say index .. 2 }` memoized the body's failure (`index`
+    // read as the listop) and then replayed it under the correct scope.
+    // A fresh generation makes every key in this body distinct from the
+    // enclosing parse's, which is exactly the scope's effect on the grammar.
+    let _generation = crate::parser::memo::begin_parse_generation();
+    super::simple::push_scope();
+    for name in code_names {
+        super::simple::register_user_sub(name);
+    }
+    for name in term_names {
+        super::simple::register_user_term_symbol(name);
+    }
+    let mut result = block_inner(rest);
+    super::simple::finish_block_anon_states(&mut result);
+    super::simple::pop_scope();
+    result
+}
+
 fn condition_has_assignment_tail(rest: &str) -> bool {
     if rest.starts_with(":=") || rest.starts_with("::=") || rest.starts_with("⚛=") {
         return true;
@@ -231,6 +292,36 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             stmts.push(Stmt::MarkReadonly(pd.name.clone(), ReadonlyKind::Alias));
         }
         Stmt::SyntheticBlock(stmts)
+    }
+}
+
+/// Bind a control statement's pointy parameter to the (once-evaluated)
+/// condition value.
+///
+/// A **sigilless** parameter (`with $x -> \\v { ... }`) is a term binding, not an
+/// ordinary lexical: the body spells it as a bare word, so the declaration has
+/// to carry the `MarkSigillessReadonly` marker that tells the compiler this
+/// name reads from its local slot. Without it `with 1 -> \\v { say v }` declared
+/// `v` and then read the bare word as a package lookup, printing `(Any)` where
+/// rakudo prints `1` (#7954). The marker also makes the binding read-only,
+/// which is what rakudo gives a `\\name` parameter.
+pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> Stmt {
+    let decl = Stmt::VarDecl {
+        name: name.to_string(),
+        expr: source.clone(),
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    };
+    if sigilless {
+        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name.to_string())])
+    } else {
+        decl
     }
 }
 
