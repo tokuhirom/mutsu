@@ -3,10 +3,10 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-# ADR-0088 issue #8033: explicit static lookaround assertions retain their
+# ADR-0088 issue #8033: lookaround assertions retain their
 # source tree and lower through the existing RegexPattern matcher.
 
-plan 32;
+plan 36;
 
 my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
 my $before-match = 'foobar' ~~ $positive-before;
@@ -132,3 +132,14 @@ my $constructed-nested = EVAL(RakuAST::QuotedRegex.new(
 ));
 ok 'bar' ~~ $constructed-nested,
     'a constructed nested lookahead lowers through the existing matcher';
+
+my $escaped-before = EVAL(Q[/foo <?before \d+>/].AST);
+my $escaped-before-match = 'foo123' ~~ $escaped-before;
+ok $escaped-before-match,
+    'an escaped digit class lowers inside a lookahead';
+is ~$escaped-before-match, 'foo',
+    'an escaped lookahead remains zero-width';
+nok 'foobar' ~~ $escaped-before,
+    'an escaped digit lookahead rejects a non-digit suffix';
+ok 'foo123' ~~ $escaped-before,
+    'an escaped lookahead can be reused without reparsing drift';
