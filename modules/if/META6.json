@@ -1,0 +1,32 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Tobias Leich"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Conditionally load a distribution",
+  "license": "Artistic-2.0",
+  "name": "if",
+  "provides": {
+    "if": "lib/if.rakumod"
+  },
+  "raku": "6.*",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/if.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/if/issues",
+    "email": "community@raku.org",
+    "source": "https://github.com/raku-community-modules/if.git"
+  },
+  "tags": [
+    "MODULE",
+    "NAUGHTY"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.1.5"
+}

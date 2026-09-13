@@ -45,7 +45,10 @@ overridden **rule names** map onto hand-implemented parser modes. The chain:
    (`parser/stmt/simple/slang_modes.rs`): `term:sym<identifier>` →
    spaced-call, `methodop` → spaced-methodop,
    `routine-declarator:sym<sub>`/`routine_declarator:sym<sub>` → no-op. An
-   unrecognized rule is a **hard compile-time error** naming the rule.
+   unrecognized rule is a **hard compile-time error** naming the rule. (Since
+   [ADR-0098](../adr/0098-if-pragma-actions-slang.md) the *actions* handle is
+   read the same way, where an override is a method name rather than a token;
+   Tuxic passes `Mu` for actions, so nothing changes for it.)
 4. The rest of the using compilation unit parses in the changed mode. Slang
    state is lexical to the unit: importers of a module that uses the slang
    are unaffected, and EVAL strings parse in the stock grammar.

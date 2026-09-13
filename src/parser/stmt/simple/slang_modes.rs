@@ -29,6 +29,12 @@ pub(crate) struct SlangModes {
     /// signature parameter) must keep meaning "the variable `x`, marked
     /// optional", not "the variable `x?`".
     pub ident_trailing_punct: bool,
+    /// `statement-control:sym<use>` override (the `if` pragma, ADR-0098): a
+    /// `:if(EXPR)` adverb on a `use` statement is a load condition rather than
+    /// part of the module spec — `use Foo:if($*DISTRO.is-win)` loads `Foo`
+    /// only when EXPR is true. Without the pragma the adverb is inert and the
+    /// module loads unconditionally, as in stock Rakudo.
+    pub use_if_adverb: bool,
 }
 
 thread_local! {
@@ -36,6 +42,7 @@ thread_local! {
         spaced_call: false,
         spaced_methodop: false,
         ident_trailing_punct: false,
+        use_if_adverb: false,
     }) };
 }
 
@@ -78,6 +85,10 @@ pub(crate) fn slang_ident_trailing_punct() -> bool {
     slang_modes().ident_trailing_punct
 }
 
+pub(crate) fn slang_use_if_adverb() -> bool {
+    slang_modes().use_if_adverb
+}
+
 /// Consume a single trailing `?`/`!` from `rest` for the `ident_trailing_punct`
 /// mode, appending it to `name`. A no-op when the mode is off. Guarded
 /// against eating one half of a doubled `??`/`!!` (e.g. a compact ternary
@@ -113,6 +124,9 @@ pub(crate) fn apply_slang_rule_override(modes: &mut SlangModes, rule: &str) -> O
         // Slangify's Piersing fixture: identifiers/names may end in a
         // trailing `?`/`!` (`sub pass?(|c) {...}`, called as `pass? "..."`).
         "identifier" | "name" => modes.ident_trailing_punct = true,
+        // The `if` pragma's actions role (ADR-0098): a `:if(EXPR)` adverb on
+        // `use` becomes a load condition instead of part of the module spec.
+        "statement-control:sym<use>" => modes.use_if_adverb = true,
         _ => return None,
     }
     Some(())
@@ -127,6 +141,7 @@ mod tests {
         spaced_call: true,
         spaced_methodop: true,
         ident_trailing_punct: false,
+        use_if_adverb: false,
     };
 
     fn parse_with_modes(modes: SlangModes, input: &str) -> Result<Vec<Stmt>, String> {
@@ -253,17 +268,26 @@ mod tests {
         assert!(apply_slang_rule_override(&mut modes, "methodop").is_some());
         assert!(apply_slang_rule_override(&mut modes, "routine-declarator:sym<sub>").is_some());
         assert!(apply_slang_rule_override(&mut modes, "routine_declarator:sym<sub>").is_some());
-        assert_eq!(
-            modes,
-            SlangModes {
-                spaced_call: true,
-                spaced_methodop: true,
-                ident_trailing_punct: false,
-            }
-        );
+        assert_eq!(modes, TUXIC);
         let mut fresh = SlangModes::default();
         assert!(apply_slang_rule_override(&mut fresh, "term:sym<colonpair>").is_none());
         assert_eq!(fresh, SlangModes::default());
+    }
+
+    /// The `if` pragma's actions role overrides exactly one production
+    /// (ADR-0098); it must reach the mode set, and must not drag any other
+    /// mode along with it.
+    #[test]
+    fn rule_override_maps_statement_control_use_to_the_if_adverb() {
+        let mut modes = SlangModes::default();
+        assert!(apply_slang_rule_override(&mut modes, "statement-control:sym<use>").is_some());
+        assert_eq!(
+            modes,
+            SlangModes {
+                use_if_adverb: true,
+                ..SlangModes::default()
+            }
+        );
     }
 
     #[test]

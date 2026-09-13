@@ -13,7 +13,10 @@
 - Addresses: `todo/deep/text-csv-needs-slang-tuxic-support.md`
 - Extended by: [ADR-0091](0091-slang-package-declarators.md) (a slang may also
   *add* a package declarator, read out of its `package_declarator:sym<...>`
-  candidate; §4's refusal to execute token bodies is preserved)
+  candidate; §4's refusal to execute token bodies is preserved) and
+  [ADR-0098](0098-if-pragma-actions-slang.md) (the **actions** half of a
+  `define_slang` call is read too — an actions role's method names are override
+  names; this answers §5's third open question, and again preserves §4)
 
 ## Outcome (2026-08-12)
 
@@ -207,6 +210,10 @@ green — it stays the campaign's yardstick, not part of this ADR's scope.
   module cache?
 - Whether `routine-declarator:sym<sub>` truly maps to a no-op on mutsu
   (decide empirically once Text::CSV parses).
-- Whether the `$*LANG` handle should also stub `slang_actions` mixins as
+- ~~Whether the `$*LANG` handle should also stub `slang_actions` mixins as
   recorded-but-inert (Tuxic passes `Mu` for actions, so nothing is needed
-  today).
+  today).~~ **Answered 2026-09-13 by
+  [ADR-0098](0098-if-pragma-actions-slang.md):** the actions half is read for
+  real, because the `if` pragma puts its whole registration there. An actions
+  role's *method names* are override names, mapped by the same recognized
+  map — its bodies are still never executed.

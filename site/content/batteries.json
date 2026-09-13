@@ -80,29 +80,6 @@
       "readme": "# Cro::TLS ![Build Status](https://github.com/croservices/cro-tls/actions/workflows/ci.yml/badge.svg)\n\nThis is part of the Cro libraries for implementing services and distributed\nsystems in Raku. See the [Cro website](http://cro.services/) for further\ninformation and documentation.\n"
     },
     {
-      "name": "Crypt::Random",
-      "version": "0.4.1",
-      "description": "Random numbers and bytes mimicking arc4random",
-      "license": "Artistic-2.0",
-      "authors": [
-        "github:skinkade"
-      ],
-      "auth": "",
-      "provides": [
-        "Crypt::Random",
-        "Crypt::Random::Extra",
-        "Crypt::Random::Nix",
-        "Crypt::Random::Win"
-      ],
-      "depends": [
-        "if"
-      ],
-      "upstream": "git://github.com/skinkade/crypt-random",
-      "slot": "Secure randomness (CSPRNG)",
-      "record": "docs/batteries/crypt-random.md",
-      "readme": "# Crypt::Random\n[![Build Status](https://travis-ci.org/skinkade/crypt-random.svg?branch=master)](https://travis-ci.org/skinkade/crypt-random) [![Build status](https://ci.appveyor.com/api/projects/status/9w39bpjclskckwep/branch/master?svg=true)](https://ci.appveyor.com/project/skinkade/crypt-random)\n\nRandom numbers and bytes mimicking `arc4random()`.\n\n\n## Synopsis\n```\nuse Crypt::Random;\n\n# Random positive Int, defaulting to 32-bit\nmy Int $foo = crypt_random();\nmy Int $foo64 = crypt_random(Int(64/8));\n\n# Random Int between 0 and $upper_bound (exclusive)\nmy Int $bar = crypt_random_uniform($upper_bound);\nmy Int $bar128 = crypt_random_uniform($upper_bound, Int(128/8));\n\n# Buf of $len random bytes\nmy Buf $baz = crypt_random_buf($len);\n```\n\n## Extra\nAdditional useful functions built upon the above primitives.\n```\nuse Crypt::Random::Extra;\n\nmy Str $uuid = crypt_random_UUIDv4();\n\nmy Int $prime = crypt_random_prime()\nmy Int $prime2048 = crypt_random_prime(Int(2048/8));\n\n# Random sampling of $set, which can be a Blob or List\nmy Array @sample = crypt_random_sample($set, $count);\n```\n\n## Entropy Sources\nRandom bytes are drawn from `/dev/urandom` on Unix-like systems, and\n`CryptGenRandom()` on Windows.\n\n## Copyright & License\nCopyright 2016 Shawn Kinkade.\n\nThis module may be used under the terms of the Artistic License 2.0.\n"
-    },
-    {
       "name": "DBIish",
       "version": "0.6.8",
       "description": "Database connectivity for Raku",
@@ -540,7 +517,7 @@
       "upstream": "https://github.com/rakudo/rakudo",
       "slot": "",
       "record": "",
-      "readme": "# Rakudo-Core (vendored)\n\nModules that **Rakudo ships inside its own core library** (`rakudo/lib/`) rather\nthan through the Zef ecosystem. They are ordinary Raku source, so mutsu runs the\ngenuine upstream implementation instead of reimplementing it natively.\n\n- Upstream project: <https://github.com/rakudo/rakudo>\n- Imported from release **2026.06**, source tarball\n  <https://rakudo.org/dl/rakudo/rakudo-2026.06.tar.gz> (`rakudo-2026.06/`)\n- License: **Artistic-2.0** — `LICENSE` in this directory is the upstream\n  license file copied verbatim from the same release, and it governs every file\n  under `lib/` here. Copyright remains with The Perl Foundation / the Rakudo\n  contributors.\n- Vendored **verbatim** — do not edit these files. If a module does not run on\n  mutsu, fix the interpreter (BATTERIES.md §1 rung 2), never the vendored source.\n\n## Contents\n\n| Module          | Upstream path             | md5 of the imported file           |\n| --------------- | ------------------------- | ---------------------------------- |\n| `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |\n| `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |\n\n(`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)\n\n### `Test` is vendored but not yet the default\n\n`Test` is here because it is measurably reachable\n(`todo/deep/vendor-real-test-module.md`), but `use Test` still resolves to\nmutsu's native TAP provider by default. Every `t/` file and every roast file\nstands on `Test`, so swapping the implementation swaps the foundation of the\nwhole suite; step 3 of that ticket flips it once the residue is gone. Until\nthen set **`MUTSU_REAL_TEST=1`** to load this file instead:\n\n```\nMUTSU_REAL_TEST=1 mutsu t/some-test.t\n```\n\nThe switch replaced the throwaway `unit module Test2;` rename the exercise ran\nunder before, so the file under test is now the unmodified upstream one that\nships in the repository. Pinned by `t/vendored-real-test-module.t`.\n\n## Why this directory exists\n\n`Pod::To::Text` was previously provided natively: `use Pod::To::Text` was\nrecognized as a built-in no-op and `pod2text` was a Rust builtin rendering the\nPod object tree (`src/runtime/io_pod.rs`). That is BATTERIES.md rung 3 applied to\na module that never needed it — unlike `JSON::Fast`, the real `Pod::To::Text` is\n168 lines of plain Raku with no `use` statements and no nqp dependency at all.\nBundling the real file replaces the private dialect with the upstream behaviour\nand turns any remaining gap into an interpreter bug we can fix.\n\nOther Rakudo core modules mutsu still provides natively (`NativeCall`,\n`experimental`, `newline`, ...) belong here too, once the interpreter runs them —\nexcept `NativeCall`, measured on 2026-08-01 as genuinely out of reach\n(`todo/deep/nativecall-cannot-be-vendored.md`).\n\n## Updating\n\nDownload the Rakudo release tarball, copy the files listed above verbatim, and\nupdate the version in this README and in `META6.json`.\n"
+      "readme": "# Rakudo-Core (vendored)\n\nModules that **Rakudo ships inside its own core library** (`rakudo/lib/`) rather\nthan through the Zef ecosystem. They are ordinary Raku source, so mutsu runs the\ngenuine upstream implementation instead of reimplementing it natively.\n\n- Upstream project: <https://github.com/rakudo/rakudo>\n- Imported from release **2026.06**, source tarball\n  <https://rakudo.org/dl/rakudo/rakudo-2026.06.tar.gz> (`rakudo-2026.06/`)\n- License: **Artistic-2.0** — `LICENSE` in this directory is the upstream\n  license file copied verbatim from the same release, and it governs every file\n  under `lib/` here. Copyright remains with The Perl Foundation / the Rakudo\n  contributors.\n- Vendored **verbatim** — do not edit these files. If a module does not run on\n  mutsu, fix the interpreter (BATTERIES.md §1 rung 2), never the vendored source.\n\n## Contents\n\n| Module          | Upstream path             | md5 of the imported file           |\n| --------------- | ------------------------- | ---------------------------------- |\n| `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |\n| `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |\n\n(`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)\n\n### `Test` runs verbatim, and is what `use Test` resolves to\n\nThis file is the unmodified upstream `Test.rakumod`, and mutsu runs it verbatim\n-- it was never renamed or shimmed. Since 2026-09-10 it is also **the only\nprovider**: a bare `use Test` loads this file, and there is nothing else it\ncould load. Mutsu's native TAP provider was retired on 2026-09-10\n([#7566](https://github.com/tokuhirom/mutsu/issues/7566)); the `MUTSU_REAL_TEST`\nswitch that used to select between the two is gone with it.\n\nEvery `t/` file and every roast file stands on `Test`, so the switch was held\nuntil nothing regressed under it. It was attempted on 2026-09-07/08 and\nwithdrawn, because the `Bundled-library test suites` gate regressed on four\nupstream distributions -- four unrelated interpreter gaps, none of them a `Test`\ncompatibility problem. Those were fixed one at a time\n([#7555](https://github.com/tokuhirom/mutsu/issues/7555) records the chase) and\nthe gate now passes under this module with more files green than under the\nnative provider. Pinned by `t/vendored-real-test-module.t`.\n\n## Why this directory exists\n\n`Pod::To::Text` was previously provided natively: `use Pod::To::Text` was\nrecognized as a built-in no-op and `pod2text` was a Rust builtin rendering the\nPod object tree (`src/runtime/io_pod.rs`). That is BATTERIES.md rung 3 applied to\na module that never needed it — unlike `JSON::Fast`, the real `Pod::To::Text` is\n168 lines of plain Raku with no `use` statements and no nqp dependency at all.\nBundling the real file replaces the private dialect with the upstream behaviour\nand turns any remaining gap into an interpreter bug we can fix.\n\nOther Rakudo core modules mutsu still provides natively (`NativeCall`,\n`experimental`, `newline`, ...) belong here too, once the interpreter runs them —\nexcept `NativeCall`, measured on 2026-08-01 as genuinely out of reach\n(`todo/deep/nativecall-cannot-be-vendored.md`).\n\n## Updating\n\nDownload the Rakudo release tarball, copy the files listed above verbatim, and\nupdate the version in this README and in `META6.json`.\n"
     },
     {
       "name": "Slang::Tuxic",
@@ -785,6 +762,24 @@
       "readme": "[![Actions Status](https://github.com/Leont/yamlish/actions/workflows/linux.yml/badge.svg)](https://github.com/Leont/yamlish/actions) [![Actions Status](https://github.com/Leont/yamlish/actions/workflows/macos.yml/badge.svg)](https://github.com/Leont/yamlish/actions) [![Actions Status](https://github.com/Leont/yamlish/actions/workflows/windows.yml/badge.svg)](https://github.com/Leont/yamlish/actions)\n\nNAME\n====\n\nYAMLish - a YAML parser/emitter written in pure raku\n\nDESCRIPTION\n===========\n\nThis is a YAML parser written in pure-raku. It aims at being feature complete (though there still a few features left to implement). Patches are welcome.\n\nINSTALLATION\n============\n\n```console\n$ zef install YAMLish\n```\n\nEXPORTED SUBS\n=============\n\n  * `load-yaml(Str $input, ::GrammarType:U :$schema = ::Schema::Core, :%tags)`\n\n  * `load-yamls(Str $input, ::GrammarType:U :$schema = ::Schema::Core, :%tags)`\n\n  * `save-yaml($document, :$sorted = True)`\n\n  * `save-yamls(**@documents, :$sorted = True)`\n\nExample use for a configuration file\n====================================\n\nThis configuration file begins with a comment followed by three lines of key/value:\n\n    # key: value\n    lang: en\n    lat: 46.12345\n    lon: -82.6231\n\nAccess the file in your code like this:\n\n    use YAMLish;\n    my $str = \"config.yml\".IO.slurp:\n    my %conf = load-yaml $str;\n    say %conf<lang>; # OUTPUT: «en␤»\n    say %conf<lat>;  # OUTPUT: «46.12345␤»\n    say %conf<lon>;  # OUTPUT: «-82.6231␤»\n\nTODO\n====\n\nPlease have a look at [./TODO.md](./TODO.md)\n\nAUTHOR\n======\n\nLeon Timmermans\n\nLICENSE\n=======\n\nArtistic License 2.0\n\n"
     },
     {
+      "name": "if",
+      "version": "0.1.5",
+      "description": "Conditionally load a distribution",
+      "license": "Artistic-2.0",
+      "authors": [
+        "Tobias Leich"
+      ],
+      "auth": "zef:raku-community-modules",
+      "provides": [
+        "if"
+      ],
+      "depends": [],
+      "upstream": "https://github.com/raku-community-modules/if",
+      "slot": "Conditional module loading (`use Foo:if(...)`)",
+      "record": "docs/batteries/if-pragma.md",
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/if/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/if/actions) [![Actions Status](https://github.com/raku-community-modules/if/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/if/actions) [![Actions Status](https://github.com/raku-community-modules/if/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/if/actions)\n\nNAME\n====\n\nif - Conditionally load a distribution\n\nSYNOPSIS\n========\n\n```raku\nuse if; # activate the :if adverb on use statements\n\nuse My::Linux::Backend:if($*KERNEL.name eq 'linux');\nuse My::Fallback::Backend:if($*KERNEL.name ne 'linux');\n\n# ... do something with the backend you got\n```\n\nDESCRIPTION\n===========\n\nThe `if` distribution will let you conditionally load a distribution. Use cases (no pun intended) are about loading different implementations of a functionality for different operating systems, compiler backends, or compiler versions.\n\nThis means that these switches for different implementations do not happen at runtime, but cheaply at compile time. This also means that a custom build and install hook is not needed because all implementations are installed. Then depending on the conditions only the desired implementation will be used.\n\nEven if the switch is by backends you can share one installation by several backends using this technique.\n\nAUTHOR\n======\n\nTobias Leich\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2016-2020 Tobias Leich\n\nCopyright 2023, 2024, 2026 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
+    },
+    {
       "name": "CBOR::Simple",
       "version": "0.1.4",
       "description": "Simple codec for the CBOR serialization format",
@@ -886,6 +881,29 @@
       "slot": "Web framework",
       "record": "docs/batteries/cro-http.md",
       "readme": "# Cro::HTTP ![Build Status](https://github.com/croservices/cro-http/actions/workflows/ci.yml/badge.svg)\n\nThis is part of the Cro libraries for implementing services and distributed\nsystems in Raku. See the [Cro website](http://cro.services/) for further\ninformation and documentation.\n"
+    },
+    {
+      "name": "Crypt::Random",
+      "version": "0.4.1",
+      "description": "Random numbers and bytes mimicking arc4random",
+      "license": "Artistic-2.0",
+      "authors": [
+        "github:skinkade"
+      ],
+      "auth": "",
+      "provides": [
+        "Crypt::Random",
+        "Crypt::Random::Extra",
+        "Crypt::Random::Nix",
+        "Crypt::Random::Win"
+      ],
+      "depends": [
+        "if"
+      ],
+      "upstream": "git://github.com/skinkade/crypt-random",
+      "slot": "Secure randomness (CSPRNG)",
+      "record": "docs/batteries/crypt-random.md",
+      "readme": "# Crypt::Random\n[![Build Status](https://travis-ci.org/skinkade/crypt-random.svg?branch=master)](https://travis-ci.org/skinkade/crypt-random) [![Build status](https://ci.appveyor.com/api/projects/status/9w39bpjclskckwep/branch/master?svg=true)](https://ci.appveyor.com/project/skinkade/crypt-random)\n\nRandom numbers and bytes mimicking `arc4random()`.\n\n\n## Synopsis\n```\nuse Crypt::Random;\n\n# Random positive Int, defaulting to 32-bit\nmy Int $foo = crypt_random();\nmy Int $foo64 = crypt_random(Int(64/8));\n\n# Random Int between 0 and $upper_bound (exclusive)\nmy Int $bar = crypt_random_uniform($upper_bound);\nmy Int $bar128 = crypt_random_uniform($upper_bound, Int(128/8));\n\n# Buf of $len random bytes\nmy Buf $baz = crypt_random_buf($len);\n```\n\n## Extra\nAdditional useful functions built upon the above primitives.\n```\nuse Crypt::Random::Extra;\n\nmy Str $uuid = crypt_random_UUIDv4();\n\nmy Int $prime = crypt_random_prime()\nmy Int $prime2048 = crypt_random_prime(Int(2048/8));\n\n# Random sampling of $set, which can be a Blob or List\nmy Array @sample = crypt_random_sample($set, $count);\n```\n\n## Entropy Sources\nRandom bytes are drawn from `/dev/urandom` on Unix-like systems, and\n`CryptGenRandom()` on Windows.\n\n## Copyright & License\nCopyright 2016 Shawn Kinkade.\n\nThis module may be used under the terms of the Artistic License 2.0.\n"
     },
     {
       "name": "HTTP::UserAgent",

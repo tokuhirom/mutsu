@@ -915,7 +915,17 @@ impl Interpreter {
                     *role_id,
                 )
             )?;
+            // A `my role` declared by the EVAL string itself is EVAL-local and
+            // gets torn down with it (`system_eval_string`). One declared while
+            // a MODULE is loading is not: the module's compunit outlives the
+            // EVAL that happened to trigger the load, and re-`use`ing it later
+            // re-runs only its `sub EXPORT`, never its mainline — so a role the
+            // mainline declared has to still be there. Dropping it made the
+            // second `EVAL 'use if'` in a process die with "Slang activation:
+            // 'Actions' is not a known role" (the pragma's own test suite does
+            // exactly this five times).
             if self.env().contains_key("__mutsu_in_eval")
+                && !self.module_load_active()
                 && !name_str.contains("::")
                 && custom_traits
                     .iter()
