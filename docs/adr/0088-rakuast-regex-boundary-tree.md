@@ -4,7 +4,7 @@
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
   bare-subrule, anchor, explicit-static-lookaround, and
-  named-static-lookaround slices implemented
+  named-static-lookaround, and nested-static-lookaround slices implemented
   2026-09-12/13; other dynamic contents and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -644,3 +644,19 @@ lookaround slice. Escaped, interpolated, nested, code-bearing, qualified, and
 argumented bodies remain deferred. The focused regressions pin all four source
 spellings, `.capturing`, zero-width capture spans, capture suppression, and
 constructed-tree execution.
+
+## 20. Nested static lookaround slice (2026-09-13)
+
+Static lookaround bodies may now contain another lookaround inside a regular
+static group, for example `<?before [<?before bar>]>`. The parser's source
+scanner balances nested angle-bracket assertions before handing the complete
+body to the shared tree parser; it no longer stops at the inner `>` or falls
+back to a normalized execution string. The existing `Group` and `Lookaround`
+nodes therefore compose recursively in both RakuAST conversion and execution
+lowering.
+
+This slice remains deliberately static: escapes, interpolations, code-bearing
+assertions, qualified or argumented subrules, and runtime-valued bodies still
+fall back to their established boundaries. The focused regressions pin the
+dual-oracle nested `Lookahead`/`RegexArg`/`Group` shape, parsed and constructed
+EVAL, reuse, and rejection of a mismatching suffix.
