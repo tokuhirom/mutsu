@@ -106,13 +106,37 @@ Per [BATTERIES.md §3](../../BATTERIES.md#updating-a-vendored-module-must-be-doc
 
 ## Performance
 
-Unmeasured against the deleted native implementation, deliberately. ADR-0096 §D3
-already settles what a gap would and would not license: a measured shortfall
-justifies optimizing this module's own code path, never substituting for it
-under its name. If `JSON::Fast` turns out slow under mutsu, that is a
-`todo:perf` finding about the interpreter, not a reason to reinstate a provider.
+**Measured, and it is bad.** 200 encodes and 200 decodes of a 2,380-byte
+META6-shaped document — the path zef walks for every metadata read — on a
+release build:
 
-The one number worth recording is the shape of the old argument: the 2026-06
-measurement that justified the native path (200 META-shaped documents, >600s
-through `JSON::Tiny`'s grammar against 0.49s native) was about a *grammar*.
-`JSON::Fast` is a hand-written scanner, so it never had that cost profile.
+| | encode | decode |
+|---|---|---|
+| rakudo, running this same vendored module | 0.067s | 0.085s |
+| mutsu, this module | **4.243s** | **10.709s** |
+| mutsu, the native Rust codec (`Rakudo::Internals::JSON`, same binary) | 0.008s | 0.011s |
+
+So mutsu runs `JSON::Fast` **~63x slower than rakudo does** on encode and ~126x
+on decode, and **~530x / ~975x** slower than the native codec this PR stopped
+answering `use JSON::Fast` with. That last column is a real, user-visible
+slowdown for any program that decodes JSON, and it shipped deliberately.
+
+ADR-0096 §D3 is what makes that the right call and not a regression to revert:
+a measured gap justifies optimizing this module's own code path, never
+substituting for it under its name. The substitution also had its own cost —
+it emitted *unescaped, invalid JSON* for any string containing a quote or a
+control character, which nobody noticed for months precisely because it was not
+the real module. Tracked as [#8289](https://github.com/tokuhirom/mutsu/issues/8289).
+
+One cheap signal for whoever picks that up: `nqp::add_i` in a tight loop is
+**0.5x** the cost of plain `+` under rakudo (the op bypasses dispatch) and
+**1.5x** under mutsu (it does not). That 3x is real but nowhere near the 500x,
+so the bulk is elsewhere — most likely the per-character string and codepoint
+ops (`nqp::ordat`, `nqp::substr`, `nqp::strtocodes`, `nqp::splice`) that this
+module's scanner runs once per input byte. Profile before assuming.
+
+The one historical number worth keeping: the 2026-06 measurement that justified
+the native path (200 META-shaped documents, >600s through `JSON::Tiny`'s grammar
+against 0.49s native) was about a *grammar*. `JSON::Fast` is a hand-written
+scanner, so it never had that cost profile — and indeed it is ~60x faster than
+that grammar was, on the same shape of input.
