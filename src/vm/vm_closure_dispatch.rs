@@ -653,41 +653,55 @@ impl Interpreter {
             return Err(Interpreter::reject_args_for_empty_sig(&args));
         }
 
-        // Bind parameters
-        let mut rw_bindings = match loan_env!(
-            self,
-            // `param_name_syms.params` is `data.params` interned once per code
-            // object, so the legacy (pointy-block / placeholder) binding path
-            // names each parameter without re-hashing it per call (#8302).
-            bind_function_args_values_with_legacy_syms(
-                &data.param_defs,
-                &data.params,
-                &param_name_syms.params,
-                &args,
-                Some(cc.reads_args_array)
-            )
-        ) {
-            Ok(bindings) => bindings,
-            Err(e) => {
-                self.truncate_routine_stack(routine_base);
-                self.pop_block();
-                self.pop_caller_env();
-                self.stack.truncate(saved_stack_depth);
-                let frame = self.pop_call_frame();
-                *self.env_mut() = frame.saved_env;
-                // A value call is never compile-time-diagnosable: when the
-                // interpreter carrier delegated here (C6d-4), return the raw
-                // binding error so it keeps its runtime X::TypeCheck::Binding
-                // identity, exactly as the carrier's own bind path did.
-                if suppress_bind_enhance {
-                    return Err(e);
-                }
-                return Err(Interpreter::enhance_binding_error(
-                    e,
-                    &data.name.resolve(),
+        // Bind parameters. A signature of nothing but plain positional `$`
+        // scalars — a single-parameter pointy block, `-> $a { … }` — takes the
+        // light bind (#8335, `vm_closure_light_bind.rs`), which reproduces the
+        // single general-binder branch such a signature can reach without its
+        // four per-call `Vec`s or its two `@_` arrays. It declines (and the
+        // general binder runs, keeping its own diagnostics) for anything else,
+        // an arity mismatch included.
+        let light_bound = self.closure_light_bind(data, param_name_syms, &args);
+        let mut rw_bindings = if light_bound {
+            // No rw binding can arise from a plain positional `$` parameter:
+            // it is a readonly item binding with no caller container behind it.
+            Vec::new()
+        } else {
+            match loan_env!(
+                self,
+                // `param_name_syms.params` is `data.params` interned once per
+                // code object, so the legacy (pointy-block / placeholder)
+                // binding path names each parameter without re-hashing it per
+                // call (#8302).
+                bind_function_args_values_with_legacy_syms(
                     &data.param_defs,
+                    &data.params,
+                    &param_name_syms.params,
                     &args,
-                ));
+                    Some(cc.reads_args_array)
+                )
+            ) {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    self.truncate_routine_stack(routine_base);
+                    self.pop_block();
+                    self.pop_caller_env();
+                    self.stack.truncate(saved_stack_depth);
+                    let frame = self.pop_call_frame();
+                    *self.env_mut() = frame.saved_env;
+                    // A value call is never compile-time-diagnosable: when the
+                    // interpreter carrier delegated here (C6d-4), return the raw
+                    // binding error so it keeps its runtime X::TypeCheck::Binding
+                    // identity, exactly as the carrier's own bind path did.
+                    if suppress_bind_enhance {
+                        return Err(e);
+                    }
+                    return Err(Interpreter::enhance_binding_error(
+                        e,
+                        &data.name.resolve(),
+                        &data.param_defs,
+                        &args,
+                    ));
+                }
             }
         };
 
