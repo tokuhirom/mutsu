@@ -107,7 +107,8 @@ predicate `is_positional_light_call_eligible` is written against
 
 Closing that is a separate, larger piece of work (a light path for closures, or
 giving a closure literal a `CompiledFunction`-shaped signature description), and
-is filed as its own issue rather than smuggled in here.
+is filed as [#8335](https://github.com/tokuhirom/mutsu/issues/8335) rather than
+smuggled in here.
 
 `tests/closure_call_intern_budget.rs` pins the result the same deterministic way
 `tests/regex_match_intern_budget.rs` pins the smartmatch path: a budget on
