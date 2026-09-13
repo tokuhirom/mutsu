@@ -18,9 +18,17 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     if node.class.renders_bare() {
         return name.to_string();
     }
-    let ctor = match node.class.constructor() {
-        Constructor::New => "new",
-        Constructor::FromIdentifier => "from-identifier",
+    let ctor = if node.class == RakuAstClass::Name
+        && node.fields.iter().any(|field| {
+            matches!(&field.value, RakuAstFieldValue::Node(v) if matches!(v.view(), ValueView::RakuAst(_)))
+        })
+    {
+        "new"
+    } else {
+        match node.class.constructor() {
+            Constructor::New => "new",
+            Constructor::FromIdentifier => "from-identifier",
+        }
     };
 
     // A class-specific gist quirk: raku's `Assignment` list form omits even the

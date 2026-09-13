@@ -88,6 +88,10 @@ pub enum RakuAstClass {
     CallName,
     CallNameWithoutParentheses,
     Name,
+    // A dynamic name part, as in `::("x")`, is not itself a RakuAST::Node in
+    // Rakudo, but it is carried by the same model value here so the immutable
+    // tree can retain the exact Name shape.
+    NamePartExpression,
     ArgList,
     // Phase 2: variables, declarations, operators.
     VarLexical,
@@ -301,6 +305,7 @@ impl RakuAstClass {
             CallName => "RakuAST::Call::Name",
             CallNameWithoutParentheses => "RakuAST::Call::Name::WithoutParentheses",
             Name => "RakuAST::Name",
+            NamePartExpression => "RakuAST::Name::Part::Expression",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
@@ -553,8 +558,13 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     if !is_registered_type_object(actual) || !is_registered_type_object(expected) {
         return false;
     }
-    if actual == expected || expected == "RakuAST::Node" {
+    if actual == expected
+        || (expected == "RakuAST::Node" && actual != "RakuAST::Name::Part::Expression")
+    {
         return true;
+    }
+    if actual == "RakuAST::Name::Part::Expression" && expected == "RakuAST::Name" {
+        return false;
     }
     if let Some(rest) = actual.strip_prefix(expected)
         && rest.starts_with("::")
@@ -584,9 +594,14 @@ pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
     }
 
     let mut mro = vec![class_name.to_string()];
+    let is_name_part =
+        class_name == "RakuAST::Name::Part" || class_name.starts_with("RakuAST::Name::Part::");
     let mut namespace = class_name;
     while let Some((parent, _)) = namespace.rsplit_once("::") {
         if parent == "RakuAST" {
+            break;
+        }
+        if is_name_part && parent == "RakuAST::Name" {
             break;
         }
         if is_registered_type_object(parent) && !mro.iter().any(|name| name == parent) {
@@ -602,7 +617,7 @@ pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
     if class_name == "RakuAST::Term" && !mro.iter().any(|name| name == "RakuAST::Expression") {
         mro.push("RakuAST::Expression".to_string());
     }
-    if class_name != "RakuAST::Node" {
+    if class_name != "RakuAST::Node" && !is_name_part {
         mro.push("RakuAST::Node".to_string());
     }
     mro.push("Any".to_string());
@@ -699,6 +714,7 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Trait"
             | "RakuAST::ParameterTarget"
             | "RakuAST::Parameter::Slurpy"
+            | "RakuAST::Name::Part"
             | "RakuAST::Postcircumfix"
             | "RakuAST::Circumfix"
             | "RakuAST::StatementModifier"
@@ -765,6 +781,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallName,
     RakuAstClass::CallNameWithoutParentheses,
     RakuAstClass::Name,
+    RakuAstClass::NamePartExpression,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
     RakuAstClass::VarDeclarationSimple,
@@ -1885,6 +1902,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
+        ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
@@ -2020,7 +2038,6 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         Constructor::New if constructor_is_supported(class) => names.push("new"),
         _ => {}
     }
-
     names.extend(accessor_names(class));
     if class == RakuAstClass::StatementList {
         names.push("add-statement");
@@ -2127,6 +2144,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TokenDeclaration
             | RakuAstClass::RuleDeclaration
             | RakuAstClass::Grammar
+            | RakuAstClass::NamePartExpression
             | RakuAstClass::Pragma
     )
 }

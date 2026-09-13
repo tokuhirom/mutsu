@@ -294,7 +294,6 @@ impl Interpreter {
                     | "Range"
                     | "Buf"
                     | "Blob"
-                    | "Capture"
                     | "array"
                     | "IO::Path::Parts"
             )

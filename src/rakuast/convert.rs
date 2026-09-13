@@ -1406,6 +1406,24 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Ok(var_lexical("$", name))
         }
+        // `::("x")` / `::($name)` -> `Term::Name(Name(Part::Expression(EXPR)))`.
+        // The parser keeps this as an IndirectTypeLookup, so preserving the
+        // expression part is necessary for `.AST` and for a later EVAL round
+        // trip; rendering it as a static Name would change the lookup mode.
+        Expr::IndirectTypeLookup(inner) => {
+            let part = RakuAstNode {
+                class: RakuAstClass::NamePartExpression,
+                fields: vec![node_field(None, convert_expr(inner)?)],
+            };
+            let name = RakuAstNode {
+                class: RakuAstClass::Name,
+                fields: vec![node_field(None, part)],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::TermName,
+                fields: vec![node_field(None, name)],
+            })
+        }
         // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
         Expr::CallOn { target, args } => {
             let call_term = RakuAstNode {
