@@ -88,6 +88,7 @@ pub(super) fn casefold_pattern(pattern: &RegexPattern) -> RegexPattern {
         anchor_end: pattern.anchor_end,
         ignore_case: pattern.ignore_case,
         ignore_mark: pattern.ignore_mark,
+        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
     }
 }
 
@@ -140,6 +141,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                 anchor_end: false,
                 ignore_case: false,
                 ignore_mark: false,
+                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
             };
             vec![RegexToken {
                 atom: RegexAtom::Group(group),
@@ -281,9 +283,9 @@ fn casefold_char_class(class: &CharClass) -> RegexAtom {
             anchor_end: false,
             ignore_case: false,
             ignore_mark: false,
+            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
         }
     }));
-
     match branches.len() {
         0 => RegexAtom::CharClass(CharClass {
             negated: false,
@@ -319,5 +321,6 @@ fn one_atom_pattern(atom: RegexAtom) -> RegexPattern {
         anchor_end: false,
         ignore_case: false,
         ignore_mark: false,
+        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
     }
 }

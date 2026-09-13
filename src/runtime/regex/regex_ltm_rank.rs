@@ -411,14 +411,16 @@ impl Interpreter {
             let (plen, stopped) = self.declarative_prefix_match_len(pattern, text);
             return (plen.map(|p| (p, 0)), stopped);
         };
-        let chars: Vec<char> = text.chars().collect();
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let chars = target.chars();
         let pkg = self.current_package_sym();
-        let (plen, stopped) = self.ltm_prefix_len_at(&parsed, &chars, 0, pkg);
+        let (plen, stopped) = self.ltm_prefix_len_at(&parsed, chars, 0, pkg);
         let Some(plen) = plen else {
             return (None, stopped);
         };
         let mut seen = HashSet::new();
-        let litlen = self.ltm_litlen_at(&parsed, &chars, 0, pkg, &mut seen, 0);
+        let litlen = self.ltm_litlen_at(&parsed, chars, 0, pkg, &mut seen, 0);
         (Some((plen, litlen)), stopped)
     }
 

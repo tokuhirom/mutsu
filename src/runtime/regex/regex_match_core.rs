@@ -253,7 +253,41 @@ impl Interpreter {
         // from both text and pattern, match on the stripped versions, then
         // map positions back to the original text.
         if pattern.ignore_mark {
-            use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
+            use super::regex_helpers::{map_pos, remap_caps_spans_derived_offset};
+            if let Some(target) = super::regex_helpers::current_match_target() {
+                let stripped = target.stripped();
+                let derived_start = stripped.original_to_stripped(start);
+                let stripped_pattern = strip_marks_pattern(pattern);
+                let mut results = self.regex_match_ends_from_caps_in_pkg_impl(
+                    &stripped_pattern,
+                    &stripped.chars()[derived_start..],
+                    0,
+                    pkg,
+                    first_only,
+                    stop_at_full,
+                );
+                let orig_len = target.chars().len();
+                for (end, caps) in &mut results {
+                    *end = stripped.stripped_to_original(*end + derived_start);
+                    if let Some(cs) = caps.capture_start.as_mut() {
+                        *cs = stripped.stripped_to_original(*cs + derived_start);
+                    }
+                    if let Some(ce) = caps.capture_end.as_mut() {
+                        *ce = stripped.stripped_to_original(*ce + derived_start);
+                    }
+                    remap_caps_spans_derived_offset(
+                        caps,
+                        stripped.stripped_map(),
+                        orig_len,
+                        derived_start,
+                    );
+                }
+                return results;
+            }
+
+            // Direct internal callers outside a public match target retain the
+            // old local-coordinate fallback.
+            use super::regex_helpers::{strip_marks_pattern, strip_marks_text};
             let text_slice = &chars[start..];
             let (stripped_chars, pos_map) = strip_marks_text(text_slice);
             let stripped_pattern = strip_marks_pattern(pattern);

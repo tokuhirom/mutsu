@@ -37,6 +37,10 @@ pub(crate) struct RegexPattern {
     pub(crate) anchor_end: bool,
     pub(crate) ignore_case: bool,
     pub(crate) ignore_mark: bool,
+    /// Lazily memoized mark-stripped form. Static parsed patterns are shared
+    /// through the regex parse cache, and scoped `:ignoremark` can enter the
+    /// same pattern many times during one match.
+    pub(crate) stripped_pattern: Arc<std::sync::OnceLock<Arc<RegexPattern>>>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).

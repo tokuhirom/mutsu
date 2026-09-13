@@ -1,6 +1,7 @@
 use super::super::*;
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::{Cell, RefCell};
+use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 use unicode_segmentation::UnicodeSegmentation;
@@ -500,7 +501,7 @@ pub(super) fn strip_marks_char(ch: char) -> Vec<char> {
 /// grapheme cluster.  Returns stripped base chars and a position map from
 /// stripped index to original char index.  The sentinel for one-past-end is
 /// also appended.
-pub(super) fn strip_marks_text(orig_chars: &[char]) -> (Vec<char>, Vec<usize>) {
+pub(crate) fn strip_marks_text(orig_chars: &[char]) -> (Vec<char>, Vec<usize>) {
     let text: String = orig_chars.iter().collect();
     let mut stripped_chars: Vec<char> = Vec::new();
     let mut pos_map: Vec<usize> = Vec::new(); // stripped idx -> original idx
@@ -583,14 +584,26 @@ fn is_format_char(c: char) -> bool {
     )
 }
 
-/// Strip combining marks from all literal atoms in a RegexPattern (recursively).
-pub(super) fn strip_marks_pattern(pattern: &RegexPattern) -> RegexPattern {
+/// Strip combining marks from all literal atoms in a RegexPattern (recursively),
+/// memoized on the parsed pattern. A scoped `:ignoremark` token can be entered
+/// once per candidate while scanning a document; keeping the derived tree on
+/// the cached pattern removes that second per-invocation traversal as well.
+pub(super) fn strip_marks_pattern(pattern: &RegexPattern) -> Arc<RegexPattern> {
+    Arc::clone(
+        pattern
+            .stripped_pattern
+            .get_or_init(|| Arc::new(strip_marks_pattern_uncached(pattern))),
+    )
+}
+
+fn strip_marks_pattern_uncached(pattern: &RegexPattern) -> RegexPattern {
     RegexPattern {
         tokens: pattern.tokens.iter().map(strip_marks_token).collect(),
         anchor_start: pattern.anchor_start,
         anchor_end: pattern.anchor_end,
         ignore_case: pattern.ignore_case,
         ignore_mark: false,
+        stripped_pattern: Arc::new(std::sync::OnceLock::new()),
     }
 }
 
@@ -606,7 +619,7 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
         frugal: token.frugal,
         separator: token.separator.as_ref().map(|s| {
             Box::new(RegexSeparatorSpec {
-                pattern: strip_marks_pattern(&s.pattern),
+                pattern: strip_marks_pattern_uncached(&s.pattern),
                 allow_trailing: s.allow_trailing,
             })
         }),
@@ -642,6 +655,7 @@ pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
         anchor_end: false,
         ignore_case,
         ignore_mark,
+        stripped_pattern: Arc::new(std::sync::OnceLock::new()),
     }
 }
 
@@ -665,27 +679,27 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
             let stripped: String = name.nfd().filter(|c| !is_combining_mark(*c)).collect();
             RegexAtom::Named(stripped.into())
         }
-        RegexAtom::Group(p) => RegexAtom::Group(strip_marks_pattern(p)),
-        RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern(p)),
+        RegexAtom::Group(p) => RegexAtom::Group(strip_marks_pattern_uncached(p)),
+        RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern_uncached(p)),
         RegexAtom::CaptureIsolatedGroup(p) => {
-            RegexAtom::CaptureIsolatedGroup(strip_marks_pattern(p))
+            RegexAtom::CaptureIsolatedGroup(strip_marks_pattern_uncached(p))
         }
         RegexAtom::Alternation(alts) => {
-            RegexAtom::Alternation(alts.iter().map(strip_marks_pattern).collect())
+            RegexAtom::Alternation(alts.iter().map(strip_marks_pattern_uncached).collect())
         }
-        RegexAtom::SequentialAlternation(alts) => {
-            RegexAtom::SequentialAlternation(alts.iter().map(strip_marks_pattern).collect())
-        }
+        RegexAtom::SequentialAlternation(alts) => RegexAtom::SequentialAlternation(
+            alts.iter().map(strip_marks_pattern_uncached).collect(),
+        ),
         RegexAtom::Conjunction(branches) => {
-            RegexAtom::Conjunction(branches.iter().map(strip_marks_pattern).collect())
+            RegexAtom::Conjunction(branches.iter().map(strip_marks_pattern_uncached).collect())
         }
         RegexAtom::GoalMatch {
             goal,
             inner,
             goal_text,
         } => RegexAtom::GoalMatch {
-            goal: strip_marks_pattern(goal),
-            inner: strip_marks_pattern(inner),
+            goal: strip_marks_pattern_uncached(goal),
+            inner: strip_marks_pattern_uncached(inner),
             goal_text: goal_text.clone(),
         },
         RegexAtom::Lookaround {
@@ -693,7 +707,7 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
             negated,
             is_behind,
         } => RegexAtom::Lookaround {
-            pattern: strip_marks_pattern(pattern),
+            pattern: strip_marks_pattern_uncached(pattern),
             negated: *negated,
             is_behind: *is_behind,
         },
@@ -799,7 +813,29 @@ pub(super) fn remap_caps_spans_offset(
     orig_len: usize,
     offset: usize,
 ) {
-    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    remap_caps_spans_mapped(caps, pos_map, orig_len, offset, 0);
+}
+
+/// Remap spans whose positions are relative to a suffix of a complete
+/// mark-stripped subject. Unlike `offset`, `derived_offset` shifts the lookup
+/// in the derived map; the resulting original positions are already absolute.
+pub(super) fn remap_caps_spans_derived_offset(
+    caps: &mut RegexCaptures,
+    pos_map: &[usize],
+    orig_len: usize,
+    derived_offset: usize,
+) {
+    remap_caps_spans_mapped(caps, pos_map, orig_len, 0, derived_offset);
+}
+
+fn remap_caps_spans_mapped(
+    caps: &mut RegexCaptures,
+    pos_map: &[usize],
+    orig_len: usize,
+    offset: usize,
+    derived_offset: usize,
+) {
+    let m = |p: usize| map_pos(p.saturating_add(derived_offset), pos_map, orig_len) + offset;
     if offset == 0 {
         caps.from = m(caps.from);
         caps.to = m(caps.to);
@@ -815,10 +851,16 @@ pub(super) fn remap_caps_spans_offset(
         .values_mut()
         .flat_map(|slot| slot.nodes.iter_mut())
     {
-        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+        remap_cap_node_spans_mapped(
+            std::sync::Arc::make_mut(sc),
+            pos_map,
+            orig_len,
+            offset,
+            derived_offset,
+        );
     }
     for slot in caps.positional.iter_mut() {
-        remap_pos_slot(slot, pos_map, orig_len, offset);
+        remap_pos_slot_mapped(slot, pos_map, orig_len, offset, derived_offset);
     }
 }
 
@@ -830,30 +872,51 @@ pub(super) fn remap_pos_slot(
     orig_len: usize,
     offset: usize,
 ) {
-    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    remap_pos_slot_mapped(slot, pos_map, orig_len, offset, 0);
+}
+
+fn remap_pos_slot_mapped(
+    slot: &mut PosSlot,
+    pos_map: &[usize],
+    orig_len: usize,
+    offset: usize,
+    derived_offset: usize,
+) {
+    let m = |p: usize| map_pos(p.saturating_add(derived_offset), pos_map, orig_len) + offset;
     slot.from = m(slot.from);
     slot.to = m(slot.to);
     if let Some(sc) = &mut slot.subcap {
-        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+        remap_cap_node_spans_mapped(
+            std::sync::Arc::make_mut(sc),
+            pos_map,
+            orig_len,
+            offset,
+            derived_offset,
+        );
     }
     for entry in slot.quantified.iter_mut().flatten() {
         entry.0 = m(entry.0);
         entry.1 = m(entry.1);
         if let Some(sc) = &mut entry.2 {
-            remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+            remap_cap_node_spans_mapped(
+                std::sync::Arc::make_mut(sc),
+                pos_map,
+                orig_len,
+                offset,
+                derived_offset,
+            );
         }
     }
 }
 
-/// [`remap_caps_spans`] over a stored capture node, recursively (same offset
-/// semantics as [`remap_caps_spans_offset`], applied to every span).
-pub(super) fn remap_cap_node_spans(
+fn remap_cap_node_spans_mapped(
     node: &mut CapNode,
     pos_map: &[usize],
     orig_len: usize,
     offset: usize,
+    derived_offset: usize,
 ) {
-    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    let m = |p: usize| map_pos(p.saturating_add(derived_offset), pos_map, orig_len) + offset;
     node.from = m(node.from);
     node.to = m(node.to);
     let Some(children) = node.children.as_deref_mut() else {
@@ -864,10 +927,16 @@ pub(super) fn remap_cap_node_spans(
         .values_mut()
         .flat_map(|slot| slot.nodes.iter_mut())
     {
-        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+        remap_cap_node_spans_mapped(
+            std::sync::Arc::make_mut(sc),
+            pos_map,
+            orig_len,
+            offset,
+            derived_offset,
+        );
     }
     for slot in children.positional.iter_mut() {
-        remap_pos_slot(slot, pos_map, orig_len, offset);
+        remap_pos_slot_mapped(slot, pos_map, orig_len, offset, derived_offset);
     }
 }
 
