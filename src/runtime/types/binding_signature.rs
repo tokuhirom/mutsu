@@ -2194,7 +2194,26 @@ impl Interpreter {
                             // `inner(\container)` calling `Replace.replace(container)`).
                             let writeback_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
-                            rw_bindings.push((pd.name.clone(), writeback_source));
+                            rw_bindings.push((pd.name.clone(), writeback_source.clone()));
+                            // ...and to the IMMEDIATE source as well, when the
+                            // two differ. A method call does not chain envs: its
+                            // writeback merges only into the frame that called
+                            // it, where the chain's root is not a key at all, so
+                            // the root-only write landed on a phantom entry. The
+                            // intermediate frame then reached its own exit with
+                            // its `\c` still holding the pre-call value and
+                            // clobbered the root with it — `method go(\c) {
+                            // Inner.go(c) }` lost the callee's write entirely.
+                            // Updating the caller's own alias binding as well
+                            // lets each frame's writeback compose into the next,
+                            // which is how the chained-env sub path already
+                            // reaches the root. This is `Crane.add/set/remove
+                            // (container, ..., :in-place)` at the root path:
+                            // `Crane` is a chain of class methods forwarding one
+                            // `\container`.
+                            if writeback_source != source_name {
+                                rw_bindings.push((pd.name.clone(), source_name.clone()));
+                            }
                             // A plain scalar param aliasing a plain scalar caller
                             // variable binds through a shared `ContainerRef` cell
                             // (installed after type checks, below): the caller's

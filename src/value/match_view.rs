@@ -56,6 +56,35 @@ impl Value {
             if class_name == "Match" || attributes.as_map().get(CURSOR_MATCH_MARKER).is_some())
     }
 
+    /// Is this value an instance mutsu classifies as an exception purely from
+    /// the namespace its class name sits in (`Exception`, `X::*`, `CX::*`)?
+    ///
+    /// mutsu has no complete exception hierarchy to consult, so a great many
+    /// sites decide "is this an exception?" from the class name alone. That
+    /// test has one systematic false positive: a grammar's Match is typed by
+    /// the grammar itself, not by `Match` (rakudo gives
+    /// `X::Foo::G.parse($s).^name` as `X::Foo::G`), so a grammar declared
+    /// under `X::` — `Crane` declares one inside
+    /// `class X::Crane::PathOutOfRange`, to parse the `Range` out of an
+    /// `X::OutOfRange` — hands every one of those sites a "class name in the
+    /// exception namespace" that is a match object. Its `.Str`/`.gist` then
+    /// rendered as `X::Foo::G with no message`, `+$/` numified THAT, and
+    /// `$/ ~~ Exception` was `True`.
+    ///
+    /// Use this instead of spelling the namespace test inline wherever the
+    /// value is at hand; the surviving bare-name checks are the ones that
+    /// never see a Match (a declared parent, a parsed bareword).
+    pub(crate) fn instance_is_exception_by_name(&self) -> bool {
+        let ValueView::Instance { class_name, .. } = self.view() else {
+            return false;
+        };
+        if self.is_match_instance() {
+            return false;
+        }
+        let cn = class_name.resolve();
+        cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::")
+    }
+
     /// The class name a Match receiver dispatches under: `"Match"` for a plain
     /// regex match, the grammar's own class for a parse cursor. Callers that
     /// used to hardcode `"Match"` for user-override / native-method lookups

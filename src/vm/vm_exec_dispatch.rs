@@ -99,13 +99,11 @@ impl Interpreter {
         }
         if let Some(class_name) = underlying_class {
             let cn = class_name.resolve();
-            let is_exception = cn == "Exception"
-                || cn.starts_with("X::")
-                || cn.starts_with("CX::")
-                || self
-                    .mro_readonly(&cn)
-                    .iter()
-                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            let is_exception = !value.is_match_instance()
+                && (value.instance_is_exception_by_name()
+                    || self.mro_readonly(&cn).iter().any(|p| {
+                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
+                    }));
             if is_exception {
                 // Preserve the value verbatim (including a `but role` mixin) so its
                 // type still matches `when X::Foo` and any overridden `.message`

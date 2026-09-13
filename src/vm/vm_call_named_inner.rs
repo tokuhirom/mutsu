@@ -848,7 +848,17 @@ impl Interpreter {
                 if target == "_" || target == "@_" || target == "%_" {
                     continue;
                 }
-                restored_env.insert(target.clone(), val.clone());
+                // A sigilless param aliasing an `@`/`%` variable stores through
+                // that variable's own shape (`\c := @a; c = LIST` is
+                // `@a.STORE(LIST)`), as in `apply_rw_bindings_to_env`.
+                // A sigilless param aliasing an `@`/`%` variable stores through
+                // that variable's own shape (`\c := @a; c = LIST` is
+                // `@a.STORE(LIST)`), as in `apply_rw_bindings_to_env`. Every
+                // entry here comes from a `pd.sigilless` parameter already.
+                restored_env.insert(
+                    target.clone(),
+                    crate::runtime::utils::shape_value_for_sigiled_target(target, val),
+                );
             }
             // A by-name write whose target name only exists at run time
             // (`$::($n) = v`, an `EVAL`'d `$a = 32`) is invisible to the
