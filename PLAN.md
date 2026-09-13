@@ -177,16 +177,23 @@ DefiniteHow — is fully closed; no open roast-adjacent language-feature backlog
 
 ---
 
-## 4. perf — de-prioritized polish
+## 4. perf — mostly polish, but three measured losses
 
-mutsu beats raku on the whole roast whitelist and on every benchmark, so **do not pick up a perf item
-just because the profile shows a hot symbol** — first confirm a goal item needs it. Levers, targets
-and the measurement protocol: [ADR-0006](docs/adr/0006-baseline-interpreter-optimizations.md),
+**Do not pick up a perf item just because the profile shows a hot symbol** — first confirm a goal
+item needs it. Levers, targets and the measurement protocol:
+[ADR-0006](docs/adr/0006-baseline-interpreter-optimizations.md),
 [docs/perf-callpath-scouting.md](docs/perf-callpath-scouting.md); canonical numbers come from the
 bench CI, never a local run.
 
-- [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
-      in hot loops (the JIT bails at the call boundary):
+This section used to open "mutsu beats raku on the whole roast whitelist and on every benchmark".
+[ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) §2 retired that claim: it held on
+one-shot wall clock, which charges rakudo its warm-up, and does not hold on steady-state or marginal
+cost. Compare warm before asserting a win.
+
+- [ ] **The interpreter function-call path in hot loops** (the JIT bails at the call boundary) —
+      until 2026-09-13 this bullet read "the one axis where mutsu is genuinely slower than raku";
+      [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) found two more (grammar parsing
+      and a boolean `~~`), so it is one of three:
       [#7573](https://github.com/tokuhirom/mutsu/issues/7573). **Read that ticket's re-diagnosis
       first**; everything this file used to say about the blocker is closed. The `&`-sigil signature
       gate, the `nqp::` by-name resolve and the 83% `interpreter_fallbacks` figure are all fixed, and
@@ -197,14 +204,27 @@ bench CI, never a local run.
       per the ticket: collapse the double `multi` resolution per call, and reduce the flat
       interpretation cost of a module body (allocation traffic and env lookups), which is what the
       remaining ~16x against raku on an assertion actually is.
-- [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
-      accumulated-state halves are fixed):
-      [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome. **This one
-      has a goal-item consumer**, so it is not polish: it is the measured reason the JSON
-      `to-json`/`from-json` fast path still shadows the vendored module by name
-      ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)) — the real grammar decodes 200
-      META-shaped documents in ~600s against 0.49s native, on a path zef walks for every metadata
-      read.
+- [ ] **Regex/grammar — read [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) before
+      touching any of it**; it supersedes what this bullet used to say. The old text ("~25× vs raku
+      per matched character", citing ADR-0007 and a ~600s/200-document JSON consumer) is stale in
+      both halves: ADR-0007 measured 18 **ms**/char and the engine is three orders of magnitude past
+      that, and [#8183](https://github.com/tokuhirom/mutsu/issues/8183) was closed 2026-09-13 with
+      its figure already corrected to 12.6s (raku 0.84s) in `docs/batteries/json-tiny.md` — zef's
+      metadata path was never on it. What is actually open, in ADR-0099's order:
+    - [ ] Stage 0, the measured losses — all defects, no design risk, and they gate the rest:
+          [#8265](https://github.com/tokuhirom/mutsu/issues/8265) (`<sym>` kills the proto-candidate
+          memo; 3.3x on a grammar parse, which is nearly the whole ~1.9x-slower-than-warm-rakudo
+          gap), [#8262](https://github.com/tokuhirom/mutsu/issues/8262) (`:ignoremark` is O(n²)),
+          [#8263](https://github.com/tokuhirom/mutsu/issues/8263) and
+          [#8269](https://github.com/tokuhirom/mutsu/issues/8269) (Match truthiness and `$_`
+          interning: 31% of a boolean `~~`, which mutsu loses to warm rakudo 2.8x),
+          [#8270](https://github.com/tokuhirom/mutsu/issues/8270) (parse-cache defects).
+    - [ ] Stage 1, the declarative prefilter:
+          [#8272](https://github.com/tokuhirom/mutsu/issues/8272). The one *asymptotic* gap —
+          `~~ /literal/` is 212x mutsu's own `.index` on the same 640 KB subject — and the one item
+          that can be wrong without being incorrect, so its differential property test is the gate.
+    - [ ] Stage 2 (a fast-lane compiled matcher) and Stage 3 (ADR-0007's CPS→bytecode regex VM) are
+          deferred questions, not work. Do not start either without a superseding ADR.
 - [ ] Opcode leftovers: [docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6.
 - [ ] Biased reference counting (ADR-0001 layer 3c) — frozen; start only on a measured trigger and an
       updated ADR.

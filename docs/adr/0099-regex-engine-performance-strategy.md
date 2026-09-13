@@ -1,6 +1,6 @@
-# ADR-0099: Regex engine performance — fix the ceremony first; a prefilter and a fast lane above the unchanged walk
+# ADR-0099: Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk
 
-- **Status**: Proposed (2026-09-13; revised the same day after review — see §8)
+- **Status**: Accepted (2026-09-13; drafted, reviewed and revised the same day — see §8)
 - **Context**: the eight regex benchmarks added on 2026-09-12/13 (`bench-regex-{match,capture,global,assertion,long-subject,split-subst}.raku`,
   `bench-grammar-parse-big.raku`, `bench-yaml-parse-big.raku`) gave the suite its first view of the
   regex engine. The question this ADR answers: is micro-benchmark-driven tuning of the present
@@ -144,6 +144,23 @@ Callgrind on a 65,536-position failing literal scan: **~983 instructions per sta
 of the 9.0 M instructions of `mutsu -e 'say 1'`) to establish that `chars[i] != 'z'`. The profile
 is the machinery, not the comparison: the five candidate-generator layers, candidate-`Vec`
 construction and drop, `memcpy`, `malloc`, and `RegexCaptures` construction/drop.
+
+The sharpest form of this is not the comparison against rakudo at all — it is mutsu against itself.
+The same question, asked two ways in the same interpreter, on the same 640 KB subject:
+
+| | mutsu | rakudo |
+|---|---:|---:|
+| `$big.index('zzzq-not-here')` | **0.4 ms** | 4.4 ms |
+| `$big ~~ / 'zzzq-not-here' /` | **84.7 ms** | 1.6 ms |
+| `$big.lc.index('zzzq')` | 14.1 ms | 10.1 ms |
+| `$big ~~ / :i 'ZZZQ' /` | **160.3 ms** | 6.6 ms |
+
+**212x between mutsu's own two answers.** mutsu already ships a substring search that is 10x faster
+than rakudo's; the regex engine simply does not use it. Rakudo's `~~ /literal/` beating its own
+`.index` is the same fact from the other side: it lowers a literal-only pattern onto a tuned scan.
+So Stage 1 below is not a new optimization to invent — it is wiring an existing primitive to the
+engine. (The `:i` rows also rule out the obvious shortcut: `.lc.index` costs 14.1 ms *because* it
+copies the whole subject, so "case-fold both sides" is not the design.)
 
 ### 2.5 Small-subject matching is ceremony-bound, and mutsu loses it to warm rakudo
 
@@ -300,7 +317,13 @@ Three constraints that are Raku-specific and non-negotiable:
 
 Scope, stated plainly so it is not over-sold: **this is a scan optimization.** It does nothing for
 `Grammar.parse` or for any anchored or subrule-entered match. It is load-bearing for §2.4's
-workload and for the `:g` / `.comb` / `.subst` / `split` scan loops, and for nothing else.
+workload and for the `:g` / `.comb` / `.subst` / `split` / `.contains` / `.grep` scan loops, and for
+nothing else. On the suite's short-line benchmarks the win is modest and Stage 0 owns the rest: over
+`bench-regex-match`'s workload an anchored pattern (zero scan) costs 8.3 ms against 11.1 ms for one
+that scans all ~110 positions and fails, so the scan is only ~34% above the per-call ceremony floor
+there.
+
+[#8272](https://github.com/tokuhirom/mutsu/issues/8272).
 
 ### Stage 2 — deferred, not decided
 
@@ -390,11 +413,12 @@ Nothing implemented. Stage 0 is fully filed, ordered as in §4:
 | 4. smartmatch interns `$_` twice per match | [#8269](https://github.com/tokuhirom/mutsu/issues/8269) | 16.4% of a boolean `~~` |
 | 5. parse-cache key, scan, and interpolated bypass | [#8270](https://github.com/tokuhirom/mutsu/issues/8270) | 4.5% of `bench-regex-match` |
 
-Stage 1 is deliberately **not** filed while this ADR is `Proposed`: it is the one part of the plan
-that is a design commitment rather than a defect, and filing an implementation ticket for an
-unaccepted decision would put it in the `todo:ticket` queue for an agent to pick up. File it as
-`todo:deep` when this ADR moves to `Accepted`. Stage 2 is a question, not work, until Stage 0
-lands and grammars are re-profiled.
+Stage 1 is [#8272](https://github.com/tokuhirom/mutsu/issues/8272) (`todo:deep`), filed when this
+ADR moved to `Accepted`. Its three constraints — reuse ADR-0022's litlen table rather than defining
+a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
+non-declarative — are the work, not footnotes, and the differential property test against the
+prefilter-disabled engine is its gate. Stage 2 is a question, not work, until Stage 0 lands and
+grammars are re-profiled.
 
 Revision history: first draft 2026-09-13, reviewed the same day. The review inverted §2.2 (the
 grammar claim had been measured on a simplified grammar over five iterations including rakudo's
@@ -406,3 +430,8 @@ corrected §2.5's shares and added the `Symbol::intern` finding, established tha
 `~~` path (its callers are `.contains`/`.grep`/`.first`/hash-key smartmatch, not `~~`), and rewrote
 §5's rejection of the big-bang rewrite onto gain grounds. The staging survived; its contents and its
 centre of gravity did not.
+
+Accepted later the same day, with §2.4's mutsu-against-itself table added: `~~ /literal/` against
+`.index` on one 640 KB subject is 212x, which makes Stage 1 a wiring job onto a primitive mutsu
+already ships rather than an optimization to invent. The title lost "and a fast lane" at the same
+time, to match Stage 2's demotion from a decision to a question.
