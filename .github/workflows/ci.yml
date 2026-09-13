@@ -250,9 +250,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The four ledger checks run FIRST, before any toolchain: they read
+      # These ledger checks run FIRST, before any toolchain: they read
       # files and finish in about a second each, so an unsorted whitelist or an
       # expired quarantine entry should not have to wait out a clippy pass.
+      - name: Suite exit status is not masked by `tee`
+        # `make test` / `make roast` pipe into `tee`, so their exit status is
+        # only meaningful while the recipe shell has `pipefail` set. It did not,
+        # for a long time, and a red suite exited 0 -- breaking the local
+        # pre-publication gate CLAUDE.md relies on (#8221). This job is the only
+        # place CI looks at it: the suites themselves run as individual steps
+        # here, never through those targets, which is exactly why the defect
+        # could persist unnoticed.
+        run: make check-pipefail
+
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
 

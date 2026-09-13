@@ -142,6 +142,12 @@ an ordinary user.
 network sandbox is the difference. The mechanism has not been pinned down further, so treat a *new*
 failure shape there (a concrete `not ok`, rather than the timeout) as real.
 
+Since [#8221](https://github.com/tokuhirom/mutsu/issues/8221) `make roast` propagates a failing
+suite into its **exit status** (it used to report `tee`'s, always 0). So in a remote container the
+target exits non-zero on these three alone: here, and only here, the status is not by itself the
+verdict — read the `Test Summary Report` and check the failing set against the table above. On the
+local box, and for `make test` everywhere, a non-zero exit is a real failure.
+
 Two things this list is not:
 
 - **It is not a licence to skim the summary.** Read the `Test Summary Report` and confirm the failing

@@ -1,4 +1,13 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail
+
+# Recipes run under bash with `pipefail`, because the two suite recipes pipe
+# into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
+# which is always 0. Without this, a failing `cargo build`, `cargo test` or
+# `prove` made `make test` / `make roast` exit 0, i.e. the pre-publication gate
+# CLAUDE.md relies on reported success on a red suite (#8221). `check-pipefail`
+# below is the guard that this stays true; it is a prerequisite of both targets.
+SHELL := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -37,7 +46,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -80,10 +89,24 @@ check-panic-surface:
 	python3 scripts/check-panic-surface.py --self-test
 	python3 scripts/check-panic-surface.py
 
-roast:
+roast: check-pipefail
 	@mkdir -p tmp
 	@rm -f temp-file-RT-126006-test
 	(cargo build --release && MUTSU_BIN=$(MUTSU_BIN) prove -j$(PROVE_JOBS) -e 'scripts/run-roast-test.sh' $(shell cat roast-whitelist.txt)) 2>&1 | tee tmp/make-roast.log
+
+# Guard for #8221. Both suite recipes end in `| tee tmp/make-*.log`, so their
+# exit status is only meaningful while the recipe shell has `pipefail` set. This
+# target fails if a false-in-the-pipeline is ever masked again -- e.g. because
+# SHELL/.SHELLFLAGS above were reverted, or a shell without `pipefail` is in
+# use. It runs no build and costs milliseconds, so both suites depend on it.
+check-pipefail:
+	@if (exit 1) 2>&1 | tee /dev/null; then \
+		echo 'check-pipefail: FAILED -- a failing command in a `| tee` pipeline exits 0.' >&2; \
+		echo '  The recipe shell is not running with pipefail, so `make test` and' >&2; \
+		echo '  `make roast` would report success on a red suite (issue #8221).' >&2; \
+		echo '  Restore `SHELL := /bin/bash` and `.SHELLFLAGS := -o pipefail -c`.' >&2; \
+		exit 1; \
+	fi
 
 check-roast-whitelist:
 	LC_ALL=C sort -c roast-whitelist.txt
