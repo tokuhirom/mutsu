@@ -97,26 +97,14 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
 }
 
 /// Static half of the Tier B `GetLocal` fast-path eligibility (ADR-0004
-/// J4d). Rejected shapes stay on the Tier A shim unconditionally:
-/// - attribute slots (`$!x` / `$.x` / bare sigilless attrs): the arm reads
-///   `self`'s shared cell, resolved through `local_attr_key`;
-/// - `!` / `.` twigil names: shared-var dirty probes and accessor aliases;
-/// - `@` / `%` containers: atomic-key and cross-thread shared-snapshot
-///   probes are keyed on the sigil.
+/// J4d): [`CompiledCode::local_read_plain`], which the interpreter's own
+/// `GetLocal` fast path (#8332) shares — the two must agree on which slots
+/// have no name-shaped guard work, so there is one definition of it.
 ///
 /// Everything dynamic (cells, atomics, thunks, Nil) is handled by the
 /// emitted word/latch checks — see `TierB::emit_get_local`.
 fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
-    let Some(name) = code.locals.get(idx) else {
-        return false;
-    };
-    if code.local_attr_key(idx).is_some() {
-        return false;
-    }
-    !matches!(
-        name.as_bytes().first(),
-        Some(b'!') | Some(b'@') | Some(b'%') | Some(b'.')
-    )
+    code.local_read_plain(idx)
 }
 
 /// Helper-call signatures used by the emitted code, imported once per

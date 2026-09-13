@@ -442,6 +442,29 @@ impl NanBox {
         )
     }
 
+    /// Whether a local slot holding this word can be handed to the stack by
+    /// the `GetLocal` fast path with nothing further to do (#8332). Excludes
+    /// exactly the kinds `exec_get_local_op_inner`'s tail still inspects after
+    /// it has cloned the slot: the three write-through holders plus the two
+    /// lazily-resolved carriers and `Nil` (whose arm runs the shared-store
+    /// probe and the undeclared-variable check). A pure tag probe, for the same
+    /// reason as [`Self::is_plain_scalar_store_payload`].
+    #[inline]
+    pub(in crate::value) fn is_plain_local_read(&self) -> bool {
+        !matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                Kind::ContainerRef
+                    | Kind::ContainerRefItemized
+                    | Kind::ContainerView
+                    | Kind::Proxy
+                    | Kind::HashEntryRef
+                    | Kind::LazyThunk
+                    | Kind::Nil
+            )
+        )
+    }
+
     /// Whether this word is one of the kinds ADR-0040's element store itemizes
     /// (`Value::needs_element_itemization`) — a pure tag probe.
     ///

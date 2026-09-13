@@ -195,15 +195,23 @@ impl NanBox {
                 storer,
                 subclass,
                 decontainerized,
-            } => pack_arc(
-                Kind::Proxy,
-                Arc::new(ProxyBox {
-                    fetcher,
-                    storer,
-                    subclass,
-                    decontainerized,
-                }),
-            ),
+            } => {
+                // Latch for the inline `GetLocal` fast paths: a `Proxy` sitting
+                // in an env overlay is adopted by the cell-adoption probe just
+                // as a `ContainerRef` is, so this — the single point every
+                // `Proxy` word passes through — spoils them too (see
+                // `vm_jit::note_proxy_value`).
+                crate::vm::vm_jit::note_proxy_value();
+                pack_arc(
+                    Kind::Proxy,
+                    Arc::new(ProxyBox {
+                        fetcher,
+                        storer,
+                        subclass,
+                        decontainerized,
+                    }),
+                )
+            }
             ValueRepr::ParametricRole {
                 base_name,
                 type_args,

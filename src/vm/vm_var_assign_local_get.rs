@@ -139,6 +139,71 @@ impl Interpreter {
         keep_deferred_entry: bool,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // Fast path (#8332): the whole guard chain below reduces to
+        // `stack.push(locals[idx].clone())` when three independent conditions
+        // hold, and it costs ~230 instructions per read when it does not —
+        // `GetLocal` being the most frequent opcode in the VM, that was a flat
+        // tax on every program (6.8% of `benchmarks/int-arith.raku`).
+        //
+        // 1. `local_read_plain` — every guard the arm decides from the slot's
+        //    NAME (the `!` twigil probes, the `@`/`%` atomic-lane and
+        //    thread-clone probes, the attribute-cell and CStruct-field reads,
+        //    the type-object-invocant error) is decided against, statically and
+        //    once per chunk.
+        // 2. `local_read_unspoiled` — nothing the arm looks for *at runtime*
+        //    has ever been created anywhere in the process: no `$CALLER::x :=`
+        //    alias for `resolve_binding` to answer, no atomic variable, no
+        //    shared cell or `Proxy` for the env cell-adoption probe to adopt,
+        //    no sigilless attribute alias. Monotonic and never cleared, so it
+        //    can only ever turn pessimistic.
+        // 3. `is_plain_local_read` — the slot's own word is none of the kinds
+        //    the arm's TAIL still inspects after cloning (`ContainerRef`,
+        //    `Proxy`, `HashEntryRef`, `LazyThunk`, `Nil`). A pure tag probe, so
+        //    it cannot force a lazy `Match`.
+        //
+        // `keep_deferred_entry` needs no part in this: it only ever changes
+        // what happens to a `HashEntryRef` or an empty `ContainerRef`, both of
+        // which condition 3 excludes.
+        //
+        // This is the interpreter twin of the JIT's Tier B inline read
+        // (ADR-0004 J4d, `vm_jit_tier_b.rs`), and shares both of its halves —
+        // the JIT was the only consumer of that analysis until now.
+        //
+        // Ordered cheapest-refusal-first: the latch is one relaxed load of a
+        // static, `local_read_plain` a `OnceLock` acquire and an indexed load,
+        // so a program that has spoiled the latch (any `:=` cell will do) pays
+        // only the load before falling through to the chain below.
+        if crate::vm::vm_jit::local_read_unspoiled()
+            && code.local_read_plain(idx)
+            && let Some(val) = self.locals.get(idx)
+            && val.is_plain_local_read()
+        {
+            // The latch is one counter shared by four sources, so a NEW spoiler
+            // mechanism added without bumping it would silently break this path
+            // instead of failing. These restate its contract for the three
+            // sources that are readable from here (the fourth, a packed
+            // `ContainerRef`/`Proxy` word, is what condition 3 excludes), so a
+            // missing bump surfaces as a debug-build assertion in the
+            // `gc-stress-tap` / `jit-stress-tap` suite runs rather than as a
+            // wrong answer in release.
+            debug_assert!(
+                !self.atomic_var_seen(),
+                "GetLocal fast path taken with an atomic variable registered"
+            );
+            debug_assert!(
+                !self.sigilless_attrs_active,
+                "GetLocal fast path taken with a sigilless attribute alias live"
+            );
+            debug_assert!(
+                code.locals
+                    .get(idx)
+                    .is_none_or(|name| self.resolve_binding(name).is_none()),
+                "GetLocal fast path taken with a $CALLER:: binding alias live"
+            );
+            let val = val.clone();
+            self.stack.push(val);
+            return Ok(());
+        }
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
         // Borrow the name from the compiled code (it is independent of `self`),
         // avoiding a String clone on every GetLocal.

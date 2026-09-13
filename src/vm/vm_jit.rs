@@ -101,6 +101,16 @@ pub(crate) fn note_container_cell() {
     note_local_read_spoiler();
 }
 
+/// Record one `Proxy` packing: like a `ContainerRef` cell, a `Proxy` reachable
+/// from an env overlay is something the `GetLocal` cell-adoption probe will
+/// adopt, so its existence spoils the inline local read (see
+/// [`LOCAL_READ_SPOILERS`]). Bumped at the single NaN-box encode chokepoint for
+/// `Kind::Proxy`; never decremented.
+#[inline]
+pub(crate) fn note_proxy_value() {
+    note_local_read_spoiler();
+}
+
 /// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
 /// aliases ever created (`Interpreter::var_bindings` inserts). Zero proves
 /// `resolve_binding` is a no-op everywhere, letting the Tier B inline
@@ -130,7 +140,10 @@ pub(crate) fn note_caller_var_binding() {
 ///   the atomic-read branch could fire;
 /// - a sigilless attribute alias was materialized
 ///   (`Interpreter::sigilless_attrs_active`) — the alias table must be
-///   consulted.
+///   consulted;
+/// - a `Proxy` was packed ([`note_proxy_value`]) — the same env cell-adoption
+///   probe adopts a `Proxy` as readily as a `ContainerRef`, so a zero
+///   [`CONTAINER_CELLS`] alone does not prove the probe is a no-op.
 ///
 /// **One counter, not four latches.** Each input is already monotonic and is
 /// never cleared, so their OR *is* a counter that every source bumps — and the
@@ -149,6 +162,16 @@ pub(crate) static LOCAL_READ_SPOILERS: std::sync::atomic::AtomicU32 =
 #[inline]
 pub(crate) fn note_local_read_spoiler() {
     LOCAL_READ_SPOILERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether no local-read spoiler has ever been recorded (see
+/// [`LOCAL_READ_SPOILERS`]). The dynamic half of the eligibility both the JIT's
+/// inline `GetLocal` (which tests the latch in emitted code) and the
+/// interpreter's own `GetLocal` fast path (#8332) share; the static half is
+/// [`crate::opcode::CompiledCode::local_read_plain`].
+#[inline(always)]
+pub(crate) fn local_read_unspoiled() -> bool {
+    LOCAL_READ_SPOILERS.load(std::sync::atomic::Ordering::Relaxed) == 0
 }
 
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.
