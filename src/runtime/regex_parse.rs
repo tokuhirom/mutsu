@@ -396,7 +396,11 @@ mod static_pattern_tests {
         assert!(!regex_pattern_is_static("$(1 + 1)"));
         assert!(!regex_pattern_is_static("$*dyn"));
         assert!(!regex_pattern_is_static("$0"));
-        assert!(!regex_pattern_is_static("$<cap>"));
+        // `$<cap>` is NOT interpolation (#8265): it is a named backreference,
+        // resolved from its literal name text alone, never by
+        // `interpolate_regex_scalars` (which has no `$<` branch at all) --
+        // see `mod tests` below (`is_static_accepts_named_capture_and_backref_forms`)
+        // for the full set this predicate must accept, `$<cap>` included.
         assert!(!regex_pattern_is_static("@words"));
         assert!(!regex_pattern_is_static("@$deref"));
         assert!(!regex_pattern_is_static("@(list())"));
