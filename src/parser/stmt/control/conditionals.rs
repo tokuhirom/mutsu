@@ -181,7 +181,7 @@ fn lower_if_clause_binding(
             is_rw: false,
             is_raw: false,
             is_whatever_code: false,
-            is_sub: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
         }),
         args,
     };
@@ -251,7 +251,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             is_rw: false,
             is_raw: false,
             is_whatever_code: false,
-            is_sub: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
         }),
         args: vec![Expr::Unary {
             op: TokenKind::Pipe,

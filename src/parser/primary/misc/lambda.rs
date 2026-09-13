@@ -98,7 +98,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_rw: false,
                 is_raw: false,
                 is_whatever_code: false,
-                is_sub: false,
+                declarator: crate::ast::RoutineDeclarator::Block,
             },
         ));
     }
@@ -119,7 +119,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_rw: false,
                 is_raw: false,
                 is_whatever_code: false,
-                is_sub: false,
+                declarator: crate::ast::RoutineDeclarator::Block,
             },
         ));
     }
@@ -169,7 +169,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_rw: false,
                 is_raw: false,
                 is_whatever_code: false,
-                is_sub: false,
+                declarator: crate::ast::RoutineDeclarator::Block,
             },
         ));
     }
@@ -227,7 +227,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_rw: false,
                 is_raw: false,
                 is_whatever_code: false,
-                is_sub: false,
+                declarator: crate::ast::RoutineDeclarator::Block,
             },
         ))
     } else {
@@ -313,7 +313,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                     is_rw: false,
                     is_raw: false,
                     is_whatever_code: false,
-                    is_sub: false,
+                    declarator: crate::ast::RoutineDeclarator::Block,
                 },
             ))
         }

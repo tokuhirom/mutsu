@@ -345,7 +345,7 @@ impl Interpreter {
                 is_rw,
                 is_raw,
                 is_whatever_code,
-                is_sub,
+                declarator,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -354,7 +354,7 @@ impl Interpreter {
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 is_whatever_code: *is_whatever_code,
-                is_sub: *is_sub,
+                declarator: *declarator,
             },
             other => other.clone(),
         }
