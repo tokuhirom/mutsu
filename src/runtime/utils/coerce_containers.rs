@@ -104,6 +104,70 @@ pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
     value
 }
 
+/// Is this parameter name a **sigilless** binding (`\c`)?
+///
+/// The gate on [`shape_value_for_sigiled_target`] at the exit-writeback sites:
+/// only a sigilless parameter is the caller's container rather than having one
+/// of its own, so only it needs its final value re-shaped for the caller's
+/// sigil. A plain `@`/`%` parameter already carries the caller's own container,
+/// metadata and all, and re-coercing that strips it (a `%_` parameter relayed
+/// into `CompUnit::DependencySpecification.new` lost its values that way).
+pub(crate) fn param_is_sigilless(name: &str) -> bool {
+    name.as_bytes()
+        .first()
+        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+}
+
+/// Shape a value the way a store through `target`'s own sigil would.
+///
+/// A sigilless alias is not a container of its own: `\c := @a` makes `c` BE
+/// `@a`, so `c = LIST` is `@a.STORE(LIST)` and `@a` stays an `Array`. The
+/// writeback that carries a sigilless parameter's final value back to the
+/// caller's variable passed it through verbatim, so `sub f(\c) { c = ('x','y') }`
+/// left the caller's `my @a` holding a bare `List` and a `my %h` holding that
+/// same List rather than a Hash. That is `Crane.add(@a, :path(), :value(...),
+/// :in-place)` — `add-to-positional`'s `container = $value` through a
+/// `\container` chain.
+///
+/// A `$`-sigiled or bare target keeps the value untouched, and so does a value
+/// that is ALREADY the target's own shape — returning it verbatim is what keeps
+/// this off the overwhelmingly common path, where the writeback carries a plain
+/// `@`/`%` parameter's container back and re-coercing it would strip its
+/// embedded type metadata and its itemization.
+///
+/// Only a value of the wrong shape is rebuilt, and only then is the scalar
+/// itemization a relay hop puts on it unwrapped: each `\c`-to-`\c` hop binds
+/// through an itemized holder, so a two-hop chain arrives as `$("x", "y")`
+/// where the one-hop one arrives as `("x", "y")`, and both have to land as
+/// `["x", "y"]`.
+pub(crate) fn shape_value_for_sigiled_target(target: &str, val: &Value) -> Value {
+    match target.as_bytes().first() {
+        Some(b'@') => {
+            if matches!(val.view(), ValueView::Array(_, k) if k.is_real_array()) {
+                return val.clone();
+            }
+            let val = val.clone().deitemize_element().into_descalarized();
+            if matches!(val.view(), ValueView::Array(_, k) if k.is_real_array()) {
+                val
+            } else {
+                Value::real_array(crate::runtime::utils::value_to_list(&val))
+            }
+        }
+        Some(b'%') => {
+            if matches!(val.view(), ValueView::Hash(_)) && !val.hash_is_itemized() {
+                return val.clone();
+            }
+            let val = val.clone().deitemize_element().into_descalarized();
+            if matches!(val.view(), ValueView::Hash(_)) {
+                val
+            } else {
+                coerce_to_hash(val)
+            }
+        }
+        _ => val.clone(),
+    }
+}
+
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();

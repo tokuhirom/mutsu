@@ -1477,7 +1477,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     } = target.view()
     {
         let cn = class_name.resolve();
-        if cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::") {
+        if target.instance_is_exception_by_name() {
             match method {
                 "gist" => {
                     let bt = attributes

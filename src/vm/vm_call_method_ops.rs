@@ -450,7 +450,7 @@ impl Interpreter {
             return Ok(None);
         };
         let cn = class_name.resolve();
-        if !(cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
+        if !target.instance_is_exception_by_name()
             || attributes.as_map().contains_key("message")
             || !self.has_user_method(&cn, "message")
             || self.has_user_method(&cn, method)
@@ -940,14 +940,11 @@ impl Interpreter {
         // otherwise carry no frames (so `.backtrace().list` would be empty).
         let target = if matches!(method, "throw" | "rethrow")
             && args.is_empty()
+            && target.instance_is_exception_by_name()
             && matches!(
                 target.view(),
-                ValueView::Instance { class_name, attributes, .. }
-                    if {
-                        let cn = class_name.resolve();
-                        (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
-                            && !attributes.as_map().contains_key("backtrace")
-                    }
+                ValueView::Instance { attributes, .. }
+                    if !attributes.as_map().contains_key("backtrace")
             ) {
             if let ValueView::Instance {
                 class_name,

@@ -859,16 +859,11 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Exception"
-                || class_name.resolve().starts_with("X::")
-                || class_name.resolve().starts_with("CX::") =>
-            {
-                attributes
-                    .as_map()
-                    .get("message")
-                    .map(|v: &Value| v.to_string_value())
-                    .unwrap_or_else(|| format!("{}()", class_name))
-            }
+            } if self.instance_is_exception_by_name() => attributes
+                .as_map()
+                .get("message")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_else(|| format!("{}()", class_name)),
             ValueView::Instance {
                 class_name,
                 attributes,

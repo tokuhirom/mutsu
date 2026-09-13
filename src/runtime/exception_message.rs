@@ -83,10 +83,11 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = target.view() else {
             return false;
         };
+        if target.is_match_instance() {
+            return false;
+        }
         let cn = class_name.resolve();
-        cn == "Exception"
-            || cn.starts_with("X::")
-            || cn.starts_with("CX::")
+        target.instance_is_exception_by_name()
             || cn.ends_with("Exception")
             || self
                 .class_mro(&cn)
@@ -112,6 +113,9 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = target.view() else {
             return false;
         };
+        if target.is_match_instance() {
+            return false;
+        }
         let stored = {
             let map = attributes.as_map();
             let looks_like_exception = cn == "Exception"

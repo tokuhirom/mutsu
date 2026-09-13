@@ -1088,11 +1088,10 @@ impl Interpreter {
             let cn = class_name.resolve();
             let mro = self.class_mro(&cn);
             let does_x_control = cn == "X::Control" || mro.iter().any(|p| p == "X::Control");
-            let is_exception = cn == "Exception"
-                || cn == "Failure"
-                || cn.starts_with("X::")
-                || cn.starts_with("CX::")
-                || mro.iter().any(|p| p == "Exception" || p == "Failure");
+            let is_exception = !target.is_match_instance()
+                && (target.instance_is_exception_by_name()
+                    || cn == "Failure"
+                    || mro.iter().any(|p| p == "Exception" || p == "Failure"));
             if is_exception || does_x_control {
                 if method == "resume" {
                     return Err(crate::value::RuntimeError::resume_signal());
@@ -1724,6 +1723,14 @@ impl Interpreter {
                         return Err(make_multi_no_match_error("splice"));
                     }
                 }
+                // Bounds are checked before the write, exactly as the lvalue
+                // path does: an offset outside `0..len` and a negative size are
+                // X::OutOfRange in rakudo, not a clamped splice at the end.
+                let arr_len = match target.view() {
+                    ValueView::Array(items, ..) => items.len(),
+                    _ => 0,
+                };
+                Self::validate_splice_range(arr_len, &args)?;
             }
             // Splice replacements land in the shared node in place now, so
             // type-check them up front (flattened like do_splice flattens).
@@ -2617,13 +2624,11 @@ impl Interpreter {
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
-            let is_exception = cn == "Exception"
-                || cn.starts_with("X::")
-                || cn.starts_with("CX::")
-                || self
-                    .class_mro(&cn)
-                    .iter()
-                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            let is_exception = !target.is_match_instance()
+                && (target.instance_is_exception_by_name()
+                    || self.class_mro(&cn).iter().any(|p| {
+                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
+                    }));
             if is_exception {
                 // Derive the human message via `.message` (X::AdHoc → `payload`,
                 // a typed exception → its formatted message) rather than the

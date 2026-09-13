@@ -424,6 +424,14 @@ impl Interpreter {
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
         }
+        // A grammar's Match is typed by the grammar itself, so a grammar
+        // declared under `X::` (`Crane` has one inside
+        // `class X::Crane::PathOutOfRange`) would otherwise satisfy the
+        // name-based `Exception` subtyping rule in `type_matches` and make
+        // `$/ ~~ Exception` True. See `Value::instance_is_exception_by_name`.
+        if constraint == "Exception" && value.is_match_instance() {
+            return false;
+        }
         // X::Await::Died role mixed into an exception by `await` of a broken
         // Promise (see `await_died_error`): the cause keeps its own class but
         // also does X::Await::Died.

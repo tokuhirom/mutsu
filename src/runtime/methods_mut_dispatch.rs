@@ -1414,70 +1414,9 @@ impl Interpreter {
                             );
                         }
                     }
-                    // Validate offset range
-                    if let Some(offset_val) = resolved_args.first()
-                        && let Some(raw_offset) = resolve_splice_raw(offset_val, arr_len)
-                        && (raw_offset < 0 || raw_offset as usize > arr_len)
-                    {
-                        return Err(RuntimeError::typed(
-                            "X::OutOfRange",
-                            [
-                                (
-                                    "message".to_string(),
-                                    Value::str(format!(
-                                        "Offset argument to splice out of range. Is: {}, should be in 0..{}",
-                                        raw_offset, arr_len
-                                    )),
-                                ),
-                                (
-                                    "what".to_string(),
-                                    Value::str_from("Offset argument to splice"),
-                                ),
-                                ("got".to_string(), Value::int(raw_offset)),
-                                (
-                                    "range".to_string(),
-                                    Value::str(format!("0..{}", arr_len)),
-                                ),
-                            ]
-                            .into_iter()
-                            .collect(),
-                        ));
-                    }
-                    // Validate size range
-                    if let Some(size_val) = resolved_args.get(1)
-                        && let Some(raw_size) = resolve_splice_raw(size_val, arr_len)
-                        && raw_size < 0
-                    {
-                        let resolved_start = resolved_args
-                            .first()
-                            .and_then(|v| resolve_splice_raw(v, arr_len))
-                            .unwrap_or(0)
-                            .max(0) as usize;
-                        let remaining = arr_len.saturating_sub(resolved_start);
-                        return Err(RuntimeError::typed(
-                            "X::OutOfRange",
-                            [
-                                (
-                                    "message".to_string(),
-                                    Value::str(format!(
-                                        "Size argument to splice out of range. Is: {}, should be in 0..^{}",
-                                        raw_size, remaining
-                                    )),
-                                ),
-                                (
-                                    "what".to_string(),
-                                    Value::str_from("Size argument to splice"),
-                                ),
-                                ("got".to_string(), Value::int(raw_size)),
-                                (
-                                    "range".to_string(),
-                                    Value::str(format!("0..^{}", remaining)),
-                                ),
-                            ]
-                            .into_iter()
-                            .collect(),
-                        ));
-                    }
+                    // Validate the offset/size ranges. Shared with the by-value
+                    // invocant path so the two cannot drift.
+                    Self::validate_splice_range(arr_len, &resolved_args)?;
                     // ADR-0039 slice 1: see the twin comment on the `append`
                     // arm above — this is the site that regressed
                     // `roast/S32-array/splice.t`'s self-referential splice
