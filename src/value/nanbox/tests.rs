@@ -263,6 +263,8 @@ fn sample_sub() -> Gc<SubData> {
         authoritative_captures: vec![],
         upvalues: vec![],
         captured_fatal_mode: false,
+        param_name_syms_cache: std::sync::OnceLock::new(),
+        source_file_sym_cache: std::sync::OnceLock::new(),
     })
 }
 

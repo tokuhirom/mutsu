@@ -185,7 +185,7 @@ impl Interpreter {
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        let unit = self.unit_of_source(data.source_file.as_deref());
+        let unit = self.unit_of_source_sym(data.source_file_sym());
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
         let result = self.call_compiled_closure_in_unit(
             data,
@@ -335,6 +335,27 @@ impl Interpreter {
                 }
             }
         }
+
+        // The set of parameter names — these are strictly local to the
+        // function call and must never leak back to the caller's env, even
+        // when they share a name with a captured outer variable.
+        // Keyed by interned Symbol so the per-entry membership checks in the
+        // writeback scan below compare Symbols directly (a u32 compare + hash)
+        // instead of resolving every env key back to a &str via `with_str` --
+        // that Symbol-to-string churn dominated the writeback profile.
+        // FxHashSet, not the default SipHash: the caller-writeback scan below
+        // probes these Symbol sets against EVERY env key (~100) on every closure
+        // call, so a cryptographic hash over the small integer key dominated the
+        // profile (~5% of mzef-ctor self time in `SipHasher::hash_one<Symbol>`).
+        //
+        // Built ONCE per code object (`SubData::param_name_syms`), not per call:
+        // a signature is immutable after construction, so re-interning each
+        // parameter name and re-filling a fresh `FxHashSet` on every call bought
+        // nothing but a thread-local string hash per parameter plus an
+        // allocation. That was the single largest `Symbol::intern` bucket in the
+        // #8302 closure-call profile.
+        let param_name_syms = data.param_name_syms();
+        let param_names = &param_name_syms.call_local;
 
         self.push_call_frame();
         // See the same capture in `call_compiled_function_named_inner`: an END
@@ -598,7 +619,7 @@ impl Interpreter {
         let routine_base = self.routine_stack_len();
         let call_line = self.current_source_line();
         let call_file = self.current_source_file_sym();
-        let def_file = data.source_file.as_deref().map(Symbol::intern);
+        let def_file = data.source_file_sym();
         if cc.is_pointy_block || data.is_bare_block {
             // Bare blocks and pointy blocks are NOT routine boundaries.
             // Push a marker name so &?ROUTINE skips them and finds the
@@ -635,9 +656,13 @@ impl Interpreter {
         // Bind parameters
         let mut rw_bindings = match loan_env!(
             self,
-            bind_function_args_values_with_argspec(
+            // `param_name_syms.params` is `data.params` interned once per code
+            // object, so the legacy (pointy-block / placeholder) binding path
+            // names each parameter without re-hashing it per call (#8302).
+            bind_function_args_values_with_legacy_syms(
                 &data.param_defs,
                 &data.params,
+                &param_name_syms.params,
                 &args,
                 Some(cc.reads_args_array)
             )
@@ -689,9 +714,13 @@ impl Interpreter {
         // inside several `push_call_frame`-bypassing "fast native loop" paths
         // and leak permanently).
         if cc.pointy_alias_param
-            && let Some(name) = data.params.first()
+            && let Some(sym) = param_name_syms.params.first().copied()
         {
-            self.mark_readonly(name);
+            // Pre-interned (#8302): `mark_readonly(&str)` interns the name on
+            // every call, and a single-`$`-param pointy block is exactly the
+            // shape a hot `.map`/`$block(...)` loop calls a hundred thousand
+            // times.
+            self.mark_readonly_sym(sym);
         }
 
         // Handle implicit $_ for bare blocks (no explicit params, single arg)
@@ -821,7 +850,10 @@ impl Interpreter {
             pd.name.starts_with('^') || pd.name.starts_with("@^") || pd.name.starts_with("%^")
         });
         let is_whatever_code = matches!(
-            data.env.get("__mutsu_callable_type").map(Value::view),
+            data
+                .env
+                .get_sym(crate::symbol::well_known::callable_type())
+                .map(Value::view),
             Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
         );
         if cc.is_routine
@@ -897,7 +929,10 @@ impl Interpreter {
 
         self.locals.refill_slots(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
+            // Pre-interned seed probe (#8302): `cc.local_sym(i)` is the name's
+            // Symbol from the chunk's own table, so this costs a `u32` hash per
+            // local instead of re-interning the name string on every call.
+            if let Some(val) = self.env().get_for(local_name, cc.local_sym(i)) {
                 self.locals[i] = val.clone();
             }
         }
@@ -1229,11 +1264,13 @@ impl Interpreter {
         // per call for the common read-only closure (which has no captured
         // locals to flush at all).
         for (i, local_name) in cc.locals.iter().enumerate() {
-            if !local_name.is_empty() && data.env.contains_key(local_name) {
-                {
-                    let __v = self.locals[i].clone();
-                    self.env_mut().insert(local_name.clone(), __v);
-                }
+            // Pre-interned on both halves (#8302): the by-name form re-interned
+            // the local's name for the probe AND allocated a fresh `String` for
+            // the insert, per captured local, per call.
+            let local_sym = cc.local_sym(i);
+            if !local_name.is_empty() && data.env.contains_key_for(local_name, local_sym) {
+                let __v = self.locals[i].clone();
+                self.env_mut().insert_for(local_name, local_sym, __v);
             }
         }
 
@@ -1409,33 +1446,6 @@ impl Interpreter {
         if !rw_bindings.is_empty() {
             self.pending_rw_writeback_sources
                 .extend(rw_bindings.iter().map(|(_, source)| source.clone()));
-        }
-        // Build set of parameter names — these are strictly local to the
-        // function call and must never leak back to the caller's env, even
-        // when they share a name with a captured outer variable.
-        // Keyed by interned Symbol so the per-entry membership checks in the
-        // writeback scan below compare Symbols directly (a u32 compare + hash)
-        // instead of resolving every env key back to a &str via `with_str` --
-        // that Symbol-to-string churn dominated the writeback profile.
-        // FxHashSet, not the default SipHash: the caller-writeback scan below
-        // probes these Symbol sets against EVERY env key (~100) on every closure
-        // call, so a cryptographic hash over the small integer key dominated the
-        // profile (~5% of mzef-ctor self time in `SipHasher::hash_one<Symbol>`).
-        let mut param_names: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
-        for p in data.params.iter() {
-            param_names.insert(Symbol::intern(p));
-        }
-        // Collect names bound by subsignature parameters (e.g. `|c(Str $x)`),
-        // which are also strictly call-local and must not leak to the caller.
-        let mut subsig_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for pd in data.param_defs.iter() {
-            if !pd.name.is_empty() {
-                param_names.insert(Symbol::intern(&pd.name));
-            }
-            Interpreter::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
-        }
-        for name in &subsig_names {
-            param_names.insert(Symbol::intern(name));
         }
 
         // The full-env writeback below scans the entire working env (~100
@@ -1748,15 +1758,23 @@ impl Interpreter {
             // pre-interned table, so this membership test costs a u32 hash
             // instead of re-interning every local's *string* on every call —
             // that intern was one of the hot path's largest `Symbol::intern`
-            // contributors (#7571).
-            if !local_name.is_empty()
-                && !data.env.contains_key(local_name)
-                && !cc
-                    .local_sym(idx)
-                    .is_some_and(|sym| param_names.contains(&sym))
-                && !local_name.starts_with("__mutsu_")
-            {
-                restored_env.remove(local_name);
+            // contributors (#7571). The captured-env probe and the removal use
+            // that same Symbol for the same reason (#8302); a chunk with no
+            // pre-interned table (`local_sym` = `None`) keeps the by-name form.
+            if local_name.is_empty() || local_name.starts_with("__mutsu_") {
+                continue;
+            }
+            match cc.local_sym(idx) {
+                Some(sym) => {
+                    if !data.env.contains_key_sym(sym) && !param_names.contains(&sym) {
+                        restored_env.remove_sym(sym);
+                    }
+                }
+                None => {
+                    if !data.env.contains_key(local_name) {
+                        restored_env.remove(local_name);
+                    }
+                }
             }
         }
 
@@ -1864,7 +1882,7 @@ impl Interpreter {
 
         let return_spec = data
             .env
-            .get("__mutsu_return_type")
+            .get_sym(crate::symbol::well_known::return_type())
             .and_then(|v| match v.view() {
                 ValueView::Str(s) => Some(s.to_string()),
                 _ => None,

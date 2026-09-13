@@ -853,6 +853,49 @@ pub(crate) mod well_known {
         static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_return_type"));
         *SYM
     }
+
+    /// The captured candidate list a materialized proto/multi dispatcher Sub
+    /// carries. Probed on EVERY indirect call (`$code(...)`, `.&meth`) by
+    /// `vm_call_on_value` before it can reach the compiled closure path, so a
+    /// per-call intern of the literal is pure waste (#8302).
+    #[inline]
+    pub(crate) fn multi_dispatch_candidates() -> Symbol {
+        static SYM: LazyLock<Symbol> =
+            LazyLock::new(|| Symbol::intern("__mutsu_multi_dispatch_candidates"));
+        *SYM
+    }
+
+    /// The dispatcher name that goes with [`multi_dispatch_candidates`].
+    #[inline]
+    pub(crate) fn multi_dispatch_name() -> Symbol {
+        static SYM: LazyLock<Symbol> =
+            LazyLock::new(|| Symbol::intern("__mutsu_multi_dispatch_name"));
+        *SYM
+    }
+
+    /// `^find_method`/`.can` dispatcher metadata: the candidate index. Probed
+    /// first by `sub_multi_method_dispatcher_name`, which runs on every
+    /// indirect call (#8302).
+    #[inline]
+    pub(crate) fn lookup_candidate_idx() -> Symbol {
+        static SYM: LazyLock<Symbol> =
+            LazyLock::new(|| Symbol::intern("__mutsu_lookup_candidate_idx"));
+        *SYM
+    }
+
+    /// `^find_method`/`.can` dispatcher metadata: the class looked up in.
+    #[inline]
+    pub(crate) fn lookup_class() -> Symbol {
+        static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_lookup_class"));
+        *SYM
+    }
+
+    /// `^find_method`/`.can` dispatcher metadata: the method name to redispatch.
+    #[inline]
+    pub(crate) fn lookup_method() -> Symbol {
+        static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_lookup_method"));
+        *SYM
+    }
 }
 
 #[cfg(test)]
