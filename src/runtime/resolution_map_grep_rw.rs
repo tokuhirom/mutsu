@@ -503,7 +503,7 @@ impl Interpreter {
                         vec![item.clone()],
                         false,
                     )?;
-                    if pred.truthy() {
+                    if self.eval_predicate_truthy(&pred) {
                         result.push(item.clone());
                         matched.push(i);
                     }
@@ -535,7 +535,7 @@ impl Interpreter {
                     };
                     let pred =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk.clone(), false)?;
-                    if pred.truthy() {
+                    if self.eval_predicate_truthy(&pred) {
                         if arity == 1 {
                             result.push(chunk[0].clone());
                         } else {
@@ -748,7 +748,7 @@ impl Interpreter {
                                 if arity == 1 {
                                     list_items[i] = updated_item.clone();
                                 }
-                                if pred.truthy() {
+                                if vm.eval_predicate_truthy(&pred) {
                                     if arity == 1 {
                                         result.push(updated_item);
                                     } else {
@@ -781,7 +781,7 @@ impl Interpreter {
                                 if arity == 1 {
                                     list_items[i] = updated_item.clone();
                                 }
-                                if pred.truthy() {
+                                if vm.eval_predicate_truthy(&pred) {
                                     if arity == 1 {
                                         result.push(updated_item);
                                     } else {
@@ -841,7 +841,7 @@ impl Interpreter {
             let mut matched = Vec::new();
             for (i, item) in list_items.iter().enumerate() {
                 let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
-                if pred.truthy() {
+                if self.eval_predicate_truthy(&pred) {
                     result.push(item.clone());
                     matched.push(i);
                 }

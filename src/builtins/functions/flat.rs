@@ -77,7 +77,7 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 flat_val(item, out, true);
             }
         }
-        // Lists and Seqs flatten in list context; as the element of an
+        // Lists, Seqs, and hyper sequences flatten in list context; as the element of an
         // itemizing container (a `[...]` Array element lives in a Scalar
         // container) they stay single and itemized: `(1, @a, 5).flat` with
         // `my @a = 2, (3, 4)` yields `(1 2 (3 4) 5)`, and
@@ -91,7 +91,7 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 out.push(Value::array_with_kind(items.clone(), ArrayKind::ItemList));
             }
         }
-        ValueView::Seq(items) => {
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             if flatten_arrays {
                 for item in items.iter() {
                     flat_val(item, out, true);
@@ -172,6 +172,8 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
             ValueView::Slip(_)
             | ValueView::Array(..)
             | ValueView::Seq(_)
+            | ValueView::HyperSeq(_)
+            | ValueView::RaceSeq(_)
             | ValueView::LazyList(_)
             | ValueView::Range(..)
             | ValueView::RangeExcl(..)

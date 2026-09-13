@@ -839,7 +839,10 @@ impl Compiler {
     /// A container read compiled to `GetLocal(slot)` is what makes container
     /// lexical scoping *lexical*: a same-named declaration in an unrelated
     /// scope can no longer hijack it, because the read never consults `env` by
-    /// name (§1.2, §4.2 first bullet).
+    /// name (§1.2, §4.2 first bullet). Uppercase aggregate names are included
+    /// when they are known locals; `@IP` is a legal lexical name, even though
+    /// uppercase names are otherwise kept out of the plain-user-lexical
+    /// capture classification because they can also denote types.
     ///
     /// The flip is restricted to **plain user lexicals**, and that restriction
     /// is a requirement rather than a safety margin (§12). The by-name read's
@@ -852,7 +855,12 @@ impl Compiler {
     /// about the ones that are. Any future widening has to supply those
     /// behaviours first.
     pub(super) fn container_read_slot(&self, sigiled: &str) -> Option<u32> {
-        if !Self::container_slot_read_applies(sigiled) {
+        let local_uppercase_aggregate = self.local_map.contains_key(sigiled)
+            && sigiled.strip_prefix(['@', '%']).is_some_and(|name| {
+                name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            });
+        if !Self::container_slot_read_applies(sigiled) && !local_uppercase_aggregate {
             return None;
         }
         let &slot = self.local_map.get(sigiled)?;

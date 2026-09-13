@@ -281,9 +281,8 @@ impl Interpreter {
             && self.thread_redeclared_vars.borrow().contains(key)
     }
 
-    /// Mask each scalar parameter, and each **slurpy** `@`/`%` parameter
-    /// (`&` and a plain non-slurpy `@`/`%` are excluded, see below), as a
-    /// fresh per-invocation binding while the cross-thread shared store is
+    /// Mask each scalar and aggregate parameter (`&` parameters are excluded)
+    /// as a fresh per-invocation binding while the cross-thread shared store is
     /// active — the call-site
     /// analogue of the `my` declaration mask `exec_set_var_dynamic_op` applies
     /// (see its comment). A plain `thread_redeclared_vars` mask alone is not
@@ -328,25 +327,14 @@ impl Interpreter {
         for pd in param_defs {
             let name = pd.name.as_str();
             // `&`-sigil parameters are routines, not shared mutable variables
-            // — never masked here. A plain (non-slurpy) `@`/`%` parameter
-            // keeps the name lane too: an ordinary `sub f(@list) {...}`'s
-            // `@list` may be read back through the shared-store fallback by
-            // a nested spawn that did not capture it lexically (mirrors why
-            // a plain `my @a` declaration keeps the lane for its
-            // `__mutsu_atomic_*` CAS copies — see `container_name_is_redeclared`'s
-            // doc). Only a **slurpy** `@`/`%` parameter (`*@x`, `*%h`) is
-            // masked: it collects a FRESH per-invocation value out of thin
-            // air (never a caller's shared container), so nothing legitimate
-            // depends on its bare name resolving to an outer binding — see
-            // `Cro::HTTP::Response.set-cookie`'s `*%options` resolving to an
-            // unrelated `%options` live elsewhere in the process via the
-            // shared bare-name store.
-            if name.is_empty()
-                || name == "_"
-                || name == "self"
-                || name.starts_with('&')
-                || (name.starts_with(['@', '%']) && !pd.slurpy)
-            {
+            // — never masked here. Every `@`/`%` parameter is a fresh binding
+            // in the callee, including a plain non-slurpy parameter: `sub
+            // f(@list) { ... }` copies its argument list, so a same-named
+            // aggregate in the worker's shared-name store must not hijack the
+            // callee's parameter. The caller's shared container remains
+            // available through the bound value itself (and `is rw` writeback),
+            // while the name lane is reserved for unrelated outer bindings.
+            if name.is_empty() || name == "_" || name == "self" || name.starts_with('&') {
                 continue;
             }
             let bare = name.trim_start_matches('$').to_string();

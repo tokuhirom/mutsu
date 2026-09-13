@@ -6,7 +6,7 @@ use Test;
 # `false` for Seq children, so e.g. `(@a xx 4).flat` left the repeated arrays
 # un-flattened (4 elems instead of 12) -- which broke roast S32-str/Collation.t.
 
-plan 8;
+plan 9;
 
 my @c = -1, 0, 1;
 is (@c xx 4).flat.elems, 12, '(@a xx 4).flat fully descends the repeated arrays';
@@ -24,3 +24,10 @@ is [1, [2, 3]].flat.elems, 2, 'real Array keeps nested array itemized';
 
 # Plain flat is identity-ish on a flat array.
 is [1, 2, 3].flat.elems, 3, 'flat of a flat array is unchanged';
+
+# The function form must also flatten the RaceSeq produced by batched map.
+my @race-flat = flat (^4).race(batch => 1).map({
+    my @pair = $_, $_ + 10;
+    @pair;
+});
+is @race-flat.elems, 8, 'flat expands RaceSeq results from batched map';
