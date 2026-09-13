@@ -16,7 +16,7 @@ use Test;
 # declaring-package switch are all built from, so the same class of mistake --
 # the wrong name reaching one of them -- is what these assertions catch.
 
-plan 78;
+plan 80;
 
 # --- the fixed per-call keys -------------------------------------------------
 
@@ -249,6 +249,19 @@ is Deep::reach(), "deep-var", 'and does so again on a repeat call';
 is Deep::reach-nested(), "deep-var+nested",
     'an unqualified call inside that body resolves in the same package';
 is $Deep::inside, "deep-var", 'the package variable is untouched from outside';
+
+# #8347: a qualified callsite (`Pkg::sub()`) must not leak its `Pkg::`
+# qualification into the callee's own frame name -- `&?ROUTINE.name` reads
+# the routine's own short name regardless of how the caller spelled it.
+package Deep {
+    our sub qualified-name-probe() {
+        &?ROUTINE.name ~ "/" ~ &?ROUTINE.package.^name;
+    }
+}
+is Deep::qualified-name-probe(), "qualified-name-probe/Deep",
+    'a qualified callsite names the routine by its own short name, not the callsite text';
+is Deep::qualified-name-probe(), "qualified-name-probe/Deep",
+    'and does so again on a repeat call, once the light-call cache is warm';
 
 # An anonymous routine has an empty name and must take the `<anon>` sentinel
 # rather than binding the empty string as a routine name.
