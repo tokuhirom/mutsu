@@ -367,8 +367,15 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
             // `(` is only a delimiter after whitespace (`ss:g(a)` is call-like).
+            // `:` is never a delimiter -- it starts an adverb, or (when what
+            // follows isn't a valid adverb name, e.g. the second `:` of a
+            // package-qualified `Pkg::sub()`) rakudo rejects it outright
+            // ("Colons may not be used to delimit quoting constructs"); either
+            // way `Pkg::sub()` must fall through to identifier/call parsing
+            // instead of misparsing as `ss` with `:` delimiters (#8363).
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
+                && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
                 && !delim_is_identifier_continuation(spec);
@@ -490,8 +497,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
             // `(` is only a delimiter after whitespace (`s(a)` is a call).
+            // `:` is never a delimiter -- see the matching comment on `ss`'s
+            // `is_delim` above (#8363).
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
+                && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
                 && !delim_is_identifier_continuation(spec);
@@ -698,8 +708,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
             // `(` is only a delimiter after whitespace (`S(a)` is a call).
+            // `:` is never a delimiter -- see the matching comment on `ss`'s
+            // `is_delim` above (#8363).
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
+                && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
                 && !delim_is_identifier_continuation(spec);
@@ -997,8 +1010,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         if let Some(open_ch) = spec.chars().next() {
             // `(` is only a delimiter after whitespace — `m(9)` / `mm(9)` are
             // calls to user routines named `m` / `mm`, never a regex.
+            // `:` is never a delimiter -- see the matching comment on `ss`'s
+            // `is_delim` in this file (#8363).
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
+                && open_ch != ':'
                 && !open_ch.is_whitespace()
                 && (open_ch != '(' || had_ws)
                 && !delim_is_identifier_continuation(spec);
