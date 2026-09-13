@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 29;
 
 # Parametric Rational role: a user class can compose `does Rational[...]`.
 my class MyRat does Rational[Int, Int] {};
@@ -35,3 +35,25 @@ is Foo.new(10) gcd Foo.new(4), 2, 'gcd reads Int-subclass payload';
 
 # Numeric coercion of Cool builtins.
 is-deeply Duration.new(42).Rat, <42/1>, 'Duration.Rat is exact';
+
+# The numeric surface. A punned `Rational[Int,Int]` used to carry a numerator
+# and a denominator with no way to say what number it IS: `.Str` fell through
+# to the type-object rendering, so JSON::Fast's `Rational` branch emitted
+# "Rational[Int,Int]()" where rakudo emits 0.3.
+my $third = Rational[Int, Int].new(3, 10);
+my $neg   = Rational[Int, Int].new(-7, 2);
+
+is $third.Str, '0.3', 'a punned Rational stringifies as its value';
+is $neg.Str, '-3.5', 'and so does a negative one';
+is $third.Num, 0.3e0, '.Num is the quotient';
+is $third.Numeric, 0.3, '.Numeric is the exact quotient';
+is $third.Rat, 0.3, '.Rat is the exact quotient';
+is $third.Bridge, 0.3e0, '.Bridge bridges to Num';
+is $neg.Int, -3, '.Int truncates toward zero, it does not floor';
+is $neg.abs, 3.5, '.abs';
+is $neg.floor, -4, '.floor';
+is $neg.ceiling, -3, '.ceiling';
+is $third + 1, 1.3, 'arithmetic goes through the numeric coercion';
+ok $third < 1, 'and so does comparison';
+dies-ok { Rational[Int, Int].new(1, 0).Str },
+    'a zero denominator still dies when coerced to Str';

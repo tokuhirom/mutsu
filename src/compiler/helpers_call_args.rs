@@ -463,6 +463,32 @@ impl Compiler {
             self.compile_call_arg_with_escape(&Expr::Var(name), escaping);
             return;
         }
+        // `f($at-eos ?? $p !! ++$p)` — JSON::Fast's whitespace scanner. Each
+        // arm of rakudo's conditional yields the native reference, so the
+        // conditional as a whole IS that reference: whichever arm ran is what
+        // binds. Compiling it as an ordinary expression would collapse both
+        // arms to a value and lose the container, so compile the choice itself
+        // into argument position — each arm through this same chokepoint, so
+        // an arm spelled `++$p` still performs its increment and a bare `$p`
+        // still binds the caller's storage. The arms may name different
+        // parameters; only the one evaluated is bound.
+        if let Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } = arg
+            && self.is_native_rw_param_reference(then_expr)
+            && self.is_native_rw_param_reference(else_expr)
+        {
+            self.compile_expr(cond);
+            let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+            self.compile_call_arg_with_escape(then_expr, escaping);
+            let jump_end = self.code.emit(OpCode::Jump(0));
+            self.code.patch_jump(jump_else);
+            self.compile_call_arg_with_escape(else_expr, escaping);
+            self.code.patch_jump(jump_end);
+            return;
+        }
         // Read-and-clear immediately: this call is the *direct* bind-target
         // compile iff the caller just set the flag for us. Clearing it up
         // front (before any nested `compile_expr`/`compile_call_arg`
@@ -1242,10 +1268,10 @@ impl Compiler {
             .collect();
     }
 
-    /// A call argument spelled `++$p` / `--$p` whose operand is one of the
-    /// enclosing routine's native `is rw` parameters — the one shape rakudo
-    /// lets bind through to another native `is rw` parameter. Returns the
-    /// operand's name.
+    /// A call argument that still denotes one of the enclosing routine's
+    /// native `is rw` parameters after being evaluated — `++$p` / `--$p`, or a
+    /// conditional whose arms both do — which is what rakudo lets bind through
+    /// to another native `is rw` parameter. Returns the parameter's name.
     ///
     /// Deliberately NOT matched: the postfix forms (`$p++` yields the old
     /// value, and rakudo rejects it here with "Expected a modifiable native
@@ -1266,6 +1292,18 @@ impl Compiler {
             return None;
         };
         self.native_rw_params.contains(name).then(|| name.clone())
+    }
+
+    /// Does this argument sub-expression still denote a native `is rw`
+    /// parameter after it is evaluated? True for the bare parameter and for a
+    /// prefix increment/decrement of one — the two shapes rakudo keeps as a
+    /// reference. Used to decide whether a conditional argument
+    /// ([`Compiler::compile_call_arg_with_escape`]) can bind through.
+    pub(super) fn is_native_rw_param_reference(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(name) => self.native_rw_params.contains(name),
+            _ => self.native_rw_param_incdec_operand(expr).is_some(),
+        }
     }
 
     /// Check for assignment to native-typed read-only parameters inside a

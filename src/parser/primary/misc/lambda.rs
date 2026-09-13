@@ -389,9 +389,7 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     // Try to detect if this is a hash literal: { key => val, ... }
-    // Heuristic: if after ws we see `ident =>` or `"str" =>` or `'str' =>`, it's a hash.
-    // However, placeholder variables ($^x, @^x, %^x) force it to be a block.
-    if is_hash_literal_start(r) && !body_has_placeholder_vars(r) && !body_references_topic(r) {
+    if body_is_hash_composer(r) {
         return super::hash::parse_hash_literal_body(r);
     }
 
@@ -749,6 +747,35 @@ fn body_has_placeholder_vars(input: &str) -> bool {
         }
     }
     false
+}
+
+/// Does the text *after* a `{` (and its leading whitespace) compose a Hash
+/// rather than open a Block?
+///
+/// Heuristic: if we see `ident =>`, `"str" =>`, `'str' =>` or a leading
+/// `%hash`, it is a hash. Placeholder variables (`$^x`, `@^x`, `%^x`) and a
+/// reference to the topic force it back to a block.
+fn body_is_hash_composer(input: &str) -> bool {
+    is_hash_literal_start(input)
+        && !body_has_placeholder_vars(input)
+        && !body_references_topic(input)
+}
+
+/// Does the `{ … }` starting at `input` compose a Hash?
+///
+/// This is the *same* classification [`block_or_hash_expr`] performs, exposed
+/// for the call sites that must decide what a brace means before parsing it —
+/// the `name { … }, args` listop shape in `identifier_call`. Raku classifies a
+/// brace purely by what is between the braces; what follows the `}` never
+/// enters into it, so those call sites must ask here rather than assume a
+/// block.
+pub(crate) fn braces_are_hash_composer(input: &str) -> bool {
+    let Some(r) = input.strip_prefix('{') else {
+        return false;
+    };
+    let (r, _) = ws_inner(r);
+    // `{}` is the empty hash.
+    r.starts_with('}') || body_is_hash_composer(r)
 }
 
 /// Check if the input looks like a hash literal start.
