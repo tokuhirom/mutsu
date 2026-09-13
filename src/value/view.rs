@@ -101,7 +101,7 @@ pub enum ValueView<'a> {
     ),
     Capture {
         positional: &'a Vec<Value>,
-        named: &'a HashMap<String, Value>,
+        named: &'a ValueMap,
     },
     /// See [`ValueRepr::VarRef`]: a transient argument wrapper carrying the name
     /// of the variable the value was read from.

@@ -363,17 +363,14 @@ impl Value {
         Value::Set(crate::gc::Gc::new(SetData::new(s)), true)
     }
     /// Create a Set with preserved original key types.
-    pub fn set_typed(elements: HashSet<String>, original_keys: HashMap<String, Value>) -> Self {
+    pub fn set_typed(elements: HashSet<String>, original_keys: ValueMap) -> Self {
         Value::Set(
             crate::gc::Gc::new(SetData::with_original_keys(elements, original_keys)),
             false,
         )
     }
     /// Create a SetHash with preserved original key types.
-    pub fn set_hash_typed(
-        elements: HashSet<String>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn set_hash_typed(elements: HashSet<String>, original_keys: ValueMap) -> Self {
         Value::Set(
             crate::gc::Gc::new(SetData::with_original_keys(elements, original_keys)),
             true,
@@ -406,7 +403,7 @@ impl Value {
         Value::Bag(crate::gc::Gc::new(BagData::new(m)), true)
     }
     /// Create a Bag with preserved original key types.
-    pub fn bag_typed(counts: HashMap<String, i64>, original_keys: HashMap<String, Value>) -> Self {
+    pub fn bag_typed(counts: HashMap<String, i64>, original_keys: ValueMap) -> Self {
         Value::Bag(
             crate::gc::Gc::new(BagData::with_original_keys(
                 Self::bag_counts_from_i64(counts),
@@ -416,20 +413,14 @@ impl Value {
         )
     }
     /// Create a Bag with preserved original key types from a BigInt count map.
-    pub fn bag_typed_big(
-        counts: HashMap<String, NumBigInt>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn bag_typed_big(counts: HashMap<String, NumBigInt>, original_keys: ValueMap) -> Self {
         Value::Bag(
             crate::gc::Gc::new(BagData::with_original_keys(counts, original_keys)),
             false,
         )
     }
     /// Create a BagHash with preserved original key types.
-    pub fn bag_hash_typed(
-        counts: HashMap<String, i64>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn bag_hash_typed(counts: HashMap<String, i64>, original_keys: ValueMap) -> Self {
         Value::Bag(
             crate::gc::Gc::new(BagData::with_original_keys(
                 Self::bag_counts_from_i64(counts),
@@ -439,10 +430,7 @@ impl Value {
         )
     }
     /// Create a BagHash with preserved original key types from a BigInt count map.
-    pub fn bag_hash_typed_big(
-        counts: HashMap<String, NumBigInt>,
-        original_keys: HashMap<String, Value>,
-    ) -> Self {
+    pub fn bag_hash_typed_big(counts: HashMap<String, NumBigInt>, original_keys: ValueMap) -> Self {
         Value::Bag(
             crate::gc::Gc::new(BagData::with_original_keys(counts, original_keys)),
             true,
@@ -458,7 +446,7 @@ impl Value {
     }
     pub fn mix_with_original_keys(
         mut weights: HashMap<String, f64>,
-        original_keys: HashMap<String, Value>,
+        original_keys: ValueMap,
     ) -> Self {
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
@@ -468,7 +456,7 @@ impl Value {
     }
     pub fn mix_hash_with_original_keys(
         mut weights: HashMap<String, f64>,
-        original_keys: HashMap<String, Value>,
+        original_keys: ValueMap,
     ) -> Self {
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
@@ -512,7 +500,7 @@ impl Value {
             is_raw: false,
             env,
             assumed_positional: Vec::new(),
-            assumed_named: HashMap::new(),
+            assumed_named: ValueMap::default(),
             id: next_instance_id(),
             empty_sig: false,
             is_bare_block: false,
@@ -685,7 +673,7 @@ impl Value {
 
     /// Build a fresh instance. `attributes` is an [`AttrMap`] (the `Symbol`-keyed
     /// storage) or anything convertible into one — notably a
-    /// `HashMap<String, Value>`, which the many cold construction sites (typed
+    /// `ValueMap`, which the many cold construction sites (typed
     /// exceptions, native-type constructors) still build; those keys are interned
     /// here, once, at construction.
     pub(crate) fn make_instance(class_name: Symbol, attributes: impl Into<AttrMap>) -> Self {
@@ -705,7 +693,7 @@ impl Value {
     /// error construction (parser/compiler) where the full sorrow/panic model is
     /// modelled with real exception objects.
     pub(crate) fn make_exception(class_name: &str, attrs: &[(&str, Value)]) -> Self {
-        let mut map: HashMap<String, Value> = HashMap::new();
+        let mut map: ValueMap = ValueMap::default();
         for (k, v) in attrs {
             map.insert((*k).to_string(), v.clone());
         }
@@ -723,7 +711,7 @@ impl Value {
         sorrows: Vec<Value>,
         worries: Vec<Value>,
     ) -> Self {
-        let mut map: HashMap<String, Value> = HashMap::new();
+        let mut map: ValueMap = ValueMap::default();
         map.insert("message".to_string(), Value::str(message));
         map.insert("sorrows".to_string(), Value::array(sorrows));
         map.insert("worries".to_string(), Value::array(worries));
@@ -888,7 +876,7 @@ impl Value {
             updates.push(("list", Value::array(list)));
         }
         if !named.is_empty() {
-            let named_vals: HashMap<String, Value> = named
+            let named_vals: ValueMap = named
                 .iter()
                 .map(|(k, texts)| {
                     let vals: Vec<Value> = texts

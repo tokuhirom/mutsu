@@ -15,7 +15,7 @@ impl Interpreter {
             .into_iter()
             .next()
         {
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("placeholder".to_string(), Value::str(ph.clone()));
             attrs.insert(
                 "message".to_string(),
@@ -59,7 +59,7 @@ impl Interpreter {
                 self.find_undeclared_var_in_stmt(stmt, &declared)
             {
                 let symbol = format!("{}{}", sigil, var_name);
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("name".to_string(), Value::str(symbol.clone()));
                 attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
                 // `post` is the source text following the eject point. For a bare
@@ -121,7 +121,7 @@ impl Interpreter {
                 "$"
             };
             let symbol = format!("{}{}", sigil, name);
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("name".to_string(), Value::str(symbol));
             return Err(RuntimeError::typed(
                 "X::Syntax::Variable::Initializer",

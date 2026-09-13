@@ -897,7 +897,7 @@ impl Interpreter {
             );
             return Err(RuntimeError::typed(
                 "X::Coerce::Impossible",
-                std::collections::HashMap::from([
+                ValueMap::from_iter([
                     (
                         "target-type".to_string(),
                         Value::str(display_name.to_string()),
@@ -959,7 +959,7 @@ impl Interpreter {
                 );
                 return Err(RuntimeError::typed(
                     "X::Coerce::Impossible",
-                    std::collections::HashMap::from([
+                    ValueMap::from_iter([
                         ("target-type".to_string(), Value::str(name.to_string())),
                         ("from-type".to_string(), Value::str(source_type)),
                         ("message".to_string(), Value::str(msg)),

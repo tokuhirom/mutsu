@@ -22,7 +22,7 @@ impl Interpreter {
             ValueView::Hash(hash) => Value::hash(
                 hash.iter()
                     .map(|(key, value)| (key.clone(), Self::detached_lvalue_value(value)))
-                    .collect::<std::collections::HashMap<_, _>>(),
+                    .collect::<ValueMap>(),
             ),
             ValueView::Array(array, kind) => Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(
@@ -538,7 +538,7 @@ impl Interpreter {
                         let which = crate::runtime::utils::value_which_key(&index);
                         new_hash
                             .original_keys
-                            .get_or_insert_with(std::collections::HashMap::new)
+                            .get_or_insert_with(ValueMap::default)
                             .insert(which.clone(), index.clone());
                         Value::hash_insert_through(
                             &mut new_hash.map,

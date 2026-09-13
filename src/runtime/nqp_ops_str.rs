@@ -141,7 +141,7 @@ impl Interpreter {
                     ValueView::Hash(map) => {
                         let copied: Vec<(String, Value)> =
                             map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                        let mut fresh = std::collections::HashMap::new();
+                        let mut fresh = ValueMap::default();
                         for (k, v) in copied {
                             fresh.insert(k, v);
                         }

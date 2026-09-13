@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Dispatch "new", "bless", and related constructor methods.
@@ -164,8 +165,8 @@ impl Interpreter {
                 // exact rational arithmetic (`0.1 + 0.02` → `0.12`, not the lossy
                 // f64 `0.12000000000000001`); lower to f64 only at the boundary.
                 use crate::builtins::quanthash_coerce::mix_pair_weight_value;
-                let mut weights: HashMap<String, Value> = HashMap::new();
-                let mut originals: HashMap<String, Value> = HashMap::new();
+                let mut weights: ValueMap = ValueMap::default();
+                let mut originals: ValueMap = ValueMap::default();
                 for item in &items {
                     let (key, weight) = match item.view() {
                         ValueView::Pair(k, v) => (
@@ -211,7 +212,7 @@ impl Interpreter {
             }
             "Bag" | "BagHash" => {
                 let mut counts: HashMap<String, i64> = HashMap::new();
-                let mut originals: HashMap<String, Value> = HashMap::new();
+                let mut originals: ValueMap = ValueMap::default();
                 for item in &items {
                     let (key, count) = match item.view() {
                         ValueView::Pair(k, v) => {
@@ -258,7 +259,7 @@ impl Interpreter {
             }
             "Set" | "SetHash" => {
                 let mut elems = std::collections::HashSet::new();
-                let mut originals: HashMap<String, Value> = HashMap::new();
+                let mut originals: ValueMap = ValueMap::default();
                 for item in &items {
                     match item.view() {
                         ValueView::Pair(k, v) => {
@@ -436,7 +437,7 @@ impl Interpreter {
                     arr
                 } else {
                     // A `%`-sigil attribute with no default is an empty Hash.
-                    Value::hash(HashMap::new())
+                    Value::hash(ValueMap::default())
                 }
             } else {
                 // Native types have zero/empty defaults instead of Nil.
@@ -817,7 +818,7 @@ impl Interpreter {
                 c.how.clone(),
                 c.repr.clone(),
                 c.name,
-                std::sync::Arc::new(HashMap::new()),
+                std::sync::Arc::new(ValueMap::default()),
                 crate::value::next_instance_id(),
             ))),
             ValueView::Package(class_name) => {

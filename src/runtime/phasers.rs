@@ -1,6 +1,6 @@
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
 use crate::value::Value;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static PHASER_TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -909,7 +909,9 @@ fn reorder_at_level(
             // Assign moments later).
             let hoisted_default = match name.as_bytes().first() {
                 Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
-                Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(HashMap::new()))),
+                Some(b'%') => {
+                    Expr::Literal(Value::hash_with_data(Value::hash_arc(ValueMap::default())))
+                }
                 _ => Expr::Literal(Value::NIL),
             };
             var_decls.push(Stmt::VarDecl {

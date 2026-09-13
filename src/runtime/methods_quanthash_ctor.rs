@@ -16,6 +16,7 @@ use crate::runtime::utils::{
 };
 use crate::runtime::{ContainerTypeInfo, Interpreter};
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
@@ -190,7 +191,7 @@ impl Interpreter {
                 let items = Self::quanthash_flatten_items(&args);
                 let items = self.apply_quanthash_element_param(&type_args, items, true)?;
                 let mut elems = HashSet::new();
-                let mut original_keys: HashMap<String, Value> = HashMap::new();
+                let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
                     quanthash_insert_set(&mut elems, &mut original_keys, item);
                 }
@@ -248,7 +249,7 @@ impl Interpreter {
                     }
                 };
                 if args.iter().any(is_lazy_arg) {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert(
                         "action".to_string(),
                         Value::str(".new-from-pairs".to_string()),
@@ -260,7 +261,7 @@ impl Interpreter {
                 let items = Self::quanthash_flatten_items(&args);
                 let items = self.apply_quanthash_element_param(&type_args, items, false)?;
                 let mut counts: HashMap<String, i64> = HashMap::new();
-                let mut original_keys: HashMap<String, Value> = HashMap::new();
+                let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
                     let (key, elem) = quanthash_elem_entry(item);
                     record_quanthash_original(&mut original_keys, &key, &elem);
@@ -305,7 +306,7 @@ impl Interpreter {
                 let items = Self::quanthash_flatten_items(&args);
                 let items = self.apply_quanthash_element_param(&type_args, items, false)?;
                 let mut weights: HashMap<String, f64> = HashMap::new();
-                let mut original_keys: HashMap<String, Value> = HashMap::new();
+                let mut original_keys: ValueMap = ValueMap::default();
                 for item in &items {
                     let (key, elem) = quanthash_elem_entry(item);
                     record_quanthash_original(&mut original_keys, &key, &elem);

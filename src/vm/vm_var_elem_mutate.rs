@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// `@a[i].push(...)` / `%h<k>.pop` invocant load (container identity
@@ -84,7 +85,7 @@ impl Interpreter {
             // (`my $x; $x<k>.push(1)`), so the held container value can be
             // stale.
             let fresh = if viv_hash {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             } else {
                 Value::real_array(Vec::new())
             };

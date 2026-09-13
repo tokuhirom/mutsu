@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -83,8 +84,8 @@ impl Interpreter {
     /// `.^private_method_table`, so neither appears here; public attribute
     /// accessors and role-composed methods do, and a `multi` contributes a
     /// single dispatcher entry.
-    pub(super) fn class_method_table(&self, class_name: &str) -> HashMap<String, Value> {
-        let mut table = HashMap::new();
+    pub(super) fn class_method_table(&self, class_name: &str) -> ValueMap {
+        let mut table = ValueMap::default();
         // RakuAST model classes are native type objects and therefore have no
         // ClassDef entry. Keep method_table in lockstep with
         // `.^methods(:local)` by deriving both from the same model metadata.

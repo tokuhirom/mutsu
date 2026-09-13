@@ -2,6 +2,7 @@
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn encode_bound_index(idx: &Value) -> String {
@@ -40,7 +41,7 @@ impl Interpreter {
         {
             return;
         }
-        let mut map = std::collections::HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(encoded, Value::TRUE);
         self.env_mut().insert_sym_noting(key, Value::hash(map));
     }
@@ -62,7 +63,7 @@ impl Interpreter {
         {
             return;
         }
-        let mut map = std::collections::HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(encoded, Value::TRUE);
         self.env_mut().insert_sym_noting(key, Value::hash(map));
         self.array_share_active = true;
@@ -111,7 +112,7 @@ impl Interpreter {
         {
             return;
         }
-        let mut map = std::collections::HashMap::new();
+        let mut map = ValueMap::default();
         map.insert(encoded, Value::TRUE);
         self.env_mut().insert_sym_noting(key, Value::hash(map));
     }
@@ -227,7 +228,7 @@ impl Interpreter {
         {
             return;
         }
-        let m = std::collections::HashMap::new();
+        let m = ValueMap::default();
         self.env_mut().insert_sym_noting(key, Value::hash(m));
         if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
@@ -262,7 +263,7 @@ impl Interpreter {
         )
     }
 
-    fn mark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
+    fn mark_index_entries(map: &mut ValueMap, idx: &Value) {
         match idx.view() {
             ValueView::Array(items, ..) => {
                 for item in items.iter() {
@@ -392,7 +393,7 @@ impl Interpreter {
         }
     }
 
-    fn unmark_index_entries(map: &mut std::collections::HashMap<String, Value>, idx: &Value) {
+    fn unmark_index_entries(map: &mut ValueMap, idx: &Value) {
         match idx.view() {
             ValueView::Array(items, ..) => {
                 for item in items.iter() {

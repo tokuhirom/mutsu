@@ -233,7 +233,7 @@ impl Interpreter {
                 Ok(Value::slip_arc(std::sync::Arc::new(resolved?)))
             }
             ValueView::Hash(map) => {
-                let mut resolved = std::collections::HashMap::new();
+                let mut resolved = ValueMap::default();
                 for (k, v) in map.iter() {
                     resolved.insert(k.clone(), self.resolve_proxies_in_value(v)?);
                 }

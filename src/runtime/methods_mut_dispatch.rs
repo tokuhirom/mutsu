@@ -2,6 +2,7 @@ use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::value_buf::{
     buf_elem_width, buf_raw_bytes_in, buf_raw_bytes_or_empty, set_buf_raw_bytes,
@@ -1624,7 +1625,7 @@ impl Interpreter {
                                         };
                                         if is_object_hash {
                                             hash.original_keys
-                                                .get_or_insert_with(std::collections::HashMap::new)
+                                                .get_or_insert_with(ValueMap::default)
                                                 .insert(wk.clone(), k);
                                         }
                                         Self::hash_push_insert(hash, wk, v, is_push);
@@ -1635,8 +1636,8 @@ impl Interpreter {
                         }
                         // No existing hash in the variable: build a fresh typed
                         // hash from the pushed pairs (preserving the constraints).
-                        let mut map = std::collections::HashMap::new();
-                        let mut orig = std::collections::HashMap::new();
+                        let mut map = ValueMap::default();
+                        let mut orig = ValueMap::default();
                         for (k, v) in kv_pairs {
                             let wk = if is_object_hash {
                                 crate::runtime::utils::value_which_key(&k)
@@ -1680,9 +1681,9 @@ impl Interpreter {
                     }
 
                     // Fallback: create from target value
-                    let mut hash: std::collections::HashMap<String, Value> = match target.view() {
+                    let mut hash: ValueMap = match target.view() {
                         ValueView::Hash(h) => h.map.clone(),
-                        _ => std::collections::HashMap::new(),
+                        _ => ValueMap::default(),
                     };
                     let pairs = Self::hash_push_collect_pairs(args);
                     for (k, v) in pairs {

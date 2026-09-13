@@ -147,7 +147,12 @@ mod tests {
         // field, with no padding growth. Pinned so a later field cannot slip in
         // unmeasured on the two hottest container types.
         assert_eq!(size_of::<crate::value::ArrayData>(), 208);
-        assert_eq!(size_of::<crate::value::HashData>(), 208);
+        // `HashData` then went 208 -> 192 on 2026-09-13 (ADR-0103): its two maps
+        // (`map` and `original_keys`) carry their `BuildHasher` inline, and
+        // `foldhash::fast::RandomState` is one `u64` where std's `RandomState`
+        // is two — 8 bytes back per map. A free shrink of the hottest container
+        // type, pinned here so it cannot silently regress.
+        assert_eq!(size_of::<crate::value::HashData>(), 192);
     }
 
     #[test]

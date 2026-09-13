@@ -176,7 +176,7 @@ impl Interpreter {
     }
 
     fn build_caller_frame(&self, frame: &RoutineFrame, callsite_line: Option<i64>) -> Value {
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         let pkg: &str = if frame.package.is_empty() || frame.package == "GLOBAL" {
             "Main"
         } else {

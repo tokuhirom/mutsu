@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::types::unwrap_varref_value;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Switch `current_package` to a compiled routine's declaring package for the
@@ -659,8 +660,8 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
         message: String,
-    ) -> std::collections::HashMap<String, Value> {
-        let mut attrs = std::collections::HashMap::new();
+    ) -> ValueMap {
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));
         attrs.insert("objname".to_string(), Value::str(func_name.to_string()));
         attrs.insert(

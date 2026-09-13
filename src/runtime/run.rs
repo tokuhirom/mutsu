@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::Stmt;
+use crate::value::ValueMap;
 
 /// Source for builtin parametric roles that are not yet representable as native
 /// `RoleDef`s. These are parsed once and prepended to programs that reference
@@ -436,7 +437,7 @@ impl Interpreter {
         source: &str,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let mut declarants = std::collections::HashMap::new();
+        let mut declarants = ValueMap::default();
         Self::collect_pod_declarants(stmts, "GLOBAL", &mut declarants);
         self.collect_doc_comments(source);
         self.collect_pod_blocks(source)?;
@@ -444,11 +445,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn collect_pod_declarants(
-        stmts: &[Stmt],
-        package: &str,
-        out: &mut std::collections::HashMap<String, Value>,
-    ) {
+    fn collect_pod_declarants(stmts: &[Stmt], package: &str, out: &mut ValueMap) {
         for stmt in stmts {
             match stmt {
                 Stmt::SubDecl {

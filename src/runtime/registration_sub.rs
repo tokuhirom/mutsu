@@ -316,7 +316,7 @@ impl Interpreter {
                 if !inner.is_empty()
                     && !crate::runtime::native_types::is_native_array_element_type(inner)
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert(
                         "message".to_string(),
                         Value::str(format!(
@@ -339,7 +339,7 @@ impl Interpreter {
                 && !base.is_empty()
                 && (declared_packages.contains(base) || declared_classes.contains(base))
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("{} cannot be parameterized", base)),
@@ -389,7 +389,7 @@ impl Interpreter {
                     "Package '{}' is insufficiently type-like to qualify a parameter.  Did you mean 'class'?",
                     tc
                 );
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("type".to_string(), Value::str(tc.to_string()));
                 attrs.insert("message".to_string(), Value::str(msg));
                 return Err(RuntimeError::typed("X::Parameter::BadType", attrs));
@@ -405,7 +405,7 @@ impl Interpreter {
                     suggestions.push(s);
                 }
             }
-            let mut attrs = std::collections::HashMap::new();
+            let mut attrs = ValueMap::default();
             attrs.insert("typename".to_string(), Value::str(tc.to_string()));
             attrs.insert(
                 "suggestions".to_string(),
@@ -507,7 +507,7 @@ impl Interpreter {
                 quoted.join(", ")
             ));
         }
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));
         attrs.insert(
             "suggestions".to_string(),
@@ -1025,7 +1025,7 @@ impl Interpreter {
             let is_hoisted =
                 is_lexical_hoist || custom_traits.iter().any(|(t, _)| t == "__hoisted");
             if is_our_scoped && !is_hoisted && !self.registry().proto_subs_contains(&single_key) {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
                     "message".to_string(),
@@ -2267,7 +2267,7 @@ impl Interpreter {
         // its values above; this return value is only consumed when the declaration is
         // used in expression position (`my $e = enum Foo <a b c>`) — a bare statement
         // pushes it as a harmless sink (see `exec_register_enum_op`).
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         for (key, val) in &enum_variants {
             map.insert(key.clone(), val.to_value());
         }

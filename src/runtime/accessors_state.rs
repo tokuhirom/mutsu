@@ -510,7 +510,7 @@ impl Interpreter {
     /// [`Self::positional_base_storage`] picks an immutable `List` over a
     /// mutable `Array` for an `is List`-but-not-`is Array` subclass.
     pub(crate) fn associative_base_storage(&mut self, class_key: &str, pairs: Vec<Value>) -> Value {
-        let mut map = HashMap::new();
+        let mut map = ValueMap::default();
         for item in pairs {
             match item.view() {
                 ValueView::Pair(k, v) => {

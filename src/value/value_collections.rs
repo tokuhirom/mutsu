@@ -48,7 +48,7 @@ impl ArrayKind {
 }
 
 impl HashData {
-    pub fn new(map: HashMap<String, Value>) -> Self {
+    pub fn new(map: ValueMap) -> Self {
         HashData {
             map,
             which_id: crate::value::which_id::WhichId::default(),
@@ -141,20 +141,20 @@ impl HashData {
 }
 
 impl std::ops::Deref for HashData {
-    type Target = HashMap<String, Value>;
-    fn deref(&self) -> &HashMap<String, Value> {
+    type Target = ValueMap;
+    fn deref(&self) -> &ValueMap {
         &self.map
     }
 }
 
 impl std::ops::DerefMut for HashData {
-    fn deref_mut(&mut self) -> &mut HashMap<String, Value> {
+    fn deref_mut(&mut self) -> &mut ValueMap {
         &mut self.map
     }
 }
 
-impl From<HashMap<String, Value>> for HashData {
-    fn from(map: HashMap<String, Value>) -> Self {
+impl From<ValueMap> for HashData {
+    fn from(map: ValueMap) -> Self {
         HashData::new(map)
     }
 }

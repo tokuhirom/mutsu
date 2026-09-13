@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use crate::value::ValueView;
 use crate::value::signature::{SigInfo, SigParam};
 use std::collections::HashMap;
@@ -31,7 +32,7 @@ impl Interpreter {
                     .cloned()
             })?;
         let candidate_param_names = candidate.type_params;
-        let param_map: HashMap<String, Value> = candidate_param_names
+        let param_map: ValueMap = candidate_param_names
             .into_iter()
             .zip(role_args.iter().cloned())
             .collect();
@@ -75,7 +76,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn signature_capture_like(
         value: &Value,
-    ) -> Option<(Vec<Value>, HashMap<String, Value>)> {
+    ) -> Option<(Vec<Value>, ValueMap)> {
         // A variable argument arrives wrapped in a `VarRef` (see `Value::varref`);
         // the signature is matched against the *value*, not the wrapper.
         let value = value.unwrap_varref();
@@ -116,7 +117,7 @@ impl Interpreter {
                     .collect(),
             )),
             ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 named.insert("numerator".to_string(), Value::int(n));
                 named.insert("denominator".to_string(), Value::int(d));
                 Some((Vec::new(), named))
@@ -129,7 +130,7 @@ impl Interpreter {
             // named flavour.
             _ if value.as_list_items().is_some() => {
                 let mut positional = Vec::new();
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 for item in value.as_list_items().unwrap().iter() {
                     match item.view() {
                         ValueView::Pair(k, v) => {
@@ -144,12 +145,12 @@ impl Interpreter {
                 Some((positional, named))
             }
             ValueView::Pair(k, v) => {
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 named.insert(k.clone(), v.clone());
                 Some((Vec::new(), named))
             }
             ValueView::ValuePair(k, v) => {
-                let mut named = HashMap::new();
+                let mut named = ValueMap::default();
                 named.insert(k.to_string_value(), v.clone());
                 Some((Vec::new(), named))
             }
@@ -300,7 +301,7 @@ impl Interpreter {
         &mut self,
         left: &Value,
         positional: &[Value],
-        named: &HashMap<String, Value>,
+        named: &ValueMap,
         signature: &SigInfo,
     ) -> bool {
         let mut pos_idx = 0usize;

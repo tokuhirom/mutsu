@@ -1,6 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     pub(crate) fn exec_assign_expr_local_op_inner(
@@ -460,7 +460,7 @@ impl Interpreter {
         if name.strip_suffix("::") == Some("OUTER") {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
-            let mut entries: HashMap<String, Value> = HashMap::new();
+            let mut entries: ValueMap = ValueMap::default();
             for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
                 if self.should_hide_from_my_global_stash(&key_str) {
@@ -535,7 +535,7 @@ impl Interpreter {
         }
 
         // MY:: pseudo-stash: collect all variable names from current scope.
-        let mut entries: HashMap<String, Value> = HashMap::new();
+        let mut entries: ValueMap = ValueMap::default();
         for (i, var_name) in code.locals.iter().enumerate() {
             let val = self.locals[i].clone();
             let key = Self::add_sigil_prefix(var_name);
@@ -559,7 +559,7 @@ impl Interpreter {
     /// non-negative slot is live in this frame, while an outer-frame entry is
     /// resolved through the same captured lexical path as `GetOuterVar`.
     pub(super) fn exec_get_lexical_stash_op(&mut self, code: &CompiledCode, spec_idx: u32) {
-        let mut entries: HashMap<String, Value> = HashMap::new();
+        let mut entries: ValueMap = ValueMap::default();
         let Some(ValueView::Array(spec, _)) =
             code.constants.get(spec_idx as usize).map(Value::view)
         else {
@@ -633,7 +633,7 @@ impl Interpreter {
     /// paths — so the type travels as the hash's declared type, exactly the way
     /// a `Map` does. Without this the spellings answered a bare `Hash`, with no
     /// symbol-table type at all.
-    fn pseudo_stash_hash(&mut self, entries: HashMap<String, Value>) -> Value {
+    fn pseudo_stash_hash(&mut self, entries: ValueMap) -> Value {
         let hash = Value::hash_with_data(Value::hash_arc(entries));
         self.tag_container_metadata(
             hash,
@@ -649,7 +649,7 @@ impl Interpreter {
     /// Used by .WHO dispatch on pseudo-package Package values.
     pub(super) fn build_pseudo_stash(&mut self, code: &CompiledCode, name: &str) -> Value {
         if name == "OUTER" {
-            let mut entries: HashMap<String, Value> = HashMap::new();
+            let mut entries: ValueMap = ValueMap::default();
             for (key, val) in self.env().iter() {
                 let key_str = key.resolve();
                 if self.should_hide_from_my_global_stash(&key_str) {
@@ -667,7 +667,7 @@ impl Interpreter {
             return loan_env!(self, package_stash_value(name));
         }
         // MY / LEXICAL: collect locals + env
-        let mut entries: HashMap<String, Value> = HashMap::new();
+        let mut entries: ValueMap = ValueMap::default();
         for (i, var_name) in code.locals.iter().enumerate() {
             let val = self.locals[i].clone();
             let key = Self::add_sigil_prefix(var_name);
@@ -685,7 +685,7 @@ impl Interpreter {
         self.pseudo_stash_hash(entries)
     }
 
-    fn add_visible_routines_to_pseudo_stash(&self, entries: &mut HashMap<String, Value>) {
+    fn add_visible_routines_to_pseudo_stash(&self, entries: &mut ValueMap) {
         let packages = self.bare_name_packages();
         // The pad this stash represents belongs to ONE compunit, and the
         // registry is shared across all of them. A routine declared in another
@@ -816,7 +816,7 @@ impl Interpreter {
     }
 
     pub(crate) fn hyperslice_recurse(
-        hash: &std::collections::HashMap<String, Value>,
+        hash: &ValueMap,
         path: &[String],
         adverb: crate::ast::HyperSliceAdverb,
         result: &mut Vec<Value>,

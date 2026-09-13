@@ -1,6 +1,7 @@
 //! `RuntimeError` constructors for numeric, range, and assignment errors.
 use super::{RuntimeError, Value};
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 use std::collections::HashMap;
 
 impl RuntimeError {
@@ -331,7 +332,7 @@ impl RuntimeError {
 
     /// Create a typed exception error with the given class name and attributes.
     /// This is the general-purpose constructor for structured exceptions.
-    pub(crate) fn typed(class_name: &str, attrs: HashMap<String, Value>) -> Self {
+    pub(crate) fn typed(class_name: &str, attrs: ValueMap) -> Self {
         let msg = attrs
             .get("message")
             .map(|v| v.to_string_value())
@@ -375,7 +376,7 @@ impl RuntimeError {
         } else {
             "Cannot modify an immutable value".to_string()
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         if let Some(v) = value {
             attrs.insert("value".to_string(), Value::str(v.to_string()));
@@ -405,7 +406,7 @@ impl RuntimeError {
                 crate::runtime::utils::gist_value(&value)
             )
         };
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("value".to_string(), value);
@@ -419,7 +420,7 @@ impl RuntimeError {
             "Can only supply an initialization value for a role if it has a single public attribute, but this is not the case for '{}'",
             role_name
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("role".to_string(), Value::str(role_name.to_string()));
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Role::Initialization", attrs)
@@ -447,7 +448,7 @@ impl RuntimeError {
         let msg = format!(
             "Could not instantiate role '{role_name}' because it died with {inner_type}; exception details:\n\n{details}\n"
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert(
             "role".to_string(),
             Value::package(Symbol::intern(role_name)),
@@ -462,7 +463,7 @@ impl RuntimeError {
     /// X::Assignment::RO with typename - Cannot modify an immutable value of a given type
     pub(crate) fn assignment_ro_typename(typename: &str, repr: &str) -> Self {
         let msg = format!("Cannot modify an immutable {} ({})", typename, repr);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Assignment::RO", attrs)
@@ -474,7 +475,7 @@ impl RuntimeError {
     /// does not reuse `assignment_ro_typename`'s "TYPE (VALUE)" shape.
     pub(crate) fn assignment_ro_type_object(name: &str) -> Self {
         let msg = format!("Cannot modify an immutable '{}' type object", name);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("typename".to_string(), Value::str(name.to_string()));
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Assignment::RO", attrs)
@@ -485,7 +486,7 @@ impl RuntimeError {
     /// Nil value"), distinct from both the typed-value and type-object forms.
     pub(crate) fn assignment_ro_nil() -> Self {
         let msg = "Cannot modify an immutable Nil value".to_string();
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Assignment::RO", attrs)
     }
@@ -494,7 +495,7 @@ impl RuntimeError {
     #[allow(dead_code)]
     pub(crate) fn str_numeric(source: &str, reason: &str) -> Self {
         let msg = format!("Cannot convert string '{}' to number: {}", source, reason);
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("source".to_string(), Value::str(source.to_string()));
         attrs.insert("reason".to_string(), Value::str(reason.to_string()));
         attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
@@ -510,7 +511,7 @@ impl RuntimeError {
             got.to_string_value(),
             range
         );
-        let mut attrs = HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("got".to_string(), got);
         attrs.insert("range".to_string(), Value::str(range.to_string()));

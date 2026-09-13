@@ -22,7 +22,7 @@ pub(crate) mod raku_repr;
 pub(crate) mod temporal;
 pub(crate) mod temporal_dispatch;
 
-use std::collections::HashMap;
+use crate::value::ValueMap;
 
 /// Create an X::Multi::NoMatch error for a method called on a type object.
 fn make_no_match_error(method_name: &str) -> RuntimeError {
@@ -878,12 +878,12 @@ pub(crate) fn native_method_0arg(
 
 fn dispatch_capture(
     positional: &[Value],
-    named: &std::collections::HashMap<String, Value>,
+    named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     match method {
         "hash" | "Hash" => {
-            let mut map = std::collections::HashMap::new();
+            let mut map = ValueMap::default();
             for (k, v) in named {
                 map.insert(k.clone(), v.clone());
             }
@@ -1458,7 +1458,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         match method {
             "meta" => {
                 return Some(Ok(attributes.as_map().get("$!meta").cloned().unwrap_or(
-                    Value::hash_with_data(Value::hash_arc(std::collections::HashMap::new())),
+                    Value::hash_with_data(Value::hash_arc(ValueMap::default())),
                 )));
             }
             "Str" | "gist" => {
@@ -1930,8 +1930,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         };
         match method {
             "hash" | "Hash" | "Map" => {
-                let map: HashMap<String, Value> =
-                    keys.iter().map(|k| (k.to_string(), part(k))).collect();
+                let map: ValueMap = keys.iter().map(|k| (k.to_string(), part(k))).collect();
                 return Some(Ok(Value::hash(map)));
             }
             "list" | "List" | "Array" => {
@@ -2010,7 +2009,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "hash" | "Hash" => {
                 return Some(Ok(target
                     .match_named()
-                    .unwrap_or_else(|| Value::hash(HashMap::new()))));
+                    .unwrap_or_else(|| Value::hash(ValueMap::default()))));
             }
             "keys" => {
                 let mut keys = Vec::new();

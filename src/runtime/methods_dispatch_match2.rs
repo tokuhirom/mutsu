@@ -141,7 +141,7 @@ impl Interpreter {
                 // `my $d` (PLAN 8.5 step 3 seeds Any) — is the empty hash,
                 // exactly like the Nil arm below.
                 if method == "Hash" && target.is_any_type_object() {
-                    return Some(Ok(Value::hash(std::collections::HashMap::new())));
+                    return Some(Ok(Value::hash(ValueMap::default())));
                 }
                 if matches!(target.view(), ValueView::Package(_)) {
                     return Some(Ok(Value::package(Symbol::intern(method))));
@@ -157,7 +157,7 @@ impl Interpreter {
                 // empty hash, like the `.hash` method. (`.Map` still throws on
                 // an undefined invocant, matching raku, so this is Hash-only.)
                 if target.is_nil() {
-                    return Some(Ok(Value::hash(std::collections::HashMap::new())));
+                    return Some(Ok(Value::hash(ValueMap::default())));
                 }
                 Some(crate::builtins::map_hash_coerce::to_hash(target, true))
             }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 /// The elements a hyper walks over.
 ///
@@ -94,7 +95,7 @@ fn hyper_weight_as_int(v: &Value) -> i64 {
 /// Rebuild the QuantHash result of a hyper from the original elements and the
 /// per-weight method results. See [`QuantHashHyper`] for the coercion rules.
 fn rebuild_quanthash_hyper(kind: QuantHashHyper, elems: &[Value], results: &[Value]) -> Value {
-    let mut originals = std::collections::HashMap::new();
+    let mut originals = ValueMap::default();
     match kind {
         QuantHashHyper::Bag { mutable } => {
             let mut counts = std::collections::HashMap::new();
@@ -1046,7 +1047,7 @@ impl Interpreter {
         if let ValueView::Hash(existing) = target.view()
             && let Some(keys) = &hash_keys
         {
-            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            let mut map = crate::value::user_key_map::with_capacity(keys.len());
             for (key, item) in keys.iter().zip(items.iter()) {
                 map.insert(key.clone(), item.clone());
             }
@@ -1078,7 +1079,7 @@ impl Interpreter {
         // Hash target: rebuild a Hash pairing the original keys with the
         // per-value results.
         if let Some(keys) = hash_keys {
-            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            let mut map = crate::value::user_key_map::with_capacity(keys.len());
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }
@@ -1186,8 +1187,8 @@ impl Interpreter {
             }
             ValueView::Hash(map) => {
                 let keys: Vec<String> = map.keys().cloned().collect();
-                let mut res_map = std::collections::HashMap::with_capacity(keys.len());
-                let mut mut_map = std::collections::HashMap::with_capacity(keys.len());
+                let mut res_map = crate::value::user_key_map::with_capacity(keys.len());
+                let mut mut_map = crate::value::user_key_map::with_capacity(keys.len());
                 for k in keys {
                     let v = map.get(&k).cloned().unwrap_or(Value::NIL);
                     let (r, m) =
@@ -1273,7 +1274,7 @@ impl Interpreter {
             }
             ValueView::Hash(map) => {
                 let keys: Vec<String> = map.keys().cloned().collect();
-                let mut res_map = std::collections::HashMap::with_capacity(keys.len());
+                let mut res_map = crate::value::user_key_map::with_capacity(keys.len());
                 for k in keys {
                     let v = map.get(&k).cloned().unwrap_or(Value::NIL);
                     let r = self.hyper_sub_apply_recursive(callable, &v, extra_args, modifier)?;
@@ -1548,7 +1549,7 @@ impl Interpreter {
         }
         // A Hash target reassembles into a Hash, pairing each key with its result.
         if let Some(keys) = hash_keys {
-            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            let mut map = crate::value::user_key_map::with_capacity(keys.len());
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }

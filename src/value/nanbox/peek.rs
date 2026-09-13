@@ -251,9 +251,7 @@ impl NanBox {
     /// word is a `RegexCaptured`. A tag probe first, so the (overwhelmingly
     /// common) plain-regex and non-regex cases cost one compare.
     #[inline]
-    pub(in crate::value) fn regex_closure_scope(
-        &self,
-    ) -> Option<&Arc<std::collections::HashMap<String, Value>>> {
+    pub(in crate::value) fn regex_closure_scope(&self) -> Option<&Arc<ValueMap>> {
         let bits = self.0.get();
         if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
             return None;

@@ -601,7 +601,7 @@ impl Interpreter {
             let Some(base) = attrs.get(&attr_name).cloned() else {
                 continue;
             };
-            let mut mixins = HashMap::new();
+            let mut mixins = ValueMap::default();
             for role in &roles {
                 mixins.insert(MetaNs::Role.owned_key_for_str(role), Value::TRUE);
                 mixins.insert(
@@ -631,7 +631,7 @@ impl Interpreter {
                 crate::value::ValueView::Mixin(inner, existing) => {
                     (inner.as_ref().clone(), (**existing).clone())
                 }
-                _ => (base.clone(), HashMap::new().into()),
+                _ => (base.clone(), ValueMap::default().into()),
             };
             for map in &override_maps {
                 for (k, v) in map {

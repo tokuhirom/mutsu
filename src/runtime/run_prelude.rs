@@ -386,7 +386,7 @@ impl Interpreter {
                 if let Some((directive, _)) = member_name.split_once("::")
                     && !VALID.contains(&directive)
                 {
-                    let mut attrs = std::collections::HashMap::new();
+                    let mut attrs = ValueMap::default();
                     attrs.insert("directive".to_string(), Value::str(directive.to_string()));
                     attrs.insert(
                         "message".to_string(),

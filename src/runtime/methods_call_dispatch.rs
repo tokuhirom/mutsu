@@ -1221,12 +1221,12 @@ impl Interpreter {
                 None => String::new(),
             };
             let _ = self.eval_eval_string(&code_str);
-            let mut unit_hash = std::collections::HashMap::new();
+            let mut unit_hash = ValueMap::default();
             unit_hash.insert(
                 "$?PACKAGE".to_string(),
                 Value::package(crate::symbol::Symbol::intern("GLOBAL")),
             );
-            let mut handle_attrs = std::collections::HashMap::new();
+            let mut handle_attrs = ValueMap::default();
             handle_attrs.insert("unit".to_string(), Value::hash(unit_hash));
             return Ok(Value::make_instance(
                 crate::symbol::Symbol::intern("CompUnit::Handle"),
@@ -3986,7 +3986,7 @@ impl Interpreter {
             if let Some(b) = batch_val
                 && b <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
                 attrs.insert("value".to_string(), Value::int(b));
@@ -3999,7 +3999,7 @@ impl Interpreter {
             if let Some(d) = degree_val
                 && d <= 0
             {
-                let mut attrs = std::collections::HashMap::new();
+                let mut attrs = ValueMap::default();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
                 attrs.insert("value".to_string(), Value::int(d));
@@ -4674,7 +4674,7 @@ impl Interpreter {
                 if public.is_empty() {
                     return None;
                 }
-                let mut named = std::collections::HashMap::new();
+                let mut named = ValueMap::default();
                 for name in public {
                     match self.call_method_with_values(target.clone(), &name, vec![]) {
                         Ok(v) => {
@@ -4695,7 +4695,7 @@ impl Interpreter {
     fn list_to_capture(&mut self, list: &Value) -> Result<Value, RuntimeError> {
         let items = Self::value_to_list(list);
         let mut positional = Vec::new();
-        let mut named = std::collections::HashMap::new();
+        let mut named = ValueMap::default();
         for item in items {
             match item.view() {
                 ValueView::Pair(k, v) => {

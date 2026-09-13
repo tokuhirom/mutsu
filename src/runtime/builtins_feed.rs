@@ -5,7 +5,7 @@ impl Interpreter {
         let value = args.first().cloned().unwrap_or(Value::NIL);
         let list = crate::runtime::value_to_list(&value);
         let list_value = Value::array(list.clone());
-        let mut hash_items = std::collections::HashMap::new();
+        let mut hash_items = ValueMap::default();
         for chunk in list.chunks(2) {
             if let [k, v] = chunk {
                 hash_items.insert(k.to_string_value(), v.clone());
@@ -73,7 +73,7 @@ impl Interpreter {
             .unwrap_or_else(|| Value::array(Vec::new()));
         let appended = self.builtin_feed_append(&[current, source])?;
         let list = crate::runtime::value_to_list(&appended);
-        let mut hash_items = std::collections::HashMap::new();
+        let mut hash_items = ValueMap::default();
         for chunk in list.chunks(2) {
             if let [k, v] = chunk {
                 hash_items.insert(k.to_string_value(), v.clone());

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 
 impl Interpreter {
     fn integral_bigint(value: &Value) -> Option<num_bigint::BigInt> {
@@ -103,12 +104,7 @@ impl Interpreter {
         }
     }
 
-    fn hash_contains(
-        &mut self,
-        hash: &HashMap<String, Value>,
-        needle: &Value,
-        whole: &Value,
-    ) -> bool {
+    fn hash_contains(&mut self, hash: &ValueMap, needle: &Value, whole: &Value) -> bool {
         if let Some(info) = self.container_type_metadata(whole)
             && let Some(key_type) = info.key_type
         {
@@ -261,7 +257,7 @@ impl Interpreter {
 
     pub(crate) fn union_insert_set_elem(
         elems: &mut HashSet<String>,
-        originals: &mut HashMap<String, Value>,
+        originals: &mut ValueMap,
         value: &Value,
     ) {
         use crate::runtime::utils::{
@@ -339,7 +335,7 @@ impl Interpreter {
 
     fn value_to_set_keys(
         value: &Value,
-        originals: &mut HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<HashSet<String>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -411,7 +407,7 @@ impl Interpreter {
 
     fn value_to_bag_counts(
         value: &Value,
-        originals: &mut HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::is_lazy_union_input(value) {
@@ -450,7 +446,7 @@ impl Interpreter {
 
     fn value_to_mix_weights(
         value: &Value,
-        originals: &mut HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<HashMap<String, f64>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::is_lazy_union_input(value) {
@@ -508,7 +504,7 @@ impl Interpreter {
         }
         let result_mutable = runtime::set_result_mutability(&left);
 
-        let mut originals: HashMap<String, Value> = HashMap::new();
+        let mut originals: ValueMap = ValueMap::default();
         let result = match (left.view(), right.view()) {
             (ValueView::Mix(a, _), ValueView::Mix(b, _)) => {
                 crate::runtime::utils::extend_quanthash_originals(&mut originals, &a.original_keys);

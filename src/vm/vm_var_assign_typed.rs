@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
@@ -275,7 +276,7 @@ impl Interpreter {
                 runtime::utils::hash_original_keys_snapshot(&Value::hash_with_data(map.clone()));
             let value_constraint = loan_env!(self, var_type_constraint(var_name));
             let key_constraint = loan_env!(self, var_hash_key_constraint(var_name));
-            let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
+            let mut coerced_map = crate::value::user_key_map::with_capacity(map.len());
             // For an object hash (`my Int %h{Int}`) whose key type is not the
             // default `Str`, record the reconstructed typed key alongside the
             // stringified store key so `.keys`/`.pairs`/`.raku` report the real
@@ -287,8 +288,7 @@ impl Interpreter {
                     let (base, _) = crate::runtime::types::strip_type_smiley(&kt);
                     base != "Str" && base != "Any" && base != "Mu"
                 });
-            let mut obj_original_keys: std::collections::HashMap<String, Value> =
-                std::collections::HashMap::new();
+            let mut obj_original_keys: ValueMap = ValueMap::default();
             for (key, val) in map.iter() {
                 let coerced_key = if let Some(constraint) = &key_constraint {
                     // The hash was built by a key-type-blind path that
@@ -643,7 +643,7 @@ impl Interpreter {
 
     /// Create an X::OutOfRange RuntimeError for negative index assignment
     pub(crate) fn make_out_of_range_error(effective_index: i64) -> RuntimeError {
-        let mut attrs = std::collections::HashMap::new();
+        let mut attrs = ValueMap::default();
         attrs.insert(
             "message".to_string(),
             Value::str_from(&format!(

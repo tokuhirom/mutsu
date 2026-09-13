@@ -4,6 +4,7 @@ use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Call a `whenever`/tap callback with the callback's own supply emitter
@@ -362,7 +363,7 @@ impl Interpreter {
         attributes: &AttrMap,
     ) -> Result<Vec<Value>, RuntimeError> {
         if attributes.contains_key("on_demand_callback") {
-            let attrs_map: HashMap<String, Value> = attributes.into();
+            let attrs_map: ValueMap = attributes.into();
             let supply = Value::make_instance(Symbol::intern("Supply"), attrs_map);
             return self.supply_collect_values(&supply, true);
         }

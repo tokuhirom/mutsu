@@ -4,6 +4,7 @@
 //! and `methods_distribution` for the method dispatch entry points.
 
 use crate::runtime::Interpreter;
+use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -118,7 +119,7 @@ impl Interpreter {
                 .as_nanos(),
             counter
         );
-        let mut installed_provides = HashMap::new();
+        let mut installed_provides = ValueMap::default();
         if let Some(provides) = meta.hash_get_str("provides")
             && let ValueView::Hash(map) = provides.view()
         {
@@ -134,12 +135,12 @@ impl Interpreter {
                 {
                     std::fs::copy(&source_full, &dest).ok();
                 }
-                let mut inner = HashMap::new();
+                let mut inner = ValueMap::default();
                 inner.insert("file".to_string(), Value::str(source_id));
                 installed_provides.insert(k, Value::hash_with_data(Value::hash_arc(inner)));
             }
         }
-        let mut installed_resources = HashMap::new();
+        let mut installed_resources = ValueMap::default();
         if let Some(resources_val) = meta.hash_get_str("resources")
             && let ValueView::Array(arr, _) = resources_val.view()
         {
@@ -169,7 +170,7 @@ impl Interpreter {
                     .insert(format!("resources/{resource_str}"), Value::str(resource_id));
             }
         }
-        let mut installed_bin = HashMap::new();
+        let mut installed_bin = ValueMap::default();
         let source_bin_dir = std::path::Path::new(&dist_prefix).join("bin");
         if source_bin_dir.is_dir()
             && let Ok(entries) = std::fs::read_dir(&source_bin_dir)
@@ -188,7 +189,7 @@ impl Interpreter {
         };
         let mut meta_map = match meta_inner.view() {
             ValueView::Hash(map) => map.map.clone(),
-            _ => HashMap::new(),
+            _ => ValueMap::default(),
         };
         meta_map.insert(
             "provides".to_string(),

@@ -97,7 +97,7 @@ impl Interpreter {
         role_name: &str,
     ) -> Result<Value, RuntimeError> {
         self.ensure_role_punned_to_class(role_name)?;
-        let mut mixins: crate::value::MixinOverrides = HashMap::new().into();
+        let mut mixins: crate::value::MixinOverrides = ValueMap::default().into();
         mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
         // Mirrors `mark_punned_role_instance`'s own role-id lookup so a
         // punned instance's `.WHAT` and `^pun`'s return value key to the

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueMap;
 use num_traits::{One, Signed, Zero};
 
 impl Interpreter {
@@ -23,7 +24,7 @@ impl Interpreter {
 
     fn union_set_keys(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashSet<String>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -87,7 +88,7 @@ impl Interpreter {
 
     fn union_bag_counts(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::union_is_lazy_input(value) {
@@ -122,7 +123,7 @@ impl Interpreter {
 
     fn union_mix_weights(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::union_is_lazy_input(value) {
@@ -157,7 +158,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::new("Exception"));
         }
-        let mut originals = std::collections::HashMap::new();
+        let mut originals = ValueMap::default();
         if matches!(left.view(), ValueView::Mix(_, _))
             || matches!(right.view(), ValueView::Mix(_, _))
         {
@@ -191,7 +192,7 @@ impl Interpreter {
     fn set_equal_bag_counts(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
-        let mut scratch = std::collections::HashMap::new();
+        let mut scratch = ValueMap::default();
         let mut counts = Self::union_bag_counts(value, &mut scratch)?;
         counts.retain(|_, v| v.is_positive());
         Ok(counts)
@@ -200,7 +201,7 @@ impl Interpreter {
     fn set_equal_mix_weights(
         value: &Value,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
-        let mut scratch = std::collections::HashMap::new();
+        let mut scratch = ValueMap::default();
         let mut weights = Self::union_mix_weights(value, &mut scratch)?;
         weights.retain(|_, w| *w != 0.0);
         Ok(weights)
@@ -222,7 +223,7 @@ impl Interpreter {
         {
             return Ok(Self::set_equal_bag_counts(left)? == Self::set_equal_bag_counts(right)?);
         }
-        let mut scratch = std::collections::HashMap::new();
+        let mut scratch = ValueMap::default();
         Ok(Self::union_set_keys(left, &mut scratch)? == Self::union_set_keys(right, &mut scratch)?)
     }
 
@@ -254,7 +255,7 @@ impl Interpreter {
 
     fn multiply_bag_counts(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, (num_bigint::BigInt, bool)>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -377,7 +378,7 @@ impl Interpreter {
 
     fn multiply_mix_weights(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -507,7 +508,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::new("Exception"));
         }
-        let mut originals = std::collections::HashMap::new();
+        let mut originals = ValueMap::default();
         if matches!(left.view(), ValueView::Mix(_, _))
             || matches!(right.view(), ValueView::Mix(_, _))
         {
@@ -543,7 +544,7 @@ impl Interpreter {
     /// Unlike union_bag_counts, this properly handles Hash and Pair values.
     fn addition_bag_counts(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -649,7 +650,7 @@ impl Interpreter {
     /// Coerce a value to mix-like weights for the (+) operator.
     fn addition_mix_weights(
         value: &Value,
-        originals: &mut std::collections::HashMap<String, Value>,
+        originals: &mut ValueMap,
     ) -> Result<std::collections::HashMap<String, f64>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
@@ -766,7 +767,7 @@ impl Interpreter {
         };
         let result_level = type_level(left).max(type_level(right)).max(1);
 
-        let mut originals = std::collections::HashMap::new();
+        let mut originals = ValueMap::default();
         if result_level >= 2 {
             let mut l = Self::addition_mix_weights(left, &mut originals)?;
             let r = Self::addition_mix_weights(right, &mut originals)?;

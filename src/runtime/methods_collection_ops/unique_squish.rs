@@ -356,7 +356,7 @@ impl Interpreter {
         if (as_func.is_some() || with_func.is_some())
             && let ValueView::Seq(items) = result.view()
         {
-            let mut revert_values = HashMap::new();
+            let mut revert_values = ValueMap::default();
             let mut revert_remove = Vec::new();
             if let Some(before) = env_before_callbacks {
                 for (k, old_v) in &before {

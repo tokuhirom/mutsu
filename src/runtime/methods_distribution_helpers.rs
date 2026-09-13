@@ -3,8 +3,8 @@
 //! (identity tuple, platform library naming, string hashing). Kept `pub(super)`
 //! so the sibling `impl Interpreter` modules can call them.
 
+use crate::value::ValueMap;
 use crate::value::{Value, ValueView};
-use std::collections::HashMap;
 
 // ---- Simple JSON parser (no serde_json dependency) ----
 
@@ -26,7 +26,7 @@ pub(super) fn parse_json_value(s: &str) -> Result<(Value, &str), String> {
 }
 
 pub(super) fn parse_json_object(s: &str) -> Result<(Value, &str), String> {
-    let mut map = HashMap::new();
+    let mut map = ValueMap::default();
     let mut s = s.trim_start();
     if let Some(rest) = s.strip_prefix('}') {
         return Ok((Value::hash_with_data(Value::hash_arc(map)), rest));

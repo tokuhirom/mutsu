@@ -58,7 +58,7 @@ impl Interpreter {
         let mut from: i64 = 0;
         let mut to: i64 = 0;
         let mut list = Value::array(Vec::new());
-        let mut hash = Value::hash(HashMap::new());
+        let mut hash = Value::hash(ValueMap::default());
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
@@ -95,7 +95,10 @@ impl Interpreter {
                 Value::hash_bare_values(map.as_ref().clone()),
             );
         } else {
-            attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
+            attrs.insert(
+                "named".to_string(),
+                Value::hash_bare_values(ValueMap::default()),
+            );
         }
         Value::make_instance(Symbol::intern("Match"), attrs)
     }
@@ -122,7 +125,7 @@ impl Interpreter {
             _ => args[0].clone(),
         };
         let string = args[1].to_string_value();
-        let mut mixins = HashMap::new();
+        let mut mixins = ValueMap::default();
         mixins.insert("Str".to_string(), Value::str(string));
         Ok(Value::mixin(numeric, mixins))
     }

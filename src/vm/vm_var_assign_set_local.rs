@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// Env key marking a variable as a genuine bound array SLICE (`@slice :=
@@ -2925,7 +2926,7 @@ impl Interpreter {
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
-                Value::hash(std::collections::HashMap::new())
+                Value::hash(ValueMap::default())
             } else {
                 Value::package(crate::symbol::wk::any())
             };

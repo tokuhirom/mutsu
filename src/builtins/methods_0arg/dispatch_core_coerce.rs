@@ -8,6 +8,7 @@ use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
 use super::parse_raku_int_from_str;
+use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 /// Build the `X::Str::Numeric` attribute map for a string that cannot be
@@ -64,12 +65,12 @@ fn has_value_identity(v: &Value) -> bool {
     }
 }
 
-fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Value> {
+fn str_numeric_exception_attrs(s: &str) -> ValueMap {
     let (pos, reason) = crate::runtime::str_numeric::str_numeric_failure(s).unwrap_or((
         0,
         "base-10 number must begin with valid digits or '.'".to_string(),
     ));
-    let mut ex_attrs = std::collections::HashMap::new();
+    let mut ex_attrs = ValueMap::default();
     ex_attrs.insert("source".to_string(), Value::str(s.to_string()));
     ex_attrs.insert("reason".to_string(), Value::str(reason.clone()));
     ex_attrs.insert("pos".to_string(), Value::int(pos as i64));

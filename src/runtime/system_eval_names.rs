@@ -315,7 +315,7 @@ impl Interpreter {
                         .iter()
                         .find(|c| all_subs.contains(*c) && !declared_before.contains(*c))
                     {
-                        let mut attrs = std::collections::HashMap::new();
+                        let mut attrs = ValueMap::default();
                         attrs.insert("symbol".to_string(), Value::str(fwd.clone()));
                         attrs.insert(
                             "message".to_string(),

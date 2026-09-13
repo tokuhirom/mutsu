@@ -29,6 +29,7 @@
 
 use super::{ArrayData, HashData, Value, ValueView};
 use crate::gc::Gc;
+use crate::value::ValueMap;
 
 /// What a deferred vivification path is anchored to.
 ///
@@ -181,7 +182,7 @@ pub(crate) fn is_container_hole(value: &Value) -> bool {
 /// untouched.
 fn fresh_level_for(step: &EntryStep) -> Value {
     let fresh = match step {
-        EntryStep::Key(_) => Value::hash(std::collections::HashMap::new()),
+        EntryStep::Key(_) => Value::hash(ValueMap::default()),
         EntryStep::Index(_) => Value::real_array(Vec::new()),
     };
     fresh.itemize_for_element_store()

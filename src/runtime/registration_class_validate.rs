@@ -154,7 +154,7 @@ impl Interpreter {
             mro: [].into(),
             wildcard_handles: Vec::new(),
             alias_attributes: HashSet::new(),
-            class_level_attrs: HashMap::new(),
+            class_level_attrs: ValueMap::default(),
         };
         if is_hidden {
             self.registry_mut().hidden_classes.insert(name.to_string());

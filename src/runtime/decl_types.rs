@@ -12,6 +12,7 @@
 use super::ClassAttributeDef;
 use crate::ast::{Expr, FunctionDef, ParamDef, Stmt};
 use crate::value::Value;
+use crate::value::ValueMap;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -37,7 +38,7 @@ pub(crate) struct ClassDef {
     pub(crate) wildcard_handles: Vec<String>,
     /// Class-level attributes declared with `our $.x` or `my $.x` (shared across instances).
     /// Maps attribute name to its current value.
-    pub(crate) class_level_attrs: HashMap<String, Value>,
+    pub(crate) class_level_attrs: ValueMap,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +52,7 @@ pub(crate) struct RoleDef {
     #[allow(dead_code)]
     pub(crate) is_rw: bool,
     /// Captured environment for evaluating attribute defaults in closures.
-    pub(crate) captured_env: Option<HashMap<String, Value>>,
+    pub(crate) captured_env: Option<ValueMap>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     pub(crate) wildcard_handles: Vec<String>,
     /// Unique identifier for this role definition instance, used to distinguish
@@ -372,6 +373,6 @@ pub(crate) struct SquishIteratorMeta {
     pub(crate) source_items: Vec<Value>,
     pub(crate) as_func: Option<Value>,
     pub(crate) with_func: Option<Value>,
-    pub(crate) revert_values: HashMap<String, Value>,
+    pub(crate) revert_values: ValueMap,
     pub(crate) revert_remove: Vec<String>,
 }

@@ -425,7 +425,7 @@ fn walk_type_capture_inheritance(
                         let msg = format!(
                             "{base} does not support inheritance, so {child_display} cannot inherit from it"
                         );
-                        let mut attrs = HashMap::new();
+                        let mut attrs = ValueMap::default();
                         attrs.insert("child-typename".to_string(), Value::str(child_display));
                         attrs.insert(
                             "parent".to_string(),
@@ -629,7 +629,7 @@ impl Interpreter {
                         || self.has_type(&target)
                         || self.is_resolvable_type(&target);
                     if !known {
-                        let mut attrs = std::collections::HashMap::new();
+                        let mut attrs = ValueMap::default();
                         attrs.insert("symbol".to_string(), Value::str(target.to_string()));
                         attrs.insert("what".to_string(), Value::str("Type".to_string()));
                         attrs.insert(
