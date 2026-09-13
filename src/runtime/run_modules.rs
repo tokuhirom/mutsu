@@ -1158,6 +1158,17 @@ impl Interpreter {
             // values have been extracted above. Qualified package globals and
             // newly-created module names are intentionally left alone.
             for (key, value) in &saved_plain_env {
+                // A `$*x` the importer already owned belongs to ITS dynamic
+                // scope, not to the module that assigned it: a mainline
+                // `$*PACKAGE_LOADED++` is how a module reports a load-time
+                // fact, and reverting it here threw that write away along with
+                // the module's own lexicals (#8229). A dynamic the module
+                // declared for itself never entered `saved_plain_env` (it is a
+                // compunit lexical, extracted into `unit_lexicals` above), so
+                // it still dies with the load.
+                if key.is_dynamic_var_env_key() {
+                    continue;
+                }
                 self.env.insert_sym(*key, value.clone());
             }
             match saved_qfile {
