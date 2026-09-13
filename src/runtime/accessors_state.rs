@@ -1,6 +1,7 @@
 //! Callable signature/composition and interpreter state accessors:
 //! `our`/`state`/once vars, wrap chains, method/multi/proto dispatch frames.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -371,10 +372,13 @@ impl Interpreter {
 
     /// The `shared_vars` key under which `key`'s cross-thread `state` cell lives.
     pub(crate) fn shared_state_cell_key(scoped_key: (Symbol, Option<u64>)) -> String {
-        format!(
-            "__mutsu_shared_state::{}",
-            crate::runtime::Interpreter::normalize_state_key(&Self::state_key_display(scoped_key))
-        )
+        // `owned_key_from_parts`, not the memoized `owned_key_for_str`: a
+        // state key carries the routine's CLONE id (`$n#c17`), so the set of
+        // them grows with what the program runs rather than with what it says,
+        // and memoizing would be a table that only ever gets bigger.
+        MetaNs::SharedState.owned_key_from_parts(&[
+            &crate::runtime::Interpreter::normalize_state_key(&Self::state_key_display(scoped_key)),
+        ])
     }
 
     pub(crate) fn set_state_var(&mut self, key: (Symbol, Option<u64>), value: Value) {

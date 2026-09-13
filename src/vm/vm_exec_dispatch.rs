@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn mark_failure_handled_on_stack(stack: &mut [Value]) {
@@ -244,7 +245,7 @@ impl Interpreter {
                 // no atomics exist, which is the overwhelmingly common case.
                 if self.atomic_var_seen() {
                     let atomic_name = name.strip_prefix('$').unwrap_or(name);
-                    let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+                    let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
                     let is_atomic_int = loan_env!(self, var_type_constraint(name)).as_deref()
                         == Some("atomicint")
                         || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
@@ -632,7 +633,7 @@ impl Interpreter {
                 // LazyList (or reading its pre-declaration env snapshot).
                 if self
                     .env()
-                    .get(&format!("__mutsu_gather_self_ref::{name}"))
+                    .get_sym(MetaNs::GatherSelfRef.key_for_str(name))
                     .is_some()
                 {
                     self.stack
@@ -2333,9 +2334,9 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let is_bound_decont = if self.bound_decont_active().get() {
                     let var_name = code.constants[*name_idx as usize].as_str().unwrap_or("");
-                    let key = format!("__mutsu_bound_decont::{}", var_name);
+                    let key = MetaNs::BoundDecont.key_for_str(var_name);
                     matches!(
-                        self.env().get(&key).map(Value::view),
+                        self.env().get_sym(key).map(Value::view),
                         Some(ValueView::Bool(true))
                     )
                 } else {

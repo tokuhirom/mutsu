@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
@@ -164,7 +165,7 @@ impl Interpreter {
         // registered — the common case on this hot local-read path.
         if self.atomic_var_seen() {
             let atomic_name = name.strip_prefix('$').unwrap_or(name);
-            let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
+            let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
             // Only use the scalar atomic fast path for scalar ($) variables.
             // Array (@) variables with `atomicint` constraint are element-wise
             // atomic and should go through the normal array read path.

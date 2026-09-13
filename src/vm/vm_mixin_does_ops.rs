@@ -1,5 +1,6 @@
 //! Mixin (`but`/`does`), `isa`, and pair-construction ops.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
@@ -208,8 +209,8 @@ impl Interpreter {
             format!("{}{anon}", crate::value::types::ANON_ROLE_MARKER_PREFIX),
             Value::TRUE,
         );
-        mixins.insert(format!("__mutsu_role_seq__{anon}"), Value::int(seq));
-        mixins.insert(format!("__mutsu_role_group__{anon}"), Value::int(seq));
+        mixins.insert(MetaNs::RoleSeq.owned_key_for_str(&anon), Value::int(seq));
+        mixins.insert(MetaNs::RoleGroup.owned_key_for_str(&anon), Value::int(seq));
         match left.view() {
             ValueView::Mixin(inner, _) => Value::mixin_with_state(inner.as_ref().clone(), mixins),
             _ => Value::mixin_with_state(left, mixins),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -160,7 +161,7 @@ impl Interpreter {
             _ => return value,
         };
         let mut mixins = extra;
-        mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        mixins.insert(MetaNs::Role.owned_key_for_str(&role_name), Value::TRUE);
         // A parameterised pun's `extra` already carries the matched
         // candidate's own role id (its `role_def.role_id`, which may differ
         // from the bare `registry().roles` entry below when several
@@ -170,7 +171,7 @@ impl Interpreter {
         // (`Interpreter::punned_role_type_object`,
         // `methods_mixin_what_cache.rs`).
         if let std::collections::hash_map::Entry::Vacant(e) =
-            mixins.entry(format!("__mutsu_role_id__{}", role_name))
+            mixins.entry(MetaNs::RoleId.owned_key_for_str(&role_name))
         {
             let role_id = self
                 .registry()
@@ -186,11 +187,11 @@ impl Interpreter {
         // resulting pun can resolve a method-name collision by later-wins,
         // not alphabetically.
         mixins.insert(
-            format!("__mutsu_role_seq__{}", role_name),
+            MetaNs::RoleSeq.owned_key_for_str(&role_name),
             Value::int(crate::value::next_instance_id() as i64),
         );
         for (name, attr) in attrs {
-            mixins.insert(format!("__mutsu_attr__{}", name), attr);
+            mixins.insert(MetaNs::Attr.owned_key_for_str(&name), attr);
         }
         // The language revision comes from the parameterless candidate (this is
         // bare role punning) so `^language-revision` reports the revision of the
@@ -566,24 +567,24 @@ impl Interpreter {
             if let Some(role) = selected_role {
                 let role_id = role.role_id;
                 let mut mixins = HashMap::new();
-                mixins.insert(format!("__mutsu_role__{}", base_name), Value::TRUE);
+                mixins.insert(MetaNs::Role.owned_key(base_name), Value::TRUE);
                 mixins.insert(
-                    format!("__mutsu_role_seq__{}", base_name),
+                    MetaNs::RoleSeq.owned_key(base_name),
                     Value::int(crate::value::next_instance_id() as i64),
                 );
                 mixins.insert(
-                    format!("__mutsu_role_typeargs__{}", base_name),
+                    MetaNs::RoleTypeargs.owned_key(base_name),
                     Value::array(type_args.clone()),
                 );
                 if role_id != 0 {
                     mixins.insert(
-                        format!("__mutsu_role_id__{}", base_name),
+                        MetaNs::RoleId.owned_key(base_name),
                         Value::int(role_id as i64),
                     );
                 }
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
                     mixins.insert(
-                        format!("__mutsu_role_param__{}", param_name),
+                        MetaNs::RoleParam.owned_key_for_str(param_name),
                         type_arg.clone(),
                     );
                 }
@@ -1150,7 +1151,7 @@ impl Interpreter {
                         .unwrap_or_else(|_| std::path::PathBuf::from(prefix_path))
                         .to_string_lossy()
                         .to_string();
-                    let cache_key = format!("__mutsu_repo_fs::{}", canonical_prefix);
+                    let cache_key = MetaNs::RepoFs.owned_key_for_str(&canonical_prefix);
                     if let Some(existing) = self.env.get(&cache_key).cloned() {
                         return Ok(existing);
                     }
@@ -1583,7 +1584,10 @@ impl Interpreter {
                                 && result_class.resolve() == role_name
                             {
                                 let mut mixins = HashMap::new();
-                                mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+                                mixins.insert(
+                                    MetaNs::Role.owned_key_for_str(&role_name),
+                                    Value::TRUE,
+                                );
                                 // Mirror `mark_punned_role_instance`'s role-id
                                 // marker so this instance's `.WHAT` keys to
                                 // the same composition-cache entry `^pun`
@@ -1595,17 +1599,17 @@ impl Interpreter {
                                     .map_or(0, |r| r.role_id);
                                 if role_id != 0 {
                                     mixins.insert(
-                                        format!("__mutsu_role_id__{}", role_name),
+                                        MetaNs::RoleId.owned_key_for_str(&role_name),
                                         Value::int(role_id as i64),
                                     );
                                 }
                                 mixins.insert(
-                                    format!("__mutsu_role_seq__{}", role_name),
+                                    MetaNs::RoleSeq.owned_key_for_str(&role_name),
                                     Value::int(crate::value::next_instance_id() as i64),
                                 );
                                 for (name, value) in attributes.as_map().iter() {
                                     mixins.insert(
-                                        format!("__mutsu_attr__{}", name.resolve()),
+                                        MetaNs::Attr.owned_key_for_str(name.resolve()),
                                         value.clone(),
                                     );
                                 }

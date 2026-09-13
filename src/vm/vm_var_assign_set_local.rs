@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Env key marking a variable as a genuine bound array SLICE (`@slice :=
@@ -2640,10 +2641,10 @@ impl Interpreter {
             if is_constant {
                 self.constant_var_names_seen.insert(name.to_string());
                 self.env_mut()
-                    .insert(format!("__mutsu_constant_var::{name}"), Value::TRUE);
+                    .insert_sym_noting(MetaNs::ConstantVar.key_for_str(name), Value::TRUE);
             } else if is_vardecl && !is_bind && self.constant_var_names_seen.contains(name) {
                 self.env_mut()
-                    .remove(&format!("__mutsu_constant_var::{name}"));
+                    .remove_sym(MetaNs::ConstantVar.key_for_str(name));
             }
         }
         Ok(())

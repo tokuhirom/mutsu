@@ -1,5 +1,6 @@
 //! Type-declaration registration ops: enum / class / augment / role / subset.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -920,8 +921,10 @@ impl Interpreter {
                     .iter()
                     .any(|(trait_name, _)| trait_name == "__my_scoped")
             {
-                self.env_mut()
-                    .insert(format!("__mutsu_eval_role::{qualified_name}"), Value::TRUE);
+                self.env_mut().insert(
+                    MetaNs::EvalRole.owned_key_for_str(&qualified_name),
+                    Value::TRUE,
+                );
             }
             // Link `is Parent` references on this role to the lexical class visible
             // in this scope (which may be stored under a mangled name), matching

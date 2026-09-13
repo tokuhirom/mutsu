@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
@@ -419,7 +420,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             // Track as a parent relationship
             parent_roles.push((hidden_name.clone(), None, false));
             // Also mark the hidden relationship with a special marker
-            parent_roles.push((format!("__mutsu_role_hides__{}", hidden_name), None, false));
+            parent_roles.push((
+                MetaNs::RoleHides.owned_key_for_str(&hidden_name),
+                None,
+                false,
+            ));
             rest = r;
             continue;
         }

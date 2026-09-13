@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -30,7 +31,7 @@ impl Interpreter {
             return Some(iter.clone());
         }
         self.env
-            .get(&format!("__mutsu_predictive_seq_iter::{seq_id}"))
+            .get(&MetaNs::PredictiveSeqIter.key_for_id(seq_id as u64))
             .cloned()
     }
 
@@ -56,7 +57,7 @@ impl Interpreter {
             && items.is_empty()
         {
             let seq_id = items.identity();
-            let key = format!("__mutsu_predictive_seq_iter::{seq_id}");
+            let key = MetaNs::PredictiveSeqIter.key_for_id(seq_id as u64);
             if let Some(iterator) = self.predictive_seq_iter_for(seq_id) {
                 let iter_slot = "$mutsu_predictive_tail_iterator";
                 let saved_iter = self.env.get(iter_slot).cloned();

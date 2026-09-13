@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
@@ -603,7 +604,7 @@ impl Interpreter {
         if let ValueView::Mixin(inner, mixins) = target.view() {
             let mut results = self.collect_can_methods(inner.as_ref(), method_name);
             if (mixins.contains_key(method_name)
-                || mixins.contains_key(&format!("__mutsu_attr__{method_name}")))
+                || mixins.contains_key(MetaNs::Attr.str_key_for_str(method_name)))
                 && results.is_empty()
             {
                 results.push(Value::routine_parts(

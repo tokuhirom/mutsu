@@ -1,5 +1,6 @@
 use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::value_buf::{
@@ -219,7 +220,7 @@ impl Interpreter {
                     })
                     .or_else(|| {
                         self.env
-                            .get(&format!("__mutsu_var_source_name::{}", target_var))
+                            .get(MetaNs::VarSourceName.str_key_for_str(target_var))
                             .map(Value::to_string_value)
                     })
             })
@@ -302,7 +303,7 @@ impl Interpreter {
                 && !target_var.starts_with('%')
                 && !target_var.starts_with('&')
             {
-                let decont_key = format!("__mutsu_bound_decont::{}", target_var);
+                let decont_key = MetaNs::BoundDecont.owned_key_for_str(target_var);
                 if self
                     .env
                     .get(&decont_key)

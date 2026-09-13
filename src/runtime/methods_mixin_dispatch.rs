@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -11,7 +12,7 @@ impl Interpreter {
             return None;
         };
         for base in ["Associative", "Positional"] {
-            let key = format!("__mutsu_role_typeargs__{base}");
+            let key = MetaNs::RoleTypeargs.owned_key_for_str(base);
             if let Some(ValueView::Array(items, ..)) = mixins.get(&key).map(Value::view)
                 && let Some(value_type) = items.iter().next()
             {
@@ -193,7 +194,7 @@ impl Interpreter {
             for arg in &args {
                 if let ValueView::Pair(key, val) = arg.view()
                     && let std::collections::hash_map::Entry::Occupied(mut e) =
-                        new_mixins.entry(format!("__mutsu_attr__{}", key))
+                        new_mixins.entry(MetaNs::Attr.owned_key_for_str(key))
                 {
                     e.insert(val.clone());
                     let attr = Symbol::intern(key);
@@ -228,7 +229,7 @@ impl Interpreter {
                 return Some(Ok(mixin_val.clone()));
             }
             // Check role attribute accessors: has $.foo stores as __mutsu_attr__foo
-            let attr_key = format!("__mutsu_attr__{}", method);
+            let attr_key = MetaNs::Attr.owned_key_for_str(method);
             if let Some(attr_val) = mixins.get(&attr_key) {
                 // An explicit method declared in a composed role shadows the
                 // auto-generated accessor for an attribute of the same name
@@ -315,7 +316,7 @@ impl Interpreter {
             })
             .map(|name| {
                 let seq = mixins
-                    .get(&format!("__mutsu_role_seq__{}", name))
+                    .get(MetaNs::RoleSeq.str_key_for_str(&name))
                     .and_then(|v| match v.view() {
                         ValueView::Int(n) => Some(n),
                         _ => None,
@@ -499,7 +500,7 @@ impl Interpreter {
             let mut results = self.collect_can_methods(inner, &method_name);
             // Also check mixin-specific methods
             if (mixins.contains_key(&method_name)
-                || mixins.contains_key(&format!("__mutsu_attr__{}", method_name)))
+                || mixins.contains_key(MetaNs::Attr.str_key_for_str(&method_name)))
                 && results.is_empty()
             {
                 results.push(Value::routine_parts(
@@ -547,9 +548,9 @@ impl Interpreter {
                     let base = base_name.resolve();
                     let has_role = target.does_check(&base)
                         || mixins.contains_key(&base)
-                        || mixins.contains_key(&format!("__mutsu_role__{}", base));
+                        || mixins.contains_key(MetaNs::Role.str_key_for_str(&base));
                     if has_role {
-                        let key = format!("__mutsu_role_typeargs__{}", base);
+                        let key = MetaNs::RoleTypeargs.owned_key_for_str(&base);
                         if let Some(ValueView::Array(actual_args, ..)) =
                             mixins.get(&key).map(Value::view)
                         {
@@ -570,13 +571,13 @@ impl Interpreter {
                     let base = n.split('[').next().unwrap_or(&n);
                     mixins.contains_key(&n)
                         || mixins.contains_key(base)
-                        || mixins.contains_key(&format!("__mutsu_role__{}", n))
-                        || mixins.contains_key(&format!("__mutsu_role__{}", base))
+                        || mixins.contains_key(MetaNs::Role.str_key_for_str(&n))
+                        || mixins.contains_key(MetaNs::Role.str_key_for_str(base))
                         || self.type_matches_value(&n, target)
                 }
                 ValueView::Str(name) => {
                     mixins.contains_key(name.as_str())
-                        || mixins.contains_key(&format!("__mutsu_role__{}", *name))
+                        || mixins.contains_key(MetaNs::Role.str_key_for_str(name.as_str()))
                         || self.type_matches_value(&name, target)
                 }
                 ValueView::Instance { class_name, .. } => {
@@ -613,7 +614,7 @@ impl Interpreter {
             // Roles are excluded from isa checks, but only when the argument
             // is literally the bare role (a `Package`) — not its pun.
             if is_bare_role_arg {
-                let role_key = format!("__mutsu_role__{}", target_name);
+                let role_key = MetaNs::Role.owned_key_for_str(&target_name);
                 if mixins.contains_key(&role_key) {
                     return Some(Ok(Value::FALSE));
                 }

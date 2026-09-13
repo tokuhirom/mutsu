@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 /// Marks a `Mixin` overrides map produced by `but`/`does` with a *concrete
 /// value* on the right (`1 but "hi"`, `$obj does 42`, `Method but True`)
@@ -217,7 +218,7 @@ pub(crate) fn mixin_roles_applied_last_first(mixins: &MixinOverrides, base: &str
         .filter(|n| *n != base)
         .map(|n| {
             let seq = mixins
-                .get(&format!("__mutsu_role_seq__{n}"))
+                .get(MetaNs::RoleSeq.str_key_for_str(n))
                 .and_then(|v| match v.view() {
                     ValueView::Int(i) => Some(i),
                     _ => None,
@@ -308,7 +309,7 @@ fn role_application_group(
     fallback: i64,
 ) -> i64 {
     mixins
-        .get(&format!("__mutsu_role_group__{role_name}"))
+        .get(MetaNs::RoleGroup.str_key_for_str(role_name))
         .and_then(|v| match v.view() {
             ValueView::Int(i) => Some(i),
             _ => None,
@@ -322,7 +323,7 @@ fn role_application_group(
 /// not record one) so such entries sort first and stay deterministic.
 fn role_application_seq(mixins: &crate::value::MixinOverrides, role_name: &str) -> i64 {
     mixins
-        .get(&format!("__mutsu_role_seq__{role_name}"))
+        .get(MetaNs::RoleSeq.str_key_for_str(role_name))
         .and_then(|v| match v.view() {
             ValueView::Int(i) => Some(i),
             _ => None,
@@ -352,7 +353,7 @@ fn role_mixin_suffix_entry(mixins: &crate::value::MixinOverrides, role_name: &st
     if display.contains('[') {
         return display;
     }
-    let Some(args) = mixins.get(&format!("__mutsu_role_typeargs__{role_name}")) else {
+    let Some(args) = mixins.get(MetaNs::RoleTypeargs.str_key_for_str(role_name)) else {
         return display;
     };
     let ValueView::Array(items, _) = args.view() else {
@@ -394,11 +395,11 @@ pub(crate) fn mixin_composition_key(base_type_name: &str, mixins: &MixinOverride
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .map(|role_name| {
             let role_id = mixins
-                .get(&format!("__mutsu_role_id__{role_name}"))
+                .get(MetaNs::RoleId.str_key_for_str(role_name))
                 .map(Value::to_string_value)
                 .unwrap_or_default();
             let typeargs = mixins
-                .get(&format!("__mutsu_role_typeargs__{role_name}"))
+                .get(MetaNs::RoleTypeargs.str_key_for_str(role_name))
                 .map(|v| match v.view() {
                     ValueView::Array(items, _) => items
                         .items()
@@ -491,18 +492,18 @@ pub(crate) fn mixin_identity_key(mixins: &MixinOverrides) -> String {
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .map(|role_name| {
             let seq = mixins
-                .get(&format!("__mutsu_role_seq__{role_name}"))
+                .get(MetaNs::RoleSeq.str_key_for_str(role_name))
                 .and_then(|v| match v.view() {
                     ValueView::Int(n) => Some(n),
                     _ => None,
                 })
                 .unwrap_or(i64::MIN);
             let role_id = mixins
-                .get(&format!("__mutsu_role_id__{role_name}"))
+                .get(MetaNs::RoleId.str_key_for_str(role_name))
                 .map(Value::to_string_value)
                 .unwrap_or_default();
             let typeargs = mixins
-                .get(&format!("__mutsu_role_typeargs__{role_name}"))
+                .get(MetaNs::RoleTypeargs.str_key_for_str(role_name))
                 .map(|v| match v.view() {
                     ValueView::Array(items, _) => items
                         .items()

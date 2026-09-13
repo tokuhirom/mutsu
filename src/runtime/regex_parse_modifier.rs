@@ -1,5 +1,6 @@
 use super::regex_parse::*;
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use ::regex::Regex;
 
 impl Interpreter {
@@ -153,7 +154,7 @@ impl Interpreter {
     /// only a genuine `constant` is a Rakudo compile-time value.
     pub(in crate::runtime) fn is_compile_time_constant_scalar(&self, name: &str) -> bool {
         self.env
-            .get(&format!("__mutsu_constant_var::{name}"))
+            .get_sym(MetaNs::ConstantVar.key_for_str(name))
             .is_some()
     }
 

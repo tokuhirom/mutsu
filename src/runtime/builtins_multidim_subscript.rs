@@ -1,5 +1,6 @@
 //! Push/append-through-accessor and subscript-adverb (`:exists`/`:delete`/`:kv`...) ops.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ArrayData;
 
@@ -49,7 +50,7 @@ impl Interpreter {
 
         // Handle Mixin targets (e.g. `&b does R` followed by `push &b.s, val`).
         if let ValueView::Mixin(inner, mixins) = target.view() {
-            let attr_key = format!("__mutsu_attr__{}", attr_name);
+            let attr_key = MetaNs::Attr.owned_key_for_str(&attr_name);
             if let Some(current) = mixins
                 .role_attribute_by_name(&attr_name)
                 .or_else(|| mixins.get(&attr_key).cloned())

@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -188,7 +189,7 @@ impl Interpreter {
                     // survives sub/block returns (see field docs).
                     self.predictive_seq_iters.insert(seq_id, iterator.clone());
                     self.env.insert(
-                        format!("__mutsu_predictive_seq_iter::{seq_id}"),
+                        MetaNs::PredictiveSeqIter.key_for_id(seq_id as u64),
                         iterator.clone(),
                     );
                 }

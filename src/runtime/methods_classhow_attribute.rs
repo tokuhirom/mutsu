@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -494,7 +495,7 @@ impl Interpreter {
                 // survive to `^attributes` (JSON::Name's `is json-name`).
                 let saved_wb_key = self.trait_mod_writeback_key.take();
                 self.trait_mod_writeback_key =
-                    Some(format!("__mutsu_attr_trait__{}!{}", owner, attr_name_str));
+                    Some(MetaNs::AttrTrait.owned_key_pair_for_strs(owner, attr_name_str));
                 let saved_pkg = self.current_package();
                 if let Some(pkg) = &dispatch_pkg
                     && *pkg != saved_pkg

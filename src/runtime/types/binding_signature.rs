@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 /// Does this legacy-path placeholder/signature param list contain a *plain
 /// positional* param — a real signature name like `p` (from a pointy block
@@ -3047,7 +3048,7 @@ impl Interpreter {
                 .flatten()
                 .unwrap_or_else(|| "element".to_string());
             self.env.insert(
-                format!("__mutsu_var_source_name::{}", pd.name),
+                MetaNs::VarSourceName.owned_key_for_str(&pd.name),
                 Value::str(source),
             );
         }

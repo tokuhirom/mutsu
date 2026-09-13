@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// The name of the type object a bareword that `has_type`/`is_builtin_type`
@@ -773,7 +774,7 @@ impl Interpreter {
         // may have overwritten the plain name (e.g. a bare `sub {...}` establishes
         // a fresh topic `$_ = Any`), but the snapshot preserves the captured
         // enclosing value that `$OUTER::` must see.
-        if let Some(val) = self.env().get(&format!("__mutsu_outer::{name}")) {
+        if let Some(val) = self.env().get_sym(MetaNs::Outer.key_for_str(name)) {
             return val.clone();
         }
         if let Some(val) = self.env().get(name) {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::value::Value;
 
 /// Minimal `ParamDef` for a plain scalar parameter (not slurpy, no default,
@@ -201,7 +202,7 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
 
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
     interp.mark_atomic_var_seen();
-    let name_key = format!("__mutsu_atomic_name::{name}");
+    let name_key = MetaNs::AtomicName.owned_key_for_str(name);
     interp
         .shared_vars
         .declare(&name_key, Value::str(value_key.to_string()));

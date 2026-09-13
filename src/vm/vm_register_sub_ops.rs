@@ -1,5 +1,6 @@
 //! Lambda/block-closure creation and sub/proto/token registration ops.
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -285,11 +286,11 @@ impl Interpreter {
             // user routine repeatedly instead of reaching the native base.
             let preregistered = site_fp.is_some_and(|fingerprint| {
                 self.env()
-                    .get(&format!(
-                        "__mutsu_inline_package_sub_preregistered::{}::{}::{fingerprint}",
-                        self.current_package(),
-                        resolved_name
-                    ))
+                    .get(&MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                        &self.current_package(),
+                        &resolved_name,
+                        &fingerprint.to_string(),
+                    ]))
                     .is_some()
             });
             // The hoist pre-pass (see `hoist_sub_decls`) registers this same

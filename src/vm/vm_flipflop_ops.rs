@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn exec_infix_func_op(
@@ -246,7 +247,7 @@ impl Interpreter {
             let lhs_pattern = self.eval_expr_range(code, lhs_start, lhs_end, compiled_fns)?;
             let rhs_pattern = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
             let scope = self.flip_flop_scope_key();
-            let matcher_key = format!("__mutsu_ff_state::{scope}::{site_id}");
+            let matcher_key = MetaNs::FfState.owned_key_from_parts(&[&scope, &site_id.to_string()]);
             let mut map = std::collections::HashMap::new();
             map.insert("__mutsu_ff_matcher".to_string(), Value::TRUE);
             map.insert("key".to_string(), Value::str(matcher_key));
@@ -261,7 +262,7 @@ impl Interpreter {
         }
 
         let scope = self.flip_flop_scope_key();
-        let state_key = format!("__mutsu_ff_state::{scope}::{site_id}");
+        let state_key = MetaNs::FfState.owned_key_from_parts(&[&scope, &site_id.to_string()]);
         let seq = self
             .get_state_var((crate::symbol::Symbol::intern(&state_key), None))
             .and_then(|v| match v.view() {

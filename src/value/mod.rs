@@ -1,3 +1,4 @@
+use crate::runtime::meta_ns::MetaNs;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
@@ -143,7 +144,7 @@ impl MixinOverrides {
     }
 
     fn role_identity(&self, owner: &str) -> String {
-        self.get(&format!("__mutsu_role_id__{owner}"))
+        self.get(MetaNs::RoleId.str_key_for_str(owner))
             .and_then(|value| match value.view() {
                 ValueView::Int(id) if id > 0 => Some(id.to_string()),
                 _ => None,

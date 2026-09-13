@@ -8,6 +8,7 @@ use super::methods_signature_errors::{
     make_x_immutable_error,
 };
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
@@ -4474,7 +4475,7 @@ impl Interpreter {
         // Mixin fallback: check __mutsu_attr__ and delegate to inner
         if let ValueView::Mixin(inner, mixins) = target.view() {
             if args.is_empty() {
-                let attr_key = format!("__mutsu_attr__{}", method);
+                let attr_key = MetaNs::Attr.owned_key_for_str(method);
                 if let Some(value) = mixins
                     .role_attribute_by_name(method)
                     .or_else(|| mixins.get(&attr_key).cloned())

@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::value::ArrayKind;
 
 impl Interpreter {
@@ -769,7 +770,7 @@ impl Interpreter {
             ));
         }
         let target_name = args[0].to_string_value();
-        let marker_key = format!("__mutsu_bound_array_len::{target_name}");
+        let marker_key = MetaNs::BoundArrayLen.owned_key_for_str(&target_name);
         let Some(limit) = self.env.get(&marker_key).and_then(|v| match v.view() {
             ValueView::Int(i) if i >= 0 => usize::try_from(i).ok(),
             _ => None,
@@ -810,7 +811,7 @@ impl Interpreter {
             .map(|v| crate::runtime::value_to_list(v).len() as i64)
             .unwrap_or(0);
         self.env.insert(
-            format!("__mutsu_bound_array_len::{target_name}"),
+            MetaNs::BoundArrayLen.owned_key_for_str(&target_name),
             Value::int(bound_len),
         );
         Ok(Value::NIL)

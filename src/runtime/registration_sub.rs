@@ -1504,7 +1504,7 @@ impl Interpreter {
             };
             self.env.insert(format!("&{}", name), sub_val);
             self.env
-                .insert(format!("__mutsu_method_value::{}", name), Value::TRUE);
+                .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);
         }
         // An `is native(...)` sub routes calls through NativeCall (libffi)
         // instead of its body. The bytecode registration path
@@ -1854,11 +1854,8 @@ impl Interpreter {
         // `__mutsu_inline_package_sub_preregistered`. Consumed here, so a
         // genuine second `our proto` for the same name in the same body is
         // still refused.
-        let prepass_marker = format!(
-            "__mutsu_inline_package_proto_preregistered::{}::{}",
-            self.current_package(),
-            name
-        );
+        let prepass_marker =
+            MetaNs::InlinePackageProto.owned_key_pair_for_strs(&self.current_package(), name);
         let is_prepass_reregistration = self.env.get(&prepass_marker).is_some();
         if is_prepass_reregistration {
             self.env.remove(&prepass_marker);
@@ -1881,11 +1878,8 @@ impl Interpreter {
         // those candidates when the proto clears stale entries; the ordinary
         // RegisterDecl opcodes will recognize their pre-registration markers
         // and skip the duplicate install later.
-        let inline_marker_prefix = format!(
-            "__mutsu_inline_package_sub_preregistered::{}::{}::",
-            self.current_package(),
-            name
-        );
+        let inline_marker_prefix =
+            MetaNs::InlinePackageSub.owned_key_from_parts(&[&self.current_package(), name, ""]);
         let has_inline_markers = self
             .env
             .keys()

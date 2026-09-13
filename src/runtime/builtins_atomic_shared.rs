@@ -4,6 +4,7 @@
 //! (`self_attr_cell_target`) shared with `builtins_atomic`/`builtins_atomic_cas`.
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
@@ -391,7 +392,7 @@ impl Interpreter {
         if is_thread_clone {
             // Per-key env marker: mark dirty once, and keep env free of a
             // competing Gc handle (reads prefer the atomic entry anyway).
-            let dirty_marker = format!("__mutsu_shared_dirty::{arr_name}");
+            let dirty_marker = MetaNs::SharedDirty.owned_key_for_str(arr_name);
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(arr_name);
                 self.env.insert(dirty_marker, Value::TRUE);

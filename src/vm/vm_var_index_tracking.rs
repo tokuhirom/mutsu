@@ -1,6 +1,7 @@
 //! Bound-index / element-share / deleted-index bookkeeping helpers
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     pub(super) fn encode_bound_index(idx: &Value) -> String {
@@ -51,8 +52,8 @@ impl Interpreter {
     /// write through the cell. The guards at the element-write chokepoints
     /// consult this marker to choose replace vs write-through.
     pub(super) fn mark_element_share(&mut self, var_name: &str, encoded: String) {
-        let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key)
+        let key = MetaNs::ElemShare.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key)
             && entry
                 .with_hash_mut(|map| {
                     crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
@@ -63,7 +64,7 @@ impl Interpreter {
         }
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::TRUE);
-        self.env_mut().insert(key, Value::hash(map));
+        self.env_mut().insert_sym_noting(key, Value::hash(map));
         self.array_share_active = true;
     }
 
@@ -72,8 +73,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
-        let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
+        let key = MetaNs::ElemShare.key_for_str(var_name);
+        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
             map.contains_key(encoded)
         } else {
             false
@@ -85,8 +86,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return;
         }
-        let key = format!("__mutsu_elem_share::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key) {
+        let key = MetaNs::ElemShare.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
                 crate::gc::Gc::make_mut(map).remove(encoded);
             });
@@ -100,8 +101,8 @@ impl Interpreter {
     /// side-set (a `:=` bind to a *container source* is writable-through, so only
     /// the literal-bind subset lands here). See PLAN.md §8.7.
     pub(super) fn mark_ro_index(&mut self, var_name: &str, encoded: String) {
-        let key = format!("__mutsu_ro_index::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key)
+        let key = MetaNs::RoIndex.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key)
             && entry
                 .with_hash_mut(|map| {
                     crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
@@ -112,7 +113,7 @@ impl Interpreter {
         }
         let mut map = std::collections::HashMap::new();
         map.insert(encoded, Value::TRUE);
-        self.env_mut().insert(key, Value::hash(map));
+        self.env_mut().insert_sym_noting(key, Value::hash(map));
     }
 
     pub(super) fn is_ro_index(&self, var_name: &str, encoded: &str) -> bool {
@@ -120,8 +121,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
-        let key = format!("__mutsu_ro_index::{}", var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
+        let key = MetaNs::RoIndex.key_for_str(var_name);
+        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
             map.contains_key(encoded)
         } else {
             false
@@ -135,8 +136,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return;
         }
-        let key = format!("__mutsu_ro_index::{}", var_name);
-        self.env_mut().remove(&key);
+        let key = MetaNs::RoIndex.key_for_str(var_name);
+        self.env_mut().remove_sym(key);
     }
 
     /// Remove a read-only-index marker for the indices addressed by `idx`
@@ -145,8 +146,8 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return;
         }
-        let key = format!("__mutsu_ro_index::{}", var_name);
-        let Some(entry) = self.env_mut().get_mut(&key) else {
+        let key = MetaNs::RoIndex.key_for_str(var_name);
+        let Some(entry) = self.env_mut().get_mut_sym(key) else {
             return;
         };
         entry.with_hash_mut(|map| {
@@ -174,8 +175,8 @@ impl Interpreter {
         // the program has never `:delete`d an index — this runs on every element
         // write and would otherwise cost a `format!` + an interned env lookup.
         if crate::env::elem_index_meta_possible() {
-            let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
-            if let Some(entry) = self.env_mut().get_mut(&deleted_key) {
+            let deleted_key = MetaNs::DeletedIndex.key_for_str(var_name);
+            if let Some(entry) = self.env_mut().get_mut_sym(deleted_key) {
                 entry.with_hash_mut(|map| {
                     crate::gc::Gc::make_mut(map).remove(&encoded);
                 });
@@ -215,8 +216,8 @@ impl Interpreter {
     /// this set so that a slot holding a type-object hole can be reported
     /// as missing even though the slot value is not `Nil`.
     pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = format!("__mutsu_deleted_index::{}", var_name);
-        if let Some(entry) = self.env_mut().get_mut(&key)
+        let key = MetaNs::DeletedIndex.key_for_str(var_name);
+        if let Some(entry) = self.env_mut().get_mut_sym(key)
             && entry
                 .with_hash_mut(|map| {
                     let m = crate::gc::Gc::make_mut(map);
@@ -227,8 +228,8 @@ impl Interpreter {
             return;
         }
         let m = std::collections::HashMap::new();
-        self.env_mut().insert(key.clone(), Value::hash(m));
-        if let Some(entry) = self.env_mut().get_mut(&key) {
+        self.env_mut().insert_sym_noting(key, Value::hash(m));
+        if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
                 let m = crate::gc::Gc::make_mut(map);
                 Self::mark_index_entries(m, idx);
@@ -238,8 +239,8 @@ impl Interpreter {
 
     #[allow(dead_code)]
     pub(super) fn unmark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = format!("__mutsu_deleted_index::{}", var_name);
-        let Some(entry) = self.env_mut().get_mut(&key) else {
+        let key = MetaNs::DeletedIndex.key_for_str(var_name);
+        let Some(entry) = self.env_mut().get_mut_sym(key) else {
             return;
         };
         entry.with_hash_mut(|map| {
@@ -254,9 +255,9 @@ impl Interpreter {
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
-        let key = format!("__mutsu_deleted_index::{}", var_name);
+        let key = MetaNs::DeletedIndex.key_for_str(var_name);
         matches!(
-            self.env().get(&key).map(Value::view),
+            self.env().get_sym(key).map(Value::view),
             Some(ValueView::Hash(map)) if map.contains_key(&idx.to_string())
         )
     }

@@ -114,6 +114,13 @@ OVERRIDES: dict[str, str] = {
     # The lifetime of a `signal()` Supply's tap (arm on tap, disarm on the last
     # untap) -- supply teardown, not the `Signal` enum's type behaviour.
     "signal-supply-tap-lifetime": "concurrency",
+    # The `__mutsu_*` metadata key namespaces (#8087). What breaks if this file
+    # breaks is a key whose writer and reader spell it differently, or an env
+    # write that skips the `note_env_key` latch -- a binding/env mechanism. The
+    # `:delete`d index and the shared element are only where it becomes visible,
+    # so `element` must not pull this into `collections`. Sibling of
+    # var-metadata-key-namespaces.t, which lands in vm/binding by the rules.
+    "var-element-metadata-keys": "vm",
 }
 
 

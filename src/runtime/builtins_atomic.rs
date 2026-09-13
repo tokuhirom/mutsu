@@ -5,6 +5,7 @@
 //! (shared-container helpers + multidim/hash CAS).
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -93,11 +94,11 @@ impl Interpreter {
     }
 
     pub(super) fn atomic_shared_value_key(id: u64) -> String {
-        format!("__mutsu_atomic_value::{id}")
+        MetaNs::AtomicValue.key_for_id(id)
     }
 
     pub(super) fn atomic_shared_name_key(name: &str) -> String {
-        format!("__mutsu_atomic_name::{name}")
+        MetaNs::AtomicName.owned_key_for_str(name)
     }
 
     pub(super) fn atomic_assign_coerced_value(

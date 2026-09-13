@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Type-check a `:=` bind to a typed-array variable.
@@ -916,15 +917,15 @@ impl Interpreter {
                 _ => false,
             };
             if is_container {
-                let key = format!("__mutsu_bound_decont::{}", name);
-                self.env_mut().insert(key, Value::TRUE);
+                let key = MetaNs::BoundDecont.key_for_str(name);
+                self.env_mut().insert_sym_noting(key, Value::TRUE);
                 self.bound_decont_active().set(true);
                 return;
             }
         }
         if self.bound_decont_active().get() {
-            let key = format!("__mutsu_bound_decont::{}", name);
-            self.env_mut().remove(&key);
+            let key = MetaNs::BoundDecont.key_for_str(name);
+            self.env_mut().remove_sym(key);
         }
     }
 
@@ -933,13 +934,13 @@ impl Interpreter {
     /// whole reassignment REPLACES its slot instead of writing through the cell.
     pub(super) fn is_array_share_scalar(&self, name: &str) -> bool {
         self.env()
-            .get(&format!("__mutsu_array_share::{}", name))
+            .get_sym(MetaNs::ArrayShare.key_for_str(name))
             .is_some()
     }
 
     pub(crate) fn clear_array_share_marker(&mut self, name: &str) {
         self.env_mut()
-            .remove(&format!("__mutsu_array_share::{}", name));
+            .remove_sym(MetaNs::ArrayShare.key_for_str(name));
     }
 
     /// Slice 2a: `$n = @z` / `$n = %h`. Promote the source container variable to
@@ -1040,8 +1041,8 @@ impl Interpreter {
         // the same name (this `=` share is itemized, not a `:=` decont alias).
         self.update_bound_decont_marker(&name, false, &val);
         // Mark the scalar so a later whole reassignment replaces the slot.
-        self.env_mut().insert(
-            format!("__mutsu_array_share::{}", name),
+        self.env_mut().insert_sym_noting(
+            MetaNs::ArrayShare.key_for_str(&name),
             itemized_container.clone(),
         );
         self.array_share_active = true;

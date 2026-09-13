@@ -21,6 +21,7 @@
 //! this one role peeled back out of its mixin map.
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 /// The role whose presence turns on the wrapper rendering.
 pub(crate) const PROMISE_BROKEN_ROLE: &str = "X::Promise::Broken";
@@ -32,9 +33,9 @@ const PROMISE_BROKEN_HEADER: &str = "Tried to get the result of a broken Promise
 /// keys that belong to one role, so peeling it back out is a key removal.
 fn role_mixin_keys(role: &str) -> [String; 3] {
     [
-        format!("__mutsu_role__{}", role),
-        format!("__mutsu_role_seq__{}", role),
-        format!("__mutsu_role_typeargs__{}", role),
+        MetaNs::Role.owned_key_for_str(role),
+        MetaNs::RoleSeq.owned_key_for_str(role),
+        MetaNs::RoleTypeargs.owned_key_for_str(role),
     ]
 }
 

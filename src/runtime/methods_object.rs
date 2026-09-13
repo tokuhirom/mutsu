@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueView;
@@ -602,9 +603,9 @@ impl Interpreter {
             };
             let mut mixins = HashMap::new();
             for role in &roles {
-                mixins.insert(format!("__mutsu_role__{}", role), Value::TRUE);
+                mixins.insert(MetaNs::Role.owned_key_for_str(role), Value::TRUE);
                 mixins.insert(
-                    format!("__mutsu_role_seq__{}", role),
+                    MetaNs::RoleSeq.owned_key_for_str(role),
                     Value::int(crate::value::next_instance_id() as i64),
                 );
             }
