@@ -1,8 +1,8 @@
 //! VM-side dispatch for the `JSON::Fast` `to-json` / `from-json` routines.
 //!
 //! These are not Raku core builtins — they are provided by the JSON modules.
-//! The real `JSON::Fast` depends on ~50 `nqp::` ops mutsu lacks and is not
-//! vendored, so mutsu ships a native Rust implementation (`runtime/json.rs`) as
+//! The real `JSON::Fast` is not vendored yet (#8226), so mutsu ships a native
+//! Rust implementation (`runtime/json.rs`) as
 //! a **last-resort provider**: it runs only when `use JSON::Fast` resolved to
 //! nothing on the module ladder. A real `JSON::Fast` reached through `use lib`
 //! / `-I` / `MUTSULIB` / the site repo loads and runs instead.

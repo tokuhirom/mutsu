@@ -311,7 +311,9 @@ impl PartialEq for Value {
                     false
                 }
             }
-            (ValueView::Uni(a), ValueView::Uni(b)) => a.form == b.form && a.text == b.text,
+            (ValueView::Uni(a), ValueView::Uni(b)) => {
+                a.form == b.form && a.codepoints() == b.codepoints()
+            }
             // ContainerRef: deref and compare inner values.
             // Check Arc pointer identity first to avoid deadlock on same-Arc comparison.
             (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => {

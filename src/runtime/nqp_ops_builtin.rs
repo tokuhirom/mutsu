@@ -68,9 +68,14 @@ impl Interpreter {
                         _ => v.to_string_value().parse::<usize>().ok(),
                     })
                     .unwrap_or(0);
-                match list.view() {
-                    ValueView::Array(items, _) => Ok(items.get(idx).cloned().unwrap_or(Value::NIL)),
-                    _ => Ok(Value::NIL),
+                match crate::runtime::nqp_ops_list::nqp_backing_array(&list) {
+                    Some(backing) => match backing.view() {
+                        ValueView::Array(items, _) => {
+                            Ok(items.get(idx).cloned().unwrap_or(Value::NIL))
+                        }
+                        _ => Ok(Value::NIL),
+                    },
+                    None => Ok(Value::NIL),
                 }
             }
             // nqp::ordat($str, $pos): the Unicode codepoint of the character at
@@ -128,20 +133,10 @@ impl Interpreter {
                     "bindattr_s" => Value::str(raw.to_string_value()),
                     _ => raw,
                 };
-                let attr_key = attr
-                    .trim_start_matches(['$', '@', '%', '&'])
-                    .trim_start_matches(['!', '.']);
-                if attr_key.is_empty() {
-                    return Some(Err(RuntimeError::new(
-                        "nqp::bindattr: empty attribute name",
-                    )));
+                match Self::nqp_bindattr_value(op, &obj, &attr, val.clone()) {
+                    Ok(()) => Ok(val),
+                    Err(e) => Err(e),
                 }
-                if let ValueView::Instance { attributes, .. } = obj.view() {
-                    let mut updated = attributes.to_map();
-                    updated.insert_through(attr_key, val.clone());
-                    attributes.commit_attrs(updated);
-                }
-                Ok(val)
             }
             // nqp::decont($x): strip the container off a value. Raku's `.item`
             // twin at the nqp level; the ops below take their argument through
@@ -208,8 +203,55 @@ impl Interpreter {
                     ValueView::Package(sym) => sym.resolve().to_string(),
                     _ => crate::runtime::utils::value_type_name(&ty).to_string(),
                 };
+                // `nqp::create(Uni)` (and the NFC/NFD/NFKC/NFKD forms) must
+                // hand back an EMPTY codepoint store, which nqp code then
+                // fills with `nqp::push_i` / `nqp::strtocodes`. `CREATE` would
+                // answer with a bare type object instead, since a Uni's
+                // content is not a Raku attribute.
+                if matches!(name.as_str(), "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
+                    let form = if name == "Uni" {
+                        String::new()
+                    } else {
+                        name.clone()
+                    };
+                    return Some(Ok(Value::uni_from_codepoints(form, std::iter::empty())));
+                }
+                // A bare VM storage class (`is repr('VMArray')` /
+                // `is repr('VMHash')`) has no attributes at all — its whole
+                // content is the store — so `CREATE` would hand back something
+                // `nqp::bindpos`/`nqp::bindkey` cannot write to. Allocate
+                // mutsu's own array/hash, which IS that store.
+                {
+                    let reg = self.registry();
+                    let short = name.rsplit("::").next().unwrap_or(&name);
+                    let holds = |set: &rustc_hash::FxHashSet<String>| {
+                        set.contains(&name)
+                            || set
+                                .iter()
+                                .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+                    };
+                    if holds(&reg.vmhash_classes) {
+                        return Some(Ok(Value::hash_with_data(Value::hash_arc(
+                            std::collections::HashMap::new(),
+                        ))));
+                    }
+                    if holds(&reg.vmarray_classes) {
+                        return Some(Ok(Value::real_array(Vec::new())));
+                    }
+                }
+                // A Map/Hash/List/Array is, in mutsu, indistinguishable from
+                // its own storage — the identity `nqp_attr_value` already
+                // answers a `'$!storage'` read with — so `CREATE` has to
+                // allocate that storage, because nqp code creates one of these
+                // and then builds it with `nqp::bindkey` / `nqp::push`, or
+                // installs a separately built store into it. `Mu.CREATE` hands
+                // back an attribute-less instance, which none of those reach;
+                // `.new` with no arguments is the empty store, correctly
+                // tagged (a `Map` is a Hash flagged immutable, a `List` an
+                // Array flagged immutable).
                 let method = if name.starts_with("array[")
                     || name == "array"
+                    || matches!(name.as_str(), "Map" | "Hash" | "List" | "Array")
                     || crate::runtime::utils::is_buf_or_blob_class(&name)
                 {
                     "new"
@@ -289,6 +331,40 @@ impl Interpreter {
             }
             _ => return None,
         })
+    }
+
+    /// Write one attribute cell directly, bypassing accessors — the shared
+    /// body of `nqp::bindattr` and `nqp::p6bindattrinvres`, which differ only
+    /// in what they hand back.
+    ///
+    /// A container target is the interesting case: rakudo's List and Map keep
+    /// their elements in a separate storage object that nqp code installs
+    /// through `'$!reified'` / `'$!storage'`, and mutsu has no such wrapper —
+    /// see [`Interpreter::nqp_bind_container_storage`], which unifies the two
+    /// stores instead.
+    pub(crate) fn nqp_bindattr_value(
+        op: &str,
+        obj: &Value,
+        attr: &str,
+        val: Value,
+    ) -> Result<(), RuntimeError> {
+        let attr_key = attr
+            .trim_start_matches(['$', '@', '%', '&'])
+            .trim_start_matches(['!', '.']);
+        if attr_key.is_empty() {
+            return Err(RuntimeError::new(format!(
+                "nqp::{op}: empty attribute name"
+            )));
+        }
+        if Self::nqp_bind_container_storage(attr_key, obj, &val) {
+            return Ok(());
+        }
+        if let ValueView::Instance { attributes, .. } = obj.view() {
+            let mut updated = attributes.to_map();
+            updated.insert_through(attr_key, val);
+            attributes.commit_attrs(updated);
+        }
+        Ok(())
     }
 
     /// The attribute-map key for an nqp `'$!name'` operand. nqp always spells

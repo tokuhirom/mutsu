@@ -93,58 +93,10 @@ fn scan_bounds(args: &[Value]) -> (Vec<char>, usize, usize) {
     (chars, offset.min(end), end)
 }
 
-/// Empty an nqp list / native array in place.
-fn clear_elems(op: &str, target: &Value) -> Result<(), RuntimeError> {
-    match target.view() {
-        ValueView::Array(items, _) => {
-            // SAFETY: audited aliased in-place container write (see
-            // value::aliased_mut); no borrow into the node is live.
-            let data = unsafe { crate::value::gc_contents_mut(&items) };
-            data.items_mut().clear();
-            Ok(())
-        }
-        ValueView::Instance { attributes, .. } => {
-            let done = crate::value::value_buf::with_buf_elems_mut(&attributes, |e| e.clear());
-            if done.is_none() {
-                return Err(RuntimeError::new(format!(
-                    "nqp::{op}: expected a Buf/Blob or array"
-                )));
-            }
-            Ok(())
-        }
-        _ => Err(RuntimeError::new(format!(
-            "nqp::{op}: expected a Buf/Blob or array"
-        ))),
-    }
-}
-
 /// Push a value onto an nqp list / native array in place.
 fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
-    match target.view() {
-        ValueView::Array(items, _) => {
-            // SAFETY: audited aliased in-place container write (see
-            // value::aliased_mut) — the same pattern `bindpos_i` uses; no
-            // borrow into the node is live.
-            let data = unsafe { crate::value::gc_contents_mut(&items) };
-            data.items_mut().push(val);
-            Ok(target.clone())
-        }
-        ValueView::Instance { attributes, .. } => {
-            let stored = val.clone();
-            let done = crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
-                elems.push(stored)
-            });
-            if done.is_none() {
-                return Err(RuntimeError::new(format!(
-                    "nqp::{op}: expected a Buf/Blob or array"
-                )));
-            }
-            Ok(target.clone())
-        }
-        _ => Err(RuntimeError::new(format!(
-            "nqp::{op}: expected a Buf/Blob or array"
-        ))),
-    }
+    Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val))?;
+    Ok(target.clone())
 }
 
 impl Interpreter {
@@ -251,30 +203,22 @@ impl Interpreter {
                         ))));
                     }
                 };
-                if let Err(e) = clear_elems(op, &target) {
-                    return Some(Err(e));
+                let refilled = Self::nqp_with_elems_mut(op, &target, |elems| {
+                    elems.clear();
+                    elems.extend(normalized.chars().map(|ch| Value::int(ch as i64)));
+                });
+                match refilled {
+                    Ok(()) => Ok(target),
+                    Err(e) => Err(e),
                 }
-                for ch in normalized.chars() {
-                    if let Err(e) = push_elem(op, &target, Value::int(ch as i64)) {
-                        return Some(Err(e));
-                    }
-                }
-                Ok(target)
             }
             // nqp::strfromcodes($codes) -> the string those codepoints spell.
             "strfromcodes" => {
                 let codes = args.first().cloned().unwrap_or(Value::NIL);
-                let elems: Vec<Value> = match codes.view() {
-                    ValueView::Array(items, _) => items.to_vec(),
-                    ValueView::Instance { attributes, .. } => {
-                        crate::value::value_buf::with_buf_elems(&attributes, |e| e.to_vec())
-                            .unwrap_or_default()
-                    }
-                    _ => {
-                        return Some(Err(RuntimeError::new(
-                            "nqp::strfromcodes: expected an array of codepoints".to_string(),
-                        )));
-                    }
+                let Some(elems) = Self::nqp_elems_of(&codes) else {
+                    return Some(Err(RuntimeError::new(
+                        "nqp::strfromcodes: expected an array of codepoints".to_string(),
+                    )));
                 };
                 let mut out = String::with_capacity(elems.len());
                 for v in &elems {
@@ -291,7 +235,13 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok(Value::str(out))
+                // MoarVM strings are NFG, so building one from codepoints
+                // normalizes: rakudo's `nqp::strfromcodes("bå".NFD)` is two
+                // graphemes spelling `bå` precomposed, not the decomposed
+                // sequence it was handed. Without this, `JSON::Fast`'s escaper
+                // — which round-trips every string through `.NFD` and back —
+                // emitted decomposed text for any composed input.
+                Ok(Value::str(normalize(&out, Normalization::Nfc)))
             }
 
             // -- string primitives --

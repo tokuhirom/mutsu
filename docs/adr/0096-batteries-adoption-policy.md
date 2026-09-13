@@ -160,9 +160,28 @@ search first and the native routines answer only when nothing resolves, so an
 `-I` / `MUTSULIB` / site-repo copy outranks them (D2 holds). `JSON::Tiny` left
 the mechanism entirely — it is a vendored battery and loads like any other
 module — the load-order-sensitive exception guess is deleted, and both dispatch
-sites now sit after routine resolution, so a resolved def always wins. Whether
-`JSON::Fast` itself stays a native provider or gets vendored behind the `nqp::`
-op work is open, and is D4's "justified in writing" bar to clear.
+sites now sit after routine resolution, so a resolved def always wins.
+
+**Re-decided 2026-09-13 ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)):
+`JSON::Fast` gets vendored, not kept.** D4's rule is that an entry whose stated
+rationale has expired is re-decided rather than re-cited, and the measurement the
+re-decision needed came out decisively: of the 51 `nqp::` ops upstream
+`JSON::Fast:ver<0.20.1>` uses, **42 already worked** — the "~50 missing" figure
+this ADR inherited was never measured. The nine that did not (`bindpos`,
+`shift_i`, `pop_s`, `push`, `chr`, `p6scalarwithvalue`, `p6bindattrinvres`,
+`hash`, `ifnull`) are implemented, along with what they were hiding: a `Uni` that
+is a real codepoint store, `nqp::create` allocating storage for the storage
+types, `'$!reified'`/`'$!storage'` installs, and an NFG-normalizing
+`nqp::strfromcodes`. **13 of the 14 upstream test files now pass against the real
+distribution.** The remaining file, `t/01-parse.t`, is held by two blockers with
+nothing to do with JSON (a ~20,000-frame recursion that overflows the Rust stack
+instead of raising — [#8232](https://github.com/tokuhirom/mutsu/issues/8232) —
+and `++$pos` passed to an `int $pos is rw` parameter —
+[#8233](https://github.com/tokuhirom/mutsu/issues/8233)), so the
+vendoring and this entry's deletion are sequenced behind those; see
+`docs/batteries/json-tiny.md`. Until then the provider survives as *scheduled for
+retirement*, which is what D4 §exception-list already records it as — not as a
+justified rung-3 entry.
 
 The rest of this entry is the record of what was there and why it went.
 
@@ -181,7 +200,8 @@ neither survives as written:
 
 - *The `nqp::` half has expired.* It rests on the real `JSON::Fast` needing ~50
   ops and on the op layer having been "rejected". mutsu has 111 ops now (D5). A
-  ~50-op gap is a rung-2 bill, not NativeCall's structural wall.
+  ~50-op gap is a rung-2 bill, not NativeCall's structural wall. (And the ~50 was
+  itself wrong: measured in #8226, the real gap was **nine** ops.)
 - *The performance half stands as a measurement and does not support the
   conclusion.* 200 META-shaped documents take ~600s through the real grammar
   against 0.49s native — on a path zef walks for every metadata read. Under D3
@@ -285,8 +305,10 @@ runs — it does not mean the feature disappears.
   attached to it.
 - **The exception list is auditable.** Two entries today, one justified (E1) and
   one retired the day this ADR landed (E2 — what survives there is a last-resort
-  `JSON::Fast` provider, still owing D4 its written justification). Any change to
-  that list is visible as a diff to this ADR.
+  `JSON::Fast` provider, **re-decided 2026-09-13 as scheduled for retirement**:
+  the real distribution now runs, 13 of its 14 upstream test files passing, and
+  the two remaining blockers are general interpreter gaps, not JSON ones).
+  Any change to that list is visible as a diff to this ADR.
 - **The `nqp::` op layer is not forbidden and never was.** D5 is the form to
   cite; work that grows ops in service of something mutsu ships needs no
   exemption from a rejection that was never that broad.
@@ -326,6 +348,6 @@ last-resort provider whose own justification is still to be written:
 | D1/D2 — rung ordering, rung-3 ban | In force since 2026-08-01 (user decision); `BATTERIES.md` §1, `CLAUDE.md` |
 | D3 — optimization vs. substitution | Stated here for the first time; no known violation other than E2 |
 | D4/E1 — `NativeCall` | Justified exception; reopening condition in [#7560](https://github.com/tokuhirom/mutsu/issues/7560) |
-| D4/E2 — JSON interception | **Retired 2026-09-12** ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); `JSON::Fast`'s last-resort provider remains, and whether it stays is open |
+| D4/E2 — JSON interception | **Retired 2026-09-12** ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); `JSON::Fast`'s last-resort provider remains, **re-decided 2026-09-13 as scheduled for retirement** ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)) — the real distribution runs, 13/14 upstream test files pass |
 | D5 — accurate `nqp::` framing | Stated here; 111 ops shipped |
 | D6 — retirement precedent | `Pod::To::Text` and native `Test` both retired |

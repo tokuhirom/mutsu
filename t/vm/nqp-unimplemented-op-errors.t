@@ -35,9 +35,13 @@ throws-like 'use nqp; nqp::objectid($_)', X::AdHoc,
     'and names the op it could not provide';
 
 # (`nqp::substr` was the example here until the String::Utils slice implemented
-# it.)
-throws-like 'use nqp; nqp::chr(65)', X::AdHoc,
-    message => /'nqp::chr'/,
+# it, then `nqp::chr` until the JSON::Fast slice did. The example must stay a
+# real nqp op that mutsu does NOT provide and whose Raku namesake would have
+# answered plausibly: raku's `sprintf("%d-%s", 7, "x")` is `"7-x"`, which is
+# exactly what nqp's own `nqp::sprintf` answers — so aliasing to it would look
+# right and hide the gap.)
+throws-like 'use nqp; nqp::sprintf("%d-%s", nqp::list(7, "x"))', X::AdHoc,
+    message => /'nqp::sprintf'/,
     'including ops whose Raku namesake would have produced a plausible answer';
 
 # Regression guard: this must stay scoped to `nqp::`. An ordinary qualified

@@ -1055,7 +1055,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         // A Uni / normalization form nested in a container keeps its
         // constructor form (`Uni.new(0x0061).NFC`), not its decoded text.
-        ValueView::Uni(u) => uni_raku_repr(&u.text, &u.form),
+        ValueView::Uni(u) => uni_raku_repr(&u.text(), &u.form),
         // A lexical class/role's type object may carry a mangled storage
         // name (ADR-0047 P1: `Foo\u{0}<decl-id>`) -- `.raku` must show the
         // user-facing bare name. The same helper also qualifies NativeCall's

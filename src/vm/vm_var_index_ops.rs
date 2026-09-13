@@ -2411,7 +2411,7 @@ impl Interpreter {
             }
             // Uni/NFC/NFD/NFKC/NFKD indexing: returns integer codepoint values
             (ValueView::Uni(u), ValueView::Int(i)) => {
-                let chars: Vec<char> = u.text.chars().collect();
+                let chars: Vec<char> = u.text().chars().collect();
                 if i < 0 || (i as usize) >= chars.len() {
                     Value::NIL
                 } else {
@@ -2419,7 +2419,7 @@ impl Interpreter {
                 }
             }
             (ValueView::Uni(u), ValueView::Sub(data)) => {
-                let chars: Vec<char> = u.text.chars().collect();
+                let chars: Vec<char> = u.text().chars().collect();
                 let len = chars.len() as i64;
                 let mut sub_env = data.env.clone();
                 for p in data.params.iter() {
@@ -2442,7 +2442,7 @@ impl Interpreter {
                 }
             }
             (ValueView::Uni(u), ValueView::Array(indices, ..)) => {
-                let chars: Vec<char> = u.text.chars().collect();
+                let chars: Vec<char> = u.text().chars().collect();
                 Value::array(
                     indices
                         .iter()
@@ -2461,7 +2461,7 @@ impl Interpreter {
                 )
             }
             (ValueView::Uni(u), ValueView::Range(a, b)) => {
-                let chars: Vec<char> = u.text.chars().collect();
+                let chars: Vec<char> = u.text().chars().collect();
                 let start = a.max(0) as usize;
                 let end = if Self::range_end_is_unbounded(b) {
                     chars.len().saturating_sub(1)
@@ -2477,7 +2477,7 @@ impl Interpreter {
                 Value::array(slice)
             }
             (ValueView::Uni(u), ValueView::RangeExcl(a, b)) => {
-                let chars: Vec<char> = u.text.chars().collect();
+                let chars: Vec<char> = u.text().chars().collect();
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
                     chars.len()

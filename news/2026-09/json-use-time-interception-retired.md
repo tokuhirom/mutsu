@@ -58,7 +58,10 @@ resting on:
 - `JSON::Tiny` is gone from the mechanism entirely. It resolves through
   `use lib` → `-I` → `MUTSULIB` → site repo → the bundled floor like any other
   battery.
-- `JSON::Fast` is not vendored (the real distribution needs ~50 `nqp::` ops),
+- `JSON::Fast` is not vendored (at the time this was written the real
+  distribution was believed to need ~50 `nqp::` ops; that was never measured and
+  turned out to be nine — see #8226 and
+  `news/2026-09/json-fast-runs-for-real.md`),
   and five bundled batteries `use` it, so the native routines still answer it —
   after the ladder comes up empty. A new `json_native_provider` flag is set only
   on that fallback, and it is what gates native dispatch;

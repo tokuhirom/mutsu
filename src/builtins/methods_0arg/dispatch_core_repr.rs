@@ -16,9 +16,9 @@ fn leaf_gist(v: &Value) -> String {
     if let ValueView::Uni(u) = v.view() {
         // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>.
         let cps: Vec<String> = u
-            .text
-            .chars()
-            .map(|c| format!("{:04X}", c as u32))
+            .codepoints()
+            .into_iter()
+            .map(|c| format!("{c:04X}"))
             .collect();
         let form = if u.form.is_empty() {
             "Uni"

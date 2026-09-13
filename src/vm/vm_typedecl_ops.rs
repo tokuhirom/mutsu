@@ -336,6 +336,8 @@ impl Interpreter {
                     self.register_cstruct_class(&storage_name);
                 } else if repr_name == "CPointer" {
                     self.register_cpointer_class(&storage_name);
+                } else if repr_name == "VMArray" || repr_name == "VMHash" {
+                    self.register_vm_storage_class(&storage_name, repr_name == "VMHash");
                 }
             }
             // TODO: Detect redeclaration of package-scoped classes across

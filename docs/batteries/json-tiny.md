@@ -70,8 +70,7 @@ Two facts the original record did not have also turned out to matter:
 
 ## `JSON::Fast` is a different case, and is still native
 
-`JSON::Fast` is **not vendored** — the real distribution depends on ~50
-`nqp::` ops mutsu does not implement. Five bundled batteries (`Cro::HTTP`,
+`JSON::Fast` is **not vendored** yet. Five bundled batteries (`Cro::HTTP`,
 `JSON::JWT`, `Log::Timeline`, …) `use` it, so `use JSON::Fast` must keep
 working, and the native `to-json`/`from-json` answer it.
 
@@ -88,11 +87,56 @@ It is a **last-resort provider, not an override**:
 - `from-json`'s failure is JSON::Fast's own plain `X::AdHoc` `die`,
   unconditionally. Nothing guesses.
 
-Deciding `JSON::Fast` itself — vendor the real distribution behind the `nqp::`
-op work (a ~50-op rung-2 bill, not NativeCall's structural wall; ADR-0096 §D5),
-or keep the provider and record it as a justified rung-3 exception alongside
-`NativeCall` ([#7560](https://github.com/tokuhirom/mutsu/issues/7560)) — is
-still open, and is ADR-0096 §D4's "justified in writing" bar to clear.
+### The recorded "~50 missing `nqp::` ops" blocker was wrong, and is gone
+
+Every earlier record here — and in `BATTERIES.md`, `src/runtime/json.rs`'s
+header, and `news/2026-07/nqp-op-layer-measured-and-rejected.md` — said the real
+distribution "depends on ~50 `nqp::` ops mutsu does not implement". Probed op by
+op against upstream `JSON::Fast:ver<0.20.1>` in September 2026, **42 of its 51
+`nqp::` ops already worked**; the missing nine were `bindpos`, `shift_i`,
+`pop_s`, `push`, `chr`, `p6scalarwithvalue`, `p6bindattrinvres`, `hash` and
+`ifnull` ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)).
+
+Those nine are implemented, and so is what they turned out to be hiding:
+
+- **`Uni` is now a codepoint store.** rakudo declares `Uni` `is repr('VMArray')
+  is array_type(uint32)`, and `JSON::Fast` treats one as exactly that — it
+  consumes a string's `.NFD` with `nqp::shift_i` and rewrites it in place with
+  `nqp::splice`. mutsu stored a Uni as the normalized *string*, which left it
+  with no element store at all, so `nqp::elems` answered 0 and the escaper's
+  scan loop never ran: `to-json` emitted *unescaped*, invalid JSON for any
+  string containing a quote or a control character. `UniData` now holds its
+  codepoints in a shared array and derives the string.
+- **`nqp::create` allocates storage.** A `Map`/`Hash`/`List`/`Array`, an
+  `is repr('VMHash')`/`is repr('VMArray')` class, and a `Uni` are all, in mutsu,
+  indistinguishable from their own store, so `CREATE`'s attribute-less instance
+  was unusable; each now comes back as an empty store that `nqp::bindkey` /
+  `nqp::push` can build.
+- **`'$!reified'` / `'$!storage'` installs unify two stores.** rakudo's List and
+  Map wrap a separate storage object that nqp code installs into them; mutsu has
+  no wrapper, so installing means the container takes the storage's contents
+  *and* the storage object is re-pointed at the container's node — nqp code does
+  it in both orders (`hllize-list` fills then installs; `parse-array` installs
+  then fills).
+- **`nqp::strfromcodes` normalizes.** A VM string is NFG, so rakudo's
+  `nqp::strfromcodes("bå".NFD)` is the *composed* two graphemes. Without that,
+  every string `JSON::Fast` round-tripped through `.NFD` came back decomposed.
+
+With those in place, **13 of the 14 upstream `JSON::Fast` test files pass
+whole**. `t/01-parse.t` is 337/674 on two blockers that have nothing to do with
+JSON:
+
+- a `Q«[{"":» x 10_000` input recurses ~20,000 routines deep, which aborts the
+  process on a Rust stack overflow rather than raising a catchable error (mutsu's
+  ceiling is between 5,000 and 10,000 frames) —
+  [#8232](https://github.com/tokuhirom/mutsu/issues/8232);
+- `nom-comment($text, ++$pos)` passes `++$pos` to an `int $pos is rw`
+  parameter, which mutsu refuses with "expects a writable container" where
+  rakudo binds the native reference —
+  [#8233](https://github.com/tokuhirom/mutsu/issues/8233).
+
+Vendoring the distribution, retiring the native provider, and the ADR-0096 §D4
+ledger row all wait on those two.
 
 ## Upstream test suite
 

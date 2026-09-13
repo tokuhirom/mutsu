@@ -594,6 +594,7 @@ mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
+mod nqp_ops_list;
 mod nqp_ops_process;
 mod nqp_ops_str;
 mod nqp_ops_text;

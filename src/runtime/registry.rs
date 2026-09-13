@@ -199,6 +199,14 @@ pub(crate) struct Registry {
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
+    /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
+    /// storage, with no Raku attributes of their own. nqp code declares one
+    /// when it wants a bare list/hash store to build with `nqp::bindpos` /
+    /// `nqp::bindkey` and then install into a List/Map (`JSON::Fast`'s
+    /// `IterationMap`), so `nqp::create` has to hand back mutsu's array/hash
+    /// rather than an attribute-less instance nothing can index.
+    pub(crate) vmarray_classes: HashSet<String>,
+    pub(crate) vmhash_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: HashSet<String>,
     /// Classes registered from a `my class`/`my role` declaration, keyed by

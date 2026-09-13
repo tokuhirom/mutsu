@@ -289,9 +289,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // the plain decoded text.
         ValueView::Uni(u) => {
             let cps: Vec<String> = u
-                .text
-                .chars()
-                .map(|c| format!("{:04X}", c as u32))
+                .codepoints()
+                .into_iter()
+                .map(|c| format!("{c:04X}"))
                 .collect();
             let form = if u.form.is_empty() {
                 "Uni"

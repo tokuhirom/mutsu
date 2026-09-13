@@ -151,7 +151,7 @@ impl Interpreter {
                 })
             }
 
-            _ => return None,
+            _ => return self.call_nqp_op_list(op, args),
         })
     }
 }

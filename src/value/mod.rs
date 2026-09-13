@@ -2181,10 +2181,58 @@ pub struct CustomTypeData {
 }
 
 /// Boxed payload of [`Value::Uni`] (a Uni in a normalization form).
+///
+/// A `Uni` IS its codepoints: rakudo declares it `is repr('VMArray')
+/// is array_type(uint32)`, and nqp code treats one as exactly that — indexing
+/// it with `nqp::atpos_i`, consuming it with `nqp::shift_i`, and rewriting it
+/// in place with `nqp::splice` (upstream `JSON::Fast`'s escaper and its string
+/// scanner are both written that way). So the codepoints are the stored form
+/// and [`UniData::text`] derives the string, not the other way round: holding
+/// the normalized `String` instead left a Uni with no element store at all, so
+/// `nqp::elems` answered 0 and the escaper silently emitted unescaped JSON.
+///
+/// `codes` is a `Value::Array`, which carries the usual shared `Gc` node — two
+/// clones of one Uni therefore share one codepoint store, the way two
+/// references to a VMArray do.
 #[derive(Debug, Clone)]
 pub struct UniData {
     pub form: String,
-    pub text: String,
+    pub codes: Value,
+}
+
+impl UniData {
+    /// The codepoints, as a plain vector.
+    pub fn codepoints(&self) -> Vec<u32> {
+        match self.codes.view() {
+            ValueView::Array(items, _) => items
+                .iter()
+                .map(|v| u32::try_from(crate::runtime::to_int(v)).unwrap_or(0))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The string these codepoints spell. A codepoint that is not a Unicode
+    /// scalar value (a lone surrogate, which a VMArray of uint32 can hold but
+    /// a Rust `String` cannot) becomes U+FFFD rather than disappearing.
+    pub fn text(&self) -> String {
+        self.codepoints()
+            .into_iter()
+            .map(|c| char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect()
+    }
+
+    /// How many codepoints this Uni holds.
+    pub fn len(&self) -> usize {
+        match self.codes.view() {
+            ValueView::Array(items, _) => items.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Boxed payload of [`Value::RegexWithAdverbs`] (a regex literal carrying adverbs).

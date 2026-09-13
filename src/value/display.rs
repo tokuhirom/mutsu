@@ -632,7 +632,7 @@ impl Value {
                         })
                 }
             }
-            ValueView::Uni(u) => u.text.clone(),
+            ValueView::Uni(u) => u.text(),
             ValueView::Hash(items) => {
                 // Cycle detection for recursive hash structures
                 thread_local! {

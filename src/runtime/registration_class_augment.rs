@@ -869,6 +869,16 @@ impl Interpreter {
             .insert(name.to_string());
     }
 
+    /// `is repr('VMArray')` / `is repr('VMHash')`: a bare VM storage class.
+    pub(crate) fn register_vm_storage_class(&mut self, name: &str, is_hash: bool) {
+        let name = name.to_string();
+        if is_hash {
+            self.registry_mut().vmhash_classes.insert(name);
+        } else {
+            self.registry_mut().vmarray_classes.insert(name);
+        }
+    }
+
     pub(crate) fn construct_cunion_instance(
         &mut self,
         class_name: &str,

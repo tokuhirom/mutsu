@@ -795,7 +795,7 @@ pub(crate) fn native_method_0arg(
     }
     // Uni types: override .chars, .codes, .comb to work on codepoints
     if let ValueView::Uni(u) = target.view() {
-        let text = &u.text;
+        let text = &u.text();
         match method {
             "chars" | "codes" => {
                 return Some(Ok(Value::int(text.chars().count() as i64)));

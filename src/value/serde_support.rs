@@ -345,7 +345,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         }
         ValueView::Uni(u) => Ok(SerValue::Uni {
             form: u.form.clone(),
-            text: u.text.clone(),
+            text: u.text(),
         }),
         ValueView::ParametricRole {
             base_name,
