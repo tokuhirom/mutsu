@@ -3,7 +3,7 @@
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
-  bare-subrule slices implemented
+  bare-subrule, and anchor slices implemented
   2026-09-12/13; other dynamic contents and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -574,3 +574,27 @@ follow-up boundaries. The focused regression is
 `t/rakuast/rakuast-regex.t`, which pins both AST spellings, the default and
 explicit capture flags, ordinary capture behavior, dot suppression, and a
 grammar-local override of the special `same` assertion.
+
+## 17. Static anchor slice (2026-09-13)
+
+The four source-level anchors with existing execution representations now
+retain their RakuAST shape in `RegexTree`: `^` and `$` become
+`Regex::Anchor::BeginningOfString` and `Regex::Anchor::EndOfString`, while
+`^^` and `$$` become `Regex::Anchor::BeginningOfLine` and
+`Regex::Anchor::EndOfLine`. The parser recognizes these only as anchor
+spellings; variable interpolation and other `$` forms remain separate tree
+boundaries.
+
+The read direction registers all four zero-field `RakuAST::Regex::Anchor::*`
+classes, including their `Anchor`/`Atom`/`Term` hierarchy. The write direction
+accepts the same nodes and lowers them through the existing compiler and VM.
+String-start anchors set the existing `RegexPattern::anchor_start` policy;
+line and string-end anchors use the existing zero-width matcher atoms. No
+new matcher or RakuAST execution path is introduced.
+
+The focused regressions are `t/rakuast/rakuast-regex.t` and
+`t/regex/regex-tree-anchors.t`. They pin dual-oracle AST shapes, concrete
+model type behavior, constructed-tree EVAL, and line/string anchor matching.
+Lookaround assertions, Unicode/compound character classes, code assertions,
+qualified or argumented subrules, and other runtime-valued assertions remain
+explicit follow-up boundaries.

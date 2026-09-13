@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 40;
+plan 46;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -83,6 +83,58 @@ is Q[/(a)/].AST.gist, q:to/END/.chomp, 'a capture group remains a CapturingGroup
         expression => RakuAST::QuotedRegex.new(
           body => RakuAST::Regex::CapturingGroup.new(
             RakuAST::Regex::Literal.new("a")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/^a/].AST.gist, q:to/END/.chomp, 'a start-of-string anchor remains structural';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::Anchor::BeginningOfString.new,
+            RakuAST::Regex::Literal.new("a")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/a$/].AST.gist, q:to/END/.chomp, 'an end-of-string anchor remains structural';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::Literal.new("a"),
+            RakuAST::Regex::Anchor::EndOfString.new
+          )
+        )
+      )
+    )
+    END
+
+is Q[/^^a/].AST.gist, q:to/END/.chomp, 'a start-of-line anchor remains structural';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::Anchor::BeginningOfLine.new,
+            RakuAST::Regex::Literal.new("a")
+          )
+        )
+      )
+    )
+    END
+
+is Q[/a$$/].AST.gist, q:to/END/.chomp, 'an end-of-line anchor remains structural';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::Literal.new("a"),
+            RakuAST::Regex::Anchor::EndOfLine.new
           )
         )
       )
@@ -221,6 +273,11 @@ my $literal = RakuAST::Regex::Literal.new("a");
 is $literal.text, 'a', 'regex literal text is available through its accessor';
 ok $literal ~~ RakuAST::Regex::Atom, 'regex atoms retain their semantic type';
 ok $literal ~~ RakuAST::Regex, 'regex nodes retain their Regex type';
+my $beginning-anchor = RakuAST::Regex::Anchor::BeginningOfString.new;
+ok $beginning-anchor ~~ RakuAST::Regex::Atom,
+    'anchors retain their regex atom type';
+is $beginning-anchor.^name, 'RakuAST::Regex::Anchor::BeginningOfString',
+    'anchors expose their concrete model class';
 my $interpolation = RakuAST::Regex::Interpolation.new(
     sequential => False,
     var => RakuAST::Var::Lexical.new(q[$x]),

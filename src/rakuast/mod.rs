@@ -73,6 +73,10 @@ pub enum RakuAstClass {
     RegexQuantifierZeroOrMore,
     RegexQuantifierOneOrMore,
     RegexQuantifierZeroOrOne,
+    RegexAnchorBeginningOfString,
+    RegexAnchorBeginningOfLine,
+    RegexAnchorEndOfString,
+    RegexAnchorEndOfLine,
     RegexCharClassDigit,
     ColonPairTrue,
     RegexDeclaration,
@@ -280,6 +284,10 @@ impl RakuAstClass {
             RegexQuantifierZeroOrMore => "RakuAST::Regex::Quantifier::ZeroOrMore",
             RegexQuantifierOneOrMore => "RakuAST::Regex::Quantifier::OneOrMore",
             RegexQuantifierZeroOrOne => "RakuAST::Regex::Quantifier::ZeroOrOne",
+            RegexAnchorBeginningOfString => "RakuAST::Regex::Anchor::BeginningOfString",
+            RegexAnchorBeginningOfLine => "RakuAST::Regex::Anchor::BeginningOfLine",
+            RegexAnchorEndOfString => "RakuAST::Regex::Anchor::EndOfString",
+            RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
             RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
             ColonPairTrue => "RakuAST::ColonPair::True",
             RegexDeclaration => "RakuAST::RegexDeclaration",
@@ -410,6 +418,10 @@ impl RakuAstClass {
                 | RakuAstClass::RegexQuantifierZeroOrMore
                 | RakuAstClass::RegexQuantifierOneOrMore
                 | RakuAstClass::RegexQuantifierZeroOrOne
+                | RakuAstClass::RegexAnchorBeginningOfString
+                | RakuAstClass::RegexAnchorBeginningOfLine
+                | RakuAstClass::RegexAnchorEndOfString
+                | RakuAstClass::RegexAnchorEndOfLine
                 | RakuAstClass::RegexCharClassDigit
         )
     }
@@ -501,6 +513,15 @@ impl RakuAstClass {
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
             RegexCharClassDigit => &[
                 "RakuAST::Regex::CharClass",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            RegexAnchorBeginningOfString
+            | RegexAnchorBeginningOfLine
+            | RegexAnchorEndOfString
+            | RegexAnchorEndOfLine => &[
+                "RakuAST::Regex::Anchor",
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
@@ -721,6 +742,10 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexQuantifierZeroOrMore,
     RakuAstClass::RegexQuantifierOneOrMore,
     RakuAstClass::RegexQuantifierZeroOrOne,
+    RakuAstClass::RegexAnchorBeginningOfString,
+    RakuAstClass::RegexAnchorBeginningOfLine,
+    RakuAstClass::RegexAnchorEndOfString,
+    RakuAstClass::RegexAnchorEndOfLine,
     RakuAstClass::RegexCharClassDigit,
     RakuAstClass::ColonPairTrue,
     RakuAstClass::RegexDeclaration,
@@ -1686,6 +1711,10 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
+                    | RakuAstClass::RegexAnchorBeginningOfString
+                    | RakuAstClass::RegexAnchorBeginningOfLine
+                    | RakuAstClass::RegexAnchorEndOfString
+                    | RakuAstClass::RegexAnchorEndOfLine
                     | RakuAstClass::RegexCharClassDigit
             ) =>
         {
@@ -1805,6 +1834,14 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         }
         ("RakuAST::Regex::Quantifier::OneOrMore", "new") => RakuAstClass::RegexQuantifierOneOrMore,
         ("RakuAST::Regex::Quantifier::ZeroOrOne", "new") => RakuAstClass::RegexQuantifierZeroOrOne,
+        ("RakuAST::Regex::Anchor::BeginningOfString", "new") => {
+            RakuAstClass::RegexAnchorBeginningOfString
+        }
+        ("RakuAST::Regex::Anchor::BeginningOfLine", "new") => {
+            RakuAstClass::RegexAnchorBeginningOfLine
+        }
+        ("RakuAST::Regex::Anchor::EndOfString", "new") => RakuAstClass::RegexAnchorEndOfString,
+        ("RakuAST::Regex::Anchor::EndOfLine", "new") => RakuAstClass::RegexAnchorEndOfLine,
         ("RakuAST::Regex::CharClass::Digit", "new") => RakuAstClass::RegexCharClassDigit,
         _ => return None,
     })
@@ -1998,6 +2035,10 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexQuantifierZeroOrMore
             | RakuAstClass::RegexQuantifierOneOrMore
             | RakuAstClass::RegexQuantifierZeroOrOne
+            | RakuAstClass::RegexAnchorBeginningOfString
+            | RakuAstClass::RegexAnchorBeginningOfLine
+            | RakuAstClass::RegexAnchorEndOfString
+            | RakuAstClass::RegexAnchorEndOfLine
             | RakuAstClass::RegexCharClassDigit
             | RakuAstClass::ColonPairTrue
             | RakuAstClass::RegexDeclaration
