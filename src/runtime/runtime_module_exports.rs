@@ -8,7 +8,7 @@ impl Interpreter {
     /// suffix to the base key, then walk base, `__m1`, `__m2`, ... and insert
     /// at the first vacant slot. A slot already holding this exact `Arc`
     /// (same-module re-import) makes the call a no-op.
-    fn import_multi_candidate_merged(&mut self, target_key: &str, def: Arc<FunctionDef>) {
+    fn import_multi_candidate_merged(&mut self, target_key: &str, def: Arc<FunctionDef>) -> Symbol {
         let base = match target_key.rfind("__m") {
             Some(pos)
                 if pos + 3 < target_key.len()
@@ -29,16 +29,86 @@ impl Interpreter {
             };
             match funcs.entry(Symbol::intern(&key)) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
+                    let key = *entry.key();
                     entry.insert(def);
-                    return;
+                    return key;
                 }
                 std::collections::hash_map::Entry::Occupied(entry) => {
                     if Arc::ptr_eq(entry.get(), &def) {
-                        return;
+                        return *entry.key();
                     }
                 }
             }
             idx += 1;
+        }
+    }
+
+    /// Publish a multi routine bound through an `OUR::` code stash entry.
+    ///
+    /// A binding such as `OUR::{'&trait_mod:<is>'} := &trait_mod:<is>` creates
+    /// the code value in the package stash, but the normal name-based dispatcher
+    /// still searches `Registry::functions`.  The RHS is a materialized multi
+    /// dispatcher, so copy the currently visible candidate definitions into the
+    /// package's registry namespace as well. Keep those aliases in the persistent
+    /// `our_scoped_functions` table: an import scope may otherwise remove the
+    /// temporary `GLOBAL::` aliases installed while the binding's source module
+    /// was loaded, making the stash entry callable but invisible to later users.
+    pub(crate) fn register_our_code_alias(&mut self, name: &str, value: &Value) {
+        let ValueView::Sub(data) = value.view() else {
+            return;
+        };
+        if !data.env.contains_key("__mutsu_multi_dispatch_candidates") {
+            return;
+        }
+        let Some(name) = name.strip_prefix("&OUR::") else {
+            return;
+        };
+        if name.is_empty() {
+            return;
+        }
+
+        let candidates = self.resolve_all_multi_candidates(name);
+        if candidates.is_empty() {
+            return;
+        }
+        let target_pkg = self.current_package();
+        let source_prefixes: Vec<String> = self
+            .bare_name_packages()
+            .into_iter()
+            .map(|pkg| format!("{pkg}::{name}/"))
+            .collect();
+        let entries: Vec<(String, Arc<FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter_map(|(key, def)| {
+                let key_str = key.as_str();
+                let source_prefix = source_prefixes
+                    .iter()
+                    .find(|prefix| key_str.starts_with(prefix.as_str()))?;
+                if !candidates
+                    .iter()
+                    .any(|candidate| Arc::ptr_eq(candidate, def))
+                {
+                    return None;
+                }
+                let suffix = key_str.strip_prefix(source_prefix)?;
+                Some((format!("{target_pkg}::{name}/{suffix}"), def.clone()))
+            })
+            .collect();
+
+        let mut changed = false;
+        for (target_key, def) in entries {
+            let installed_key = self.import_multi_candidate_merged(&target_key, def.clone());
+            self.registry_mut()
+                .our_scoped_functions
+                .insert(installed_key, def);
+            crate::runtime::cow_table_mut(&mut self.module_registered_functions)
+                .insert(installed_key);
+            changed = true;
+        }
+        if changed {
+            self.fn_resolve_gen += 1;
         }
     }
 
