@@ -318,6 +318,7 @@ impl Compiler {
                 .unwrap_or_else(|| self.current_package.clone()),
         );
         sub_compiler.set_current_package(state_scope);
+        sub_compiler.seed_native_rw_params(param_defs);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);
@@ -1141,6 +1142,14 @@ impl Compiler {
                 .unwrap_or_else(|| self.current_package.clone()),
         );
         sub_compiler.set_current_package(closure_package);
+        // A routine body's own signature defines the native `is rw` parameters
+        // in scope; a plain block is lexically inside its enclosing routine, so
+        // that routine's parameters stay visible and its set carries down.
+        if is_routine {
+            sub_compiler.seed_native_rw_params(param_defs);
+        } else {
+            sub_compiler.native_rw_params = self.native_rw_params.clone();
+        }
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);

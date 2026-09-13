@@ -1200,6 +1200,19 @@ pub(crate) struct Compiler {
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// Sigil-less names of the enclosing routine's NATIVE-typed `is rw`
+    /// parameters (`sub f(int $p is rw)` records `"p"`).
+    ///
+    /// Such a parameter is bound to a *native reference* to the caller's
+    /// location rather than to a `Scalar`, which is why rakudo lets `++$p`
+    /// be handed straight on to another native `is rw` parameter: the
+    /// increment writes through the reference and yields the reference again.
+    /// Every other operand shape rakudo rejects (`my int $x; f(++$x)` and a
+    /// non-native `$p is rw` both die), so this set is the exact gate that
+    /// keeps [`Compiler::native_rw_param_incdec_operand`] as narrow as
+    /// rakudo is. Seeded per routine body; a nested non-routine block
+    /// inherits it, since the parameter stays lexically visible there.
+    native_rw_params: HashSet<String>,
     compiled_functions: CompiledFns,
     current_package: String,
     /// True when compiling inside a `unit module`/`unit class`/`unit role`
@@ -1635,6 +1648,7 @@ impl Compiler {
             lexical_dup_routines: HashSet::new(),
             hoisted_sub_plans: Vec::new(),
             local_types: HashMap::new(),
+            native_rw_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
