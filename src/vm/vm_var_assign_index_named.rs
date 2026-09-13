@@ -334,12 +334,10 @@ impl Interpreter {
         }
         // Associative: the Positional shapes do not do it either.
         //
-        // TODO: compile to bytecode -- a `Buf` is missing from this set. It
-        // reaches this store as an `Instance` carrying `__mutsu_array_storage`
-        // and is served by the instance arm far above, which coerces the key
-        // and answers "Index out of range" where rakudo answers "Type Buf does
-        // not support associative indexing."; refusing it belongs there, not
-        // here.
+        // A `Buf`/`Blob` also does not do Associative, but it reaches this
+        // store as an `Instance` carrying `__mutsu_array_storage` rather than
+        // one of the `ValueView` shapes below, so it is refused by the
+        // instance arm far above instead (#7556).
         let positional_only = matches!(
             view,
             ValueView::Array(..)
@@ -1327,6 +1325,19 @@ impl Interpreter {
             if crate::runtime::utils::is_native_elems_class(&cn)
                 && crate::value::value_buf::has_buf_elems(&attributes)
             {
+                // #7556: a Buf/Blob does Positional, not Associative — an
+                // associative subscript store (`$buf<a> = 5`, `$buf{"a"} = 5`)
+                // never reaches an element store in rakudo, regardless of
+                // whether the key happens to look numeric; it answers the
+                // Any.ASSIGN-KEY protocol error instead of "Index out of
+                // range" (the message the code below produces when the key
+                // fails to parse as a positional index).
+                if !is_positional {
+                    return Err(RuntimeError::new(format!(
+                        "Type {} does not support associative indexing.",
+                        cn
+                    )));
+                }
                 if crate::runtime::utils::is_blob_like_class(&cn) {
                     return Err(RuntimeError::assignment_ro(Some("Blob")));
                 }
