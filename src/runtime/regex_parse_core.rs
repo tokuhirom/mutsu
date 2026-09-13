@@ -148,6 +148,59 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
     }
 }
 
+/// Scan the body of a `{ ... }` code assertion, having already consumed the
+/// opening brace. Braces inside quoted strings are code, not block delimiters.
+fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
+    let mut code = String::new();
+    let mut brace_depth = 1usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for (idx, &ch) in rest.iter().enumerate() {
+        if let Some(closer) = quote {
+            code.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == closer {
+                quote = None;
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            code.push(ch);
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            code.push(ch);
+            continue;
+        }
+        if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
+            quote = Some(closer);
+            code.push(ch);
+            continue;
+        }
+        match ch {
+            '{' => {
+                brace_depth += 1;
+                code.push(ch);
+            }
+            '}' => {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    return Some((code, idx + 1));
+                }
+                code.push(ch);
+            }
+            _ => code.push(ch),
+        }
+    }
+    None
+}
+
 /// True when `s` (the text after the `?`/`!` prefix of a `<?…>` / `<!…>`
 /// assertion) names a subrule that a general zero-width lookahead can wrap: an
 /// identifier-led rule name, optionally prefixed with `.` for a non-capturing
@@ -2582,21 +2635,10 @@ impl Interpreter {
                             }
                             // Skip '{'
                             chars.next();
-                            let mut code = String::new();
-                            let mut brace_depth = 1usize;
-                            for ch in chars.by_ref() {
-                                if ch == '{' {
-                                    brace_depth += 1;
-                                    code.push(ch);
-                                } else if ch == '}' {
-                                    brace_depth -= 1;
-                                    if brace_depth == 0 {
-                                        break;
-                                    }
-                                    code.push(ch);
-                                } else {
-                                    code.push(ch);
-                                }
+                            let rest: Vec<char> = chars.clone().collect();
+                            let (code, consumed) = scan_code_assertion_body(&rest)?;
+                            for _ in 0..consumed {
+                                chars.next();
                             }
                             // Consume the closing '>'
                             if chars.peek() == Some(&'>') {
