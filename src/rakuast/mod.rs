@@ -65,6 +65,8 @@ pub enum RakuAstClass {
     RegexGroup,
     RegexCapturingGroup,
     RegexNamedCapture,
+    RegexAssertionNamed,
+    RegexAssertionAlias,
     RegexInterpolation,
     RegexAlternation,
     RegexQuantifiedAtom,
@@ -270,6 +272,8 @@ impl RakuAstClass {
             RegexGroup => "RakuAST::Regex::Group",
             RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
             RegexNamedCapture => "RakuAST::Regex::NamedCapture",
+            RegexAssertionNamed => "RakuAST::Regex::Assertion::Named",
+            RegexAssertionAlias => "RakuAST::Regex::Assertion::Alias",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -485,6 +489,8 @@ impl RakuAstClass {
             | RegexGroup
             | RegexCapturingGroup
             | RegexNamedCapture
+            | RegexAssertionNamed
+            | RegexAssertionAlias
             | RegexInterpolation
             | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
@@ -618,6 +624,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Group"
         | "RakuAST::Regex::CapturingGroup"
         | "RakuAST::Regex::NamedCapture"
+        | "RakuAST::Regex::Assertion::Named"
+        | "RakuAST::Regex::Assertion::Alias"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
@@ -676,6 +684,7 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Regex"
             | "RakuAST::Regex::Atom"
             | "RakuAST::Regex::Term"
+            | "RakuAST::Regex::Assertion"
             | "RakuAST::Regex::Quantifier"
             | "RakuAST::Regex::CharClass"
             | "RakuAST::ColonPair"
@@ -704,6 +713,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexGroup,
     RakuAstClass::RegexCapturingGroup,
     RakuAstClass::RegexNamedCapture,
+    RakuAstClass::RegexAssertionNamed,
+    RakuAstClass::RegexAssertionAlias,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexQuantifiedAtom,
@@ -1393,6 +1404,67 @@ pub fn construct(
             fields,
         }))));
     }
+    if class_name == "RakuAST::Regex::Assertion::Named" && method == "new" {
+        let name = named_arg(args, "name").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Named.new requires `name`")
+        })?;
+        require_rakuast_class(
+            &name,
+            RakuAstClass::Name,
+            "RakuAST::Regex::Assertion::Named.new",
+        )?;
+        let capturing = named_arg(args, "capturing").unwrap_or_else(|| Value::truth(false));
+        if !matches!(capturing.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Named.new expects `capturing` to be Bool",
+            ));
+        }
+        let mut fields = vec![RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(name),
+        }];
+        if matches!(capturing.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("capturing"),
+                value: RakuAstFieldValue::Node(capturing),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionNamed,
+            fields,
+        }))));
+    }
+    if class_name == "RakuAST::Regex::Assertion::Alias" && method == "new" {
+        let name = named_arg(args, "name").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `name`")
+        })?;
+        if !matches!(name.view(), ValueView::Str(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Alias.new expects `name` to be Str",
+            ));
+        }
+        let assertion = named_arg(args, "assertion").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `assertion`")
+        })?;
+        require_rakuast_class(
+            &assertion,
+            RakuAstClass::RegexAssertionNamed,
+            "RakuAST::Regex::Assertion::Alias.new",
+        )?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionAlias,
+            fields: vec![
+                RakuAstField {
+                    name: Some("name"),
+                    value: RakuAstFieldValue::Node(name),
+                },
+                RakuAstField {
+                    name: Some("assertion"),
+                    value: RakuAstFieldValue::Node(assertion),
+                },
+            ],
+        }))));
+    }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
@@ -1609,6 +1681,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexGroup
                     | RakuAstClass::RegexCapturingGroup
                     | RakuAstClass::RegexNamedCapture
+                    | RakuAstClass::RegexAssertionNamed
+                    | RakuAstClass::RegexAssertionAlias
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
@@ -1917,6 +1991,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexGroup
             | RakuAstClass::RegexCapturingGroup
             | RakuAstClass::RegexNamedCapture
+            | RakuAstClass::RegexAssertionNamed
+            | RakuAstClass::RegexAssertionAlias
             | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore

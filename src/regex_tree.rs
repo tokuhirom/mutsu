@@ -51,6 +51,14 @@ pub(crate) enum RegexNode {
         array: bool,
         regex: Box<RegexNode>,
     },
+    Subrule {
+        name: String,
+        capturing: bool,
+    },
+    SubruleAlias {
+        alias: String,
+        name: String,
+    },
     Interpolation {
         name: String,
         sequential: bool,
@@ -330,6 +338,23 @@ impl RegexTree {
                         };
                     Some(tokens)
                 }
+                RegexNode::Subrule { name, capturing } => {
+                    let name = if *capturing {
+                        name.clone()
+                    } else {
+                        format!(".{name}")
+                    };
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::Named(name.into()),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
+                RegexNode::SubruleAlias { alias, name } => Some(vec![token(
+                    crate::runtime::RegexAtom::Named(format!("{alias}={name}").into()),
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
                 RegexNode::Interpolation { name, sequential } => {
                     if *sequential {
                         return None;
@@ -395,7 +420,11 @@ impl RegexNode {
             | Self::Quantified { atom: child, .. }
             | Self::WithWhitespace(child) => child.collect_interpolation_names(names),
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
-            Self::Literal(_) | Self::Quote(_) | Self::CharClassDigit => {}
+            Self::Literal(_)
+            | Self::Quote(_)
+            | Self::Subrule { .. }
+            | Self::SubruleAlias { .. }
+            | Self::CharClassDigit => {}
         }
     }
 
@@ -448,6 +477,11 @@ impl RegexNode {
                 let sigil = if *array { '@' } else { '$' };
                 format!("{sigil}<{name}> = {}", regex.to_source())
             }
+            Self::Subrule { name, capturing } => {
+                let prefix = if *capturing { "" } else { "." };
+                format!("<{prefix}{name}>")
+            }
+            Self::SubruleAlias { alias, name } => format!("<{alias}={name}>"),
             Self::Interpolation { name, .. } => format!("${name}"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
@@ -605,7 +639,8 @@ impl Parser {
             '$' => self.parse_interpolation(),
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
-            '|' | '+' | '*' | '?' | '.' | '^' | '<' | '>' => None,
+            '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
+            '<' => self.parse_subrule(),
             _ => self.parse_literal(),
         }
     }
@@ -714,6 +749,12 @@ impl Parser {
         self.skip_whitespace();
         let mut regex = self.parse_atom(&[])?;
         let quantifier = self.parse_quantifier();
+        // Aggregate aliases have their own list-context semantics in the
+        // legacy matcher. Keep subrule-containing forms there until the
+        // shared tree has a representation for that combination.
+        if array && contains_subrule(&regex) {
+            return None;
+        }
         if let RegexNode::Literal(text) = &mut regex
             && text.chars().count() > 1
         {
@@ -755,6 +796,28 @@ impl Parser {
             array,
             regex: Box::new(regex),
         })
+    }
+
+    fn parse_subrule(&mut self) -> Option<RegexNode> {
+        self.pos += 1; // '<'
+        let start = self.pos;
+        while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
+            self.pos += 1;
+        }
+        if self.pos == start || !self.consume_if('>') {
+            return None;
+        }
+        let contents: String = self.chars[start..self.pos - 1].iter().collect();
+        if let Some((alias, name)) = contents.split_once('=') {
+            if is_simple_subrule_name(alias) && is_simple_subrule_name(name) {
+                return Some(RegexNode::SubruleAlias {
+                    alias: alias.to_string(),
+                    name: name.to_string(),
+                });
+            }
+            return None;
+        }
+        None
     }
 
     fn parse_variable_name(&mut self) -> Option<String> {
@@ -807,6 +870,33 @@ impl Parser {
         } else {
             false
         }
+    }
+}
+
+fn is_simple_subrule_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+}
+
+fn contains_subrule(node: &RegexNode) -> bool {
+    match node {
+        RegexNode::Subrule { .. } | RegexNode::SubruleAlias { .. } => true,
+        RegexNode::Sequence(nodes) | RegexNode::Alternation(nodes) => {
+            nodes.iter().any(contains_subrule)
+        }
+        RegexNode::Group(child)
+        | RegexNode::CapturingGroup(child)
+        | RegexNode::Quantified { atom: child, .. }
+        | RegexNode::WithWhitespace(child) => contains_subrule(child),
+        RegexNode::NamedCapture { regex, .. } => contains_subrule(regex),
+        RegexNode::Literal(_)
+        | RegexNode::Quote(_)
+        | RegexNode::Interpolation { .. }
+        | RegexNode::CharClassDigit => false,
     }
 }
 

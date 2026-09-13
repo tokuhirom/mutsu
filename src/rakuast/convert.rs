@@ -2321,6 +2321,26 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("regex"), regex_node(regex)?));
             (RakuAstClass::RegexNamedCapture, fields)
         }
+        RegexNode::Subrule { name, capturing } => {
+            let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+            if *capturing {
+                fields.push(leaf_field(Some("capturing"), Value::truth(true)));
+            }
+            (RakuAstClass::RegexAssertionNamed, fields)
+        }
+        RegexNode::SubruleAlias { alias, name } => (
+            RakuAstClass::RegexAssertionAlias,
+            vec![
+                leaf_field(Some("name"), Value::str(alias.clone())),
+                node_field(
+                    Some("assertion"),
+                    regex_node(&RegexNode::Subrule {
+                        name: name.clone(),
+                        capturing: true,
+                    })?,
+                ),
+            ],
+        ),
         RegexNode::Interpolation { name, sequential } => (
             RakuAstClass::RegexInterpolation,
             vec![

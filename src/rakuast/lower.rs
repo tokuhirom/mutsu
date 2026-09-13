@@ -1600,6 +1600,40 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             array: bool_field(node, "array")?,
             regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
         }),
+        RakuAstClass::RegexAssertionNamed => {
+            let name = named_child(node, "name")?;
+            if name.class != RakuAstClass::Name {
+                return Err(unsupported(node));
+            }
+            let name_value = positional_leaf(name)?;
+            let ValueView::Str(name) = name_value.view() else {
+                return Err(unsupported(node));
+            };
+            Ok(RegexNode::Subrule {
+                name: name.to_string(),
+                capturing: bool_field(node, "capturing")?,
+            })
+        }
+        RakuAstClass::RegexAssertionAlias => {
+            let assertion = named_child(node, "assertion")?;
+            if assertion.class != RakuAstClass::RegexAssertionNamed
+                || !bool_field(assertion, "capturing")?
+            {
+                return Err(unsupported(node));
+            }
+            let name = named_child(assertion, "name")?;
+            if name.class != RakuAstClass::Name {
+                return Err(unsupported(node));
+            }
+            let name_value = positional_leaf(name)?;
+            let ValueView::Str(name) = name_value.view() else {
+                return Err(unsupported(node));
+            };
+            Ok(RegexNode::SubruleAlias {
+                alias: leaf_str(node, "name")?,
+                name: name.to_string(),
+            })
+        }
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             if sequential {
