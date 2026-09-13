@@ -297,6 +297,12 @@ impl Interpreter {
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                     self.call_sub_value(mapper.clone(), vec![callable_item(item)], true)?
                 }
+                // `classify(*)` / `categorize(*)` classify on the *identity* of
+                // each element (documented under `multi method classify(Whatever)`;
+                // Rakudo 2023.02 added it). It behaves exactly like a `{ $_ }`
+                // block mapper, so a list-valued element becomes a multi-level
+                // path for `classify` and several categories for `categorize`.
+                ValueView::Whatever => callable_item(item),
                 // A mapper miss is whatever the corresponding *subscript* read
                 // would yield, which is the `Any` type object — `@mapper[6]`
                 // and `%mapper<z>` both answer `(Any)`, and `raku` keys the

@@ -31,6 +31,22 @@ pub(crate) fn native_function(
     name_sym: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    // A plain-variable argument reaches a call site wrapped in a `VarRef` so an
+    // `is rw` parameter can bind the caller's container. Nothing in this table
+    // binds rw — every handler here is pure Rust over values — and none of them
+    // knows the wrapper, so a `VarRef` that survives to here silently falls into
+    // the handler's catch-all arm: `abs($n)` answered `0` and `is-prime($n)`
+    // answered `False`. `normalize_call_args_for_target` strips the wrapper for
+    // an unregistered name, but deliberately keeps it when a user routine of the
+    // same name is registered — so declaring any `multi sub abs(...)` (or, as
+    // Math::NumberTheory does, `multi sub is-prime(Complex:D)`) left every
+    // fall-through-to-core call with a wrapped argument. Strip it here, at the
+    // one door into the table, rather than at each of its callers.
+    let unwrapped: Option<Vec<Value>> = args
+        .iter()
+        .any(Value::is_varref)
+        .then(|| args.iter().map(|a| a.unwrap_varref().clone()).collect());
+    let args: &[Value] = unwrapped.as_deref().unwrap_or(args);
     let name = name_sym.resolve();
     let name = name.as_str();
     // Junction constructors are pure value assembly (no autothreading: the

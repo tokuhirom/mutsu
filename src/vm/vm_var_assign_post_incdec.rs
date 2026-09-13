@@ -57,10 +57,10 @@ impl Interpreter {
             B::BitShiftRight => self.exec_bit_shift_right_op()?,
             B::IntDiv => self.exec_int_div_op()?,
             B::IntMod => self.exec_int_mod_op()?,
-            B::Gcd => self.exec_gcd_op(),
-            B::Lcm => self.exec_lcm_op(),
-            B::InfixMin => self.exec_infix_min_op(),
-            B::InfixMax => self.exec_infix_max_op(),
+            B::Gcd => self.exec_gcd_op()?,
+            B::Lcm => self.exec_lcm_op()?,
+            B::InfixMin => self.exec_infix_min_op()?,
+            B::InfixMax => self.exec_infix_max_op()?,
             B::StringRepeat => self.exec_string_repeat_op()?,
         }
         Ok(self.stack.pop().unwrap())
