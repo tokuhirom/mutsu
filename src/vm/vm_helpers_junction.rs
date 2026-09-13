@@ -221,7 +221,11 @@ impl Interpreter {
             // A bare block may hold its lexically captured `$/` in a shared
             // cell. Smartmatch returns the Match value, never the container
             // implementing that lexical binding.
-            let slash = self.env().get("/").cloned().unwrap_or(Value::NIL);
+            let slash = self
+                .env()
+                .get_sym(crate::symbol::wk::match_var())
+                .cloned()
+                .unwrap_or(Value::NIL);
             let slash = if slash.is_container_ref() {
                 slash.into_deref()
             } else {

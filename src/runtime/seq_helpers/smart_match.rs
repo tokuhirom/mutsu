@@ -956,15 +956,28 @@ impl Interpreter {
                             if !a.global && !a.exhaustive && !a.overlap && !a.perl5
                     ) =>
             {
-                let text = self.regex_match_text(left);
-                // Set $_ to the match target so $( $_ ) works inside regex
-                let saved_topic = self.env.get("_").cloned();
-                self.env.insert("_".to_string(), Value::str(text.clone()));
-                let match_result = self.regex_match_with_captures_value(right, &text);
+                // The topic Value and the `&str` the matcher walks share one
+                // allocation. Building the topic as `Value::str(text.clone())`
+                // copied the whole subject on every `~~` purely to have it in
+                // two places; cloning the `Value` instead is a refcount bump
+                // (#8269).
+                let text_val = Value::str(self.regex_match_text(left));
+                // `Value::str` always constructs a `Str`, so the fallback is
+                // unreachable; spelling it as one rather than as an assertion
+                // keeps this path off the panic surface (#8186).
+                let text: &str = text_val.as_str().unwrap_or_default();
+                // Set $_ to the match target so $( $_ ) works inside regex.
+                // Symbol-keyed throughout: the by-name `Env` API re-interns its
+                // literal on every call, and interning `_` three times per
+                // match cost more than running the matcher did (#8269).
+                let topic = crate::symbol::wk::topic();
+                let saved_topic = self.env.get_sym(topic).cloned();
+                self.env.insert_sym(topic, text_val.clone());
+                let match_result = self.regex_match_with_captures_value(right, text);
                 if let Some(v) = &saved_topic {
-                    self.env.insert("_".to_string(), v.clone());
+                    self.env.insert_sym(topic, v.clone());
                 } else {
-                    self.env.remove("_");
+                    self.env.remove_sym(topic);
                 }
                 if let Some(mut captures) = match_result {
                     // Reset stale numeric/named capture vars from any previous match.
@@ -974,14 +987,16 @@ impl Interpreter {
                         if v.alternation_padding {
                             continue;
                         }
-                        self.env
-                            .insert(i.to_string(), Value::str(captures.slot_text(v)));
+                        self.env.insert_sym(
+                            crate::symbol::wk::capture_index(i),
+                            Value::str(captures.slot_text(v)),
+                        );
                     }
                     // Clear any previous `made` value before executing code blocks
-                    self.env.remove("made");
+                    self.env.remove_sym(crate::symbol::wk::made());
                     // Reduce-time inline actions: run each subrule's `{ make … }`
                     // once (children first) and commit per-node `.made`.
-                    let starget = captures.target_or_new(&text);
+                    let starget = captures.target_or_new(text);
                     self.reduce_regex_captures_made(&mut captures, Some(&starget));
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
@@ -1033,7 +1048,7 @@ impl Interpreter {
                     if left.as_str().is_none() {
                         updates.push(("orig", left.clone()));
                     }
-                    if let Some(made_val) = self.env.get("made").cloned() {
+                    if let Some(made_val) = self.env.get_sym(crate::symbol::wk::made()).cloned() {
                         updates.push(("ast", made_val));
                     }
                     let match_obj = if updates.is_empty() {
@@ -1054,8 +1069,10 @@ impl Interpreter {
                             .rposition(|slot| !slot.alternation_padding)
                             .map_or(0, |idx| idx + 1);
                         for (i, slot) in captures.positional[..visible_len].iter().enumerate() {
-                            self.env
-                                .insert(i.to_string(), Value::pos_slot_value(slot, &starget));
+                            self.env.insert_sym(
+                                crate::symbol::wk::capture_index(i),
+                                Value::pos_slot_value(slot, &starget),
+                            );
                         }
                         for (k, slot) in &named_with_hash {
                             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
@@ -1070,7 +1087,8 @@ impl Interpreter {
                         let list_v = match_obj.match_list();
                         if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                             for (i, v) in list.iter().enumerate() {
-                                self.env.insert(i.to_string(), v.clone());
+                                self.env
+                                    .insert_sym(crate::symbol::wk::capture_index(i), v.clone());
                             }
                         }
                         let named_v = match_obj.match_named();
@@ -1081,7 +1099,8 @@ impl Interpreter {
                             }
                         }
                     }
-                    self.env.insert("/".to_string(), match_obj);
+                    self.env
+                        .insert_sym(crate::symbol::wk::match_var(), match_obj);
                     return true;
                 }
                 self.clear_match_state();

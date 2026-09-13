@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
@@ -133,6 +133,17 @@ thread_local! {
     /// siblings, not as a claimed win.)
     static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> =
         const { RefCell::new(FxHashMap::with_hasher(rustc_hash::FxBuildHasher)) };
+
+    /// How many times this thread has called [`Symbol::intern`].
+    ///
+    /// Not a leak gauge (that is [`interned_count`], which counts *distinct*
+    /// names): this counts the *calls*, including the ones the memo above
+    /// serves. A repeat intern is not free — it hashes and compares the whole
+    /// key string — so a fixed name re-interned once per operation is pure
+    /// waste, and this is how a test pins that a hot path has stopped doing it
+    /// (#8269). Per-thread and non-atomic so the counting itself cannot
+    /// contend or perturb what it measures.
+    static INTERN_CALLS: Cell<u64> = const { Cell::new(0) };
 
     /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
     /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
@@ -380,6 +391,13 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The match variable `$/`, stored sigil-less. Written by every
+        /// successful `~~` and by every failed one (`clear_match_state`), so
+        /// it is on the per-match path twice over (#8269).
+        match_var => "/";
+        /// The pending `make` payload a regex code block leaves behind.
+        /// Removed before, and read after, every single-regex smartmatch.
+        made => "made";
         /// The `Any` type object, the value a routine's fresh topic is seeded with.
         any => "Any";
         /// The dynamic `$?FILE`, stored sigil-less with its twigil.
@@ -438,6 +456,34 @@ pub(crate) mod wk {
         in_eval => "__mutsu_in_eval";
     }
 
+    /// How many positional-capture index names ([`capture_index`]) are served
+    /// from the pre-interned table. `$0`..`$15` covers essentially every real
+    /// pattern; a wider one falls back to the allocating path.
+    const CAPTURE_INDEX_CACHED: usize = 16;
+
+    /// The env key for positional capture `$i`, i.e. the decimal spelling of
+    /// `i`. Capture vars are stored sigil-less, so `$0`'s key is `"0"`.
+    ///
+    /// The by-name spelling of this is `env.insert(i.to_string(), ...)`, which
+    /// allocates a `String` and then re-interns it — per capture, per match.
+    /// Interning a fixed name is exactly what this module exists to avoid
+    /// (#8269).
+    ///
+    /// Each index is interned **lazily**, on first use, rather than the whole
+    /// table at once: interning a numeric name registers it in the symbol
+    /// table's capture-shape registry, which `reset_capture_env_vars` probes
+    /// per match. Priming all sixteen up front would make a program that only
+    /// ever uses `$0` pay fifteen extra probes per match forever.
+    #[inline]
+    pub(crate) fn capture_index(i: usize) -> Symbol {
+        static CELLS: [std::sync::OnceLock<Symbol>; CAPTURE_INDEX_CACHED] =
+            [const { std::sync::OnceLock::new() }; CAPTURE_INDEX_CACHED];
+        match CELLS.get(i) {
+            Some(cell) => *cell.get_or_init(|| Symbol::intern(&i.to_string())),
+            None => Symbol::intern(&i.to_string()),
+        }
+    }
+
     /// Whether `key` is one of the fixed per-call env keys the well-known
     /// method-entry family above covers. Only used by debug assertions and
     /// tests that check the string-keyed and symbol-keyed spellings agree.
@@ -471,6 +517,7 @@ impl Symbol {
     /// Intern a string and return its `Symbol`.  If the string has already been
     /// interned, the existing symbol is returned (idempotent).
     pub fn intern(s: &str) -> Symbol {
+        INTERN_CALLS.with(|c| c.set(c.get().wrapping_add(1)));
         // Thread-local memo first: interned symbols are global and append-only
         // (an id, once assigned to a string, is never reused or remapped), so a
         // cached `str -> Symbol` mapping is valid for the life of the process
@@ -734,6 +781,19 @@ impl Symbol {
     pub fn is_empty(&self) -> bool {
         self.as_str().is_empty()
     }
+}
+
+/// How many times **this thread** has called [`Symbol::intern`], memo hits
+/// included.
+///
+/// Distinct from [`interned_count`]: that one counts the names that exist, this
+/// one counts the asks. A repeat intern still hashes and compares the whole key
+/// string, so a fixed name re-interned once per operation is measurable waste —
+/// and because this counter is exact and load-independent, a test can pin that a
+/// hot path has stopped doing it without timing anything (#8269). Pinned by
+/// `tests/regex_match_intern_budget.rs`.
+pub fn intern_calls() -> u64 {
+    INTERN_CALLS.with(|c| c.get())
 }
 
 /// How many distinct strings the process has interned so far.
