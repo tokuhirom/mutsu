@@ -41,7 +41,8 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, binding_params) = parse_if_binding_params(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, raw_then_branch) = block(rest)?;
+    let (rest, raw_then_branch) =
+        block_with_pointy_params(rest, binding_params.as_deref().unwrap_or(&[]))?;
     let (rest, _) = ws(rest)?;
     let (binding_var, then_branch) = lower_if_clause_binding(binding_params, raw_then_branch);
 
@@ -198,6 +199,21 @@ fn ensure_last_clause_binding_var(clauses: &mut [IfChainClause]) -> Option<Strin
     })
 }
 
+/// Read the value the last clause's binding variable holds.
+///
+/// `binding_var` keeps the declaration's own spelling, and a sigilless
+/// `if COND -> \\a { }` is recorded as `\\a` — so the `\\` has to come off before
+/// the name is read, and the read itself is the bare word a sigilless binding
+/// is spelled as. Stripping only `$` left `Expr::Var("\\a")`, a name nothing
+/// declares, so `if 0 -> \\a { } else -> $x { }` handed the else clause Nil
+/// instead of the condition value.
+fn binding_var_read(source_binding: &str) -> Expr {
+    match source_binding.strip_prefix('\\') {
+        Some(bare) => Expr::BareWord(bare.to_string()),
+        None => Expr::Var(source_binding.trim_start_matches('$').to_string()),
+    }
+}
+
 fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {
     let Some(param_defs) = else_clause.binding_params else {
         return else_clause.body;
@@ -210,25 +226,18 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             // `else -> $_ { }` topicalizes through `given` for the same reason
             // as the then-branch form — see `lower_if_clause_binding`.
             return vec![Stmt::Given {
-                topic: Expr::Var(source_binding.trim_start_matches('$').to_string()),
+                topic: binding_var_read(source_binding),
                 body: else_clause.body,
                 is_statement_modifier: false,
                 with_kind: None,
             }];
         }
         let mut body = Vec::with_capacity(else_clause.body.len() + 1);
-        body.push(Stmt::VarDecl {
-            name: param_defs[0].name.clone(),
-            expr: Expr::Var(source_binding.trim_start_matches('$').to_string()),
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        });
+        body.push(simple_pointy_bind(
+            &param_defs[0].name,
+            &binding_var_read(source_binding),
+            param_defs[0].sigilless,
+        ));
         body.extend(else_clause.body);
         return body;
     }
@@ -246,9 +255,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
         }),
         args: vec![Expr::Unary {
             op: TokenKind::Pipe,
-            expr: Box::new(Expr::Var(
-                source_binding.trim_start_matches('$').to_string(),
-            )),
+            expr: Box::new(binding_var_read(source_binding)),
         }],
     };
     vec![Stmt::Expr(call_expr)]
@@ -281,7 +288,8 @@ pub(crate) fn parse_elsif_chain(
             let (r, _) = ws(r)?;
             let (r, binding_params) = parse_if_binding_params(r)?;
             let (r, _) = ws(r)?;
-            let (r, raw_then_branch) = block(r)?;
+            let (r, raw_then_branch) =
+                block_with_pointy_params(r, binding_params.as_deref().unwrap_or(&[]))?;
             let (r, _) = ws(r)?;
             let (binding_var, then_branch) =
                 lower_if_clause_binding(binding_params, raw_then_branch);
@@ -390,7 +398,7 @@ pub(crate) fn parse_elsif_chain(
         }
         let (r, mut binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
-        let (r, mut body) = block(r)?;
+        let (r, mut body) = block_with_pointy_params(r, binding_params.as_deref().unwrap_or(&[]))?;
         // If the last clause was `orwith`, topicalize $_ in the else body via
         // `given` (a fresh topic scope) so it is not blocked by an enclosing `for`'s
         // read-only `$_` (see the orwith branch above).
@@ -504,7 +512,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, binding_params) = parse_if_binding_params(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, body) = block_with_pointy_params(rest, binding_params.as_deref().unwrap_or(&[]))?;
     // `unless` cannot have else/elsif/orwith. rakudo rejects this at COMPILE
     // time with `X::Syntax::UnlessElse`, carrying the offending `keyword`
     // (roast S04-statements/unless.t matches on it). mutsu used to lower it to
