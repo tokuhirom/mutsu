@@ -248,7 +248,8 @@ in the code, and the exception list has shrunk to two entries:
     resolves through the ordinary ladder and runs the module's own Raku source — `to-json([1,2])`
     answers `[ 1, 2 ]`, the module's spelling, where the interception answered a pretty-printed
     block.
-  - `JSON::Fast` is not vendored (the real distribution needs ~50 `nqp::` ops mutsu lacks), so
+  - `JSON::Fast` is not vendored yet (#8226 — the "~50 missing `nqp::` ops" once recorded here
+    was never measured; 42 of its 51 ops already worked), so
     nothing resolves and the native routines answer — but only *after* the ladder has run and
     come up empty, so a `JSON::Fast` reached via `use lib` / `-I` / `MUTSULIB` / the site repo
     now wins (BATTERIES.md §6). It no longer returns ahead of `call_routine_def` to beat a

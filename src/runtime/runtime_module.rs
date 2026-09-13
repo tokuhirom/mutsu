@@ -474,8 +474,10 @@ impl Interpreter {
             }
         } else if module == "JSON::Fast" {
             // `JSON::Fast` is the one JSON module mutsu still provides natively
-            // (`runtime/json.rs`): the real distribution needs ~50 `nqp::` ops
-            // mutsu lacks and is not vendored, so nothing would resolve. It is a
+            // (`runtime/json.rs`): the real distribution is not vendored yet, so
+            // nothing would resolve. (The "~50 missing `nqp::` ops" this comment
+            // used to give as the reason was never measured; see #8226 and
+            // `docs/batteries/json-tiny.md` for what the real bill is.) It is a
             // *fallback*, not an override — the ladder runs first, so a real
             // `JSON::Fast` reached through `use lib` / `-I` / `MUTSULIB` / the
             // site repo wins (BATTERIES.md §6). `JSON::Tiny` is no longer on

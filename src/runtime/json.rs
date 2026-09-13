@@ -1,10 +1,17 @@
 //! Native `to-json` / `from-json` (JSON::Fast / JSON::Tiny compatible).
 //!
 //! These are NOT Raku core builtins — they are provided by the `JSON::Fast` /
-//! `JSON::Tiny` modules. The real `JSON::Fast` depends on ~50 `nqp::` ops mutsu
-//! does not implement, so mutsu ships native Rust implementations gated behind
-//! `use JSON::Fast` / `use JSON::Tiny`, mirroring how the `Test` functions are
-//! gated on `use Test` (see `vm_native_test.rs`).
+//! `JSON::Tiny` modules. `JSON::Tiny` is vendored and runs its own source
+//! (#8183/#8203); `JSON::Fast` is not vendored yet, so this native provider
+//! still answers `use JSON::Fast` — but only as a last resort, after the module
+//! ladder comes up empty (`runtime/runtime_module.rs`).
+//!
+//! The "~50 `nqp::` ops mutsu does not implement" this header used to cite as
+//! the blocker was never measured: probed op by op against upstream
+//! `JSON::Fast:ver<0.20.1>`, 42 of its 51 ops already worked, and the nine that
+//! did not are implemented now (#8226). 13 of the 14 upstream test files pass
+//! against the real distribution; retiring this file waits on two non-JSON
+//! blockers recorded in `docs/batteries/json-tiny.md`.
 //!
 //! Encoding follows JSON::Fast 0.19 semantics: `:pretty` defaults to True with a
 //! 2-space indent, type objects / undefined values render as `null`, `Rat`s gain

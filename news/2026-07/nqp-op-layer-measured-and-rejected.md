@@ -11,6 +11,20 @@ forced, and the three changes that closed every item it opened:
 - **a package-qualified call no longer becomes a builtin** (the wider shape) —
   news/2026-07/qualified-call-no-longer-aliases-a-builtin.md
 
+> **Superseded in three ways (2026-09-13, #8226).** The premise below — "mutsu
+> already ships its own JSON::Fast ... so the real distribution never runs" — was
+> removed by #8203, which retired the `use`-time interception. The "42 of 51 ops
+> missing" count was never re-measured after the op work of the intervening
+> months: probed op by op against `JSON::Fast:ver<0.20.1>`, **42 of the 51
+> already worked** and only nine did not. And the verification repro quoted below
+> ("dies with `Unknown function: list_i`") no longer reproduces — `list_i` is
+> implemented. The nine are implemented now, and 13 of the 14 upstream
+> `JSON::Fast` test files pass against the real distribution; see
+> `news/2026-09/json-fast-runs-for-real.md` and
+> `docs/batteries/json-tiny.md`. The *conclusion* below ("do not build an
+> `nqp::` layer; implement demand-driven") still stands — what is stale is every
+> number used to justify it.
+
 ## Measured: how big is the `nqp::` question, really
 
 Over the 847 cached fez dists:
@@ -113,4 +127,5 @@ news/2026-07/qualified-call-no-longer-aliases-a-builtin.md.
 - `src/runtime/builtins.rs` — the full-name `nqp::` ops (`atkey`, `atpos`,
   `ordat`, `gethostname`, `bindattr`)
 - `src/runtime/runtime_module.rs` — `use nqp` as a no-op pragma; the
-  JSON::Fast / JSON::Tiny interception
+  JSON::Fast / JSON::Tiny interception (retired in #8203; `JSON::Fast` is now a
+  last-resort provider reached only after the module ladder comes up empty)

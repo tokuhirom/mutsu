@@ -231,12 +231,21 @@ impl Interpreter {
             "elems" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let n = match v.view() {
-                    ValueView::Instance { attributes, .. } => {
-                        value_buf::buf_len(&attributes).unwrap_or(0) as i64
-                    }
                     ValueView::Array(items, _) => items.len() as i64,
                     ValueView::Hash(map) => map.len() as i64,
-                    _ => 0,
+                    // An `IterationBuffer` keeps its elements in an attribute
+                    // rather than a buf payload, and a `Uni` answers with its
+                    // codepoints, so ask the shared accessor before falling
+                    // back to the buf length.
+                    _ => Self::nqp_elems_of(&v)
+                        .map(|e| e.len())
+                        .or_else(|| match v.view() {
+                            ValueView::Instance { attributes, .. } => {
+                                value_buf::buf_len(&attributes)
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0) as i64,
                 };
                 Ok(Value::int(n))
             }
@@ -271,17 +280,25 @@ impl Interpreter {
             "atpos_i" | "atpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1);
+                // A Buf/Blob answers from its bytes; everything else (a plain
+                // array, an IterationBuffer, a Uni's codepoints) from the
+                // shared element accessor.
                 let elem = match target.view() {
-                    ValueView::Instance { attributes, .. } => usize::try_from(idx)
+                    ValueView::Instance { attributes, .. }
+                        if value_buf::buf_len(&attributes).is_some() =>
+                    {
+                        usize::try_from(idx)
+                            .ok()
+                            .and_then(|i| {
+                                value_buf::with_buf_bytes(&attributes, |b| b.get(i).copied())
+                                    .flatten()
+                            })
+                            .map(|b| Value::int(b as i64))
+                    }
+                    _ => usize::try_from(idx)
                         .ok()
-                        .and_then(|i| {
-                            value_buf::with_buf_bytes(&attributes, |b| b.get(i).copied()).flatten()
-                        })
-                        .map(|b| Value::int(b as i64)),
-                    ValueView::Array(items, _) => usize::try_from(idx)
-                        .ok()
-                        .and_then(|i| items.get(i).cloned()),
-                    _ => None,
+                        .zip(Self::nqp_elems_of(&target))
+                        .and_then(|(i, elems)| elems.get(i).cloned()),
                 };
                 let elem = elem.unwrap_or(Value::int(0));
                 if op == "atpos_n" {
@@ -361,6 +378,13 @@ impl Interpreter {
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 2).max(0) as usize;
                 let count = iarg(args, 3).max(0) as usize;
+                // An element-store target (a plain list, an IterationBuffer, a
+                // Uni) splices VALUES; only a Buf/Blob splices bytes. nqp code
+                // builds escaped text by splicing one native int list into
+                // another, which the byte path cannot express.
+                if let Some(r) = Self::nqp_splice_elems(op, &target, &source, offset, count) {
+                    return Some(r);
+                }
                 let src_bytes = match buf_bytes_of(op, &source) {
                     Ok(b) => b,
                     Err(e) => return Some(Err(e)),

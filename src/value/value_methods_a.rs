@@ -237,9 +237,17 @@ impl Value {
             id,
         }))
     }
-    /// Create a Uni value (boxed payload).
+    /// Create a Uni value (boxed payload) from the string it spells.
     pub fn uni(form: String, text: String) -> Self {
-        Value::Uni(Box::new(UniData { form, text }))
+        Value::uni_from_codepoints(form, text.chars().map(|c| c as u32))
+    }
+    /// Create a Uni value directly from its codepoints — the stored form.
+    pub fn uni_from_codepoints(form: String, codes: impl IntoIterator<Item = u32>) -> Self {
+        let items: Vec<Value> = codes.into_iter().map(|c| Value::int(c as i64)).collect();
+        Value::Uni(Box::new(UniData {
+            form,
+            codes: Value::real_array(items),
+        }))
     }
     /// Create a CustomTypeInstance value (boxed payload).
     pub fn custom_type_instance(

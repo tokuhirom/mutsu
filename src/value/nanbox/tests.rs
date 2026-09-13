@@ -523,7 +523,7 @@ fn every_variant_roundtrips_losslessly() {
         },
         ValueRepr::Uni(Box::new(UniData {
             form: "NFC".to_string(),
-            text: "abc".to_string(),
+            codes: Value::real_array(vec![Value::int(97), Value::int(98), Value::int(99)]),
         })),
         ValueRepr::RakuAst(Box::new(crate::rakuast::RakuAstNode {
             class: crate::rakuast::RakuAstClass::IntLiteral,

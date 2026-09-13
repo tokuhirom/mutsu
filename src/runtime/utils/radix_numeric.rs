@@ -245,7 +245,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 y, mo, d, h, mi, s, tz,
             ))
         }
-        ValueView::Uni(u) => Value::int(u.text.chars().count() as i64),
+        ValueView::Uni(u) => Value::int(u.len() as i64),
         ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
         _ => Value::int(0),
     }

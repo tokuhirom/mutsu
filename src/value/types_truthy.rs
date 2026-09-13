@@ -156,7 +156,7 @@ impl Value {
             ValueView::Whatever => true,
             ValueView::HyperWhatever => true,
             ValueView::Capture { positional, named } => !positional.is_empty() || !named.is_empty(),
-            ValueView::Uni(u) => !u.text.is_empty(),
+            ValueView::Uni(u) => !u.is_empty(),
             ValueView::Mixin(inner, mixins) => {
                 if let Some(bool_val) = mixins.get("Bool") {
                     bool_val.truthy()

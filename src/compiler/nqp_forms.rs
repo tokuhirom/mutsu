@@ -91,6 +91,24 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
                 true
             }
+            // nqp::ifnull(a, b) — yield `a` unless it is null, in which case
+            // yield `b`. A special form because `b` must not be evaluated when
+            // `a` is there: rakudo's idiom is
+            // `nqp::ifnull(nqp::getattr(...), nqp::bindattr(..., fresh))`,
+            // which would install a fresh empty store over a live one if both
+            // arms ran. mutsu has no VM-level null distinct from an undefined
+            // Raku value, so "null" is tested as undefined — which also makes a
+            // type object take the `b` arm.
+            "nqp::ifnull" if args.len() == 2 => {
+                self.compile_expr(&args[0]);
+                // `JumpIfNotNil` peeks, so the defined value is already the
+                // result on the taken path.
+                let jump_keep = self.code.emit(OpCode::JumpIfNotNil(0));
+                self.code.emit(OpCode::Pop);
+                self.compile_expr(&args[1]);
+                self.code.patch_jump(jump_keep);
+                true
+            }
             // nqp::while(c, body) / nqp::until(c, body) — re-evaluate the
             // condition each iteration; yields Nil.
             "nqp::while" | "nqp::until" if args.len() == 2 => {

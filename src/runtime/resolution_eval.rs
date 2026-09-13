@@ -426,6 +426,30 @@ impl Interpreter {
         (code, fns)
     }
 
+    /// Whether `sym` is a code-env entry this block's own compiled chunk
+    /// declares — a `my &f` / `my sub f`, a `sub f`, or the
+    /// `__mutsu_callable_id::` marker that accompanies one. Consulted only on
+    /// the rare path where undoing the block's code-var writes would leave the
+    /// name unresolvable, so the walk over `sub_decl_plans` costs nothing in
+    /// the common case.
+    fn block_declares_code_name(code: &crate::opcode::CompiledCode, sym: Symbol) -> bool {
+        if code.my_declared_sym.contains(&sym) {
+            return true;
+        }
+        let name = sym.resolve();
+        let bare = name
+            .strip_prefix('&')
+            .or_else(|| {
+                name.rsplit_once("::")
+                    .filter(|(head, _)| head.starts_with("__mutsu_callable_id::"))
+                    .map(|(_, tail)| tail)
+            })
+            .unwrap_or(&name);
+        code.sub_decl_plans
+            .iter()
+            .any(|plan| plan.name.resolve() == bare)
+    }
+
     fn eval_block_value_inner(
         &mut self,
         body: &[Stmt],
@@ -665,8 +689,25 @@ impl Interpreter {
                 .any(|k| self.env.overlay_get_sym(*k).is_some())
         {
             for k in code_keys_after.iter() {
-                if !saved_code_env.contains_key(k) {
-                    self.env.remove_overlay_sym(*k);
+                if saved_code_env.contains_key(k) {
+                    continue;
+                }
+                let Some(dropped) = self.env.remove_overlay_sym(*k) else {
+                    continue;
+                };
+                // A code entry this tier's overlay gained while the block ran
+                // was not necessarily ADDED by the block: a nested call that
+                // flattens the env chain (`flattened_for_frame`) migrates the
+                // caller's own `&`-bindings into this tier. Dropping one of
+                // those loses it outright, because a flattened env has no
+                // parent tier for it to shadow back through — which is what
+                // made an imported `&to-json` (and any `my &f`) vanish from a
+                // sub's body as soon as one of its parameter defaults had to be
+                // evaluated re-entrantly (`sub h($x, @k = $x.keys) { f() }`).
+                // So put a still-needed binding back unless this block is the
+                // one that declared the name.
+                if self.env.get_sym(*k).is_none() && !Self::block_declares_code_name(&code, *k) {
+                    self.env.insert_sym(*k, dropped);
                 }
             }
             for (k, v) in saved_code_env {

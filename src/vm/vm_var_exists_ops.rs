@@ -756,7 +756,7 @@ impl Interpreter {
 
         // Uni: check exists based on codepoint count
         if let ValueView::Uni(u) = target.view() {
-            let len = u.text.chars().count() as i64;
+            let len = u.text().chars().count() as i64;
             if indices.len() == 1 && !is_zen {
                 let i = indices[0];
                 let exists = i >= 0 && i < len;
