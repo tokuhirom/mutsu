@@ -2,7 +2,7 @@ use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
     CaseFoldIter, LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars,
-    grapheme_end, is_word_char, matches_named_builtin,
+    grapheme_end, is_grapheme_boundary, is_word_char, matches_named_builtin,
 };
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use crate::runtime::regex_parse::RegexParseMode;
@@ -657,18 +657,33 @@ impl Interpreter {
         }
         let matched = match atom {
             RegexAtom::Literal(ch) => {
-                if ignore_case {
-                    // In case-insensitive mode, a plain literal should not match
-                    // a synthetic grapheme (base + combining marks) because they
-                    // are different graphemes.
-                    let ge = grapheme_end(chars, pos);
-                    if ge > pos + 1 {
-                        false
-                    } else {
-                        ch.to_lowercase().to_string() == c.to_lowercase().to_string()
-                    }
+                // A literal atom is a whole grapheme. It must therefore not
+                // match the base of a synthetic one (`/a/` does not match
+                // `"a\x[5B4]b"`, whose first grapheme is `a\x[5B4]`), and it
+                // must not start inside a cluster either (`"a\x[094D]b" ~~
+                // /\x[094D]/` and `"क्ष" ~~ /ष/` are both `False` in Rakudo).
+                if grapheme_end(chars, pos) > pos + 1 || !is_grapheme_boundary(chars, pos) {
+                    false
+                } else if ignore_case {
+                    ch.to_lowercase().to_string() == c.to_lowercase().to_string()
                 } else {
                     *ch == c
+                }
+            }
+            RegexAtom::LiteralGrapheme(g) => {
+                let len = g.chars().count();
+                if pos + len > chars.len()
+                    || grapheme_end(chars, pos) != pos + len
+                    || !is_grapheme_boundary(chars, pos)
+                {
+                    false
+                } else {
+                    let subject = &chars[pos..pos + len];
+                    if ignore_case {
+                        subject.iter().collect::<String>().to_lowercase() == g.to_lowercase()
+                    } else {
+                        g.chars().eq(subject.iter().copied())
+                    }
                 }
             }
             RegexAtom::Named(name) => {
@@ -853,10 +868,15 @@ impl Interpreter {
                     let spec = name.spec();
                     Some(pos + spec.lookup_name.chars().count())
                 }
-                // Literal matches advance by exactly 1 codepoint — they do
-                // NOT consume trailing combining marks, because the regex may
-                // need to match those marks explicitly (e.g. `abc \x[5B4] def`).
+                // A literal atom is one grapheme, and the arms above only
+                // report a match when the subject's grapheme at `pos` is
+                // exactly it — so advancing by its own length advances by a
+                // whole grapheme. A pattern that spells a cluster out
+                // codepoint by codepoint (`abc \x[5B4] def`) is re-joined into
+                // one `LiteralGrapheme` at parse time, so the marks are part
+                // of the atom rather than atoms of their own.
                 RegexAtom::Literal(_) => Some(pos + 1),
+                RegexAtom::LiteralGrapheme(g) => Some(pos + g.chars().count()),
                 // Character classes (\d, \w, .), Unicode properties, and
                 // composite classes match a full grapheme: the base codepoint
                 // plus any trailing combining marks.

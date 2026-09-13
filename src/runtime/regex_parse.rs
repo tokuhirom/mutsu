@@ -754,6 +754,7 @@ pub(super) fn single_token_pattern(
 pub(super) fn goal_text_for_token(token: &RegexToken) -> String {
     match &token.atom {
         RegexAtom::Literal(ch) => format!("{ch:?}"),
+        RegexAtom::LiteralGrapheme(g) => format!("{g:?}"),
         RegexAtom::Named(name) => format!("<{name}>"),
         _ => "goal".to_string(),
     }
@@ -1435,6 +1436,10 @@ pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> Reg
                 from_runtime_interpolation: false,
             })
             .collect();
+        // `'क्ष'` inside a regex is one grapheme, not three codepoint atoms:
+        // this token list is built here rather than by the tokenizer, so it
+        // needs the same re-joining pass.
+        let tokens = super::regex_parse_grapheme::merge_grapheme_literal_tokens(tokens);
         RegexAtom::Group(RegexPattern {
             tokens,
             anchor_start: false,

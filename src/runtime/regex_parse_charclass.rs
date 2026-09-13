@@ -665,6 +665,7 @@ impl Interpreter {
     fn regex_atom_is_closed(a: &RegexAtom) -> bool {
         match a {
             RegexAtom::Literal(_)
+            | RegexAtom::LiteralGrapheme(_)
             | RegexAtom::Any
             | RegexAtom::Newline
             | RegexAtom::NotNewline

@@ -877,6 +877,14 @@ impl PartialEq<&str> for NamedAtom {
 #[derive(Clone)]
 pub(crate) enum RegexAtom {
     Literal(char),
+    /// A literal *grapheme* that spans more than one codepoint, e.g. the
+    /// Devanagari cluster `क्ष` (`क` U+0915, virama U+094D, `ष` U+0937) or a
+    /// base character followed by combining marks that NFC cannot compose
+    /// away. Raku's regex grammar works on graphemes, so such a cluster is a
+    /// single atom: the tokenizer's per-codepoint scan is re-joined by
+    /// `merge_grapheme_literal_tokens`, and matching it consumes the whole
+    /// grapheme rather than its leading codepoint.
+    LiteralGrapheme(Box<str>),
     Named(NamedAtom),
     Any,
     CharClass(CharClass),

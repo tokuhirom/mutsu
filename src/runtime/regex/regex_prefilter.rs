@@ -78,6 +78,9 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
         }
         match &token.atom {
             RegexAtom::Literal(ch) => prefix.push(*ch),
+            // A grapheme literal is still a fixed run of codepoints, so it
+            // extends the required prefix like any other literal.
+            RegexAtom::LiteralGrapheme(g) => prefix.extend(g.chars()),
             _ => break,
         }
     }
