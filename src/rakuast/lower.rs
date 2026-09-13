@@ -1634,6 +1634,32 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 name: name.to_string(),
             })
         }
+        RakuAstClass::RegexAssertionLookahead => {
+            let assertion = named_child(node, "assertion")?;
+            if assertion.class != RakuAstClass::RegexAssertionNamedRegexArg {
+                return Err(unsupported(node));
+            }
+            let name_node = named_child(assertion, "name")?;
+            if name_node.class != RakuAstClass::Name {
+                return Err(unsupported(node));
+            }
+            let name_value = positional_leaf(name_node)?;
+            let ValueView::Str(name) = name_value.view() else {
+                return Err(unsupported(node));
+            };
+            let is_behind = match name.as_str() {
+                "before" => false,
+                "after" => true,
+                _ => return Err(unsupported(node)),
+            };
+            let regex_arg = named_child(assertion, "regex-arg")?;
+            Ok(RegexNode::Lookaround {
+                assertion: Box::new(lower_regex_node(regex_arg)?),
+                negated: bool_field(node, "negated")?,
+                is_behind,
+            })
+        }
+        RakuAstClass::RegexAssertionNamedRegexArg => Err(unsupported(node)),
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             if sequential {

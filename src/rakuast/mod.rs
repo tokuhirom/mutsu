@@ -67,6 +67,8 @@ pub enum RakuAstClass {
     RegexNamedCapture,
     RegexAssertionNamed,
     RegexAssertionAlias,
+    RegexAssertionNamedRegexArg,
+    RegexAssertionLookahead,
     RegexInterpolation,
     RegexAlternation,
     RegexQuantifiedAtom,
@@ -278,6 +280,8 @@ impl RakuAstClass {
             RegexNamedCapture => "RakuAST::Regex::NamedCapture",
             RegexAssertionNamed => "RakuAST::Regex::Assertion::Named",
             RegexAssertionAlias => "RakuAST::Regex::Assertion::Alias",
+            RegexAssertionNamedRegexArg => "RakuAST::Regex::Assertion::Named::RegexArg",
+            RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
@@ -503,6 +507,8 @@ impl RakuAstClass {
             | RegexNamedCapture
             | RegexAssertionNamed
             | RegexAssertionAlias
+            | RegexAssertionNamedRegexArg
+            | RegexAssertionLookahead
             | RegexInterpolation
             | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
@@ -647,6 +653,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::NamedCapture"
         | "RakuAST::Regex::Assertion::Named"
         | "RakuAST::Regex::Assertion::Alias"
+        | "RakuAST::Regex::Assertion::Named::RegexArg"
+        | "RakuAST::Regex::Assertion::Lookahead"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
@@ -736,6 +744,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexNamedCapture,
     RakuAstClass::RegexAssertionNamed,
     RakuAstClass::RegexAssertionAlias,
+    RakuAstClass::RegexAssertionNamedRegexArg,
+    RakuAstClass::RegexAssertionLookahead,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexQuantifiedAtom,
@@ -1490,6 +1500,64 @@ pub fn construct(
             ],
         }))));
     }
+    if class_name == "RakuAST::Regex::Assertion::Named::RegexArg" && method == "new" {
+        let name = named_arg(args, "name").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Named::RegexArg.new requires `name`")
+        })?;
+        require_rakuast_class(
+            &name,
+            RakuAstClass::Name,
+            "RakuAST::Regex::Assertion::Named::RegexArg.new",
+        )?;
+        let regex_arg = named_arg(args, "regex-arg").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Named::RegexArg.new requires `regex-arg`")
+        })?;
+        require_regex_node(&regex_arg, "RakuAST::Regex::Assertion::Named::RegexArg.new")?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionNamedRegexArg,
+            fields: vec![
+                RakuAstField {
+                    name: Some("name"),
+                    value: RakuAstFieldValue::Node(name),
+                },
+                RakuAstField {
+                    name: Some("regex-arg"),
+                    value: RakuAstFieldValue::Node(regex_arg),
+                },
+            ],
+        }))));
+    }
+    if class_name == "RakuAST::Regex::Assertion::Lookahead" && method == "new" {
+        let assertion = named_arg(args, "assertion").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Lookahead.new requires `assertion`")
+        })?;
+        require_rakuast_class(
+            &assertion,
+            RakuAstClass::RegexAssertionNamedRegexArg,
+            "RakuAST::Regex::Assertion::Lookahead.new",
+        )?;
+        let negated = named_arg(args, "negated").unwrap_or_else(|| Value::truth(false));
+        if !matches!(negated.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Lookahead.new expects `negated` to be Bool",
+            ));
+        }
+        let mut fields = Vec::new();
+        if matches!(negated.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("negated"),
+                value: RakuAstFieldValue::Node(negated),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("assertion"),
+            value: RakuAstFieldValue::Node(assertion),
+        });
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionLookahead,
+            fields,
+        }))));
+    }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
@@ -1708,6 +1776,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexNamedCapture
                     | RakuAstClass::RegexAssertionNamed
                     | RakuAstClass::RegexAssertionAlias
+                    | RakuAstClass::RegexAssertionNamedRegexArg
+                    | RakuAstClass::RegexAssertionLookahead
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexQuantifiedAtom
@@ -2030,6 +2100,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexNamedCapture
             | RakuAstClass::RegexAssertionNamed
             | RakuAstClass::RegexAssertionAlias
+            | RakuAstClass::RegexAssertionNamedRegexArg
+            | RakuAstClass::RegexAssertionLookahead
             | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore

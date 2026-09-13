@@ -59,6 +59,11 @@ pub(crate) enum RegexNode {
         alias: String,
         name: String,
     },
+    Lookaround {
+        assertion: Box<RegexNode>,
+        negated: bool,
+        is_behind: bool,
+    },
     Interpolation {
         name: String,
         sequential: bool,
@@ -426,6 +431,33 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                RegexNode::Lookaround {
+                    assertion,
+                    negated,
+                    is_behind,
+                } => {
+                    let mut inner_anchor_start = false;
+                    let inner_tokens = lower_node(
+                        assertion,
+                        ratchet,
+                        ignore_case,
+                        ignore_mark,
+                        rule_sigspace,
+                        true,
+                        &mut inner_anchor_start,
+                    )?;
+                    let mut inner = pattern(inner_tokens, ignore_case, ignore_mark);
+                    inner.anchor_start = inner_anchor_start;
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::Lookaround {
+                            pattern: inner,
+                            negated: *negated,
+                            is_behind: *is_behind,
+                        },
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Interpolation { name, sequential } => {
                     if *sequential {
                         return None;
@@ -506,6 +538,7 @@ impl RegexNode {
             | Self::Quantified { atom: child, .. }
             | Self::WithWhitespace(child) => child.collect_interpolation_names(names),
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
+            Self::Lookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -532,6 +565,7 @@ impl RegexNode {
             | Self::Quantified { atom: child, .. }
             | Self::WithWhitespace(child) => child.contains_anchor(),
             Self::NamedCapture { regex, .. } => regex.contains_anchor(),
+            Self::Lookaround { assertion, .. } => assertion.contains_anchor(),
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -595,6 +629,15 @@ impl RegexNode {
                 format!("<{prefix}{name}>")
             }
             Self::SubruleAlias { alias, name } => format!("<{alias}={name}>"),
+            Self::Lookaround {
+                assertion,
+                negated,
+                is_behind,
+            } => {
+                let polarity = if *negated { '!' } else { '?' };
+                let keyword = if *is_behind { "after" } else { "before" };
+                format!("<{polarity}{keyword} {}>", assertion.to_source())
+            }
             Self::Interpolation { name, .. } => format!("${name}"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
@@ -776,9 +819,97 @@ impl Parser {
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
-            '<' => self.parse_subrule(),
+            '<' => self.parse_lookaround().or_else(|| self.parse_subrule()),
             _ => self.parse_literal(),
         }
+    }
+
+    /// Parse the explicit lookaround forms whose source and execution shapes
+    /// are currently shared: `<?before body>`, `<!before body>`,
+    /// `<?after body>`, and `<!after body>`. The unprefixed and dot-prefixed
+    /// spellings deliberately remain on the legacy parser path because their
+    /// RakuAST shape omits the Lookahead wrapper.
+    fn parse_lookaround(&mut self) -> Option<RegexNode> {
+        let start = self.pos;
+        self.pos += 1; // '<'
+        let negated = match self.chars.get(self.pos).copied() {
+            Some('?') => false,
+            Some('!') => true,
+            _ => {
+                self.pos = start;
+                return None;
+            }
+        };
+        self.pos += 1;
+
+        let is_behind = if self.chars[self.pos..].starts_with(&['a', 'f', 't', 'e', 'r']) {
+            self.pos += "after".chars().count();
+            true
+        } else if self.chars[self.pos..].starts_with(&['b', 'e', 'f', 'o', 'r', 'e']) {
+            self.pos += "before".chars().count();
+            false
+        } else {
+            self.pos = start;
+            return None;
+        };
+
+        if !self
+            .chars
+            .get(self.pos)
+            .is_some_and(|ch| ch.is_whitespace())
+        {
+            self.pos = start;
+            return None;
+        }
+        self.skip_whitespace();
+        let body_start = self.pos;
+        let mut quote = None;
+        while let Some(ch) = self.chars.get(self.pos).copied() {
+            if let Some(closer) = quote {
+                self.pos += 1;
+                if ch == closer {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '\\' => {
+                    // The current source tree does not retain escape spelling
+                    // inside a lookaround argument. Let the legacy parser own
+                    // those forms rather than emitting a misleading AST.
+                    self.pos = start;
+                    return None;
+                }
+                '"' | '\'' => {
+                    quote = Some(ch);
+                    self.pos += 1;
+                }
+                '>' => break,
+                '<' => {
+                    // Nested assertions/subrules need their own source
+                    // representation and are a later ADR-0088 slice.
+                    self.pos = start;
+                    return None;
+                }
+                _ => self.pos += 1,
+            }
+        }
+        if self.chars.get(self.pos) != Some(&'>') || quote.is_some() {
+            self.pos = start;
+            return None;
+        }
+        let body_source: String = self.chars[body_start..self.pos].iter().collect();
+        let assertion = RegexTree::parse_static(&body_source, false)?.body;
+        if !is_static_lookaround_body(&assertion) {
+            self.pos = start;
+            return None;
+        }
+        self.pos += 1; // '>'
+        Some(RegexNode::Lookaround {
+            assertion: Box::new(assertion),
+            negated,
+            is_behind,
+        })
     }
 
     fn parse_quote(&mut self, quote: char) -> Option<RegexNode> {
@@ -1037,6 +1168,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::Quantified { atom: child, .. }
         | RegexNode::WithWhitespace(child) => contains_subrule(child),
         RegexNode::NamedCapture { regex, .. } => contains_subrule(regex),
+        RegexNode::Lookaround { assertion, .. } => contains_subrule(assertion),
         RegexNode::Literal(_)
         | RegexNode::Quote(_)
         | RegexNode::Interpolation { .. }
@@ -1045,6 +1177,28 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
         | RegexNode::CharClassDigit => false,
+    }
+}
+
+fn is_static_lookaround_body(node: &RegexNode) -> bool {
+    match node {
+        RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClassDigit => true,
+        RegexNode::Sequence(nodes) | RegexNode::Alternation(nodes) => {
+            nodes.iter().all(is_static_lookaround_body)
+        }
+        RegexNode::Group(child)
+        | RegexNode::Quantified { atom: child, .. }
+        | RegexNode::WithWhitespace(child) => is_static_lookaround_body(child),
+        RegexNode::CapturingGroup(_)
+        | RegexNode::NamedCapture { .. }
+        | RegexNode::Subrule { .. }
+        | RegexNode::SubruleAlias { .. }
+        | RegexNode::Lookaround { .. }
+        | RegexNode::Interpolation { .. }
+        | RegexNode::AnchorBeginningOfString
+        | RegexNode::AnchorBeginningOfLine
+        | RegexNode::AnchorEndOfString
+        | RegexNode::AnchorEndOfLine => false,
     }
 }
 

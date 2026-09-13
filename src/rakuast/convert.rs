@@ -2341,6 +2341,26 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 ),
             ],
         ),
+        RegexNode::Lookaround {
+            assertion,
+            negated,
+            is_behind,
+        } => {
+            let keyword = if *is_behind { "after" } else { "before" };
+            let named_assertion = RakuAstNode {
+                class: RakuAstClass::RegexAssertionNamedRegexArg,
+                fields: vec![
+                    node_field(Some("name"), name_from_identifier(keyword)),
+                    node_field(Some("regex-arg"), regex_node(assertion)?),
+                ],
+            };
+            let mut fields = Vec::new();
+            if *negated {
+                fields.push(leaf_field(Some("negated"), Value::truth(true)));
+            }
+            fields.push(node_field(Some("assertion"), named_assertion));
+            (RakuAstClass::RegexAssertionLookahead, fields)
+        }
         RegexNode::Interpolation { name, sequential } => (
             RakuAstClass::RegexInterpolation,
             vec![
