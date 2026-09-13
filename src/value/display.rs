@@ -1088,7 +1088,15 @@ impl Value {
             }
             ValueView::Regex(pattern) => format!("/{}/", *pattern),
             ValueView::RegexWithAdverbs(a) => {
-                let pattern = &a.pattern;
+                let mut pattern = a.pattern.as_str();
+                // Adverbs are prepended to the execution spelling so the
+                // legacy regex matcher can see them. They are metadata, not
+                // part of the source shown by Regex.gist.
+                for modifier in [":ratchet ", ":s ", ":m ", ":i "] {
+                    if let Some(rest) = pattern.strip_prefix(modifier) {
+                        pattern = rest;
+                    }
+                }
                 let global = &a.global;
                 let exhaustive = &a.exhaustive;
                 let overlap = &a.overlap;
@@ -1099,38 +1107,58 @@ impl Value {
                 let sigspace = &a.sigspace;
                 let samecase = &a.samecase;
                 let samespace = &a.samespace;
-                let mut prefix = String::new();
-                if *ignore_case {
-                    prefix.push_str(":i");
+                let mut prefix = if let Some(source) = a.source_adverbs.as_ref() {
+                    source
+                        .iter()
+                        .map(|(name, argument)| match argument {
+                            Some(argument) => format!(":{name}({argument})"),
+                            None => format!(":{name}"),
+                        })
+                        .collect::<String>()
+                } else if let Some(tree) = a.source_tree.as_ref() {
+                    tree.adverbs
+                        .iter()
+                        .map(|adverb| match &adverb.argument {
+                            Some(argument) => format!(":{}({argument})", adverb.name),
+                            None => format!(":{}", adverb.name),
+                        })
+                        .collect::<String>()
+                } else {
+                    String::new()
+                };
+                if prefix.is_empty() {
+                    if *ignore_case {
+                        prefix.push_str(":i");
+                    }
+                    if *sigspace {
+                        prefix.push_str(":s");
+                    }
+                    if *global {
+                        prefix.push_str(":g");
+                    }
+                    if *exhaustive {
+                        prefix.push_str(":ex");
+                    }
+                    if *overlap {
+                        prefix.push_str(":ov");
+                    }
+                    if let Some(count) = repeat {
+                        prefix.push_str(&format!(":x({count})"));
+                    }
+                    if let Some(raw) = nth {
+                        prefix.push_str(&format!(":nth({raw})"));
+                    }
+                    if *perl5 {
+                        prefix.push_str(":P5");
+                    }
+                    if *samecase {
+                        prefix.push_str(":ii");
+                    }
+                    if *samespace {
+                        prefix.push_str(":ss");
+                    }
                 }
-                if *sigspace {
-                    prefix.push_str(":s");
-                }
-                if *global {
-                    prefix.push_str(":g");
-                }
-                if *exhaustive {
-                    prefix.push_str(":ex");
-                }
-                if *overlap {
-                    prefix.push_str(":ov");
-                }
-                if let Some(count) = repeat {
-                    prefix.push_str(&format!(":x({count})"));
-                }
-                if let Some(raw) = nth {
-                    prefix.push_str(&format!(":nth({raw})"));
-                }
-                if *perl5 {
-                    prefix.push_str(":P5");
-                }
-                if *samecase {
-                    prefix.push_str(":ii");
-                }
-                if *samespace {
-                    prefix.push_str(":ss");
-                }
-                format!("m{prefix}/{pattern}/")
+                format!("rx{prefix}/{pattern}/")
             }
             ValueView::Version {
                 parts,

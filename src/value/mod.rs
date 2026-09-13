@@ -2235,6 +2235,9 @@ impl UniData {
     }
 }
 
+/// Source-level adverb spellings retained on a parsed regex value.
+pub(crate) type RegexSourceAdverbs = Arc<Vec<(String, Option<String>)>>;
+
 /// Boxed payload of [`Value::RegexWithAdverbs`] (a regex literal carrying adverbs).
 #[derive(Debug, Clone)]
 pub struct RegexAdverbs {
@@ -2258,6 +2261,9 @@ pub struct RegexAdverbs {
     pub sigspace: bool,
     pub samecase: bool,
     pub samespace: bool,
+    /// Source-level adverb spellings, retained for `.gist`/`.raku` after the
+    /// execution pattern has been normalized with inline modifiers.
+    pub(crate) source_adverbs: Option<RegexSourceAdverbs>,
     /// The defining scope this literal closed over, when its pattern embeds
     /// code — see [`RegexClosure`]. `None` for every ordinary literal.
     pub captured: Option<Arc<HashMap<String, Value>>>,

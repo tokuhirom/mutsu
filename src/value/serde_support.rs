@@ -80,6 +80,8 @@ enum SerValue {
         sigspace: bool,
         samecase: bool,
         samespace: bool,
+        #[serde(default)]
+        source_adverbs: Option<Vec<(String, Option<String>)>>,
     },
     Junction {
         kind: SerJunctionKind,
@@ -262,6 +264,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             sigspace: a.sigspace,
             samecase: a.samecase,
             samespace: a.samespace,
+            source_adverbs: a.source_adverbs.as_ref().map(|v| (**v).clone()),
         }),
         ValueView::Junction { kind, values } => {
             let ser_kind = match kind {
@@ -482,6 +485,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             sigspace,
             samecase,
             samespace,
+            source_adverbs,
         } => Value::RegexWithAdverbs(Box::new(crate::value::RegexAdverbs {
             pattern: Arc::new(pattern),
             global,
@@ -498,6 +502,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             sigspace,
             samecase,
             samespace,
+            source_adverbs: source_adverbs.map(Arc::new),
             // A captured defining scope holds live `Value`s; it cannot survive
             // a serialization round-trip and is not part of the wire format.
             captured: None,

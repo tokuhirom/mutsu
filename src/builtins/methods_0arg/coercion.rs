@@ -1151,8 +1151,10 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         }
         // Sub → X::Cannot::Capture (Callable)
         ValueView::Sub(..) => Err(cannot_capture(&crate::value::types::what_type_name(target))),
-        // Regex → X::Cannot::Capture
-        ValueView::Regex(..) => Err(cannot_capture("Regex")),
+        // Regex → X::Cannot::Capture. RegexWithAdverbs is the metadata-carrying
+        // representation used for source-preserving regex literals, but it has
+        // the same nominal Capture behavior as a plain Regex.
+        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Err(cannot_capture("Regex")),
         // Mixin types that should throw X::Cannot::Capture
         // (e.g., IntStr, NumStr allomorphs, WhateverCode, Signature, Version)
         ValueView::Mixin(..) => {

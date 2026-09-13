@@ -1345,6 +1345,10 @@ pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
         "digit" => c.is_ascii_digit(),
         "xdigit" => c.is_ascii_hexdigit(),
         "space" | "ws" => c.is_whitespace(),
+        // In a character-class context `<ident>` denotes one identifier-start
+        // character.  The sequence form (`<ident>` outside a class) is lowered
+        // separately by the regex parser to alpha followed by alnum*.
+        "ident" => c.is_alphabetic() || c == '_',
         "alnum" => c.is_alphabetic() || c == '_' || c.is_ascii_digit(),
         "blank" => c == '\t' || c == ' ' || c == '\u{A0}',
         "cntrl" => c.is_control(),

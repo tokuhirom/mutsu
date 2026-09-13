@@ -157,7 +157,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Enum { enum_type, .. } => enum_type.resolve(),
         ValueView::Sub(_) | ValueView::WeakSub(_) => "Sub".to_string(),
         ValueView::Routine { .. } => "Sub".to_string(),
-        ValueView::Regex(_) => "Regex".to_string(),
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => "Regex".to_string(),
         ValueView::Junction { .. } => "Junction".to_string(),
         ValueView::Slip(_) => "Slip".to_string(),
         ValueView::Uni(u) if !u.form.is_empty() => u.form.clone(),

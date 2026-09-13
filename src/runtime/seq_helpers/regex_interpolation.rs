@@ -147,10 +147,32 @@ impl Interpreter {
     #[cfg(feature = "pcre2")]
     pub(in crate::runtime) fn compile_p5_regex(&self, pattern: &str) -> Option<PcreRegex> {
         let interpolated = self.expand_p5_interpolation(pattern);
+        let (interpolated, caseless) = Self::strip_p5_inline_adverbs(&interpolated);
         let converted = Self::p5_pattern_to_rust_regex(&interpolated);
         let transformed = Self::transform_p5_pattern(&converted);
         let mut builder = PcreRegexBuilder::new();
-        builder.utf(true).ucp(true);
+        builder.utf(true).ucp(true).caseless(caseless);
         builder.build(&transformed).ok()
+    }
+
+    /// Remove the normalized Raku modifiers prepended to a P5 execution
+    /// pattern. PCRE2 receives the equivalent `caseless` option separately;
+    /// the other modifiers are not part of the P5 pattern either.
+    #[cfg(feature = "pcre2")]
+    fn strip_p5_inline_adverbs(pattern: &str) -> (String, bool) {
+        let mut rest = pattern;
+        let mut caseless = false;
+        while let Some(after) = rest
+            .strip_prefix(":i ")
+            .or_else(|| rest.strip_prefix(":m "))
+            .or_else(|| rest.strip_prefix(":s "))
+            .or_else(|| rest.strip_prefix(":ratchet "))
+        {
+            if rest.starts_with(":i ") {
+                caseless = true;
+            }
+            rest = after;
+        }
+        (rest.to_string(), caseless)
     }
 }
