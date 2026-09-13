@@ -45,6 +45,41 @@ impl Interpreter {
         Self::wrap_react_died(err)
     }
 
+    /// Deliver an on-demand `supply { ... }` body failure to the subscribing
+    /// `whenever`'s `QUIT` phasers before it is allowed to become an
+    /// `X::React::Died` (issue #8185).
+    ///
+    /// raku hands an exception thrown inside a supply block to that supply's
+    /// consumer as a *quit*; only an unhandled one dies the enclosing `react`.
+    /// `err` is the body's failure — a `die`, or a Rust panic the VM boundary
+    /// has already converted into a catchable `X::AdHoc` ("Internal error:
+    /// ..."), so a mutsu bug in a supply worker reaches `QUIT` instead of
+    /// vanishing with the worker.
+    ///
+    /// Returns `Ok(true)` when a `QUIT` phaser consumed the failure (the caller
+    /// retires the subscription and keeps the react alive) and `Ok(false)` when
+    /// the `whenever` registered none (the caller dies the react as before). An
+    /// error raised by the `QUIT` phaser itself — including the `done` signal a
+    /// phaser body commonly ends with — propagates to the caller.
+    pub(crate) fn deliver_supply_body_quit(
+        &mut self,
+        quit_callbacks: &[Value],
+        err: &RuntimeError,
+    ) -> Result<bool, RuntimeError> {
+        if quit_callbacks.is_empty() {
+            return Ok(false);
+        }
+        let reason = err
+            .exception
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| Value::str(err.message.to_string()));
+        for quit_cb in quit_callbacks {
+            self.call_supply_quit_handler(quit_cb.clone(), reason.clone())?;
+        }
+        Ok(true)
+    }
+
     /// Check if a value is a subscription registration from `whenever` inside `supply`.
     pub(crate) fn is_supply_subscription_registration(value: &Value) -> bool {
         if let ValueView::Array(items, ..) = value.view()

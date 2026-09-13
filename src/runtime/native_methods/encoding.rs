@@ -488,6 +488,7 @@ impl Interpreter {
         is_lines: bool,
         line_chomp: bool,
         mut head_limit: Option<usize>,
+        producer_supplier_id: Option<u64>,
     ) {
         use super::state::take_complete_lines_from_buffer;
         use std::io::Write;
@@ -608,7 +609,16 @@ impl Interpreter {
                 // `runtime::react_done_handler_depth`.
                 let _react_done_handler =
                     crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-                let result = match end_cb {
+                // `guard_worker_panic` (issue #8185): this loop runs detached on a
+                // pooled worker, whose `worker_loop` catches and *discards* an
+                // escaping panic — a Rust panic raised outside the VM's own
+                // `run_inner_guarded` frames (native method plumbing, dispatch
+                // helpers) therefore killed the tap silently, with no
+                // diagnostic and no quit. Converting it here to the same
+                // catchable `X::AdHoc` ("Internal error: ...") the VM boundary
+                // produces puts it on the ordinary failure path below, so it
+                // reaches a `quit =>` handler or the loud unhandled report.
+                let result = crate::vm::guard_worker_panic(|| match end_cb {
                     Some((end, _)) if is_done_marker => {
                         interp.invoke_done_callback(end).map(|_| ())
                     }
@@ -616,7 +626,7 @@ impl Interpreter {
                     None => interp
                         .call_sub_value(cb.clone(), vec![value], true)
                         .map(|_| ()),
-                };
+                });
                 drop(_react_done_handler);
                 // Flush stdout (check both the per-interpreter buffer and the
                 // shared thread output buffer used by thread clones).
@@ -666,6 +676,25 @@ impl Interpreter {
                 if let Err(err) = result {
                     if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
                         break 'outer;
+                    }
+                    // When `cb` is *producer* code — a `supply { }` block's
+                    // `whenever` body, driven here because its source is a live
+                    // channel — its failure is the enclosing supply's quit, not
+                    // an unhandled crash of the process: deliver it to the
+                    // emitter's registered `quit =>` handlers and tear the loop
+                    // down (issue #8185). Reached via the serialize-group link
+                    // for the same reason `invoke_supply_done_callback_for_supplier`
+                    // is (ADR-0031 Decision A): the downstream handler lives on
+                    // the enclosing supply block's emitter, not on this source.
+                    let mut err = err;
+                    if let Some(sid) = producer_supplier_id {
+                        match Self::deliver_act_loop_producer_quit(interp, sid, &err) {
+                            Ok(true) => break 'outer,
+                            Ok(false) => {}
+                            // The quit handler itself failed: report *that*,
+                            // loudly, rather than losing both errors.
+                            Err(handler_err) => err = handler_err,
+                        }
                     }
                     eprintln!(
                         "Unhandled exception in code scheduled on thread\n{}",

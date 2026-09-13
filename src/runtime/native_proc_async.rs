@@ -734,6 +734,9 @@ impl Interpreter {
                                     false,
                                     true,
                                     None,
+                                    // Consumer-side tap callback: raku does not
+                                    // route its failure to its own quit handler.
+                                    None,
                                 );
                             },
                         ));

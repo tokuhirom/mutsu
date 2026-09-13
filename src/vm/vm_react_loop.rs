@@ -147,7 +147,27 @@ impl Interpreter {
                 sub.done = true;
                 Ok(false)
             }
-            Err(e) => Err(e),
+            // A die (or a Rust panic already converted to `X::AdHoc` at the VM
+            // boundary) in a subscription that was flattened out of an
+            // on-demand `supply { ... }` body is that supply's *quit*, not a
+            // raw crash of this drive loop: `supplier_quit` its emitter so the
+            // owning subscription's `QUIT` phasers get a chance to handle it,
+            // matching `raku`. This is the body-side twin of the LAST-phaser
+            // attribution in `vm_react_subscriptions.rs`'s `SinkEvent::Done`
+            // arm (issue #8185); both hang off `emitter_supplier_id`.
+            Err(e) => {
+                let Some(sid) = sub.emitter_supplier_id else {
+                    return Err(e);
+                };
+                let cause = e
+                    .exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(e.message.to_string()));
+                crate::runtime::native_methods::supplier_quit(sid, cause);
+                sub.done = true;
+                Ok(false)
+            }
         }
     }
 
@@ -393,6 +413,23 @@ impl Interpreter {
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done()
                             {
+                                // The body died (or a Rust panic in it was
+                                // converted at the VM boundary): that is this
+                                // supply's quit, so give this `whenever`'s QUIT
+                                // phasers first refusal before the react dies
+                                // (issue #8185). Only this stage's own stream
+                                // consumer is retired when a phaser handles it —
+                                // the react lives on, so an earlier `whenever`'s
+                                // consumer must stay registered. Dying still
+                                // unwinds every consumer this react pushed.
+                                self.supply_stream_consumers.truncate(stream_idx);
+                                let quit_cbs = items
+                                    .get(3)
+                                    .and_then(crate::runtime::Interpreter::value_array_items)
+                                    .unwrap_or_default();
+                                if self.deliver_supply_body_quit(&quit_cbs, &od_err)? {
+                                    continue;
+                                }
                                 self.supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
                                 return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
