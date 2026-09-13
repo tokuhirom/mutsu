@@ -4389,60 +4389,20 @@ pub(crate) struct CompiledCode {
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
     pub(crate) locals_sym: Vec<Symbol>,
-    /// Pre-interned Symbol of the `__mutsu_sigilless_alias::<name>` env key for
-    /// each local. The scalar-assignment hot path probes that key on EVERY store
-    /// (to propagate the new value to a `:=` alias target); building the key with
-    /// `format!` per store cost a String allocation plus a `Symbol::intern` string
-    /// hash, which profiled as ~19% of bench-mandelbrot. Interned once here, the
-    /// probe is a plain `Env::get_sym`.
-    pub(crate) locals_alias_sym: Vec<Symbol>,
-    /// Pre-interned Symbol of the `__mutsu_sigilless_readonly::<name>` env key
-    /// for each local — the readonly half of the pair described above, probed on
-    /// every assignment for the same reason.
-    pub(crate) locals_readonly_sym: Vec<Symbol>,
-    /// Pre-interned Symbols of the two per-variable metadata keys a `my`
-    /// DECLARATION speculatively clears (`__mutsu_deleted_index::<name>` and
-    /// `__mutsu_bound_array_slice::<name>`), so a redeclaration cannot inherit an
-    /// earlier same-named variable's state. Both keys are almost never present,
-    /// but the clears ran per declaration — in a loop body (`my $t = ...`) that
-    /// is once per iteration.
-    pub(crate) locals_deleted_index_sym: Vec<Symbol>,
-    pub(crate) locals_bound_slice_sym: Vec<Symbol>,
-    /// Pre-interned Symbol of the `__mutsu_scalar_bind_no_container::<name>` env
-    /// key for each local — the one key of that family that still paid a
-    /// `format!` plus a `Symbol::intern` on every scalar `my` declaration.
-    pub(crate) locals_scalar_no_container_sym: Vec<Symbol>,
-    /// Bitmap: true if `local[i]` is a *plain lexical* name — the sigil-less form
-    /// the compiler stores scalars under (`my $x` -> `"x"`, a scalar param
-    /// `$n` -> `"n"`), with no twigil (`*d`, `^a`), no attribute (`.x`, `!x`),
-    /// no `@`/`%`/`&` sigil, no `::` qualifier, not the topic `_`, and not a
-    /// compiler-internal name (`__mutsu_*`, `__ANON*`).
+    /// One [`crate::binding_desc::BindingDesc`] per entry of `locals`, same
+    /// index: the pre-interned `__mutsu_sigilless_alias::<name>` /
+    /// `__mutsu_sigilless_readonly::<name>` / `__mutsu_deleted_index::<name>`
+    /// / `__mutsu_bound_array_slice::<name>` / `__mutsu_scalar_bind_no_container::<name>`
+    /// env keys, and the two name-derived bitmap facts `plain_local` /
+    /// `simple_scalar_local` used by the scalar store fast path.
     ///
-    /// Such a name has none of the aliases the by-name env writer
-    /// (`set_env_with_main_alias`) exists to maintain — no `$*d`/`*d` twigil
-    /// pair, no `&infix:<+>` operator alias, no `Main::`/`GLOBAL::`/`OUR::`
-    /// qualification — so its env mirror is a single Symbol-keyed insert. The
-    /// predicate is a scan of the name's bytes, so it is computed once here
-    /// rather than on every store (`flush_local_to_env` runs on each `my $x =
-    /// ...`).
-    pub(crate) plain_locals: Vec<bool>,
-    /// Bitmap: true if a store into `local[i]` can take the plain-scalar fast
-    /// path in `exec_set_local_op` — i.e. the slot's *name* alone makes every
-    /// name-derived branch of the store cascade inert.
-    ///
-    /// A strict subset of [`CompiledCode::plain_locals`]: on top of "no sigil,
-    /// twigil, qualifier, attribute marker, topic or compiler-internal name" it
-    /// also rules out a `term:<...>` definition (which mirrors itself into two
-    /// extra env keys) and any `__ANON` container slot. What remains is the
-    /// ordinary user scalar (`my $i` -> `"i"`, a scalar parameter `$n` -> `"n"`)
-    /// whose store has no container identity to preserve, no attribute cell to
-    /// mirror, no `is default` / atomic / alias lane keyed on its name, and no
-    /// `@`/`%` coercion to run — see the fast path's own doc comment for the
-    /// full list and for the runtime half of the decision.
-    ///
-    /// Like `plain_locals` this is a scan of the name's bytes, so it is settled
-    /// once per slot at compile time instead of on every store.
-    pub(crate) simple_scalar_locals: Vec<bool>,
+    /// ADR-0097 slice 1: this used to be seven parallel vectors, one per
+    /// campaign that needed a new per-slot fact — see
+    /// [`crate::binding_desc`]'s module doc for why they were folded into one.
+    /// Access through [`CompiledCode::alias_sym`] and its siblings, or
+    /// [`CompiledCode::is_plain_local`] / [`CompiledCode::is_simple_scalar_local`],
+    /// never through this field directly.
+    pub(crate) binding_descs: Vec<crate::binding_desc::BindingDesc>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, Symbol)>,
     /// Maps local slot indices to qualified package names for `our` variables.
@@ -5567,13 +5527,7 @@ impl CompiledCode {
             decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
-            locals_alias_sym: Vec::new(),
-            locals_readonly_sym: Vec::new(),
-            locals_deleted_index_sym: Vec::new(),
-            locals_bound_slice_sym: Vec::new(),
-            locals_scalar_no_container_sym: Vec::new(),
-            plain_locals: Vec::new(),
-            simple_scalar_locals: Vec::new(),
+            binding_descs: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             param_bind_names: Vec::new(),
@@ -5877,8 +5831,8 @@ impl CompiledCode {
     /// `compute_locals_sym` falls back to interning it on the spot, so the probe
     /// is never silently skipped.
     pub(crate) fn alias_sym(&self, idx: usize) -> Option<Symbol> {
-        match self.locals_alias_sym.get(idx) {
-            Some(sym) => Some(*sym),
+        match self.binding_descs.get(idx).and_then(|d| d.alias_sym) {
+            Some(sym) => Some(sym),
             None => self
                 .locals
                 .get(idx)
@@ -5889,8 +5843,8 @@ impl CompiledCode {
     /// The interned `__mutsu_sigilless_readonly::<name>` env key of local `idx`.
     /// See [`CompiledCode::alias_sym`].
     pub(crate) fn readonly_sym(&self, idx: usize) -> Option<Symbol> {
-        match self.locals_readonly_sym.get(idx) {
-            Some(sym) => Some(*sym),
+        match self.binding_descs.get(idx).and_then(|d| d.readonly_sym) {
+            Some(sym) => Some(sym),
             None => self
                 .locals
                 .get(idx)
@@ -5901,8 +5855,12 @@ impl CompiledCode {
     /// The interned `__mutsu_deleted_index::<name>` env key of local `idx`.
     /// See [`CompiledCode::alias_sym`].
     pub(crate) fn deleted_index_sym(&self, idx: usize) -> Option<Symbol> {
-        match self.locals_deleted_index_sym.get(idx) {
-            Some(sym) => Some(*sym),
+        match self
+            .binding_descs
+            .get(idx)
+            .and_then(|d| d.deleted_index_sym)
+        {
+            Some(sym) => Some(sym),
             None => self
                 .locals
                 .get(idx)
@@ -5913,8 +5871,8 @@ impl CompiledCode {
     /// The interned `__mutsu_bound_array_slice::<name>` env key of local `idx`.
     /// See [`CompiledCode::alias_sym`].
     pub(crate) fn bound_slice_sym(&self, idx: usize) -> Option<Symbol> {
-        match self.locals_bound_slice_sym.get(idx) {
-            Some(sym) => Some(*sym),
+        match self.binding_descs.get(idx).and_then(|d| d.bound_slice_sym) {
+            Some(sym) => Some(sym),
             None => self
                 .locals
                 .get(idx)
@@ -5925,8 +5883,12 @@ impl CompiledCode {
     /// The interned `__mutsu_scalar_bind_no_container::<name>` env key of local
     /// `idx`. See [`CompiledCode::alias_sym`].
     pub(crate) fn scalar_no_container_sym(&self, idx: usize) -> Option<Symbol> {
-        match self.locals_scalar_no_container_sym.get(idx) {
-            Some(sym) => Some(*sym),
+        match self
+            .binding_descs
+            .get(idx)
+            .and_then(|d| d.scalar_no_container_sym)
+        {
+            Some(sym) => Some(sym),
             None => self
                 .locals
                 .get(idx)
@@ -5934,33 +5896,56 @@ impl CompiledCode {
         }
     }
 
+    /// True if `local[idx]` is a *plain lexical* name. Was
+    /// `plain_locals[idx]`; see [`crate::binding_desc::BindingFlags::plain_local`].
+    #[inline]
+    pub(crate) fn is_plain_local(&self, idx: usize) -> bool {
+        self.binding_descs
+            .get(idx)
+            .is_some_and(|d| d.flags.plain_local())
+    }
+
+    /// True if a store into `local[idx]` may take the plain-scalar fast path.
+    /// Was `simple_scalar_locals[idx]`; see
+    /// [`crate::binding_desc::BindingFlags::simple_scalar_local`].
+    #[inline]
+    pub(crate) fn is_simple_scalar_local(&self, idx: usize) -> bool {
+        self.binding_descs
+            .get(idx)
+            .is_some_and(|d| d.flags.simple_scalar_local())
+    }
+
+    /// Computes the five per-local metadata `Symbol`s on every
+    /// [`crate::binding_desc::BindingDesc`], plus `locals_sym`.
+    ///
+    /// Deliberately still a bulk finalize-time pass rather than done at
+    /// [`crate::compiler::Compiler::alloc_local`] time alongside the
+    /// `flags` half of the descriptor: `flags` is a closed-form scan of the
+    /// name alone, but moving the five interns here as well would be an
+    /// unrelated, unmeasured change to when the `Symbol` table takes them —
+    /// out of scope for this consolidation. A hand-built chunk that pushes
+    /// straight to `locals` without a matching `binding_descs` entry (several
+    /// unit tests do) is padded with defaults before being filled in, which
+    /// is why every entry ends up `Some` afterwards regardless of how it
+    /// started.
     pub(crate) fn compute_locals_sym(&mut self) {
         self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
-        self.locals_alias_sym = self
-            .locals
-            .iter()
-            .map(|s| crate::runtime::sigilless_alias_key(s))
-            .collect();
-        self.locals_readonly_sym = self
-            .locals
-            .iter()
-            .map(|s| crate::runtime::sigilless_readonly_key(s))
-            .collect();
-        self.locals_deleted_index_sym = self
-            .locals
-            .iter()
-            .map(|s| Symbol::intern(&crate::runtime::deleted_index_key(s)))
-            .collect();
-        self.locals_bound_slice_sym = self
-            .locals
-            .iter()
-            .map(|s| Symbol::intern(&crate::runtime::bound_array_slice_key(s)))
-            .collect();
-        self.locals_scalar_no_container_sym = self
-            .locals
-            .iter()
-            .map(|s| Symbol::intern(&crate::runtime::scalar_bind_no_container_key(s)))
-            .collect();
+        if self.binding_descs.len() < self.locals.len() {
+            self.binding_descs.resize(
+                self.locals.len(),
+                crate::binding_desc::BindingDesc::default(),
+            );
+        }
+        for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
+            desc.alias_sym = Some(crate::runtime::sigilless_alias_key(name));
+            desc.readonly_sym = Some(crate::runtime::sigilless_readonly_key(name));
+            desc.deleted_index_sym = Some(Symbol::intern(&crate::runtime::deleted_index_key(name)));
+            desc.bound_slice_sym =
+                Some(Symbol::intern(&crate::runtime::bound_array_slice_key(name)));
+            desc.scalar_no_container_sym = Some(Symbol::intern(
+                &crate::runtime::scalar_bind_no_container_key(name),
+            ));
+        }
     }
 
     /// Compute which locals need to be synced to env.

@@ -3,6 +3,7 @@ pub mod alloc_stats;
 pub mod analysis;
 pub mod anon_names;
 mod ast;
+pub(crate) mod binding_desc;
 mod builtins;
 pub(crate) mod chain_compare;
 mod compiler;
