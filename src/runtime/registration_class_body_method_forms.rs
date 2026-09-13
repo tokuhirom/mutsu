@@ -12,7 +12,7 @@ use crate::symbol::Symbol;
 /// an explicit invocant (`$self:`) the signature is kept (minus a literal
 /// `self` param def); otherwise a `self` parameter is prepended so the first
 /// argument gets bound as `self` when calling this as a function.
-pub(super) fn method_sub_form_params(
+pub(crate) fn method_sub_form_params(
     effective_params: &[String],
     effective_param_defs: &[ParamDef],
 ) -> (Vec<String>, Vec<ParamDef>) {
