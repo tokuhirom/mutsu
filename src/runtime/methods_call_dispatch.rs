@@ -2592,7 +2592,19 @@ impl Interpreter {
         }
         // Coerce Instance args for log/exp/atan2
         let mut args = args;
-        if matches!(method, "log" | "exp" | "atan2") {
+        // A user-defined method with one of these names must receive its
+        // arguments unchanged. In particular, grammar action classes commonly
+        // define `method exp($/)`; coercing its Match argument through Numeric
+        // here turns a failed coercion into a Failure before ordinary method
+        // dispatch gets a chance to see the override.
+        let receiver_has_user_math_method = match target.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.class_has_user_method(&class_name.resolve(), method)
+            }
+            ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
+            _ => false,
+        };
+        if matches!(method, "log" | "exp" | "atan2") && !receiver_has_user_math_method {
             for arg in &mut args {
                 if !matches!(arg.view(), ValueView::Instance { .. }) {
                     continue;

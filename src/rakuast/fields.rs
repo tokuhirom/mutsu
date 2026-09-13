@@ -92,6 +92,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         IntLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
         VarLexical => &[("name", Absent::Required)],
+        NamePartExpression => &[("expr", Absent::Required)],
         ApplyInfix => &[
             ("left", Absent::Required),
             ("infix", Absent::Required),
@@ -216,6 +217,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         IntLiteral | RatLiteral | StrLiteral => "value",
         FunctionInfix => "function",
         VarLexical => "name",
+        NamePartExpression => "expr",
         Blockoid => "statement-list",
         InitializerAssign => "expression",
         MetaInfixAssign => "infix",

@@ -208,7 +208,12 @@ impl Value {
         // part of the printed class name.
         if let ValueView::RakuAst(node) = self.view() {
             if type_name == "RakuAST::Node" {
-                return true;
+                return node.class != crate::rakuast::RakuAstClass::NamePartExpression;
+            }
+            if node.class == crate::rakuast::RakuAstClass::NamePartExpression
+                && type_name == "RakuAST::Name"
+            {
+                return false;
             }
             if let Some(rest) = my_type.strip_prefix(type_name)
                 && rest.starts_with("::")
@@ -486,7 +491,6 @@ impl Value {
                         | ValueView::RangeExclStart(_, _)
                         | ValueView::RangeExclBoth(_, _)
                         | ValueView::GenericRange { .. }
-                        | ValueView::Capture { .. }
                 ) || matches!(
                     self.view(),
                     ValueView::Package(name)

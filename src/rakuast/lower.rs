@@ -1549,6 +1549,32 @@ fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, Runtime
     }
 }
 
+/// Lower a `RakuAST::Name` used as a term. Static names are the barewords that
+/// the parser already uses for declared constants; an expression part is the
+/// dynamic `::(...)` lookup retained by `Expr::IndirectTypeLookup`.
+fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if node.class != RakuAstClass::Name {
+        return Err(unsupported(node));
+    }
+    let Some(field) = node.fields.first() else {
+        return Err(unsupported(node));
+    };
+    match &field.value {
+        RakuAstFieldValue::Node(value) => match value.view() {
+            ValueView::Str(name) if field.name.is_none() => Ok(Expr::BareWord(name.to_string())),
+            ValueView::RakuAst(part) if field.name.is_none() => {
+                if part.class != RakuAstClass::NamePartExpression {
+                    return Err(unsupported(node));
+                }
+                let inner = named_child_or_positional(part)?;
+                Ok(Expr::IndirectTypeLookup(Box::new(lower_expr(inner)?)))
+            }
+            _ => Err(unsupported(node)),
+        },
+        _ => Err(unsupported(node)),
+    }
+}
+
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
@@ -1999,16 +2025,10 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             Ok(Expr::BracketArray(items, false))
         }
-        // A bareword naming a `constant` the same unit declared. Its value is
-        // whatever the declaration bound, so it lowers to the same bareword the
-        // parser produces.
-        RakuAstClass::TermName => {
-            let name = match positional_leaf(named_child_or_positional(node)?)?.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => return Err(unsupported(node)),
-            };
-            Ok(Expr::BareWord(name))
-        }
+        // A bareword naming something the unit declared, or a dynamic
+        // `::(...)` name. Both are represented by RakuAST::Term::Name; the
+        // nested Name part tells the lowerer which internal expression to keep.
+        RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
         // itself (a leading backslash), which is how the converter reads it
