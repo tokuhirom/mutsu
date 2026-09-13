@@ -99,6 +99,20 @@ impl Interpreter {
     /// intern via `Symbol::intern` (a thread-local cache hit after the first
     /// call for a given call site, since the same name/package is reused on
     /// every repeat call).
+    ///
+    /// `name` is stripped of any `Pkg::` qualification before it is stored.
+    /// A qualified callsite (`P::f()`) hands every call path here whatever
+    /// text named the routine at the callsite -- some (the general dispatch
+    /// entry) already resolve that back down to the routine's own short
+    /// name first, others (the light-call fast paths, which push their own
+    /// frame directly) do not, so a qualified call could reach this point
+    /// carrying `P::f` as its OWN name. The qualification belongs on
+    /// `package` alone: `resolve_code_var`'s `?ROUTINE` arm reads this
+    /// frame's `name` straight into `&?ROUTINE.name`, so an unstripped
+    /// qualification leaked there directly, and repeat calls (served by the
+    /// light-call caches, which push their frame without going through the
+    /// general entry at all) kept leaking it even once the general entry's
+    /// own call was fixed to resolve the short name first (#8347).
     pub(crate) fn push_routine_with_location(
         &mut self,
         package: Symbol,
@@ -109,6 +123,10 @@ impl Interpreter {
     ) {
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
+        let name = match name.as_str().rsplit_once("::") {
+            Some((_, short)) => Symbol::intern(short),
+            None => name,
+        };
         self.routine_stack.push(super::RoutineFrame {
             package,
             lexical_package,
