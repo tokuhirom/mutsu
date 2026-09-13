@@ -3893,33 +3893,43 @@ impl Interpreter {
         outer_positional: bool,
         next_key: Option<&str>,
     ) -> Option<RuntimeError> {
-        // A `Pair` DOES `Associative`, so rakudo descends into it and refuses at
-        // the VALUE the next subscript reaches — `my %h = :x(:y(1)); %h<x><y> = 2`
-        // is "Cannot modify an immutable Int (1)", and Crane's
-        // `:a(:pair(:is(:not(:a<hash>))))` chain is "Cannot modify an immutable
-        // Pair (a => hash)". Refusing on the SLOT's type instead produced
-        // `X::AdHoc` "Type Pair does not support associative indexing", which is
-        // what rakudo raises for a genuinely non-Associative slot (an `Int`,
-        // a `Seq`) and which Crane's `CATCH { when X::Assignment::RO }` cannot
-        // map to `X::Crane::OpSet::RO`.
-        let pair_parts = match slot.view() {
-            ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
-            ValueView::ValuePair(key, value) => Some((key.to_string_value(), value.clone())),
-            _ => None,
-        };
+        // A `Pair` DOES `Associative`, so an ASSOCIATIVE next subscript descends
+        // into it and refuses at the value it reaches — `my %h = :x(:y(1));
+        // %h<x><y> = 2` is "Cannot modify an immutable Int (1)", and a key the
+        // one-entry Pair does not hold reads back undefined, giving rakudo's
+        // "Cannot modify an immutable Nil value". Refusing on the SLOT's type
+        // instead produced `X::AdHoc` "Type Pair does not support associative
+        // indexing", which is what rakudo raises for a genuinely non-Associative
+        // slot (an `Int`, a `Seq`) and which Crane's
+        // `CATCH { when X::Assignment::RO }` cannot map to `X::Crane::OpSet::RO`.
+        //
+        // A POSITIONAL next subscript is a different question — a Pair is not
+        // Positional — and rakudo names the Pair itself there
+        // (`my @a = (a => 1), 3; @a[0][0] = 9` is "Cannot modify an immutable
+        // Pair (a => 1)"), which the type-based arm below already produces.
+        let pair_parts = (!outer_positional)
+            .then(|| match slot.view() {
+                ValueView::Pair(key, value) => Some((key.to_string(), value.clone())),
+                ValueView::ValuePair(key, value) => Some((key.to_string_value(), value.clone())),
+                _ => None,
+            })
+            .flatten();
         if let Some((pair_key, pair_value)) = pair_parts {
             let addressed = match next_key {
                 Some(k) if k == pair_key => pair_value,
-                // Any other key is absent from a one-entry Pair; rakudo's
-                // `Any.AT-KEY` hands back an undefined value, and storing into
-                // that is "Cannot modify an immutable Nil value".
                 Some(_) => Value::NIL,
+                // No key threaded through: name the Pair, which is at least the
+                // right class and the right ballpark value.
                 None => slot.clone(),
             };
-            return Some(RuntimeError::assignment_ro_typename(
-                crate::runtime::utils::value_type_name(&addressed),
-                &crate::runtime::utils::gist_value(&addressed),
-            ));
+            return Some(if addressed.is_nil() {
+                RuntimeError::assignment_ro_value(addressed)
+            } else {
+                RuntimeError::assignment_ro_typename(
+                    crate::runtime::utils::value_type_name(&addressed),
+                    &crate::runtime::utils::gist_value(&addressed),
+                )
+            });
         }
         let view = slot.view();
         let descendable = matches!(

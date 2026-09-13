@@ -371,23 +371,11 @@ impl Interpreter {
             return;
         }
         let meta_key = Self::type_meta_key_for_sym(name_sym);
-        // A SIGILLESS parameter (`Associative \container`) is a raw alias, not a
-        // container of its own: Rakudo checks its declared type once, when the
-        // argument binds, and every later write through the alias goes straight
-        // into the CALLER's container and is checked against *that* container's
-        // constraint. Registering the declared type in the assignment-time lane
-        // therefore invents a constraint Rakudo does not have — `sub h(Associative
-        // \c) { c = Empty }` died with "Type check failed in assignment to
-        // $container; expected Associative but got Slip" where Rakudo happily
-        // stores the Slip into the caller's untyped scalar. This is exactly
-        // Crane's `remove-from-associative(\container, :in-place)`, which empties
-        // a container with `container = Empty`.
-        //
-        // Falling into the `None` arm also keeps the shadowing behaviour the
-        // untyped case documents: the callee's `container` hides any same-named
-        // outer lexical's constraint for the duration of the frame.
-        let sigilless = !name.starts_with(['$', '@', '%', '&']);
-        match constraint.filter(|_| !sigilless) {
+        // A SIGILLESS parameter passes `None` here — see
+        // [`crate::ast::ParamDef::assignment_type_constraint`] — and so lands in
+        // the `None` arm below, which is also what keeps the shadowing behaviour
+        // that arm documents.
+        match constraint {
             Some(c) => {
                 let info = Self::parse_container_constraint(name, &c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {

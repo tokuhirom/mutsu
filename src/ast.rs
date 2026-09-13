@@ -157,6 +157,29 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// The type constraint to register in the **assignment-time** lane when this
+    /// parameter binds (`Interpreter::bind_param_type_constraint`).
+    ///
+    /// `None` for a SIGILLESS parameter (`Associative \container`), which is a
+    /// raw alias rather than a container of its own: Rakudo checks its declared
+    /// type once, when the argument binds, and every later write through the
+    /// alias goes straight into the CALLER's container and is checked against
+    /// *that* container's constraint. Registering the declared type here invents
+    /// a constraint Rakudo does not have — `sub h(Associative \c) { c = Empty }`
+    /// died with "Type check failed in assignment to $container; expected
+    /// Associative but got Slip" where Rakudo stores the Slip into the caller's
+    /// untyped scalar.
+    ///
+    /// The decision has to be made from `sigilless`, not from the name: a scalar
+    /// parameter's env key drops its `$`, so `$p` and `\p` reach the binder
+    /// spelled identically.
+    pub(crate) fn assignment_type_constraint(&self) -> Option<String> {
+        if self.sigilless {
+            return None;
+        }
+        self.type_constraint.clone()
+    }
+
     /// True when the *source* declares a parameter spelled `$self` — an explicit
     /// invocant (`method m($self: $n)`, `method symbol(::?CLASS $self: ...)`) or
     /// an ordinary parameter (`sub ($self)`, `-> $self, $x`). A parser-synthesized

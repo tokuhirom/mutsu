@@ -1225,7 +1225,7 @@ impl Interpreter {
                                 format!("@{}", pd.name)
                             };
                             self.bind_param_value(&key, lazy_value.clone());
-                            self.bind_param_type_constraint(&key, pd.type_constraint.clone());
+                            self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                         }
                     }
                     if let Some(sub_params) = &pd.sub_signature {
@@ -1341,7 +1341,7 @@ impl Interpreter {
                         format!("@{}", pd.name)
                     };
                     self.bind_param_value(&key, slurpy_value.clone());
-                    self.bind_param_type_constraint(&key, pd.type_constraint.clone());
+                    self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
@@ -1382,7 +1382,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
@@ -1447,7 +1447,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                 } else if pd.double_slurpy {
@@ -1467,7 +1467,7 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, Value::real_array(items));
-                        self.bind_param_type_constraint(&key, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                     }
                 } else if !pd.name.starts_with('@') {
                     // *$x -- slurpy scalar: captures what would otherwise be the
@@ -1493,7 +1493,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                 } else {
@@ -1551,7 +1551,7 @@ impl Interpreter {
                             self.bind_param_value(&slurpy_key, slurpy_value.clone());
                             self.bind_param_type_constraint(
                                 &slurpy_key,
-                                pd.type_constraint.clone(),
+                                pd.assignment_type_constraint(),
                             );
                         }
                         if let Some(sub_params) = &pd.sub_signature {
@@ -1691,7 +1691,7 @@ impl Interpreter {
                             format!("@{}", pd.name)
                         };
                         self.bind_param_value(&key, slurpy_value.clone());
-                        self.bind_param_type_constraint(&key, pd.type_constraint.clone());
+                        self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                     }
                     // Check where constraint for slurpy params
                     if let Some(where_expr) = &pd.where_constraint {
@@ -1966,7 +1966,7 @@ impl Interpreter {
                                 self.bind_param_type_constraint_sym(
                                     &pd.name,
                                     pd_name_sym(),
-                                    pd.type_constraint.clone(),
+                                    pd.assignment_type_constraint(),
                                 );
                                 bind_sub_signature_from_value(self, sub_params, &bound_value)?;
                             } else {
@@ -1981,7 +1981,7 @@ impl Interpreter {
                             self.bind_param_type_constraint_sym(
                                 &pd.name,
                                 pd_name_sym(),
-                                pd.type_constraint.clone(),
+                                pd.assignment_type_constraint(),
                             );
                         }
                         found = true;
@@ -2044,7 +2044,7 @@ impl Interpreter {
                             self.bind_param_type_constraint_sym(
                                 &pd.name,
                                 pd_name_sym(),
-                                pd.type_constraint.clone(),
+                                pd.assignment_type_constraint(),
                             );
                         }
                     } else if !pd.name.is_empty() && !is_rename {
@@ -2052,7 +2052,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                     // For renamed named params like :foo($y) = $x, also bind the
@@ -2090,7 +2090,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                     // A `:color(:$colour)` alias chain declares its inner
@@ -2391,9 +2391,15 @@ impl Interpreter {
                                 .flatten()
                         })
                     });
+                    // The SOURCE variable's constraint wins, and for a sigilless
+                    // parameter it is the only one that applies: `\c` is a raw
+                    // alias, so a write through it lands in the caller's
+                    // container and is checked against that container's `of`,
+                    // never against the alias's own declared type. See
+                    // [`crate::ast::ParamDef::assignment_type_constraint`].
                     let bound_type_constraint = source_type_constraint
                         .clone()
-                        .or_else(|| pd.type_constraint.clone());
+                        .or_else(|| pd.assignment_type_constraint());
                     let mut value = unwrap_varref_value(raw_arg.clone());
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
@@ -2843,7 +2849,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
@@ -2891,7 +2897,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             &pd.name,
                             pd_name_sym(),
-                            pd.type_constraint.clone(),
+                            pd.assignment_type_constraint(),
                         );
                     }
                 }
