@@ -2134,6 +2134,58 @@ impl Compiler {
         self.code.add_lex_scope_chain(chain)
     }
 
+    /// Emit a pseudo-stash for exactly one lexical frame when `name` is a
+    /// literal `MY::`/`LEXICAL::` spelling, optionally preceded by one or more
+    /// `OUTER::` prefixes. The ordinary runtime pseudo-stash path is backed by
+    /// the flattened environment, which is intentionally broader than one
+    /// lexical frame and therefore makes `MY::` leak enclosing variables.
+    pub(crate) fn emit_lexical_stash(&mut self, name: &str) -> bool {
+        let Some(stash_name) = name.strip_suffix("::") else {
+            return false;
+        };
+        let mut remaining = stash_name;
+        let mut depth = 0usize;
+        while let Some(rest) = remaining.strip_prefix("OUTER::") {
+            depth += 1;
+            remaining = rest;
+        }
+        if !matches!(remaining, "MY" | "LEXICAL") {
+            return false;
+        }
+
+        let scopes = self.full_scope_chain();
+        let Some(target_index) = scopes.len().checked_sub(depth + 1) else {
+            return false;
+        };
+        let target = &scopes[target_index];
+        let entries = target
+            .keys()
+            .map(|var_name| {
+                let slot = match lex_scope::resolve_outer(&scopes, &self.local_map, var_name, depth)
+                {
+                    lex_scope::OuterResolution::Read { slot, .. } => slot,
+                    lex_scope::OuterResolution::NotDeclared => None,
+                };
+                let display_name = if var_name.starts_with(['$', '@', '%', '&'])
+                    || var_name.chars().next().is_some_and(|c| c.is_uppercase())
+                {
+                    var_name.clone()
+                } else {
+                    format!("${var_name}")
+                };
+                Value::array(vec![
+                    Value::str(display_name),
+                    Value::str(var_name.clone()),
+                    Value::int(depth as i64),
+                    Value::int(slot.map_or(-1, |slot| slot as i64)),
+                ])
+            })
+            .collect();
+        let spec_idx = self.code.add_constant(Value::array(entries));
+        self.code.emit(OpCode::GetLexicalStash(spec_idx));
+        true
+    }
+
     /// Record the compiler-authoritative positional-parameter → local-slot map
     /// into `code.param_local_slots`, so the VM's `precompute_param_local_slots`
     /// need not re-resolve parameter names by searching `locals` (§1.5).

@@ -554,6 +554,76 @@ impl Interpreter {
         self.stack.push(stash);
     }
 
+    /// Build a pseudo-stash for the exact lexical frame selected by the
+    /// compiler. Each entry is `[display-key, bare-name, depth, slot]`; a
+    /// non-negative slot is live in this frame, while an outer-frame entry is
+    /// resolved through the same captured lexical path as `GetOuterVar`.
+    pub(super) fn exec_get_lexical_stash_op(&mut self, code: &CompiledCode, spec_idx: u32) {
+        let mut entries: HashMap<String, Value> = HashMap::new();
+        let Some(ValueView::Array(spec, _)) =
+            code.constants.get(spec_idx as usize).map(Value::view)
+        else {
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
+            return;
+        };
+        for item in spec.items() {
+            let ValueView::Array(parts, _) = item.view() else {
+                continue;
+            };
+            if parts.items().len() != 4 {
+                continue;
+            }
+            let (
+                ValueView::Str(display),
+                ValueView::Str(name),
+                ValueView::Int(depth),
+                ValueView::Int(slot),
+            ) = (
+                parts.items()[0].view(),
+                parts.items()[1].view(),
+                parts.items()[2].view(),
+                parts.items()[3].view(),
+            )
+            else {
+                continue;
+            };
+            let depth = depth.max(0) as usize;
+            let value = if depth == 0 {
+                if slot >= 0 {
+                    self.locals
+                        .get(slot as usize)
+                        .cloned()
+                        .unwrap_or(Value::NIL)
+                } else {
+                    self.get_env_with_main_alias(&name).unwrap_or(Value::NIL)
+                }
+            } else {
+                let slot = (slot >= 0).then_some(slot as u32);
+                self.get_outer_var(code, &name, depth, slot)
+            };
+            entries.insert(display.to_string(), value);
+        }
+        // Imported type/package aliases are lexical names too, but they are
+        // maintained in the runtime environment rather than in a compiler
+        // scope frame. Preserve those visible package bindings while keeping
+        // ordinary scalar entries frame-local; the latter are precisely what
+        // makes MY:: stop leaking enclosing lexicals.
+        for (key, value) in self.env().iter() {
+            let key = key.resolve();
+            if self.should_hide_from_my_global_stash(&key)
+                || !matches!(value.view(), ValueView::Package(_))
+            {
+                continue;
+            }
+            let display = Self::add_sigil_prefix(&key);
+            entries.entry(display).or_insert_with(|| value.clone());
+        }
+        self.add_visible_routines_to_pseudo_stash(&mut entries);
+        let stash = self.pseudo_stash_hash(entries);
+        self.stack.push(stash);
+    }
+
     /// Wrap a lexical-pad snapshot as a `PseudoStash`.
     ///
     /// Raku reports every pseudo-package view of a pad (`MY::`, `OUTER::`,

@@ -1365,6 +1365,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
             if let Some(after_bracket) = after.strip_prefix('<')
+                && !after.starts_with("<<")
                 && let Some(end) = after_bracket.find('>')
             {
                 let symbol = &after_bracket[..end];
@@ -1393,6 +1394,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 || after.starts_with(';')
                 || after.starts_with(')')
                 || after.starts_with(',')
+                || after.starts_with("<<")
                 || after.starts_with(' ')
                 || after.starts_with('\n')
                 || after.starts_with('\r')

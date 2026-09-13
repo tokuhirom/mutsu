@@ -820,6 +820,10 @@ impl Interpreter {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::GetLexicalStash(spec_idx) => {
+                self.exec_get_lexical_stash_op(code, *spec_idx);
+                *ip += 1;
+            }
             OpCode::RoleGroupToCandidate => {
                 self.exec_role_group_to_candidate_op();
                 *ip += 1;
