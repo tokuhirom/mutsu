@@ -11,22 +11,23 @@
   "dist": "JSON::Pretty",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Too deep recursion (out of stack space)",
         "nok": 0,
-        "ok": 17,
+        "ok": 0,
         "plan": 17,
-        "secs": 0.13,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-roundtrip.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 4.63,
+        "secs": 5.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,10 +39,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,13 +53,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_PRETTY/0b5511665befb5235e5ab6949c48ac5f8e9ee8e6.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 17,
     "baseline_files": 1,
-    "mutsu_assertions": 17,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.1.1"
 }

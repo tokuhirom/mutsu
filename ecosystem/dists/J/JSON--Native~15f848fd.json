@@ -9,63 +9,16 @@
     "unresolved": []
   },
   "dist": "JSON::Native",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
-        "nok": 0,
-        "ok": 0,
-        "plan": 39,
-        "secs": 5.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-parse.t",
-      "raku": {
-        "nok": 0,
-        "ok": 39,
-        "plan": 39,
-        "secs": 5.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-write.t",
-      "raku": {
-        "nok": 0,
-        "ok": 133,
-        "plan": 133,
-        "secs": 2.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "JSON::Native": "ok"
+    "JSON::Native": "Redeclaration of routine 'from-json'. Did you mean to declare a multi-sub?"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -76,13 +29,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_NATIVE/677562281d4117a343489fcac83bb6d01271fca5.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 172,
-    "baseline_files": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 2
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

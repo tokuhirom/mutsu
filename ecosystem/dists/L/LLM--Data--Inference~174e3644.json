@@ -47,7 +47,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.17,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -57,53 +57,51 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.03,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.36,
+        "ok": 11,
+        "plan": 11,
+        "secs": 9.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-task.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 21.96,
+        "secs": 20.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.4,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-json-task.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 15.26,
+        "secs": 13.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 12.94,
+        "secs": 12.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,7 +127,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.51,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,145 +137,139 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 18.39,
+        "secs": 16.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.48,
+        "ok": 13,
+        "plan": 13,
+        "secs": 3.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-fallback.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 19.24,
+        "secs": 18.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.36,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-or-telemetry.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 16.38,
+        "secs": 13.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.42,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/08-parse-retry.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 16.44,
+        "secs": 14.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.69,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/09-cancellation.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 17.45,
+        "secs": 14.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.43,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/10-on-exhausted.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 17.19,
+        "secs": 15.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.39,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/11-truncation.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 16.78,
+        "secs": 15.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,11 +278,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
+        "first_failure": "No such method 'contains' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.43,
+        "ok": 1,
+        "plan": 7,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -300,53 +292,51 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 18.36,
+        "secs": 16.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.44,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/13-timeout.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 17.42,
+        "secs": 15.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Failed to parse module 'Crypt::Random': slang activation for 'if' failed: No such method 'legacy' for invocant of type 'Raku'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.5,
+        "ok": 12,
+        "plan": 12,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/14-shared-exceptions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 16.11,
+        "secs": 13.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -363,10 +353,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -381,9 +371,9 @@
   "totals": {
     "baseline_assertions": 102,
     "baseline_files": 13,
-    "mutsu_assertions": 10,
-    "parity_files": 1,
-    "regressed_files": 12
+    "mutsu_assertions": 95,
+    "parity_files": 11,
+    "regressed_files": 2
   },
   "version": "0.10.0"
 }

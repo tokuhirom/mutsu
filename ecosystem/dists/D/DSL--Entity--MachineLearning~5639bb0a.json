@@ -26,27 +26,94 @@
     "unresolved": []
   },
   "dist": "DSL::Entity::MachineLearning",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Classifier-measurement-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 52.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Classifier-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ROC-function-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "DSL::Entity::MachineLearning": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::Bulgarian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::English::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::Korean::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::Raku::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::Russian::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::Spanish::Standard": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::WL::Entity": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Actions::WL::System": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
-    "DSL::Entity::MachineLearning::Grammar": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]",
+    "DSL::Entity::MachineLearning": "ok",
+    "DSL::Entity::MachineLearning::Actions::Bulgarian::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::English::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Korean::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Raku::System": "ok",
+    "DSL::Entity::MachineLearning::Actions::Russian::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Spanish::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::WL::Entity": "ok",
+    "DSL::Entity::MachineLearning::Actions::WL::System": "ok",
+    "DSL::Entity::MachineLearning::Grammar": "ok",
     "DSL::Entity::MachineLearning::Grammar::EntityNames": "ok",
-    "DSL::Entity::MachineLearning::ResourceAccess": "Failed to parse module 'DSL::Shared::Roles::CommonStructures': X::Syntax::Missing: Missing block [at Shared/Roles/CommonStructures.rakumod:153]"
+    "DSL::Entity::MachineLearning::ResourceAccess": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "mutsu_commit": "2d8228e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -57,12 +124,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_MACHINELEARNING/d68f324ddb580e8bf85ae06442273015ec85d46b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 20,
+    "baseline_files": 3,
+    "mutsu_assertions": 20,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "0.1.2"
