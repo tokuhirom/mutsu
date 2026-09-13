@@ -58,7 +58,7 @@ pub(crate) use registry::{
 };
 pub(crate) use slang_modes::{
     SlangModes, apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes,
-    slang_modes, slang_spaced_call, slang_spaced_methodop,
+    slang_modes, slang_spaced_call, slang_spaced_methodop, slang_use_if_adverb,
 };
 
 // `pub(super)` re-exports.

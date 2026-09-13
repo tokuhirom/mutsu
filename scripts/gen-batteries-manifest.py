@@ -113,6 +113,10 @@ SIDECAR = {
         # META6.json has no license key; the dist ships an Artistic-2.0 LICENSE file.
         "license": "Artistic-2.0",
     },
+    "if": {
+        "slot": "Conditional module loading (`use Foo:if(...)`)",
+        "record": "docs/batteries/if-pragma.md",
+    },
     "Crypt::Random": {
         "slot": "Secure randomness (CSPRNG)",
         "record": "docs/batteries/crypt-random.md",

@@ -3976,13 +3976,6 @@ impl Compiler {
                     arg_count: 0,
                 });
             }
-            // `use if;` — the bare `if` pragma module itself is a no-op; it only
-            // provides the `:if(...)` adverb handled below.
-            Stmt::Use {
-                module,
-                condition: None,
-                ..
-            } if module == "if" => {}
             Stmt::Use {
                 module,
                 tags,

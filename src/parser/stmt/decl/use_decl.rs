@@ -74,10 +74,20 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             // :!name
             let r = r.strip_prefix('!').unwrap_or(r);
             if let Ok((r, tag_name)) = ident(r) {
-                // The `if` pragma's `:if(EXPR)` adverb (`use Foo:if($cond)`) loads
-                // the module only when EXPR is true at runtime. It is NOT an import
+                // The `if` pragma's `:if(EXPR)` adverb (`use Foo:if($cond)`)
+                // loads the module only when EXPR is true. It is NOT an import
                 // tag; capture the condition expression instead.
-                if tag_name == "if" && r.starts_with('(') {
+                //
+                // Only while the pragma is active, though (ADR-0098): the
+                // adverb means nothing until `use if;` has mixed the pragma's
+                // actions role into the compilation unit's MAIN slang, and in
+                // stock Rakudo an unrecognized `use` adverb is inert — the
+                // module loads regardless. Falling through to the
+                // consume-and-discard arm below reproduces that.
+                if tag_name == "if"
+                    && r.starts_with('(')
+                    && super::super::simple::slang_use_if_adverb()
+                {
                     let inner = &r[1..];
                     let (after_expr, cond) = expression(inner)?;
                     let (after_expr, _) = ws(after_expr)?;
@@ -101,6 +111,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // `:ver<...>` (confirmed equivalent via `raku -e`) and normalizes
                 // to the same canonical `ver` selector key.
                 let is_dist_selector = matches!(tag_name.as_str(), "ver" | "v" | "auth" | "api");
+                // A `:if(...)` that reached here is one the pragma is not
+                // active for. Rakudo reads it as one more module-spec adverb,
+                // which selects nothing and is silently ignored, so the module
+                // loads; discard it the same way a `:auth(...)` expression is
+                // discarded. Treating it as an import tag instead would raise
+                // "no such tag 'if'" for a program that runs fine on rakudo.
+                let is_inert_adverb = tag_name == "if" && r.starts_with('(');
                 let canonical_tag_name = if tag_name == "v" {
                     "ver"
                 } else {
@@ -127,7 +144,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     rest = after;
                     continue;
                 }
-                if is_dist_selector && r.starts_with('(') {
+                if (is_dist_selector || is_inert_adverb) && r.starts_with('(') {
                     let after = skip_balanced_parens(r);
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);

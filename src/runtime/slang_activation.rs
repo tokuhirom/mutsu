@@ -51,6 +51,23 @@ const ACTIONS_HANDLE_CLASS: &str = "Mutsu::Slang::Actions";
 /// names another slang-activating module).
 pub(crate) const ACTIVATION_THREAD_NAME: &str = "mutsu-slang-activation";
 
+/// Which half of a `define_slang('MAIN', $grammar, $actions)` registration a
+/// role was mixed into. The two halves spell an override differently, so the
+/// reader has to know which it is looking at.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SlangRoleKind {
+    /// Mixed into `slang_grammar('MAIN')`. A grammar role overrides
+    /// *productions*, written as `token`/`rule` members (plus, for an
+    /// `L10N::XX` vocabulary role, `<category>2ast` methods carrying a
+    /// spelling map).
+    Grammar,
+    /// Mixed into `slang_actions('MAIN')`. An actions role has one *method*
+    /// per production it overrides — `method statement-control:sym<use>` in
+    /// the `if` pragma — so its method names are the override names
+    /// (ADR-0098).
+    Actions,
+}
+
 /// One grammar-rule override a slang role declares: the overridden rule/token
 /// name, plus the token's raw regex source when it has one.
 ///
@@ -200,28 +217,52 @@ impl Interpreter {
     }
 
     /// `$*LANG.define_slang($name, $grammar, $actions?)`: read the roles the
-    /// grammar handle accumulated via `.^mixin` and map each role's overridden
-    /// rule names onto parser modes. An unknown rule is a hard error naming
-    /// the rule (ADR-0026 §2.2) — never a silent ignore. Actions mixins are
-    /// recorded-but-inert (Slang::Tuxic passes Mu for actions).
+    /// grammar and actions handles accumulated via `.^mixin` and map each
+    /// role's overridden production names onto parser modes. An unknown
+    /// override is a hard error naming it (ADR-0026 §2.2) — never a silent
+    /// ignore.
+    ///
+    /// Both handles are read (ADR-0098). ADR-0026 left the actions half
+    /// recorded-but-inert because `Slang::Tuxic` passes `Mu` for actions, but
+    /// a slang can put its whole registration there: the `if` pragma
+    /// overrides exactly one production, `statement-control:sym<use>`, and
+    /// does it from an actions role.
     fn slang_define_slang(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let Some(grammar) = args.get(1) else {
             return Err(RuntimeError::new("define_slang requires a grammar handle"));
         };
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
         let mut declarators: Vec<SlangDeclarator> = Vec::new();
-        for role in Self::slang_handle_roles(grammar) {
-            for over in self.slang_role_rule_names(&role)? {
-                // A `package_declarator:sym<name>` candidate *adds* a keyword
-                // rather than overriding an existing rule (ADR-0091), so it is
-                // read as a declarator registration instead of being mapped
-                // onto a parser mode.
-                if let Some(keyword) = declarator_keyword(&over.name) {
-                    declarators
-                        .push(self.slang_declarator_from_candidate(keyword, over.body.as_deref()));
-                    continue;
+        let halves = [
+            (Some(grammar), SlangRoleKind::Grammar),
+            (args.get(2), SlangRoleKind::Actions),
+        ];
+        for (handle, kind) in halves {
+            let Some(handle) = handle else { continue };
+            for role in Self::slang_handle_roles(handle) {
+                for over in self.slang_role_rule_names(&role, kind)? {
+                    // A `package_declarator:sym<name>` candidate *adds* a
+                    // keyword rather than overriding an existing rule
+                    // (ADR-0091), so it is read as a declarator registration
+                    // instead of being mapped onto a parser mode.
+                    //
+                    // Only the grammar half declares one, though. Rakudo pairs
+                    // every grammar candidate with an actions method of the
+                    // same name whose job is to build QAST — the half mutsu
+                    // never runs — so reading the actions one as a second
+                    // registration would overwrite the grammar one with a
+                    // bodyless record, losing its `$*PKGDECL`/`set_how`
+                    // (a `role` declarator came back out as a class).
+                    if let Some(keyword) = declarator_keyword(&over.name) {
+                        if kind == SlangRoleKind::Grammar {
+                            declarators.push(
+                                self.slang_declarator_from_candidate(keyword, over.body.as_deref()),
+                            );
+                        }
+                        continue;
+                    }
+                    rules.push(over);
                 }
-                rules.push(over);
             }
         }
         crate::parser::apply_slang_overrides(&rules).map_err(RuntimeError::new)?;
@@ -270,7 +311,17 @@ impl Interpreter {
     /// members, each with the raw regex source of its body. Role tokens live in
     /// the role's deferred body (`DeferredBodyOpKind::TokenRule`), not its
     /// `methods` map.
-    fn slang_role_rule_names(&self, role: &Value) -> Result<Vec<SlangRuleOverride>, RuntimeError> {
+    ///
+    /// An `Actions` role (ADR-0098) additionally contributes every one of its
+    /// plain methods: an actions role has one method per production it
+    /// overrides, so the method *name* is the override name. A grammar role's
+    /// plain methods are not read that way — only its `<category>2ast` /
+    /// `<category>2str` vocabulary maps are, exactly as before.
+    fn slang_role_rule_names(
+        &self,
+        role: &Value,
+        kind: SlangRoleKind,
+    ) -> Result<Vec<SlangRuleOverride>, RuntimeError> {
         let role_name = match role.view() {
             ValueView::Package(name) => name.resolve(),
             _ => role.to_string_value(),
@@ -298,25 +349,34 @@ impl Interpreter {
         }
         // An L10N role translates identifier-position names (core routine
         // names, `is` trait arguments) through a `<category>2ast` method rather
-        // than through a token, so read those maps too.
-        for (method_name, defs) in &def.methods {
-            let Some(category) = method_name
+        // than through a token, so read those maps too. `def.methods` is a hash,
+        // so walk it in name order: the set of overrides decides which mode
+        // flags flip, but the *first unsupported* one decides the error message.
+        let mut method_names: Vec<&String> = def.methods.keys().collect();
+        method_names.sort_unstable();
+        for method_name in method_names {
+            let defs = &def.methods[method_name];
+            let vocabulary = method_name
                 .strip_suffix("2ast")
                 .or_else(|| method_name.strip_suffix("2str"))
-            else {
-                continue;
-            };
-            if category.is_empty() {
-                continue;
+                .filter(|category| !category.is_empty())
+                .and_then(|_| defs.first())
+                .and_then(|d| constant_mapping_pairs(&d.body));
+            match vocabulary {
+                Some(aliases) => names.push(SlangRuleOverride {
+                    name: method_name.clone(),
+                    body: None,
+                    aliases,
+                }),
+                // An actions role's every other method is a production
+                // override by construction; a grammar role's is not.
+                None if kind == SlangRoleKind::Actions => names.push(SlangRuleOverride {
+                    name: method_name.clone(),
+                    body: None,
+                    aliases: Vec::new(),
+                }),
+                None => {}
             }
-            let Some(aliases) = defs.first().and_then(|d| constant_mapping_pairs(&d.body)) else {
-                continue;
-            };
-            names.push(SlangRuleOverride {
-                name: method_name.clone(),
-                body: None,
-                aliases,
-            });
         }
         Ok(names)
     }

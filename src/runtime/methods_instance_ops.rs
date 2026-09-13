@@ -2847,6 +2847,26 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     _ => self.dispatch_owner_name(&target).to_string(),
                 };
+                // `Raku.legacy` is rakudo's one `Raku:U` method (ADR-0098): it
+                // tells a module which compiler frontend is compiling it —
+                // `True` under the NQP/`Perl6::World` frontend, `False` under
+                // RakuAST. mutsu is neither, but the compile-time surface it
+                // offers a module is the RakuAST-shaped one (a `$*LANG` handle
+                // with `define_slang`/`slang_grammar`/`slang_actions`, per
+                // ADR-0026/ADR-0091; there is no `$*W` World to mix a role
+                // into), so `False` names the branch mutsu can honour.
+                //
+                // It gets a type-object arm of its own rather than a row in
+                // `Raku`'s native-method table because every *other* `Raku`
+                // method needs an instance: rakudo answers `Raku.backend` with
+                // "No such method" and `$*RAKU.legacy` with an invocant-type
+                // error, and mutsu matches both.
+                if args.is_empty()
+                    && method == "legacy"
+                    && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Raku")
+                {
+                    return Ok(Value::FALSE);
+                }
                 // RakuAST construction via a non-`new` constructor (Phase 4),
                 // e.g. `RakuAST::Name.from-identifier("x")` (`.new` is handled
                 // earlier in methods_object_dispatch_new).
