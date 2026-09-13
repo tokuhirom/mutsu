@@ -24,6 +24,12 @@ name: Sync the `working` label from the claim log
 on:
   issue_comment:
     types: [created, edited, deleted]
+  issues:
+    # A close is the one event that most reliably means the work is over, and
+    # it posts no comment -- so nothing in the `issue_comment`-driven pipeline
+    # ever saw it (#8256), and a closed issue kept reading as claimed forever.
+    # `reopened` is the mirror: put the label back if a claim is still live.
+    types: [closed, reopened]
   schedule:
     # Every three hours. The label itself is event-driven; this run exists to
     # expire dead claims and to catch an event that was never delivered.

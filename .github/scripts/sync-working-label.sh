@@ -29,6 +29,14 @@
 # such branch on origin. It posts a real `Releasing:` comment rather than just
 # dropping the label, because the log -- not the label -- is the record.
 #
+# A CLOSED issue is never `working`, regardless of what the log's last line
+# says (#8256): the issue is not in any queue once closed, so there is nothing
+# left for the label to gate. Unlike the stale-claim case above, this does NOT
+# append a synthetic `Releasing:` comment -- the log stays exactly what
+# happened, and the closed state alone is enough to suppress the label. A
+# reopen re-derives the label from the log as normal, so a claim that was
+# never released comes back.
+#
 # Needs: gh (authenticated), jq is not required (gh --jq covers it), awk, date.
 set -uo pipefail
 
@@ -76,6 +84,19 @@ live_claims() {
   '
 }
 
+# Apply the "a closed issue is never `working`" rule (#8256): a closed issue
+# has no live claim regardless of what the log says, because it is not in any
+# queue once closed. Separated out as a pure function (state + a count in,
+# a count out) so the self-test can exercise it without an API call.
+effective_live_count() { # effective_live_count <state> <raw_live_count>
+  local state="$1" raw="$2"
+  if [ "$state" = "closed" ]; then
+    echo 0
+  else
+    echo "$raw"
+  fi
+}
+
 # ------------------------------------------------------------------- the API
 
 comment_log() { # comment_log <issue>
@@ -85,6 +106,10 @@ comment_log() { # comment_log <issue>
 
 issue_labels() { # issue_labels <issue>
   gh api "repos/$REPO/issues/$1" --jq '.labels[].name'
+}
+
+issue_state() { # issue_state <issue> -> "open" or "closed"
+  gh api "repos/$REPO/issues/$1" --jq '.state'
 }
 
 has_label() { # has_label <label> <<< "<labels>"
@@ -125,22 +150,31 @@ release_if_stale() { # release_if_stale <issue> <branch> <claimed_at>
 }
 
 sync_issue() { # sync_issue <issue>
-  local n="$1" labels claims live=0 line branch ts
+  local n="$1" labels state claims raw_live=0 live line branch ts
 
   labels=$(issue_labels "$n" 2>/dev/null) || { echo "  #$n: unreadable, skipped"; return 0; }
   # The lock board is infrastructure: its comments lock distributions, not it.
   if printf '%s\n' "$labels" | has_label "ecosystem:lock"; then return 0; fi
 
+  state=$(issue_state "$n" 2>/dev/null) || state="open"
+
   claims=$(comment_log "$n" | live_claims)
 
   while IFS=$'\t' read -r branch ts; do
     [ -n "$branch" ] || continue
-    if release_if_stale "$n" "$branch" "$ts"; then continue; fi
-    live=$((live + 1))
+    # A stale-claim release only makes sense on an issue still in the queue --
+    # posting "claim it again" on a closed one would be actively wrong.
+    if [ "$state" = "open" ] && release_if_stale "$n" "$branch" "$ts"; then continue; fi
+    raw_live=$((raw_live + 1))
     echo "  #$n: live claim '$branch' ($(hours_since "$ts")h)"
   done <<EOF
 $claims
 EOF
+
+  live=$(effective_live_count "$state" "$raw_live")
+  if [ "$state" = "closed" ] && [ "$raw_live" -gt 0 ]; then
+    echo "  #$n: closed with $raw_live live claim(s) in the log -> not working"
+  fi
 
   if printf '%s\n' "$labels" | has_label "$LABEL"; then
     if [ "$live" -eq 0 ]; then
@@ -155,8 +189,16 @@ EOF
 
 sync_all() {
   local n
-  # Open issues only: a closed one is out of the queue whatever its label says.
+  # Open issues: a closed one is out of the queue whatever its label says, and
+  # gets caught by the loop below instead of the full (expensive) listing here.
   for n in $(gh issue list --repo "$REPO" --state open --limit 300 --json number --jq '.[].number'); do
+    sync_issue "$n"
+  done
+  # Sweep closed issues that still carry the label from before the `issues:
+  # [closed]` trigger existed (#8256) -- scoped to `--label "$LABEL"` so this
+  # stays cheap (there should be very few) instead of listing every closed
+  # issue in the repo.
+  for n in $(gh issue list --repo "$REPO" --state closed --label "$LABEL" --limit 300 --json number --jq '.[].number'); do
     sync_issue "$n"
   done
 }
@@ -222,6 +264,23 @@ self_test() {
   check '#8094: claim and release both carry a footer' '' \
     "$ts	Claiming: claude/laughing-clarke-6i0912" \
     "$ts	Releasing: claude/laughing-clarke-6i0912 - fixed in https://github.com/tokuhirom/mutsu/pull/8114."
+
+  # #8256: a closed issue is never `working`, whatever the log's last line says.
+  check_effective() { # check_effective <label> <state> <raw> <expected>
+    local label="$1" state="$2" raw="$3" expected="$4" got
+    got=$(effective_live_count "$state" "$raw")
+    if [ "$got" != "$expected" ]; then
+      echo "not ok - $label (expected '$expected', got '$got')" >&2
+      failures=$((failures + 1))
+    else
+      echo "ok - $label"
+    fi
+  }
+  check_effective '#8256: a closed issue with a live claim in the log is not working' closed 1 0
+  check_effective '#8256: a closed issue with several live claims is still not working' closed 3 0
+  check_effective '#8256: a closed issue with no claims stays at zero' closed 0 0
+  check_effective '#8256: an open issue keeps its raw live count' open 2 2
+  check_effective '#8256: a reopened (open) issue with a live claim is working again' open 1 1
 
   if [ "$failures" -ne 0 ]; then
     echo "sync-working-label self-test: $failures failure(s)" >&2
