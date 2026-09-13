@@ -922,6 +922,7 @@ impl Parser {
         self.skip_whitespace();
         let body_start = self.pos;
         let mut quote = None;
+        let mut nested_assertions = 0usize;
         while let Some(ch) = self.chars.get(self.pos).copied() {
             if let Some(closer) = quote {
                 self.pos += 1;
@@ -942,17 +943,26 @@ impl Parser {
                     quote = Some(ch);
                     self.pos += 1;
                 }
+                '>' if nested_assertions > 0 => {
+                    nested_assertions -= 1;
+                    self.pos += 1;
+                }
                 '>' => break,
                 '<' => {
-                    // Nested assertions/subrules need their own source
-                    // representation and are a later ADR-0088 slice.
-                    self.pos = start;
-                    return None;
+                    // A nested lookaround can contain another assertion in a
+                    // static group, for example
+                    // `<?before [<?before bar>]>`. Keep scanning through the
+                    // inner terminator so the body parser receives the whole
+                    // source-level tree. Unsupported angle-bracket forms are
+                    // still rejected by `parse_static` below rather than
+                    // being mistaken for literals.
+                    nested_assertions += 1;
+                    self.pos += 1;
                 }
                 _ => self.pos += 1,
             }
         }
-        if self.chars.get(self.pos) != Some(&'>') || quote.is_some() {
+        if self.chars.get(self.pos) != Some(&'>') || quote.is_some() || nested_assertions != 0 {
             self.pos = start;
             return None;
         }
@@ -1260,13 +1270,14 @@ fn is_static_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
         | RegexNode::SubruleAlias { .. }
-        | RegexNode::Lookaround { .. }
-        | RegexNode::NamedLookaround { .. }
         | RegexNode::Interpolation { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine => false,
+        RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
+            is_static_lookaround_body(assertion)
+        }
     }
 }
 

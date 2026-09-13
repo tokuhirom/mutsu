@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: explicit static lookaround assertions retain their
 # source tree and lower through the existing RegexPattern matcher.
 
-plan 28;
+plan 32;
 
 my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
 my $before-match = 'foobar' ~~ $positive-before;
@@ -106,3 +106,29 @@ ok $grammar.parse('foobar'),
     'a lowered declaration can reuse its lookahead without duplicate policy';
 nok $grammar.parse('foobaz'),
     'a declaration lookahead rejects the wrong suffix';
+
+my $nested = EVAL(Q[/foo <?before [<?before bar>]> bar/].AST);
+ok 'foobar' ~~ $nested,
+    'a nested static lookahead lowers through the shared tree';
+ok 'foobar' ~~ $nested,
+    'a nested static lookahead can be reused without reparsing drift';
+nok 'foobaz' ~~ $nested,
+    'a nested static lookahead rejects a different suffix';
+
+my $constructed-nested = EVAL(RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Lookahead.new(
+        assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+            name => RakuAST::Name.from-identifier('before'),
+            regex-arg => RakuAST::Regex::Group.new(
+                RakuAST::Regex::Assertion::Lookahead.new(
+                    assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                        name => RakuAST::Name.from-identifier('before'),
+                        regex-arg => RakuAST::Regex::Literal.new('bar'),
+                    ),
+                ),
+            ),
+        ),
+    ),
+));
+ok 'bar' ~~ $constructed-nested,
+    'a constructed nested lookahead lowers through the existing matcher';
