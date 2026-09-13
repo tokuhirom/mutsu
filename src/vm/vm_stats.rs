@@ -172,6 +172,10 @@ static REGEX_MATCH_TARGETS_BUILT: AtomicU64 = AtomicU64::new(0);
 // Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
 static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
 static REGEX_CODE_PARSE_MISSES: AtomicU64 = AtomicU64::new(0);
+// Top-level regex parse cache (REGEX_PARSE_CACHE and the interpolated-pattern
+// cache) effectiveness.
+static REGEX_PARSE_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static REGEX_PARSE_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 
 /// Record one lookup in the regex embedded-code parse cache.
 #[inline]
@@ -206,6 +210,18 @@ pub(crate) fn record_regex_raw_token_candidates(hit: bool) {
             REGEX_RAW_TOKEN_CANDIDATES_HITS.fetch_add(1, Ordering::Relaxed);
         } else {
             REGEX_RAW_TOKEN_CANDIDATES_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Record one lookup in the top-level regex parse cache.
+#[inline]
+pub(crate) fn record_regex_parse_cache(hit: bool) {
+    if enabled() {
+        if hit {
+            REGEX_PARSE_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_PARSE_CACHE_MISSES.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -1218,6 +1234,11 @@ pub(crate) fn dump() {
     let raw_candidates_misses = REGEX_RAW_TOKEN_CANDIDATES_MISSES.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] regex-raw-token-candidates-cache: hits={raw_candidates_hits} misses={raw_candidates_misses}"
+    );
+    let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
+    let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-parse-cache: hits={regex_parse_cache_hits} misses={regex_parse_cache_misses}"
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");

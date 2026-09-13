@@ -1497,34 +1497,88 @@ impl Interpreter {
     /// than a deep clone of the whole token tree (the previous owned-`RegexPattern`
     /// cache cloned the tree on every hit — ANALYSIS §8.4).
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<std::sync::Arc<RegexPattern>> {
+        let package = self.current_package_sym();
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         if regex_pattern_is_static(pattern) {
             // Parsing resolves grammar tokens against the current package (and
             // may fold their bodies in), so the cache key includes the package;
             // a stale token-registry generation forces a re-parse.
-            let tok_gen = crate::runtime::regex_parse::TOKEN_DEFS_GEN
-                .load(std::sync::atomic::Ordering::Relaxed);
-            let key = format!("{}\u{0}{}", self.current_package(), pattern);
-            if let Some(cached) = REGEX_PARSE_CACHE.with(|c| {
+            let cache_key = (package, None);
+            let cached = REGEX_PARSE_CACHE.with(|c| {
                 c.borrow()
-                    .get(&key)
+                    .get(&cache_key)
+                    .and_then(|bucket| bucket.get(pattern))
                     .filter(|(cached_gen, _)| *cached_gen == tok_gen)
                     .map(|(_, p)| std::sync::Arc::clone(p))
-            }) {
+            });
+            if let Some(cached) = cached {
+                crate::vm::vm_stats::record_regex_parse_cache(true);
                 return Some(cached);
             }
+            crate::vm::vm_stats::record_regex_parse_cache(false);
             let parsed = lower_static_execution_pattern(pattern)
                 .or_else(|| self.parse_regex_uncached(pattern, RegexParseMode::Match))
                 .map(std::sync::Arc::new);
             if let Some(ref p) = parsed {
                 REGEX_PARSE_CACHE.with(|c| {
                     c.borrow_mut()
-                        .insert(key, (tok_gen, std::sync::Arc::clone(p)));
+                        .entry(cache_key)
+                        .or_default()
+                        .insert(pattern.to_owned(), (tok_gen, std::sync::Arc::clone(p)));
                 });
             }
             return parsed;
         }
-        self.parse_regex_uncached(pattern, RegexParseMode::Match)
-            .map(std::sync::Arc::new)
+
+        // Interpolation is the unavoidable allocation for a dynamic pattern;
+        // retain that concrete text as the cache key so an unchanged runtime
+        // value parses only once. The structural parse can still consult
+        // ambient state (for example `<$var>` or `<~~>`), so such entries are
+        // kept out of this cache by the flag maintained by the parser.
+        let interpolated = match self.interpolate_regex_scalars(pattern) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|err| {
+                    *err.borrow_mut() = Some(e);
+                });
+                return None;
+            }
+        };
+        let cached = crate::runtime::regex_parse::REGEX_INTERPOLATED_PARSE_CACHE.with(|c| {
+            c.borrow()
+                .get(&package)
+                .and_then(|bucket| bucket.get(interpolated.as_str()))
+                .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                .map(|(_, p)| std::sync::Arc::clone(p))
+        });
+        if let Some(cached) = cached {
+            crate::vm::vm_stats::record_regex_parse_cache(true);
+            return Some(cached);
+        }
+        crate::vm::vm_stats::record_regex_parse_cache(false);
+
+        // The ambient-read flag belongs to one top-level parse. Clear a flag
+        // left by a previous parse before entering the recursive parser, then
+        // consume this parse's result so an impure pattern does not disable
+        // caching for all later independent patterns.
+        crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|flag| flag.set(false));
+        let parsed = self
+            .parse_regex_uncached_interpolated(&interpolated, RegexParseMode::Match)
+            .map(std::sync::Arc::new);
+        let ambient_read = crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE
+            .with(|flag| flag.replace(false));
+        if !ambient_read && let Some(ref p) = parsed {
+            crate::runtime::regex_parse::REGEX_INTERPOLATED_PARSE_CACHE.with(|c| {
+                let mut cache = c.borrow_mut();
+                let bucket = cache.entry(package).or_default();
+                if bucket.len() >= crate::runtime::regex_parse::INTERPOLATED_PARSE_CACHE_MAX {
+                    bucket.clear();
+                }
+                bucket.insert(interpolated, (tok_gen, std::sync::Arc::clone(p)));
+            });
+        }
+        parsed
     }
 
     /// Parse a regex value while retaining parser-produced source provenance.
@@ -1583,22 +1637,21 @@ impl Interpreter {
         // with the same compatibility spelling.
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         tree.hash(&mut hasher);
-        let key = format!(
-            "{}\u{0}{}\u{0}tree:{:016x}",
-            self.current_package(),
-            pattern,
-            hasher.finish()
-        );
+        let cache_key = (self.current_package_sym(), Some(hasher.finish()));
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(cached) = REGEX_PARSE_CACHE.with(|c| {
+        let cached = REGEX_PARSE_CACHE.with(|c| {
             c.borrow()
-                .get(&key)
+                .get(&cache_key)
+                .and_then(|bucket| bucket.get(pattern.as_str()))
                 .filter(|(cached_gen, _)| *cached_gen == tok_gen)
                 .map(|(_, p)| std::sync::Arc::clone(p))
-        }) {
+        });
+        if let Some(cached) = cached {
+            crate::vm::vm_stats::record_regex_parse_cache(true);
             return Some(cached);
         }
+        crate::vm::vm_stats::record_regex_parse_cache(false);
 
         let parsed = lower_static_execution_tree(&pattern, tree)
             .map(std::sync::Arc::new)
@@ -1606,7 +1659,9 @@ impl Interpreter {
         if let Some(ref p) = parsed {
             REGEX_PARSE_CACHE.with(|c| {
                 c.borrow_mut()
-                    .insert(key, (tok_gen, std::sync::Arc::clone(p)));
+                    .entry(cache_key)
+                    .or_default()
+                    .insert(pattern, (tok_gen, std::sync::Arc::clone(p)));
             });
         }
         parsed
