@@ -81,6 +81,8 @@ Raku documentation.
 - `make test`: Rust tests, build, and local TAP tests; its log is
   `tmp/make-test.log`.
 - `make roast`: whitelisted roast tests; its log is `tmp/make-roast.log`.
+  Both targets exit non-zero when their suite fails, so the exit status is the
+  verdict; the log is where you find which file failed.
 - `cargo fmt --all`: format Rust.
 - `cargo clippy -- -D warnings`: lint with warnings denied.
 
@@ -88,7 +90,8 @@ Add a focused regression test for each behavior change, normally under `t/` — 
 the category `docs/t-directory-layout.md` names for it, never at `t/` top level.
 Run a targeted test while iterating. Before publishing a code PR, run
 `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and `make roast`
-once each. After either full command runs, inspect its saved log. A failing
+once each, and do not publish unless each exits zero. After either full command
+runs, inspect its saved log for the detail rather than re-running it. A failing
 full test belongs to the branch: diagnose it and use targeted checks as needed
 for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
 

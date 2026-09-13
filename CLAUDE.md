@@ -404,7 +404,7 @@ CI costs a wake, a fix-up commit and a reviewer's attention; discovering it loca
 suites are a pre-publication gate, not an inner loop:
 
 - Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
-- Read the saved logs (`tmp/make-test.log`, `tmp/make-roast.log`) with the Grep tool instead of re-running a suite to see its output.
+- Both suites report failure in their **exit status** (`bash -o pipefail`, guarded by the `check-pipefail` target; see "Checking `make test` / `make roast` results" below). Read the saved logs (`tmp/make-test.log`, `tmp/make-roast.log`) with the Grep tool to find out *which* file failed — never to find out *whether* something failed, and never by re-running a suite to see its output.
 - **Some `make roast` failures are the container, not your change** — running as `uid 0` makes the
   `chmod`-based file tests meaningless, and the sandboxed network breaks one socket test. The exact
   files, the discriminator for each, and how to tell them from a real failure are in
@@ -450,17 +450,24 @@ Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench C
 
 ## Checking `make test` / `make roast` results
 
-`make test` and `make roast` automatically save their full output to log files via `tee`:
+**The exit status is the verdict; the log is the detail.** Both recipes end in `| tee tmp/make-*.log`
+but run under `bash -o pipefail` (`SHELL` / `.SHELLFLAGS` at the top of the Makefile), so a failing
+`cargo build`, `cargo test` or `prove` makes `make` exit non-zero. That was **not** true before
+[#8221](https://github.com/tokuhirom/mutsu/issues/8221): plain `sh` reported `tee`'s status, always
+0, so every red suite looked green and the only thing catching it was reading the log by eye. That is
+why the older rule here amounted to "grep the log to find out whether it passed" — **do not go back
+to judging green that way.** A zero exit now means the suite passed; a non-zero one is a real failure
+and not something to interpret away (the only licensed exception is a `make roast` red whose failing
+files are a subset **by name** of the container-only list in
+[docs/agent-environments.md](docs/agent-environments.md)). The `check-pipefail` target — a
+prerequisite of both suites, costing milliseconds — fails loudly if that masking ever returns.
+
+Both targets also save their complete output, so you never need to re-run one to see it:
 - `make test` → `tmp/make-test.log`
 - `make roast` → `tmp/make-roast.log`
 
-**After running `make test` or `make roast`, always use the Grep tool on the log file instead of re-running the command.** Do NOT re-run `make test` or `make roast` just to grep the output — use the saved log file.
-
-```
-# Use the Grep tool on these files:
-# tmp/make-test.log
-# tmp/make-roast.log
-```
+**When a suite exits non-zero, read its log with the Grep tool to find which file failed.** Do NOT
+re-run `make test` or `make roast` just to get the output again — it is already on disk.
 
 ## Running mutsu safely
 

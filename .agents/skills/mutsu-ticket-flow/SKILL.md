@@ -243,7 +243,8 @@ Before publishing an implementation PR, run `cargo fmt --all`, `make lint`, `mak
 `make roast` once each (`make lint` rather than a bare `cargo clippy` — it adds the three
 configurations CI's `lint-configs` job gates on and the default clippy is blind to). Inspect
 `tmp/make-test.log` and `tmp/make-roast.log` with the Grep tool rather than rerunning a suite for
-its output. Do not publish an implementation PR until both full suites succeed.
+its output. Do not publish an implementation PR until both full suites succeed — each target exits
+non-zero when its suite fails, so check the status and do not rely on skimming the log.
 
 In a remote container `make roast` has a fixed set of three environment-only failures it cannot
 avoid (`uid 0` breaks two `chmod`-based file-test files; the network sandbox times out one socket
