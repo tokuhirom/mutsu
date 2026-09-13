@@ -9,6 +9,36 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
+Every `benchmarks/*.raku` file is measured by the bench CI automatically (two
+configurations each, wall clock and simulated instruction counts — see
+`scripts/bench-ci.sh` and `scripts/bench-det.sh`), so adding a file is all it
+takes to add a series. Keep a new one deterministic, self-checking (print a
+checksum), and in the 0.1-0.4 s range on a release build: the deterministic
+series resolves ~0.1%, while the wall-clock series needs the file to be well
+clear of the ~8 ms startup without paying 90x for it under callgrind.
+
+### Regex and grammar coverage
+
+The regex engine was effectively unmeasured until 2026-09-13 (one 5000-iteration
+`~~ /\d+/` loop inside `bench-string.raku`). Eight files now cover it, each
+isolating one mechanism: `bench-regex-match` (matching with no `Match` built),
+`bench-regex-capture` (captures and `Match` accessors), `bench-regex-global`
+(`:g` / `comb` / `subst`), `bench-regex-assertion` (look-around, word
+boundaries, backtracking, `:r`), `bench-regex-long-subject` (per-position reject
+cost on a 128 KB subject), `bench-regex-split-subst` (the superlinear
+result-assembly paths), plus `bench-grammar-parse-big` and `bench-yaml-parse-big`
+for grammar growth rate at a realistic document size. Each file's header says
+what it measures and why. Two open perf issues came out of writing them:
+[#8247](https://github.com/tokuhirom/mutsu/issues/8247) (`.split(rx)` /
+`.subst(rx, :g)` quadratic in subject length) and
+[#8248](https://github.com/tokuhirom/mutsu/issues/8248) (scanning is linear but
+~8x rakudo's per-position constant, so mutsu loses above ~0.5 MB).
+
+Note the size dependence when quoting any regex ratio: on ~100-character
+subjects mutsu measures 0.2-0.4x rakudo, and the same operations measure 1.0x and
+worse on multi-hundred-kilobyte ones. A ratio without its subject size says
+nothing.
+
 ## Current Status (bench CI, main commit `c8955d2e`, 2026-07-13)
 
 > Source of truth: the **bench CI history** (`bench-history.tsv` on the
