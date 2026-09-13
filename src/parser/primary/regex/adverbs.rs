@@ -460,6 +460,7 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
         sigspace: adverbs.sigspace,
         samecase: adverbs.samecase,
         samespace: adverbs.samespace,
+        source_adverbs: Some(Arc::new(adverbs.source.clone())),
         // Filled in at *load* time by `OpCode::LoadRegexClosure` when the
         // pattern embeds code; a parsed literal never carries a scope.
         captured: None,
