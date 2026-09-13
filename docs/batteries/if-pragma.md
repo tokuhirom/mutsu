@@ -74,13 +74,13 @@ difference is the deliberately mutsu-specific `Raku.legacy` assertion).
 
 ## Status / limitations
 
-- The `if` upstream suite is **0/1 files** in the release gate (nothing
-  whitelisted). All five of `t/if.rakutest`'s assertions run and the three
-  `:if` ones behave correctly, but the file counts loads by having the loaded
-  module's `sub EXPORT` increment a caller **dynamic variable**, and mutsu
-  discards a module load's writes to the caller's dynamics
-  ([#8229](https://github.com/tokuhirom/mutsu/issues/8229)). That gap is
-  unrelated to the pragma — a module *mainline* write is lost the same way.
+- The `if` upstream suite is **1/1 files** in the release gate: `t/if.rakutest`
+  passes 5/5 and is whitelisted. It reached that only once a module load stopped
+  discarding its writes to the *caller's* dynamic variables
+  ([#8229](https://github.com/tokuhirom/mutsu/issues/8229)) — the file counts
+  loads by having the loaded module's `sub EXPORT` increment
+  `$*PACKAGE_LOADED`. That gap was unrelated to the pragma: a module *mainline*
+  write was lost the same way.
 - **The `:if` value is evaluated at run time, not at BEGIN.** Rakudo replaces a
   false `use` with `RakuAST::Statement::Empty` at compile time; mutsu still
   scans the named module at parse time (registering its exports) and only skips

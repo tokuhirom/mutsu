@@ -275,6 +275,7 @@ YAMLish	basic.rakutest
 YAMLish	p5-tests.rakutest
 YAMLish	roundtrip.rakutest
 YAMLish	test-harness.rakutest
+if	if.rakutest
 zef	00-load.rakutest
 zef	build.rakutest
 zef	distribution-depends-parsing.rakutest

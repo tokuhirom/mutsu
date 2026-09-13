@@ -45,6 +45,51 @@ impl Interpreter {
         }
     }
 
+    /// Put `caller_env` back as the current env after module code ran in
+    /// `self.env`, but keep that code's writes to dynamic variables the
+    /// caller already owned.
+    ///
+    /// A `$*x` belongs to the dynamic scope that *declared* it, not to the
+    /// module that assigns it, so a `sub EXPORT { $*PACKAGE_LOADED++ }` has to
+    /// leave the importer's counter incremented — that is how a module reports
+    /// a load-time fact, and how `modules/if/`'s own suite counts loads
+    /// (#8229). The wholesale restore this replaces dropped those writes along
+    /// with EXPORT's params and locals, which is the only thing it is actually
+    /// there to drop (see `apply_module_export`).
+    ///
+    /// Only keys the caller already had are carried over, so a dynamic the
+    /// module declared for itself still dies with the load.
+    fn restore_caller_env_keeping_dynamics(&mut self, mut caller_env: crate::env::Env) {
+        for (key, value) in &self.env {
+            if key.is_dynamic_var_env_key()
+                && caller_env.contains_key_sym(*key)
+                && caller_env.get_sym(*key) != Some(value)
+            {
+                caller_env.insert_sym(*key, value.clone());
+            }
+        }
+        self.env = caller_env;
+    }
+
+    /// Overlay the importer's live dynamic variables onto a remembered
+    /// module-scope env, before `sub EXPORT` is re-run in it.
+    ///
+    /// [`ModuleExportDef::Sub`] carries the module's own scope as it stood at
+    /// its FIRST load, so a re-`use` would otherwise run EXPORT against that
+    /// load's `$*x` values. A `$*PACKAGE_LOADED` already incremented to 1 then
+    /// reads as 0, increments back to 1, and
+    /// [`Interpreter::restore_caller_env_keeping_dynamics`] sees no change to
+    /// carry back — the second load goes uncounted (#8229). Dynamics are
+    /// dynamic-scope: the live binding belongs to whoever is importing now,
+    /// not to the scope that happened to load the module first.
+    fn overlay_caller_dynamics(env: &mut crate::env::Env, caller_env: &crate::env::Env) {
+        for (key, value) in caller_env {
+            if key.is_dynamic_var_env_key() {
+                env.insert_sym(*key, value.clone());
+            }
+        }
+    }
+
     /// If the just-loaded module defined `sub EXPORT`, call it with the `use`
     /// arguments and install the symbols from its returned `Map`(s) into the
     /// caller's scope. `EXPORT` itself is special (never an export), so it is
@@ -90,7 +135,7 @@ impl Interpreter {
                 self.env = module_env;
                 self.bind_compile_time_lang();
                 let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
-                self.env = caller_env;
+                self.restore_caller_env_keeping_dynamics(caller_env);
                 self.install_export_map(&result, importer.as_deref());
                 if let Some(m) = self.module_load_stack.last().cloned() {
                     self.module_export_defs
@@ -128,7 +173,7 @@ impl Interpreter {
         let result = self.compile_and_call_function_def(&def, export_args, &empty_fns);
         self.current_unit = saved_unit;
         let result = result?;
-        self.env = caller_env;
+        self.restore_caller_env_keeping_dynamics(caller_env);
         // `EXPORT` must not itself become a callable in (or leak from) the
         // module; drop every registered `EXPORT` routine now that it has run.
         self.remove_export_routine();
@@ -154,8 +199,9 @@ impl Interpreter {
         let export_args = self.pending_use_export_args.take().unwrap_or_default();
         let saved_env = self.env.clone();
         let result = match def {
-            ModuleExportDef::Sub(d, module_env) => {
+            ModuleExportDef::Sub(d, mut module_env) => {
                 let empty_fns = crate::opcode::CompiledFns::default();
+                Self::overlay_caller_dynamics(&mut module_env, &saved_env);
                 self.env = module_env;
                 self.bind_compile_time_lang();
                 // Same compunit anchoring as the first-load path above.
@@ -170,7 +216,11 @@ impl Interpreter {
                 self.call_sub_value(v, export_args, false)?
             }
         };
-        self.env = saved_env;
+        // Same discipline as the first-load path: EXPORT's own lexicals go,
+        // the importer's dynamics keep whatever EXPORT wrote (#8229). Raku
+        // runs `sub EXPORT` on every import, so a re-`use` must report its
+        // load the same way the first one did.
+        self.restore_caller_env_keeping_dynamics(saved_env);
         let importer = self.module_load_stack.last().cloned();
         self.install_export_map(&result, importer.as_deref());
         Ok(())
