@@ -290,6 +290,26 @@ impl Interpreter {
                     }
                     acc += 1;
                 }
+                RegexAtom::LiteralGrapheme(g) => {
+                    // One atom, several codepoints: it contributes its whole
+                    // length to litlen, and only when the subject carries the
+                    // same cluster there.
+                    let len = g.chars().count();
+                    let idx = pos + acc;
+                    if idx + len > chars.len() {
+                        return (acc, false);
+                    }
+                    let subject = &chars[idx..idx + len];
+                    let hit = if pattern.ignore_case {
+                        subject.iter().collect::<String>().to_lowercase() == g.to_lowercase()
+                    } else {
+                        g.chars().eq(subject.iter().copied())
+                    };
+                    if !hit {
+                        return (acc, false);
+                    }
+                    acc += len;
+                }
                 RegexAtom::Group(inner) => {
                     let (len, full) =
                         self.ltm_litlen_walk(inner, chars, pos + acc, pkg, seen, depth + 1);

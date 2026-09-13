@@ -181,6 +181,18 @@ impl RegexTree {
             }
         }
 
+        /// A combining mark (or a `\r`, which joins a following `\n`) means the
+        /// literal spans a grapheme cluster, and a cluster can straddle two
+        /// source-tree nodes (`/क्ष+/` is `Literal("क्")` followed by a
+        /// quantified `Literal("ष")`, yet the whole cluster is the atom the
+        /// `+` applies to). Only the runtime parser re-joins tokens across
+        /// that boundary, so hand such a pattern back to it rather than
+        /// lowering it codepoint by codepoint here.
+        fn spans_a_grapheme_cluster(text: &str) -> bool {
+            text.chars()
+                .any(|c| c == '\r' || unicode_normalization::char::is_combining_mark(c))
+        }
+
         fn lower_node(
             node: &RegexNode,
             ratchet: bool,
@@ -232,6 +244,9 @@ impl RegexTree {
                     }) {
                         return None;
                     }
+                    if spans_a_grapheme_cluster(text) {
+                        return None;
+                    }
                     Some(
                         text.chars()
                             .map(|ch| {
@@ -244,17 +259,22 @@ impl RegexTree {
                             .collect(),
                     )
                 }
-                RegexNode::Quote(text) => Some(
-                    text.chars()
-                        .map(|ch| {
-                            token(
-                                crate::runtime::RegexAtom::Literal(ch),
-                                crate::runtime::RegexQuant::One,
-                                ratchet,
-                            )
-                        })
-                        .collect(),
-                ),
+                RegexNode::Quote(text) => {
+                    if spans_a_grapheme_cluster(text) {
+                        return None;
+                    }
+                    Some(
+                        text.chars()
+                            .map(|ch| {
+                                token(
+                                    crate::runtime::RegexAtom::Literal(ch),
+                                    crate::runtime::RegexQuant::One,
+                                    ratchet,
+                                )
+                            })
+                            .collect(),
+                    )
+                }
                 RegexNode::CharClassDigit => Some(vec![token(
                     crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
                         negated: false,

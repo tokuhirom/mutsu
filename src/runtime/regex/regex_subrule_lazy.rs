@@ -67,6 +67,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         // Every one of these matches text (or asserts) on its own; none of them
         // reaches the subrule dispatcher.
         RegexAtom::Literal(_)
+        | RegexAtom::LiteralGrapheme(_)
         | RegexAtom::Any
         | RegexAtom::CharClass(_)
         | RegexAtom::Newline

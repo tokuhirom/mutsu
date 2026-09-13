@@ -710,6 +710,18 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
                 RegexAtom::Literal(bases[0])
             }
         }
+        RegexAtom::LiteralGrapheme(g) => {
+            // `:ignoremark` compares base characters only, so a grapheme
+            // literal collapses to its bases — usually a single one, which
+            // becomes a plain `Literal` again.
+            let stripped: String = g.nfd().filter(|c| !is_combining_mark(*c)).collect();
+            let mut it = stripped.chars();
+            match (it.next(), it.next()) {
+                (Some(ch), None) => RegexAtom::Literal(ch),
+                (Some(_), Some(_)) => RegexAtom::LiteralGrapheme(stripped.into()),
+                _ => RegexAtom::LiteralGrapheme(g.clone()),
+            }
+        }
         RegexAtom::Named(name) => {
             // Named subrule / literal string match — strip marks from the name
             let stripped: String = name.nfd().filter(|c| !is_combining_mark(*c)).collect();
@@ -1064,11 +1076,94 @@ pub(super) fn grapheme_end(chars: &[char], pos: usize) -> usize {
     if pos < chars.len() && chars[pos] == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
         return pos + 2;
     }
+    // UAX #29 GB4: nothing extends a control character, so its cluster is
+    // itself even when a combining mark follows (`"\t\x[0300]"` is two
+    // graphemes, and `/\t/` matches its first).
+    if pos < chars.len() && is_grapheme_control(chars[pos]) {
+        return pos + 1;
+    }
     let mut end = pos + 1;
+    let mut saw_linker = false;
     while end < chars.len() && is_combining_mark(chars[end]) {
+        saw_linker |= is_conjunct_linker(chars[end]);
         end += 1;
     }
+    if saw_linker && end < chars.len() {
+        // An Indic virama does not end its cluster: UAX #29's GB9c joins the
+        // consonant that follows it, so `क` + `्` + `ष` is the single grapheme
+        // `क्ष`. Only the real segmentation knows whether that rule applies
+        // here (it does not for `a` + `्` + `b`, where neither side is an
+        // Indic consonant), so pay for it on the rare linker-bearing cluster.
+        return uax29_grapheme_end(chars, pos);
+    }
     end
+}
+
+/// True for an Indic virama / conjunct linker — canonical combining class 9.
+fn is_conjunct_linker(c: char) -> bool {
+    unicode_normalization::char::canonical_combining_class(c) == 9
+}
+
+/// True for a codepoint UAX #29 treats as `Control` (plus the line/paragraph
+/// separators): a cluster boundary always follows one, whatever comes next.
+fn is_grapheme_control(c: char) -> bool {
+    c.is_control() || c == '\u{2028}' || c == '\u{2029}'
+}
+
+/// The end of the grapheme cluster at `pos` under the full UAX #29 rules.
+///
+/// Segmentation needs a `&str`, so it runs over a window of the remaining
+/// codepoints that is grown until the first cluster ends inside it (a cluster
+/// that fills the whole window may have been cut short by the window itself).
+fn uax29_grapheme_end(chars: &[char], pos: usize) -> usize {
+    let remaining = chars.len() - pos;
+    let mut window = 16;
+    loop {
+        let take = window.min(remaining);
+        let text: String = chars[pos..pos + take].iter().collect();
+        let first = text
+            .graphemes(true)
+            .next()
+            .map_or(1, |g| g.chars().count())
+            .max(1);
+        if first < take || take == remaining {
+            return pos + first;
+        }
+        window *= 2;
+    }
+}
+
+/// True when `pos` sits on a grapheme-cluster boundary of `chars`.
+///
+/// Raku strings are NFG, so a regex atom can only start where a grapheme
+/// starts: `"a\x[094D]b" ~~ /\x[094D]/` is `False` in Rakudo because the mark
+/// is *inside* the first grapheme, never an atom of its own. The common case
+/// (neither this codepoint nor the one before it can extend a cluster) costs
+/// two array reads.
+pub(super) fn is_grapheme_boundary(chars: &[char], pos: usize) -> bool {
+    if pos == 0 || pos >= chars.len() {
+        return true;
+    }
+    if chars[pos] == '\n' && chars[pos - 1] == '\r' {
+        return false;
+    }
+    // Find the start of the combining-mark run this position sits in or after.
+    let mut run_start = pos;
+    while run_start > 0 && is_combining_mark(chars[run_start - 1]) {
+        run_start -= 1;
+    }
+    if is_combining_mark(chars[pos]) {
+        // Only the first mark of a run can begin a cluster, and only when
+        // nothing before it can be extended (GB4 — after a control, or at the
+        // start of the string, a mark stands alone).
+        return run_start == pos && run_start > 0 && is_grapheme_control(chars[run_start - 1]);
+    }
+    if run_start == pos || run_start == 0 {
+        return true;
+    }
+    // A conjunct linker in the mark run just before `pos` can pull this
+    // codepoint into the preceding cluster (GB9c, as in `grapheme_end`).
+    grapheme_end(chars, run_start - 1) <= pos
 }
 
 /// Check if an atom is "simple" — it only advances position without producing
@@ -1103,6 +1198,7 @@ pub(super) fn is_simple_atom(atom: &RegexAtom) -> bool {
     matches!(
         atom,
         RegexAtom::Literal(_)
+            | RegexAtom::LiteralGrapheme(_)
             | RegexAtom::CharClass(_)
             | RegexAtom::Any
             | RegexAtom::Newline
