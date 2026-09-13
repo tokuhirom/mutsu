@@ -49,6 +49,7 @@ impl Interpreter {
                 shadowed_proto_functions: HashMap::new(),
                 shadowed_proto_names: HashSet::new(),
                 imported_env_keys: HashSet::new(),
+                imported_routine_aliases: self.imported_routine_aliases.clone(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
@@ -70,6 +71,24 @@ impl Interpreter {
         }
     }
 
+    /// Record a routine name imported into `package`. A later local
+    /// declaration may replace this alias, while another declaration after
+    /// that replacement remains a genuine redeclaration.
+    pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
+        self.imported_routine_aliases
+            .insert(Symbol::intern(&format!("{package}::{name}")));
+    }
+
+    pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
+        self.imported_routine_aliases
+            .contains(&Symbol::intern(&format!("{package}::{name}")))
+    }
+
+    pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
+        self.imported_routine_aliases
+            .remove(&Symbol::intern(&format!("{package}::{name}")));
+    }
+
     /// Restore function/class/proto registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
@@ -83,6 +102,7 @@ impl Interpreter {
                 shadowed_proto_functions,
                 shadowed_proto_names: _,
                 imported_env_keys,
+                imported_routine_aliases,
                 newline_mode,
                 strict_mode,
                 fatal_mode,
@@ -203,6 +223,7 @@ impl Interpreter {
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
             self.monkey_typing = monkey_typing;
+            self.imported_routine_aliases = imported_routine_aliases;
             // Removing imported functions when a lexical import scope pops must
             // invalidate the name-keyed function-resolution caches: a sub that
             // was OTF-compiled and cached under its bare name while in scope

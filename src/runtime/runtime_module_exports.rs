@@ -429,6 +429,7 @@ impl Interpreter {
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
+            self.record_imported_routine_alias(&target_pkg, &name);
             // An imported operator sub (e.g. `method infix:<as> is export`'s
             // sub form) must be visible to the EVAL parser so code parsed at
             // runtime recognizes the new operator symbol.

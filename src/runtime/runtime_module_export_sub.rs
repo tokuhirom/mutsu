@@ -340,6 +340,10 @@ impl Interpreter {
             Some('$') => key[1..].to_string(),
             _ => key,
         };
+        if sigil == Some('&') {
+            let package = self.current_package();
+            self.record_imported_routine_alias(&package, &env_key[1..]);
+        }
         self.env.insert(env_key, value);
         self.fn_resolve_gen += 1;
     }
