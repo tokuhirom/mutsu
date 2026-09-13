@@ -92,9 +92,12 @@ impl Interpreter {
         }
         let mut out = Vec::new();
         let mut pos = 0usize;
+        // One target for the whole scan — see the note in `native_subst_regex`:
+        // rebuilding it per match is what made `s:g///` quadratic (#8247).
+        let target = crate::runtime::MatchTarget::new(text);
         while let Some((start, end, positional, named)) = loan_env!(
             self,
-            regex_find_first_from_with_all_captures(&op.pattern, text, pos)
+            regex_find_first_from_with_all_captures_in(&op.pattern, &target, pos)
         ) {
             out.push((start, end, SubstMatchCaps { positional, named }));
             if first_only {

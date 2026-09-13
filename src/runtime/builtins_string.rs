@@ -341,6 +341,11 @@ impl Interpreter {
             return Ok(Vec::new());
         }
         let chars: Vec<char> = text.chars().collect();
+        // One target for the whole walk. Each `MatchTarget` copies the subject
+        // and its char vector, so building one per separator made a regex split
+        // O(separators x subject) -- 11.9 s on 80 KB against rakudo's 0.26 s
+        // (#8247).
+        let target = MatchTarget::new(text);
         let mut result = Vec::new();
 
         if text.is_empty() {
@@ -367,7 +372,9 @@ impl Interpreter {
             }
 
             // Try to match regex starting from search_from, using full text for context
-            if let Some(caps) = self.regex_match_with_captures_from(pattern, text, search_from) {
+            if let Some(caps) =
+                self.regex_match_with_captures_from_target(pattern, &target, search_from)
+            {
                 let (from, to) = (caps.from, caps.to);
                 let segment: String = chars[pos..from].iter().collect();
                 let matched: String = chars[from..to].iter().collect();
@@ -380,7 +387,6 @@ impl Interpreter {
                         matched,
                         splitter_index: 0,
                         is_regex: true,
-                        orig: text.to_string(),
                         match_obj: Some(match_obj),
                     }),
                 ));
@@ -419,6 +425,11 @@ impl Interpreter {
             return Ok(Vec::new());
         }
         let chars: Vec<char> = text.chars().collect();
+        // One target for the whole walk. Each `MatchTarget` copies the subject
+        // and its char vector, so building one per separator made a regex split
+        // O(separators x subject) -- 11.9 s on 80 KB against rakudo's 0.26 s
+        // (#8247).
+        let target = MatchTarget::new(text);
         let mut result = Vec::new();
 
         if text.is_empty() {
@@ -448,10 +459,10 @@ impl Interpreter {
                     ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                         let found = match splitter.view() {
                             ValueView::Regex(p) => {
-                                self.regex_match_with_captures_from(&p, text, pos)
+                                self.regex_match_with_captures_from_target(&p, &target, pos)
                             }
                             ValueView::RegexWithAdverbs(a) => {
-                                self.regex_match_with_captures_from(&a.pattern, text, pos)
+                                self.regex_match_with_captures_from_target(&a.pattern, &target, pos)
                             }
                             _ => unreachable!(),
                         };
@@ -512,7 +523,6 @@ impl Interpreter {
                             matched,
                             splitter_index: idx,
                             is_regex,
-                            orig: text.to_string(),
                             match_obj,
                         }),
                     ));
@@ -577,7 +587,6 @@ fn split_by_string_static(
                     matched: String::new(),
                     splitter_index: 0,
                     is_regex: false,
-                    orig: String::new(),
                     match_obj: None,
                 }),
             ));
@@ -623,7 +632,6 @@ fn split_by_string_static(
                         matched: sep.to_string(),
                         splitter_index: 0,
                         is_regex: false,
-                        orig: String::new(),
                         match_obj: None,
                     }),
                 ));
@@ -707,7 +715,6 @@ fn split_by_strings_static(
                         matched,
                         splitter_index: splitter_idx,
                         is_regex: false,
-                        orig: String::new(),
                         match_obj: None,
                     }),
                 ));

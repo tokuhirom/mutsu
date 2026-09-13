@@ -28,11 +28,13 @@ boundaries, backtracking, `:r`), `bench-regex-long-subject` (per-position reject
 cost on a 128 KB subject), `bench-regex-split-subst` (the superlinear
 result-assembly paths), plus `bench-grammar-parse-big` and `bench-yaml-parse-big`
 for grammar growth rate at a realistic document size. Each file's header says
-what it measures and why. Two open perf issues came out of writing them:
+what it measures and why. Two perf issues came out of writing them:
 [#8247](https://github.com/tokuhirom/mutsu/issues/8247) (`.split(rx)` /
-`.subst(rx, :g)` quadratic in subject length) and
+`.subst(rx, :g)` quadratic in subject length — **fixed**, see
+`news/2026-09/split-and-subst-stop-recopying-the-subject.md`: 228x on an 80 KB
+split, 181x on a 640 KB substitution) and
 [#8248](https://github.com/tokuhirom/mutsu/issues/8248) (scanning is linear but
-~8x rakudo's per-position constant, so mutsu loses above ~0.5 MB).
+~8x rakudo's per-position constant, so mutsu loses above ~0.5 MB — still open).
 
 Note the size dependence when quoting any regex ratio: on ~100-character
 subjects mutsu measures 0.2-0.4x rakudo, and the same operations measure 1.0x and

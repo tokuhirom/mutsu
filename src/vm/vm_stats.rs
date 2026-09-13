@@ -162,6 +162,12 @@ static REGEX_MATCH_LEAF_SPANS: AtomicU64 = AtomicU64::new(0);
 // probes visible in instrumented grammar/regex runs instead of silently
 // eroding the lazy representation.
 static REGEX_MATCH_MATERIALIZATIONS: AtomicU64 = AtomicU64::new(0);
+// #8247 guard: how many times a whole subject was materialized as a
+// `MatchTarget` (an `Arc<String>` copy plus an `Arc<[char]>`, ~5 bytes per
+// character). One per regex *operation* is correct; one per match makes an
+// operation that scans repeatedly -- `.split(rx)`, `.subst(rx, :g)`, `s:g///`
+// -- quadratic in subject length, which is what this counts.
+static REGEX_MATCH_TARGETS_BUILT: AtomicU64 = AtomicU64::new(0);
 
 // Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
 static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -208,6 +214,15 @@ pub(crate) fn record_regex_match_leaf(searched: bool) {
 pub(crate) fn record_regex_match_materialization() {
     if enabled() {
         REGEX_MATCH_MATERIALIZATIONS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one whole-subject `MatchTarget` construction (see
+/// `REGEX_MATCH_TARGETS_BUILT`).
+#[inline]
+pub(crate) fn record_regex_match_target_built() {
+    if enabled() {
+        REGEX_MATCH_TARGETS_BUILT.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1165,8 +1180,9 @@ pub(crate) fn dump() {
     let leaf_searches = REGEX_MATCH_LEAF_SEARCHES.load(Ordering::Relaxed);
     let leaf_spans = REGEX_MATCH_LEAF_SPANS.load(Ordering::Relaxed);
     let match_materializations = REGEX_MATCH_MATERIALIZATIONS.load(Ordering::Relaxed);
+    let match_targets = REGEX_MATCH_TARGETS_BUILT.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared} leaf_searches={leaf_searches} leaf_spans={leaf_spans} match_materializations={match_materializations}"
+        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared} leaf_searches={leaf_searches} leaf_spans={leaf_spans} match_materializations={match_materializations} match_targets={match_targets}"
     );
     let code_parse_hits = REGEX_CODE_PARSE_HITS.load(Ordering::Relaxed);
     let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);

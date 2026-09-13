@@ -153,9 +153,27 @@ impl Interpreter {
         text: &str,
         from_pos: usize,
     ) -> Option<RegexCaptures> {
+        let target = MatchTarget::new(text);
+        self.regex_match_with_captures_from_target(pattern, &target, from_pos)
+    }
+
+    /// [`Self::regex_match_with_captures_from`] against a subject already
+    /// materialized as a [`MatchTarget`].
+    ///
+    /// A caller that scans the SAME subject repeatedly — `split` walks one
+    /// string separator by separator — must build the target once and call this.
+    /// Building it costs a copy of the whole subject (an `Arc<String>` plus an
+    /// `Arc<[char]>`, ~5 bytes per character), so paying it per match made
+    /// `.split(/rx/)` O(separators x subject): 11.9 s on an 80 KB subject where
+    /// rakudo takes 0.26 s (#8247).
+    pub(crate) fn regex_match_with_captures_from_target(
+        &mut self,
+        pattern: &str,
+        target: &MatchTarget,
+        from_pos: usize,
+    ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package_sym();
-        let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
         if from_pos > orig_chars.len() {
@@ -361,37 +379,34 @@ impl Interpreter {
         out
     }
 
-    /// Find the first match from `min_pos`, returning its positional captures.
-    /// Unlike `regex_find_first`, this preserves full-text context for zero-width
-    /// assertions.
-    pub(crate) fn regex_find_first_from_with_captures(
+    /// Find the first match from `min_pos` against a subject already
+    /// materialized as a [`MatchTarget`], returning its span plus every capture
+    /// text: the positional list and the per-name lists (a substitution needs
+    /// the named ones to bind `$<name>` in its replacement and in the `$/` it
+    /// leaves behind). Unlike `regex_find_first`, this preserves full-text
+    /// context for zero-width assertions.
+    ///
+    /// Taking a target rather than a `&str` is the point: this is the scan step
+    /// of every global substitution (`.subst(:g)`, `s:g///`), called once per
+    /// match over one unchanging subject. Deriving the subject's char vector
+    /// per call made those O(matches x subject) -- 23.2 s to substitute in a
+    /// 640 KB string where rakudo takes 0.79 s, with 66% of the instructions of
+    /// an ordinary 32 KB substitution inside that one `collect` (#8247). Build
+    /// the target once, outside the loop.
+    pub(crate) fn regex_find_first_from_with_all_captures_in(
         &mut self,
         pattern: &str,
-        text: &str,
-        min_pos: usize,
-    ) -> Option<(usize, usize, Vec<String>)> {
-        self.regex_find_first_from_with_all_captures(pattern, text, min_pos)
-            .map(|(from, to, pos, _named)| (from, to, pos))
-    }
-
-    /// [`Self::regex_find_first_from_with_captures`] including the NAMED capture
-    /// texts. A substitution needs these to bind `$<name>` in its replacement
-    /// (and in the `$/` it leaves behind), which the positional-only variant
-    /// cannot express.
-    pub(crate) fn regex_find_first_from_with_all_captures(
-        &mut self,
-        pattern: &str,
-        text: &str,
+        target: &MatchTarget,
         min_pos: usize,
     ) -> Option<MatchWithAllCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package_sym();
-        let orig_chars: Vec<char> = text.chars().collect();
+        let orig_chars = target.chars();
         if parsed.anchor_start && min_pos > 0 {
             return None;
         }
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(&orig_chars);
+            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             let stripped_min = pos_map
@@ -419,8 +434,8 @@ impl Interpreter {
                     return Some((
                         map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len),
                         map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len),
-                        super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
-                        super::regex_helpers::named_slot_texts(&caps.named, &orig_chars),
+                        super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
+                        super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
                     ));
                 }
             }
@@ -429,7 +444,7 @@ impl Interpreter {
         let search_start = if parsed.anchor_start { 0 } else { min_pos };
         for start in search_start..=orig_chars.len() {
             if let Some((end, caps)) =
-                self.regex_match_end_from_caps_in_pkg(&parsed, &orig_chars, start, pkg)
+                self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
             {
                 // `<( … )>` narrows the reported match to the marked region even
                 // though the pattern consumed more, exactly as the other match
@@ -440,8 +455,8 @@ impl Interpreter {
                 return Some((
                     caps.capture_start.unwrap_or(start),
                     caps.capture_end.unwrap_or(end),
-                    super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
-                    super::regex_helpers::named_slot_texts(&caps.named, &orig_chars),
+                    super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
+                    super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
                 ));
             }
         }
