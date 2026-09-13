@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 33;
+plan 40;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -253,6 +253,31 @@ is Q[/<alias=foo>/].AST.gist, q:to/END/.chomp, 'a subrule alias retains its asse
     )
     END
 
+is Q[/<foo>/].AST.gist, q:to/END/.chomp, 'a capturing subrule retains its Named assertion';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Assertion::Named.new(
+            name      => RakuAST::Name.from-identifier("foo"),
+            capturing => True
+          )
+        )
+      )
+    )
+    END
+
+is Q[/<.foo>/].AST.gist, q:to/END/.chomp, 'a dot-suppressed subrule omits capturing';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Assertion::Named.new(
+            name => RakuAST::Name.from-identifier("foo")
+          )
+        )
+      )
+    )
+    END
+
 my $named-subrule = RakuAST::Regex::Assertion::Named.new(
     name => RakuAST::Name.from-identifier('part'),
     capturing => True,
@@ -263,6 +288,12 @@ is $named-subrule.name.raku, 'RakuAST::Name.from-identifier("part")',
     'named subrule assertions expose their Name child';
 is $named-subrule.capturing, True,
     'named subrule assertions expose their capturing flag';
+
+my $silent-subrule = RakuAST::Regex::Assertion::Named.new(
+    name => RakuAST::Name.from-identifier('suffix'),
+);
+is $silent-subrule.capturing, False,
+    'named subrule assertions default to non-capturing';
 
 my $alias-subrule = RakuAST::Regex::Assertion::Alias.new(
     name => 'word',
@@ -286,3 +317,23 @@ is ~$subrule-match<word>, 'a', 'a subrule alias captures under its alias name';
 is ~$subrule-match<part>, 'a', 'a subrule alias retains the original capture name';
 is $subrule-match.hash.keys.sort.join(','), 'part,word',
     'a subrule alias retains both alias and original captures';
+
+my $ordinary-subrule-grammar = EVAL(Q[grammar GRegexBareSubrule {
+    token TOP { <part><.suffix> };
+    token part { "a" };
+    token suffix { "b" };
+}].AST);
+my $ordinary-subrule-match = $ordinary-subrule-grammar.parse('ab');
+ok $ordinary-subrule-match,
+    'a bare and dot-suppressed subrule lower through the existing matcher';
+is ~$ordinary-subrule-match<part>, 'a',
+    'a bare subrule retains its named capture';
+ok !$ordinary-subrule-match<suffix>.defined,
+    'a dot-suppressed subrule does not publish a named capture';
+
+my $builtin-override-grammar = EVAL(Q[grammar GRegexBuiltinOverride {
+    token TOP { <same> };
+    token same { "a" };
+}].AST);
+ok $builtin-override-grammar.parse('a'),
+    'a grammar-local subrule keeps precedence over a special builtin assertion';

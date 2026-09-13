@@ -2,7 +2,8 @@
 
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
   static-value-provenance, declaration-provenance, positional-capture,
-  scalar-interpolation, named-capture, and array-capture slices implemented
+  scalar-interpolation, named-capture, array-capture, subrule-alias, and
+  bare-subrule slices implemented
   2026-09-12/13; other dynamic contents and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -548,3 +549,28 @@ the model can retain their name-part and argument semantics. The focused
 regression is `t/rakuast/rakuast-regex.t`, which pins the alias source shape,
 assertion hierarchy and accessors, model construction, alias/original captures,
 and end-to-end grammar EVAL execution.
+
+## 16. Bare and dot-suppressed subrule slice (2026-09-13)
+
+Simple bare and dot-suppressed subrule spellings (`<name>` and `<.name>`) now
+retain their source form in the shared tree as `RegexNode::Subrule`, with the
+`capturing` bit recording whether the dot was written. The read direction maps
+both forms to `RakuAST::Regex::Assertion::Named`, omitting `capturing` for the
+dot-suppressed form just as Rakudo does. The existing Named assertion model and
+write direction from the alias slice therefore cover both constructed and
+parser-created trees.
+
+The execution lowerer deliberately leaves `Subrule` nodes on the existing
+runtime parser path. Bare names overlap with context-sensitive assertions such
+as `<same>`, `<wb>`, `<ww>`, and builtin classes, while grammar-local tokens can
+shadow those names. Returning no direct execution plan for this node lets the
+existing matcher resolve that package state, builtin precedence, and capture
+side effects unchanged. This slice expands the RakuAST boundary without
+claiming that those names are static lookup operations.
+
+Only simple, unqualified names without arguments are included. Qualified and
+argumented subrules, code assertions, and other assertion forms remain
+follow-up boundaries. The focused regression is
+`t/rakuast/rakuast-regex.t`, which pins both AST spellings, the default and
+explicit capture flags, ordinary capture behavior, dot suppression, and a
+grammar-local override of the special `same` assertion.
