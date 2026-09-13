@@ -720,8 +720,42 @@ impl Interpreter {
                 // NOT match (e.g., "D + combining marks" is not the same as "D").
                 // However, negated classes should still match (the grapheme is clearly
                 // NOT one of the excluded characters).
+                // A class matches a whole grapheme, so it can no more start
+                // inside a cluster than a literal atom can: `"a\x[094D]b" ~~
+                // /<[\x[094D]]>/` is `False` in rakudo because the mark is not
+                // a position any atom may start at.
+                if !is_grapheme_boundary(chars, pos) {
+                    return None;
+                }
                 let ge = grapheme_end(chars, pos);
-                if ge > pos + 1 && !class.negated && class_has_only_exact_chars(class) {
+                // A `Grapheme` entry is the only item that can match a cluster,
+                // and it matches the WHOLE of it, so it is compared here rather
+                // than in the per-`char` evaluator. `<[क्ष]>` consumes the
+                // three codepoints of that one grapheme.
+                // Both sides are compared in NFC: the entry was normalised when
+                // it was parsed, so the subject has to be too or `<[क्ष]>` would
+                // miss the very text it was written from.
+                let subject: String = {
+                    use unicode_normalization::UnicodeNormalization;
+                    chars[pos..ge].iter().copied().nfc().collect()
+                };
+                let grapheme_hit = class.items.iter().any(|item| match item {
+                    ClassItem::Grapheme(g) => {
+                        if ignore_case {
+                            g.to_lowercase() == subject.to_lowercase()
+                        } else {
+                            **g == *subject
+                        }
+                    }
+                    _ => false,
+                });
+                if grapheme_hit {
+                    if class.negated {
+                        false
+                    } else {
+                        return Some(ge);
+                    }
+                } else if ge > pos + 1 && !class.negated && class_has_only_exact_chars(class) {
                     false
                 } else {
                     self.regex_match_class_ignorecase(class, c, ignore_case)
@@ -732,6 +766,12 @@ impl Interpreter {
                 negated,
                 args,
             } => {
+                // Same rule as the class arm: a property tests the grapheme, so
+                // it may not start on a combining mark inside one
+                // (`"a\x[094D]b" ~~ /<:Mn>/` is `False`).
+                if !is_grapheme_boundary(chars, pos) {
+                    return None;
+                }
                 let prop_match = if let Some(arg_str) = args {
                     check_unicode_property_with_args(name, arg_str, c)
                 } else {

@@ -1,6 +1,6 @@
 use super::regex_parse::*;
 use super::*;
-use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+use unicode_normalization::UnicodeNormalization;
 
 /// Result of statically folding a grammar token referenced in an enumerated
 /// char class (see `token_class_fold`).
@@ -240,21 +240,36 @@ impl Interpreter {
                 .peek()
                 .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
             {
-                // NFG synthetic (base char + combining marks) — cannot be used as range endpoint
-                PENDING_REGEX_ERROR.with(|e| {
-                    let mut grapheme = c.to_string();
-                    while chars
-                        .peek()
-                        .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
-                    {
-                        grapheme.push(chars.next().unwrap());
-                    }
-                    *e.borrow_mut() = Some(RuntimeError::new(format!(
-                        "Cannot use {} as a range endpoint, as it is not a single codepoint",
-                        grapheme
-                    )));
-                });
-                return None;
+                // An NFG synthetic (base char + combining marks) is a legal
+                // class ENTRY -- `<[क्ष]>` matches that grapheme -- and only an
+                // illegal range ENDPOINT. This used to reject both.
+                //
+                // The cluster is NOT segmented here: the base and its marks go
+                // in as ordinary `Char` items and `compose_char_class_items`
+                // groups them with the one real rule (`grapheme_end`). Doing it
+                // here would need a second copy of that rule, and a
+                // hand-rolled base-plus-marks loop gets `क` + `्` + `ष` wrong --
+                // UAX #29 GB9c joins the consonant after an Indic virama, so
+                // the cluster does not end at the mark.
+                let mut lookahead = c.to_string();
+                while chars
+                    .peek()
+                    .is_some_and(|ch| unicode_normalization::char::is_combining_mark(*ch))
+                {
+                    lookahead.push(chars.next().unwrap());
+                }
+                if Self::peek_dotdot(&chars) {
+                    PENDING_REGEX_ERROR.with(|e| {
+                        *e.borrow_mut() = Some(RuntimeError::new(format!(
+                            "Cannot use {} as a range endpoint, as it is not a single codepoint",
+                            lookahead
+                        )));
+                    });
+                    return None;
+                }
+                items.extend(lookahead.chars().map(ClassItem::Char));
+                all_negated_escapes = false;
+                has_items = true;
             } else if Self::peek_dotdot(&chars) {
                 // Check for '..' range syntax: c..end
                 while chars.peek() == Some(&' ') {
@@ -314,41 +329,75 @@ impl Interpreter {
     /// `ä`, so it must not also admit the bare `a`. The parser already keeps
     /// escaped combining marks as ordinary `Char` items; compose adjacent
     /// exact entries here before the class is lowered to a matcher atom.
+    /// Group each run of adjacent `Char` items into the graphemes they spell.
+    ///
+    /// A class matches a whole grapheme, so a cluster has to reach the matcher
+    /// as ONE item: left as separate codepoints it could only ever match by
+    /// starting inside itself, which is not a position any atom may start at.
+    /// NFC collapses most base-plus-mark sequences to a single `char`; the rest
+    /// become [`ClassItem::Grapheme`].
+    ///
+    /// Segmentation is `grapheme_end`, the same rule the matcher uses -- not a
+    /// base-plus-combining-marks loop, which gets `क` + `्` + `ष` wrong (UAX #29
+    /// GB9c joins the consonant that follows an Indic virama, so that is one
+    /// grapheme, not a cluster plus a stray consonant).
     fn compose_char_class_items(items: Vec<ClassItem>) -> Vec<ClassItem> {
         let mut composed = Vec::with_capacity(items.len());
         let mut index = 0;
         while index < items.len() {
-            let ClassItem::Char(base) = &items[index] else {
+            if !matches!(items[index], ClassItem::Char(_)) {
                 composed.push(items[index].clone());
                 index += 1;
                 continue;
-            };
-
-            let mut grapheme = base.to_string();
-            let mut next = index + 1;
-            while next < items.len() {
-                let ClassItem::Char(mark) = items[next] else {
-                    break;
+            }
+            // The run of consecutive `Char` items this grapheme may draw from.
+            let run_end = items[index..]
+                .iter()
+                .position(|it| !matches!(it, ClassItem::Char(_)))
+                .map_or(items.len(), |off| index + off);
+            // `filter_map` rather than a `map` with an `unreachable!`: the run is
+            // `Char`-only by construction, so nothing is dropped, and the total
+            // spelling keeps this off the never-panic ratchet (#8186).
+            let run: Vec<char> = items[index..run_end]
+                .iter()
+                .filter_map(|it| match it {
+                    ClassItem::Char(ch) => Some(*ch),
+                    _ => None,
+                })
+                .collect();
+            let mut at = 0usize;
+            while at < run.len() {
+                // Adjacent class entries are separate ALTERNATIVES, not one
+                // grapheme: `<[ \x[D]\x[A] \x[A] ]>` holds `\r\n` and `\n` as
+                // two entries, and `"\r"` matches the first of them even though
+                // `grapheme_end` would happily join the two codepoints
+                // (`roast/S05-modifier/ignoremark.t` test 60 is exactly that).
+                //
+                // So a cluster starts only where the NEXT codepoint is a
+                // combining mark -- something that cannot stand as an entry of
+                // its own. From there the real segmentation takes over, which is
+                // what pulls in the consonant after an Indic virama.
+                let starts_cluster = run
+                    .get(at + 1)
+                    .is_some_and(|next| unicode_normalization::char::is_combining_mark(*next));
+                let end = if starts_cluster {
+                    crate::runtime::regex::regex_helpers::grapheme_end(&run, at)
+                } else {
+                    at + 1
                 };
-                if !is_combining_mark(mark) {
-                    break;
+                if end == at + 1 {
+                    composed.push(ClassItem::Char(run[at]));
+                } else {
+                    let normalized: String = run[at..end].iter().copied().nfc().collect();
+                    let mut it = normalized.chars();
+                    match (it.next(), it.next()) {
+                        (Some(ch), None) => composed.push(ClassItem::Char(ch)),
+                        _ => composed.push(ClassItem::Grapheme(normalized.into_boxed_str())),
+                    }
                 }
-                grapheme.push(mark);
-                next += 1;
+                at = end;
             }
-
-            let normalized: String = grapheme.nfc().collect();
-            let mut normalized_chars = normalized.chars();
-            match (normalized_chars.next(), normalized_chars.next()) {
-                (Some(ch), None) if next > index + 1 => {
-                    composed.push(ClassItem::Char(ch));
-                }
-                _ => {
-                    composed.push(ClassItem::Char(*base));
-                    composed.extend(items[index + 1..next].iter().cloned());
-                }
-            }
-            index = next;
+            index = run_end;
         }
         composed
     }

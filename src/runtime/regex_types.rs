@@ -1033,6 +1033,19 @@ pub(crate) struct CharClass {
 pub(crate) enum ClassItem {
     Range(char, char),
     Char(char),
+    /// A class entry that is one grapheme but several codepoints, such as
+    /// `<[क्ष]>` or the `\c[LATIN CAPITAL LETTER A WITH HOOK ABOVE,HEBREW POINT
+    /// HIRIQ]` spelling of the same thing.
+    ///
+    /// A class matches a whole grapheme, so such an entry has to survive as one
+    /// item: stored as its separate codepoints it could only match by starting
+    /// inside the cluster, which is not a position any atom may start at. NFC
+    /// collapses many base-plus-mark sequences to a single `char`, and those
+    /// stay [`ClassItem::Char`]; this variant is for the ones it does not.
+    ///
+    /// It is a legal class *entry* but not a legal range *endpoint* — `a..क्ष`
+    /// is still rejected at parse time.
+    Grapheme(Box<str>),
     /// The `.` any-character base of a character-class arithmetic expression
     /// (`<.-[a]-[b]>`, `<.-:letter-:digit>`): a positive item that matches every
     /// character. Raku's class arithmetic is not true set arithmetic — the
