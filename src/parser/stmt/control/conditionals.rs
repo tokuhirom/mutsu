@@ -74,7 +74,15 @@ fn parse_if_binding_params(input: &str) -> PResult<'_, Option<Vec<ParamDef>>> {
         let (rest, params) = super::super::parse_param_list_pub(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        (rest, params)
+        // A pointy block has no parenthesised parameter list: `-> (...)` is one
+        // parameter with a destructuring sub-signature, the same shape `for` and
+        // a bare `-> (...)` lambda record. Reading the parens away turned
+        // `-> (:key($k))` into a top-level NAMED parameter and `-> ($a, $b)`
+        // into two positionals.
+        (
+            rest,
+            crate::parser::stmt::sub_param::fold_parenthesised_pointy_params(params),
+        )
     } else {
         super::super::parse_param_list_pub(rest)?
     };
@@ -158,20 +166,17 @@ fn lower_if_clause_binding(
 
     let source_binding = next_if_bind_tmp_name();
     let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
-    // For **@ (double slurpy) as the only positional param, pass the condition
-    // as a single argument without slipping, so the list is captured as-is.
-    let has_only_double_slurpy = param_defs
-        .iter()
-        .filter(|p| !p.named)
-        .all(|p| p.double_slurpy);
-    let args = if has_only_double_slurpy {
-        vec![source_expr]
-    } else {
-        vec![Expr::Unary {
-            op: TokenKind::Pipe,
-            expr: Box::new(source_expr),
-        }]
-    };
+    // The condition is ONE argument. `if (1, 2) -> $a, $b` is "expected 2
+    // arguments but got 1" in rakudo, not a two-way bind -- the clause receives
+    // the condition value itself, and it is the *signature* that decides what
+    // to do with it. Slipping it (`|$tmp`) made a list condition bind several
+    // parameters, which no source ever asked for.
+    //
+    // The slurpy spellings in `roast/S04-statements/if.t` all follow from this
+    // one rule rather than needing their own: `*@a` flattens the single list
+    // argument, `**@a` keeps it whole, `+@a` applies the one-argument rule to
+    // it. `**@a` used to be special-cased here for exactly that reason.
+    let args = vec![source_expr];
     let call_expr = Expr::CallOn {
         target: Box::new(Expr::AnonSubParams {
             params: param_defs.iter().map(|p| p.name.clone()).collect(),
@@ -253,10 +258,9 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             is_whatever_code: false,
             declarator: crate::ast::RoutineDeclarator::Block,
         }),
-        args: vec![Expr::Unary {
-            op: TokenKind::Pipe,
-            expr: Box::new(binding_var_read(source_binding)),
-        }],
+        // One argument, as in `lower_if_clause_binding` -- `else -> ...` shares
+        // the rule.
+        args: vec![binding_var_read(source_binding)],
     };
     vec![Stmt::Expr(call_expr)]
 }

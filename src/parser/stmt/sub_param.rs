@@ -24,7 +24,7 @@ mod where_constraint;
 // --- Re-exports preserving original visibilities ---
 
 // make_param is pub(crate): used from crate::parser::primary::misc::lambda
-pub(crate) use helpers::make_param;
+pub(crate) use helpers::{fold_parenthesised_pointy_params, make_param};
 
 // These were pub(super) in the original file (visible within `stmt`).
 pub(super) use helpers::{is_anonymous_sigil_param, starts_with_sigil_param};
