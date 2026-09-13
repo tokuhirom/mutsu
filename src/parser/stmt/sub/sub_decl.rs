@@ -1,10 +1,14 @@
 use super::*;
 
+/// `::(EXPR)` glued (no whitespace between `::` and `(`) — the indirect
+/// declarator name form (`sub ::(name) (...) {...}`, `method ::(name) {...}`).
+/// A `::` NOT glued to `(` (`sub :: (...) {...}`) is the unrelated *null
+/// routine name* instead (#8294) and must not reach this function — callers
+/// decide the branch on gluedness before calling it.
 pub(crate) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr)> {
     let rest = input
         .strip_prefix("::")
         .ok_or_else(|| PError::expected("indirect declarator name"))?;
-    let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, '(')?;
     let (rest, _) = ws(rest)?;
     let (rest, expr) = expression(rest)?;
