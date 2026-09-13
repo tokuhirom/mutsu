@@ -42,15 +42,14 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // Inline when every field is a positional leaf or a colonpair adverb
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.
-    if node
-        .fields
+    let fields = rendered_fields(node);
+    if fields
         .iter()
         .all(|f| f.name.is_none() && is_inline_field(f))
     {
-        let inner = node
-            .fields
+        let inner = fields
             .iter()
-            .map(render_inline_field)
+            .map(|field| render_inline_field(field))
             .collect::<Vec<_>>()
             .join(", ");
         return format!("{name}.{ctor}({inner})");
@@ -60,10 +59,10 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     let mut s = format!("{name}.{ctor}(\n");
     let child_indent = indent + 2;
     let pad = " ".repeat(child_indent);
-    for (i, f) in node.fields.iter().enumerate() {
+    for (i, f) in fields.iter().enumerate() {
         s.push_str(&pad);
         s.push_str(&render_field_line(f, child_indent, width));
-        if i + 1 != node.fields.len() {
+        if i + 1 != fields.len() {
             s.push(',');
         }
         s.push('\n');
@@ -73,12 +72,24 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s
 }
 
+/// Rakudo keeps `Regex::NamedCapture.array` observable through its accessor,
+/// but omits that implementation-detail field from the constructor-form gist.
+/// Keep the field in the model so lowering and reflection retain the source
+/// sigil while matching Rakudo's renderer.
+fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
+    node.fields
+        .iter()
+        .filter(|field| {
+            !(node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array"))
+        })
+        .collect()
+}
+
 /// The `key => value` alignment width for a node: the max length over its
 /// *shown* named-field keys, floored by the class's `min_align_width` (which
 /// covers the few classes that pad to a declared-but-omitted attribute).
 fn field_align_width(node: &RakuAstNode) -> usize {
-    let shown = node
-        .fields
+    let shown = rendered_fields(node)
         .iter()
         .filter_map(|f| f.name.map(str::len))
         .max()

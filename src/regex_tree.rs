@@ -47,6 +47,8 @@ pub(crate) enum RegexNode {
     CapturingGroup(Box<RegexNode>),
     NamedCapture {
         name: String,
+        #[serde(default)]
+        array: bool,
         regex: Box<RegexNode>,
     },
     Interpolation {
@@ -290,7 +292,7 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
-                RegexNode::NamedCapture { name, regex } => {
+                RegexNode::NamedCapture { name, array, regex } => {
                     // A scalar alias around a non-capturing quantified atom
                     // captures the whole run as one Match. This mirrors the
                     // legacy parser's user-alias wrapper; an aliased
@@ -310,12 +312,22 @@ impl RegexTree {
                             ratchet,
                         );
                         outer.named_capture = Some(name.clone());
+                        outer.force_list_capture =
+                            *array && matches!(atom.as_ref(), RegexNode::CapturingGroup(_));
                         return Some(vec![outer]);
                     }
                     let mut tokens =
                         lower_node(regex, ratchet, ignore_case, ignore_mark, rule_sigspace)?;
                     let first = tokens.first_mut()?;
                     first.named_capture = Some(name.clone());
+                    first.force_list_capture = *array
+                        && match regex.as_ref() {
+                            RegexNode::CapturingGroup(_) => true,
+                            RegexNode::Quantified { atom, .. } => {
+                                matches!(atom.as_ref(), RegexNode::CapturingGroup(_))
+                            }
+                            _ => false,
+                        };
                     Some(tokens)
                 }
                 RegexNode::Interpolation { name, sequential } => {
@@ -432,8 +444,9 @@ impl RegexNode {
             }
             Self::Group(child) => format!("[{}]", child.to_source()),
             Self::CapturingGroup(child) => format!("({})", child.to_source()),
-            Self::NamedCapture { name, regex } => {
-                format!("$<{name}> = {}", regex.to_source())
+            Self::NamedCapture { name, array, regex } => {
+                let sigil = if *array { '@' } else { '$' };
+                format!("{sigil}<{name}> = {}", regex.to_source())
             }
             Self::Interpolation { name, .. } => format!("${name}"),
             Self::Quantified { atom, quantifier } => {
@@ -587,7 +600,8 @@ impl Parser {
                     sequence_for_multichar_literal(inner),
                 )))
             }
-            '$' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(),
+            '$' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(false),
+            '@' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(true),
             '$' => self.parse_interpolation(),
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
@@ -683,8 +697,8 @@ impl Parser {
         })
     }
 
-    fn parse_named_capture(&mut self) -> Option<RegexNode> {
-        self.pos += 2; // '$<'
+    fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {
+        self.pos += 2; // '$<' or '@<'
         let start = self.pos;
         while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
             self.pos += 1;
@@ -711,6 +725,7 @@ impl Parser {
             let rest: String = chars.collect();
             let mut nodes = vec![RegexNode::NamedCapture {
                 name,
+                array,
                 regex: Box::new(RegexNode::Literal(first.to_string())),
             }];
             if let Some(quantifier) = quantifier {
@@ -737,6 +752,7 @@ impl Parser {
         }
         Some(RegexNode::NamedCapture {
             name,
+            array,
             regex: Box::new(regex),
         })
     }

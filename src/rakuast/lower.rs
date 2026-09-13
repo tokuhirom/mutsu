@@ -1595,15 +1595,11 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexCapturingGroup => Ok(RegexNode::CapturingGroup(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,
         ))),
-        RakuAstClass::RegexNamedCapture => {
-            if bool_field(node, "array")? {
-                return Err(unsupported(node));
-            }
-            Ok(RegexNode::NamedCapture {
-                name: leaf_str(node, "name")?,
-                regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
-            })
-        }
+        RakuAstClass::RegexNamedCapture => Ok(RegexNode::NamedCapture {
+            name: leaf_str(node, "name")?,
+            array: bool_field(node, "array")?,
+            regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
+        }),
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             if sequential {
