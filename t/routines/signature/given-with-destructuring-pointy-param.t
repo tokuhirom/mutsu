@@ -14,7 +14,7 @@ use Test;
 # From ASTQuery::Match's `given $m -> ::?CLASS:D (:@list, :%hash, |) { ... }`
 # (#7988).
 
-plan 29;
+plan 33;
 
 class Node {
     has @.list;
@@ -48,6 +48,41 @@ given (a => 1) -> (:key($k), :value($v)) {
 }
 with (b => 2) -> (:key($k), :value($v)) {
     is "$k=$v", 'b=2', 'with -> (:key($k), :value($v)) renames';
+}
+
+# --- #8357: a sub-signature naming only PART of a named capture rejects ----
+#
+# A `Pair`'s capture is exactly `\(:key(…), :value(…))`; naming only one of
+# the two leaves the other unaccounted, and rakudo rejects the bind the same
+# way it rejects a surplus named argument at an ordinary call. This is the
+# BINDER's own check (a plain, non-multi `if`/`given`/`with`/`for` never
+# consults the multi-dispatch matcher that already had this rule).
+{
+    my $err;
+    try { if (a => 1) -> (:key($k)) { } };
+    $err = $!;
+    is $err.message, "Unexpected named argument 'value' passed in sub-signature",
+        'a sub-signature naming only "key" rejects the unaccounted "value"';
+}
+
+# The same rule for an all-named Hash/Map destructure: every entry is a named
+# capture part with no positional part at all.
+{
+    my $err;
+    try { if {op => 'add', path => '/x'} -> (:$op) { } };
+    $err = $!;
+    is $err.message, "Unexpected named argument 'path' passed in sub-signature",
+        'a Hash destructure naming only one key rejects the unaccounted rest';
+}
+
+# A bare `|` capture (unlike a typed `*@rest`, which does NOT exempt a named
+# surplus) swallows everything, named arguments included, and must NOT
+# regress into rejecting it.
+if (a => 1) -> (:key($k), |) {
+    is $k, 'a', 'a `|` capture after a partial named destructure still binds';
+}
+if {op => 'add', path => '/x'} -> (:$op, |) {
+    is $op, 'add', 'a `|` capture after a partial Hash destructure still binds';
 }
 
 # A Hash topic has no accessor method per key, so the unpack falls back to a
