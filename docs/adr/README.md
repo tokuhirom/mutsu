@@ -124,4 +124,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0096](0096-batteries-adoption-policy.md) | A battery is the real upstream module; the interpreter is what grows (rung-3 native provision banned; a performance measurement justifies an optimization, never a substitution) | Accepted |
 | [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
 | [0098](0098-if-pragma-actions-slang.md) | mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name (the `if` pragma) | Accepted (implemented 2026-09-13) |
-| [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — a prefilter/fast-lane layering, not a big-bang rewrite | Proposed |
+| [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter and a fast lane above the unchanged walk | Proposed |
