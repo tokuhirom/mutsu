@@ -151,13 +151,8 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
         // named parameter the caller must pass. Flattening the former into the
         // latter only appeared to work while every hash-derived pair was itself
         // treated as a named argument.
-        let param_defs = if sub_params.len() > 1 || sub_params.first().is_some_and(|p| p.named) {
-            let mut p = crate::parser::stmt::sub_param::make_param("__subsig__".to_string());
-            p.sub_signature = Some(sub_params);
-            vec![p]
-        } else {
-            sub_params
-        };
+        let param_defs =
+            crate::parser::stmt::sub_param::fold_parenthesised_pointy_params(sub_params);
         let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
         return Ok((
             r,

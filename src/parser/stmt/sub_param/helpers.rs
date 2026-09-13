@@ -4,6 +4,30 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use std::collections::HashMap;
 
+/// Fold a parenthesised pointy parameter list into what `-> (...)` actually
+/// declares.
+///
+/// In Raku `-> ($a, $b)` is ONE parameter that binds a single argument and
+/// unpacks it -- not two parameters, which is `-> $a, $b`. A lone *named*
+/// sub-parameter is a destructure too: `-> (:$k)` pulls the `k` key out of the
+/// one argument it is handed, where `-> :$k` declares a named parameter the
+/// caller must pass.
+///
+/// A lone positional (`-> ($a)`) is left as a plain parameter, mirroring the
+/// `len == 1` capture sub-signature special case in this module. rakudo treats
+/// that one as a destructure too (`-> ($a)` against a non-list dies with
+/// "Cannot unpack or Capture"), but changing it is a cross-cutting decision
+/// about every `.map(-> ($x) {...})` in the tree, not a per-caller one.
+pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec<ParamDef> {
+    if sub_params.len() > 1 || sub_params.first().is_some_and(|p| p.named) {
+        let mut p = make_param("__subsig__".to_string());
+        p.sub_signature = Some(sub_params);
+        vec![p]
+    } else {
+        sub_params
+    }
+}
+
 /// Helper to construct a default ParamDef with only required fields.
 pub(crate) fn make_param(name: String) -> ParamDef {
     ParamDef {

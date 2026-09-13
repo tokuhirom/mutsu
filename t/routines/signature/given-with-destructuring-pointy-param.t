@@ -14,7 +14,7 @@ use Test;
 # From ASTQuery::Match's `given $m -> ::?CLASS:D (:@list, :%hash, |) { ... }`
 # (#7988).
 
-plan 21;
+plan 29;
 
 class Node {
     has @.list;
@@ -103,3 +103,49 @@ for ((5, 6),) -> (Int $a, $b) {
 my @src = 1, 2;
 given @src -> @p { @p.push: 3 }
 is @src.join(','), '1,2,3', 'a plain pointy parameter still aliases the topic';
+
+# --- `if` / `elsif` / `unless` / `else`, the same gap (#8340) ---------------
+#
+# Two halves. The parameter PARSER read `-> (...)` as the signature's own
+# parentheses and handed the inside to the ordinary parameter-list parser, so
+# `-> ($a, $b)` became two positionals; it now records one destructuring
+# parameter, as `for` / `given` / a bare `-> (...)` lambda already did. And the
+# clause was CALLED with the condition slipped (`|$tmp`), so a list condition
+# bound several parameters; rakudo passes the condition as one argument and lets
+# the signature decide.
+
+if (1, 2) -> ($a, $b) { is "$a $b", '1 2', 'if destructures a list condition' }
+
+{
+    my $ran = False;
+    unless 0 -> $c { $ran = $c }
+    is $ran, 0, 'unless passes the condition as one argument too';
+}
+
+{
+    my $ran = False;
+    if 0 { } elsif (7, 8) -> ($a, $b) { $ran = "$a $b" }
+    is $ran, '7 8', 'elsif destructures too';
+}
+{
+    my $ran;
+    if 0 { } else -> $c { $ran = $c }
+    is $ran, 0, '`else -> $c` receives the condition as one argument';
+}
+
+# The condition is ONE argument, so a two-parameter signature is an arity
+# error -- it is not a two-way bind.
+{
+    my $err;
+    try { EVAL 'if (1, 2) -> $a, $b { }' };
+    $err = $!;
+    ok $err.defined, 'a list condition does not bind two plain parameters';
+}
+
+# The slurpy spellings all follow from that single rule, and are what
+# `roast/S04-statements/if.t` pins.
+if 1, 2 -> +@a { is-deeply @a, [1, 2], '+@ applies the one-argument rule' }
+if 42, 42 -> **@a { is-deeply @a, [(42, 42),], '**@ keeps the list whole' }
+if 1, (2, (3, $(4, 5))) -> *@a {
+    is-deeply @a, [1, 2, 3, $(4, 5)], '*@ flattens the single list argument';
+}
