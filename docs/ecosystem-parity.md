@@ -34,7 +34,7 @@ sides, and publish the difference.
 > **41.1%** dist parity — 53.4% file, 63.1% assertion — and `history.tsv` plus the
 > chart carry it over time. A sweep runs nightly, on dispatch, or locally (§8).
 > P5's first batch filed fifteen root-caused issues covering ~330 distribution
-> slots (§9).
+> slots, and a second batch twelve more covering ~110 (§9).
 >
 > **What to do with this now: pick work, not phases.** Either take a root cause
 > from the clustered issues (§9), or take a distribution with the
@@ -721,6 +721,60 @@ splits a cluster, which is progress even though it moves no KPI.
 What is left after this batch is a long tail: 985 clusters in total, of which
 these fifteen are the ones affecting ten or more distributions. The tail is a
 **sampling** job (`--min-dists 1`), not an exhaustive-triage one.
+
+### The second batch (2026-09-13)
+
+Twelve issues from the corpus measured at `1557d41` (the 2026-09-11 `scope=all`
+sweep), covering ~110 further distribution slots. This batch went *below* the
+ten-distribution line the first one stopped at, and the interesting result is
+that the message-shaped clusters down there **split**: three of the twelve came
+out of one cluster.
+
+| issue | dists | root cause |
+|---|---|---|
+| [#8209](https://github.com/tokuhirom/mutsu/issues/8209) | 19 | a `{`/`}` inside a string literal ends a regex code assertion early (one line of `DSL::Shared`) |
+| [#8210](https://github.com/tokuhirom/mutsu/issues/8210) | 18 | `use Foo:if($cond)` — `Raku.legacy` unimplemented, so the `if` pragma dies in `EXPORT` (`todo:deep`) |
+| [#8211](https://github.com/tokuhirom/mutsu/issues/8211) | 12 | `.grep`/`.first`/`.classify` on a non-`%`-sigil Hash hand the block the Hash, not its Pairs |
+| [#8214](https://github.com/tokuhirom/mutsu/issues/8214) | 9 | a local `sub` cannot shadow a routine imported by `sub EXPORT` (false redeclaration) |
+| [#8213](https://github.com/tokuhirom/mutsu/issues/8213) | 8 | `OUTER::MY::` does not resolve, `MY::` sees outer lexicals, `<<$name>>` subscript throws |
+| [#8212](https://github.com/tokuhirom/mutsu/issues/8212) | 7 | `role R[::T] does R` — a parameterised role cannot compose its own base |
+| [#8215](https://github.com/tokuhirom/mutsu/issues/8215) | 13 | missing nqp ops `push`, `hash`, `p6bindattrinvres` (three clusters, one fix site) |
+| [#8216](https://github.com/tokuhirom/mutsu/issues/8216) | 5 | an anonymous role literal as a `does` argument reads as a role named `role` |
+| [#8217](https://github.com/tokuhirom/mutsu/issues/8217) | 5 | `use NativeCall::Types` is not resolvable on its own |
+| [#8218](https://github.com/tokuhirom/mutsu/issues/8218) | 5 | a `my class` inside a `module` is installed into that package (false self-inheritance) |
+| [#8219](https://github.com/tokuhirom/mutsu/issues/8219) | 1 | a `when` whose matcher is a comma list does not parse — and a literal list matcher silently sinks |
+| [#8220](https://github.com/tokuhirom/mutsu/issues/8220) | 1 | `CORE::<&infix:<+>>` mis-parses by context, and `CORE::` holds no operator routines |
+
+**One message was three bugs.** `eco-cluster: 5ed688f7` (26 distributions, all
+reporting `X::Syntax::Missing: Missing block`) is not one fix: bisecting its
+members' files gave the brace-in-a-string-literal assertion bug (#8209, 19
+dists), the comma-list `when` (#8219), and the `CORE::<&op>` pair (#8220) — plus
+one member, `App::Moneymoor`, already in #7954's table. A *named* exception is no
+more of a root cause than an expectation dump; only the located line is. So the
+"verify a cluster before filing it" rule applies to the named `X::Syntax::*`
+buckets exactly as it does to `expected statement …`.
+
+**The reverse also happened.** The three `nqp-op` clusters are separate
+signatures with one fix site, so they were filed as one ticket (#8215), the way
+#8024 was. Cluster count is a starting point in both directions.
+
+Two clusters were examined and deliberately **not** filed:
+
+- `eco-cluster: 7e654040` (`Type Array does not support associative indexing.`,
+  8 dists) is heterogeneous — `OrderedHash` reaches it through `my %h does
+  OrderedHash[…]` (a `does` mixin on a `%` variable), while `Ujumla` and
+  `Docker::File` reach it from test files with no such declaration. Filing it as
+  one ticket would produce a mega-ticket no single fix closes; it needs per-dist
+  triage first.
+- `eco-cluster: 4aad304a` (`Function 'X' needs parens to avoid gobbling block`,
+  6 dists) did not reproduce from the construct its line names (a qualified
+  typename in a `when`, which works today), so its reported lines are containers
+  rather than causes. It needs the same bisect treatment #8209 got.
+
+`eco-cluster: f15ddd40` (`check-phaser`, 21 dists) is still opaque and is
+**waiting on a re-measure**, not on triage: #8000 (the `CHECK` message swallowing
+its inner exception) landed after this sweep, so these records carry the old
+uninformative text. Re-measure that status before reading anything into them.
 
 ## 10. Known limits and follow-ups
 
