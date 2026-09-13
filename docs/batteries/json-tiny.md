@@ -2,7 +2,7 @@
 
 **Slot:** JSON (reference / `Grammar`+`Actions`) · **Chosen:** `JSON::Tiny`
 v1.0 (`moritz/json`, Artistic-2.0) · **Kind:** Adopted (community module,
-vendored as-is), with a **deliberate native fast path kept in front of it**
+vendored as-is, and **run as-is**)
 
 ## What it is
 
@@ -15,111 +15,117 @@ my $json = to-json([1, 2, "a third item"]);
 my $copy = from-json($json);
 ```
 
-Three files (~120 lines), zero `nqp::` use, zero dependencies
-(`todo/tickets/bundle-json-tiny-instead-of-emulating.md`, resolved by this
-record).
+Three files (~120 lines), zero `nqp::` use, zero dependencies.
 
-## Why it is bundled, and why `use JSON::Tiny` still does NOT run it
+## `use JSON::Tiny` runs the vendored module
 
-mutsu already answers `use JSON::Fast` / `use JSON::Tiny` with a **native Rust
-implementation** (`src/runtime/json.rs`, dispatched in
-`src/vm/vm_native_json.rs`), gated at `use`-time in
-`src/runtime/runtime_module.rs` (`use_module_with_tags_inner`) — the bare
-module names `"JSON::Fast"` / `"JSON::Tiny"` are recognized and treated as a
-no-op *before* the normal `-I` / `MUTSULIB` / bundled-module search even runs.
-This was a rung-3 private reimplementation, justified at the time by the real
-`JSON::Fast` needing ~50 missing `nqp::` ops
-(`news/2026-07/nqp-op-layer-measured-and-rejected.md`) — a justification that has
-since expired; see "Policy status of the split" below.
+It resolves through the ordinary precedence chain — `use lib` → `-I` →
+`MUTSULIB` → the `mzef` site repo → the bundled floor at
+`modules/JSON-Tiny/lib` ([BATTERIES.md §6](../../BATTERIES.md)) — like any
+other battery. There is no special case for the name anywhere in the parser,
+in `use`-time gating, or in dispatch.
 
-`JSON::Tiny` is different: it is pure Raku and **already runs on mutsu
-unmodified**. So why not just delete the emulation for it and let
-`use JSON::Tiny` load the real thing? **Throughput.** Parsing a 3 KB
-META-shaped document 200 times: the native implementation takes 0.49s; the
-real `JSON::Tiny` grammar running on mutsu's regex engine did not finish in
-600s (**>1000x slower**). JSON sits on zef's metadata path (every
-`META6.json`, every index read) and is a default of many other bundled
-batteries, so swapping the *default* `use JSON::Tiny` to the vendored Raku
-source would be a serious regression even though every test passes.
+That is a change of policy, made on 2026-09-12
+([#8183](https://github.com/tokuhirom/mutsu/issues/8183)). **This record used
+to declare the opposite arrangement permanent** — which
+[ADR-0096](../adr/0096-batteries-adoption-policy.md) then took out of its hands:
+a battery's selection record does not decide policy, and ADR-0096 §E2 recorded
+the interception as an exception *scheduled for retirement*. This is that
+retirement. The history matters:
 
-So the shape this record ships is exactly what the ticket recommended:
-**vendor the real module as a battery, and keep the native implementation as
-the fast path** — the two are not the same thing, and `use JSON::Tiny` keeps
-hitting native. Concretely:
+- mutsu answered the bare names `JSON::Fast` *and* `JSON::Tiny` from one
+  native Rust implementation (`src/runtime/json.rs`), recognized at `use` time
+  *before* the module search ran, and returned ahead of `call_routine_def` at
+  the dispatch sites so it also beat the vendored module's own resolved
+  routines.
+- The justification was throughput: 200 META-shaped documents parsed in 0.49s
+  natively against **>600s** through the real grammar on mutsu's regex engine.
 
-- `use JSON::Tiny;` (the bare module name, anywhere) is still intercepted and
-  answered natively — unchanged by this record.
-- `use JSON::Tiny::Grammar;` / `use JSON::Tiny::Actions;` are **not**
-  intercepted (only the two bare top-level names are special-cased), so code
-  that reaches for the grammar/actions classes directly — as `JSON::Tiny`'s
-  own upstream test suite does, and as mutsu's `t/json-tiny-compat.t` already
-  did against a manually-cloned checkout — now resolves them from the bundled
-  `modules/JSON-Tiny/lib` like any other battery.
-- The vendored copy is also what a user gets if they explicitly shadow the
-  bare name — e.g. `mzef install` a different `JSON::Tiny` version into the
-  site repo, which (per BATTERIES.md §6) is layered *below* the native
-  interception today, so that override path is not yet wired up. Recorded as
-  a known gap below, not fixed by this record.
+**Being slow is not a reason to substitute** (ADR-0096 §D3). The distinction
+the project holds is between an *optimization* — selected transparently, semantically
+indistinguishable from the code it replaces, which is what the JIT does to
+bytecode — and a *substitution*, which changes what the program observes. This
+one was observable three ways: `to-json([1,2,"x"])` answered a pretty-printed
+block where the module answers `[ 1, 2, "x" ]`; a parse failure's exception
+type was guessed from *which module names appeared anywhere in the program*
+(`json_tiny_exception_style()` was `JSON::Tiny loaded && !JSON::Fast loaded`);
+and the whole resolution ladder was bypassed, so an `-I` or site-repo copy —
+an upstream security fix, say — could not reach a user who could not rebuild
+mutsu. Rung 3 is banned because a module that only *looks* like the upstream
+one is a private dialect ([BATTERIES.md §1](../../BATTERIES.md)); that
+argument does not weaken when the divergence is bought with a benchmark.
 
-**Interpreter work it drove:** the one genuine correctness gap between mutsu's
-native `from-json` and the real module was its exception shape on a parse
-failure. The real `JSON::Tiny.from-json` throws `X::JSON::Tiny::Invalid`
-(`.source` = the original text, `.message` computed from its length); mutsu's
-native path threw a plain `X::AdHoc` (matching `JSON::Fast`, which really does
-just `die` a string). Fixed by making `native_from_json` pick the exception
-shape based on which module was `use`d (`self.loaded_modules.contains(...)`,
-see `json_tiny_exception_style()` in `src/runtime/runtime_module.rs`) —
-`JSON::Fast`'s own `X::JSON::AdditionalContent` mirroring
-(`t/json-additional-content.t`) was the precedent. Pin:
-`t/json-tiny-invalid-exception.t`.
+Two facts the original record did not have also turned out to matter:
 
-Upstream tests: 6 files, 135 subtests (`t/04-roundtrip.t` has 10 expected
-`TODO passed`) — all pass against the bundled `lib/`, matching raku. Smoke:
-covered by `t/json-tiny-invalid-exception.t` and the pre-existing
-`t/json-tiny-compat.t`.
+- **zef's metadata path was never on this.** `Zef::from-json` calls
+  `Rakudo::Internals::JSON.from-json` (`vendor/zef/lib/Zef.rakumod:9`) — a
+  *core Rakudo class*, which mutsu implements natively as a genuine builtin and
+  which this change does not touch. The only `JSON::Fast` mention in zef is
+  inside a `=begin pod` block. So the regression this mechanism was held in
+  place to prevent did not apply to the path it was named for.
+- **The gap is an order of magnitude smaller than recorded.** The same 200-document
+  measurement today: **12.6s** through the real grammar (raku: 0.84s). mutsu's
+  grammar engine is ~15x off rakudo, not off the scale. That 15x is the real
+  bill and is worth paying; it is not a reason to keep a substitution.
 
-## Policy status of the split (updated 2026-09-12)
+## `JSON::Fast` is a different case, and is still native
 
-**This record's earlier claim that the native/vendored split is "permanent
-policy" is withdrawn.** A battery's selection record does not decide policy;
-[ADR-0096](../adr/0096-batteries-adoption-policy.md) does, and it lists this
-interception as **an exception scheduled for retirement**, not as policy
-(§D4/E2). Two reasons, both of which postdate the paragraph they replace:
+`JSON::Fast` is **not vendored** — the real distribution depends on ~50
+`nqp::` ops mutsu does not implement. Five bundled batteries (`Cro::HTTP`,
+`JSON::JWT`, `Log::Timeline`, …) `use` it, so `use JSON::Fast` must keep
+working, and the native `to-json`/`from-json` answer it.
 
-- *A performance measurement justifies an optimization, never a substitution*
-  (ADR-0096 §D3). The ~1000x measurement below stands as a measurement — it is
-  an argument for making the grammar engine fast, or for a transparent
-  specialization of the vendored module's own code path. It is not an argument
-  for shadowing a resolved module by name and diverging from its semantics
-  (the exception type this path returns depends on which module names appear
-  anywhere in the program — see `json_tiny_exception_style()`).
-- *The `nqp::` half of the rationale has expired.* "The real `JSON::Fast` needs
-  ~50 missing `nqp::` ops, and an op layer was rejected" is no longer the
-  situation: mutsu has 111 `nqp::` ops across ~1,790 lines. The durable form of
-  that 2026-07 measurement is narrower — the op set is a *threshold* function,
-  so a large module is not reached one op at a time (ADR-0096 §D5).
+It is a **last-resort provider, not an override**:
 
-Retirement is tracked by
-[#8183](https://github.com/tokuhirom/mutsu/issues/8183), which also notes the
-sequencing: the regex/grammar engine's cost on the vendored grammar is on the
-regression side of this (zef walks the JSON path for every metadata read), so
-the work has to be scheduled rather than simply reverted. Nothing below is
-changed by this note; it is the *justification* that is superseded.
+- `use JSON::Fast` runs the normal module search first. Only when nothing
+  resolves does `json_native_provider` flip on and the native routines become
+  reachable (`runtime/runtime_module.rs`). A real `JSON::Fast` on the ladder
+  loads and runs instead — pinned by `t/modules/batteries/json-module-ladder.t`.
+- The dispatch sites (`runtime/calls.rs` for statement position,
+  `vm/vm_call_func_ops.rs` for the expression path) now sit strictly *after*
+  routine resolution, so a resolved def always wins. Neither one matches on a
+  module name any more.
+- `from-json`'s failure is JSON::Fast's own plain `X::AdHoc` `die`,
+  unconditionally. Nothing guesses.
 
-## What is NOT fixed by this record
+Deciding `JSON::Fast` itself — vendor the real distribution behind the `nqp::`
+op work (a ~50-op rung-2 bill, not NativeCall's structural wall; ADR-0096 §D5),
+or keep the provider and record it as a justified rung-3 exception alongside
+`NativeCall` ([#7560](https://github.com/tokuhirom/mutsu/issues/7560)) — is
+still open, and is ADR-0096 §D4's "justified in writing" bar to clear.
 
-- **The bare module names still hit the native path.** Reversing that needs the
-  work in #8183 — the regex/grammar engine's speed on the vendored module,
-  and/or an honest transparent specialization that cannot diverge observably —
-  which is a separate, large campaign.
-- **`mzef`/site-repo overrides of `JSON::Tiny` do not shadow the native
-  path.** BATTERIES.md §6 says an explicit `-I` / `MUTSULIB` / installed
-  module should take priority over the bundled floor; the native interception
-  currently jumps that whole ladder for the two JSON module names (like
-  `Test`/`NativeCall`, which are recognized pragma-like built-ins by design).
-  Not a regression introduced here — pre-existing behavior this record does
-  not change — but worth flagging if a future security update to `JSON::Tiny`
-  ever needs to reach a user who cannot rebuild mutsu.
+## Upstream test suite
+
+5 of the 6 upstream files pass whole against the bundled `lib/`
+(`t/04-roundtrip.t` has 10 expected `TODO passed`). `t/01-parse.t` is **92/93**
+and is therefore not on `batteries-whitelist.txt`. Its last assertion is:
+
+```raku
+throws-like {
+    use JSON::Tiny;
+    from-json '',
+}, X::JSON::Tiny::Invalid;
+```
+
+Both of `throws-like`'s arguments evaluate before the block is invoked, so
+`X::JSON::Tiny::Invalid` is read before the block's `use` has run. Raku
+performs `use` at BEGIN time and has the symbol; mutsu's `use` is a runtime
+opcode, so the reference gets a fabricated stub and the type comparison fails
+against the module's real `JSON::Tiny::X::JSON::Tiny::Invalid`. That is a
+general `use`-is-not-BEGIN-time gap with a JSON-free repro, filed as
+[#8201](https://github.com/tokuhirom/mutsu/issues/8201); fixing it is what puts
+this file back on the whitelist.
+
+The assertion did pass under the old arrangement — but only because both sides
+were mutsu fabrications agreeing with each other: the native path threw an
+exception named `X::JSON::Tiny::Invalid`, and the parser pre-registered that
+bare name as a user type. Retiring the interception did not break it so much
+as stop hiding it.
+
+Local pins: `t/modules/batteries/json-tiny-compat.t` (48 assertions, now run
+against the bundled module rather than skipped),
+`t/exceptions/json-tiny-invalid-exception.t`,
+`t/modules/batteries/json-module-ladder.t`.
 
 ## Provenance and update procedure
 
@@ -147,8 +153,9 @@ python3 scripts/gen-batteries-manifest.py
 Verification after a bump:
 
 ```sh
+mutsu -e 'use JSON::Tiny; say to-json([1, 2, "x"])'              # [ 1, 2, "x" ]
+mutsu -e 'use JSON::Tiny; try { from-json "" }; say $!.^name'    # JSON::Tiny::X::JSON::Tiny::Invalid
 mutsu -I modules/JSON-Tiny/lib -e 'use JSON::Tiny::Grammar; say JSON::Tiny::Grammar.parse(q<{"a":1}>).defined'   # True
-mutsu -e 'use JSON::Tiny; try { from-json "" }; say $!.^name'   # X::JSON::Tiny::Invalid
 ```
 
 ## License

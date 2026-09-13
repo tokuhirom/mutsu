@@ -198,31 +198,6 @@ pub(crate) fn register_module_exports(module: &str) {
         apply_module_exports(&exports);
         return;
     }
-    if module == "JSON::Fast" || module == "JSON::Tiny" {
-        // Native modules: `to-json`/`from-json` are implemented in Rust
-        // (runtime/json.rs), so there is no source file to scan for exports.
-        // JSON::Fast also exports the X::JSON::AdditionalContent exception
-        // class, and JSON::Tiny its own X::JSON::Tiny::Invalid; register
-        // whichever applies as a declared type so `when X::JSON::...Invalid {`
-        // is not misread as an undeclared-bareword block gobble.
-        if module == "JSON::Fast" {
-            register_user_type("X::JSON::AdditionalContent");
-        }
-        if module == "JSON::Tiny" {
-            register_user_type("X::JSON::Tiny::Invalid");
-        }
-        let exports: Vec<InlineModuleExport> = ["to-json", "from-json"]
-            .iter()
-            .map(|s| InlineModuleExport {
-                name: (*s).to_string(),
-                precedence: None,
-                associativity: None,
-                is_test_assertion: false,
-            })
-            .collect();
-        apply_module_exports(&exports);
-        return;
-    }
     // Check for infinite recursion
     let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
     if already_loading {
@@ -248,6 +223,27 @@ pub(crate) fn register_module_exports(module: &str) {
         for (keyword, _how_type) in &scan.declare_keywords {
             register_declare_keyword(keyword, false);
         }
+    } else if module == "JSON::Fast" {
+        // Nothing on the module ladder supplies `JSON::Fast`, so the native
+        // provider (runtime/json.rs) will answer it at runtime — there is no
+        // source file to scan for exports. Register what it provides: the two
+        // routines, plus the `X::JSON::AdditionalContent` exception class it
+        // throws, so `when X::JSON::AdditionalContent {` is not misread as an
+        // undeclared-bareword block gobble. A real `JSON::Fast` found on the
+        // ladder takes the `Some(scan)` arm above instead, like any other
+        // module. `JSON::Tiny` needs none of this: it is vendored, so its own
+        // source is scanned (#8183).
+        register_user_type("X::JSON::AdditionalContent");
+        let exports: Vec<InlineModuleExport> = ["to-json", "from-json"]
+            .iter()
+            .map(|s| InlineModuleExport {
+                name: (*s).to_string(),
+                precedence: None,
+                associativity: None,
+                is_test_assertion: false,
+            })
+            .collect();
+        apply_module_exports(&exports);
     } else if !import_is_pragma_like(module) {
         note_type_index_incomplete();
     }

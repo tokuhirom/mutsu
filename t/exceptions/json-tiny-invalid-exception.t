@@ -2,17 +2,23 @@ use v6;
 use JSON::Tiny;
 use Test;
 
-# The real JSON::Tiny's `from-json` throws X::JSON::Tiny::Invalid (carrying
-# the original source string) on a parse failure, instead of JSON::Fast's
-# plain X::AdHoc `die`. mutsu's native from-json backs both modules, so it
-# must pick the exception shape based on which module was `use`d
-# (see t/json-additional-content.t for the JSON::Fast side).
+# `use JSON::Tiny` loads the real vendored module (modules/JSON-Tiny/), so its
+# `from-json` throws the module's OWN X::JSON::Tiny::Invalid on a parse
+# failure. mutsu used to answer this `use` from a native Rust implementation
+# and guess the exception shape from which module names had been `use`d
+# (#8183); nothing guesses now, because the module's own code runs.
+#
+# The class is declared inside `unit module JSON::Tiny;`, so its composed name
+# is `JSON::Tiny::X::JSON::Tiny::Invalid` -- matching raku.
 
 throws-like { from-json '' }, X::JSON::Tiny::Invalid,
     'empty input throws X::JSON::Tiny::Invalid';
 
 throws-like { from-json 'not json' }, X::JSON::Tiny::Invalid,
     'malformed input throws X::JSON::Tiny::Invalid';
+
+is X::JSON::Tiny::Invalid.^name, 'JSON::Tiny::X::JSON::Tiny::Invalid',
+    'the exception is the module-composed class, not a native stand-in';
 
 {
     from-json 'nope';

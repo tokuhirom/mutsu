@@ -1,29 +1,34 @@
-//! VM-side dispatch for the `JSON::Fast` / `JSON::Tiny` `to-json` / `from-json`
-//! routines.
+//! VM-side dispatch for the `JSON::Fast` `to-json` / `from-json` routines.
 //!
 //! These are not Raku core builtins — they are provided by the JSON modules.
-//! The real `JSON::Fast` depends on ~50 `nqp::` ops mutsu lacks, so mutsu ships
-//! native Rust implementations (`runtime/json.rs`) gated behind `use JSON::Fast`
-//! / `use JSON::Tiny`. (`Test` used to be provided the same way; its native
-//! provider was retired in #7566 and `use Test` now loads rakudo's own
-//! `Test.rakumod`.)
+//! The real `JSON::Fast` depends on ~50 `nqp::` ops mutsu lacks and is not
+//! vendored, so mutsu ships a native Rust implementation (`runtime/json.rs`) as
+//! a **last-resort provider**: it runs only when `use JSON::Fast` resolved to
+//! nothing on the module ladder. A real `JSON::Fast` reached through `use lib`
+//! / `-I` / `MUTSULIB` / the site repo loads and runs instead.
+//!
+//! `JSON::Tiny` used to be answered here too. It is a vendored battery
+//! (`modules/JSON-Tiny/`) that runs unmodified on mutsu, so `use JSON::Tiny`
+//! loads the real module like any other (#8183). (`Test` went the same way in
+//! #7566.)
 
 use super::*;
 use crate::runtime::json::{self, ToJsonOpts};
 use crate::value::Value;
 
 impl Interpreter {
-    /// Dispatch `to-json` / `from-json` straight to the native JSON
-    /// implementation when a JSON module is loaded. Returns `Some(result)` when
-    /// handled, `None` to let the caller fall through unchanged (so a
-    /// user-defined `sub to-json { … }` still wins, since user resolution runs
-    /// before this).
+    /// Dispatch `to-json` / `from-json` to the native JSON implementation when
+    /// the `JSON::Fast` fallback provider is active. Returns `Some(result)`
+    /// when handled, `None` to let the caller fall through unchanged (so a
+    /// user-defined `sub to-json { … }`, or a real `JSON::Fast`/`JSON::Tiny`
+    /// loaded off the module ladder, still wins — user resolution runs before
+    /// this).
     pub(crate) fn try_native_json_function(
         &mut self,
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(name, "to-json" | "from-json") || !self.json_module_loaded() {
+        if !matches!(name, "to-json" | "from-json") || !self.json_native_provider_active() {
             return None;
         }
         // Strip the synthetic `__test_callsite_line` trailer (and any other
@@ -53,7 +58,6 @@ impl Interpreter {
             "from-json" => Some(native_from_json(
                 &clean_args,
                 self.json_import_defaults.immutable,
-                self.json_tiny_exception_style(),
             )),
             _ => None,
         }
@@ -220,9 +224,7 @@ impl Interpreter {
         let (clean_args, _) = self.sanitize_call_args(args);
         Some(match method {
             "to-json" => native_to_json(&clean_args, self.base_to_json_opts()),
-            "from-json" => {
-                native_from_json(&clean_args, self.json_import_defaults.immutable, false)
-            }
+            "from-json" => native_from_json(&clean_args, self.json_import_defaults.immutable),
             _ => unreachable!(),
         })
     }
@@ -259,11 +261,7 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
     }
 }
 
-fn native_from_json(
-    args: &[Value],
-    default_immutable: bool,
-    tiny_exception_style: bool,
-) -> Result<Value, RuntimeError> {
+fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, RuntimeError> {
     let mut immutable = default_immutable;
     let mut allow_jsonc = false;
     let mut text = String::new();
@@ -285,25 +283,11 @@ fn native_from_json(
         }
     }
     json::from_json(&text, immutable, allow_jsonc).map_err(|e| match e {
-        json::FromJsonError::Parse(_) if tiny_exception_style => {
-            // Mirror the real JSON::Tiny's `X::JSON::Tiny::Invalid`, which
-            // `from-json` throws (with the original source string, not the
-            // parser's diagnostic) whenever the grammar fails to parse.
-            let tiny_msg = format!(
-                "Input ({} characters) is not a valid JSON string",
-                text.chars().count()
-            );
-            let ex = Value::make_exception(
-                "X::JSON::Tiny::Invalid",
-                &[
-                    ("source", Value::str(text.clone())),
-                    ("message", Value::str(tiny_msg.clone())),
-                ],
-            );
-            let mut err = RuntimeError::new(tiny_msg);
-            err.exception = Some(Box::new(ex));
-            err
-        }
+        // JSON::Fast's own `from-json` just `die`s a string on a parse
+        // failure, so a plain X::AdHoc is the faithful shape. (The real
+        // `JSON::Tiny` throws `X::JSON::Tiny::Invalid` instead — its own
+        // vendored source now does that itself, and this provider no longer
+        // has to guess which module's error shape the caller wanted.)
         json::FromJsonError::Parse(msg) => RuntimeError::new(msg),
         json::FromJsonError::AdditionalContent {
             parsed,

@@ -190,7 +190,7 @@ module).
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
 | `email` | — | Ecosystem (not bundled) | `Email::MIME`-style modules exist; not vendored. |
-| `json` | native `to-json` / `from-json` | mutsu native | Not spec-mandated in real Raku (`JSON::Fast` is a separate, if near-universal, module there) — mutsu provides it as a genuine built-in. See [BATTERIES.md §7](../../BATTERIES.md#7-bundle-index). |
+| `json` | `JSON::Tiny` (bundled), plus a native `JSON::Fast` provider | mutsu battery + native fallback | Not spec-mandated in real Raku (`JSON::Fast` is a separate, if near-universal, module there). `use JSON::Tiny` runs the vendored module; `JSON::Fast` is not vendored, so the native routines answer it when nothing on the ladder does. See [json-tiny.md](json-tiny.md). |
 | `mailbox` | — | Gap | |
 | `mimetypes` | `MIME::Types` (transitively, via the HTTP/web stack) | Ecosystem (not bundled standalone) | |
 | `base64` | `MIME::Base64`, `Base64` | mutsu battery | [base64.md](base64.md) — two distinct modules for the MIME-flavored and URI-safe alphabets. |

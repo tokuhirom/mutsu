@@ -23,12 +23,12 @@ have no home:
 1. **The rejected alternative.** Nothing states why native reimplementation
    loses, so each new case re-argues it from scratch — usually on effort, which
    is the axis the policy deliberately does not decide on.
-2. **The exceptions.** Two survive (`NativeCall`, and the JSON
+2. **The exceptions.** Two survived into this review (`NativeCall`, and the JSON
    `to-json`/`from-json` fast path). One is justified in writing and one was
    declared "permanent policy" inside a battery's own selection record — a
    document that has no standing to make a policy decision, and which
-   [#8183](https://github.com/tokuhirom/mutsu/issues/8183) has since shown was
-   arguing from an expired premise.
+   [#8183](https://github.com/tokuhirom/mutsu/issues/8183) showed was arguing
+   from an expired premise before retiring it (E2).
 3. **The clause the JSON carve-out was allowed to skip**: that a performance
    measurement justifies an *optimization*, never a *substitution*. Leaving it
    implicit is what let a 1000x benchmark buy an exemption the policy does not
@@ -150,13 +150,27 @@ also asymmetric here: 33 files across the bundled batteries depend on
 `use NativeCall`, so a half-working replacement takes the TLS stack and the
 database layer with it.
 
-#### E2. The JSON `to-json`/`from-json` fast path — an exception, not a justified one
+#### E2. The JSON `to-json`/`from-json` fast path — retired 2026-09-12
 
-`src/runtime/json.rs` (759 lines) plus `src/vm/vm_native_json.rs` (333), gated on
-`use JSON::Fast` / `use JSON::Tiny` (`runtime/runtime_module.rs`), carried in the
-parser's export list (`parser/stmt/simple/module_exports.rs`), and winning over
-the resolved routine in both the statement path (`runtime/calls.rs`) and the
-expression path (`vm/vm_call_func_ops.rs`).
+**Status: the interception this entry recorded is gone**
+([#8183](https://github.com/tokuhirom/mutsu/issues/8183)). What survives is
+`src/runtime/json.rs` plus `src/vm/vm_native_json.rs` as a **last-resort
+provider for `JSON::Fast` alone**: `use JSON::Fast` runs the ordinary module
+search first and the native routines answer only when nothing resolves, so an
+`-I` / `MUTSULIB` / site-repo copy outranks them (D2 holds). `JSON::Tiny` left
+the mechanism entirely — it is a vendored battery and loads like any other
+module — the load-order-sensitive exception guess is deleted, and both dispatch
+sites now sit after routine resolution, so a resolved def always wins. Whether
+`JSON::Fast` itself stays a native provider or gets vendored behind the `nqp::`
+op work is open, and is D4's "justified in writing" bar to clear.
+
+The rest of this entry is the record of what was there and why it went.
+
+It was `src/runtime/json.rs` (759 lines) plus `src/vm/vm_native_json.rs` (333),
+gated on `use JSON::Fast` / `use JSON::Tiny` (`runtime/runtime_module.rs`),
+carried in the parser's export list (`parser/stmt/simple/module_exports.rs`),
+and winning over the resolved routine in both the statement path
+(`runtime/calls.rs`) and the expression path (`vm/vm_call_func_ops.rs`).
 
 It is a partial exception: the real `JSON::Tiny` **is** vendored, and its
 `Grammar`/`Actions` run unintercepted against their upstream suite. Only the two
@@ -186,14 +200,24 @@ it is a real problem the day an upstream security fix has to reach a user who
 cannot rebuild mutsu.
 
 **Decision (user, 2026-09-12):** being slow is not a reason to introduce a
-mechanism like this. The entry is recorded as an exception scheduled for
-retirement, tracked by
-[#8183](https://github.com/tokuhirom/mutsu/issues/8183) — not as policy. A
-battery's selection record does not get to declare a policy exception permanent;
-that is what this document is for. The retirement's real bill (the grammar
-engine's cost on the vendored module, and deciding `JSON::Fast` separately since
-it is not vendored at all) is scheduling, not a reason to leave the mechanism
-unexamined.
+mechanism like this. A battery's selection record does not get to declare a
+policy exception permanent; that is what this document is for. The retirement's
+real bill (the grammar engine's cost on the vendored module, and deciding
+`JSON::Fast` separately since it is not vendored at all) is scheduling, not a
+reason to leave the mechanism unexamined.
+
+**Carried out the same day.** Two facts found while doing it are worth keeping,
+because both had been load-bearing for "permanent":
+
+- *zef's metadata path was never on this mechanism.* `Zef::from-json` calls
+  `Rakudo::Internals::JSON.from-json` — a core Rakudo class, unaffected — and
+  zef's only `JSON::Fast` mention is inside a pod block. The sequencing worry
+  that kept the entry unexamined did not apply to the path it was named for.
+- *The measurement had moved ~48x.* 200 META-shaped documents through the real
+  grammar: >600s when the split was recorded, **12.6s** today against raku's
+  0.84s. The grammar engine is ~15x off rakudo, not off the scale — a bill worth
+  paying on its own terms, which is exactly what D3 says such a measurement is
+  for.
 
 ### D5. The `nqp::` op measurement, stated accurately
 
@@ -259,9 +283,10 @@ runs — it does not mean the feature disappears.
   observable — an exception type, a message, an edge-case answer, which module
   resolves — is out of scope for a performance argument regardless of the number
   attached to it.
-- **The exception list is auditable.** Two entries today, one justified (E1), one
-  scheduled for retirement (E2). Any change to that list is visible as a diff to
-  this ADR.
+- **The exception list is auditable.** Two entries today, one justified (E1) and
+  one retired the day this ADR landed (E2 — what survives there is a last-resort
+  `JSON::Fast` provider, still owing D4 its written justification). Any change to
+  that list is visible as a diff to this ADR.
 - **The `nqp::` op layer is not forbidden and never was.** D5 is the form to
   cite; work that grows ops in service of something mutsu ships needs no
   exemption from a rejection that was never that broad.
@@ -292,14 +317,15 @@ runs — it does not mean the feature disappears.
 
 ## Implementation status
 
-The policy is in force and is what the codebase already follows. Outstanding
-work is the E2 entry:
+The policy is in force and is what the codebase already follows. The E2 entry
+was retired on the day this ADR landed; what is left of it is a single
+last-resort provider whose own justification is still to be written:
 
 | Item | State |
 | --- | --- |
 | D1/D2 — rung ordering, rung-3 ban | In force since 2026-08-01 (user decision); `BATTERIES.md` §1, `CLAUDE.md` |
 | D3 — optimization vs. substitution | Stated here for the first time; no known violation other than E2 |
 | D4/E1 — `NativeCall` | Justified exception; reopening condition in [#7560](https://github.com/tokuhirom/mutsu/issues/7560) |
-| D4/E2 — JSON interception | **Open** — retirement tracked by [#8183](https://github.com/tokuhirom/mutsu/issues/8183) |
+| D4/E2 — JSON interception | **Retired 2026-09-12** ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); `JSON::Fast`'s last-resort provider remains, and whether it stays is open |
 | D5 — accurate `nqp::` framing | Stated here; 111 ops shipped |
 | D6 — retirement precedent | `Pod::To::Text` and native `Test` both retired |

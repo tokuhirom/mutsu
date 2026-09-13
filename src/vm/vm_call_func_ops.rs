@@ -1973,8 +1973,9 @@ impl Interpreter {
                     // prelude candidates (see vm::vm_trait_mod_does_ops).
                     result
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
-                    // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
-                    // to the native implementation (runtime/json.rs).
+                    // Dispatch `to-json` / `from-json` to the native
+                    // JSON::Fast provider (runtime/json.rs), which is only
+                    // active when nothing on the module ladder supplied them.
                     result
                 } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), name) {
                     // Pure lexical `&name` callable (a `&code` parameter or
