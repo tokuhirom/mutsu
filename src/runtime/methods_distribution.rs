@@ -25,12 +25,17 @@ impl Interpreter {
     /// `GLOBALish.WHO.merge-symbols(...)` can publish them into GLOBAL.
     pub(crate) fn make_globalish_package(&self, symbols: Option<&Value>) -> Value {
         // File-system repositories load symbols straight into GLOBAL, so there is
-        // nothing to merge later: hand back the live GLOBAL package so stash
-        // navigation (`.globalish-package<Pkg>.WHO<...>`) resolves as before.
-        // Only the Installation repository carries `globalish-symbols` (kept
-        // hidden until `merge-symbols`), which needs the dedicated Stash object.
+        // nothing to merge later: hand back GLOBAL's own stash (an Associative
+        // Instance, same as `GLOBAL.WHO`) so a direct
+        // `.globalish-package<Pkg>` navigates like `GLOBAL.WHO<Pkg>` does,
+        // rather than the bare `GLOBAL` *type object* -- `Package<...>` is an
+        // ordinary (Any-returning) postcircumfix subscript in Raku, never
+        // navigation (#8295); only a real Associative stash resolves `<Pkg>`
+        // to the nested package. Only the Installation repository carries
+        // `globalish-symbols` (kept hidden until `merge-symbols`), which needs
+        // the dedicated Stash object below instead.
         let Some(symbols) = symbols else {
-            return Value::package(crate::symbol::Symbol::intern("GLOBAL"));
+            return self.package_stash_value("GLOBAL");
         };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("GLOBALish"));

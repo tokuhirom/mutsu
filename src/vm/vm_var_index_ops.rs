@@ -254,10 +254,21 @@ impl Interpreter {
                 self.stack.push(slot_ref.unwrap_or(Value::NIL));
             }
             _ => {
-                // Fallback: just do a normal index read
+                // Fallback: just do a normal index read. Must carry through the
+                // real `is_positional` -- hardcoding `false` here made a `[...]`
+                // autovivify-context read of a bare type object (`array[int]`
+                // through a `:=` bind or list-literal element, which routes
+                // through this fallback rather than the plain `Index` opcode)
+                // misread as an *associative* subscript, which is
+                // indistinguishable from `[...]` at this fallback for a target
+                // this function does not otherwise special-case (#8295's
+                // `is_positional` guard on the type-parameterization arms is
+                // what turned this from harmless into wrong: before it, an
+                // associative-vs-positional Package subscript parameterized
+                // identically either way).
                 self.stack.push(target);
                 self.stack.push(index);
-                return self.exec_index_op_with_positional(false);
+                return self.exec_index_op_with_positional(is_positional);
             }
         }
         Ok(())
@@ -2536,11 +2547,19 @@ impl Interpreter {
                 };
                 Value::parametric_role(name, type_args)
             }
-            // Non-positional subscript (`<key>` / `{key}`) of the bare Any type
-            // object returns Any per Raku spec (S09/autovivification): reading a
-            // missing key does not autovivify and the result must be indistinct
-            // from Any so that `%h<missing><b> === Any` holds.
-            (ValueView::Package(name), idx) if !is_positional && name.resolve() == "Any" => {
+            // Non-positional subscript (`<key>` / word-list `<a b c>`) of ANY
+            // bare type object -- not just `Any` -- returns Any per Raku spec
+            // (S09/autovivification) rather than being misread as `Type[...]`
+            // parameterization sugar (#8295). `<...>`/`«...»` is always the
+            // postcircumfix word-list subscript; only `[...]` (`is_positional`)
+            // is genuine parameterization syntax. Verified against rakudo:
+            // `Array<Int>`/`C<Int>` (a plain, even non-parametric, class) both
+            // give `Any`, matching the bare-`Any`-object case this arm used to
+            // be restricted to; a *role* is the one receiver whose own
+            // parametric-dispatch machinery treats `<...>` and `[...]`
+            // identically, which is why the role arm above already runs first
+            // and is unconditional on `is_positional`.
+            (ValueView::Package(_), idx) if !is_positional => {
                 // A SLICE of keys answers a matching-length list of Any, exactly
                 // like the positional arm below: `my $h; $h<a b c>` is
                 // `(Any, Any, Any)` in raku, and collapsing it to a single `Any`
