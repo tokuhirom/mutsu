@@ -516,10 +516,124 @@ impl Interpreter {
         self.exec_index_op_with_positional(false)
     }
 
+    /// The element `@a[$i]` reads when nothing about the subscript is unusual,
+    /// or `None` when anything at all is (which sends the read down the general
+    /// path below, unchanged).
+    ///
+    /// WHY THIS EXISTS (issue #8308). `exec_index_op_with_positional` is a
+    /// ~2,200-line funnel: before it reaches the `(Array, Int)` arm that does
+    /// the actual read it runs some forty `Value::view()` probes for Proxy,
+    /// Scalar, ContainerRef, HashEntryRef, Junction (target *and* index), enum
+    /// and Bool index coercion, a user `postcircumfix:<[ ]>` candidate, a
+    /// not-yet-reified Seq, an object-hash key type, a QuantHash coercion key,
+    /// `^parameterize`, and the one-element-list rule — and then builds a
+    /// throwaway `Value::array_with_kind` just to ask `typed_container_default`
+    /// for a default the in-range read never uses. Measured on a 400k-iteration
+    /// loop that differs from its twin only by the subscript, one `@a[$i]` cost
+    /// **2,241 simulated instructions** and ~330 ns against rakudo's ~39 ns.
+    ///
+    /// None of that preamble can change the answer for the shape handled here,
+    /// so it is skipped rather than made cheaper. The guards are deliberately
+    /// conservative — a plain non-negative `Int` into a plain `List`/`Array`
+    /// carrying no element type, no `is default(...)`, and no native backing,
+    /// answering an element that is itself an ordinary value. Anything else
+    /// (a hole, a `:=`-bound element cell, a deferred bind token, an
+    /// out-of-range index, a shaped or itemized array) falls through, so the
+    /// general path stays the single definition of every edge case.
+    ///
+    /// The stack is only *peeked*; the caller pops exactly when this answers
+    /// `Some`, so a `None` leaves the operand stack untouched.
+    #[inline]
+    fn index_fast_path_element(&self, is_positional: bool) -> Option<Value> {
+        // The core-subscript re-entry guard means this dispatch is not an
+        // ordinary one, so leave it to the general path (which also has to
+        // CLEAR the flag — this helper never touches it).
+        if self.skip_postcircumfix_overload {
+            return None;
+        }
+        let n = self.stack.len();
+        if n < 2 {
+            return None;
+        }
+        // `%h{...}` obeys different rules (no index numification, key
+        // encoding), so it has its own twin below.
+        if !is_positional {
+            return Self::hash_fast_path_element(&self.stack[n - 2], &self.stack[n - 1]);
+        }
+        let ValueView::Int(i) = self.stack[n - 1].view() else {
+            return None;
+        };
+        if i < 0 {
+            return None;
+        }
+        let ValueView::Array(items, kind) = self.stack[n - 2].view() else {
+            return None;
+        };
+        // `Shaped` dies on an out-of-range read and defaults its unwritten
+        // slots; `Lazy` may still need reifying; the itemized kinds are a
+        // one-element list under a positional subscript. All three are left to
+        // the general path.
+        if !matches!(kind, ArrayKind::List | ArrayKind::Array) {
+            return None;
+        }
+        // An element type, an `is default(...)`, or ADR-0030 native backing all
+        // change what a read answers (or where it reads from).
+        if items.has_type_meta() || items.default.is_some() || items.has_native_backing() {
+            return None;
+        }
+        let elem = items.get(i as usize)?;
+        match elem.view() {
+            // A deleted/never-assigned hole, a `:=`-bound element cell, and a
+            // deferred array-entry bind token each resolve to something other
+            // than themselves — `resolve_array_entry` owns all three.
+            ValueView::Package(..)
+            | ValueView::ContainerRef(_)
+            | ValueView::HashEntryRef { .. }
+            | ValueView::Nil => None,
+            _ => Some(elem.clone()),
+        }
+    }
+
+    /// The associative twin of [`Interpreter::index_fast_path_element`]:
+    /// `%h{$k}` for a plain `Str` key that is PRESENT in a hash with no
+    /// object-hash key type.
+    ///
+    /// A present entry answers itself whatever metadata the hash carries, so
+    /// the element type, the `is default(...)` and `hash_autovivify` are all
+    /// irrelevant here — every one of them only decides what a MISS answers,
+    /// and a miss falls through to the general path. What does matter is a key
+    /// type (the lookup is then `.WHICH`-keyed, not by the literal string) and
+    /// a `:=`-bound entry cell or deferred bind token (which resolve to
+    /// something other than themselves); each of those bails.
+    #[inline]
+    fn hash_fast_path_element(target: &Value, index: &Value) -> Option<Value> {
+        let ValueView::Str(key) = index.view() else {
+            return None;
+        };
+        let ValueView::Hash(items) = target.view() else {
+            return None;
+        };
+        if items.key_type.is_some() || items.has_typed_keys() {
+            return None;
+        }
+        let entry = items.get(key.as_str())?;
+        match entry.view() {
+            ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
+            _ => Some(entry.clone()),
+        }
+    }
+
     pub(crate) fn exec_index_op_with_positional(
         &mut self,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // #8308: the ordinary `@a[$i]` read, answered without walking the
+        // general path's preamble. See `index_fast_path_element`.
+        if let Some(elem) = self.index_fast_path_element(is_positional) {
+            self.stack.truncate(self.stack.len() - 2);
+            self.stack.push(elem);
+            return Ok(());
+        }
         // `skip_postcircumfix_overload` is set by the CORE subscript routine
         // (what `&postcircumfix:<[ ]>` resolves to) so that a user candidate
         // delegating back to it does not re-enter itself. Take it here, before
