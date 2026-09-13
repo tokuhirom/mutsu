@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 72;
+plan 73;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -357,6 +357,29 @@ is Q[/foo <?before \d+>/].AST.gist, q:to/END/.chomp, 'an escaped digit class rem
                 regex-arg => RakuAST::Regex::QuantifiedAtom.new(
                   atom       => RakuAST::Regex::CharClass::Digit.new,
                   quantifier => RakuAST::Regex::Quantifier::OneOrMore.new
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <?before $x>/].AST.gist, q:to/END/.chomp, 'a scalar interpolation remains structural inside a lookahead';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Lookahead.new(
+              assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                name      => RakuAST::Name.from-identifier("before"),
+                regex-arg => RakuAST::Regex::Interpolation.new(
+                  sequential => False,
+                  var        => RakuAST::Var::Lexical.new("\$x")
                 )
               )
             )

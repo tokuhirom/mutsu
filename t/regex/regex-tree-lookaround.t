@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: lookaround assertions retain their
 # source tree and lower through the existing RegexPattern matcher.
 
-plan 36;
+plan 44;
 
 my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
 my $before-match = 'foobar' ~~ $positive-before;
@@ -143,3 +143,30 @@ nok 'foobar' ~~ $escaped-before,
     'an escaped digit lookahead rejects a non-digit suffix';
 ok 'foo123' ~~ $escaped-before,
     'an escaped lookahead can be reused without reparsing drift';
+
+my $lookaround-value = 'bar';
+my $interpolated-before = /foo <?before $lookaround-value>/;
+my $interpolated-match = 'foobar' ~~ $interpolated-before;
+ok $interpolated-match,
+    'a scalar interpolation matches inside a lookahead';
+is ~$interpolated-match, 'foo',
+    'an interpolated lookahead remains zero-width';
+$lookaround-value = 'baz';
+ok 'foobaz' ~~ $interpolated-before,
+    'an interpolated lookahead reads the current lexical value';
+nok 'foobar' ~~ $interpolated-before,
+    'an interpolated lookahead no longer uses the previous lexical value';
+
+my $constructed-interpolated = EVAL(Q[/foo <?before $lookaround-value>/].AST);
+ok 'foobaz' ~~ $constructed-interpolated,
+    'a constructed interpolated lookahead lowers through EVAL';
+$lookaround-value = 'qux';
+ok 'fooqux' ~~ $constructed-interpolated,
+    'a constructed interpolated lookahead keeps match-time binding';
+
+my $interpolated-after = EVAL(Q[/<?after $lookaround-value> bar/].AST);
+ok 'quxbar' ~~ $interpolated-after,
+    'a scalar interpolation matches inside a lookbehind';
+$lookaround-value = 'nope';
+nok 'quxbar' ~~ $interpolated-after,
+    'an interpolated lookbehind reads the current lexical value';

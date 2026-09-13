@@ -4,9 +4,9 @@
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
   bare-subrule, anchor, explicit-static-lookaround,
-  named-static-lookaround, nested-static-lookaround, and escaped-lookaround
-  slices implemented 2026-09-12/13; other dynamic contents and the complete
-  execution-tree migration remain)
+  named-static-lookaround, nested-static-lookaround, escaped-lookaround, and
+  lookaround-interpolation slices implemented 2026-09-12 through 2026-09-14;
+  other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -679,3 +679,17 @@ explicit boundaries.
 The focused regressions are in `t/rakuast/rakuast-regex.t` and
 `t/regex/regex-tree-lookaround.t`. They pin the dual-oracle AST shape,
 zero-width matching, rejection and reuse for `\d+`.
+
+## 22. Scalar interpolation in lookaround slice (2026-09-14)
+
+Ordinary scalar interpolation is now accepted inside the existing lookaround
+assertion nodes. The source tree retains `RegexNode::Interpolation` beneath
+`Lookaround`/`NamedLookaround`, so RakuAST emits the same
+`Assertion::Named::RegexArg` and `Regex::Interpolation` shape as Rakudo.
+
+Execution lowering reuses the existing `RegexAtom::VarInterp` matcher inside
+the zero-width lookaround plan. The value is read at match time from the
+current lexical environment, preserving reassignment for both parser-created
+regex values and constructed RakuAST trees. Sequential interpolation, code
+assertions, captures, subrules, and other runtime-valued bodies remain outside
+this bounded slice.
