@@ -39,12 +39,12 @@ dies-ok { $writer(1) }, 'a pointy-block parameter stays readonly';
 # --- arity ------------------------------------------------------------------
 
 # An arity mismatch is NOT the light bind's to diagnose: it declines and the
-# general binder reports it. (mutsu's legacy binder reports a SHORT call as an
-# undeclared-variable read rather than rakudo's "Too few positionals" -- issue
-# #8353, a divergence that predates the light bind -- so only the dying is
-# asserted here.)
+# general binder reports it. (#8353 fixed the general binder's SHORT-call
+# report from an undeclared-variable read to rakudo's own "Too few
+# positionals" text.)
 my $two = -> $a { $a };
-dies-ok { $two() }, 'a short call still dies';
+throws-like { $two() }, Exception, message => /'Too few positionals'/,
+    'a short call reports "Too few positionals"';
 throws-like { $two(1, 2) }, Exception, message => /'Too many positionals'/,
     'a surplus call still reports "Too many positionals"';
 

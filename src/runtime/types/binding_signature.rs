@@ -1023,6 +1023,39 @@ impl Interpreter {
                     named_key.is_none()
                 })
                 .count();
+            // A params list made ENTIRELY of plain (non-placeholder, non-named)
+            // identifiers is the shape a bare pointy block (`-> $a { }`,
+            // compiled via `Expr::Lambda`) or a non-mutating WhateverCode
+            // (`*+1`) takes: every param requires exactly one positional
+            // argument, with no `@_`/`%_` overflow to catch a short call (that
+            // combination is rejected at compile time -- see the "too many"
+            // check below). Computed before the bind loop so a short call can
+            // reject up front, atomically, rather than partially binding the
+            // params the caller did supply and leaving the trailing one(s)
+            // unbound for the body to read as an undeclared variable (#8353).
+            let has_placeholder = |p: &String| {
+                p.starts_with('^')
+                    || p.starts_with("@^")
+                    || p.starts_with("%^")
+                    || p.starts_with("&^")
+            };
+            let has_named_placeholder =
+                |p: &String| p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:");
+            let all_plain_positional = params
+                .iter()
+                .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
+            if all_plain_positional && positional_args.len() < required_positional_count {
+                return Err(RuntimeError::new(format!(
+                    "Too few positionals passed; expected {} argument{} but got {}",
+                    required_positional_count,
+                    if required_positional_count == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    positional_args.len()
+                )));
+            }
             let mut positional_idx = 0usize;
             for (param_idx, param) in params.iter().enumerate() {
                 // The pre-interned name for this `params` slot, when the caller
@@ -1090,31 +1123,25 @@ impl Interpreter {
                     || param.starts_with("&^")
                 {
                     return Err(RuntimeError::new(format!(
-                        "Too few positionals passed; expected {} arguments but got {}",
+                        "Too few positionals passed; expected {} argument{} but got {}",
                         required_positional_count,
+                        if required_positional_count == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
                         positional_args.len()
                     )));
                 }
             }
-            // A params list made ENTIRELY of plain (non-placeholder)
-            // identifiers always rejects a surplus. That shape only arises
-            // from an explicit single-param pointy block (`-> $a { }`,
-            // compiled via `Expr::Lambda`) or a non-mutating WhateverCode
-            // (`*+1`), neither of which can coexist with a body `@_`/`%_`
-            // read -- Raku rejects that combination at compile time
-            // (`X::Signature::Placeholder`, "Placeholder variable '@_' cannot
-            // override existing signature"), so it is never ambiguous.
-            let has_placeholder = |p: &String| {
-                p.starts_with('^')
-                    || p.starts_with("@^")
-                    || p.starts_with("%^")
-                    || p.starts_with("&^")
-            };
-            let has_named_placeholder =
-                |p: &String| p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:");
-            let all_plain_positional = params
-                .iter()
-                .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
+            // `all_plain_positional` always rejects a surplus too (that shape
+            // only arises from an explicit single-param pointy block or a
+            // non-mutating WhateverCode, neither of which can coexist with a
+            // body `@_`/`%_` read -- Raku rejects that combination at compile
+            // time with `X::Signature::Placeholder`, so it is never
+            // ambiguous); computed above, before the bind loop, alongside the
+            // "too few" check for the same shape.
+            //
             // A `^`-twigil placeholder routine rejects a surplus too -- UNLESS
             // its body reads a bare `@_`, which is where the leftovers go.
             // Measured against rakudo 2026.07 (#7619):
