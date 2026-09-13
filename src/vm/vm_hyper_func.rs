@@ -494,7 +494,9 @@ impl Interpreter {
         if let Some(data) = sub {
             return data.param_defs.first().map(writable).unwrap_or(false);
         }
-        if let Some(cf) = self.find_compiled_function(compiled_fns, name, &probe) {
+        if let Some(cf) =
+            self.find_compiled_function(compiled_fns, name, Symbol::intern(name), &probe)
+        {
             return cf.param_defs.first().map(writable).unwrap_or(false);
         }
         if let Some(def) = loan_env!(self, resolve_function_with_types(name, &probe)) {

@@ -7,9 +7,10 @@ impl Interpreter {
         &mut self,
         compiled_fns: &'a CompiledFns,
         name: &str,
+        name_sym: Symbol,
         args: &[Value],
     ) -> Option<&'a Arc<CompiledFunction>> {
-        self.find_compiled_function_memo(compiled_fns, name, args, &mut None)
+        self.find_compiled_function_memo(compiled_fns, name, name_sym, args, &mut None)
     }
 
     /// [`Self::find_compiled_function`], handing back the multi resolution it
@@ -39,6 +40,7 @@ impl Interpreter {
         &mut self,
         compiled_fns: &'a CompiledFns,
         name: &str,
+        name_sym: Symbol,
         args: &[Value],
         memo: &mut Option<Arc<crate::ast::FunctionDef>>,
     ) -> Option<&'a Arc<CompiledFunction>> {
@@ -46,7 +48,7 @@ impl Interpreter {
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        self.find_compiled_function_inner(compiled_fns, name, args, memo)
+        self.find_compiled_function_inner(compiled_fns, name, name_sym, args, memo)
     }
 
     /// Get the cached package for a function, if available.
@@ -57,15 +59,26 @@ impl Interpreter {
         None
     }
 
+    /// `name` and `name_sym` are the same callsite name in its two forms. The
+    /// symbol is a parameter rather than interned here because every caller
+    /// already holds it — a callsite name is a string constant with a
+    /// `CompiledCode::const_sym` entry — and this ran once per dispatch (#7766
+    /// unit 2).
     fn find_compiled_function_inner<'a>(
         &mut self,
         compiled_fns: &'a CompiledFns,
         name: &str,
+        name_sym: Symbol,
         args: &[Value],
         memo: &mut Option<Arc<crate::ast::FunctionDef>>,
     ) -> Option<&'a Arc<CompiledFunction>> {
+        // `lookup`, not `intern`: the assertion must not itself grow the symbol
+        // table or move `symbol::intern_calls()`, which
+        // `tests/named_call_intern_budget.rs` reads. `name_sym` can only exist
+        // because someone interned `name`, so a present entry is the whole
+        // check.
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let arity = args.len();
-        let name_sym = Symbol::intern(name);
         // ONE type signature, shared by both resolution-cache keys and by the
         // compiled-key probes further down. The probes used to build their own
         // copy, so every call allocated a `String` per argument twice over; the

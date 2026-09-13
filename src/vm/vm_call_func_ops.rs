@@ -972,7 +972,6 @@ impl Interpreter {
                         } else {
                             // The body must run under its *defining* package, not
                             // the callsite's (see `otf_call_cache`'s doc comment).
-                            let pkg = def_pkg_sym.resolve();
                             self.push_samewith_context(name_str, None, None);
                             let pushed_dispatch =
                                 loan_env!(self, push_multi_dispatch_frame(name_str, &args));
@@ -983,8 +982,8 @@ impl Interpreter {
                                 &cf,
                                 std::mem::take(&mut args),
                                 compiled_fns,
-                                &pkg,
-                                name_str,
+                                def_pkg_sym,
+                                name_sym,
                             );
                             self.set_pending_call_arg_sources(None);
                             self.pop_samewith_context();
@@ -1468,6 +1467,11 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // The callsite name as a string constant AND as its pre-interned
+        // `const_syms` entry: the dispatch below wants the symbol, and
+        // re-interning the same constant per call is exactly what #7766 is
+        // about.
+        let name_sym = code.const_sym(name_idx);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -1535,15 +1539,16 @@ impl Interpreter {
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
-        } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+        } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
             native_result?
         } else if !self.has_proto_cached(&name)
-            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
+            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, name_sym, &args)
         {
             let cf_auto_fetch = !cf.returns_container();
-            let pkg = self.current_package().to_string();
+            let pkg_sym = self.current_package_sym();
             self.set_pending_call_arg_sources(arg_sources.clone());
-            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+            let result =
+                self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
@@ -1625,8 +1630,18 @@ impl Interpreter {
             // The multi winner this resolves on the way, so the multi branch
             // below does not resolve the identical call a second time (#7573).
             let mut multi_def_memo: Option<Arc<crate::ast::FunctionDef>> = None;
+            // Interned once for the whole branch: the resolution probe below,
+            // the light path's cache key and the named entry all want it, and
+            // each used to re-hash the same name (#7766 unit 2).
+            let name_sym = Symbol::intern(name);
             let compiled = if !self.has_proto_cached(name) {
-                self.find_compiled_function_memo(compiled_fns, name, &args, &mut multi_def_memo)
+                self.find_compiled_function_memo(
+                    compiled_fns,
+                    name,
+                    name_sym,
+                    &args,
+                    &mut multi_def_memo,
+                )
             } else {
                 None
             };
@@ -1714,7 +1729,6 @@ impl Interpreter {
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     // Populate light-call cache so subsequent calls skip resolution
-                    let name_sym = Symbol::intern(name);
                     let cur_pkg_sym = self.current_package_sym();
                     if !self.light_call_cache.contains_key(&(name_sym, cur_pkg_sym)) {
                         // Find the compiled_fns key for this function
@@ -1736,8 +1750,8 @@ impl Interpreter {
                 self.push_samewith_context(name, None, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
-                let pkg = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
-                    cached_pkg
+                let pkg_sym = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
+                    Symbol::intern(&cached_pkg)
                 } else {
                     let resolved_def = loan_env!(self, resolve_function_with_types(name, &args));
                     if let Some(ref def) = resolved_def {
@@ -1745,12 +1759,16 @@ impl Interpreter {
                             .or_else(|| self.pending_callsite_line());
                         loan_env!(self, check_deprecation_for_def_with_line(def, cl));
                     }
+                    // `def.package` is already a `Symbol`, and the fallback has
+                    // the atomic mirror: neither needs the `String` this used to
+                    // build purely to satisfy a `&str` parameter (#7766).
                     resolved_def
-                        .map(|def| def.package.resolve())
-                        .unwrap_or_else(|| self.current_package().to_string())
+                        .map(|def| def.package)
+                        .unwrap_or_else(|| self.current_package_sym())
                 };
                 let cf_auto_fetch = !cf.returns_container();
-                let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+                let result =
+                    self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
                 self.set_pending_call_arg_sources(None);
                 self.pop_samewith_context();
                 if pushed_dispatch {
@@ -1887,13 +1905,13 @@ impl Interpreter {
                         // which the per-call OTF recompile below cannot.
                         if !is_builtin && let Some(shared) = self.imported_state_body_for_def(&def)
                         {
-                            let pkg = self.current_package().to_string();
+                            let pkg_sym = self.current_package_sym();
                             let result = self.call_shared_state_body(
                                 &shared,
                                 args,
                                 compiled_fns,
-                                &pkg,
-                                name,
+                                pkg_sym,
+                                Symbol::intern(name),
                             )?;
                             return loan_env!(
                                 self,
@@ -2202,8 +2220,8 @@ impl Interpreter {
         // routine's. A proto declared with signature *alternates* shares one
         // `state` cell across them the same way an ordinary multi does
         // (`t/multi-signature-alternates.t`).
-        let (cf, pkg) = if let Some(compiled) = proto.compiled.clone() {
-            (compiled, proto.package.resolve())
+        let (cf, pkg_sym) = if let Some(compiled) = proto.compiled.clone() {
+            (compiled, proto.package)
         } else {
             // Fallback for a proto with no plan-compiled body — defensive; every
             // non-trivial package proto sub is plan-derived once C8 is complete,
@@ -2222,8 +2240,8 @@ impl Interpreter {
                 return None;
             }
             let cf = self.otf_compile_function_def(&proto_def);
-            let pkg = proto_def.package.resolve();
-            (cf, pkg)
+            let pkg_sym = proto_def.package;
+            (cf, pkg_sym)
         };
         // `{*}` redispatch reads the args from `proto_dispatch_stack` (the
         // ORIGINAL proto args, matching the interpreter's
@@ -2238,7 +2256,8 @@ impl Interpreter {
         // that declares its own nested sub/multi/proto must resolve its own
         // `RegisterDecl` keys, not the caller's unrelated table.
         let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
-        let result = self.call_compiled_function_named(&cf, args, fns, &pkg, name);
+        let result =
+            self.call_compiled_function_named(&cf, args, fns, pkg_sym, Symbol::intern(name));
         self.pop_proto_dispatch_frame();
         Some(result)
     }
@@ -2696,8 +2715,8 @@ impl Interpreter {
         shared: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
-        pkg: &str,
-        name: &str,
+        pkg: Symbol,
+        name: Symbol,
     ) -> Result<Value, RuntimeError> {
         let saved_scope = self.state_scope_id.take();
         // Prefer the routine's own nested-sub table over the caller's

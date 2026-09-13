@@ -6,8 +6,8 @@ impl Interpreter {
         cf: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
-        fn_package: &str,
-        fn_name: &str,
+        fn_package_sym: Symbol,
+        fn_name_sym: Symbol,
     ) -> Result<Value, RuntimeError> {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
@@ -37,12 +37,19 @@ impl Interpreter {
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
-        // Interned once per call: the package and routine name are pushed on
-        // three frames below (the `callframe().code` Sub, the routine frame,
-        // the state scope), and each `Symbol::intern` is a thread-local
-        // string-keyed hash lookup.
-        let fn_package_sym = Symbol::intern(fn_package);
-        let fn_name_sym = Symbol::intern(fn_name);
+        // The package and routine name arrive already interned (#7766 unit 2):
+        // every caller holds the symbol, either as a callsite string constant's
+        // `CompiledCode::const_sym` entry, as a `FunctionDef`'s own `package` /
+        // `name`, or as the atomic `current_package_sym` mirror. Interning them
+        // here instead cost a thread-local string-keyed hash lookup per call —
+        // twice, since both are pushed on three frames below (the
+        // `callframe().code` Sub, the routine frame, the state scope).
+        //
+        // `as_str` is the reverse direction: an indexed read out of the
+        // per-thread resolve cache, with no hashing, for the handful of places
+        // in this function that still want the text.
+        let fn_package = fn_package_sym.as_str();
+        let fn_name = fn_name_sym.as_str();
         // Record deprecation for cached compiled functions
         self.record_cf_deprecation(cf);
         // An END phaser registered inside this call closes over this frame's
