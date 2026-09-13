@@ -273,7 +273,7 @@ impl Interpreter {
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
             // self's shared cell for an attribute-twigil alias.
-            self.propagate_sigilless_alias_chain(code, name, &new_val);
+            self.propagate_sigilless_alias_chain(code, name, Some(slot), &new_val);
             self.stack.push(val);
             return Ok(());
         }
@@ -379,7 +379,7 @@ impl Interpreter {
             self.flush_local_to_env(code, slot);
             // Propagate the new value along the sigilless alias chain and into
             // self's shared cell for an attribute-twigil alias.
-            self.propagate_sigilless_alias_chain(code, name, &new_val);
+            self.propagate_sigilless_alias_chain(code, name, Some(slot), &new_val);
             self.stack.push(val);
             return Ok(());
         }
