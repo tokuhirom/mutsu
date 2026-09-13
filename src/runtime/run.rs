@@ -25,6 +25,22 @@ role GLOBAL::Rational[::NuT = Int, ::DeT = Int] does Real {
     }
     method nude { self.numerator, self.denominator }
     method Bool { self.numerator != 0 }
+    # The numeric surface every Rakudo `Rational` carries. Without it a punned
+    # `Rational[Int,Int]` had a numerator and a denominator but no way to say
+    # what number it *is*: `.Str` fell through to the type-object rendering
+    # ("Rational[Int,Int]()"), which is what made JSON::Fast emit that in place
+    # of `0.3` for a `Rational[Int,Int]` value. Everything derives from the one
+    # division, so `.Int` truncates (Rat semantics) rather than flooring the way
+    # a bare `div` on the two attributes would.
+    method Rat { self.numerator / self.denominator }
+    method Numeric { self.Rat }
+    method Num { self.Rat.Num }
+    method Bridge { self.Rat.Num }
+    method Int { self.Rat.Int }
+    method Str { self.Rat.Str }
+    method abs { self.Rat.abs }
+    method floor { self.Rat.floor }
+    method ceiling { self.Rat.ceiling }
 }
 "#;
 

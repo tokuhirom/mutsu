@@ -3,6 +3,10 @@ use crate::symbol::Symbol;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+type RegexParseCacheBucket = rustc_hash::FxHashMap<String, (u64, std::sync::Arc<RegexPattern>)>;
+type RegexParseCache = rustc_hash::FxHashMap<(Symbol, Option<u64>), RegexParseCacheBucket>;
+type RegexInterpolatedParseCache = rustc_hash::FxHashMap<Symbol, RegexParseCacheBucket>;
+
 thread_local! {
     /// Thread-local storage for regex security errors that need to propagate
     /// from inside `parse_regex` (which takes `&self`) to callers that can throw.
@@ -31,14 +35,25 @@ thread_local! {
     /// rather than a deep clone of the whole token tree — the hot match loop
     /// re-fetches the same compiled pattern on every step / every iteration.
     ///
-    /// Keyed by `(current package, pattern)` because parsing resolves grammar
-    /// tokens against the current package (`parse_combined_class` both decides
-    /// token-ness and — since the static fold — inlines simple token bodies).
-    /// Each entry records the `TOKEN_DEFS_GEN` it was parsed under; a hit with
-    /// a stale generation re-parses so a token (re)definition after the first
-    /// parse is picked up.
-    pub(crate) static REGEX_PARSE_CACHE: RefCell<HashMap<String, (u64, std::sync::Arc<RegexPattern>)>> =
-        RefCell::new(HashMap::new());
+    /// Keyed by `(current package, optional source-tree fingerprint, pattern)`
+    /// because parsing resolves grammar tokens against the current package
+    /// (`parse_combined_class` both decides token-ness and — since the static
+    /// fold — inlines simple token bodies). The outer key is copyable and the
+    /// inner pattern map is probed with a borrowed `&str`, so cache hits do not
+    /// allocate a formatted package-plus-pattern key. Each entry records the
+    /// `TOKEN_DEFS_GEN` it was parsed under; a hit with a stale generation
+    /// re-parses so a token (re)definition after the first parse is picked up.
+    pub(crate) static REGEX_PARSE_CACHE: RefCell<RegexParseCache> =
+        RefCell::new(rustc_hash::FxHashMap::default());
+
+    /// Memoization cache for top-level patterns after runtime interpolation.
+    /// The interpolated text is already allocated by
+    /// `interpolate_regex_scalars`, so it can be retained as the owned cache
+    /// key. Keep this cache bounded because a pattern that splices a changing
+    /// value can otherwise mint one entry per match. As with the static cache,
+    /// entries are invalidated lazily by `TOKEN_DEFS_GEN`.
+    pub(crate) static REGEX_INTERPOLATED_PARSE_CACHE: RefCell<RegexInterpolatedParseCache> =
+        RefCell::new(rustc_hash::FxHashMap::default());
 
     /// Memoization cache for *sub-pattern* parses — every `parse_regex_uncached`
     /// entry, not just the outermost one [`REGEX_PARSE_CACHE`] covers.
@@ -244,33 +259,29 @@ pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     fn starts_variable_form(c: char) -> bool {
         c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '*' | '?' | '^' | '.' | '!')
     }
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0usize;
-    while i < chars.len() {
-        let c = chars[i];
+    let mut chars = pattern.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
         if c == '\\' {
-            i += 2;
+            chars.next();
             continue;
         }
         if matches!(c, '$' | '@' | '%') {
-            let mut j = i + 1;
+            let mut next = chars.peek().map(|(_, next)| *next);
             // A doubled sigil is structural (`$$` line-end anchor, `%%`
             // separator op) — but if a variable form follows the pair, stay
             // conservative and treat the whole thing as dynamic.
-            if chars.get(j) == Some(&c) {
-                j += 1;
+            if next == Some(c) {
+                chars.next();
+                next = chars.peek().map(|(_, next)| *next);
             }
             // `@$var` scalar-deref interpolation.
-            if c == '@' && chars.get(j) == Some(&'$') {
+            if c == '@' && next == Some('$') {
                 return false;
             }
-            if chars.get(j).copied().is_some_and(starts_variable_form) {
+            if next.is_some_and(starts_variable_form) {
                 return false;
             }
-            i = j;
-            continue;
         }
-        i += 1;
     }
     true
 }
@@ -416,6 +427,12 @@ mod static_pattern_tests {
 /// interpolated pattern text — a regex that splices a loop counter mints a
 /// fresh one on every iteration.
 pub(crate) const SUBPATTERN_PARSE_CACHE_MAX: usize = 4096;
+
+/// Per-package entry cap for [`REGEX_INTERPOLATED_PARSE_CACHE`]. Reaching it
+/// clears the bucket: the memo is an optimization, so dropping it costs
+/// re-parses and nothing else, and a changing interpolated value must not grow
+/// the cache without bound.
+pub(crate) const INTERPOLATED_PARSE_CACHE_MAX: usize = 4096;
 
 /// Parsing mode for the shared regex grammar parser (`parse_regex_uncached`).
 ///

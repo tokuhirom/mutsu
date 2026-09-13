@@ -339,17 +339,12 @@ impl RegexTree {
                         };
                     Some(tokens)
                 }
-                RegexNode::Subrule { name, capturing } => {
-                    let name = if *capturing {
-                        name.clone()
-                    } else {
-                        format!(".{name}")
-                    };
-                    Some(vec![token(
-                        crate::runtime::RegexAtom::Named(name.into()),
-                        crate::runtime::RegexQuant::One,
-                        ratchet,
-                    )])
+                RegexNode::Subrule { .. } => {
+                    // Bare and dot-suppressed subrules share spelling with
+                    // builtin assertions and grammar-local names. Let the
+                    // runtime parser resolve that context-sensitive spelling
+                    // instead of reducing it to a generic Named atom here.
+                    None
                 }
                 RegexNode::SubruleAlias { alias, name } => Some(vec![token(
                     crate::runtime::RegexAtom::Named(format!("{alias}={name}").into()),
@@ -818,7 +813,15 @@ impl Parser {
             }
             return None;
         }
-        None
+        let (capturing, name) = if let Some(name) = contents.strip_prefix('.') {
+            (false, name)
+        } else {
+            (true, contents.as_str())
+        };
+        is_simple_subrule_name(name).then(|| RegexNode::Subrule {
+            name: name.to_string(),
+            capturing,
+        })
     }
 
     fn parse_variable_name(&mut self) -> Option<String> {

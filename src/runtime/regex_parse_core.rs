@@ -769,6 +769,17 @@ impl Interpreter {
         } else {
             pattern.to_string()
         };
+        self.parse_regex_uncached_interpolated(&interpolated, mode)
+    }
+
+    /// Parse a pattern whose runtime interpolation has already been performed.
+    /// This is used by the top-level interpolated-pattern cache so a cache miss
+    /// does not interpolate the same source twice before the structural parse.
+    pub(super) fn parse_regex_uncached_interpolated(
+        &self,
+        interpolated: &str,
+        mode: RegexParseMode,
+    ) -> Option<RegexPattern> {
         // `Validate` mode is not memoized: a structurally-questionable pattern
         // pushes non-fatal diagnostics onto `REGEX_SORROWS` on its way to a
         // successful parse, and `validate_regex_structurally` drains them — a
@@ -777,7 +788,7 @@ impl Interpreter {
         // times over the whole profiled document, against 10,958 match-mode
         // parses).
         if mode != RegexParseMode::Match {
-            return self.parse_regex_structural(&interpolated, mode);
+            return self.parse_regex_structural(interpolated, mode);
         }
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
@@ -785,7 +796,7 @@ impl Interpreter {
         if let Some(hit) = crate::runtime::regex_parse::REGEX_SUBPATTERN_PARSE_CACHE.with(|c| {
             c.borrow()
                 .get(&bucket)
-                .and_then(|m| m.get(interpolated.as_str()))
+                .and_then(|m| m.get(interpolated))
                 .filter(|(entry_gen, _)| *entry_gen == tok_gen)
                 .map(|(_, p)| std::sync::Arc::clone(p))
         }) {
@@ -798,7 +809,7 @@ impl Interpreter {
         // back into this function for its own sub-patterns.
         let ambient = &crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE;
         let outer_read = ambient.with(|f| f.replace(false));
-        let parsed = self.parse_regex_structural(&interpolated, mode);
+        let parsed = self.parse_regex_structural(interpolated, mode);
         let this_read = ambient.with(|f| f.replace(outer_read || f.get()));
         let stored = std::sync::Arc::new(parsed?);
         if !this_read {
@@ -812,7 +823,10 @@ impl Interpreter {
                 if bucket_map.len() >= crate::runtime::regex_parse::SUBPATTERN_PARSE_CACHE_MAX {
                     bucket_map.clear();
                 }
-                bucket_map.insert(interpolated, (tok_gen, std::sync::Arc::clone(&stored)));
+                bucket_map.insert(
+                    interpolated.to_owned(),
+                    (tok_gen, std::sync::Arc::clone(&stored)),
+                );
             });
         }
         Some((*stored).clone())
