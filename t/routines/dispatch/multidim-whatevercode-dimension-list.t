@@ -13,7 +13,11 @@ use Test;
 # 0]` is `(4)`), and so does an ordinary block dimension (`@m[{0}; 0]` is
 # `(1)`) -- both go through the same runtime representation as `*-1`.
 #
-# Every expectation below was measured against rakudo (#8188).
+# Every expectation below was measured against rakudo (#8188), under the
+# default `v6.d` this file implicitly runs as. 6.e reclassifies a
+# WhateverCode/block dimension back to a plain scalar index (the same
+# exception the associative subscript already has) -- that side is pinned
+# separately by `roast/S32-array/multislice-6e.t` under `use v6.e.PREVIEW`.
 
 plan 18;
 
