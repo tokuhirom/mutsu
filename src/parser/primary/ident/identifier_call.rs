@@ -167,6 +167,22 @@ fn split_dist_selectors_from_name(name: &str) -> (&str, String) {
     (name, String::new())
 }
 
+/// Find the `>` that closes a stash subscript whose body may contain a nested
+/// angle-bracket construct, such as `CORE::<&infix:<+>>`. The first `>` closes
+/// the inner `infix:<...>` name; it is not the end of the stash subscript.
+fn find_angle_subscript_end(input: &str) -> Option<usize> {
+    let mut nested = 0;
+    for (index, ch) in input.char_indices() {
+        match ch {
+            '<' => nested += 1,
+            '>' if nested > 0 => nested -= 1,
+            '>' => return Some(index),
+            _ => {}
+        }
+    }
+    None
+}
+
 fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     let (mut rest, _) = ws1(rest)?;
     let mut dist_selectors = String::new();
@@ -1366,7 +1382,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // Handle ::<SYMBOL> subscript syntax (e.g., CORE::<&run>)
             if let Some(after_bracket) = after.strip_prefix('<')
                 && !after.starts_with("<<")
-                && let Some(end) = after_bracket.find('>')
+                && let Some(end) = find_angle_subscript_end(after_bracket)
             {
                 let symbol = &after_bracket[..end];
                 if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
