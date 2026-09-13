@@ -15,7 +15,7 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         (rest, None)
     };
-    let (rest, mut body) = block(rest)?;
+    let (rest, mut body) = block_with_pointy_params(rest, pointy_param.as_slice())?;
     if let Some(pd) = pointy_param {
         body.insert(0, pointy_topic_bind(&pd));
     }

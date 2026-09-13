@@ -559,14 +559,6 @@ impl Interpreter {
             // just call-syntax macros. They dispatch through the builtin-function
             // path (see `builtins.rs`), so expose them as Routine values here.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
-        } else if self.json_native_provider_active()
-            && matches!(lookup_name, "to-json" | "from-json")
-        {
-            // The native JSON::Fast provider's routines (runtime/json.rs) have
-            // no declared sub either; expose them as Routines so `&from-json` /
-            // `$str.&from-json` work. The Routine call path falls through to
-            // try_native_json_function.
-            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
             // at call time (including builtins not listed in is_builtin_function).

@@ -665,6 +665,11 @@ impl Interpreter {
         // compunit, this writes the compunit's shared cell and NOT the bare env
         // key, which belongs to the scope that loaded the module (`unit_lexicals`).
         self.set_env_with_main_alias(&name, val.clone());
+        // A compound assignment expression uses this path rather than the
+        // SetGlobal opcode.  Keep a package-block or class-body lexical's
+        // authoritative store in sync just as SetGlobal does, otherwise the
+        // next method call sees the old value through package_scope_lexical.
+        self.writeback_package_scope_var(&name, &val);
         // Persist anonymous state variable (`$`) across closure calls.
         self.sync_anon_state_value(&name, &val);
         // Track topic mutations for map rw writeback: when `$_` (= "_") is

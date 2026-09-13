@@ -2368,6 +2368,12 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 ],
             )
         }
+        RegexNode::AnchorBeginningOfString => {
+            (RakuAstClass::RegexAnchorBeginningOfString, Vec::new())
+        }
+        RegexNode::AnchorBeginningOfLine => (RakuAstClass::RegexAnchorBeginningOfLine, Vec::new()),
+        RegexNode::AnchorEndOfString => (RakuAstClass::RegexAnchorEndOfString, Vec::new()),
+        RegexNode::AnchorEndOfLine => (RakuAstClass::RegexAnchorEndOfLine, Vec::new()),
         RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,

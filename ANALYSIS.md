@@ -248,12 +248,11 @@ in the code, and the exception list has shrunk to two entries:
     resolves through the ordinary ladder and runs the module's own Raku source — `to-json([1,2])`
     answers `[ 1, 2 ]`, the module's spelling, where the interception answered a pretty-printed
     block.
-  - `JSON::Fast` is not vendored yet (#8226 — the "~50 missing `nqp::` ops" once recorded here
-    was never measured; 42 of its 51 ops already worked), so
-    nothing resolves and the native routines answer — but only *after* the ladder has run and
-    come up empty, so a `JSON::Fast` reached via `use lib` / `-I` / `MUTSULIB` / the site repo
-    now wins (BATTERIES.md §6). It no longer returns ahead of `call_routine_def` to beat a
-    resolved def.
+  - `JSON::Fast` is vendored too as of 2026-09-13 (#8226), and its last-resort native provider
+    is **deleted**: the name resolves through the ladder like any other module. The "~50 missing
+    `nqp::` ops" once recorded here was never measured — 42 of its 51 ops already worked. The
+    only JSON mutsu still answers from Rust is `Rakudo::Internals::JSON`, a core class that no
+    `use` gates.
   - `json_tiny_exception_style()` — the "best-effort guess" that read the *set* of loaded
     module names to pick `from-json`'s exception type — is deleted. Each module owns its own
     error again: `JSON::Tiny` throws its own `X::JSON::Tiny::Invalid` from its own source, and

@@ -1082,13 +1082,6 @@ impl Interpreter {
             return Ok(args.first().cloned().unwrap_or(Value::NIL));
         }
 
-        // Native JSON routines invoked as code objects (`&from-json`,
-        // `$str.&from-json`) reach this generic fallback — they have no
-        // declared sub for the resolver above to find.
-        if let Some(result) = self.try_native_json_function(name, args) {
-            return result;
-        }
-
         // A sub declared lexically in a block, called from a closure that
         // escaped it: block exit restored the routine registry, so nothing
         // above could resolve the name, but the closure's captured env still

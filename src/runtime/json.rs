@@ -1,17 +1,11 @@
-//! Native `to-json` / `from-json` (JSON::Fast / JSON::Tiny compatible).
+//! The JSON codec behind `Rakudo::Internals::JSON.to-json` / `.from-json`.
 //!
-//! These are NOT Raku core builtins — they are provided by the `JSON::Fast` /
-//! `JSON::Tiny` modules. `JSON::Tiny` is vendored and runs its own source
-//! (#8183/#8203); `JSON::Fast` is not vendored yet, so this native provider
-//! still answers `use JSON::Fast` — but only as a last resort, after the module
-//! ladder comes up empty (`runtime/runtime_module.rs`).
-//!
-//! The "~50 `nqp::` ops mutsu does not implement" this header used to cite as
-//! the blocker was never measured: probed op by op against upstream
-//! `JSON::Fast:ver<0.20.1>`, 42 of its 51 ops already worked, and the nine that
-//! did not are implemented now (#8226). 13 of the 14 upstream test files pass
-//! against the real distribution; retiring this file waits on two non-JSON
-//! blockers recorded in `docs/batteries/json-tiny.md`.
+//! That class is **core Rakudo**, not an ecosystem module — it resolves with no
+//! `use` — so this is ordinary core surface, outside ADR-0096 §D4's rung-3
+//! ledger. The name-keyed `JSON::Fast` / `JSON::Tiny` providers this file used
+//! to serve are gone: both are vendored batteries now and run their own
+//! upstream source (#8183/#8203 and #8226). See `vm/vm_native_json.rs` for the
+//! dispatch side.
 //!
 //! Encoding follows JSON::Fast 0.19 semantics: `:pretty` defaults to True with a
 //! 2-space indent, type objects / undefined values render as `null`, `Rat`s gain
@@ -43,43 +37,6 @@ impl Default for ToJsonOpts {
             enums_as_value: false,
             nan_inf_support: false,
         }
-    }
-}
-
-/// Per-`use` defaults selected by the import list of the native JSON modules
-/// (`use JSON::Fast <immutable !pretty sorted-keys>`). Rakudo scopes these
-/// lexically (the list picks which candidates are exported into the using
-/// scope); mutsu executes `use` at run time, so the latest `use` wins — which
-/// matches straight-line block-sequential usage.
-// TODO: model true lexical scoping if a real-world module needs interleaved
-// scopes with different JSON defaults.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct JsonImportDefaults {
-    pub immutable: bool,
-    pub not_pretty: bool,
-    pub sorted_keys: bool,
-    pub enums_as_value: bool,
-}
-
-impl JsonImportDefaults {
-    /// Parse import-list words (`immutable`, `!pretty`, ...) into defaults.
-    /// Unknown words are ignored (JSON::Fast also exports sub names there).
-    pub(crate) fn from_import_words(words: &[String]) -> Self {
-        let mut d = JsonImportDefaults::default();
-        for w in words {
-            let (name, on) = match w.strip_prefix('!') {
-                Some(rest) => (rest, false),
-                None => (w.as_str(), true),
-            };
-            match name {
-                "immutable" => d.immutable = on,
-                "pretty" => d.not_pretty = !on,
-                "sorted-keys" => d.sorted_keys = on,
-                "enums-as-value" => d.enums_as_value = on,
-                _ => {}
-            }
-        }
-        d
     }
 }
 

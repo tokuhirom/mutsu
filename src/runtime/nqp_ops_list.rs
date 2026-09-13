@@ -319,12 +319,30 @@ impl Interpreter {
             // is how an nqp-built Array/Hash gets assignable elements. mutsu's
             // containers store values directly and hand out an element
             // container on demand (ADR-0036/ADR-0045), so there is no
-            // pre-wrapped Scalar to build — the value itself is the answer,
-            // and the descriptor (which mutsu's `'$!descriptor'` read has
-            // nothing to return anyway) is ignored.
-            "p6scalarwithvalue" => Ok(crate::runtime::types::unwrap_varref_value(
-                args.get(1).cloned().unwrap_or(Value::NIL),
-            )),
+            // pre-wrapped Scalar to build and the descriptor is ignored.
+            //
+            // What the wrapping still has to reproduce is **itemization**: a
+            // value bound in through raw `nqp::bindkey` never reaches the
+            // store-side hook that itemizes an ordinary `%h<k> = [1,2]`, so
+            // returning the bare value lost it. `JSON::Fast`'s `parse-obj`
+            // builds every decoded object exactly that way, which made
+            // `from-json('{"a":[1,2]}')<a>.raku` answer `[1, 2]` where rakudo
+            // (running the same module) answers `$[1, 2]`.
+            //
+            // Which values itemize is measured against rakudo, not assumed:
+            // `Array`, `Hash`, `Seq` and `List` do; `Range`, `Pair`, `Bool`,
+            // `Int`, `Str` and a type object do not. That is narrower than
+            // `Value::itemize_for_element_store`, which also itemizes every
+            // `Range` variant — right for its own call sites, wrong here.
+            "p6scalarwithvalue" => {
+                let value = crate::runtime::types::unwrap_varref_value(
+                    args.get(1).cloned().unwrap_or(Value::NIL),
+                );
+                Ok(match value.view() {
+                    ValueView::Array(..) | ValueView::Hash(_) | ValueView::Seq(_) => value.item(),
+                    _ => value,
+                })
+            }
             // nqp::p6bindattrinvres($obj, Type, '$!attr', $value): bind the
             // attribute and return the INVOCANT rather than the value, so a
             // mutating method stays chainable. The standard way nqp code

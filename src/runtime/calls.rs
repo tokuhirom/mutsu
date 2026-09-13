@@ -193,15 +193,6 @@ impl Interpreter {
                     return Err(err);
                 } else if self.has_proto(name) {
                     return Err(self.multi_no_match_error(name, &args));
-                } else if let Some(result) = self.try_native_json_function(name, &args) {
-                    // The native JSON::Fast provider's to-json/from-json in
-                    // STATEMENT position with named args (`from-json($t,
-                    // :$immutable);` inside a try) reaches exec_call via
-                    // ExecCallPairs; the expression path dispatches these in
-                    // vm_call_func_ops. Placed after user-sub resolution so a
-                    // user-defined from-json -- or a real JSON::Fast off the
-                    // module ladder -- still wins.
-                    return result;
                 } else {
                     return Err(RuntimeError::new(format!("Unknown call: {}", name)));
                 }

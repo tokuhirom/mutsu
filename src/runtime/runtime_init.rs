@@ -2650,6 +2650,32 @@ impl Interpreter {
                     pending_param_type_checks: Vec::new(),
                 },
             );
+            // Rakudo exposes the streaming encoding interfaces as roles.  The
+            // native dispatch table is still registered as a class-shaped
+            // entry above, but user implementations must be able to compose
+            // these role names (for example Encoding::Emacs::Registry's
+            // SingleByteDecoder/SingleByteEncoder).
+            for role_name in ["Encoding::Decoder", "Encoding::Encoder"] {
+                roles.insert(
+                    role_name.to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                        is_hidden: false,
+                        is_rw: false,
+                        captured_env: None,
+                        wildcard_handles: Vec::new(),
+                        role_id: 0,
+                        attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
+                        deferred_body: Vec::new(),
+                        decl_file: None,
+                        deferred_custom_traits: Vec::new(),
+                        pending_param_type_checks: Vec::new(),
+                    },
+                );
+            }
             roles.insert(
                 "Iterator".to_string(),
                 RoleDef {
@@ -3300,8 +3326,6 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: crate::precomp::enabled_by_default(),
             monkey_typing: false,
-            json_import_defaults: crate::runtime::json::JsonImportDefaults::default(),
-            json_native_provider: false,
 
             // Merged VM execution registers (CP-3 collapse) — same defaults the
             // former `VM::new` installed.

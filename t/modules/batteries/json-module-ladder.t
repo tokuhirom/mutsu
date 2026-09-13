@@ -12,15 +12,16 @@ use Test;
 # (BATTERIES.md §6), and `from-json`'s exception shape was guessed from the
 # *set* of module names the program had `use`d.
 #
-# Now:
-#   - `JSON::Tiny` is a vendored battery and always resolves to real Raku code;
-#   - `JSON::Fast` is not vendored, so the native provider answers it -- but
-#     only as a last resort, when nothing on the ladder supplied it.
+# Now both are vendored batteries that always resolve to real Raku code
+# (`JSON::Tiny` since #8183, `JSON::Fast` since #8226), and there is no native
+# JSON provider left for either name to reach. The only JSON mutsu still
+# answers from Rust is `Rakudo::Internals::JSON`, a core class that no `use`
+# gates -- see the last case below.
 #
 # Each case runs in its own process: `use` is global, and the point of the test
 # is what a *fresh* program sees.
 
-plan 7;
+plan 8;
 
 my $mutsu = $*EXECUTABLE.absolute;
 my $fixture = 't/fixtures/json-ladder/lib';
@@ -58,12 +59,12 @@ sub run-snippet($code, *%opts) {
         '-I JSON::Tiny shadows the bundled battery (BATTERIES.md 6)';
 }
 
-# --- JSON::Fast: the native provider answers only when nothing else does ---
+# --- JSON::Fast resolves to the bundled battery, and -I outranks it ---
 
 {
     my ($out, $) = run-snippet('use JSON::Fast; print from-json(q<{"a":1}>).raku');
     is $out, '{:a(1)}',
-        'use JSON::Fast falls back to the native provider when unresolvable';
+        'use JSON::Fast runs the vendored module';
 }
 
 {
@@ -72,7 +73,7 @@ sub run-snippet($code, *%opts) {
     my $out = $proc.out.slurp(:close).trim;
     $proc.err.slurp(:close);
     is $out, 'ladder-from-json:{"a":1}',
-        '-I JSON::Fast wins over the native provider: it is a fallback, not an override';
+        '-I JSON::Fast shadows the bundled battery (BATTERIES.md 6)';
 }
 
 # --- the exception shape no longer depends on which names were `use`d ---
@@ -84,4 +85,16 @@ sub run-snippet($code, *%opts) {
         'use JSON::Fast; use JSON::Tiny; try { from-json("") }; print $!.^name');
     is $out, 'JSON::Tiny::X::JSON::Tiny::Invalid',
         'JSON::Tiny keeps its own exception even with JSON::Fast also loaded';
+}
+
+# --- the one JSON mutsu still answers from Rust is the CORE class ---
+
+# `Rakudo::Internals::JSON` resolves with no `use` in rakudo too, so answering
+# it natively is core surface rather than a BATTERIES.md rung-3 provider. zef
+# reads every META6.json through it (vendor/zef/lib/Zef.rakumod).
+{
+    my ($out, $) = run-snippet(
+        'print Rakudo::Internals::JSON.from-json(q<{"a":1}>).raku');
+    is $out, '{:a(1)}',
+        'Rakudo::Internals::JSON needs no `use` and survived the provider removal';
 }

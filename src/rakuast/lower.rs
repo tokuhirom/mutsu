@@ -1676,6 +1676,10 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             })
         }
         RakuAstClass::RegexCharClassDigit => Ok(RegexNode::CharClassDigit),
+        RakuAstClass::RegexAnchorBeginningOfString => Ok(RegexNode::AnchorBeginningOfString),
+        RakuAstClass::RegexAnchorBeginningOfLine => Ok(RegexNode::AnchorBeginningOfLine),
+        RakuAstClass::RegexAnchorEndOfString => Ok(RegexNode::AnchorEndOfString),
+        RakuAstClass::RegexAnchorEndOfLine => Ok(RegexNode::AnchorEndOfLine),
         _ => Err(unsupported(node)),
     }
 }
