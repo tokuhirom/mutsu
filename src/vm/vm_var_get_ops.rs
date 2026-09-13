@@ -318,11 +318,17 @@ impl Interpreter {
         } else if crate::runtime::utils::has_double_colon(name)
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
-            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                let pkg = def.package.resolve();
+            let name_sym = crate::symbol::Symbol::intern(name);
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &[]) {
                 // Slice 6.3 step 2: call_compiled_function_named signals env_dirty
                 // precisely via its return merge; no blanket mark needed.
-                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
+                self.call_compiled_function_named(
+                    cf,
+                    Vec::new(),
+                    compiled_fns,
+                    def.package,
+                    name_sym,
+                )?
             } else {
                 self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?
             }
@@ -386,10 +392,11 @@ impl Interpreter {
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || self.has_multi_function(name)
         {
-            if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
-                let pkg = self.current_package().to_string();
+            let name_sym = crate::symbol::Symbol::intern(name);
+            if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &[]) {
+                let pkg_sym = self.current_package_sym();
                 // Slice 6.3 step 2: precise env_dirty from the named-call merge.
-                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, &pkg, name)?
+                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)?
             } else if let Some(native_result) =
                 self.try_native_function(crate::symbol::Symbol::intern(name), &[])
             {

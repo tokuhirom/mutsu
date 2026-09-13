@@ -1381,14 +1381,12 @@ impl Interpreter {
             // its own to offer.
             let empty_fns = crate::opcode::CompiledFns::default();
             let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
-            let next_pkg = next_def.package.resolve();
-            let next_name = next_def.name.resolve();
             let result = self.call_compiled_function_named(
                 &cf,
                 call_args.clone(),
                 fns,
-                &next_pkg,
-                &next_name,
+                next_def.package,
+                next_def.name,
             );
             if have_rw_source {
                 self.set_pending_call_arg_sources(None);

@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn exec_exec_call_op(
@@ -10,6 +9,11 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // The callsite name, both as text (for the `&str` probes below) and as
+        // its pre-interned `const_syms` entry — which is what the dispatch
+        // entries want, rather than re-interning the same constant per call
+        // (#7766 unit 2).
+        let name_sym = code.const_sym(name_idx);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -85,11 +89,11 @@ impl Interpreter {
             self.apply_pending_rw_writeback(code);
             return Ok(());
         }
-        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, name_sym, &args) {
             self.set_pending_call_arg_sources(arg_sources.clone());
-            let pkg = self.current_package().to_string();
+            let pkg_sym = self.current_package_sym();
             let call_result =
-                self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
+                self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
             let value = call_result?;
             // Slice F: write any `is rw` param writeback through to the caller's
@@ -101,7 +105,7 @@ impl Interpreter {
             // vm_call_func_ops path). A blanket `= true` here would defeat that
             // precision. See docs/vm-dual-store.md "CP-2 status & corrected plan".
             self.sink_discarded_call_value(&value)?;
-        } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+        } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
             let value = native_result?;
             self.sink_discarded_call_value(&value)?;
         } else {
@@ -197,6 +201,8 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
         keep_value: bool,
     ) -> Result<(), RuntimeError> {
+        // See `exec_exec_call_op`: the pre-interned form of the same constant.
+        let name_sym = code.const_sym(name_idx);
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -232,12 +238,16 @@ impl Interpreter {
         // routine the probe resolved on the way, so the carrier arm below does
         // not resolve the same call a second time (see `exec_call_sanitized`).
         let mut resolved_memo: Option<Arc<crate::ast::FunctionDef>> = None;
-        if let Some(cf) =
-            self.find_compiled_function_memo(compiled_fns, &name, &args, &mut resolved_memo)
-        {
+        if let Some(cf) = self.find_compiled_function_memo(
+            compiled_fns,
+            &name,
+            name_sym,
+            &args,
+            &mut resolved_memo,
+        ) {
             crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "compiled");
-            let pkg = self.current_package().to_string();
-            let v = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            let pkg_sym = self.current_package_sym();
+            let v = self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym)?;
             // Slice F: drain any `is rw` param writeback into the caller's slots.
             self.apply_pending_rw_writeback(code);
             // call_compiled_function_named signals env_dirty precisely; no blanket.
@@ -249,7 +259,7 @@ impl Interpreter {
             return Ok(());
         }
         // Try native function (env-pure: no env_dirty mark).
-        if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+        if let Some(native_result) = self.try_native_function(name_sym, &args) {
             crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "native");
             let v = native_result?;
             if keep_value {

@@ -147,12 +147,13 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
-            let pkg = self.current_package().to_string();
+        let name_sym = crate::symbol::Symbol::intern(name);
+        if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &args) {
+            let pkg_sym = self.current_package_sym();
             // Prefer the routine's own nested-sub table over the caller's
             // (ADR-0019 C6e-3c) — see `compile_and_call_function_def`.
             let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
-            return self.call_compiled_function_named(cf, args, fns, &pkg, name);
+            return self.call_compiled_function_named(cf, args, fns, pkg_sym, name_sym);
         }
         if let Some(native_result) =
             self.try_native_function(crate::symbol::Symbol::intern(name), &args)
@@ -168,8 +169,14 @@ impl Interpreter {
             // module sub so its `state` cell stays shared across threads (the
             // per-call OTF recompile below gives each thread a distinct cell).
             if let Some(shared) = self.imported_state_body_for_def(&def) {
-                let pkg = self.current_package().to_string();
-                return self.call_shared_state_body(&shared, args, compiled_fns, &pkg, name);
+                let pkg_sym = self.current_package_sym();
+                return self.call_shared_state_body(
+                    &shared,
+                    args,
+                    compiled_fns,
+                    pkg_sym,
+                    crate::symbol::Symbol::intern(name),
+                );
             }
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
@@ -363,8 +370,9 @@ impl Interpreter {
             self,
             check_deprecation_for_def_with_line(def, callsite_line)
         );
+        // `def.name` / `def.package` are already interned; only the probes
+        // below that still take `&str` need the text form (#7766).
         let name = def.name.resolve();
-        let pkg = def.package.resolve();
 
         let cf = match &def.compiled {
             Some(compiled) => Arc::clone(compiled),
@@ -460,10 +468,9 @@ impl Interpreter {
             && self.wrap_sub_id_for_name(&name).is_none()
             && !self.light_call_blocked_by_mainline_capture(&name);
         let result = if light_eligible {
-            let name_sym = Symbol::intern(&name);
-            self.call_compiled_function_positional_light(&cf, &args, fns, &name, name_sym)
+            self.call_compiled_function_positional_light(&cf, &args, fns, &name, def.name)
         } else {
-            self.call_compiled_function_named(&cf, args, fns, &pkg, &name)
+            self.call_compiled_function_named(&cf, args, fns, def.package, def.name)
         };
 
         self.pop_samewith_context();
@@ -497,9 +504,6 @@ impl Interpreter {
         def: &crate::ast::FunctionDef,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // `as_str`, not `resolve`: the latter allocates a `String` per call.
-        let pkg = def.package.as_str();
-        let name = def.name.as_str();
         let cf = match &def.compiled {
             Some(compiled) => Arc::clone(compiled),
             None => self.otf_compile_function_def(def),
@@ -508,7 +512,9 @@ impl Interpreter {
         // empty one: this caller owns no `CompiledFns` of its own to offer.
         let empty_fns = CompiledFns::default();
         let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
-        self.call_compiled_function_named(&cf, args, fns, pkg, name)
+        // `def.package` / `def.name` are already interned: neither the `&str`
+        // view nor a re-intern inside the callee is needed (#7766).
+        self.call_compiled_function_named(&cf, args, fns, def.package, def.name)
     }
 
     /// Check if a function name is handled by the interpreter's Rust code

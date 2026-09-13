@@ -8,8 +8,15 @@ use Test;
 # resolve its name through `Symbol::intern` at every helper it passed; they now
 # share one symbol, so a mix-up would show up as a *wrong name* being bound,
 # marked or cleared rather than as a slowdown.
+#
+# The last section extends that to #7766 unit 2, which threads the *callsite*
+# name and package as symbols into `call_compiled_function_named` and the
+# resolution probe below it. Those two names are what the routine frame,
+# `&?ROUTINE`, the callable-id key, the `LEAVE` routine key and the
+# declaring-package switch are all built from, so the same class of mistake --
+# the wrong name reaching one of them -- is what these assertions catch.
 
-plan 55;
+plan 78;
 
 # --- the fixed per-call keys -------------------------------------------------
 
@@ -214,3 +221,77 @@ is $chained, "abab", 'string compound assignment chains on one name';
 my $repeated = 0;
 $repeated++ for ^5;
 is $repeated, 5, 'repeated increments accumulate on one name';
+
+# --- #7766: the callsite name and package carried as symbols -----------------
+
+# `&?ROUTINE` is built from the two symbols the named entry is handed.
+sub routine-identity($a) { &?ROUTINE.name ~ "/" ~ &?ROUTINE.package.^name }
+is routine-identity(1), "routine-identity/GLOBAL",
+    'a by-name call names its own routine and package';
+is routine-identity(2), "routine-identity/GLOBAL",
+    'and answers the same on a second call, not a neighbour name';
+
+sub other-identity($a) { &?ROUTINE.name }
+is other-identity(1), "other-identity",
+    'a second routine of the same shape keeps its own name';
+is routine-identity(3), "routine-identity/GLOBAL",
+    'the first routine is unaffected by the second having been called';
+
+# The declaring package, not the callsite's, is what the body resolves against.
+package Deep {
+    our $inside = "deep-var";
+    our sub reach() { $inside }
+    our sub reach-nested() { reach() ~ "+nested" }
+}
+is Deep::reach(), "deep-var",
+    'a cross-package call resolves a package variable of its DECLARING package';
+is Deep::reach(), "deep-var", 'and does so again on a repeat call';
+is Deep::reach-nested(), "deep-var+nested",
+    'an unqualified call inside that body resolves in the same package';
+is $Deep::inside, "deep-var", 'the package variable is untouched from outside';
+
+# An anonymous routine has an empty name and must take the `<anon>` sentinel
+# rather than binding the empty string as a routine name.
+my $anon = sub ($a) { $a * 2 };
+is $anon(21), 42, 'an anonymous sub called through a scalar still runs';
+my &code-var = &routine-identity;
+is code-var(4), "routine-identity/GLOBAL",
+    'a call through a `&`-sigil code variable names the routine it holds';
+
+# `where` makes the call ineligible for the light entries, so it takes the
+# named entry this change rewired.
+sub wherey($a where * > 0) { &?ROUTINE.name ~ ":" ~ $a }
+is wherey(1), "wherey:1", 'a where-constrained call binds and names correctly';
+is wherey(2), "wherey:2", 'and again with a different argument';
+
+# A multi candidate reports the proto's name, and each candidate keeps its own
+# body -- the resolution probe is keyed on the callsite name symbol.
+proto pd($) {*}
+multi pd(Int $n) { "int:" ~ &?ROUTINE.name }
+multi pd(Str $s) { "str:" ~ &?ROUTINE.name }
+is pd(1), "int:pd", 'an Int multi candidate runs and reports the proto name';
+is pd("x"), "str:pd", 'a Str multi candidate runs and reports the proto name';
+is pd(2), "int:pd", 'the Int candidate is still reachable after the Str one';
+
+# `nextsame` re-enters the dispatch chain with the NEXT candidate's own
+# package/name pair.
+multi chain(Int $n) { "int-" ~ nextsame }
+multi chain(Any $n) { "any" }
+is chain(1), "any", 'nextsame defers to the next candidate and returns ITS value';
+is chain("s"), "any", 'a non-Int argument reaches the Any candidate directly';
+
+# The `LEAVE` phaser's routine key is `"{package}::{name}"`, built from the
+# same two symbols.
+my $left = "";
+sub leaver($a) { LEAVE { $left ~= "L" }; return $a * 3 }
+is leaver(2), 6, 'a routine with a LEAVE phaser returns its own value';
+is $left, "L", 'and the phaser fired exactly once';
+is leaver(3), 9, 'a second call returns its own value';
+is $left, "LL", 'and fires the phaser again';
+
+# `$!` is reset per routine; the reset is gated on the name being non-empty.
+sub thrower() { die "boom" }
+sub catcher() { try thrower(); return $!.defined ?? "caught" !! "clean" }
+is catcher(), "caught", 'a by-name call sees its own $! after a failed call';
+sub quiet() { return $!.defined ?? "stale" !! "fresh" }
+is quiet(), "fresh", 'a later routine starts with a fresh $!';

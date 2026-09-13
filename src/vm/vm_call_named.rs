@@ -6,8 +6,8 @@ impl Interpreter {
         cf: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
-        fn_package: &str,
-        fn_name: &str,
+        fn_package: Symbol,
+        fn_name: Symbol,
     ) -> Result<Value, RuntimeError> {
         let cache_key: Vec<Value> = if cf.is_cached {
             args.iter()

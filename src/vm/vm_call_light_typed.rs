@@ -57,14 +57,14 @@ impl Interpreter {
         // param, which is exactly when the plan is precomputed. A hand-built
         // chunk without one takes the full named dispatch instead.
         let Some(plan) = cf.named_call_plan.as_deref() else {
-            let pkg = self.current_package().to_string();
+            let pkg_sym = self.current_package_sym();
             // call_compiled_function_named tracks the unit itself.
             return self.call_compiled_function_named(
                 cf,
                 args.to_vec(),
                 compiled_fns,
-                &pkg,
-                func_name,
+                pkg_sym,
+                func_name_sym,
             );
         };
         let saved_unit = self.enter_compilation_unit(cf);
