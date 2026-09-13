@@ -378,7 +378,10 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let r = match name {
             "val" => Ok(builtin_val(args)),
-            "list" => self.builtin_list(args),
+            // `__mutsu_word_list` is the word-quoting literal's reserved
+            // spelling (see `make_list_expr`): identical behaviour, but a name
+            // a user's own `sub list` cannot shadow.
+            "list" | "__mutsu_word_list" => self.builtin_list(args),
             "slip" | "Slip" => self.builtin_slip(args),
             "hash" => self.builtin_hash(args),
             "__object_hash" => self.builtin_object_hash(args),
