@@ -875,12 +875,13 @@ impl Parser {
         }
     }
 
-    /// Parse static lookaround forms whose source and execution shapes are
-    /// currently shared: the explicit `<?before body>`, `<!before body>`,
-    /// `<?after body>`, and `<!after body>` forms, plus the unprefixed and
-    /// dot-prefixed named forms. The latter retain their capture policy in a
-    /// separate tree node because their RakuAST shape omits the Lookahead
-    /// wrapper.
+    /// Parse lookaround forms whose source and execution shapes are currently
+    /// shared: the explicit `<?before body>`, `<!before body>`, `<?after
+    /// body>`, and `<!after body>` forms, plus the unprefixed and dot-prefixed
+    /// named forms. The latter retain their capture policy in a separate tree
+    /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
+    /// characters are accepted when the nested tree already has a source and
+    /// execution representation.
     fn parse_lookaround(&mut self) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1; // '<'
@@ -933,11 +934,15 @@ impl Parser {
             }
             match ch {
                 '\\' => {
-                    // The current source tree does not retain escape spelling
-                    // inside a lookaround argument. Let the legacy parser own
-                    // those forms rather than emitting a misleading AST.
-                    self.pos = start;
-                    return None;
+                    // Skip the escaped character while looking for the
+                    // closing angle bracket. The nested parser will decide
+                    // whether the escape has a shared-tree representation;
+                    // this also prevents an escaped `>` from ending the
+                    // assertion prematurely.
+                    self.pos += 1;
+                    if self.pos < self.chars.len() {
+                        self.pos += 1;
+                    }
                 }
                 '"' | '\'' => {
                     quote = Some(ch);

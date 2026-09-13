@@ -3,10 +3,10 @@
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
-  bare-subrule, anchor, explicit-static-lookaround, and
-  named-static-lookaround, and nested-static-lookaround slices implemented
-  2026-09-12/13; other dynamic contents and the complete execution-tree
-  migration remain)
+  bare-subrule, anchor, explicit-static-lookaround,
+  named-static-lookaround, nested-static-lookaround, and escaped-lookaround
+  slices implemented 2026-09-12/13; other dynamic contents and the complete
+  execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -655,8 +655,27 @@ back to a normalized execution string. The existing `Group` and `Lookaround`
 nodes therefore compose recursively in both RakuAST conversion and execution
 lowering.
 
-This slice remains deliberately static: escapes, interpolations, code-bearing
-assertions, qualified or argumented subrules, and runtime-valued bodies still
-fall back to their established boundaries. The focused regressions pin the
-dual-oracle nested `Lookahead`/`RegexArg`/`Group` shape, parsed and constructed
-EVAL, reuse, and rejection of a mismatching suffix.
+This slice remains deliberately static: unsupported escapes, interpolations,
+code-bearing assertions, qualified or argumented subrules, and runtime-valued
+bodies still fall back to their established boundaries. The focused
+regressions pin the dual-oracle nested `Lookahead`/`RegexArg`/`Group` shape,
+parsed and constructed EVAL, reuse, and rejection of a mismatching suffix.
+
+## 21. Escaped lookaround slice (2026-09-13)
+
+Lookaround bodies now accept the already-supported escaped digit class (`\d`).
+The parser scanner skips escaped characters while balancing the assertion's
+closing `>`, then delegates the nested body to the same `RegexTree` parser used
+outside lookarounds. This keeps the RakuAST shape measured by Rakudo: `\d+`
+remains a quantified `CharClass::Digit` under
+`Assertion::Named::RegexArg`.
+
+The existing execution lowerer handles the digit class without a new matcher
+path: it becomes the current `CharClass::Digit` atom. Escaped classes not yet
+represented by the shared tree (such as `\w` and `\s`), interpolations, code
+assertions, captures, subrules, and qualified or argumented forms remain
+explicit boundaries.
+
+The focused regressions are in `t/rakuast/rakuast-regex.t` and
+`t/regex/regex-tree-lookaround.t`. They pin the dual-oracle AST shape,
+zero-width matching, rejection and reuse for `\d+`.
