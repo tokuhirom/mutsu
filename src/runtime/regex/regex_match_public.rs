@@ -1,6 +1,7 @@
 use super::super::*;
 use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
 use super::regex_helpers::strip_marks_pattern;
+use super::regex_prefilter::regex_scan_positions;
 
 impl Interpreter {
     /// Write the current (never-restored) values of a `:my`/`:constant`
@@ -262,7 +263,7 @@ impl Interpreter {
                         caps
                     });
             }
-            for start in 0..=stripped_chars.len() {
+            for start in regex_scan_positions(&stripped_parsed, stripped_chars, 0) {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     stripped_chars,
@@ -352,7 +353,7 @@ impl Interpreter {
                     caps
                 });
         }
-        for start in 0..=chars.len() {
+        for start in regex_scan_positions(parsed, chars, 0) {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {
