@@ -131,6 +131,17 @@ impl Interpreter {
             && !e.is_react_done()
         {
             self.supply_stream_consumers.truncate(stream_idx);
+            // This nested stage's body failed: hand it to the subscribing
+            // `whenever`'s QUIT phasers before dying the react (issue #8185),
+            // the same way the top-level on-demand branch in `vm_react_loop.rs`
+            // does.
+            let quit_cbs = items
+                .get(3)
+                .and_then(crate::runtime::Interpreter::value_array_items)
+                .unwrap_or_default();
+            if self.deliver_supply_body_quit(&quit_cbs, &e)? {
+                return Ok(Some(true));
+            }
             return Err(crate::runtime::Interpreter::wrap_react_died(e));
         }
         if streamed_done {

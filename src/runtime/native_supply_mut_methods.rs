@@ -341,6 +341,9 @@ impl Interpreter {
                             is_lines,
                             line_chomp,
                             head_limit,
+                            // Consumer-side tap callback: raku does not route
+                            // its failure to its own quit handler.
+                            None,
                         );
                     });
                     let mut tap_handle_attrs = HashMap::new();
@@ -793,6 +796,11 @@ impl Interpreter {
                                         is_lines,
                                         line_chomp,
                                         None,
+                                        // `body_cb` is the enclosing `supply { }`
+                                        // block's own `whenever` body: producer
+                                        // code, so a failure in it quits this
+                                        // supply through its emitter (#8185).
+                                        Some(emitter_supplier_id),
                                     );
                                 });
                             } else if let ValueView::Instance {
@@ -1533,6 +1541,8 @@ impl Interpreter {
                             None,
                             false,
                             true,
+                            None,
+                            // Consumer-side tap callback (scheduler drain shim).
                             None,
                         );
                     });

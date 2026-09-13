@@ -233,7 +233,6 @@ levers — [#7571](https://github.com/tokuhirom/mutsu/issues/7571), actively wor
       deferred. **No roast pressure remains** (all 99 S17 files are whitelisted); the motive is
       thread consumption under heavy concurrency, so start this only on a measured trigger and an
       updated ADR.
-- [ ] Propagate Supply detached-worker panics to QUIT (currently swallowed) — [#8185](https://github.com/tokuhirom/mutsu/issues/8185).
 - [ ] Split out the roast fudge logic. File size (376 over 500 lines, 138 over 1000, still growing —
       `ANALYSIS.md` §6) is **not** a standalone campaign: split when a campaign opens the file and the
       ownership boundary is visible.

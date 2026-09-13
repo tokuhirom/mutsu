@@ -238,6 +238,66 @@ impl Interpreter {
         }
     }
 
+    /// Deliver a failure raised by *producer* code running on a detached
+    /// `run_supply_act_loop` worker to the enclosing supply's `quit =>`
+    /// handlers (issue #8185).
+    ///
+    /// `err` is a `die` from a `supply { }` block's `whenever` body, or a Rust
+    /// panic the act loop's `guard_worker_panic` boundary has already converted
+    /// into a catchable `X::AdHoc` ("Internal error: ..."). Either way raku
+    /// treats it as that supply quitting, so it belongs on the downstream tap's
+    /// quit handler rather than on the process-killing unhandled-exception
+    /// path the act loop otherwise takes.
+    ///
+    /// `supplier_id` is the enclosing supply block's emitter; the handlers are
+    /// reached through the serialize-group link for the same reason
+    /// `invoke_supply_done_callback_for_supplier` does it
+    /// (ADR-0031 Decision A) — a whenever-subscribed source's downstream
+    /// handler lives on that emitter, not on the source's own supplier.
+    ///
+    /// Returns `Ok(false)` when no handler is registered, leaving the caller to
+    /// report the failure loudly exactly as before, and `Err` when a handler
+    /// itself failed — that error takes the same loud path, so a broken quit
+    /// handler cannot make a supply failure disappear either. A control signal
+    /// from a handler (`done`/`last`, which a quit handler commonly ends with)
+    /// counts as delivered. On success the emitter is also marked quit so the
+    /// supply's other sinks and pending promises see the terminal state instead
+    /// of waiting on a producer that is gone.
+    pub(in crate::runtime) fn deliver_act_loop_producer_quit(
+        interp: &mut Interpreter,
+        supplier_id: u64,
+        err: &RuntimeError,
+    ) -> Result<bool, RuntimeError> {
+        let quit_cbs = take_supplier_quit_callbacks_via_group(supplier_id);
+        if quit_cbs.is_empty() {
+            return Ok(false);
+        }
+        let reason = err
+            .exception
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| Value::str(err.message.to_string()));
+        let mut handler_err = None;
+        for qcb in quit_cbs {
+            match interp.call_supply_quit_handler(qcb, reason.clone()) {
+                Ok(()) => {}
+                Err(e)
+                    if e.is_react_done()
+                        || e.is_last()
+                        || e.is_supply_body_done()
+                        || e.is_next() => {}
+                Err(e) => {
+                    handler_err.get_or_insert(e);
+                }
+            }
+        }
+        crate::runtime::native_methods::supplier_quit(supplier_id, reason);
+        match handler_err {
+            Some(e) => Err(e),
+            None => Ok(true),
+        }
+    }
+
     /// Marker registered on the emitter's done so that a supply terminating via
     /// `done` fires every whenever source's on-close callbacks plus the
     /// downstream done handler.
