@@ -157,10 +157,20 @@ impl Interpreter {
         let Ok(result) = result else {
             return Ok(None);
         };
-        match self.assign_lvalue_container(&result, value.clone()) {
-            Some(assigned) => assigned.map(Some),
-            None => Ok(None),
+        if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+            return assigned.map(Some);
         }
+        // An rw method whose tail names an `@`/`%` container hands back the
+        // aggregate itself, not a cell — there is no Scalar around an `@`/`%`
+        // variable to hand back. That is still an lvalue: the assignment stores
+        // into it, exactly as the sub form does. Without this the legacy
+        // setter/attribute chain below took over and quietly dropped the write
+        // (`Crane::In.in(%h, ()) = $value`, the root-path case of every
+        // `Crane.set`/`add`/`replace`).
+        if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
+            return Ok(Some(stored));
+        }
+        Ok(None)
     }
 
     /// `Class.m($arg) = $v` where `m` is a declared method that is **not**

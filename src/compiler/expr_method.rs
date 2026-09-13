@@ -575,6 +575,52 @@ impl Compiler {
         matches!(arg, Expr::AnonSub { is_block: true, .. })
     }
 
+    /// Compile `<delete_target>[<delete_index>]:delete` by BINDING the target to
+    /// a temp and deleting through it: `my $t := <delete_target>; $t[<index>]
+    /// :delete`.
+    ///
+    /// The bind shares the target's `ContainerRef` cell, so the removal reaches
+    /// the real container; evaluating the target onto the stack and running
+    /// `DeleteIndexExpr` over the popped value instead deletes from a temporary
+    /// and silently loses it. The rewritten inner delete names a plain variable,
+    /// so it takes the `DeleteIndexNamed` path and cannot recurse back here.
+    fn compile_delete_through_bound_temp(
+        &mut self,
+        delete_target: &Expr,
+        delete_index: &Expr,
+        is_positional: bool,
+    ) {
+        let tmp = format!("__mutsu_nested_del_{}", self.code.constants.len());
+        let bind_decl = Stmt::VarDecl {
+            name: tmp.clone(),
+            expr: delete_target.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__scalar_bind".to_string(), None)],
+            where_constraint: None,
+        };
+        let delete_through = Expr::MethodCall {
+            target: Box::new(Expr::Index {
+                target: Box::new(Expr::Var(tmp)),
+                index: Box::new(delete_index.clone()),
+                is_positional,
+            }),
+            name: Symbol::intern("DELETE-KEY"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        };
+        self.compile_expr(&Expr::desugar_block(vec![
+            Stmt::MarkBind,
+            bind_decl,
+            Stmt::Expr(delete_through),
+        ]));
+    }
+
     /// Compile method call on non-variable target (no writeback needed).
     pub(super) fn compile_expr_method_generic(
         &mut self,
@@ -602,35 +648,11 @@ impl Compiler {
             // (`my $t := %h<a>`) — which shares its `ContainerRef` cell — and delete
             // through it, so the deletion reaches the real inner container.
             if matches!(delete_target.as_ref(), Expr::Index { .. }) {
-                let tmp = format!("__mutsu_nested_del_{}", self.code.constants.len());
-                let bind_decl = Stmt::VarDecl {
-                    name: tmp.clone(),
-                    expr: (**delete_target).clone(),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: vec![("__scalar_bind".to_string(), None)],
-                    where_constraint: None,
-                };
-                let delete_through = Expr::MethodCall {
-                    target: Box::new(Expr::Index {
-                        target: Box::new(Expr::Var(tmp)),
-                        index: delete_index.clone(),
-                        is_positional: *delete_positional,
-                    }),
-                    name: Symbol::intern("DELETE-KEY"),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                };
-                self.compile_expr(&Expr::desugar_block(vec![
-                    Stmt::MarkBind,
-                    bind_decl,
-                    Stmt::Expr(delete_through),
-                ]));
+                self.compile_delete_through_bound_temp(
+                    delete_target,
+                    delete_index,
+                    *delete_positional,
+                );
                 return;
             }
             if let Some(var_name) = Self::postfix_index_name(delete_target) {
@@ -664,9 +686,22 @@ impl Compiler {
                     ],
                 });
             } else {
-                self.compile_expr(delete_target);
-                self.compile_expr(delete_index);
-                self.code.emit(OpCode::DeleteIndexExpr);
+                // Last resort: the delete target is an arbitrary expression, most
+                // often an `is rw`/`return-rw` CALL whose result is the very
+                // container to delete from (`Crane::At.at($root, @path){$step}
+                // :delete`, and `at-rw(%h)<do>:delete` reduced). Pushing that
+                // result on the stack and running `DeleteIndexExpr` over it
+                // deletes from the popped temporary, so the deletion is lost —
+                // even though binding the identical expression to a variable and
+                // deleting through THAT reaches the real container. So take the
+                // same temp-bind route the nested-subscript case above takes,
+                // rather than the stack form. `DeleteIndexExpr` survives for the
+                // `:exists:delete` compiler path, which has its own target.
+                self.compile_delete_through_bound_temp(
+                    delete_target,
+                    delete_index,
+                    *delete_positional,
+                );
             }
             return;
         }

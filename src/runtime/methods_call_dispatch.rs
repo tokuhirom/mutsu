@@ -1689,6 +1689,24 @@ impl Interpreter {
             // `Callable`) — a `Num`/`Str`/`Array` there matches no candidate and
             // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather
             // than being coerced. Mirrors the lvalue path in methods_mut_dispatch.
+            // A from-the-end start/count (`*-1`) arrives as a `WhateverCode`;
+            // resolve it against the invocant's length before anything reads
+            // those positions as integers. The lvalue path does the same (see
+            // `resolve_splice_callable_args`).
+            let args = if method == "splice"
+                && args
+                    .iter()
+                    .take(2)
+                    .any(|v| matches!(v.view(), ValueView::Sub(..) | ValueView::WeakSub(..)))
+            {
+                let arr_len = match target.view() {
+                    ValueView::Array(items, ..) => items.len(),
+                    _ => 0,
+                };
+                self.resolve_splice_callable_args(arr_len, &args)
+            } else {
+                args
+            };
             if method == "splice" {
                 fn is_valid_splice_index(v: &Value) -> bool {
                     match v.view() {

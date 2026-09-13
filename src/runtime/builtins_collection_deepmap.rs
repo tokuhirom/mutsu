@@ -563,7 +563,27 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::hash_with_data(Value::hash_arc(result)))
+                let hash = Value::hash_with_data(Value::hash_arc(result));
+                // A descended-into Hash is itemized in its parent exactly like a
+                // descended-into sublist (the `Array`/`Seq` arms above already
+                // honour `itemize_result`; this arm silently dropped it).
+                // Rakudo: `%(:x({:a(1)})).deepmap({$_})` is `{:x(${:a(1)})}`, and
+                // `(1, {:a(2)}).deepmap({$_})` is `(1, ${:a(2)})`. Without the
+                // itemization the mapped copy's nested hashes are bare values, so
+                // nothing can be BOUND to one — which is how Crane's
+                // `Crane::At.at($root, @path){$step}:delete` (on a
+                // `container.deepmap({ .clone })` copy) deleted from a temporary
+                // instead of from `$root`.
+                //
+                // `.item()` — NOT `Value::scalar(...)`: a hash's itemization is a
+                // per-holder flag on the same `HashData` `Gc`, so `.item()` keeps
+                // the store shared, while a `Scalar` wrapper would hand back a
+                // copy nothing can mutate in place.
+                if itemize_result {
+                    Ok(hash.item())
+                } else {
+                    Ok(hash)
+                }
             }
             // Leaf value: apply the block (through a transient container so
             // mutating callables write through to a bare top-level leaf too).

@@ -371,6 +371,10 @@ impl Interpreter {
             return;
         }
         let meta_key = Self::type_meta_key_for_sym(name_sym);
+        // A SIGILLESS parameter passes `None` here — see
+        // [`crate::ast::ParamDef::assignment_type_constraint`] — and so lands in
+        // the `None` arm below, which is also what keeps the shadowing behaviour
+        // that arm documents.
         match constraint {
             Some(c) => {
                 let info = Self::parse_container_constraint(name, &c);

@@ -832,21 +832,15 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
         // :name or :name(expr) or :name[expr]
+        //
+        // A statement can never START with a `:`, so a leading colonpair is
+        // unambiguously a hash composer no matter what the pair's KEY spells.
+        // A list of statement keywords used to be excluded here, which made
+        // `{ :when({...}) }`, `{ :if(1) }`, `{ :my(1) }` and the like parse as
+        // blocks — rakudo answers `Hash` for every one of them, and Crane's
+        // `t/remove.rakutest` builds a literal `:me({:when({:im(7)})})`, so the
+        // `when` entry alone turned a nested hash into a `Block`.
         if let Ok((_r, name)) = crate::parser::stmt::ident_pub(r)
-            && !matches!(
-                name.as_str(),
-                "my" | "our"
-                    | "has"
-                    | "if"
-                    | "unless"
-                    | "for"
-                    | "while"
-                    | "until"
-                    | "loop"
-                    | "given"
-                    | "when"
-                    | "return"
-            )
             && !name.starts_with(|c: char| c.is_ascii_digit())
         {
             return true;

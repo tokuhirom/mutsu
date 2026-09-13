@@ -285,9 +285,18 @@ pub(super) fn dispatch(
                             *item = clone_rows(item);
                         }
                     }
+                    // Itemization is a property of the CONTAINER, not of the
+                    // object, and `.clone` copies the object. So the clone comes
+                    // back de-itemized, exactly as rakudo has it:
+                    // `my $v = <a b c>; $v.raku` is `$("a", "b", "c")` but
+                    // `$v.clone.raku` is `("a", "b", "c")` — which is why
+                    // `my @a; @a = $v.clone` flattens where `@a = $v` does not.
+                    // (Crane's `Crane::In.in(container, @path) = $value.clone`
+                    // depends on exactly that: a List value must land in the
+                    // target array as elements, not as one nested list.)
                     Some(Some(Ok(Value::array_with_kind(
                         crate::gc::Gc::new(data),
-                        kind,
+                        kind.decontainerize(),
                     ))))
                 }
                 ValueView::Hash(map) => Some(Some(Ok(Value::hash_with_data(Value::hash_arc(
