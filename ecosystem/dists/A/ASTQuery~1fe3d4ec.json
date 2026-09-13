@@ -7,21 +7,204 @@
     "unresolved": []
   },
   "dist": "ASTQuery",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-ASTQuery.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-matcher.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST' [at ASTQuery-0.0.7/t/03-matcher.rakutest:2]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-coverage.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-coverage.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-matcher-more.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-coverage-extra.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-attr-rel.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-attr-ops.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-functions.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-functions-composed.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-doc-examples.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-coverage-edge.rakutest",
+      "raku": {
+        "first_failure": "Could not find symbol '&CurryThunk' in 'RakuAST'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "ASTQuery": "raku_also_fails",
     "ASTQuery::Actions": "raku_also_fails",
     "ASTQuery::Grammar": "ok",
     "ASTQuery::HighLighter": "ok",
-    "ASTQuery::Match": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or '{' [at lib/ASTQuery/Match.rakumod:26]",
+    "ASTQuery::Match": "ok",
     "ASTQuery::Matcher": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-12",
+    "date": "2026-09-13",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "36527ea",
+    "host": "linux-x86_64",
+    "mutsu_commit": "0d88a69ef",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -32,7 +215,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/ST/ASTQUERY/dfa25bec9258b5504f9d0073476f7fc334eefc86.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
