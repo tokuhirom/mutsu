@@ -115,6 +115,18 @@ pub(crate) fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBrac
         }
     }
     let (r, first) = crate::parser::expr::expression(input)?;
+    // A bracket subscript is a semilist, so its first expression can carry an
+    // inline statement modifier just like an array or parenthesized composer:
+    // `%h{S/b/c/ with $key}`. The ordinary expression parser deliberately
+    // leaves statement modifiers to statement/composer callers; without this
+    // handoff the modifier's keyword is reported as an unexpected second term.
+    let (r, first) = {
+        let (after_ws, _) = ws(r)?;
+        match crate::parser::primary::container::try_inline_modifier(after_ws, first.clone()) {
+            Some(result) => result?,
+            None => (r, first),
+        }
+    };
     let mut current_dim = vec![first];
     let mut dimensions: Vec<Expr> = Vec::new();
     let mut has_semicolons = false;
