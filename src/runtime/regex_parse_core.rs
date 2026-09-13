@@ -726,11 +726,14 @@ impl Interpreter {
     /// `$`/`@`/`%` variable values into the pattern first, and what follows is
     /// a function of the resulting string plus the grammar-token registry
     /// (pinned by `TOKEN_DEFS_GEN`). Keying on the source text instead would
-    /// have to refuse every pattern `regex_pattern_is_static` calls dynamic —
-    /// which on the profiled document is most of the repeated ones, since that
-    /// predicate conservatively counts `$<name>` *capture* forms
-    /// (`$<value> = [ … ]`) as interpolation. Measured: source-keyed -2.7%,
-    /// interpolated-keyed -9.0%.
+    /// have to refuse every pattern `regex_pattern_is_static` calls dynamic.
+    /// Measured: source-keyed -2.7%, interpolated-keyed -9.0% (before #8265,
+    /// when that predicate still conservatively -- and wrongly -- counted
+    /// every `$<name>` *capture* form (`$<value> = [ … ]`) as interpolation,
+    /// which was most of the repeated patterns on the profiled document; a
+    /// `$<name>` occurrence is resolved from its literal name text alone and
+    /// is not runtime interpolation at all, per `regex_pattern_is_static`'s
+    /// own doc comment).
     ///
     /// "Mostly", because a few parse steps read state the key does not carry —
     /// the `<$var>` / `<@var>` assertion forms take the variable's value at

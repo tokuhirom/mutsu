@@ -13,6 +13,15 @@ pub(super) type ParsedTokenCandidate = (std::sync::Arc<RegexPattern>, Symbol, Op
 /// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
 type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
 
+/// A raw (pre-parse) candidate: pattern source text, dispatch package, and
+/// `:sym<...>` key -- the same shape [`Interpreter::resolve_token_patterns_static_in_pkg`]
+/// returns, before any candidate's pattern has been checked for staticness or
+/// parsed.
+type RawTokenCandidate = (String, Symbol, Option<String>);
+
+/// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the raw candidates.
+type CachedRawCandidates = (u64, std::sync::Arc<Vec<RawTokenCandidate>>);
+
 thread_local! {
     /// Memoized argument-less subrule resolution: (pkg, name) → candidates
     /// with their patterns already parsed. Rebuilding this on every
@@ -48,13 +57,46 @@ thread_local! {
     static PARSED_TOKEN_ARG_CANDIDATES: std::cell::RefCell<
         rustc_hash::FxHashMap<(String, String, String), CachedCandidates>,
     > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+
+    /// Memoized RAW (pre-parse) subrule resolution: (pkg, name) → each
+    /// candidate's pattern SOURCE TEXT plus dispatch package and `:sym<...>`
+    /// key, before any candidate is checked for staticness or parsed (#8265).
+    ///
+    /// This is what actually dominates the cost `PARSED_TOKEN_CANDIDATES`
+    /// exists to avoid: `resolve_token_patterns_static_in_pkg` walks the whole
+    /// `token_defs` registry and re-derives every candidate's pattern text
+    /// (`instantiate_token_pattern`'s `format!`/`String::clone` per
+    /// `:sym<...>` substitution) from scratch on every call, regardless of
+    /// whether any candidate turns out to be non-static -- profiled at ~70%+
+    /// of a grammar-heavy parse for a proto with even ONE candidate that
+    /// declined `PARSED_TOKEN_CANDIDATES`, which fell back to re-running this
+    /// whole walk on every single reference.
+    ///
+    /// Caching the raw text here separately means a proto with a genuinely
+    /// dynamic sibling now pays only the comparatively cheap (~8% profiled)
+    /// per-call `parse_regex` cost for that one candidate, never the registry
+    /// walk again. Same `TOKEN_DEFS_GEN` invalidation as `PARSED_TOKEN_CANDIDATES`.
+    static RAW_TOKEN_CANDIDATES: std::cell::RefCell<
+        rustc_hash::FxHashMap<(Symbol, Symbol), CachedRawCandidates>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
 }
 
 impl Interpreter {
     /// Resolve an argument-less subrule to parsed candidates, memoized per
-    /// (pkg, name). Returns `None` when any candidate's pattern is non-static
-    /// (its parse depends on runtime variable interpolation) or fails to
-    /// parse — callers fall back to the uncached per-call path.
+    /// (pkg, name). Returns `None` only when some candidate's pattern fails
+    /// to parse outright — callers fall back to the uncached per-call path,
+    /// which skips just the failing candidate instead of the whole set.
+    ///
+    /// A non-static candidate (its parse depends on runtime variable
+    /// interpolation) no longer declines the memo for its siblings (#8265):
+    /// the raw candidate list — the expensive part, see
+    /// [`RAW_TOKEN_CANDIDATES`] — is always cached, and only the fully-PARSED
+    /// form is skipped from the persistent cache when at least one candidate
+    /// is non-static, so that one candidate's stale-value risk cannot reach
+    /// its statically-cacheable siblings. It is still re-parsed on every call
+    /// (correctly, since its parse depends on the current runtime value), but
+    /// that per-call cost is now the cheap step (`parse_regex`, ~8% profiled),
+    /// not the registry walk this function used to redo for the whole proto.
     ///
     /// `name_sym` is `name` interned. Callers that already hold it (every
     /// `<subrule>` reference does — the memoized [`NamedRegexLookupSpec`]
@@ -80,21 +122,53 @@ impl Interpreter {
         }) {
             return Some(hit);
         }
-        let raw = self.resolve_token_patterns_static_in_pkg(name, pkg);
+        let raw = self.resolve_raw_token_candidates_in_pkg(name, pkg, cache_key, tok_gen);
         let mut parsed_list = Vec::with_capacity(raw.len());
-        for (sub_pat, sub_pkg, sym_key) in raw {
-            if !crate::runtime::regex_parse::regex_pattern_is_static(&sub_pat) {
-                return None;
+        let mut all_static = true;
+        for (sub_pat, sub_pkg, sym_key) in raw.iter() {
+            if !crate::runtime::regex_parse::regex_pattern_is_static(sub_pat) {
+                all_static = false;
             }
-            let parsed = self.parse_candidate_in_pkg(&sub_pat, sub_pkg)?;
-            parsed_list.push((parsed, sub_pkg, sym_key));
+            let parsed = self.parse_candidate_in_pkg(sub_pat, *sub_pkg)?;
+            parsed_list.push((parsed, *sub_pkg, sym_key.clone()));
         }
         let arc = std::sync::Arc::new(parsed_list);
-        PARSED_TOKEN_CANDIDATES.with(|c| {
-            c.borrow_mut()
-                .insert(cache_key, (tok_gen, std::sync::Arc::clone(&arc)));
-        });
+        if all_static {
+            PARSED_TOKEN_CANDIDATES.with(|c| {
+                c.borrow_mut()
+                    .insert(cache_key, (tok_gen, std::sync::Arc::clone(&arc)));
+            });
+        }
         Some(arc)
+    }
+
+    /// The raw (pre-parse) candidate list behind
+    /// [`Self::resolve_parsed_token_candidates_in_pkg`], memoized in
+    /// [`RAW_TOKEN_CANDIDATES`] independently of whether any candidate is
+    /// static — see that cache's doc comment for why this split is the fix.
+    fn resolve_raw_token_candidates_in_pkg(
+        &self,
+        name: &str,
+        pkg: Symbol,
+        cache_key: (Symbol, Symbol),
+        tok_gen: u64,
+    ) -> std::sync::Arc<Vec<RawTokenCandidate>> {
+        if let Some(hit) = RAW_TOKEN_CANDIDATES.with(|c| {
+            c.borrow()
+                .get(&cache_key)
+                .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                .map(|(_, v)| std::sync::Arc::clone(v))
+        }) {
+            crate::vm::vm_stats::record_regex_raw_token_candidates(true);
+            return hit;
+        }
+        crate::vm::vm_stats::record_regex_raw_token_candidates(false);
+        let raw = std::sync::Arc::new(self.resolve_token_patterns_static_in_pkg(name, pkg));
+        RAW_TOKEN_CANDIDATES.with(|c| {
+            c.borrow_mut()
+                .insert(cache_key, (tok_gen, std::sync::Arc::clone(&raw)));
+        });
+        raw
     }
 
     /// Parse a candidate's pattern in its OWN package so nested unqualified
