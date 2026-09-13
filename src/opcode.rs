@@ -876,6 +876,10 @@ pub(crate) enum OpCode {
     GetHashVar(u32),
     GetBareWord(u32),
     GetPseudoStash(u32),
+    /// Build a lexical pseudo-stash from a compiler-baked scope description.
+    /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an
+    /// inner `MY::` cannot accidentally expose captured outer variables.
+    GetLexicalStash(u32),
     /// Replace the role *group* type object on the stack with the INDIVIDUAL
     /// parametric role that was just declared (the group's current candidate).
     /// Emitted right after a `role` declaration used in expression position, so
@@ -6510,6 +6514,7 @@ impl CompiledCode {
                 | OpCode::GetOuterVar { .. }
                 | OpCode::GetCallerOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
+                | OpCode::GetLexicalStash(_)
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,

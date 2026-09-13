@@ -303,8 +303,10 @@ impl Compiler {
                 }
             }
             Expr::PseudoStash(name) => {
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::GetPseudoStash(name_idx));
+                if !self.emit_lexical_stash(name) {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetPseudoStash(name_idx));
+                }
             }
             Expr::Unary { op, expr } => {
                 self.compile_expr_unary(op, expr);
