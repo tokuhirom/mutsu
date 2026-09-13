@@ -209,10 +209,10 @@ impl Interpreter {
                 Value::str(return_type.clone()),
             );
         }
-        if def.is_method {
+        if let Some(callable_type) = def.declarator.callable_type() {
             captured_env.insert(
                 "__mutsu_callable_type".to_string(),
-                Value::str_from("Method"),
+                Value::str_from(callable_type),
             );
         }
         let empty_sig = def.empty_sig;

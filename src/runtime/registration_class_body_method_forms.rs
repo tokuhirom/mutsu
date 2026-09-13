@@ -152,7 +152,7 @@ impl Interpreter {
             is_test_assertion: false,
             is_rw: false,
             is_raw: false,
-            is_method: false,
+            declarator: crate::ast::RoutineDeclarator::Sub,
             empty_sig: false,
             is_stub: false,
             return_type: None,

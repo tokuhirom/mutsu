@@ -16,7 +16,7 @@ impl Interpreter {
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
             let line = callsite_line.unwrap_or(self.cur_source_line);
-            let kind = if def.is_method { "Method" } else { "Sub" };
+            let kind = def.declarator.callable_type().unwrap_or("Sub");
             let pkg = def.package.resolve();
             super::deprecation::record_deprecation(
                 kind,

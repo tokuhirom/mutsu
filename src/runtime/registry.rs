@@ -1775,7 +1775,7 @@ mod tests {
             is_test_assertion: false,
             is_rw: false,
             is_raw: false,
-            is_method: true,
+            declarator: crate::ast::RoutineDeclarator::Method,
             empty_sig: false,
             is_stub: false,
             return_type: None,
