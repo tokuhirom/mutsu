@@ -1648,8 +1648,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Bareword followed by block { ... } and comma/colon — function call with block arg
     // e.g., map { $_ * 2 }, @arr  or  map { $_ * 2 }: @arr
+    //
+    // A brace is classified by what is between the braces, never by what
+    // follows the `}` — so `f { "a" => 1 }, @rest` passes a *Hash*, exactly as
+    // the same braces do with no `@rest` after them. Leave a hash composer to
+    // the ordinary term path (`block_or_hash_expr`) below instead of claiming
+    // it as a block here. `BEGIN { ... }` is the one shape that wants a block
+    // regardless: it is a phaser, not a call taking a first argument.
     if r.starts_with('{')
         && !is_keyword(&name)
+        && (name == "BEGIN" || !crate::parser::primary::misc::braces_are_hash_composer(r))
         && let Ok((r2, block_body)) = parse_block_body(r)
     {
         if name == "BEGIN" {
