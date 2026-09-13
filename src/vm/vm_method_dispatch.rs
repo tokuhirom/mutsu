@@ -1067,7 +1067,26 @@ impl Interpreter {
                             let qualified = format!("{}::{}", owner_class, param_name);
                             self.env().get(&qualified).cloned()
                         })
-                        .map(|val| (source_name.clone(), val))
+                        .map(|val| {
+                            // A SIGILLESS param aliasing an `@`/`%` variable
+                            // stores through that variable's own shape
+                            // (`\c := @a; c = LIST` is `@a.STORE(LIST)`), so the
+                            // writeback must not leave the caller holding the
+                            // bare List the param's slot held. Gated on the
+                            // parameter being sigilless, as in
+                            // `apply_rw_bindings_to_env`: a plain `@`/`%` param
+                            // already carries the caller's own container and
+                            // re-coercing it would strip its metadata.
+                            let val = if crate::runtime::utils::param_is_sigilless(param_name) {
+                                crate::runtime::utils::shape_value_for_sigiled_target(
+                                    source_name,
+                                    &val,
+                                )
+                            } else {
+                                val
+                            };
+                            (source_name.clone(), val)
+                        })
                 })
                 .collect();
 

@@ -341,13 +341,7 @@ impl Value {
                     ValueView::Instance { class_name, .. } if class_name == "Method"
                 ) || matches!(self.view(), ValueView::Package(name) if name == "Method")
             }
-            "Exception" => {
-                if let ValueView::Instance { class_name, .. } = self.view() {
-                    class_name.resolve().starts_with("X::") || class_name == "Exception"
-                } else {
-                    false
-                }
-            }
+            "Exception" => self.instance_is_exception_by_name(),
             "X::AdHoc" | "CX::Warn" | "CX::Return" | "X::OS" => {
                 if let ValueView::Instance { class_name, .. } = self.view() {
                     class_name == type_name

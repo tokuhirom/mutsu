@@ -69,13 +69,11 @@ impl Interpreter {
         }
         if let ValueView::Instance { class_name, .. } = value.view() {
             let cn = class_name.resolve();
-            let is_exception = cn == "Exception"
-                || cn.starts_with("X::")
-                || cn.starts_with("CX::")
-                || self
-                    .mro_readonly(&cn)
-                    .iter()
-                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
+            let is_exception = !value.is_match_instance()
+                && (value.instance_is_exception_by_name()
+                    || self.mro_readonly(&cn).iter().any(|p| {
+                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
+                    }));
             if is_exception {
                 err.exception = Some(Box::new(value.clone()));
             } else {

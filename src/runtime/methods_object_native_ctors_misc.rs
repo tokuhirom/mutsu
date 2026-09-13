@@ -253,13 +253,12 @@ impl Interpreter {
         };
         let is_exception = if let ValueView::Instance { class_name, .. } = raw_exception.view() {
             let cn = class_name.resolve();
-            cn == "Exception"
-                || cn.starts_with("X::")
-                || cn.starts_with("CX::")
-                || self
-                    .mro_readonly(&cn)
-                    .iter()
-                    .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"))
+            !raw_exception.is_match_instance()
+                && (raw_exception.instance_is_exception_by_name()
+                    || self
+                        .mro_readonly(&cn)
+                        .iter()
+                        .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")))
         } else {
             false
         };

@@ -936,6 +936,20 @@ impl Interpreter {
     /// cell so a sigilless attribute write (`has $x; $x = v`) reaches the cell
     /// (Phase 3 Stage 2c (ii)). Shared by the inc/dec ops; the cycle guard copes
     /// with the bidirectional `x ↔ !x` alias table.
+    /// Shape a value the way a store through `target`'s own sigil would.
+    ///
+    /// A sigilless alias is not a container: `\c := @a` makes `c` BE `@a`, so
+    /// `c = LIST` is `@a.STORE(LIST)` and `@a` stays an `Array`. Writing the
+    /// raw value through the alias chain left `@a` holding a bare `List` (and a
+    /// `%h` target holding a List rather than a Hash), which is what
+    /// `Crane.add(@a, :path(), :value(...), :in-place)` — `add-to-positional`'s
+    /// `container = $value` through a `\container` chain — produced.
+    ///
+    /// A `$`-sigiled or bare target keeps the value untouched.
+    fn coerce_alias_target_shape(&mut self, target: &str, val: &Value) -> Value {
+        crate::runtime::utils::shape_value_for_sigiled_target(target, val)
+    }
+
     pub(crate) fn propagate_sigilless_alias_chain(
         &mut self,
         code: &CompiledCode,
@@ -960,9 +974,17 @@ impl Interpreter {
             if !seen_aliases.insert(current_alias.clone()) {
                 break;
             }
-            self.set_env_with_main_alias(&current_alias, val.clone());
-            self.update_local_if_exists(code, &current_alias, val);
-            self.write_self_attr_cell(&current_alias, val.clone());
+            // A sigilless name has no container of its own, but the variable it
+            // aliases does: raku gives `@a`/`%h` no Scalar, so `\c := @a; c = LIST`
+            // IS `@a.STORE(LIST)` and leaves `@a` an Array, not the bare List.
+            // Propagating the value verbatim left `my @a; f(@a)` (for
+            // `sub f(\c) { c = ('x','y') }`) holding a List, and a `%` target
+            // holding a List rather than a Hash. Coerce to the target's own
+            // shape, exactly as a store through the sigiled name would.
+            let stored = self.coerce_alias_target_shape(&current_alias, val);
+            self.set_env_with_main_alias(&current_alias, stored.clone());
+            self.update_local_if_exists(code, &current_alias, &stored);
+            self.write_self_attr_cell(&current_alias, stored);
             // Slice F: an inc/dec through a sigilless param (`\target`) aliases a
             // caller variable; record it so the call-site drain writes the env
             // value through to the caller's local slot (without relying on the

@@ -276,6 +276,95 @@ impl Interpreter {
         resolved
     }
 
+    /// Reject a `splice` offset/size that falls outside the invocant's bounds.
+    ///
+    /// Rakudo's `splice` validates both positions before it touches the array:
+    /// an offset outside `0..len` and a negative size are `X::OutOfRange`, not a
+    /// clamped write. The lvalue path (`methods_mut_dispatch`) always did this;
+    /// the by-value path (`f().splice(...)`, an element read, a literal) did
+    /// not, so `[1,2,3].splice(5, 0, 'x')` silently spliced at the end and
+    /// `Crane`'s `CATCH { when X::OutOfRange }` never fired. Shared here so the
+    /// two cannot drift.
+    ///
+    /// `args` must already have had its callables resolved by
+    /// [`Interpreter::resolve_splice_callable_args`] — a `*-1` that still reads
+    /// as a `WhateverCode` resolves to no integer and would skip the check.
+    pub(crate) fn validate_splice_range(
+        arr_len: usize,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        /// Resolve a splice position to a signed integer for validation.
+        fn resolve_raw(v: &Value, len: usize) -> Option<i64> {
+            match v.view() {
+                ValueView::Int(i) => Some(i),
+                ValueView::Whatever => Some(len as i64),
+                ValueView::Str(s) => s.parse::<i64>().ok(),
+                ValueView::Num(n) => Some(n as i64),
+                // Handle Mixin (allomorphic types like IntStr)
+                ValueView::Mixin(inner, _) => resolve_raw(inner, len),
+                _ => None,
+            }
+        }
+        if let Some(raw_offset) = args.first().and_then(|v| resolve_raw(v, arr_len))
+            && (raw_offset < 0 || raw_offset as usize > arr_len)
+        {
+            return Err(RuntimeError::typed(
+                "X::OutOfRange",
+                [
+                    (
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Offset argument to splice out of range. Is: {}, should be in 0..{}",
+                            raw_offset, arr_len
+                        )),
+                    ),
+                    (
+                        "what".to_string(),
+                        Value::str_from("Offset argument to splice"),
+                    ),
+                    ("got".to_string(), Value::int(raw_offset)),
+                    ("range".to_string(), Value::str(format!("0..{}", arr_len))),
+                ]
+                .into_iter()
+                .collect(),
+            ));
+        }
+        if let Some(raw_size) = args.get(1).and_then(|v| resolve_raw(v, arr_len))
+            && raw_size < 0
+        {
+            let resolved_start = args
+                .first()
+                .and_then(|v| resolve_raw(v, arr_len))
+                .unwrap_or(0)
+                .max(0) as usize;
+            let remaining = arr_len.saturating_sub(resolved_start);
+            return Err(RuntimeError::typed(
+                "X::OutOfRange",
+                [
+                    (
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Size argument to splice out of range. Is: {}, should be in 0..^{}",
+                            raw_size, remaining
+                        )),
+                    ),
+                    (
+                        "what".to_string(),
+                        Value::str_from("Size argument to splice"),
+                    ),
+                    ("got".to_string(), Value::int(raw_size)),
+                    (
+                        "range".to_string(),
+                        Value::str(format!("0..^{}", remaining)),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Mutate an Array value in place for push/pop/shift/unshift/append/
     /// prepend/splice on a by-value invocant (function results, element
     /// reads, literals). Container identity (§3.2): the mutation writes

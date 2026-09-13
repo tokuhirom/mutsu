@@ -1383,14 +1383,13 @@ impl Interpreter {
             // `message` already won dispatch above, so reaching here is the default.
             if args.is_empty() && matches!(method, "gist" | "Str" | "Stringy" | "message") {
                 let cn = class_name.resolve();
-                let is_exception = cn == "Exception"
-                    || cn.starts_with("X::")
-                    || cn.starts_with("CX::")
-                    || cn.ends_with("Exception")
-                    || self
-                        .class_mro(&cn)
-                        .iter()
-                        .any(|p| p == "Exception" || p == "Failure");
+                let is_exception = !target.is_match_instance()
+                    && (target.instance_is_exception_by_name()
+                        || cn.ends_with("Exception")
+                        || self
+                            .class_mro(&cn)
+                            .iter()
+                            .any(|p| p == "Exception" || p == "Failure"));
                 if is_exception {
                     // This arm is only the DEFAULT implementation of
                     // `Exception.message`/`.gist`/`.Str`. A class that defines
