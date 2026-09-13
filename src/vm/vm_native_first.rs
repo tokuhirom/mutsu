@@ -94,7 +94,7 @@ impl Interpreter {
         // `Seq` of bare items, a native or multi-dimensional array, a `Hash`)
         // keeps the bare-item scan.
         let items = Self::array_element_cells(target)
-            .unwrap_or_else(|| crate::runtime::utils::value_to_list(target));
+            .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(target));
         // `.first` answers the element's VALUE; a container above is the
         // matcher's binding, not the result.
         let answer = |v: Value| Some(Ok(v.deref_container()));
