@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::utils::IdentityIndex;
 use crate::value::types::is_stash_class_name;
 
 /// Read a `:as(...)` / `:with(...)` adverb argument regardless of Pair
@@ -42,6 +43,37 @@ fn cache_seq_needle(key: Value) -> Value {
     key
 }
 
+/// The identity test `unique` / `repeated` use for their default (no `:with`)
+/// comparison. Lifted out of both loops so the two cannot drift apart, and so
+/// [`IdentityIndex::contains_by`] narrows the scan under exactly this rule.
+fn dispatch_keys_same(seen: &Value, key: &Value) -> bool {
+    if let (
+        ValueView::Instance {
+            class_name: seen_class,
+            id: seen_id,
+            ..
+        },
+        ValueView::Instance {
+            class_name: key_class,
+            id: key_id,
+            ..
+        },
+    ) = (seen.view(), key.view())
+    {
+        // Some instances still use placeholder id=0; treat those as
+        // distinct for unique's default identity semantics.
+        if seen_id == 0
+            && key_id == 0
+            && seen_class == key_class
+            && !is_stash_class_name(seen_class.as_str())
+            && seen_class.resolve() != "Supply"
+        {
+            return false;
+        }
+    }
+    values_identical(seen, key)
+}
+
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_unique(
         &mut self,
@@ -79,7 +111,8 @@ impl Interpreter {
         } else {
             vec![target]
         };
-        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut seen = IdentityIndex::new();
+        let mut with_seen_keys: Vec<Value> = Vec::new();
         let mut unique_items: Vec<Value> = Vec::new();
         for item in items {
             let key = if let Some(func) = as_func.clone() {
@@ -88,47 +121,31 @@ impl Interpreter {
                 item.clone()
             };
 
-            let mut duplicate = false;
-            for seen in &seen_keys {
-                let is_same = if let Some(func) = with_func.clone() {
-                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+            let duplicate = if let Some(func) = with_func.clone() {
+                // A user comparator defines its own equality class, which the
+                // index cannot model, so `:with` keeps the full scan (rakudo's
+                // `:with` path is quadratic for the same reason).
+                let mut found = false;
+                for prev in &with_seen_keys {
+                    if self
+                        .call_sub_value(func.clone(), vec![prev.clone(), key.clone()], true)?
                         .truthy()
-                } else if let (
-                    ValueView::Instance {
-                        class_name: seen_class,
-                        id: seen_id,
-                        ..
-                    },
-                    ValueView::Instance {
-                        class_name: key_class,
-                        id: key_id,
-                        ..
-                    },
-                ) = (seen.view(), key.view())
-                {
-                    // Some instances still use placeholder id=0; treat those as
-                    // distinct for unique's default identity semantics.
-                    if seen_id == 0
-                        && key_id == 0
-                        && seen_class == key_class
-                        && !is_stash_class_name(seen_class.as_str())
-                        && seen_class.resolve() != "Supply"
                     {
-                        false
-                    } else {
-                        values_identical(seen, &key)
+                        found = true;
+                        break;
                     }
-                } else {
-                    values_identical(seen, &key)
-                };
-                if is_same {
-                    duplicate = true;
-                    break;
                 }
-            }
+                found
+            } else {
+                seen.contains_by(&key, dispatch_keys_same)
+            };
 
             if !duplicate {
-                seen_keys.push(key);
+                if with_func.is_some() {
+                    with_seen_keys.push(key);
+                } else {
+                    seen.insert(key);
+                }
                 unique_items.push(item);
             }
         }
@@ -172,7 +189,8 @@ impl Interpreter {
         } else {
             vec![target]
         };
-        let mut seen_keys: Vec<Value> = Vec::new();
+        let mut seen = IdentityIndex::new();
+        let mut with_seen_keys: Vec<Value> = Vec::new();
         let mut repeated_items: Vec<Value> = Vec::new();
         for item in items {
             let key = if let Some(func) = as_func.clone() {
@@ -181,47 +199,28 @@ impl Interpreter {
                 item.clone()
             };
 
-            let mut duplicate = false;
-            for seen in &seen_keys {
-                let is_same = if let Some(func) = with_func.clone() {
-                    self.call_sub_value(func, vec![seen.clone(), key.clone()], true)?
+            let duplicate = if let Some(func) = with_func.clone() {
+                let mut found = false;
+                for prev in &with_seen_keys {
+                    if self
+                        .call_sub_value(func.clone(), vec![prev.clone(), key.clone()], true)?
                         .truthy()
-                } else if let (
-                    ValueView::Instance {
-                        class_name: seen_class,
-                        id: seen_id,
-                        ..
-                    },
-                    ValueView::Instance {
-                        class_name: key_class,
-                        id: key_id,
-                        ..
-                    },
-                ) = (seen.view(), key.view())
-                {
-                    if seen_id == 0
-                        && key_id == 0
-                        && seen_class == key_class
-                        && !is_stash_class_name(seen_class.as_str())
-                        && seen_class.resolve() != "Supply"
                     {
-                        false
-                    } else {
-                        values_identical(seen, &key)
+                        found = true;
+                        break;
                     }
-                } else {
-                    values_identical(seen, &key)
-                };
-                if is_same {
-                    duplicate = true;
-                    break;
                 }
-            }
+                found
+            } else {
+                seen.contains_by(&key, dispatch_keys_same)
+            };
 
             if duplicate {
                 repeated_items.push(item);
+            } else if with_func.is_some() {
+                with_seen_keys.push(key);
             } else {
-                seen_keys.push(key);
+                seen.insert(key);
             }
         }
 

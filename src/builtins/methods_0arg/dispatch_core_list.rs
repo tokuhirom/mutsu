@@ -6,6 +6,37 @@ use num_traits::{Signed, Zero};
 
 use super::{is_infinite_range, raku_round, raku_round_to_value};
 
+/// `unique` and `repeated` share one pass over the input, keeping the values
+/// already seen in a [`crate::runtime::IdentityIndex`] so the duplicate test does not rescan
+/// them all: both were O(n^2) here, which is why `(^160_000).unique` never
+/// finished. The three container shapes (Array, Seq, Slip) differ only in how
+/// the items are reached, so they iterate through one helper rather than three
+/// copies of the loop.
+fn unique_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
+    let mut seen = crate::runtime::IdentityIndex::new();
+    let mut result = Vec::new();
+    for item in items {
+        if !seen.contains(item) {
+            seen.insert(item.clone());
+            result.push(item.clone());
+        }
+    }
+    Value::seq(result)
+}
+
+fn repeated_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
+    let mut seen = crate::runtime::IdentityIndex::new();
+    let mut result = Vec::new();
+    for item in items {
+        if seen.contains(item) {
+            result.push(item.clone());
+        } else {
+            seen.insert(item.clone());
+        }
+    }
+    Value::seq(result)
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -177,99 +208,18 @@ pub(super) fn dispatch(
             _ => None,
         }),
         "unique" => Some(match target.view() {
-            ValueView::Array(items, ..) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if !seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        seen.push(item.clone());
-                        result.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
-            ValueView::Seq(items) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if !seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        seen.push(item.clone());
-                        result.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
-            ValueView::Slip(items) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if !seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        seen.push(item.clone());
-                        result.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
+            ValueView::Array(items, ..) => Some(Ok(unique_seq(items.iter()))),
+            ValueView::Seq(items) => Some(Ok(unique_seq(items.iter()))),
+            ValueView::Slip(items) => Some(Ok(unique_seq(items.iter()))),
             ValueView::LazyList(_) => None,
             // Supply.unique is handled by native_supply
             ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         }),
         "repeated" => Some(match target.view() {
-            ValueView::Array(items, ..) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        result.push(item.clone());
-                    } else {
-                        seen.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
-            ValueView::Seq(items) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        result.push(item.clone());
-                    } else {
-                        seen.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
-            ValueView::Slip(items) => {
-                let mut seen: Vec<Value> = Vec::new();
-                let mut result = Vec::new();
-                for item in items.iter() {
-                    if seen
-                        .iter()
-                        .any(|existing| crate::runtime::values_identical(existing, item))
-                    {
-                        result.push(item.clone());
-                    } else {
-                        seen.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
+            ValueView::Array(items, ..) => Some(Ok(repeated_seq(items.iter()))),
+            ValueView::Seq(items) => Some(Ok(repeated_seq(items.iter()))),
+            ValueView::Slip(items) => Some(Ok(repeated_seq(items.iter()))),
             ValueView::LazyList(_) => None,
             _ => Some(Ok(Value::seq(Vec::new()))),
         }),
