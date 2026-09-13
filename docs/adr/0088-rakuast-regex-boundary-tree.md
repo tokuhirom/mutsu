@@ -3,7 +3,8 @@
 - Status: Accepted (static source-tree, RakuAST, execution-lowering,
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
-  bare-subrule, anchor, and explicit-static-lookaround slices implemented
+  bare-subrule, anchor, explicit-static-lookaround, and
+  named-static-lookaround slices implemented
   2026-09-12/13; other dynamic contents and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -621,3 +622,25 @@ The focused regressions are in `t/rakuast/rakuast-regex.t` and
 `t/regex/regex-tree-lookaround.t`. They pin the four dual-oracle model
 shapes, node accessors and hierarchy, constructed-tree lowering, repeated
 lookahead use, and positive/negative lookahead/lookbehind matching.
+
+## 19. Unprefixed and dot-prefixed static lookaround slice (2026-09-13)
+
+Unprefixed and dot-prefixed static `before`/`after` assertions now retain their
+source tree as `Regex::Assertion::Named::RegexArg`. Rakudo exposes the same
+model shape for `<before body>` and `<.before body>`; the source distinction is
+the inherited `capturing` flag, which is true for the unprefixed form and false
+for the dot-prefixed form. The shared tree keeps that flag instead of reducing
+both spellings to the explicit `Lookahead` wrapper used by `<?...>`/`<!...>`.
+
+Execution lowering still uses the existing zero-width `RegexAtom::Lookaround`.
+For a capturing named assertion it attaches the `before` or `after` name to
+the outer token, producing the same zero-width named `Match` as the legacy
+parser; dot-prefixed assertions leave that capture channel unset. Constructed
+`RegexArg` nodes accept the same `capturing` field and lower through the normal
+Parser -> Compiler -> VM path.
+
+The bounded parser accepts only static bodies already supported by the explicit
+lookaround slice. Escaped, interpolated, nested, code-bearing, qualified, and
+argumented bodies remain deferred. The focused regressions pin all four source
+spellings, `.capturing`, zero-width capture spans, capture suppression, and
+constructed-tree execution.

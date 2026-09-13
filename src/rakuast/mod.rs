@@ -1513,6 +1513,12 @@ pub fn construct(
             RuntimeError::new("RakuAST::Regex::Assertion::Named::RegexArg.new requires `regex-arg`")
         })?;
         require_regex_node(&regex_arg, "RakuAST::Regex::Assertion::Named::RegexArg.new")?;
+        let capturing = named_arg(args, "capturing").unwrap_or_else(|| Value::truth(true));
+        if !matches!(capturing.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Named::RegexArg.new expects `capturing` to be Bool",
+            ));
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::RegexAssertionNamedRegexArg,
             fields: vec![
@@ -1523,6 +1529,10 @@ pub fn construct(
                 RakuAstField {
                     name: Some("regex-arg"),
                     value: RakuAstFieldValue::Node(regex_arg),
+                },
+                RakuAstField {
+                    name: Some("capturing"),
+                    value: RakuAstFieldValue::Node(capturing),
                 },
             ],
         }))));
