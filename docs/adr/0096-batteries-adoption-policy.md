@@ -125,8 +125,9 @@ rung 2 unreachable** and **what would have to become true to reopen it**. An
 entry whose stated rationale has expired is re-decided, not re-cited. Adding an
 entry is a user decision (D2); removing one is ordinary work.
 
-Being on the list is not the same as being justified. The list currently holds
-two entries, one of each kind:
+Being on the list is not the same as being justified. The list holds **one**
+entry, E1. E2 is kept below as the worked example of an expired rationale being
+re-decided rather than re-cited — the outcome D4 exists to produce:
 
 #### E1. `NativeCall` — a justified rung-3 use
 
@@ -150,38 +151,39 @@ also asymmetric here: 33 files across the bundled batteries depend on
 `use NativeCall`, so a half-working replacement takes the TLS stack and the
 database layer with it.
 
-#### E2. The JSON `to-json`/`from-json` fast path — retired 2026-09-12
+#### E2. The JSON `to-json`/`from-json` fast path — retired, and now deleted
 
-**Status: the interception this entry recorded is gone**
-([#8183](https://github.com/tokuhirom/mutsu/issues/8183)). What survives is
-`src/runtime/json.rs` plus `src/vm/vm_native_json.rs` as a **last-resort
-provider for `JSON::Fast` alone**: `use JSON::Fast` runs the ordinary module
-search first and the native routines answer only when nothing resolves, so an
-`-I` / `MUTSULIB` / site-repo copy outranks them (D2 holds). `JSON::Tiny` left
-the mechanism entirely — it is a vendored battery and loads like any other
-module — the load-order-sensitive exception guess is deleted, and both dispatch
-sites now sit after routine resolution, so a resolved def always wins.
+**Status: this entry is closed.** The `use`-time interception went on 2026-09-12
+([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); the `JSON::Fast`
+last-resort provider that survived it was **deleted on 2026-09-13**
+([#8226](https://github.com/tokuhirom/mutsu/issues/8226)). `JSON::Fast` is a
+vendored battery now (`modules/JSON-Fast/`, upstream tag 0.20.1) and resolves
+through the ordinary ladder like any other module. There is no JSON name-keyed
+dispatch left anywhere.
 
-**Re-decided 2026-09-13 ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)):
-`JSON::Fast` gets vendored, not kept.** D4's rule is that an entry whose stated
-rationale has expired is re-decided rather than re-cited, and the measurement the
-re-decision needed came out decisively: of the 51 `nqp::` ops upstream
-`JSON::Fast:ver<0.20.1>` uses, **42 already worked** — the "~50 missing" figure
-this ADR inherited was never measured. The nine that did not (`bindpos`,
-`shift_i`, `pop_s`, `push`, `chr`, `p6scalarwithvalue`, `p6bindattrinvres`,
-`hash`, `ifnull`) are implemented, along with what they were hiding: a `Uni` that
-is a real codepoint store, `nqp::create` allocating storage for the storage
-types, `'$!reified'`/`'$!storage'` installs, and an NFG-normalizing
-`nqp::strfromcodes`. **13 of the 14 upstream test files now pass against the real
-distribution.** The remaining file, `t/01-parse.t`, is held by two blockers with
-nothing to do with JSON (a ~20,000-frame recursion that overflows the Rust stack
-instead of raising — [#8232](https://github.com/tokuhirom/mutsu/issues/8232) —
-and `++$pos` passed to an `int $pos is rw` parameter —
-[#8233](https://github.com/tokuhirom/mutsu/issues/8233)), so the
-vendoring and this entry's deletion are sequenced behind those; see
-`docs/batteries/json-tiny.md`. Until then the provider survives as *scheduled for
-retirement*, which is what D4 §exception-list already records it as — not as a
-justified rung-3 entry.
+D4's rule is that an entry whose stated rationale has expired is re-decided
+rather than re-cited, and the measurement came out decisively: of the 51 `nqp::`
+ops upstream `JSON::Fast:ver<0.20.1>` uses, **42 already worked** — the "~50
+missing" figure this ADR inherited was never measured. The nine that did not
+(`bindpos`, `shift_i`, `pop_s`, `push`, `chr`, `p6scalarwithvalue`,
+`p6bindattrinvres`, `hash`, `ifnull`) were implemented, along with what they were
+hiding: a `Uni` that is a real codepoint store, `nqp::create` allocating storage
+for the storage types, `'$!reified'`/`'$!storage'` installs, and an
+NFG-normalizing `nqp::strfromcodes`. Three further general gaps and two
+non-JSON blockers followed ([#8232](https://github.com/tokuhirom/mutsu/issues/8232),
+[#8233](https://github.com/tokuhirom/mutsu/issues/8233),
+[#8282](https://github.com/tokuhirom/mutsu/issues/8282)); with those fixed,
+**all 14 upstream test files (931 assertions) pass against the bundled copy**.
+
+`src/runtime/json.rs` and `src/vm/vm_native_json.rs` still exist, narrowed to
+one caller: `Rakudo::Internals::JSON.to-json` / `.from-json`. That is **core
+Rakudo surface, not a module** — it resolves with no `use` in rakudo too — so it
+is a builtin like any other and this ledger does not apply to it. zef reads every
+`META6.json` through it (`vendor/zef/lib/Zef.rakumod`), as do OpenSSL's
+`%?RESOURCES` loading and JSON::JWT. See
+[docs/batteries/json-fast.md](../batteries/json-fast.md).
+
+**D4's exception list is now one entry: `NativeCall` (E1).**
 
 The rest of this entry is the record of what was there and why it went.
 
@@ -303,12 +305,12 @@ runs — it does not mean the feature disappears.
   observable — an exception type, a message, an edge-case answer, which module
   resolves — is out of scope for a performance argument regardless of the number
   attached to it.
-- **The exception list is auditable.** Two entries today, one justified (E1) and
-  one retired the day this ADR landed (E2 — what survives there is a last-resort
-  `JSON::Fast` provider, **re-decided 2026-09-13 as scheduled for retirement**:
-  the real distribution now runs, 13 of its 14 upstream test files passing, and
-  the two remaining blockers are general interpreter gaps, not JSON ones).
-  Any change to that list is visible as a diff to this ADR.
+- **The exception list is auditable.** One entry today: `NativeCall` (E1),
+  justified and re-measured. E2 was retired the day this ADR landed and
+  **closed on 2026-09-13** — `JSON::Fast` is a vendored battery and the provider
+  is deleted, which is D4's rule (an expired rationale is re-decided, not
+  re-cited) producing its intended outcome. Any change to that list is visible
+  as a diff to this ADR.
 - **The `nqp::` op layer is not forbidden and never was.** D5 is the form to
   cite; work that grows ops in service of something mutsu ships needs no
   exemption from a rejection that was never that broad.
@@ -348,6 +350,6 @@ last-resort provider whose own justification is still to be written:
 | D1/D2 — rung ordering, rung-3 ban | In force since 2026-08-01 (user decision); `BATTERIES.md` §1, `CLAUDE.md` |
 | D3 — optimization vs. substitution | Stated here for the first time; no known violation other than E2 |
 | D4/E1 — `NativeCall` | Justified exception; reopening condition in [#7560](https://github.com/tokuhirom/mutsu/issues/7560) |
-| D4/E2 — JSON interception | **Retired 2026-09-12** ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); `JSON::Fast`'s last-resort provider remains, **re-decided 2026-09-13 as scheduled for retirement** ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)) — the real distribution runs, 13/14 upstream test files pass |
+| D4/E2 — JSON interception | **Closed 2026-09-13.** Interception retired ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); the `JSON::Fast` provider **deleted** and the real distribution vendored ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)) — 14/14 upstream files, 931 assertions. What remains is `Rakudo::Internals::JSON`, a core class outside this ledger. The list is now one entry: `NativeCall` |
 | D5 — accurate `nqp::` framing | Stated here; 111 ops shipped |
 | D6 — retirement precedent | `Pod::To::Text` and native `Test` both retired |

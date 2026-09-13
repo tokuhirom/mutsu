@@ -1,0 +1,33 @@
+{
+  "auth": "zef:timo",
+  "authors": [
+    "Timo Paulssen",
+    "Tony O'Dell",
+    "Wenzel P. P. Peppmeyer",
+    "Elizabeth Mattijsen"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "A naive, fast json parser and serializer; drop-in replacement for JSON::Tiny",
+  "license": "Artistic-2.0",
+  "meta6": "0",
+  "name": "JSON::Fast",
+  "perl": "6.*",
+  "provides": {
+    "JSON::Fast": "lib/JSON/Fast.pm6"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/timo/json_fast.git",
+  "support": {
+    "source": "git://github.com/timo/json_fast.git"
+  },
+  "tags": [
+  ],
+  "test-depends": [
+    "Test"
+  ],
+  "version": "0.20.1"
+}
