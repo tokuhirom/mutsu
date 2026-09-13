@@ -380,7 +380,7 @@ impl Interpreter {
                             'redo_item: loop {
                                 match self.call_sub_value(func.clone(), vec![item.clone()], false) {
                                     Ok(pred) => {
-                                        if pred.truthy() {
+                                        if self.eval_predicate_truthy(&pred) {
                                             result.push(item.clone());
                                             result_indices.push(item_idx);
                                         }
