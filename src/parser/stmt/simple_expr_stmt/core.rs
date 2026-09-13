@@ -1635,10 +1635,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // `Selkie` and `App::Moneymoor` both fail to load on ([#7993]).
     //
     // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
-    let consumed = &input[..input.len() - rest_before_ws.len()];
     if separated_by_newline
         && matches!(expr, Expr::Try { .. } | Expr::Gather(_))
-        && consumed.trim_end().ends_with('}')
+        && crate::parser::expr::consumed_span(input, rest_before_ws)
+            .is_some_and(|consumed| consumed.trim_end().ends_with('}'))
     {
         return parse_statement_modifier(rest_before_ws, stmt);
     }
