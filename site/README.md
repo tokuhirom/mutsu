@@ -67,6 +67,10 @@ this avoids: it sat ~290 files stale.)
 
 `bench-trend.html` is rendered into the site at deploy time by
 `scripts/bench-visualize.py` from the `bench-data` branch's `bench-history.tsv`.
+A completed `Bench` run re-triggers the deploy, so a new measurement reaches the
+published trend within minutes instead of waiting for the nightly run: `bench.yml`
+pushes to `bench-data` with the default `GITHUB_TOKEN`, and such a push cannot
+start a workflow, so the run's completion is the only signal the new data exists.
 Passing `--site-chrome` makes it load `assets/site.css` and `assets/i18n.js` and
 render the same nav, language switch and footer as every other page, so the shared
 chrome has exactly one definition. Without the flag the script keeps producing a
