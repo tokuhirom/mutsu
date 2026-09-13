@@ -75,11 +75,28 @@ pub(crate) fn make_negative_subscript_error(neg_val: &str) -> PError {
     )
 }
 
-/// Check if a character is valid inside an angle-bracket word key (`<key>`).
-/// Raku allows any non-whitespace character that isn't `>` in angle bracket words.
-/// We allow: alphanumeric, common ASCII punctuation used in identifiers/keys,
-/// non-breaking spaces, and any non-ASCII Unicode character that isn't whitespace.
-pub(crate) fn is_angle_key_char(c: char) -> bool {
+/// Check if a character may appear in an angle *subscript* key (`%h<key>`).
+///
+/// `<...>` is a Q-style word quote, and rakudo validates nothing inside one: it
+/// splits on whitespace and every other character is an ordinary member of a
+/// word. So `%h<a, b>` is the two-key slice `'a,'`/`'b'`, `Hash<A, B, C>` is a
+/// three-key slice of the type object (BigRoot writes exactly that), and
+/// `%h<a|b>` is the single key `a|b`. That is the rule implemented here.
+///
+/// It is deliberately *not* the rule [`is_conservative_angle_key_char`] uses:
+/// that one disambiguates an lvalue from a comparison, where being permissive
+/// would claim source that is not a subscript at all.
+pub(crate) fn is_angle_subscript_key_char(c: char) -> bool {
+    // `split_angle_words` already split on whitespace, so a key cannot contain
+    // any — except a non-breaking space, which is not a word separator.
+    is_non_breaking_space(c) || (!c.is_whitespace() && c != '>')
+}
+
+/// Check if a character is valid inside an angle-bracket word key (`<key>`),
+/// using the conservative set that tells an angle-subscript *lvalue* apart from
+/// a comparison (`%h<b> := 5` vs `$a < $b`). A subscript being parsed as a
+/// subscript uses [`is_angle_subscript_key_char`] instead.
+pub(crate) fn is_conservative_angle_key_char(c: char) -> bool {
     c.is_alphanumeric()
         || c == '_'
         || c == '-'

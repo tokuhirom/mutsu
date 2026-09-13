@@ -518,8 +518,10 @@ fn parse_list_infix_loop_impl<'a>(
         // `additive_expr` instead — which is why `1 op 2 ?? "y" !! "n"` is
         // `(1 op 2) ?? ...` and not a parse error.
         //
-        // Do not span statement boundaries across newlines.
-        if !ws_before.contains('\n')
+        // Do not span statement boundaries across newlines — unless the word is
+        // an operator the parser has seen declared, which is unambiguous (see
+        // `is_declared_custom_infix_word`).
+        if (!ws_before.contains('\n') || super::custom_infix::is_declared_custom_infix_word(r))
             && let Some(new_rest) = super::custom_infix::try_custom_infix_word(
                 r,
                 left,

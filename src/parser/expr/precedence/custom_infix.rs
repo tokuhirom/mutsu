@@ -196,6 +196,25 @@ pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
     )
 }
 
+/// True when `input` opens with a custom infix word the parser has actually
+/// SEEN declared, as opposed to the speculative any-bareword match
+/// [`parse_custom_infix_word`] also makes for runtime-installed operators.
+///
+/// This is what lets a custom infix continue an expression across a newline.
+/// The speculative match may not: a bare identifier opening the next line is
+/// normally a new statement, and claiming it as an operator would swallow it. A
+/// *declared* operator carries no such ambiguity — it is in rakudo's operator
+/// table by then, so the newline before it is ordinary whitespace and
+/// `$a \n op $b` is one expression (Arithmetic::PaperAndPencil wraps a long
+/// `☈+` expression exactly that way).
+pub(crate) fn is_declared_custom_infix_word(input: &str) -> bool {
+    let Some((name, _)) = parse_custom_infix_word(input) else {
+        return false;
+    };
+    crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).is_some()
+        || crate::parser::stmt::simple::is_user_defined_infix(&name)
+}
+
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
 /// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
 /// word whose precedence level falls in `(min_level, max_level]` — with `None`

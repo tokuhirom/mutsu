@@ -15,7 +15,7 @@ use super::call_method::{
 use super::dot_assign::{atomic_var_name, parse_dot_assign};
 use super::helpers::{
     colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
-    extract_range_negative_end, is_angle_key_char, make_negative_subscript_error,
+    extract_range_negative_end, is_angle_subscript_key_char, make_negative_subscript_error,
 };
 use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
@@ -24,6 +24,7 @@ use crate::parser::expr::operators::{
 use crate::parser::expr::{expression, expression_no_sequence, listop_arg_expr_list_infix};
 use crate::parser::helpers::{consume_unspace, is_ident_char, split_angle_words, ws};
 use crate::parser::parse_result::{PError, PResult, parse_char, take_while1};
+use crate::parser::primary::ident::predicates::next_is_bareword_fat_arrow_pair;
 use crate::parser::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -448,12 +449,23 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // A bareword followed by `=>` is a pair key, whatever else the word means:
+    // `(lazy => 1)`, `%(race => 1)` and `f(eager => 1)` are Pair literals, not
+    // statement prefixes applied to a stray `=> 1`. The declarator keywords
+    // already get this treatment in `identifier_call`, but the four
+    // statement-prefix branches below run ahead of it, so they need the same
+    // guard — without it those four words were the only ones in the language
+    // that could not name a pair outside a `{ ... }` hash composer.
+    let names_a_pair_key = next_is_bareword_fat_arrow_pair(input);
     // lazy prefix: wrap inner expression with .lazy method call
     // `lazy` is a statement prefix — it wraps the full following expression
     // (including infix operators like `..`), not just the next prefix term.
     // Special case: `lazy for ...` compiles the for loop with ForMode::Lazy
     // so the body does not execute until the resulting Seq is consumed.
-    if input.starts_with("lazy") && !is_ident_char(input.as_bytes().get(4).copied()) {
+    if !names_a_pair_key
+        && input.starts_with("lazy")
+        && !is_ident_char(input.as_bytes().get(4).copied())
+    {
         let r = &input[4..];
         let (r, _) = ws(r)?;
         // Try to parse as `lazy for ...` first
@@ -474,7 +486,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     // hyper prefix: `hyper for` is the statement-prefix form (ForMode::Hyper),
     // matching `lazy for`. `hyper LIST` is eager materialization (`.hyper`).
-    if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
+    if !names_a_pair_key
+        && input.starts_with("hyper")
+        && !is_ident_char(input.as_bytes().get(5).copied())
+    {
         let r = &input[5..];
         let (r, _) = ws(r)?;
         if let Ok((r2, stmt)) = crate::parser::stmt::hyper_for_stmt_pub(r) {
@@ -494,7 +509,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     // race prefix: `race for` is the statement-prefix form (ForMode::Race).
     // `race LIST` wraps the operand in `.race`, same as `hyper LIST`.
-    if input.starts_with("race") && !is_ident_char(input.as_bytes().get(4).copied()) {
+    if !names_a_pair_key
+        && input.starts_with("race")
+        && !is_ident_char(input.as_bytes().get(4).copied())
+    {
         let r = &input[4..];
         let (r, _) = ws(r)?;
         if let Ok((r2, stmt)) = crate::parser::stmt::race_for_stmt_pub(r) {
@@ -513,7 +531,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     // eager prefix: force lazy evaluation
-    if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
+    if !names_a_pair_key
+        && input.starts_with("eager")
+        && !is_ident_char(input.as_bytes().get(5).copied())
+    {
         let r = &input[5..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_prefix_listop_operand(r)?;
@@ -1956,7 +1977,7 @@ fn postfix_expr_loop_from(
                 && !is_zen_angle
                 && keys
                     .iter()
-                    .any(|key| key.is_empty() || !key.chars().all(is_angle_key_char))
+                    .any(|key| key.is_empty() || !key.chars().all(is_angle_subscript_key_char))
             {
                 return Err(PError::expected_at("angle index key", r));
             }
@@ -3071,9 +3092,9 @@ fn postfix_expr_loop_from(
                     let content = &r2[..end];
                     let keys = split_angle_words(content);
                     if !keys.is_empty()
-                        && keys
-                            .iter()
-                            .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
+                        && keys.iter().all(|key| {
+                            !key.is_empty() && key.chars().all(is_angle_subscript_key_char)
+                        })
                     {
                         // val()-allomorphic keys, matching the plain `<...>`
                         // subscript above.

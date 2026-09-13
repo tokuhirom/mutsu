@@ -523,11 +523,19 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     if input.starts_with('%') {
         return hash_var(input);
     }
-    if let Some(after_paren) = input.strip_prefix('(') {
-        let (rest, expr) = crate::parser::expr::expression(after_paren)?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, expr));
+    // A contextualizer takes another contextualizer as its operand, so the
+    // sigils stack: `&&(0, 1)` is `&(&(0, 1))` and `&&f` is `&(&f)`. Without
+    // this the second `&` is not a term at all, which is what made a statement
+    // beginning with `&&(...)` unparsable.
+    if input.starts_with('&') {
+        return code_var(input);
+    }
+    // `&( ... )` is the callable contextualizer, whose operand is a *circumfix*
+    // — a whole parenthesized group, so it holds a comma list or a semilist
+    // (`&(1, 2)`, `&(;)`), not a single expression. Parsing only an expression
+    // stopped at the first comma and failed at the `)`.
+    if input.starts_with('(') {
+        return crate::parser::primary::container::paren_expr(input);
     }
     // Callable block literal dereference: &{ ... }
     if input.starts_with('{') {
