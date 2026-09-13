@@ -812,6 +812,12 @@ impl Interpreter {
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
+        let package = self.current_package();
+        // Imports are aliases in the importing scope, not declarations in
+        // that scope. A later local `sub` replaces the alias; once replaced,
+        // the alias marker is consumed so another local declaration still
+        // raises X::Redeclaration.
+        let imported_routine_alias = !is_our_scoped && self.imported_routine_alias(&package, name);
         // Idempotent re-registration fast path. A `RegisterSub` re-executes every
         // time its enclosing frame runs (e.g. a `my sub` inside a hot routine),
         // but the declaration it installs is constant. When a structurally
@@ -1134,6 +1140,7 @@ impl Interpreter {
             if !matches!(existing.view(), ValueView::Mixin(..))
                 && !shadows_outer_eval_name
                 && !allow_lexical_shadow
+                && !imported_routine_alias
                 && !is_method_value_decl
             {
                 return Err(RuntimeError::redeclaration_routine(name));
@@ -1163,6 +1170,11 @@ impl Interpreter {
                     .clone_from(&new_def.compiled);
             }
             if same && !has_user_custom_traits {
+                if imported_routine_alias {
+                    self.remove_imported_routine_alias(&package, name);
+                    self.env.remove(&format!("&{name}"));
+                    self.env.remove(&format!("&{package}::{name}"));
+                }
                 // A structurally identical stub at a DIFFERENT site (line) is
                 // recognized as `same` (registration_identity strips SetLine),
                 // so its own site fingerprint must still be remembered here —
@@ -1237,12 +1249,17 @@ impl Interpreter {
                 && !has_proto
                 && !allow_redeclare
                 && !allow_lexical_shadow
+                && !imported_routine_alias
                 && !shadows_outer_eval_single
                 && !has_user_custom_traits
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-        } else if !allow_redeclare && !allow_lexical_shadow && !has_user_custom_traits {
+        } else if !allow_redeclare
+            && !allow_lexical_shadow
+            && !imported_routine_alias
+            && !has_user_custom_traits
+        {
             if has_multi && !has_proto && !shadows_outer_eval_multi {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
@@ -1282,7 +1299,7 @@ impl Interpreter {
             .iter()
             .any(|(t, _)| t == "hidden-from-USAGE")
             .then(|| def.body_fingerprint());
-        if !multi && allow_lexical_shadow && !is_our_scoped {
+        if !multi && (allow_lexical_shadow || imported_routine_alias) && !is_our_scoped {
             let lexical_single = format!("{}::{}", self.current_package(), name);
             let lexical_multi_prefix = format!("{}::{}/", self.current_package(), name);
             self.registry_mut().functions_mut().retain(|key, _| {
@@ -1299,7 +1316,12 @@ impl Interpreter {
         // block whose own `multi f` had just been declared. Sibling candidates
         // of this multi's own group are keyed with a `/` suffix and are left
         // alone.
-        if multi && allow_lexical_shadow && !is_our_scoped && has_single && !has_proto {
+        if multi
+            && (allow_lexical_shadow || imported_routine_alias)
+            && !is_our_scoped
+            && has_single
+            && !has_proto
+        {
             let lexical_single = Symbol::intern(&format!("{}::{}", self.current_package(), name));
             self.registry_mut().functions_mut().remove(&lexical_single);
             self.fn_resolve_gen += 1;
@@ -1676,6 +1698,14 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             }
+        }
+        if imported_routine_alias {
+            self.remove_imported_routine_alias(&package, name);
+            // A custom `sub EXPORT` may have installed a callable value in
+            // env in addition to the registry alias. Remove both spellings
+            // so an explicit `&name` follows the local declaration too.
+            self.env.remove(&format!("&{name}"));
+            self.env.remove(&format!("&{package}::{name}"));
         }
         Ok(SubRegisterOutcome::Installed)
     }

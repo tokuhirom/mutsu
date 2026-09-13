@@ -938,6 +938,7 @@ impl Interpreter {
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
             let saved_imports = std::mem::take(&mut self.module_imported_names);
+            let saved_imported_routine_aliases = std::mem::take(&mut self.imported_routine_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
             // Pragmas set by a module are lexical to that module. The module
             // mainline runs in this interpreter, so restore the caller's mode
@@ -968,6 +969,7 @@ impl Interpreter {
                 .truncate(saved_pending_rw_writeback_len);
             self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
+            self.imported_routine_aliases = saved_imported_routine_aliases;
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // `module_imported_names` records the ENV KEY the import landed under,
             // because the restore loop below has to undo that exact key. For the

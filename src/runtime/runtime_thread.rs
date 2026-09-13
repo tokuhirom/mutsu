@@ -733,6 +733,7 @@ impl Interpreter {
             hash_autovivify: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
+            imported_routine_aliases: self.imported_routine_aliases.clone(),
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
             suppress_cross_eval_class_redeclaration_check: false,

@@ -2843,6 +2843,12 @@ pub struct Interpreter {
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
     /// before a block with `use`.
     import_scope_stack: Vec<ImportScopeSnapshot>,
+    /// Routine aliases installed by an import, keyed by their target package
+    /// and name. A local `sub` may shadow such an alias, but two declarations
+    /// in the same scope must still be rejected. The set is restored together
+    /// with routine-registry snapshots so a nested lexical declaration cannot
+    /// consume an import belonging to its caller.
+    pub(crate) imported_routine_aliases: HashSet<Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
@@ -4339,6 +4345,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
+    HashSet<Symbol>, // imported routine aliases snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
@@ -4374,6 +4381,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: HashSet<Symbol>,
+    /// Imported routine aliases visible before this scope was pushed. The
+    /// registry snapshot alone cannot distinguish an imported alias from a
+    /// declaration made in this scope when the names collide.
+    pub(crate) imported_routine_aliases: HashSet<Symbol>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
