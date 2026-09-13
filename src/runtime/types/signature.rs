@@ -1134,6 +1134,87 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             }
         }
     }
+    // Reject unexpected named arguments the sub-signature does not name.
+    // `sub_signature_matches_value` (above) already applies this rule when a
+    // MULTI candidate is being matched; a plain (non-multi) call reaches this
+    // binder directly, without ever consulting the matcher, so the same rule
+    // has to be applied here too or a surplus named part binds silently
+    // (#8357) -- `if (a => 1) -> (:key($k)) { ... }` names only one of the
+    // Pair's two named capture parts ("key"/"value"), and rakudo rejects the
+    // unaccounted "value" the same way it rejects a surplus named argument at
+    // an ordinary call.
+    // A bare `|` slurpy (`_capture`/sigilless) swallows everything, named
+    // arguments included -- unlike a typed `*@rest` (positional-only, does
+    // NOT exempt a named surplus: verified against `raku`) or `*%rest`
+    // (named-only). `consumed_named_keys` (computed above) already accounts
+    // for every OTHER named param's own name and, for a `:outer(:$inner)`
+    // alias, its inner name too -- reusing it here (rather than re-deriving
+    // "does some param address this key" from scratch) keeps the alias case
+    // correct for free.
+    let has_named_slurpy = sub_params.iter().any(|p| {
+        p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
+    });
+    if !has_named_slurpy {
+        let unwrapped = value.unwrap_varref();
+        let unaccounted: Vec<String> = if matches!(
+            unwrapped.view(),
+            ValueView::Pair(..) | ValueView::ValuePair(..)
+        ) {
+            // Mirrors the matcher's Pair rule: its capture is exactly
+            // `\(:key(…), :value(…))`, so naming only one of the two leaves
+            // the other unconsumed. Only checked once the sub-signature
+            // destructures BY NAME at all -- an all-positional signature
+            // takes the Pair as a single positional value instead (a
+            // different, unrelated shape).
+            if sub_params.iter().any(|p| p.named) {
+                ["key", "value"]
+                    .into_iter()
+                    .filter(|key| !consumed_named_keys.contains(*key))
+                    .map(String::from)
+                    .collect()
+            } else {
+                Vec::new()
+            }
+        } else if let ValueView::Capture { named, .. } = unwrapped.view() {
+            // Mirrors the matcher's Capture rule.
+            named
+                .keys()
+                .filter(|key| !consumed_named_keys.contains(key.as_str()))
+                .cloned()
+                .collect()
+        } else if destructures_associative_by_name(value, sub_params) {
+            // Mirrors `associative_entries_all_named`: every entry of an
+            // all-named Associative destructure (`%patch (:$op)` against a
+            // `Hash`/`Map`) is a named capture part with no positional part
+            // at all, so an entry the sub-signature does not name is
+            // unaccounted the same way.
+            named_values_from_unpack_target(value)
+                .keys()
+                .filter(|key| !consumed_named_keys.contains(key.as_str()))
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+        match unaccounted.len() {
+            0 => {}
+            1 => {
+                return Err(RuntimeError::new(format!(
+                    "Unexpected named argument '{}' passed in sub-signature",
+                    unaccounted[0]
+                )));
+            }
+            n => {
+                // Raku's own wording for the plural case, key order
+                // unspecified (rakudo's own is hash-iteration-order
+                // dependent too).
+                return Err(RuntimeError::new(format!(
+                    "{n}  unexpected named arguments passed ({}) in sub-signature",
+                    unaccounted.join(",")
+                )));
+            }
+        }
+    }
     // If there are unconsumed positional elements and no slurpy param, error
     let has_slurpy = sub_params.iter().any(|p| p.slurpy);
     let has_positional_params = sub_params.iter().any(|p| !p.named && !p.slurpy);
