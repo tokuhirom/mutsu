@@ -74,7 +74,7 @@ pub(crate) fn bound_array_slice_key(name: &str) -> String {
 /// so owns no Scalar container (`my $i := 42`). Written at the declaration's
 /// store and speculatively cleared on every other scalar declaration, so — like
 /// the four keys above — a hot path pre-interns it per local rather than
-/// rebuilding it per store (`CompiledCode::locals_scalar_no_container_sym`).
+/// rebuilding it per store (`CompiledCode::scalar_no_container_sym`).
 ///
 /// The `$` is trimmed because the compiler stores scalars under their bare name,
 /// but a caller that still holds the sigiled spelling must land on the same key.

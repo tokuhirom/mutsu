@@ -4776,7 +4776,13 @@ mod tests {
             "@noise".to_string(),
             "$temp".to_string(),
         ];
-        compiled.plain_locals = vec![true, false, false];
+        compiled.binding_descs = vec![
+            crate::binding_desc::BindingDesc::new(crate::binding_desc::BindingFlags::new(
+                true, false,
+            )),
+            crate::binding_desc::BindingDesc::default(),
+            crate::binding_desc::BindingDesc::default(),
+        ];
         compiled.ops = vec![
             OpCode::GetGlobal(0),
             OpCode::GetArrayVar(1),

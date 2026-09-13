@@ -1951,17 +1951,18 @@ impl Compiler {
     fn alloc_fresh_local(&mut self, name: &str) -> u32 {
         let slot = self.code.locals.len() as u32;
         self.code.locals.push(name.to_string());
+        let flags = crate::binding_desc::BindingFlags::new(
+            Self::is_plain_lexical_name(name),
+            Self::is_simple_scalar_store_name(name),
+        );
         self.code
-            .plain_locals
-            .push(Self::is_plain_lexical_name(name));
-        self.code
-            .simple_scalar_locals
-            .push(Self::is_simple_scalar_store_name(name));
+            .binding_descs
+            .push(crate::binding_desc::BindingDesc::new(flags));
         self.local_map.insert(name.to_string(), slot);
         slot
     }
 
-    /// See [`CompiledCode::plain_locals`]. Scalars are stored sigil-less
+    /// See [`CompiledCode::is_plain_local`]. Scalars are stored sigil-less
     /// (`my $x` -> `"x"`), so a plain lexical is a name with no sigil, twigil,
     /// qualifier or attribute marker of any kind.
     pub(crate) fn is_plain_lexical_name(name: &str) -> bool {
@@ -1973,7 +1974,7 @@ impl Compiler {
             && !name.starts_with("__ANON")
     }
 
-    /// See [`CompiledCode::simple_scalar_locals`]. A plain lexical name, minus
+    /// See [`CompiledCode::is_simple_scalar_local`]. A plain lexical name, minus
     /// the two shapes that still reach a name-derived branch of the store
     /// cascade: a `term:<...>` definition (mirrored into its own and its
     /// package-qualified env keys on every store) and a compiler-synthesised

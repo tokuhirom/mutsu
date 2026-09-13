@@ -1420,7 +1420,7 @@ impl Interpreter {
     }
 
     /// The by-name env write for a *plain lexical* (see
-    /// [`CompiledCode::plain_locals`]): everything
+    /// [`CompiledCode::is_plain_local`]): everything
     /// [`Self::set_env_with_main_alias_sym`] does minus the alias maintenance, every
     /// branch of which is unreachable for such a name.
     ///
@@ -2095,10 +2095,10 @@ impl Interpreter {
         let sym = code.locals_sym.get(idx).copied();
         // A plain lexical (the overwhelmingly common local: `my $x`, a scalar
         // param) has no aliases to maintain, so it takes the cheap writer. The
-        // predicate is precomputed per slot; `plain_locals` is a strict subset of
-        // `is_bare_param_name`, so the remaining mirrored names (dynamic `*x`,
+        // predicate is precomputed per slot; `is_plain_local` is a strict subset
+        // of `is_bare_param_name`, so the remaining mirrored names (dynamic `*x`,
         // `__ANON*`) still take the full alias-maintaining path below.
-        if code.plain_locals.get(idx).copied().unwrap_or(false) {
+        if code.is_plain_local(idx) {
             crate::vm::vm_stats::record_env_flush(1);
             self.set_env_plain_lexical(name, sym, self.locals[idx].clone());
             return;
@@ -2467,7 +2467,7 @@ impl Interpreter {
     /// Under the (B) per-store env-write, return this frame's live local slot
     /// value for `name` when the slot holds a real (non-Nil) value — the slot is
     /// the authoritative half while the env mirror is suppressed. Returns None
-    /// when there is no `plain_locals` slot for `name`, or when the slot is Nil (an
+    /// when there is no `is_plain_local` slot for `name`, or when the slot is Nil (an
     /// uninitialized/absent local, where the env read — and any autovivification it
     /// drives — is the right source), so callers fall back to the env read. §1.5
     /// helper — see docs/lexical-scope-slot-campaign.md.
@@ -2483,7 +2483,7 @@ impl Interpreter {
 
     /// Slot index of a `(B)`-gate-authoritative local, or `None`.
     ///
-    /// Returns the slot only when the name is a `plain_locals` scalar — the only
+    /// Returns the slot only when the name is an `is_plain_local` scalar — the only
     /// variables whose env mirror the per-store env-write skips, making the slot
     /// the authoritative half. Aggregates (`@a`/`%h`) always take the
     /// unconditional `set_env_with_main_alias` writer (vm_var_assign_set_local.rs),
@@ -2505,7 +2505,7 @@ impl Interpreter {
         name: &str,
     ) -> Option<usize> {
         let slot = self.resolve_local_slot(code, slot, name)?;
-        if !code.plain_locals.get(slot).copied().unwrap_or(false) {
+        if !code.is_plain_local(slot) {
             return None;
         }
         Some(slot)
