@@ -472,3 +472,23 @@ The focused regressions are in `t/rakuast/rakuast-regex.t` and
 `t/regex/regex-tree-interpolation.t`. They pin Rakudo's interpolation node
 shape, constructed-tree lowering, stored-value lookup after lexical mutation,
 type-sensitive fallback, and the declaration boundary.
+
+## 13. Ordinary named-capture source and execution slice (2026-09-13)
+
+Scalar named captures written as `$<name> = atom` now have a shared
+`RegexNode::NamedCapture` representation. The read direction emits
+`RakuAST::Regex::NamedCapture` with a string `name` and a structural `regex`
+child; the default `array => False` remains an absent model field, matching
+Rakudo's renderer. The write direction accepts the scalar form and rejects
+array captures until their list-context semantics have their own boundary.
+
+The execution lowerer attaches the alias to the existing `RegexToken` capture
+channel. For a non-capturing quantified atom it preserves the established
+whole-run scalar-alias wrapper, while an aliased positional capturing group
+continues to use the matcher's per-iteration capture behavior. No subrule
+lookup or code assertion is performed while converting the tree.
+
+The focused regression is `t/regex/match/regex-tree-named-captures.t`. It pins the
+source whitespace and quantified AST shapes, capture spans, constructor
+accessors, and constructed-tree EVAL execution. Subrule aliases, array/hash
+aliases, and code-bearing regex nodes remain separate follow-up slices.
