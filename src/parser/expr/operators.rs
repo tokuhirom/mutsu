@@ -506,10 +506,23 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     // `+`/`-`/`~` falls through to numeric-literal parsing and fails on the `!`.
     let starts_another_prefix = |s: &str| parse_prefix_unary_op(s.trim_start()).is_some();
     if input.starts_with('!')
-        && !input.starts_with("!!")
         && !input.starts_with("!~~")
         && !input.starts_with("!%%")
         && !input.starts_with("!===")
+        // `!!` is ALSO the ternary's else marker (`$c ?? $a !! $b`) and the
+        // start of the `!!!` fatal-stub operator (handled elsewhere as its
+        // own atomic 3-char marker, matched first), so `!!` is a
+        // double-negation prefix (`!!$x` == `!(!$x)`, raku's idiomatic
+        // "boolify") only when glued directly onto its term with no
+        // whitespace and the third character is not itself `!` -- exactly
+        // the distinction raku makes (`!!$x` is `True`; `!! $x`, with a
+        // space, and `!!!x`, three bangs, are each raku's own "Two terms in
+        // a row" error, never double negation). A ternary's `!!` marker
+        // always has a space on both sides, so this glued-only check can
+        // never mistake it for one (#8206).
+        && (!input.starts_with("!!")
+            || (!input.starts_with("!!!")
+                && matches!(input[2..].chars().next(), Some(c) if unary_term_start(c) || c == '.')))
     {
         Some((PrefixUnaryOp::Not, 1))
     } else if input.starts_with("?^") {
