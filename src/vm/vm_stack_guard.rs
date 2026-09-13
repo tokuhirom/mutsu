@@ -66,9 +66,21 @@ pub fn init_thread_stack_floor(stack_size: usize) {
     if stack_size < MIN_GUARDABLE_STACK_BYTES {
         return;
     }
-    let floor = approx_stack_pointer()
-        .saturating_sub(stack_size)
-        .saturating_add(STACK_RESERVE_BYTES);
+    let top = approx_stack_pointer();
+    // `stack_size` is a claim about the caller's stack, and a wrong one must
+    // leave the thread unguarded rather than arm it into an already-exhausted
+    // state. Saturating the subtraction instead of rejecting it did exactly
+    // that on wasm32, where `usize` is 32 bits and the stack pointer sits a
+    // megabyte or two into linear memory: `sp - 256 MiB` clamped to 0, and the
+    // reserve then placed the floor ABOVE `sp`, so the very first check fired
+    // and every `start {}` block died with "Too deep recursion".
+    let Some(floor) = top
+        .checked_sub(stack_size)
+        .and_then(|bottom| bottom.checked_add(STACK_RESERVE_BYTES))
+        .filter(|floor| *floor < top)
+    else {
+        return;
+    };
     STACK_FLOOR.with(|c| c.set(floor));
 }
 
@@ -154,6 +166,18 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    #[test]
+    fn a_stack_size_bigger_than_the_address_below_us_leaves_the_thread_unguarded() {
+        // The wasm32 shape: a 32-bit `usize` whose stack pointer is far below
+        // the claimed stack size. Arming must decline, not compute a floor
+        // above the current stack pointer — that made `headroom_exhausted()`
+        // true immediately and killed every `start {}` block in the wasm
+        // build with "Too deep recursion (out of stack space)".
+        init_thread_stack_floor(usize::MAX);
+        assert!(!headroom_exhausted());
+        assert_eq!(STACK_FLOOR.with(|c| c.get()), 0);
     }
 
     #[test]

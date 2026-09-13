@@ -79,6 +79,12 @@ where
         // can be guarded -- a default-stack service thread runs no user VM
         // code, so it has no Raku recursion to bound and no size to measure
         // against.
+        //
+        // On wasm there is no new thread to arm: `spawn_thread` queues the
+        // closure on the single browser thread, whose stack is neither this
+        // size nor mutsu's to measure. That thread stays unguarded, as
+        // `vm_stack_guard`'s module docs describe.
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(size) = stack_size {
             crate::vm::vm_stack_guard::init_thread_stack_floor(size);
         }
