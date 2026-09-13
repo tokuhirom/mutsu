@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 62;
+plan 70;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -231,6 +231,86 @@ is Q[/<!after foo> bar/].AST.gist, q:to/END/.chomp, 'a negative lookbehind prese
     )
     END
 
+is Q[/foo <before bar>/].AST.gist, q:to/END/.chomp, 'an unprefixed lookahead keeps its named regex argument';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Named::RegexArg.new(
+              name      => RakuAST::Name.from-identifier("before"),
+              regex-arg => RakuAST::Regex::Sequence.new(
+                RakuAST::Regex::Literal.new("bar")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <.before bar>/].AST.gist, q:to/END/.chomp, 'a dot-suppressed lookahead keeps the same model shape';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Named::RegexArg.new(
+              name      => RakuAST::Name.from-identifier("before"),
+              regex-arg => RakuAST::Regex::Sequence.new(
+                RakuAST::Regex::Literal.new("bar")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <after bar>/].AST.gist, q:to/END/.chomp, 'an unprefixed lookbehind keeps its named regex argument';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Named::RegexArg.new(
+              name      => RakuAST::Name.from-identifier("after"),
+              regex-arg => RakuAST::Regex::Sequence.new(
+                RakuAST::Regex::Literal.new("bar")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[/foo <.after bar>/].AST.gist, q:to/END/.chomp, 'a dot-suppressed lookbehind keeps the same model shape';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Named::RegexArg.new(
+              name      => RakuAST::Name.from-identifier("after"),
+              regex-arg => RakuAST::Regex::Sequence.new(
+                RakuAST::Regex::Literal.new("bar")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
 is Q[/a $x b/].AST.gist, q:to/END/.chomp, 'a scalar interpolation remains an Interpolation node';
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
@@ -399,6 +479,18 @@ is $lookahead.assertion.name.raku, 'RakuAST::Name.from-identifier("before")',
     'lookaround assertions expose their named assertion';
 is $lookahead.assertion.regex-arg.text, 'bar',
     'named regex arguments expose their regex body';
+my $bare-before-node = Q[/<before bar>/].AST.statements[0].expression.body;
+is $bare-before-node.capturing, True,
+    'an unprefixed lookaround retains its capturing policy';
+my $dot-before-node = Q[/<.before bar>/].AST.statements[0].expression.body;
+is $dot-before-node.capturing, False,
+    'a dot-prefixed lookaround suppresses its named capture';
+my $bare-after-node = Q[/<after foo>/].AST.statements[0].expression.body;
+is $bare-after-node.capturing, True,
+    'an unprefixed lookbehind retains its capturing policy';
+my $dot-after-node = Q[/<.after foo>/].AST.statements[0].expression.body;
+is $dot-after-node.capturing, False,
+    'a dot-prefixed lookbehind suppresses its named capture';
 
 my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
 ok 'foobar' ~~ $positive-before,
