@@ -2293,6 +2293,13 @@ pub struct RegexClosure {
     /// has no defining lexical scope, so `scope` is `None`; code-bearing
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
     pub source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+    /// The signature an *anonymous* declarator term carried
+    /// (`token ($x) { $x \\d+ }`). A regex is a routine, so its parameters
+    /// have to ride along with the value: there is no named `token_defs`
+    /// entry to look them up on, and a subrule reference (`<&$re('a')>`)
+    /// binds them at match time — see
+    /// `Interpreter::instantiate_regex_value_with_args`.
+    pub signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

@@ -487,6 +487,7 @@ fn every_variant_roundtrips_losslessly() {
                     .collect::<std::collections::HashMap<_, _>>(),
             )),
             source_tree: None,
+            signature: None,
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

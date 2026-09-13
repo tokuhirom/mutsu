@@ -8,7 +8,8 @@ use crate::symbol::Symbol;
 /// carried to every match position, where the old `String` was cloned per use
 /// and re-interned to be compared
 /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-pub(super) type ParsedTokenCandidate = (std::sync::Arc<RegexPattern>, Symbol, Option<String>);
+pub(in crate::runtime::regex) type ParsedTokenCandidate =
+    (std::sync::Arc<RegexPattern>, Symbol, Option<String>);
 
 /// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
 type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
@@ -174,7 +175,7 @@ impl Interpreter {
     /// Parse a candidate's pattern in its OWN package so nested unqualified
     /// token references (notably char-class `<+name>` items) resolve against
     /// the grammar that defines them, not the outer caller's package.
-    fn parse_candidate_in_pkg(
+    pub(in crate::runtime::regex) fn parse_candidate_in_pkg(
         &mut self,
         sub_pat: &str,
         sub_pkg: Symbol,
@@ -215,6 +216,15 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
+        // `<&$re('a')>` / `<&re: 'a'>` may name a *lexical* holding a Regex
+        // value rather than a registry rule. That resolution reads the
+        // caller's scope, so it runs ahead of — and never enters — the memos
+        // below, which are keyed by name alone.
+        if Self::may_name_lexical_regex(spec)
+            && let Some(hit) = self.lexical_regex_subrule_candidates(spec, pkg, arg_values)
+        {
+            return (hit, false);
+        }
         if arg_values.is_empty()
             && let Some(hit) =
                 self.resolve_parsed_token_candidates_in_pkg(&spec.lookup_name, spec.lookup_sym, pkg)

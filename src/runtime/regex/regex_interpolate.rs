@@ -127,6 +127,24 @@ impl Interpreter {
         Some(inner.split_at(head))
     }
 
+    /// Split a code assertion (`<?{ … }>`, `<!{ … }>`, `<{ … }>`) into its
+    /// `?`/`!` marker and the `{ … }` block itself.
+    ///
+    /// Such a body is Raku code that runs at match time, in the *caller's*
+    /// env — so a rule's parameters have to be baked into it exactly like a
+    /// bare `{ … }` block's. Without this, `token t($x) { <?{ $x eq 'a' }> }`
+    /// saw `Nil` for its own parameter (raku prints the bound value), and an
+    /// anonymous `token ($text) { <?{ … $text … }> }` — the shape
+    /// HomoGlypher's `tokenize` returns — could never see its argument.
+    fn split_code_assertion_body(inner: &str) -> Option<(&str, &str)> {
+        let head = match inner.as_bytes().first() {
+            Some(b'{') => 0,
+            Some(b'?') | Some(b'!') if inner.as_bytes().get(1) == Some(&b'{') => 1,
+            _ => return None,
+        };
+        Some(inner.split_at(head))
+    }
+
     /// Walk a regex pattern source and, inside each top-level `{ ... }` code
     /// block, replace bare `$name` references for `param_names` with a
     /// parenthesised literal of the value bound in `self.env`. This lets
@@ -153,7 +171,9 @@ impl Interpreter {
                 let (inner, closed, next) = Self::scan_angle_construct(&chars, i);
                 i = next;
                 out.push('<');
-                match Self::split_lookaround_body(&inner) {
+                match Self::split_lookaround_body(&inner)
+                    .or_else(|| Self::split_code_assertion_body(&inner))
+                {
                     Some((keyword, body)) => {
                         out.push_str(keyword);
                         out.push_str(

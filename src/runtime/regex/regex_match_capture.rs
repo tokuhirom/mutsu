@@ -168,8 +168,7 @@ impl Interpreter {
                     self.eval_regex_arg_list(&spec.arg_exprs, current_caps)
                 };
                 if let Some(arg_values) = arg_values {
-                    dyn_saved =
-                        self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                    dyn_saved = self.install_subrule_dynamic_params(spec, pkg, &arg_values);
                     preinstalled_arg_values = Some(arg_values);
                     self.enter_grammar_rule_dynvars(&spec.lookup_name)
                 } else {
@@ -922,8 +921,7 @@ impl Interpreter {
             // Establish the subrule's `$*`-twigil parameters for the whole
             // resolve-and-match (see `regex_dynparams`); the wrapper restores.
             if !preinstalled {
-                *dyn_saved =
-                    self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
+                *dyn_saved = self.install_subrule_dynamic_params(&spec, pkg, &arg_values);
             }
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case). Patterns are matched in place with
