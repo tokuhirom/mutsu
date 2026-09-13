@@ -722,6 +722,14 @@ impl Value {
         self.0.is_plain_scalar_store_slot()
     }
 
+    /// Whether a local slot holding this value can go straight to the stack on
+    /// the `GetLocal` fast path (#8332). A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_plain_local_read(&self) -> bool {
+        self.0.is_plain_local_read()
+    }
+
     /// Whether this is a `Package` type object. A pure tag probe (see
     /// [`Self::is_junction_value`]).
     #[inline]

@@ -5176,6 +5176,11 @@ pub(crate) struct CompiledCode {
     /// once per chunk keeps the twigil string parse *and* `Symbol::intern` off
     /// the per-access `$!x` / `$.x` read-write path (ADR-0006 §2.4).
     pub(crate) local_attr_keys: std::sync::OnceLock<LocalAttrKeys>,
+    /// Lazily-built "this slot's read has no name-shaped guard work" bit per
+    /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
+    /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
+    /// inline read (ADR-0004 J4d).
+    pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
     /// Lazily-built `Symbol` sets over [`free_var_syms`](Self::free_var_syms)
     /// and [`locals_sym`](Self::locals_sym), for `capture_closure_env`'s
     /// membership tests. Both are pure functions of the chunk, but the capture
@@ -5608,6 +5613,7 @@ impl CompiledCode {
             env_only_decls: Vec::new(),
             const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
+            local_read_plain: std::sync::OnceLock::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -5634,6 +5640,38 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().flatten()
+    }
+
+    /// Whether local slot `idx` is a *statically plain* read: one where every
+    /// guard `exec_get_local_op_inner` runs before it reaches the slot is
+    /// decided by the slot's NAME alone, and decided against. Rejected shapes:
+    ///
+    /// - attribute slots (`$!x` / `$.x` / a bare sigilless attr): the arm reads
+    ///   `self`'s shared cell, resolved through [`Self::local_attr_key`];
+    /// - `!` / `.` twigil names: shared-var dirty probes and accessor aliases;
+    /// - `@` / `%` containers: the atomic-lane and cross-thread shared-snapshot
+    ///   probes are keyed on the sigil.
+    ///
+    /// Everything a *name* cannot decide — a `$CALLER::x :=` alias, an atomic
+    /// variable, a shared cell, a sigilless alias table — is the dynamic half,
+    /// and is what [`crate::vm::vm_jit::local_read_unspoiled`] answers.
+    ///
+    /// Memoized per chunk for the same reason [`Self::local_attr_key`] is: this
+    /// runs on the single most frequent opcode in the VM, and the byte tests
+    /// plus the attribute-key probe are a pure function of the chunk.
+    pub(crate) fn local_read_plain(&self, idx: usize) -> bool {
+        let slots = self.local_read_plain.get_or_init(|| {
+            (0..self.locals.len())
+                .map(|i| {
+                    self.local_attr_key(i).is_none()
+                        && !matches!(
+                            self.locals[i].as_bytes().first(),
+                            Some(b'!') | Some(b'@') | Some(b'%') | Some(b'.')
+                        )
+                })
+                .collect()
+        });
+        slots.get(idx).copied().unwrap_or(false)
     }
 
     /// The shared body of the closure declaration at `stmt_pool[idx]`, built
