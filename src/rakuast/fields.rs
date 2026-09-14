@@ -165,6 +165,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("name", Absent::Required), ("regex-arg", Absent::Required)]
         }
         RegexAssertionLookahead => &[("negated", Absent::False), ("assertion", Absent::Required)],
+        RegexAssertionInterpolatedVar => {
+            &[("sequential", Absent::False), ("var", Absent::Required)]
+        }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
         RegexQuantifiedAtom => &[
             ("atom", Absent::Required),

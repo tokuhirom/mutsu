@@ -69,6 +69,7 @@ pub enum RakuAstClass {
     RegexAssertionAlias,
     RegexAssertionNamedRegexArg,
     RegexAssertionLookahead,
+    RegexAssertionInterpolatedVar,
     RegexInterpolation,
     RegexAlternation,
     RegexSequentialAlternation,
@@ -287,6 +288,7 @@ impl RakuAstClass {
             RegexAssertionAlias => "RakuAST::Regex::Assertion::Alias",
             RegexAssertionNamedRegexArg => "RakuAST::Regex::Assertion::Named::RegexArg",
             RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
+            RegexAssertionInterpolatedVar => "RakuAST::Regex::Assertion::InterpolatedVar",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
@@ -516,6 +518,7 @@ impl RakuAstClass {
             | RegexAssertionAlias
             | RegexAssertionNamedRegexArg
             | RegexAssertionLookahead
+            | RegexAssertionInterpolatedVar
             | RegexInterpolation
             | RegexWithWhitespace => &[
                 "RakuAST::Regex::Atom",
@@ -674,6 +677,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Assertion::Alias"
         | "RakuAST::Regex::Assertion::Named::RegexArg"
         | "RakuAST::Regex::Assertion::Lookahead"
+        | "RakuAST::Regex::Assertion::InterpolatedVar"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace" => &[
             "RakuAST::Regex::Atom",
@@ -768,6 +772,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionAlias,
     RakuAstClass::RegexAssertionNamedRegexArg,
     RakuAstClass::RegexAssertionLookahead,
+    RakuAstClass::RegexAssertionInterpolatedVar,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,
@@ -1569,11 +1574,19 @@ pub fn construct(
         let assertion = named_arg(args, "assertion").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::Lookahead.new requires `assertion`")
         })?;
-        require_rakuast_class(
-            &assertion,
-            RakuAstClass::RegexAssertionNamedRegexArg,
-            "RakuAST::Regex::Assertion::Lookahead.new",
-        )?;
+        if !matches!(
+            assertion.view(),
+            ValueView::RakuAst(node)
+                if matches!(
+                    node.class,
+                    RakuAstClass::RegexAssertionNamedRegexArg
+                        | RakuAstClass::RegexAssertionInterpolatedVar
+                )
+        ) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Lookahead.new expects a supported assertion node",
+            ));
+        }
         let negated = named_arg(args, "negated").unwrap_or_else(|| Value::truth(false));
         if !matches!(negated.view(), ValueView::Bool(_)) {
             return Err(RuntimeError::new(
@@ -1594,6 +1607,35 @@ pub fn construct(
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::RegexAssertionLookahead,
             fields,
+        }))));
+    }
+    if class_name == "RakuAST::Regex::Assertion::InterpolatedVar" && method == "new" {
+        let var = named_arg(args, "var").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::InterpolatedVar.new requires `var`")
+        })?;
+        require_rakuast_class(
+            &var,
+            RakuAstClass::VarLexical,
+            "RakuAST::Regex::Assertion::InterpolatedVar.new",
+        )?;
+        let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
+        if !matches!(sequential.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::InterpolatedVar.new expects `sequential` to be Bool",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionInterpolatedVar,
+            fields: vec![
+                RakuAstField {
+                    name: Some("sequential"),
+                    value: RakuAstFieldValue::Node(sequential),
+                },
+                RakuAstField {
+                    name: Some("var"),
+                    value: RakuAstFieldValue::Node(var),
+                },
+            ],
         }))));
     }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
@@ -1816,6 +1858,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAssertionAlias
                     | RakuAstClass::RegexAssertionNamedRegexArg
                     | RakuAstClass::RegexAssertionLookahead
+                    | RakuAstClass::RegexAssertionInterpolatedVar
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexSequentialAlternation
@@ -2158,6 +2201,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAssertionAlias
             | RakuAstClass::RegexAssertionNamedRegexArg
             | RakuAstClass::RegexAssertionLookahead
+            | RakuAstClass::RegexAssertionInterpolatedVar
             | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore

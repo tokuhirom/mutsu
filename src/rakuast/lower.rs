@@ -1667,21 +1667,56 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         }
         RakuAstClass::RegexAssertionLookahead => {
             let assertion = named_child(node, "assertion")?;
-            if assertion.class != RakuAstClass::RegexAssertionNamedRegexArg {
+            match assertion.class {
+                RakuAstClass::RegexAssertionNamedRegexArg => {
+                    let RegexNode::NamedLookaround {
+                        assertion: regex_arg,
+                        is_behind,
+                        ..
+                    } = lower_regex_node(assertion)?
+                    else {
+                        return Err(unsupported(node));
+                    };
+                    Ok(RegexNode::Lookaround {
+                        assertion: regex_arg,
+                        negated: bool_field(node, "negated")?,
+                        is_behind,
+                    })
+                }
+                RakuAstClass::RegexAssertionInterpolatedVar => {
+                    let RegexNode::ArrayLookaround { name, negated } = lower_regex_node(assertion)?
+                    else {
+                        return Err(unsupported(node));
+                    };
+                    Ok(RegexNode::ArrayLookaround {
+                        name,
+                        negated: negated || bool_field(node, "negated")?,
+                    })
+                }
+                _ => Err(unsupported(node)),
+            }
+        }
+        RakuAstClass::RegexAssertionInterpolatedVar => {
+            if bool_field(node, "sequential")? {
                 return Err(unsupported(node));
             }
-            let RegexNode::NamedLookaround {
-                assertion: regex_arg,
-                is_behind,
-                ..
-            } = lower_regex_node(assertion)?
-            else {
+            let var = named_child(node, "var")?;
+            if var.class != RakuAstClass::VarLexical {
+                return Err(unsupported(node));
+            }
+            let name_value = positional_leaf(var)?;
+            let ValueView::Str(name) = name_value.view() else {
                 return Err(unsupported(node));
             };
-            Ok(RegexNode::Lookaround {
-                assertion: regex_arg,
-                negated: bool_field(node, "negated")?,
-                is_behind,
+            let Some(name) = name.strip_prefix('@') else {
+                return Err(unsupported(node));
+            };
+            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+                return Err(unsupported(node));
+            }
+            Ok(RegexNode::ArrayLookaround {
+                name: name.to_string(),
+                negated: false,
             })
         }
         RakuAstClass::RegexAssertionNamedRegexArg => {
