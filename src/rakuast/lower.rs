@@ -1749,16 +1749,27 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             let ValueView::Str(name) = name_value.view() else {
                 return Err(unsupported(node));
             };
-            let Some(name) = name.strip_prefix('$') else {
+            let (array, name) = if let Some(name) = name.strip_prefix('$') {
+                (false, name)
+            } else if let Some(name) = name.strip_prefix('@') {
+                (true, name)
+            } else {
                 return Err(unsupported(node));
             };
             if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
                 return Err(unsupported(node));
             }
-            Ok(RegexNode::Interpolation {
-                name: name.to_string(),
-                sequential,
-            })
+            if array {
+                Ok(RegexNode::ArrayInterpolation {
+                    name: name.to_string(),
+                    sequential,
+                })
+            } else {
+                Ok(RegexNode::Interpolation {
+                    name: name.to_string(),
+                    sequential,
+                })
+            }
         }
         RakuAstClass::RegexWithWhitespace => Ok(RegexNode::WithWhitespace(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,

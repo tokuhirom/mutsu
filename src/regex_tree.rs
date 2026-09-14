@@ -74,6 +74,13 @@ pub(crate) enum RegexNode {
         name: String,
         sequential: bool,
     },
+    /// `@name` inside a named lookaround's regex argument. It has the same
+    /// RakuAST class as scalar interpolation, but array-valued interpolation
+    /// must retain the `@` sigil and stay on the runtime parser path.
+    ArrayInterpolation {
+        name: String,
+        sequential: bool,
+    },
     /// `<?@name>` / `<!@name>` — a zero-width assertion over the current
     /// elements of an array interpolation. The runtime parser resolves the
     /// array at match time; the source form is retained for RakuAST.
@@ -106,10 +113,19 @@ impl RegexTree {
     /// still receives the original pattern, while the converter reports an
     /// honest unsupported boundary for a construct without a source tree.
     pub(crate) fn parse_static(source: &str, declaration: bool) -> Option<Self> {
+        Self::parse_static_with_options(source, declaration, false)
+    }
+
+    fn parse_static_with_options(
+        source: &str,
+        declaration: bool,
+        allow_array_interpolation: bool,
+    ) -> Option<Self> {
         let mut parser = Parser {
             chars: source.chars().collect(),
             pos: 0,
             declaration,
+            allow_array_interpolation,
         };
         let body = parser.parse_alternation(&[], declaration)?;
         parser.skip_whitespace();
@@ -119,6 +135,10 @@ impl RegexTree {
             adverbs: Vec::new(),
             declaration_kind: None,
         })
+    }
+
+    fn parse_lookaround_body(source: &str) -> Option<Self> {
+        Self::parse_static_with_options(source, false, true)
     }
 
     pub(crate) fn to_source(&self) -> String {
@@ -561,7 +581,7 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                RegexNode::ArrayLookaround { .. } => None,
+                RegexNode::ArrayInterpolation { .. } | RegexNode::ArrayLookaround { .. } => None,
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -636,7 +656,7 @@ impl RegexNode {
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
             Self::Lookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
-            Self::ArrayLookaround { .. } => {}
+            Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => {}
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -652,7 +672,7 @@ impl RegexNode {
     fn contains_array_interpolation(&self) -> bool {
         match self {
             Self::Interpolation { .. } => false,
-            Self::ArrayLookaround { .. } => true,
+            Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
             Self::Sequence(nodes)
             | Self::Alternation(nodes)
             | Self::SequentialAlternation(nodes) => {
@@ -699,6 +719,7 @@ impl RegexNode {
             | Self::Subrule { .. }
             | Self::SubruleAlias { .. }
             | Self::Interpolation { .. }
+            | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::CharClassDigit => false,
         }
@@ -789,6 +810,7 @@ impl RegexNode {
                 format!("<{prefix}{keyword} {}>", assertion.to_source())
             }
             Self::Interpolation { name, .. } => format!("${name}"),
+            Self::ArrayInterpolation { name, .. } => format!("@{name}"),
             Self::ArrayLookaround { name, negated } => {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}@{name}>")
@@ -844,6 +866,7 @@ struct Parser {
     chars: Vec<char>,
     pos: usize,
     declaration: bool,
+    allow_array_interpolation: bool,
 }
 
 impl Parser {
@@ -1028,6 +1051,9 @@ impl Parser {
                 Some(RegexNode::AnchorEndOfString)
             }
             '$' => self.parse_interpolation(sequential_interpolation),
+            '@' if self.allow_array_interpolation => {
+                self.parse_array_interpolation(sequential_interpolation)
+            }
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
@@ -1147,7 +1173,7 @@ impl Parser {
             return None;
         }
         let body_source: String = self.chars[body_start..self.pos].iter().collect();
-        let assertion = RegexTree::parse_static(&body_source, false)?.body;
+        let assertion = RegexTree::parse_lookaround_body(&body_source)?.body;
         if !is_supported_lookaround_body(&assertion) {
             self.pos = start;
             return None;
@@ -1250,6 +1276,12 @@ impl Parser {
             self.parse_variable_name()?
         };
         Some(RegexNode::Interpolation { name, sequential })
+    }
+
+    fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
+        self.pos += 1; // '@'
+        let name = self.parse_variable_name()?;
+        Some(RegexNode::ArrayInterpolation { name, sequential })
     }
 
     fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {
@@ -1426,6 +1458,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         RegexNode::Literal(_)
         | RegexNode::Quote(_)
         | RegexNode::Interpolation { .. }
+        | RegexNode::ArrayInterpolation { .. }
         | RegexNode::ArrayLookaround { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
@@ -1444,7 +1477,7 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         RegexNode::Group(child)
         | RegexNode::Quantified { atom: child, .. }
         | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
-        RegexNode::Interpolation { .. } => true,
+        RegexNode::Interpolation { .. } | RegexNode::ArrayInterpolation { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }

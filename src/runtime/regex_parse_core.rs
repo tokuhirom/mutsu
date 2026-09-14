@@ -2683,6 +2683,8 @@ impl Interpreter {
                                     ),
                                 }
                             } else {
+                                let _preserve_array_interpolation =
+                                    crate::runtime::regex_parse::PreserveArrayInterpolationScope::enter();
                                 let Some(parsed) = self.parse_regex_with_mode(&inner, mode) else {
                                     continue;
                                 };

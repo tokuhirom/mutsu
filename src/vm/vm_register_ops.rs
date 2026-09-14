@@ -122,6 +122,10 @@ impl Interpreter {
                 // An anonymous declarator term's signature rides on the value;
                 // attaching the defining scope must not drop it.
                 base.regex_signature(),
+                base.regex_source_tree()
+                    .filter(|tree| tree.contains_array_interpolation())
+                    .cloned()
+                    .map(Box::new),
             ),
             ValueView::RegexWithAdverbs(a) => {
                 let mut adv = a.clone();

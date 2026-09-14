@@ -4,9 +4,9 @@
   static-value-provenance, declaration-provenance, positional-capture,
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
   bare-subrule, anchor, explicit-static-lookaround,
-  named-static-lookaround, nested-static-lookaround, escaped-lookaround, and
-  lookaround-interpolation and array-lookaround slices implemented 2026-09-12
-  through 2026-09-14;
+  named-static-lookaround, nested-static-lookaround, escaped-lookaround,
+  lookaround-interpolation, array-lookaround, and named-array-lookaround slices
+  implemented 2026-09-12 through 2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
@@ -734,3 +734,27 @@ dual-oracle `InterpolatedVar` shape, positive and negative zero-width matching,
 array reassignment, constructor accessors, and constructed-tree EVAL. Named
 regex-argument array interpolation, code assertions, and other runtime-valued
 lookaround bodies remain separate boundaries.
+
+## 25. Named regex-argument array interpolation slice (2026-09-14)
+
+Array interpolation in a named lookaround's regex argument, such as
+`<?before @name>` and `<!before @name>`, now retains its source shape as
+`RakuAST::Regex::Interpolation` beneath
+`Assertion::Named::RegexArg`/`Assertion::Lookahead`. The shared tree keeps the
+aggregate `@` sigil distinct from the existing direct `InterpolatedVar`
+lookaround node, while the read and write directions use the same
+`Regex::Interpolation` model as scalar interpolation.
+
+Execution preserves the bare array spelling while the nested lookaround body
+is parsed, then routes it through the established `<@name>` array-variable
+matcher. The resulting plan is not cached because the array is read from the
+current match environment at parse time; reassignment after regex construction
+therefore remains visible. The closure path now carries the parser-produced
+source tree along with the defining lexical scope so this behavior survives
+regex values captured into a variable.
+
+The focused regression is `t/regex/regex-tree-named-array-lookaround.t`. It pins
+the dual-oracle AST shape, positive and negative lookahead matching, live array
+reassignment, interpolation accessors, and constructed-tree EVAL. Code
+assertions and other runtime-valued lookaround bodies remain separate
+boundaries.

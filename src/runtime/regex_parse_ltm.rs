@@ -1605,10 +1605,16 @@ impl Interpreter {
         };
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
-        // Do not cache the resulting execution plan under the source-tree
-        // fingerprint, which has no array-content component.
+        // Do not cache the resulting execution plan under either the
+        // source-tree fingerprint or the ordinary pattern key, neither of
+        // which has an array-content component. This is especially important
+        // for `<?before @values>`: the array is nested inside a lookaround, so
+        // the outer pattern can otherwise look static to the top-level cache
+        // even though its inner plan was built from the old array value.
         if tree.contains_array_interpolation() {
-            return self.parse_regex(&pattern);
+            return self
+                .parse_regex_uncached(&pattern, RegexParseMode::Match)
+                .map(std::sync::Arc::new);
         }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
