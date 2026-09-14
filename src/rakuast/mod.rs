@@ -1062,6 +1062,22 @@ pub fn construct(
             fields: Vec::new(),
         }))));
     }
+    if class_name == "RakuAST::ArgList" && method == "new" {
+        for arg in args {
+            require_any_rakuast(arg, "RakuAST::ArgList.new", "arguments")?;
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::ArgList,
+            fields: args
+                .iter()
+                .cloned()
+                .map(|value| RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(value),
+                })
+                .collect(),
+        }))));
+    }
     if class_name == "RakuAST::Pragma" && method == "new" {
         let name = named_arg(args, "name")
             .ok_or_else(|| RuntimeError::new("RakuAST::Pragma.new requires `name`"))?;
@@ -2281,7 +2297,8 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 fn constructor_is_supported(class: RakuAstClass) -> bool {
     matches!(
         class,
-        RakuAstClass::StatementList
+        RakuAstClass::ArgList
+            | RakuAstClass::StatementList
             | RakuAstClass::IntLiteral
             | RakuAstClass::RatLiteral
             | RakuAstClass::StrLiteral

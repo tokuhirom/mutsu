@@ -1725,13 +1725,39 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             let Expr::CodeVar(name) = callee else {
                 return Err(unsupported(node));
             };
-            if let Some(field) = node.fields.iter().find(|f| f.name == Some("args")) {
-                let args = child_node(&field.value)?;
-                if args.class != RakuAstClass::ArgList || !args.fields.is_empty() {
-                    return Err(unsupported(node));
+            let args = match node.fields.iter().find(|f| f.name == Some("args")) {
+                Some(field) => {
+                    let args = child_node(&field.value)?;
+                    if args.class != RakuAstClass::ArgList {
+                        return Err(unsupported(node));
+                    }
+                    let mut lowered = Vec::with_capacity(args.fields.len());
+                    for field in &args.fields {
+                        if field.name.is_some() {
+                            return Err(unsupported(node));
+                        }
+                        lowered.push(lower_expr(child_node(&field.value)?)?);
+                    }
+                    lowered
                 }
-            }
-            Ok(RegexNode::Callable { name })
+                None => Vec::new(),
+            };
+            let arg_source = if args.is_empty() {
+                None
+            } else {
+                Some(
+                    args.iter()
+                        .map(crate::regex_tree::expression_source)
+                        .collect::<Option<Vec<_>>>()
+                        .ok_or_else(|| unsupported(node))?
+                        .join(", "),
+                )
+            };
+            Ok(RegexNode::Callable {
+                name,
+                args,
+                arg_source,
+            })
         }
         RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
             code: String::new(),

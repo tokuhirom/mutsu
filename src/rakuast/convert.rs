@@ -2403,10 +2403,13 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("assertion"), interpolated));
             (RakuAstClass::RegexAssertionLookahead, fields)
         }
-        RegexNode::Callable { name } => (
-            RakuAstClass::RegexAssertionCallable,
-            vec![node_field(Some("callee"), var_lexical("&", name))],
-        ),
+        RegexNode::Callable { name, args, .. } => {
+            let mut fields = vec![node_field(Some("callee"), var_lexical("&", name))];
+            if !args.is_empty() {
+                fields.push(node_field(Some("args"), arg_list(args)?));
+            }
+            (RakuAstClass::RegexAssertionCallable, fields)
+        }
         RegexNode::CodeAssertion { body, negated, .. } => {
             let mut fields = Vec::new();
             if *negated {
