@@ -333,7 +333,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         }
         if let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
-            let (r, trait_name) = ident(r)?;
+            // `is` may name an inherited type with a qualified name, as in
+            // `role SubModelHOW is Metamodel::SubsetHOW`.  Reading only the
+            // first identifier leaves `::SubsetHOW` in the input and turns
+            // the real parent into an unrelated `Metamodel` trait/role.
+            let (r, trait_name) = qualified_ident(r)?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
                 let r = skip_balanced_parens(r);
