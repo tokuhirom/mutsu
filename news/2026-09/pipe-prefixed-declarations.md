@@ -13,4 +13,4 @@ Grok moves from blocked-load to green: 2/2 Rakudo-baseline files pass under
 both interpreters. The two remaining test files are `no_baseline` because
 Grok's undeclared `Test::Output` dependency is unavailable to Rakudo as well.
 
-Pinned by `t/lang/parsing/pipe-prefixed-declaration.t`.
+Pinned by `t/lang/parsing/parser-pipe-prefixed-declaration.t`.
