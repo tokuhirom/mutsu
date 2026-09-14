@@ -1601,7 +1601,9 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 _ => Err(unsupported(node)),
             }
         }
-        RakuAstClass::RegexSequence | RakuAstClass::RegexAlternation => {
+        RakuAstClass::RegexSequence
+        | RakuAstClass::RegexAlternation
+        | RakuAstClass::RegexSequentialAlternation => {
             let mut children = Vec::with_capacity(node.fields.len());
             for field in &node.fields {
                 if field.name.is_some() {
@@ -1609,10 +1611,13 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 }
                 children.push(lower_regex_node(child_node(&field.value)?)?);
             }
-            if node.class == RakuAstClass::RegexSequence {
-                Ok(RegexNode::Sequence(children))
-            } else {
-                Ok(RegexNode::Alternation(children))
+            match node.class {
+                RakuAstClass::RegexSequence => Ok(RegexNode::Sequence(children)),
+                RakuAstClass::RegexAlternation => Ok(RegexNode::Alternation(children)),
+                RakuAstClass::RegexSequentialAlternation => {
+                    Ok(RegexNode::SequentialAlternation(children))
+                }
+                _ => Err(unsupported(node)),
             }
         }
         RakuAstClass::RegexGroup => Ok(RegexNode::Group(Box::new(lower_regex_node(
@@ -1701,9 +1706,6 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         }
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
-            if sequential {
-                return Err(unsupported(node));
-            }
             let var = named_child(node, "var")?;
             if var.class != RakuAstClass::VarLexical {
                 return Err(unsupported(node));

@@ -43,6 +43,7 @@ pub(crate) enum RegexNode {
     Quote(String),
     Sequence(Vec<RegexNode>),
     Alternation(Vec<RegexNode>),
+    SequentialAlternation(Vec<RegexNode>),
     Group(Box<RegexNode>),
     CapturingGroup(Box<RegexNode>),
     NamedCapture {
@@ -356,6 +357,28 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
+                RegexNode::SequentialAlternation(branches) => {
+                    let alternatives = branches
+                        .iter()
+                        .map(|branch| {
+                            lower_node(
+                                branch,
+                                ratchet,
+                                ignore_case,
+                                ignore_mark,
+                                rule_sigspace,
+                                false,
+                                anchor_start,
+                            )
+                            .map(|tokens| pattern(tokens, ignore_case, ignore_mark))
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(vec![token(
+                        crate::runtime::RegexAtom::SequentialAlternation(alternatives),
+                        crate::runtime::RegexQuant::One,
+                        ratchet,
+                    )])
+                }
                 RegexNode::Group(child) => {
                     let tokens = lower_node(
                         child,
@@ -518,16 +541,11 @@ impl RegexTree {
                     }
                     Some(vec![lookaround])
                 }
-                RegexNode::Interpolation { name, sequential } => {
-                    if *sequential {
-                        return None;
-                    }
-                    Some(vec![token(
-                        crate::runtime::RegexAtom::VarInterp(name.clone()),
-                        crate::runtime::RegexQuant::One,
-                        ratchet,
-                    )])
-                }
+                RegexNode::Interpolation { name, .. } => Some(vec![token(
+                    crate::runtime::RegexAtom::VarInterp(name.clone()),
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -588,7 +606,9 @@ impl RegexNode {
     fn collect_interpolation_names(&self, names: &mut Vec<String>) {
         match self {
             Self::Interpolation { name, .. } => names.push(name.clone()),
-            Self::Sequence(nodes) | Self::Alternation(nodes) => {
+            Self::Sequence(nodes)
+            | Self::Alternation(nodes)
+            | Self::SequentialAlternation(nodes) => {
                 for node in nodes {
                     node.collect_interpolation_names(names);
                 }
@@ -618,9 +638,9 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine => true,
-            Self::Sequence(nodes) | Self::Alternation(nodes) => {
-                nodes.iter().any(Self::contains_anchor)
-            }
+            Self::Sequence(nodes)
+            | Self::Alternation(nodes)
+            | Self::SequentialAlternation(nodes) => nodes.iter().any(Self::contains_anchor),
             Self::Group(child)
             | Self::CapturingGroup(child)
             | Self::Quantified { atom: child, .. }
@@ -675,6 +695,18 @@ impl RegexNode {
                                 source.push(' ');
                             }
                             source.push('|');
+                        }
+                        source.push_str(&node.to_source());
+                        source
+                    })
+            }
+            Self::SequentialAlternation(nodes) => {
+                nodes
+                    .iter()
+                    .enumerate()
+                    .fold(String::new(), |mut source, (index, node)| {
+                        if index > 0 {
+                            source.push_str("||");
                         }
                         source.push_str(&node.to_source());
                         source
@@ -740,6 +772,19 @@ fn sequence_for_multichar_literal(node: RegexNode) -> RegexNode {
     }
 }
 
+fn collapse_alternation(nodes: Vec<RegexNode>) -> RegexNode {
+    let mut nodes = nodes.into_iter();
+    let Some(first) = nodes.next() else {
+        return RegexNode::Alternation(Vec::new());
+    };
+    let Some(second) = nodes.next() else {
+        return first;
+    };
+    let mut alternatives = vec![first, second];
+    alternatives.extend(nodes);
+    RegexNode::Alternation(alternatives)
+}
+
 fn has_whitespace_after(node: &RegexNode) -> bool {
     matches!(node, RegexNode::WithWhitespace(_))
 }
@@ -752,22 +797,58 @@ struct Parser {
 
 impl Parser {
     fn parse_alternation(&mut self, stops: &[char], top_level: bool) -> Option<RegexNode> {
-        let mut branches = vec![self.parse_sequence(stops)?];
+        let mut branches = vec![self.parse_sequence(stops, false)?];
+        let mut sequential_operators = Vec::new();
         while self.consume_if('|') {
-            branches.push(self.parse_sequence(stops)?);
+            let sequential = self.consume_if('|');
+            sequential_operators.push(sequential);
+            branches.push(self.parse_sequence(stops, sequential)?);
         }
         if top_level && let Some(last) = branches.last_mut() {
             wrap_last_node(last);
         }
+        // RakuAST represents a multi-character literal branch as a
+        // `Sequence`, even when that branch contains only the literal. Apply
+        // the same normalization here so `bar||$x` retains the branch shape
+        // independently of whether the separator is `|` or `||`.
+        branches = branches
+            .into_iter()
+            .map(sequence_for_multichar_literal)
+            .collect();
         if branches.len() == 1 {
             Some(branches.pop().unwrap())
         } else {
-            Some(RegexNode::Alternation(branches))
+            // `||` binds less tightly than `|`: `a | b || c` is a
+            // sequential alternation whose first branch is the ordinary
+            // alternation `a | b`, while `a || b | c` keeps `b | c` as its
+            // second branch. This is also the shape Rakudo exposes through
+            // RakuAST::Regex::SequentialAlternation.
+            let mut groups = Vec::new();
+            let mut branch_iter = branches.into_iter();
+            let first = branch_iter.next()?;
+            let mut current = vec![first];
+            for (sequential, branch) in sequential_operators.into_iter().zip(branch_iter) {
+                if sequential {
+                    groups.push(collapse_alternation(std::mem::take(&mut current)));
+                }
+                current.push(branch);
+            }
+            groups.push(collapse_alternation(current));
+            if groups.len() == 1 {
+                Some(collapse_alternation(groups))
+            } else {
+                Some(RegexNode::SequentialAlternation(groups))
+            }
         }
     }
 
-    fn parse_sequence(&mut self, stops: &[char]) -> Option<RegexNode> {
+    fn parse_sequence(
+        &mut self,
+        stops: &[char],
+        sequential_interpolation: bool,
+    ) -> Option<RegexNode> {
         let mut nodes = Vec::new();
+        let mut sequential_interpolation = sequential_interpolation;
         loop {
             let before = self.pos;
             self.skip_whitespace();
@@ -784,7 +865,11 @@ impl Parser {
                 }
                 break;
             }
-            let mut atom = self.parse_atom(stops, nodes.is_empty())?;
+            let mut atom = self.parse_atom(stops, nodes.is_empty(), sequential_interpolation)?;
+            // Rakudo marks only the first interpolation after `||`; nested
+            // groups and later atoms retain their ordinary non-sequential
+            // interpolation shape.
+            sequential_interpolation = false;
             if let Some(quantifier) = self.parse_quantifier() {
                 // A quantifier binds to the final atom, not to a run of
                 // adjacent literal characters (`ab+` means `a` then `b+`).
@@ -840,7 +925,12 @@ impl Parser {
         }
     }
 
-    fn parse_atom(&mut self, stops: &[char], at_sequence_start: bool) -> Option<RegexNode> {
+    fn parse_atom(
+        &mut self,
+        stops: &[char],
+        at_sequence_start: bool,
+        sequential_interpolation: bool,
+    ) -> Option<RegexNode> {
         let ch = *self.chars.get(self.pos)?;
         match ch {
             '"' | '\'' => self.parse_quote(ch),
@@ -886,7 +976,7 @@ impl Parser {
                 self.pos += 1;
                 Some(RegexNode::AnchorEndOfString)
             }
-            '$' => self.parse_interpolation(),
+            '$' => self.parse_interpolation(sequential_interpolation),
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
@@ -1083,7 +1173,7 @@ impl Parser {
             .any(|keyword| rest.starts_with(keyword))
     }
 
-    fn parse_interpolation(&mut self) -> Option<RegexNode> {
+    fn parse_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         self.pos += 1; // '$'
         let name = if self.consume_if('{') {
             let name = self.parse_variable_name()?;
@@ -1094,10 +1184,7 @@ impl Parser {
         } else {
             self.parse_variable_name()?
         };
-        Some(RegexNode::Interpolation {
-            name,
-            sequential: false,
-        })
+        Some(RegexNode::Interpolation { name, sequential })
     }
 
     fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {
@@ -1115,7 +1202,7 @@ impl Parser {
             return None;
         }
         self.skip_whitespace();
-        let mut regex = self.parse_atom(&[], true)?;
+        let mut regex = self.parse_atom(&[], true, false)?;
         let quantifier = self.parse_quantifier();
         // Aggregate aliases have their own list-context semantics in the
         // legacy matcher. Keep subrule-containing forms there until the
@@ -1261,9 +1348,9 @@ fn is_simple_subrule_name(name: &str) -> bool {
 fn contains_subrule(node: &RegexNode) -> bool {
     match node {
         RegexNode::Subrule { .. } | RegexNode::SubruleAlias { .. } => true,
-        RegexNode::Sequence(nodes) | RegexNode::Alternation(nodes) => {
-            nodes.iter().any(contains_subrule)
-        }
+        RegexNode::Sequence(nodes)
+        | RegexNode::Alternation(nodes)
+        | RegexNode::SequentialAlternation(nodes) => nodes.iter().any(contains_subrule),
         RegexNode::Group(child)
         | RegexNode::CapturingGroup(child)
         | RegexNode::Quantified { atom: child, .. }
@@ -1285,20 +1372,17 @@ fn contains_subrule(node: &RegexNode) -> bool {
 fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     match node {
         RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClassDigit => true,
-        RegexNode::Sequence(nodes) | RegexNode::Alternation(nodes) => {
-            nodes.iter().all(is_supported_lookaround_body)
-        }
+        RegexNode::Sequence(nodes)
+        | RegexNode::Alternation(nodes)
+        | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_supported_lookaround_body),
         RegexNode::Group(child)
         | RegexNode::Quantified { atom: child, .. }
         | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
-        RegexNode::Interpolation {
-            sequential: false, ..
-        } => true,
+        RegexNode::Interpolation { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
         | RegexNode::SubruleAlias { .. }
-        | RegexNode::Interpolation { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString

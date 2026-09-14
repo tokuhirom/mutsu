@@ -2324,6 +2324,13 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 .map(|child| regex_node(child).map(|node| node_field(None, node)))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        RegexNode::SequentialAlternation(nodes) => (
+            RakuAstClass::RegexSequentialAlternation,
+            nodes
+                .iter()
+                .map(|child| regex_node(child).map(|node| node_field(None, node)))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         RegexNode::Group(child) => (
             RakuAstClass::RegexGroup,
             vec![node_field(None, regex_node(child)?)],
