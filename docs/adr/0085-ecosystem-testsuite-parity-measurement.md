@@ -481,6 +481,17 @@ loads successfully under both mutsu and rakudo after the change. Remaining failu
 distribution are separate downstream dependency or runtime findings and are
 not folded into this parser slice.
 
+## 13. Campaign slice: `elsif` accepts a condition without intervening whitespace (2026-09-14)
+
+The next Red lead was `elsif($attr.rw)` in
+`MetamodelX::Red::Relationship`. Rakudo accepts a conditional branch whose
+condition begins immediately with `(`, but mutsu required whitespace after the
+`elsif` keyword and therefore reported the failure at the preceding `if`.
+`parse_elsif_chain` now uses the existing zero-or-more whitespace parser before
+the condition. The focused regression is
+`t/control/if-elsif-condition-without-whitespace.t`, and the result was recorded
+in the Red ecosystem ledger after re-measurement.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
