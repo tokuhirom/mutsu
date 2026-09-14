@@ -1850,6 +1850,17 @@ impl Interpreter {
                 }
             } else if pd.named || pd.name.starts_with(':') {
                 // Look for a matching named argument (Pair) in args
+                // Rakudo does not enforce a named parameter's nominal or
+                // callable-return constraint when it follows a positional
+                // slurpy. This is observable with `sub f(*@items, Callable
+                // :&by)`: the named callback is intentionally accepted as
+                // an unconstrained value. A `where` constraint remains an
+                // explicit runtime check and therefore keeps the normal
+                // binding path.
+                let enforce_named_constraints = pd.where_constraint.is_some()
+                    || !param_defs[..param_idx]
+                        .iter()
+                        .any(|candidate| candidate.slurpy);
                 let match_key = if pd.name.starts_with(':') {
                     &pd.name[1..]
                 } else if let Some(rest) = pd
@@ -1885,7 +1896,8 @@ impl Interpreter {
                     if let ValueView::Pair(key, val) = arg.view()
                         && key == match_key
                     {
-                        if let Some((sig_params, sig_ret)) = &pd.code_signature
+                        if enforce_named_constraints
+                            && let Some((sig_params, sig_ret)) = &pd.code_signature
                             && !code_signature_matches_value(self, sig_params, sig_ret, val)
                         {
                             let expected = Self::signature_constraint_for_error(sig_params);
@@ -1936,8 +1948,10 @@ impl Interpreter {
                         // f(x => "no")` silently bound the mismatched Str.
                         // Checked against the raw passed value, before any
                         // container-sharing/rw promotion below.
-                        bound_value =
-                            self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                        if enforce_named_constraints {
+                            bound_value =
+                                self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                        }
                         // Named `is copy` container param: own a distinct
                         // container, exactly like the positional arm — and give
                         // the fresh copy the "element" descriptor name (rakudo:
