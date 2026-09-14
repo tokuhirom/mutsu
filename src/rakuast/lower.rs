@@ -1575,6 +1575,45 @@ fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
 }
 
+/// Lower a regex assertion name, preserving qualified name-part boundaries in
+/// the execution spelling used by the existing matcher.
+fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    if node.class != RakuAstClass::Name {
+        return Err(unsupported(node));
+    }
+    if let Some(field) = node.fields.iter().find(|field| field.name == Some("parts")) {
+        let RakuAstFieldValue::List(parts) = &field.value else {
+            return Err(unsupported(node));
+        };
+        if parts.is_empty() {
+            return Err(unsupported(node));
+        }
+        let mut names = Vec::with_capacity(parts.len());
+        for part in parts {
+            let ValueView::RakuAst(part) = part.view() else {
+                return Err(unsupported(node));
+            };
+            if part.class != RakuAstClass::NamePartSimple {
+                return Err(unsupported(node));
+            }
+            let value = positional_leaf(part)?;
+            let ValueView::Str(name) = value.view() else {
+                return Err(unsupported(node));
+            };
+            if name.is_empty() {
+                return Err(unsupported(node));
+            }
+            names.push(name.to_string());
+        }
+        return Ok(names.join("::"));
+    }
+    let value = positional_leaf(node)?;
+    let ValueView::Str(name) = value.view() else {
+        return Err(unsupported(node));
+    };
+    Ok(name.to_string())
+}
+
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
@@ -1631,20 +1670,10 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             array: bool_field(node, "array")?,
             regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
         }),
-        RakuAstClass::RegexAssertionNamed => {
-            let name = named_child(node, "name")?;
-            if name.class != RakuAstClass::Name {
-                return Err(unsupported(node));
-            }
-            let name_value = positional_leaf(name)?;
-            let ValueView::Str(name) = name_value.view() else {
-                return Err(unsupported(node));
-            };
-            Ok(RegexNode::Subrule {
-                name: name.to_string(),
-                capturing: bool_field(node, "capturing")?,
-            })
-        }
+        RakuAstClass::RegexAssertionNamed => Ok(RegexNode::Subrule {
+            name: lower_regex_subrule_name(named_child(node, "name")?)?,
+            capturing: bool_field(node, "capturing")?,
+        }),
         RakuAstClass::RegexAssertionAlias => {
             let assertion = named_child(node, "assertion")?;
             if assertion.class != RakuAstClass::RegexAssertionNamed
@@ -1652,17 +1681,9 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             {
                 return Err(unsupported(node));
             }
-            let name = named_child(assertion, "name")?;
-            if name.class != RakuAstClass::Name {
-                return Err(unsupported(node));
-            }
-            let name_value = positional_leaf(name)?;
-            let ValueView::Str(name) = name_value.view() else {
-                return Err(unsupported(node));
-            };
             Ok(RegexNode::SubruleAlias {
                 alias: leaf_str(node, "name")?,
-                name: name.to_string(),
+                name: lower_regex_subrule_name(named_child(assertion, "name")?)?,
             })
         }
         RakuAstClass::RegexAssertionLookahead => {

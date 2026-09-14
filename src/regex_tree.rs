@@ -1871,7 +1871,7 @@ impl Parser {
         }
         let contents: String = self.chars[start..self.pos - 1].iter().collect();
         if let Some((alias, name)) = contents.split_once('=') {
-            if is_simple_subrule_name(alias) && is_simple_subrule_name(name) {
+            if is_simple_subrule_name(alias) && is_subrule_name(name) {
                 return Some(RegexNode::SubruleAlias {
                     alias: alias.to_string(),
                     name: name.to_string(),
@@ -1884,7 +1884,7 @@ impl Parser {
         } else {
             (true, contents.as_str())
         };
-        is_simple_subrule_name(name).then(|| RegexNode::Subrule {
+        is_subrule_name(name).then(|| RegexNode::Subrule {
             name: name.to_string(),
             capturing,
         })
@@ -1950,6 +1950,13 @@ fn is_simple_subrule_name(name: &str) -> bool {
     };
     (first.is_alphabetic() || first == '_')
         && chars.all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+}
+
+/// A qualified subrule name is a sequence of ordinary identifier segments.
+/// Keep the alias side restricted to `is_simple_subrule_name`: Rakudo rejects
+/// a long name on the alias side, while the called rule may be qualified.
+fn is_subrule_name(name: &str) -> bool {
+    !name.is_empty() && name.split("::").all(is_simple_subrule_name)
 }
 
 fn contains_subrule(node: &RegexNode) -> bool {
