@@ -1453,6 +1453,7 @@ impl Interpreter {
         // GLOBAL and would otherwise be removed with the preload aliases.
         if multi
             && !self.suppress_exports
+            && self.current_package() == "GLOBAL"
             && let Some(owner) = self.module_load_stack.last()
             && let Some(tags) = self
                 .module_owned_exports
