@@ -127,12 +127,27 @@ fn strip_null_decl_name_marker(input: &str) -> &str {
 /// `;`. In expression context the `;` belongs to the *outer* statement, so if it
 /// were swallowed the surrounding expression parser would keep going and treat a
 /// following listop (`my @a = do $_ for 2..4; say @a`) as an infix operator on
-/// the `do` result. Give the terminator back by returning a remaining slice that
-/// starts at the consumed `;`.
+/// the `do` result. A block-valued conditional can likewise consume the
+/// newline which separates the outer statement from the next expression. Give
+/// either terminator back to the outer parser.
 fn restore_do_stmt_terminator<'a>(orig: &'a str, after: &'a str) -> &'a str {
     let consumed = orig.len().saturating_sub(after.len());
     if consumed > 0 && orig.as_bytes()[consumed - 1] == b';' {
         &orig[consumed - 1..]
+    } else if consumed > 0 {
+        // The statement parser also consumes a newline after a block-valued
+        // `do if`/`do for`. Keep it visible to the outer expression parser so
+        // the next line is recognized as a new statement, not an adjacent term.
+        let consumed_source = &orig[..consumed];
+        let trailing_ws_start = consumed_source
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .map_or(0, |(idx, ch)| idx + ch.len_utf8());
+        if consumed_source[trailing_ws_start..].contains(['\n', '\r']) {
+            return &orig[trailing_ws_start..];
+        }
+        after
     } else {
         after
     }

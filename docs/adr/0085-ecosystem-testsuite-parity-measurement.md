@@ -492,6 +492,21 @@ the condition. The focused regression is
 `t/control/if-elsif-condition-without-whitespace.t`, and the result was recorded
 in the Red ecosystem ledger after re-measurement.
 
+## 14. Campaign slice: preserve the boundary after a block-valued `do if` (2026-09-14)
+
+The next Red lead was `Red::Driver::CommonSQL`, where a block-valued `do if`
+expression is followed by a `qq[...]` expression on the next line. The full
+statement parser consumed the newline after the `do if` block. In expression
+context that left the outer parser with two adjacent terms and produced
+`Confused: Two terms in a row`, although Rakudo treats the newline as the
+statement boundary.
+
+`restore_do_stmt_terminator` now restores a consumed trailing newline as well as
+the existing semicolon case. The focused regression is
+`t/lang/quoting/qq-after-do-if-block.t`. This is a parser-boundary fix; the
+other Red failures, including `Red::Driver::Mock` and
+`Red::Driver::SQLite::SchemaReader`, remain independent slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
