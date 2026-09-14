@@ -6,7 +6,8 @@
   bare-subrule, anchor, explicit-static-lookaround,
   named-static-lookaround, nested-static-lookaround, escaped-lookaround,
   lookaround-interpolation, array-lookaround, and named-array-lookaround slices
-  implemented 2026-09-12 through 2026-09-14;
+  and predicate-block-code-assertion slices implemented 2026-09-12 through
+  2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
@@ -758,3 +759,24 @@ the dual-oracle AST shape, positive and negative lookahead matching, live array
 reassignment, interpolation accessors, and constructed-tree EVAL. Code
 assertions and other runtime-valued lookaround bodies remain separate
 boundaries.
+
+## 26. Predicate-block code assertion slice (2026-09-14)
+
+Predicate-block assertions (`<?{ ... }>` and `<!{ ... }>`) now retain their
+source structure as `RakuAST::Regex::Assertion::PredicateBlock`, including the
+negation field and the nested `RakuAST::Block`. The parser stores both the
+original source text and the parsed statement body in the shared regex tree;
+the read direction converts the body to a RakuAST block and the write
+direction lowers a constructed block back to the same tree node.
+
+Execution carries the parsed body into the existing ADR-0009 inline-code
+matcher. It therefore preserves the current real-match versus declarative
+probe behavior, including once-per-match side effects, without evaluating code
+during `.AST` conversion or adding a VM fallback. Interpolated blocks
+(`<{ ... }>`), plain code blocks, and other runtime-valued regex bodies remain
+deferred until their source and execution semantics can be represented
+together.
+
+The focused regression is `t/regex/regex-tree-code-assertion.t`. It pins the
+dual-oracle AST shape, nested lookaround, polarity, side-effect count, and
+constructed-tree EVAL behavior.

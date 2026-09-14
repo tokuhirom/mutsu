@@ -487,6 +487,8 @@ impl Interpreter {
                 code,
                 negated,
                 is_assertion,
+                body,
+                code_cache_id,
             } => {
                 // Declarative-prefix (LTM) measurement: never execute the code
                 // (ADR-0009). The two kinds are treated differently, per
@@ -523,8 +525,14 @@ impl Interpreter {
                     // (ADR-0009 part B). It is therefore NOT recorded as a code block
                     // for `execute_regex_code_blocks` to replay on the winning path —
                     // that replay would run it a second time.
-                    let outcome =
-                        self.eval_regex_inline_code(code, current_caps, &matched_so_far, false);
+                    let outcome = self.eval_regex_inline_code(
+                        code,
+                        body.as_ref(),
+                        *code_cache_id,
+                        current_caps,
+                        &matched_so_far,
+                        false,
+                    );
                     let result = outcome.value.map(|v| v.truthy()).unwrap_or(false);
                     let pass = if *negated { !result } else { result };
                     if pass {
@@ -552,8 +560,14 @@ impl Interpreter {
                 // special case either: `walk_seq_alternation` only evaluates that
                 // branch once raku's cursor would enter it, so reaching this point
                 // means the block really is on the cursor's path.
-                let outcome =
-                    self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
+                let outcome = self.eval_regex_inline_code(
+                    code,
+                    body.as_ref(),
+                    *code_cache_id,
+                    current_caps,
+                    &matched_so_far,
+                    true,
+                );
                 // The block `die`d: fail the match so the engine unwinds; the
                 // parked pending error is re-raised at the match entry point.
                 if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {

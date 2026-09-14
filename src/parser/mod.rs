@@ -199,11 +199,19 @@ fn take_suppress_sink_warnings() -> bool {
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
     let saved_markers = VCS_CONFLICT_MARKERS.with(|m| std::mem::take(&mut *m.borrow_mut()));
+    let saved_source_state = primary::snapshot_source_state();
+    let saved_scopes = stmt::simple::snapshot_scopes();
+    let saved_package_path = stmt::simple::snapshot_package_path();
+    let saved_language_version = stmt::simple::current_language_version();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     let result = parse_program(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     PARSE_WARNINGS.with(|w| *w.borrow_mut() = saved_warnings);
     VCS_CONFLICT_MARKERS.with(|m| *m.borrow_mut() = saved_markers);
+    primary::restore_source_state(saved_source_state);
+    stmt::simple::restore_scopes(saved_scopes);
+    stmt::simple::restore_package_path(saved_package_path);
+    stmt::simple::set_current_language_version(&saved_language_version);
     result
 }
 

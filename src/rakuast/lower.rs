@@ -1719,6 +1719,11 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 negated: false,
             })
         }
+        RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
+            code: String::new(),
+            negated: bool_field(node, "negated")?,
+            body: lower_block(named_child(node, "block")?)?,
+        }),
         RakuAstClass::RegexAssertionNamedRegexArg => {
             let name_node = named_child(node, "name")?;
             if name_node.class != RakuAstClass::Name {

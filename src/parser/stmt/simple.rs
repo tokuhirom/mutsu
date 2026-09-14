@@ -120,7 +120,7 @@ enum TermBinding {
 }
 
 #[derive(Clone, Default)]
-struct LexicalScope {
+pub(in crate::parser) struct LexicalScope {
     user_subs: HashSet<String>,
     infix_assoc: HashMap<String, String>,
     test_assertion_subs: HashSet<String>,
@@ -260,6 +260,25 @@ thread_local! {
     /// Used by `import` to register exported operators at parse time.
     static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<InlineModuleExport>>> =
         RefCell::new(HashMap::new());
+}
+
+/// Save the lexical parser scopes around a nested fragment parse. The nested
+/// parser starts a fresh compilation unit and therefore resets this stack; the
+/// caller must restore it before continuing the enclosing source parse.
+pub(in crate::parser) fn snapshot_scopes() -> Vec<LexicalScope> {
+    SCOPES.with(|scopes| scopes.borrow().clone())
+}
+
+pub(in crate::parser) fn restore_scopes(scopes: Vec<LexicalScope>) {
+    SCOPES.with(|current| *current.borrow_mut() = scopes);
+}
+
+pub(in crate::parser) fn snapshot_package_path() -> Vec<String> {
+    PACKAGE_PATH.with(|path| path.borrow().clone())
+}
+
+pub(in crate::parser) fn restore_package_path(path: Vec<String>) {
+    PACKAGE_PATH.with(|current| *current.borrow_mut() = path);
 }
 
 /// Whether an EVAL is seeding the next `reset_user_subs` with names (or a

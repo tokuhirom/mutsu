@@ -234,16 +234,23 @@ impl Interpreter {
     pub(super) fn eval_regex_inline_code(
         &mut self,
         code: &str,
+        parsed_body: Option<&std::sync::Arc<Vec<crate::ast::Stmt>>>,
+        parsed_cache_id: u64,
         caps: &RegexCaptures,
         matched_so_far: &str,
         writes_back_to_caller: bool,
     ) -> InlineCodeOutcome {
-        let Some((stmts, code_cache_id)) = self.parse_regex_code_cached_with_id(code) else {
-            return InlineCodeOutcome {
-                value: None,
-                writes: ValueMap::default(),
-                made: None,
+        let (stmts, code_cache_id) = if let Some(body) = parsed_body {
+            (std::sync::Arc::clone(body), parsed_cache_id)
+        } else {
+            let Some((stmts, code_cache_id)) = self.parse_regex_code_cached_with_id(code) else {
+                return InlineCodeOutcome {
+                    value: None,
+                    writes: ValueMap::default(),
+                    made: None,
+                };
             };
+            (stmts, code_cache_id)
         };
         // The bindings to install for the body, and to restore afterwards.
         let mut env: Vec<(String, Value)> = Vec::new();
