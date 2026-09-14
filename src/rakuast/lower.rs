@@ -1684,13 +1684,17 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                     })
                 }
                 RakuAstClass::RegexAssertionInterpolatedVar => {
-                    let RegexNode::ArrayLookaround { name, negated } = lower_regex_node(assertion)?
+                    let RegexNode::RegexValueInterpolation { name, sigil, .. } =
+                        lower_regex_node(assertion)?
                     else {
                         return Err(unsupported(node));
                     };
+                    if sigil != '@' {
+                        return Err(unsupported(node));
+                    }
                     Ok(RegexNode::ArrayLookaround {
                         name,
-                        negated: negated || bool_field(node, "negated")?,
+                        negated: bool_field(node, "negated")?,
                     })
                 }
                 _ => Err(unsupported(node)),
@@ -1706,24 +1710,20 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             let ValueView::Str(name) = name_value.view() else {
                 return Err(unsupported(node));
             };
-            if let Some(name) = name.strip_prefix('@') {
-                if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
-                    return Err(unsupported(node));
-                }
-                return Ok(RegexNode::ArrayLookaround {
-                    name: name.to_string(),
-                    negated: false,
-                });
-            }
-            let Some(name) = name.strip_prefix('$') else {
+            let Some(sigil) = name.chars().next() else {
                 return Err(unsupported(node));
             };
+            if !matches!(sigil, '$' | '@' | '%') {
+                return Err(unsupported(node));
+            }
+            let name = &name[sigil.len_utf8()..];
             if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
                 return Err(unsupported(node));
             }
             Ok(RegexNode::RegexValueInterpolation {
                 name: name.to_string(),
                 sequential,
+                sigil,
             })
         }
         RakuAstClass::RegexAssertionCallable => {

@@ -1591,9 +1591,9 @@ impl Interpreter {
 
     /// Parse a regex value while retaining parser-produced source provenance.
     /// Values with a supported source tree use it directly, including the
-    /// match-time scalar interpolation node. Values synthesized by runtime
-    /// code, and trees outside the current execution subset, retain the
-    /// established string parser path.
+    /// match-time angle value interpolation node. Values synthesized by
+    /// runtime code, and trees outside the current execution subset, retain
+    /// the established string parser path.
     pub(super) fn parse_regex_value(&self, value: &Value) -> Option<std::sync::Arc<RegexPattern>> {
         let pattern = match value.view() {
             ValueView::Regex(pattern) => pattern.to_string(),
@@ -1616,10 +1616,11 @@ impl Interpreter {
                 .parse_regex_uncached(&pattern, RegexParseMode::Match)
                 .map(std::sync::Arc::new);
         }
-        // `<$name>` is source-representable, but its scalar value is read and
-        // reparsed while the runtime builds the nested regex. Do not cache
-        // that plan by source tree alone: the lexical may be reassigned to a
-        // different string, Regex, or other value before the next match.
+        // Angle value interpolation is source-representable, but its lexical
+        // value is read and reparsed while the runtime builds the nested
+        // regex. Do not cache that plan by source tree alone: the lexical may
+        // be reassigned to a different aggregate, string, Regex, or other
+        // value before the next match.
         if tree.contains_regex_value_interpolation() {
             return self
                 .parse_regex_uncached(&pattern, RegexParseMode::Match)

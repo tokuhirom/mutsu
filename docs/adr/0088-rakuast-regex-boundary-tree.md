@@ -9,8 +9,8 @@
   predicate-block-code-assertion, plain-code-block, and
   interpolated-code-block, sequential-interpolated-code-block, and
   ordinary-array-interpolation, callable-interpolation,
-  callable-interpolation-arguments, and angle-scalar-interpolation slices
-  implemented
+  callable-interpolation-arguments, angle-scalar-interpolation, and
+  angle-aggregate-interpolation slices implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -961,3 +961,26 @@ assertion shape, sequential alternation, Regex and string reassignment,
 lookaround composition, and constructed-node EVAL. Callable interpolation,
 hash interpolation, and other runtime-valued regex bodies remain separate
 boundaries.
+
+## 35. Angle aggregate regex interpolation slice (2026-09-14)
+
+Indirect aggregate interpolation (`<@name>` and `<%name>`) now retains
+Rakudo's `RakuAST::Regex::Assertion::InterpolatedVar` shape, including the
+aggregate sigil on its lexical variable and the `sequential` branch flag.
+This is distinct from ordinary `@name` interpolation, which remains a
+`RakuAST::Regex::Interpolation` node, and from direct `%name` interpolation,
+which Rakudo reserves.
+
+The shared tree records the angle form as a value interpolation with its
+sigil. Execution deliberately stays on the existing runtime parser path:
+array assertions resolve current elements at match time, while hash-valued
+assertions retain the runtime parser's existing semantics and diagnostics.
+The source-tree execution-plan cache is therefore bypassed for all three
+angle sigils, including the already-supported scalar form. Constructed
+`InterpolatedVar` nodes lower through the same Regex value and Parser ->
+Compiler -> VM path without evaluating the aggregate during AST conversion.
+
+The focused regression is `t/regex/regex-tree-angle-interpolation.t`. It pins
+the dual-oracle array and hash assertion shapes, sequential context, nested
+lookaround, array reassignment, and constructed-node EVAL. Qualified and
+argumented subrules remain deferred to separate boundaries.

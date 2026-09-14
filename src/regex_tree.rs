@@ -37,6 +37,10 @@ pub(crate) struct RegexAdverb {
     pub(crate) argument: Option<String>,
 }
 
+fn default_regex_value_sigil() -> char {
+    '$'
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RegexNode {
     Literal(String),
@@ -74,13 +78,18 @@ pub(crate) enum RegexNode {
         name: String,
         sequential: bool,
     },
-    /// `<$name>` — interpolate the current scalar value as a regex. The
-    /// runtime parser resolves the value when the regex is matched, so this
-    /// node is retained for RakuAST but deliberately stays off the static
-    /// execution-plan path.
+    /// `<$name>`, `<@name>`, or `<%name>` — interpolate the current lexical
+    /// value as an indirect subrule. The runtime parser resolves the value
+    /// when the regex is matched, so this node is retained for RakuAST but
+    /// deliberately stays off the static execution-plan path.
     RegexValueInterpolation {
         name: String,
         sequential: bool,
+        /// The lexical sigil is observable in RakuAST. These forms share one
+        /// model class, but the runtime parser gives each one type-specific
+        /// subrule semantics.
+        #[serde(default = "default_regex_value_sigil")]
+        sigil: char,
     },
     /// `@name` inside a named lookaround's regex argument. It has the same
     /// RakuAST class as scalar interpolation, but array-valued interpolation
@@ -211,10 +220,10 @@ impl RegexTree {
         self.body.contains_array_interpolation()
     }
 
-    /// Stored regex interpolation reads the referenced value while the
-    /// runtime parser builds its execution plan. Such a plan must not enter
-    /// the source-tree cache, whose key does not include the current value of
-    /// the lexical.
+    /// Angle value interpolation reads the referenced value while the runtime
+    /// parser builds its execution plan. Such a plan must not enter the
+    /// source-tree cache, whose key does not include the current value of the
+    /// lexical.
     pub(crate) fn contains_regex_value_interpolation(&self) -> bool {
         self.body.contains_regex_value_interpolation()
     }
@@ -955,7 +964,9 @@ impl RegexNode {
                 format!("<{prefix}{keyword} {}>", assertion.to_source())
             }
             Self::Interpolation { name, .. } => format!("${name}"),
-            Self::RegexValueInterpolation { name, .. } => format!("<${name}>"),
+            Self::RegexValueInterpolation { name, sigil, .. } => {
+                format!("<{sigil}{name}>")
+            }
             Self::ArrayInterpolation { name, .. } => format!("@{name}"),
             Self::ArrayLookaround { name, negated } => {
                 let marker = if *negated { '!' } else { '?' };
@@ -1352,12 +1363,18 @@ impl Parser {
             return self.parse_callable(start);
         }
 
-        // `<$name>` interpolates the current scalar value as a regex. It has
-        // a different RakuAST node from bare `$name` interpolation because
-        // the runtime reparses the value as a nested regex and isolates its
-        // captures. Keep that value-sensitive execution on the established
-        // parser path.
-        if !explicit && self.chars.get(self.pos) == Some(&'$') {
+        // `<$name>`, `<@name>`, and `<%name>` interpolate the current lexical
+        // value as an indirect subrule. They share one RakuAST node but the
+        // sigil remains observable and gives the runtime parser its
+        // type-specific semantics. Keep all three value-sensitive forms on
+        // the established parser path.
+        if !explicit
+            && self
+                .chars
+                .get(self.pos)
+                .is_some_and(|ch| matches!(ch, '$' | '@' | '%'))
+        {
+            let sigil = self.chars[self.pos];
             self.pos += 1;
             let Some(name) = self.parse_variable_name() else {
                 self.pos = start;
@@ -1370,6 +1387,7 @@ impl Parser {
             return Some(RegexNode::RegexValueInterpolation {
                 name,
                 sequential: sequential_interpolation,
+                sigil,
             });
         }
 
