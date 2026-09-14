@@ -88,6 +88,12 @@ pub(crate) enum RegexNode {
         name: String,
         negated: bool,
     },
+    /// `<&name>` / `<&name()>` — call a lexical routine and interpolate its
+    /// return value as a regex. Argument-bearing calls remain on the legacy
+    /// parser path until their argument tree has its own bounded slice.
+    Callable {
+        name: String,
+    },
     /// `<?{ ... }>` / `<!{ ... }>` — a zero-width predicate whose body runs
     /// inline in the real interpreter. Keep both the source spelling and the
     /// parsed statements so RakuAST conversion and execution use one tree.
@@ -610,6 +616,7 @@ impl RegexTree {
                     ratchet,
                 )]),
                 RegexNode::ArrayInterpolation { .. } | RegexNode::ArrayLookaround { .. } => None,
+                RegexNode::Callable { .. } => None,
                 RegexNode::CodeAssertion {
                     code,
                     negated,
@@ -720,6 +727,7 @@ impl RegexNode {
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
+            | Self::Callable { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => {}
@@ -739,6 +747,7 @@ impl RegexNode {
         match self {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
+            Self::Callable { .. } => false,
             Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => false,
@@ -790,6 +799,7 @@ impl RegexNode {
             | Self::Interpolation { .. }
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
+            | Self::Callable { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
@@ -887,6 +897,7 @@ impl RegexNode {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}@{name}>")
             }
+            Self::Callable { name } => format!("<&{name}>"),
             Self::CodeAssertion { code, negated, .. } => {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}{{{code}}}>")
@@ -1183,6 +1194,14 @@ impl Parser {
             return self.parse_code_interpolation(sequential_interpolation);
         }
 
+        // `<&name>` and `<&name()>` are callable regex interpolations. Keep
+        // only the argument-less form in this slice; a non-empty argument
+        // list must continue through the legacy parser until its RakuAST
+        // argument tree is represented here.
+        if !explicit && self.chars.get(self.pos) == Some(&'&') {
+            return self.parse_callable(start);
+        }
+
         // `<?@name>` and `<!@name>` are the direct array-interpolation
         // assertion forms. They have a distinct RakuAST node from the
         // `<?before @name>` form, even though both are zero-width assertions
@@ -1317,6 +1336,28 @@ impl Parser {
             body,
             sequential,
         })
+    }
+
+    fn parse_callable(&mut self, start: usize) -> Option<RegexNode> {
+        self.pos += 1; // '&'
+        let Some(name) = self.parse_variable_name() else {
+            self.pos = start;
+            return None;
+        };
+        self.skip_whitespace();
+        if self.consume_if('(') {
+            self.skip_whitespace();
+            if !self.consume_if(')') {
+                self.pos = start;
+                return None;
+            }
+            self.skip_whitespace();
+        }
+        if !self.consume_if('>') {
+            self.pos = start;
+            return None;
+        }
+        Some(RegexNode::Callable { name })
     }
 
     fn parse_code_block(&mut self) -> Option<RegexNode> {
@@ -1654,6 +1695,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::Interpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::ArrayLookaround { .. }
+        | RegexNode::Callable { .. }
         | RegexNode::CodeAssertion { .. }
         | RegexNode::CodeBlock { .. }
         | RegexNode::InterpolatedBlock { .. }
@@ -1676,6 +1718,7 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
         RegexNode::Interpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
+        | RegexNode::Callable { .. }
         | RegexNode::CodeAssertion { .. }
         | RegexNode::CodeBlock { .. }
         | RegexNode::InterpolatedBlock { .. } => true,

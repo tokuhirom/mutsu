@@ -8,7 +8,7 @@
   lookaround-interpolation, array-lookaround, named-array-lookaround,
   predicate-block-code-assertion, plain-code-block, and
   interpolated-code-block, sequential-interpolated-code-block, and
-  ordinary-array-interpolation slices implemented
+  ordinary-array-interpolation, and callable-interpolation slices implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -890,5 +890,29 @@ check rather than snapshotting or lowering the hash as a regex.
 This slice therefore changes no parser or matcher behavior. It settles the
 hash-interpolation remainder as an explicit language boundary; if Rakudo
 later assigns semantics to hash interpolation, that syntax needs a fresh
-measurement and a new ADR-0088 slice. The next open dynamic boundary remains
-code interpolation.
+measurement and a new ADR-0088 slice. At the time of this slice, the next open
+dynamic boundary was code interpolation.
+
+## 32. Argument-less callable interpolation slice (2026-09-14)
+
+Argument-less callable interpolation (`<&name>` and the empty-call spelling
+`<&name()>`) now retains Rakudo's
+`RakuAST::Regex::Assertion::Callable` shape with a lexical `&name` callee.
+Both spellings intentionally normalize to the same source tree; a non-empty
+argument list remains represented by the node's separate `args => ArgList`
+field and is deferred to a later slice.
+
+The parser recognizes only the argument-less forms and keeps their source
+provenance in `RegexNode::Callable`. Execution lowering deliberately leaves
+the node on the existing runtime parser path, so this slice does not invent a
+new VM dispatch route or evaluate a callable while converting `.AST`.
+Constructed Callable nodes with an empty argument list lower back through the
+same regex value path; non-empty argument lists remain an explicit lowering
+boundary.
+
+The focused regression is `t/regex/regex-tree-callable.t`. It pins the dual-
+oracle AST shape for both spellings, the callee and optional-argument
+accessors, sequence nesting, construction, and the EVAL round trip.
+
+The next open dynamic boundary is callable interpolation with non-empty
+arguments, followed by the remaining runtime-valued regex bodies.

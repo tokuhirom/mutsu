@@ -71,6 +71,7 @@ pub enum RakuAstClass {
     RegexAssertionNamedRegexArg,
     RegexAssertionLookahead,
     RegexAssertionInterpolatedVar,
+    RegexAssertionCallable,
     RegexAssertionPredicateBlock,
     RegexAssertionInterpolatedBlock,
     RegexInterpolation,
@@ -293,6 +294,7 @@ impl RakuAstClass {
             RegexAssertionNamedRegexArg => "RakuAST::Regex::Assertion::Named::RegexArg",
             RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
             RegexAssertionInterpolatedVar => "RakuAST::Regex::Assertion::InterpolatedVar",
+            RegexAssertionCallable => "RakuAST::Regex::Assertion::Callable",
             RegexAssertionPredicateBlock => "RakuAST::Regex::Assertion::PredicateBlock",
             RegexAssertionInterpolatedBlock => "RakuAST::Regex::Assertion::InterpolatedBlock",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
@@ -525,6 +527,7 @@ impl RakuAstClass {
             | RegexAssertionNamedRegexArg
             | RegexAssertionLookahead
             | RegexAssertionInterpolatedVar
+            | RegexAssertionCallable
             | RegexAssertionPredicateBlock
             | RegexAssertionInterpolatedBlock
             | RegexInterpolation
@@ -687,6 +690,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Assertion::Named::RegexArg"
         | "RakuAST::Regex::Assertion::Lookahead"
         | "RakuAST::Regex::Assertion::InterpolatedVar"
+        | "RakuAST::Regex::Assertion::Callable"
         | "RakuAST::Regex::Assertion::PredicateBlock"
         | "RakuAST::Regex::Assertion::InterpolatedBlock"
         | "RakuAST::Regex::Interpolation"
@@ -786,6 +790,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionNamedRegexArg,
     RakuAstClass::RegexAssertionLookahead,
     RakuAstClass::RegexAssertionInterpolatedVar,
+    RakuAstClass::RegexAssertionCallable,
     RakuAstClass::RegexAssertionPredicateBlock,
     RakuAstClass::RegexAssertionInterpolatedBlock,
     RakuAstClass::RegexInterpolation,
@@ -1653,6 +1658,43 @@ pub fn construct(
             ],
         }))));
     }
+    if class_name == "RakuAST::Regex::Assertion::Callable" && method == "new" {
+        let callee = named_arg(args, "callee").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Callable.new requires `callee`")
+        })?;
+        require_rakuast_class(
+            &callee,
+            RakuAstClass::VarLexical,
+            "RakuAST::Regex::Assertion::Callable.new",
+        )?;
+        let args_node = named_arg(args, "args");
+        if let Some(args_node) = &args_node {
+            require_rakuast_class(
+                args_node,
+                RakuAstClass::ArgList,
+                "RakuAST::Regex::Assertion::Callable.new",
+            )?;
+        }
+        let mut fields = vec![RakuAstField {
+            name: Some("callee"),
+            value: RakuAstFieldValue::Node(callee),
+        }];
+        // Rakudo omits an empty ArgList from the rendered node even when the
+        // caller supplied `args => ArgList.new`.
+        if let Some(args_node) = args_node
+            && let ValueView::RakuAst(node) = args_node.view()
+            && !node.fields.is_empty()
+        {
+            fields.push(RakuAstField {
+                name: Some("args"),
+                value: RakuAstFieldValue::Node(args_node),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionCallable,
+            fields,
+        }))));
+    }
     if class_name == "RakuAST::Regex::Assertion::PredicateBlock" && method == "new" {
         let block = named_arg(args, "block").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::PredicateBlock.new requires block")
@@ -1935,6 +1977,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAssertionNamedRegexArg
                     | RakuAstClass::RegexAssertionLookahead
                     | RakuAstClass::RegexAssertionInterpolatedVar
+                    | RakuAstClass::RegexAssertionCallable
                     | RakuAstClass::RegexAssertionPredicateBlock
                     | RakuAstClass::RegexAssertionInterpolatedBlock
                     | RakuAstClass::RegexInterpolation
@@ -2282,6 +2325,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAssertionNamedRegexArg
             | RakuAstClass::RegexAssertionLookahead
             | RakuAstClass::RegexAssertionInterpolatedVar
+            | RakuAstClass::RegexAssertionCallable
             | RakuAstClass::RegexAssertionPredicateBlock
             | RakuAstClass::RegexAssertionInterpolatedBlock
             | RakuAstClass::RegexInterpolation
