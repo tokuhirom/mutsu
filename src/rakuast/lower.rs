@@ -1728,6 +1728,11 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             code: String::new(),
             body: lower_block(named_child_or_positional(node)?)?,
         }),
+        RakuAstClass::RegexAssertionInterpolatedBlock => Ok(RegexNode::InterpolatedBlock {
+            code: String::new(),
+            body: lower_block(named_child(node, "block")?)?,
+            sequential: bool_field(node, "sequential")?,
+        }),
         RakuAstClass::RegexAssertionNamedRegexArg => {
             let name_node = named_child(node, "name")?;
             if name_node.class != RakuAstClass::Name {

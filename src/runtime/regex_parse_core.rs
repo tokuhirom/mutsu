@@ -2719,7 +2719,7 @@ impl Interpreter {
                                 chars.next();
                             }
                             if is_closure_interp {
-                                RegexAtom::ClosureInterpolation { code }
+                                RegexAtom::ClosureInterpolation { code, body: None }
                             } else {
                                 RegexAtom::CodeAssertion {
                                     code,

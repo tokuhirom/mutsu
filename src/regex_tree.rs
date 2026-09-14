@@ -103,6 +103,14 @@ pub(crate) enum RegexNode {
         code: String,
         body: Vec<crate::ast::Stmt>,
     },
+    /// `<{ ... }>` — evaluate an inline block and match its result as a
+    /// regex. This is distinct from a predicate assertion: the block's value
+    /// supplies the pattern to match rather than deciding a zero-width test.
+    InterpolatedBlock {
+        code: String,
+        body: Vec<crate::ast::Stmt>,
+        sequential: bool,
+    },
     Quantified {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
@@ -623,6 +631,19 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                RegexNode::InterpolatedBlock {
+                    code,
+                    body,
+                    sequential,
+                } if !sequential => Some(vec![token(
+                    crate::runtime::RegexAtom::ClosureInterpolation {
+                        code: code.clone(),
+                        body: Some(std::sync::Arc::new(body.clone())),
+                    },
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
+                RegexNode::InterpolatedBlock { .. } => None,
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -700,7 +721,8 @@ impl RegexNode {
             Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::CodeAssertion { .. }
-            | Self::CodeBlock { .. } => {}
+            | Self::CodeBlock { .. }
+            | Self::InterpolatedBlock { .. } => {}
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -717,7 +739,9 @@ impl RegexNode {
         match self {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
-            Self::CodeAssertion { .. } | Self::CodeBlock { .. } => false,
+            Self::CodeAssertion { .. }
+            | Self::CodeBlock { .. }
+            | Self::InterpolatedBlock { .. } => false,
             Self::Sequence(nodes)
             | Self::Alternation(nodes)
             | Self::SequentialAlternation(nodes) => {
@@ -768,6 +792,7 @@ impl RegexNode {
             | Self::ArrayLookaround { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
+            | Self::InterpolatedBlock { .. }
             | Self::CharClassDigit => false,
         }
     }
@@ -867,6 +892,7 @@ impl RegexNode {
                 format!("<{marker}{{{code}}}>")
             }
             Self::CodeBlock { code, .. } => format!("{{{code}}}"),
+            Self::InterpolatedBlock { code, .. } => format!("<{{{code}}}>"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
                     RegexQuantifier::ZeroOrMore => '*',
@@ -1148,6 +1174,13 @@ impl Parser {
             return self.parse_code_assertion(negated);
         }
 
+        // `<{ ... }>` evaluates its block and interpolates the resulting value
+        // as a regex. `<!{ ... }>` above is the separate predicate assertion
+        // form and must remain zero-width.
+        if !explicit && self.chars.get(self.pos) == Some(&'{') {
+            return self.parse_code_interpolation();
+        }
+
         // `<?@name>` and `<!@name>` are the direct array-interpolation
         // assertion forms. They have a distinct RakuAST node from the
         // `<?before @name>` form, even though both are zero-width assertions
@@ -1266,6 +1299,21 @@ impl Parser {
             code,
             negated,
             body,
+        })
+    }
+
+    fn parse_code_interpolation(&mut self) -> Option<RegexNode> {
+        let start = self.pos;
+        let (code, body) = self.parse_code_body()?;
+        if self.chars.get(self.pos) != Some(&'>') {
+            self.pos = start;
+            return None;
+        }
+        self.pos += 1; // '>'
+        Some(RegexNode::InterpolatedBlock {
+            code,
+            body,
+            sequential: false,
         })
     }
 
@@ -1606,6 +1654,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::ArrayLookaround { .. }
         | RegexNode::CodeAssertion { .. }
         | RegexNode::CodeBlock { .. }
+        | RegexNode::InterpolatedBlock { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
@@ -1626,7 +1675,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         RegexNode::Interpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::CodeAssertion { .. }
-        | RegexNode::CodeBlock { .. } => true,
+        | RegexNode::CodeBlock { .. }
+        | RegexNode::InterpolatedBlock { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
