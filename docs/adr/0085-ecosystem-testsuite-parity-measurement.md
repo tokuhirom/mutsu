@@ -458,6 +458,29 @@ The Red → `Red::Operators` import chain remains unclassified and is left for a
 later #7988 slice. #8340 is a separate, already-closed issue and is not part of
 this record.
 
+## 12. Campaign slice: a custom minus prefix does not shadow pointy lambdas (2026-09-14)
+
+The next Red lead was the `Red` → `Red::Operators` import chain. `Red::Operators`
+declares `prefix:<->` and then uses pointy lambdas in method arguments, for
+example:
+
+```raku
+$b.map(-> $v { $v ~~ Enumeration ?? $v.value !! $v })
+```
+
+The parser's user-defined prefix branch ran before the ordinary primary parser.
+It matched the `-` in `->` as the custom minus operator, leaving `>` where the
+pointy-lambda parser expected its parameter list. The built-in prefix matcher
+already excludes `->`; the user-defined branch now does the same, reserving the
+complete spelling for the pointy-lambda declarator.
+
+The focused regression is
+`t/oo/user-prefix-does-not-shadow-pointy-lambda.t`: it checks both an ordinary
+pointy lambda and the `Red::Operators` ternary/map shape. `Red::Operators`
+loads successfully under both mutsu and rakudo after the change. Remaining failures in the full Red
+distribution are separate downstream dependency or runtime findings and are
+not folded into this parser slice.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
