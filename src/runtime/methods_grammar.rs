@@ -1333,6 +1333,15 @@ impl Interpreter {
         if self.has_user_method(cn, &bare) {
             return bare;
         }
+        // A shorthand proto candidate (`rule modifier:<null>`) has the same
+        // runtime variant value as `rule modifier:sym<null>`, but its grammar
+        // action method keeps the shorthand spelling. Try that spelling after
+        // the established `:sym<>` and bare-adverb forms so existing action
+        // dispatch remains preferred when both declarations are present.
+        let shorthand = format!("{rule_name}:<{sym_val}>");
+        if self.has_user_method(cn, &shorthand) {
+            return shorthand;
+        }
         bracketed
     }
 

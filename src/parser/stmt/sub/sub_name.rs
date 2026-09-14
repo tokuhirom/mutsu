@@ -27,10 +27,56 @@ pub(crate) fn parse_method_sub_name(input: &str) -> PResult<'_, String> {
     if let Some(err) = null_operator_error(&name) {
         return Err(err);
     }
+    // A method may use an angle-qualified name for a grammar rule category,
+    // such as `method modifier:<null>($/)`. This is an ordinary method name,
+    // not an operator category declaration: Rakudo rejects the corresponding
+    // plain `sub modifier:<null>`, but accepts it on methods so grammar action
+    // classes can implement proto-regex candidates. `parse_sub_name_inner`
+    // deliberately leaves unknown categories unconsumed so the plain-sub path
+    // can diagnose them; consume that suffix only on the method path.
+    if let Some((rest, name)) = consume_method_category_suffix(&name, rest) {
+        return Ok((rest, name));
+    }
     if let Some(err) = operator_name_extension_error(&name, rest, true) {
         return Err(err);
     }
     Ok((rest, name))
+}
+
+/// Consume an angle-qualified extension on a method name that is not one of
+/// mutsu's built-in operator categories. Grammar action methods commonly use
+/// this spelling (`method modifier:<null>`) to match a `rule modifier:<null>`
+/// candidate. Bracketed colon-pair values (`method foo:[bar]`) are left for
+/// `operator_name_extension_error`, which matches Rakudo's diagnostic for that
+/// form.
+fn consume_method_category_suffix<'a>(base: &str, rest: &'a str) -> Option<(&'a str, String)> {
+    if let Some(after_open) = rest.strip_prefix(":<") {
+        let mut depth = 1u32;
+        for (i, ch) in after_open.char_indices() {
+            match ch {
+                '<' => depth += 1,
+                '>' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let suffix = &after_open[..i];
+                        return Some((&after_open[i + 1..], format!("{base}:<{}>", suffix.trim())));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some(after_open) = rest.strip_prefix(":\u{ab}")
+        && let Some(end) = after_open.find('\u{bb}')
+    {
+        let suffix = &after_open[..end];
+        let end_with_delimiter = end + '\u{bb}'.len_utf8();
+        return Some((
+            &after_open[end_with_delimiter..],
+            format!("{base}:\u{ab}{}\u{bb}", suffix.trim()),
+        ));
+    }
+    None
 }
 
 /// Diagnose an operator-declaration name that `parse_sub_name_inner` could not
