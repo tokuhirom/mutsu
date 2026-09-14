@@ -133,6 +133,7 @@ impl Interpreter {
                 | "definite"
                 | "methods"
                 | "attributes"
+                | "attribute_table"
                 | "parents"
                 | "roles"
                 | "candidates"
