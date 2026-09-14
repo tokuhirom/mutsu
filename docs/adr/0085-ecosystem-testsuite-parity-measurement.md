@@ -538,6 +538,27 @@ to the independent `EXPORT` redeclaration failure in its import chain, while
 `Red::Driver::SQLite` now exposes the same chain's role-composition failure.
 Those remaining roots are separate #7988 campaign slices.
 
+## 16. Campaign slice: nested multi `EXPORT` hooks (2026-09-14)
+
+The next Red lead was the `Redeclaration of routine 'EXPORT'` failure in the
+`Red` import chain. Red declares `multi EXPORT(+@experimentals)`, while
+`JSON::Fast`, which Red loads transitively, declares an ordinary `sub EXPORT`.
+The existing per-compilation-unit `EXPORT` scoping guard recognised the bare
+`GLOBAL::EXPORT` key but not the arity-suffixed key used for a multi, so the
+inner module saw the outer hook as a conflicting declaration.
+
+The guard now recognises `GLOBAL::EXPORT/<arity>` entries and removes them for
+the duration of a nested module load. The custom export path also dispatches a
+multi hook with the actual `use` arguments when no bare hook exists. The focused
+regression is
+`t/modules/import-export/nested-export-sub-scoping.t`, which now covers a
+`multi EXPORT(+@args)` outer hook as well as ordinary and `my` hooks.
+
+The targeted Red remeasurement on 2026-09-14 moved the observed first failure
+from `EXPORT` redeclaration to the independent
+`X::Role::Composition::Conflict` in `Red::Driver::Pg`; the latter remains for a
+separate #7988 slice.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

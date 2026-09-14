@@ -127,7 +127,14 @@ impl Interpreter {
         let importer = self.module_load_stack.iter().rev().nth(1).cloned();
         // The module body runs under GLOBAL, so `sub EXPORT` registers as
         // `GLOBAL::EXPORT`. Only participate when it is actually present.
-        let Some(def) = self.resolve_function("EXPORT") else {
+        // A custom EXPORT hook may be a multi, whose candidates are stored
+        // under arity-suffixed keys rather than the bare name. Resolve the
+        // ordinary hook first, then dispatch the multi using the actual `use`
+        // arguments (Red's `multi EXPORT(+@experimentals)` is one example).
+        let Some(def) = self
+            .resolve_function("EXPORT")
+            .or_else(|| self.resolve_function_with_types("EXPORT", &export_args))
+        else {
             if let Some(export_sub) = inherited {
                 // Same env discipline as the compiled path below: the imported
                 // EXPORT's effects are its return value, not caller-env writes.
@@ -294,9 +301,11 @@ impl Interpreter {
 
     /// Whether a registry key names the magic `EXPORT` hook. The module body
     /// runs under GLOBAL, so the key is normally `GLOBAL::EXPORT`; be liberal
-    /// in case a package prefix was used.
+    /// in case a package prefix was used. Multi `EXPORT` declarations are
+    /// stored under arity-suffixed keys such as `GLOBAL::EXPORT/0`, so they
+    /// must be hidden too when a nested module loads.
     fn is_export_routine_key(key: &str) -> bool {
-        key == "EXPORT" || key.ends_with("::EXPORT")
+        key == "EXPORT" || key.ends_with("::EXPORT") || key.contains("::EXPORT/")
     }
 
     /// Remove any `EXPORT` routine registered by the module body (it runs under
