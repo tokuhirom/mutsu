@@ -8,7 +8,7 @@ use Test;
 # shapes Rakudo exposes. Dynamic assertions and non-scalar interpolations
 # remain explicit follow-up boundaries.
 
-plan 73;
+plan 76;
 
 is Q[/a/].AST.gist, q:to/END/.chomp, 'a regex literal has a Literal body';
     RakuAST::StatementList.new(
@@ -389,6 +389,36 @@ is Q[/foo <?before $x>/].AST.gist, q:to/END/.chomp, 'a scalar interpolation rema
     )
     END
 
+is Q[/foo <?before bar || $x>/].AST.gist, q:to/END/.chomp, 'a sequential interpolation remains structural inside a lookahead';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::QuotedRegex.new(
+          body => RakuAST::Regex::Sequence.new(
+            RakuAST::Regex::WithWhitespace.new(
+              RakuAST::Regex::Literal.new("foo")
+            ),
+            RakuAST::Regex::Assertion::Lookahead.new(
+              assertion => RakuAST::Regex::Assertion::Named::RegexArg.new(
+                name      => RakuAST::Name.from-identifier("before"),
+                regex-arg => RakuAST::Regex::SequentialAlternation.new(
+                  RakuAST::Regex::Sequence.new(
+                    RakuAST::Regex::WithWhitespace.new(
+                      RakuAST::Regex::Literal.new("bar")
+                    )
+                  ),
+                  RakuAST::Regex::Interpolation.new(
+                    sequential => True,
+                    var        => RakuAST::Var::Lexical.new("\$x")
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
 is Q[/a $x b/].AST.gist, q:to/END/.chomp, 'a scalar interpolation remains an Interpolation node';
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
@@ -533,6 +563,17 @@ my $interpolation = RakuAST::Regex::Interpolation.new(
 is $interpolation.var.name, '$x', 'interpolation exposes its lexical variable';
 ok $interpolation ~~ RakuAST::Regex::Atom, 'interpolation retains its regex atom type';
 is $interpolation.sequential, False, 'scalar interpolation is non-sequential';
+my $sequential-alternation = RakuAST::Regex::SequentialAlternation.new(
+    RakuAST::Regex::Literal.new('bar'),
+    RakuAST::Regex::Interpolation.new(
+        sequential => True,
+        var => RakuAST::Var::Lexical.new(q[$x]),
+    ),
+);
+ok $sequential-alternation ~~ RakuAST::Regex,
+    'sequential alternation retains its regex model type';
+is $sequential-alternation.branches.elems, 2,
+    'sequential alternation exposes its branches';
 my $constructed = RakuAST::QuotedRegex.new(
     match-immediately => True,
     body              => RakuAST::Regex::Literal.new("test"),

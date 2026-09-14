@@ -71,6 +71,7 @@ pub enum RakuAstClass {
     RegexAssertionLookahead,
     RegexInterpolation,
     RegexAlternation,
+    RegexSequentialAlternation,
     RegexQuantifiedAtom,
     RegexQuantifierZeroOrMore,
     RegexQuantifierOneOrMore,
@@ -284,6 +285,7 @@ impl RakuAstClass {
             RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
+            RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
             RegexQuantifiedAtom => "RakuAST::Regex::QuantifiedAtom",
             RegexQuantifierZeroOrMore => "RakuAST::Regex::Quantifier::ZeroOrMore",
             RegexQuantifierOneOrMore => "RakuAST::Regex::Quantifier::OneOrMore",
@@ -515,7 +517,9 @@ impl RakuAstClass {
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
             ],
-            RegexSequence | RegexAlternation => &["RakuAST::Regex"],
+            RegexSequence | RegexAlternation | RegexSequentialAlternation => {
+                &["RakuAST::Regex"]
+            }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
             RegexCharClassDigit => &[
                 "RakuAST::Regex::CharClass",
@@ -661,7 +665,9 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
         ],
-        "RakuAST::Regex::Sequence" | "RakuAST::Regex::Alternation" => {
+        "RakuAST::Regex::Sequence"
+        | "RakuAST::Regex::Alternation"
+        | "RakuAST::Regex::SequentialAlternation" => {
             &["RakuAST::Regex"]
         },
         "RakuAST::Regex::QuantifiedAtom" =>
@@ -748,6 +754,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionLookahead,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
+    RakuAstClass::RegexSequentialAlternation,
     RakuAstClass::RegexQuantifiedAtom,
     RakuAstClass::RegexQuantifierZeroOrMore,
     RakuAstClass::RegexQuantifierOneOrMore,
@@ -1300,11 +1307,15 @@ pub fn construct(
     }
     if matches!(
         class_name,
-        "RakuAST::Regex::Sequence" | "RakuAST::Regex::Alternation"
+        "RakuAST::Regex::Sequence"
+            | "RakuAST::Regex::Alternation"
+            | "RakuAST::Regex::SequentialAlternation"
     ) && method == "new"
     {
         let class = if class_name.ends_with("Sequence") {
             RakuAstClass::RegexSequence
+        } else if class_name.ends_with("SequentialAlternation") {
+            RakuAstClass::RegexSequentialAlternation
         } else {
             RakuAstClass::RegexAlternation
         };
@@ -1790,6 +1801,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAssertionLookahead
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
+                    | RakuAstClass::RegexSequentialAlternation
                     | RakuAstClass::RegexQuantifiedAtom
                     | RakuAstClass::RegexAnchorBeginningOfString
                     | RakuAstClass::RegexAnchorBeginningOfLine
@@ -1979,11 +1991,27 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             .collect();
         return Some(Value::array(items));
     }
-    // Positional-leaf accessors: a node whose single positional field is its
-    // payload exposes it under a class-specific name (`IntLiteral.value`,
-    // `Var::Lexical.name`). The named-field loop above runs first, so a class
-    // with a *named* field of the same name (e.g. `Call::Name.name`) is
-    // unaffected.
+    // Positional-leaf accessors: a node whose positional field is its payload
+    // exposes it under a class-specific name (`IntLiteral.value`,
+    // `Var::Lexical.name`). Regex sequences and alternations are the one
+    // variadic case: their accessor returns all positional children as a List.
+    if matches!(
+        node.class,
+        RakuAstClass::RegexSequence
+            | RakuAstClass::RegexAlternation
+            | RakuAstClass::RegexSequentialAlternation
+    ) && fields::positional_accessor(node.class) == Some(method)
+    {
+        let items = node
+            .fields
+            .iter()
+            .filter(|f| f.name.is_none())
+            .map(|f| field_to_value(&f.value))
+            .collect();
+        return Some(Value::array(items));
+    }
+    // The named-field loop above runs first, so a class with a named field of
+    // the same name (e.g. `Call::Name.name`) is unaffected.
     if fields::positional_accessor(node.class) == Some(method)
         && let Some(f) = node.fields.first()
         && f.name.is_none()
@@ -2102,6 +2130,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::QuotedRegex
             | RakuAstClass::RegexSequence
             | RakuAstClass::RegexAlternation
+            | RakuAstClass::RegexSequentialAlternation
             | RakuAstClass::RegexLiteral
             | RakuAstClass::RegexQuote
             | RakuAstClass::RegexWithWhitespace

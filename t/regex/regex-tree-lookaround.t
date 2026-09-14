@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: lookaround assertions retain their
 # source tree and lower through the existing RegexPattern matcher.
 
-plan 44;
+plan 51;
 
 my $positive-before = EVAL(Q[/foo <?before bar>/].AST);
 my $before-match = 'foobar' ~~ $positive-before;
@@ -170,3 +170,25 @@ ok 'quxbar' ~~ $interpolated-after,
 $lookaround-value = 'nope';
 nok 'quxbar' ~~ $interpolated-after,
     'an interpolated lookbehind reads the current lexical value';
+
+my $sequential-lookaround-value = 'baz';
+my $sequential-before = /foo <?before bar || $sequential-lookaround-value>/;
+ok 'foobar' ~~ $sequential-before,
+    'a sequential lookahead keeps its first branch priority';
+my $sequential-match = 'foobaz' ~~ $sequential-before;
+ok $sequential-match,
+    'a sequential lookahead falls through to its interpolation branch';
+is ~$sequential-match, 'foo',
+    'a sequential lookahead remains zero-width after fallback';
+$sequential-lookaround-value = 'qux';
+ok 'fooqux' ~~ $sequential-before,
+    'a sequential lookahead reads its current lexical value';
+nok 'foobaz' ~~ $sequential-before,
+    'a sequential lookahead does not retain its previous lexical value';
+
+my $constructed-sequential = EVAL(Q[/foo <?before bar || $sequential-lookaround-value>/].AST);
+ok 'fooqux' ~~ $constructed-sequential,
+    'a constructed sequential lookahead lowers through EVAL';
+$sequential-lookaround-value = 'quux';
+ok 'fooquux' ~~ $constructed-sequential,
+    'a constructed sequential lookahead keeps match-time binding';

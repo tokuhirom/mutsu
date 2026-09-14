@@ -693,3 +693,20 @@ current lexical environment, preserving reassignment for both parser-created
 regex values and constructed RakuAST trees. Sequential interpolation, code
 assertions, captures, subrules, and other runtime-valued bodies remain outside
 this bounded slice.
+
+## 23. Sequential scalar interpolation in lookaround slice (2026-09-14)
+
+The shared tree now distinguishes `||` from ordinary `|` as
+`RegexNode::SequentialAlternation`. Its first scalar interpolation branch
+retains `sequential => True`, so a body such as `<?before bar || $value>`
+converts to Rakudo's `RakuAST::Regex::SequentialAlternation` shape rather than
+falling back to the normalized execution spelling. Mixed `|`/`||` expressions
+are grouped according to their RakuAST precedence, and the interpolation flag
+is applied only to the first atom after `||`.
+
+Execution lowering maps the new node to the existing
+`RegexAtom::SequentialAlternation` matcher and continues to read scalar values
+at match time through `RegexAtom::VarInterp`. This slice is limited to scalar
+variables; array interpolation, code interpolation, and other runtime-valued
+branches remain deferred until their source and execution semantics can be
+represented together.
