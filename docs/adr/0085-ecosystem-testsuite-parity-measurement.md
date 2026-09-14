@@ -603,6 +603,39 @@ failure to `ok`. Red remains `blocked_load` because the independent
 blocks its SQLite chain; `Red::Driver::Cache::Memory` and migration/relationship
 leads remain separate slices.
 
+## 19. Campaign slice: custom HOW methods keep explicit `$self` separate (2026-09-14)
+
+The next Red lead was the independent type-object failure in
+`Red::Driver::SQLite::SQLiteMaster`. Red's declaration-time role traits call
+methods on a custom HOW using the `.^method` spelling, and those methods have
+an explicit `Mu:U $self` parameter in addition to the HOW's implicit
+invocant. mutsu dispatched the caret method against the type object itself and
+then bound the explicit `$self` to the same `self` environment slot. A role
+attribute default evaluated during that call consequently saw the HOW
+invocant, not the value being composed.
+
+The caret-method path now resolves the receiver's HOW and invokes the named
+method with the receiver as its first explicit argument. Method compilation
+and both method binders keep an ordinary `$self` parameter under the reserved
+`$self` lexical key, separate from the implicit `self` invocant. During role
+composition, attribute defaults run with a temporary `self` value representing
+the partial mixin, and the surrounding environment is restored afterwards.
+
+The acceptance test is
+`t/oo/role/custom-how-explicit-self-and-role-default.t`. It exercises both the
+read-only fast method path and the general binder, and passes identically under
+mutsu and rakudo. The Red SQLiteMaster probe now reaches the independent
+typed-hash failure in `%!relationships` (`∪=` stores a `Bool` where Red expects
+an `Attribute`) instead of the type-object attribute lookup error. That
+operator/typed-container issue, along with Cache::Memory and migration/
+relationship leads, remains outside this slice.
+
+The invariant pinned here is: for a method invoked as `Type.^m(...)`, bare
+`self` is the HOW receiver and an ordinary `$self` parameter is the first
+argument after it; role defaults must evaluate with the value currently being
+composed. The Red ledger is remeasured after this slice so the changed frontier
+and the new independent blocker remain visible in the campaign record.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

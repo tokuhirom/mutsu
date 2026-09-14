@@ -343,6 +343,13 @@ impl Compiler {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, outer_params);
             }
         }
+        // A method may have an ordinary parameter spelled `$self` in addition
+        // to its implicit invocant. The source parser keeps the signature name
+        // sigil-less for introspection, while expression parsing preserves the
+        // `$self` spelling as `LEX_SELF`; give that lexical its own slot.
+        if sub_compiler.lexically_in_method && Self::signature_declares_self(params, param_defs) {
+            sub_compiler.declare_param(crate::env::LEX_SELF);
+        }
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
@@ -1172,6 +1179,9 @@ impl Compiler {
             if let Some(sub_params) = &pd.sub_signature {
                 Self::alloc_sub_signature_locals(&mut sub_compiler, sub_params);
             }
+        }
+        if sub_compiler.lexically_in_method && Self::signature_declares_self(params, param_defs) {
+            sub_compiler.declare_param(crate::env::LEX_SELF);
         }
         // The destructure bind statements are prepended to the body at runtime by
         // by-name assignment (not into the freshly-allocated local slots), so a

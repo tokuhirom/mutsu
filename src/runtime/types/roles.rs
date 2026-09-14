@@ -869,6 +869,39 @@ impl Interpreter {
             } else {
                 None
             };
+            // Attribute defaults are evaluated as methods on the value being
+            // composed.  The composition can happen inside another method
+            // (for example a custom HOW's trait handler), where `self` in the
+            // interpreter environment is still that method's invocant.  Keep
+            // that invocant from leaking into a default such as
+            // `has $.flag = self.type ~~ Positional`; on a type-object
+            // invocant it otherwise produces the misleading "Cannot look up
+            // attributes in ... type object" error.  The partial mixin already
+            // contains the role markers and parameter bindings, so it also
+            // lets a default refer to an earlier role attribute.
+            let saved_self = self.env.get("self").cloned();
+            let mut saved_attr_env = Vec::new();
+            // Private attribute reads in a declaration-time default use the
+            // same env bridge as BUILD/TWEAK.  Seed the attributes that have
+            // not reached their real value yet so `$!previous // fallback`
+            // sees Raku's normal uninitialized attribute value rather than
+            // the composing method's attribute namespace.
+            for attr in &role.attributes {
+                let key = attr_env_key(attr.sigil, &attr.name);
+                saved_attr_env.push((key.clone(), self.env.get(&key).cloned()));
+                if !self.env.contains_key(&key) {
+                    let seed = match attr.sigil {
+                        '@' => Value::real_array(Vec::new()),
+                        '%' => Value::hash_with_data(Value::hash_arc(ValueMap::default())),
+                        _ => Value::package(crate::symbol::wk::any()),
+                    };
+                    self.env.insert(key, seed);
+                }
+            }
+            self.env.insert(
+                "self".to_string(),
+                Value::mixin_with_state(inner.clone(), mixins.clone()),
+            );
             for (idx, attr) in role.attributes.iter().enumerate() {
                 let attr_name = &attr.name;
                 let default_expr = &attr.default;
@@ -895,6 +928,31 @@ impl Interpreter {
                     }
                 };
                 mixins.insert(MetaNs::Attr.owned_key_for_str(attr_name), value);
+                self.env.insert(
+                    attr_env_key(*sigil, attr_name),
+                    mixins
+                        .get(&MetaNs::Attr.owned_key_for_str(attr_name))
+                        .cloned()
+                        .unwrap_or_else(|| Value::package(crate::symbol::wk::any())),
+                );
+            }
+            for (key, old_value) in saved_attr_env {
+                match old_value {
+                    Some(value) => {
+                        self.env.insert(key, value);
+                    }
+                    None => {
+                        self.env.remove(&key);
+                    }
+                }
+            }
+            match saved_self {
+                Some(value) => {
+                    self.env.insert("self".to_string(), value);
+                }
+                None => {
+                    self.env.remove("self");
+                }
             }
             if let Some(saved) = saved_env {
                 self.env = saved;

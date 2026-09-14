@@ -57,7 +57,6 @@ impl Interpreter {
                 attributes.clone(),
             )
         };
-
         // Pre-compute whether we can skip the expensive env merge on exit.
         // `is raw` is included alongside `is rw`: an `is raw` param bound to an
         // lvalue argument also writes back to the caller (`bind_function_args_values`
@@ -627,6 +626,14 @@ impl Interpreter {
                 let bound_to_container = arrival.is_some() || base.is_container_ref();
                 let invocant_value = arrival.unwrap_or_else(|| base.clone());
                 self.env_mut().insert(param_name.clone(), invocant_value);
+                if method_def
+                    .param_defs
+                    .get(idx)
+                    .is_some_and(|pd| pd.declares_self_lexical())
+                {
+                    self.env_mut()
+                        .insert(crate::env::LEX_SELF.to_string(), base.clone());
+                }
                 // No container arrived: the invocant was an immutable value with
                 // no location (`(1, 2)[0]`, `42`, `$a + 1`). raku refuses the
                 // body's write to it -- "Cannot modify an immutable Int (1)" --
@@ -760,7 +767,7 @@ impl Interpreter {
         // Bind method parameters
         let rw_bindings = match loan_env!(
             self,
-            bind_function_args_values(&bind_param_defs, &bind_params, &args)
+            bind_method_function_args_values(&bind_param_defs, &bind_params, &args)
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
@@ -1656,6 +1663,11 @@ impl Interpreter {
         let mut arg_idx = 0;
         for (idx, param_name) in method_def.params.iter().enumerate() {
             let pd = method_def.param_defs.get(idx);
+            let binding_name = if pd.is_some_and(|pd| pd.declares_self_lexical()) {
+                crate::env::LEX_SELF
+            } else {
+                param_name.as_str()
+            };
             let is_invocant = pd
                 .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                 .unwrap_or(false);
@@ -1668,7 +1680,7 @@ impl Interpreter {
                 let arrival = self.take_raw_invocant_arrival(method_name, pd);
                 let bound_to_container = arrival.is_some() || base.is_container_ref();
                 let invocant_value = arrival.unwrap_or_else(|| base.clone());
-                param_values.push((param_name, invocant_value));
+                param_values.push((binding_name, invocant_value));
                 // See the twin in `call_compiled_method`: with no container the
                 // invocant is an immutable value with no location, and the
                 // body's write to it must be refused rather than dropped.
@@ -1725,7 +1737,7 @@ impl Interpreter {
                     self.record_build_attr_write(cell, attr_sym);
                     cell.insert(attr_sym, val.clone());
                 }
-                param_values.push((param_name, val));
+                param_values.push((binding_name, val));
                 continue;
             }
             // Positional param: skip named (string-Pair) args, as the slow
@@ -1767,10 +1779,10 @@ impl Interpreter {
                         None,
                     ));
                 }
-                param_values.push((param_name, val));
+                param_values.push((binding_name, val));
                 arg_idx += 1;
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
-                param_values.push((param_name, Self::missing_optional_param_value(pd)));
+                param_values.push((binding_name, Self::missing_optional_param_value(pd)));
             }
         }
 
