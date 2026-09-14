@@ -1445,6 +1445,27 @@ impl Interpreter {
             // Invalidate name-keyed resolution caches.
             self.invalidate_fn_resolution();
         }
+        // A proto can be exported before its multi candidates are declared.
+        // Keep the candidate family in the module's EXPORT stash as each
+        // candidate arrives, so a preload scope can retain it for a later
+        // import. This is particularly important for bare-file modules such
+        // as P5localtime, whose candidates are initially registered under
+        // GLOBAL and would otherwise be removed with the preload aliases.
+        if multi
+            && !self.suppress_exports
+            && let Some(owner) = self.module_load_stack.last()
+            && let Some(tags) = self
+                .module_owned_exports
+                .get(owner)
+                .and_then(|exports| exports.get(name))
+                .cloned()
+        {
+            self.register_exported_sub(
+                self.current_package().to_string(),
+                name.to_string(),
+                tags.into_iter().collect(),
+            );
+        }
         // A prelude splice declared as a `multi` registers under arity-suffixed
         // keys (`GLOBAL::name/2`, and the chained `…__mN` slots
         // `insert_multi_overload` uses), never under the bare `GLOBAL::name`

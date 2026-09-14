@@ -2872,6 +2872,11 @@ pub struct Interpreter {
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// Environment keys installed by imports, paired with the spelling that
+    /// should appear in a lexical pseudo-stash. Scalar exports are stored in
+    /// `env` without their `$` sigil, so the display spelling cannot be
+    /// reconstructed from the environment key alone.
+    pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
@@ -4434,6 +4439,8 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: HashSet<Symbol>,
+    /// Imported environment aliases visible before this scope was pushed.
+    pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.

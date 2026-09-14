@@ -225,6 +225,12 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     if let Some(pos) = custom_traits.iter().position(|(t, _)| t == "DEPRECATED") {
                         custom_traits[pos] = (format!("DEPRECATED:{}", arg), None);
                     }
+                } else if let Some(pos) = custom_traits.iter().rposition(|(t, _)| t == trait_name) {
+                    // Angle-bracket arguments are literal strings.  Keep them
+                    // in the same custom-trait slot as parenthesized
+                    // arguments so traits such as `is symbol<localtime>` can
+                    // reach NativeCall registration.
+                    custom_traits[pos].1 = Some(crate::ast::Expr::Literal(Value::str(arg)));
                 }
                 r = r2;
             }

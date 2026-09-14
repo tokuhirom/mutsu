@@ -86,6 +86,19 @@ impl Interpreter {
                 name,
             )));
         }
+        // An imported routine may share its short spelling with a type
+        // (`Time::localtime` exports `localtime`). Resolve a callable nullary
+        // routine before the type-object paths below, so the bare term is
+        // invoked when it is used as an argument (`ok-time localtime`) rather
+        // than being replaced by the lower-case class's type object.
+        if self.has_type(name)
+            && (self.has_declared_function(name) || self.has_multi_function(name))
+            && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+        {
+            let result = self.call_routine_def(&def, Vec::new())?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // A bareword with a type smiley whose base is a bound generic type
         // parameter (`T:D` inside a role method where `T` -> `Int`) resolves to
         // the parameterized type with the smiley applied (`Int:D`). Plain
@@ -271,15 +284,25 @@ impl Interpreter {
             // exactly one thing — the env-alias fallback that was serving the
             // wrong scope's symbol.
             module_val
-        } else if let Some(v) = self.env().get(name) {
-            if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil)
-                || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
-            {
+        } else if let Some(v) = self.env().get(name).cloned() {
+            if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil) {
                 // Check for poisoned enum aliases
                 if matches!(v.view(), ValueView::Enum { .. }) {
                     self.poisoned_enum_alias_check(name)?;
                 }
-                v.clone()
+                v
+            } else if matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name) {
+                // A package binding can share a short name with an imported
+                // routine (`class Time::localtime` and the exported
+                // `localtime` sub). In term position the callable wins; the
+                // package remains available through its qualified name. This
+                // is especially visible when the routine is passed as a
+                // no-paren listop argument (`ok-time localtime`).
+                if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[])) {
+                    self.call_routine_def(&def, Vec::new())?
+                } else {
+                    v
+                }
             } else if self.has_type(name) || Self::is_builtin_type(name) {
                 Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
             } else if crate::runtime::utils::has_double_colon(name)
@@ -397,6 +420,13 @@ impl Interpreter {
                 let pkg_sym = self.current_package_sym();
                 // Slice 6.3 step 2: precise env_dirty from the named-call merge.
                 self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)?
+            } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[])) {
+                // A user routine imported under a name that also has a native
+                // nullary form must win in term position.  This matters for
+                // modules such as Time::localtime: `localtime` is a term in
+                // the module's public API, while mutsu also provides a
+                // compatibility builtin with the same spelling.
+                self.call_routine_def(&def, Vec::new())?
             } else if let Some(native_result) =
                 self.try_native_function(crate::symbol::Symbol::intern(name), &[])
             {

@@ -3224,6 +3224,7 @@ impl Interpreter {
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             imported_routine_aliases: HashSet::new(),
+            imported_env_aliases: HashMap::new(),
             strict_mode: false,
             fatal_mode: false,
             suppress_cross_eval_class_redeclaration_check: false,

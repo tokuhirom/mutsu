@@ -619,6 +619,21 @@ impl Interpreter {
             let display = Self::add_sigil_prefix(&key);
             entries.entry(display).or_insert_with(|| value.clone());
         }
+        // Imports are not compiler declarations, but Raku exposes their
+        // aliases through the importing compunit's lexical pad. Keep them
+        // separate from the flattened environment so `MY::` still excludes
+        // enclosing lexicals (and `OUTER::MY::` can see the import).
+        for (key, display) in &self.imported_env_aliases {
+            let key = key.resolve();
+            if self.should_hide_from_my_global_stash(&key) {
+                continue;
+            }
+            if let Some(value) = self.env().get(&key) {
+                entries
+                    .entry(display.resolve().to_string())
+                    .or_insert_with(|| value.clone());
+            }
+        }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         let stash = self.pseudo_stash_hash(entries);
         self.stack.push(stash);
@@ -717,7 +732,13 @@ impl Interpreter {
                     })?;
                     let declared_here = def.source_file.is_none()
                         || self.unit_of_declaring_file(def.source_file.as_deref()) == anchor;
-                    (declared_here || self.env().get(&format!("&{name}")).is_some()).then_some(name)
+                    let imported_here = packages
+                        .iter()
+                        .any(|package| self.imported_routine_alias(package, &name));
+                    (declared_here
+                        || imported_here
+                        || self.env().get(&format!("&{name}")).is_some())
+                    .then_some(name)
                 })
                 .collect()
         };
