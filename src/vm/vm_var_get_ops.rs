@@ -91,7 +91,12 @@ impl Interpreter {
         // routine before the type-object paths below, so the bare term is
         // invoked when it is used as an argument (`ok-time localtime`) rather
         // than being replaced by the lower-case class's type object.
+        let imported_routine = self
+            .bare_name_packages()
+            .iter()
+            .any(|package| self.imported_routine_alias(package, name));
         if self.has_type(name)
+            && imported_routine
             && (self.has_declared_function(name) || self.has_multi_function(name))
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
@@ -298,7 +303,9 @@ impl Interpreter {
                 // package remains available through its qualified name. This
                 // is especially visible when the routine is passed as a
                 // no-paren listop argument (`ok-time localtime`).
-                if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[])) {
+                if imported_routine
+                    && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+                {
                     self.call_routine_def(&def, Vec::new())?
                 } else {
                     v
@@ -422,7 +429,7 @@ impl Interpreter {
                 self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)?
             } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[])) {
                 // A user routine imported under a name that also has a native
-                // nullary form must win in term position.  This matters for
+                // nullary form must win in term position. This matters for
                 // modules such as Time::localtime: `localtime` is a term in
                 // the module's public API, while mutsu also provides a
                 // compatibility builtin with the same spelling.
