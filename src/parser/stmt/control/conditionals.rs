@@ -287,7 +287,10 @@ pub(crate) fn parse_elsif_chain(
 
     loop {
         if let Some(r) = keyword("elsif", rest) {
-            let (r, _) = ws1(r)?;
+            // Rakudo accepts the condition immediately after the keyword, as
+            // in `elsif($condition)`.  The opening parenthesis is still the
+            // condition expression here, not a call to `elsif`.
+            let (r, _) = ws(r)?;
             let (r, cond) = conditional_expr(r)?;
             let (r, _) = ws(r)?;
             let (r, binding_params) = parse_if_binding_params(r)?;
