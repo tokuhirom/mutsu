@@ -823,3 +823,27 @@ The focused regression is `t/regex/regex-tree-interpolated-block.t`. It pins
 the dual-oracle AST shape, node accessors, match-time lexical reassignment,
 returned-pattern execution, and constructed-tree EVAL. Sequential/dynamic
 variants and other runtime-valued regex bodies remain deferred.
+
+## 29. Sequential interpolated regex code block slice (2026-09-14)
+
+An interpolated code block immediately following a sequential alternation
+separator, such as `foo || <{ "bar" }>`, now retains Rakudo's
+`RakuAST::Regex::Assertion::InterpolatedBlock` with `sequential => True` under
+`RakuAST::Regex::SequentialAlternation`. Ordinary `<{ ... }>` blocks continue
+to report `sequential => False`, and the flag is scoped to the first atom in
+the branch after `||`.
+
+The parser passes the sequential-branch context through the shared regex tree
+instead of treating every interpolated block as an ordinary branch. The
+execution lowerer uses the existing `RegexAtom::ClosureInterpolation` atom
+for the branch, and the existing `RegexAtom::SequentialAlternation` matcher
+supplies branch priority. No code runs during `.AST` conversion and no new VM
+fallback is introduced. Parser-created and constructed RakuAST trees
+therefore retain the measured source shape while preserving match-time lexical
+reassignment and sequential branch priority.
+
+The focused regression is `t/regex/regex-tree-interpolated-block.t`. It pins
+the dual-oracle sequential-alternation shape, the `True` field, branch
+fallback, match-time reassignment, and constructed-tree execution. Predicate
+blocks, array/code interpolation, and other runtime-valued regex bodies remain
+separate boundaries.
