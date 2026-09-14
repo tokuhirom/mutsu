@@ -574,12 +574,14 @@ before dispatch unless the class explicitly composes that ancestor as well;
 `class C does Child does Parent` therefore keeps the real conflict. The role
 graph is used for this decision, while value-level constraints remain distinct
 candidates. The focused regression is
-`t/oo/role/transitive-multi-override.t`.
+`t/routines/dispatch/transitive-multi-override.t`.
 
-The targeted Red remeasurement on 2026-09-14 (mutsu `TBD`, Rakudo 2026.07,
-bubblewrap) confirms that `Red::Driver::Pg` loads past the role-composition
-failure; the remaining Red failures are independent leads for later #7988
-slices.
+The targeted Red remeasurement on 2026-09-14 (mutsu `98ffa3c8e`, Rakudo
+2026.07, bubblewrap) confirms that `Red` and `Red::Driver::Pg` load past the
+role-composition failure. The next independent load failures are the missing
+`Metamodel` role in `MetamodelX::Red::SubModelHOW`, the required `prepare`
+method conflict in `Red::Driver::Cache::Memory`, and the existing parser and
+relationship/migration gaps; these remain leads for later #7988 slices.
 
 ## Alternatives considered
 
