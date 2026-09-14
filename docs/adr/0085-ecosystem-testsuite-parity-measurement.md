@@ -636,6 +636,31 @@ argument after it; role defaults must evaluate with the value currently being
 composed. The Red ledger is remeasured after this slice so the changed frontier
 and the new independent blocker remain visible in the campaign record.
 
+## 20. Campaign slice: hash sub-signatures on later pointy parameters (2026-09-14)
+
+The next Red lead was the `Missing block` reported at line 126 of
+`Red::Driver::Mock`. Its `verify` method iterates over a hash with
+`for %!when-str.kv -> Str $str, % (:$counter = 0, :$times, |)`. The first
+parameter's pointy-header path already attached a following sub-signature, but
+the path for later parameters only handled a plain variable or a standalone
+destructuring pattern. It left the `(` after the anonymous hash parameter
+unconsumed, so the enclosing parser reported the later `subtest` block as
+missing.
+
+The later-parameter path now delegates sigiled parameters carrying a
+sub-signature to the existing complete signature parser and marks the result as
+a block parameter. This preserves the existing `ParamDef` representation and
+binding semantics for named defaults, nested destructuring, and the capture
+slurpy. The focused regression is
+`t/routines/signature/for-multi-param-hash-subsignature.t`, which passes under
+both mutsu and rakudo.
+
+The targeted Red remeasurement on 2026-09-14 (mutsu `4c8c5126e`, Rakudo
+2026.07, bubblewrap, three attempts) changes `Red::Driver::Mock` from the
+parse failure to the independent typed-hash `%!relationships` / `Bool`
+failure. Red remains `blocked_load`; `Red::Driver::Cache::Memory`, the
+relationship/migration leads, and the SQLite chain remain separate slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
