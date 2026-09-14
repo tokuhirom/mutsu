@@ -514,6 +514,30 @@ their own role-composition failures instead of inheriting the parse error, and
 failure. Red remains `blocked_load` because those independent failures still
 prevent the distribution's complete module load.
 
+## 15. Campaign slice: generic rule-category names in grammar action methods (2026-09-14)
+
+The next Red lead was `method modifier:<null>($/)` in
+`Red::Driver::SQLite::SchemaReader`. This is an ordinary grammar action method
+for the `modifier:<null>` candidate of a `proto rule modifier`, not a
+user-defined operator declaration. mutsu left the angle-qualified suffix
+unconsumed for unknown method categories, so it reported `Cannot add tokens of
+category 'modifier'`; its action walk also only considered the `:sym<...>` and
+bare-adverb spellings after the candidate's variant value had been selected.
+
+The method-name parser now consumes angle-qualified and guillemet-qualified
+generic suffixes on the method path, while the plain `sub` path retains the
+Rakudo-compatible category diagnostic. Grammar action dispatch checks the
+corresponding shorthand name after the existing `:sym<...>` and bare-adverb
+forms. The focused regression is
+`t/grammar/grammar-action-generic-rule-category.t`.
+
+The targeted remeasurement on 2026-09-14 (mutsu `905aa67cc`, Rakudo 2026.07,
+bubblewrap) leaves Red `blocked_load` with no comparable test files. The
+`Red::Driver::SQLite::SchemaReader` lead moved from the token-category failure
+to the independent `EXPORT` redeclaration failure in its import chain, while
+`Red::Driver::SQLite` now exposes the same chain's role-composition failure.
+Those remaining roots are separate #7988 campaign slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
