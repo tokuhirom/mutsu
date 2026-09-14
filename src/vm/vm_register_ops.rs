@@ -123,7 +123,10 @@ impl Interpreter {
                 // attaching the defining scope must not drop it.
                 base.regex_signature(),
                 base.regex_source_tree()
-                    .filter(|tree| tree.contains_array_interpolation())
+                    .filter(|tree| {
+                        tree.contains_array_interpolation()
+                            || tree.contains_regex_value_interpolation()
+                    })
                     .cloned()
                     .map(Box::new),
             ),

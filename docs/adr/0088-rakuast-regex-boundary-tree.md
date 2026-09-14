@@ -8,8 +8,9 @@
   lookaround-interpolation, array-lookaround, named-array-lookaround,
   predicate-block-code-assertion, plain-code-block, and
   interpolated-code-block, sequential-interpolated-code-block, and
-  ordinary-array-interpolation, callable-interpolation, and
-  callable-interpolation-arguments slices implemented
+  ordinary-array-interpolation, callable-interpolation,
+  callable-interpolation-arguments, and angle-scalar-interpolation slices
+  implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -935,3 +936,28 @@ regex EVAL, and parser-created matching behavior.
 
 The remaining open dynamic boundaries are code interpolation and other
 runtime-valued regex bodies.
+
+## 34. Angle scalar regex interpolation slice (2026-09-14)
+
+Angle scalar interpolation (`<$name>`) now retains Rakudo's
+`RakuAST::Regex::Assertion::InterpolatedVar` shape, with the lexical scalar
+and the `sequential` branch flag. This is intentionally distinct from bare
+`$name` interpolation: the angle form reads the current value and reparses it
+as a nested regex, isolating the nested regex's captures from the outer match.
+
+The read and write directions share the existing assertion model class for
+the scalar lexical form. The execution lowerer deliberately leaves this node
+on the established runtime parser path, where strings, Regex values, and
+other value-sensitive cases retain their existing semantics. Because the
+runtime plan depends on the current lexical value, source-tree plan caching is
+bypassed for trees containing this node; parser-created regexes therefore
+observe reassignment before a later match. Constructed nodes lower through the
+same `Regex` value and Parser -> Compiler -> VM path without evaluating the
+lexical during AST conversion.
+
+The focused regression is
+`t/rakuast/rakuast-regex-stored-interpolation.t`. It pins the dual-oracle
+assertion shape, sequential alternation, Regex and string reassignment,
+lookaround composition, and constructed-node EVAL. Callable interpolation,
+hash interpolation, and other runtime-valued regex bodies remain separate
+boundaries.
