@@ -1719,6 +1719,20 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 negated: false,
             })
         }
+        RakuAstClass::RegexAssertionCallable => {
+            let callee = named_child(node, "callee")?;
+            let callee = lower_expr(callee)?;
+            let Expr::CodeVar(name) = callee else {
+                return Err(unsupported(node));
+            };
+            if let Some(field) = node.fields.iter().find(|f| f.name == Some("args")) {
+                let args = child_node(&field.value)?;
+                if args.class != RakuAstClass::ArgList || !args.fields.is_empty() {
+                    return Err(unsupported(node));
+                }
+            }
+            Ok(RegexNode::Callable { name })
+        }
         RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
             code: String::new(),
             negated: bool_field(node, "negated")?,
