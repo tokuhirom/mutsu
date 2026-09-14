@@ -74,6 +74,14 @@ pub(crate) enum RegexNode {
         name: String,
         sequential: bool,
     },
+    /// `<$name>` — interpolate the current scalar value as a regex. The
+    /// runtime parser resolves the value when the regex is matched, so this
+    /// node is retained for RakuAST but deliberately stays off the static
+    /// execution-plan path.
+    RegexValueInterpolation {
+        name: String,
+        sequential: bool,
+    },
     /// `@name` inside a named lookaround's regex argument. It has the same
     /// RakuAST class as scalar interpolation, but array-valued interpolation
     /// must retain the `@` sigil and stay on the runtime parser path.
@@ -201,6 +209,14 @@ impl RegexTree {
     /// plan cache, whose key does not include array contents.
     pub(crate) fn contains_array_interpolation(&self) -> bool {
         self.body.contains_array_interpolation()
+    }
+
+    /// Stored regex interpolation reads the referenced value while the
+    /// runtime parser builds its execution plan. Such a plan must not enter
+    /// the source-tree cache, whose key does not include the current value of
+    /// the lexical.
+    pub(crate) fn contains_regex_value_interpolation(&self) -> bool {
+        self.body.contains_regex_value_interpolation()
     }
 
     /// Anchored patterns with outer lexical interpolation retain the legacy
@@ -622,7 +638,9 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                RegexNode::ArrayInterpolation { .. } | RegexNode::ArrayLookaround { .. } => None,
+                RegexNode::ArrayInterpolation { .. }
+                | RegexNode::ArrayLookaround { .. }
+                | RegexNode::RegexValueInterpolation { .. } => None,
                 RegexNode::Callable { .. } => None,
                 RegexNode::CodeAssertion {
                     code,
@@ -734,6 +752,7 @@ impl RegexNode {
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
+            | Self::RegexValueInterpolation { .. }
             | Self::Callable { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
@@ -754,6 +773,7 @@ impl RegexNode {
         match self {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
+            Self::RegexValueInterpolation { .. } => false,
             Self::Callable { .. } => false,
             Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
@@ -783,6 +803,41 @@ impl RegexNode {
         }
     }
 
+    fn contains_regex_value_interpolation(&self) -> bool {
+        match self {
+            Self::RegexValueInterpolation { .. } => true,
+            Self::Sequence(nodes)
+            | Self::Alternation(nodes)
+            | Self::SequentialAlternation(nodes) => {
+                nodes.iter().any(Self::contains_regex_value_interpolation)
+            }
+            Self::Group(child)
+            | Self::CapturingGroup(child)
+            | Self::Quantified { atom: child, .. }
+            | Self::WithWhitespace(child) => child.contains_regex_value_interpolation(),
+            Self::NamedCapture { regex, .. } => regex.contains_regex_value_interpolation(),
+            Self::Lookaround { assertion, .. } | Self::NamedLookaround { assertion, .. } => {
+                assertion.contains_regex_value_interpolation()
+            }
+            Self::Literal(_)
+            | Self::Quote(_)
+            | Self::Subrule { .. }
+            | Self::SubruleAlias { .. }
+            | Self::Interpolation { .. }
+            | Self::ArrayInterpolation { .. }
+            | Self::ArrayLookaround { .. }
+            | Self::Callable { .. }
+            | Self::CodeAssertion { .. }
+            | Self::CodeBlock { .. }
+            | Self::InterpolatedBlock { .. }
+            | Self::AnchorBeginningOfString
+            | Self::AnchorBeginningOfLine
+            | Self::AnchorEndOfString
+            | Self::AnchorEndOfLine
+            | Self::CharClassDigit => false,
+        }
+    }
+
     fn contains_anchor(&self) -> bool {
         match self {
             Self::AnchorBeginningOfString
@@ -804,6 +859,7 @@ impl RegexNode {
             | Self::Subrule { .. }
             | Self::SubruleAlias { .. }
             | Self::Interpolation { .. }
+            | Self::RegexValueInterpolation { .. }
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::Callable { .. }
@@ -899,6 +955,7 @@ impl RegexNode {
                 format!("<{prefix}{keyword} {}>", assertion.to_source())
             }
             Self::Interpolation { name, .. } => format!("${name}"),
+            Self::RegexValueInterpolation { name, .. } => format!("<${name}>"),
             Self::ArrayInterpolation { name, .. } => format!("@{name}"),
             Self::ArrayLookaround { name, negated } => {
                 let marker = if *negated { '!' } else { '?' };
@@ -1293,6 +1350,27 @@ impl Parser {
         // argument tree is represented here.
         if !explicit && self.chars.get(self.pos) == Some(&'&') {
             return self.parse_callable(start);
+        }
+
+        // `<$name>` interpolates the current scalar value as a regex. It has
+        // a different RakuAST node from bare `$name` interpolation because
+        // the runtime reparses the value as a nested regex and isolates its
+        // captures. Keep that value-sensitive execution on the established
+        // parser path.
+        if !explicit && self.chars.get(self.pos) == Some(&'$') {
+            self.pos += 1;
+            let Some(name) = self.parse_variable_name() else {
+                self.pos = start;
+                return None;
+            };
+            if !self.consume_if('>') {
+                self.pos = start;
+                return None;
+            }
+            return Some(RegexNode::RegexValueInterpolation {
+                name,
+                sequential: sequential_interpolation,
+            });
         }
 
         // `<?@name>` and `<!@name>` are the direct array-interpolation
@@ -1872,6 +1950,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         RegexNode::Literal(_)
         | RegexNode::Quote(_)
         | RegexNode::Interpolation { .. }
+        | RegexNode::RegexValueInterpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::ArrayLookaround { .. }
         | RegexNode::Callable { .. }
@@ -1896,6 +1975,7 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::Quantified { atom: child, .. }
         | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
         RegexNode::Interpolation { .. }
+        | RegexNode::RegexValueInterpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::Callable { .. }
         | RegexNode::CodeAssertion { .. }

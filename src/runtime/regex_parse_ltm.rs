@@ -1616,6 +1616,15 @@ impl Interpreter {
                 .parse_regex_uncached(&pattern, RegexParseMode::Match)
                 .map(std::sync::Arc::new);
         }
+        // `<$name>` is source-representable, but its scalar value is read and
+        // reparsed while the runtime builds the nested regex. Do not cache
+        // that plan by source tree alone: the lexical may be reassigned to a
+        // different string, Regex, or other value before the next match.
+        if tree.contains_regex_value_interpolation() {
+            return self
+                .parse_regex_uncached(&pattern, RegexParseMode::Match)
+                .map(std::sync::Arc::new);
+        }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
         // plain scalar case. Regex values, collections, and other objects

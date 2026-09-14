@@ -1697,9 +1697,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             }
         }
         RakuAstClass::RegexAssertionInterpolatedVar => {
-            if bool_field(node, "sequential")? {
-                return Err(unsupported(node));
-            }
+            let sequential = bool_field(node, "sequential")?;
             let var = named_child(node, "var")?;
             if var.class != RakuAstClass::VarLexical {
                 return Err(unsupported(node));
@@ -1708,15 +1706,24 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             let ValueView::Str(name) = name_value.view() else {
                 return Err(unsupported(node));
             };
-            let Some(name) = name.strip_prefix('@') else {
+            if let Some(name) = name.strip_prefix('@') {
+                if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+                    return Err(unsupported(node));
+                }
+                return Ok(RegexNode::ArrayLookaround {
+                    name: name.to_string(),
+                    negated: false,
+                });
+            }
+            let Some(name) = name.strip_prefix('$') else {
                 return Err(unsupported(node));
             };
             if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
                 return Err(unsupported(node));
             }
-            Ok(RegexNode::ArrayLookaround {
+            Ok(RegexNode::RegexValueInterpolation {
                 name: name.to_string(),
-                negated: false,
+                sequential,
             })
         }
         RakuAstClass::RegexAssertionCallable => {
