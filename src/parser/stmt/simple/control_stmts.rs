@@ -695,7 +695,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?
     } else {
-        parse_stmt_call_args(rest).map_err(|err| PError {
+        parse_stmt_call_args_paren(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,

@@ -143,6 +143,21 @@ fn parse_semicolon_sliced_paren_args(input: &str) -> PResult<'_, Vec<CallArg>> {
 }
 
 pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
+    parse_stmt_call_args_inner(input, true)
+}
+
+/// Parse a call whose opening parenthesis is attached to the callable name.
+/// A comma after that closing parenthesis belongs to the surrounding
+/// expression/statement, unlike the comma after a parenthesized first
+/// argument in listop syntax (`f (arg), extra`).
+pub(super) fn parse_stmt_call_args_paren(input: &str) -> PResult<'_, Vec<CallArg>> {
+    parse_stmt_call_args_inner(input, false)
+}
+
+fn parse_stmt_call_args_inner(
+    input: &str,
+    allow_args_after_closing_paren: bool,
+) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
     let rest = input;
 
@@ -203,21 +218,22 @@ pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
             let (r2, _) = ws(r)?;
             if r2.starts_with(')') {
                 let (r2, _) = parse_char(r2, ')')?;
-                // Check for additional args after closing paren
-                let (r2, _) = ws(r2)?;
-                if r2.starts_with(',') {
-                    let (r2, _) = parse_char(r2, ',')?;
+                if allow_args_after_closing_paren {
                     let (r2, _) = ws(r2)?;
-                    let (r2, more) = parse_remaining_call_args(r2).map_err(|err| PError {
-                        messages: merge_expected_messages(
-                            "expected call arguments after closing paren",
-                            &err.messages,
-                        ),
-                        remaining_len: err.remaining_len.or(Some(r2.len())),
-                        exception: None,
-                    })?;
-                    args.extend(more);
-                    return Ok((r2, args));
+                    if r2.starts_with(',') {
+                        let (r2, _) = parse_char(r2, ',')?;
+                        let (r2, _) = ws(r2)?;
+                        let (r2, more) = parse_remaining_call_args(r2).map_err(|err| PError {
+                            messages: merge_expected_messages(
+                                "expected call arguments after closing paren",
+                                &err.messages,
+                            ),
+                            remaining_len: err.remaining_len.or(Some(r2.len())),
+                            exception: None,
+                        })?;
+                        args.extend(more);
+                        return Ok((r2, args));
+                    }
                 }
                 return Ok((r2, args));
             }

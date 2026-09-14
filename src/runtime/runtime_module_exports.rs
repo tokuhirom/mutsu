@@ -216,6 +216,25 @@ impl Interpreter {
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut writes below (read->write on the same lock deadlocks).
         let def = self.registry().functions.get(&fq_sym).cloned();
+        // Multi candidates are stored under an arity-qualified key, so there
+        // is no exact `package::name` entry to use for the EXPORT aliases.
+        // Snapshot that family before taking mutable registry access. These
+        // aliases also let imports recover a family when a distribution's
+        // `unit module` name differs from its provided module path.
+        let candidate_prefix = format!("{}::{}/", package, name);
+        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
+            self.registry()
+                .functions
+                .iter()
+                .filter_map(|(key, candidate)| {
+                    let key = key.resolve();
+                    key.strip_prefix(&candidate_prefix)
+                        .map(|suffix| (suffix.to_string(), candidate.clone()))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         if let Some(def) = def {
             for tag in &tags {
                 // Bare EXPORT::TAG::name (accessible from the same package)
@@ -243,6 +262,35 @@ impl Interpreter {
                     .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&pkg_all))
                     .or_insert_with(|| def);
+            }
+        } else if !candidate_defs.is_empty() {
+            for tag in &tags {
+                for (suffix, candidate) in &candidate_defs {
+                    let bare_export = format!("EXPORT::{}::{}/{}", tag, name, suffix);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&bare_export))
+                        .or_insert_with(|| candidate.clone());
+                    let pkg_export = format!("{}::EXPORT::{}::{}/{}", package, tag, name, suffix);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&pkg_export))
+                        .or_insert_with(|| candidate.clone());
+                }
+            }
+            if !tags.contains(&"ALL".to_string()) {
+                for (suffix, candidate) in &candidate_defs {
+                    let bare_all = format!("EXPORT::ALL::{}/{}", name, suffix);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&bare_all))
+                        .or_insert_with(|| candidate.clone());
+                    let pkg_all = format!("{}::EXPORT::ALL::{}/{}", package, name, suffix);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&pkg_all))
+                        .or_insert_with(|| candidate.clone());
+                }
             }
         }
         // Mirror this export into the unit-module export table so that
@@ -272,6 +320,22 @@ impl Interpreter {
                 owned.insert(tag.clone());
             }
         }
+        // The module load stack names the requested compunit path. Keep a
+        // second metadata entry under that path when the declared unit package
+        // is different, so `use Lingua::EN::Numbers :short` can validate the
+        // export even though the file says `unit module Numbers`.
+        if self.unit_module_loading_stack.last().is_some()
+            && let Some(module) = self.module_load_stack.last().cloned()
+        {
+            let mirror = crate::runtime::cow_table_mut(&mut self.exported_subs)
+                .entry(module)
+                .or_default()
+                .entry(name.clone())
+                .or_default();
+            for tag in &tags {
+                mirror.insert(tag.clone());
+            }
+        }
         let entry = crate::runtime::cow_table_mut(&mut self.exported_subs)
             .entry(package)
             .or_default()
@@ -291,6 +355,8 @@ impl Interpreter {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
         }
+        let mirror_name = name.clone();
+        let mirror_tags = tags.clone();
         let entry = crate::runtime::cow_table_mut(&mut self.exported_vars)
             .entry(package)
             .or_default()
@@ -298,6 +364,36 @@ impl Interpreter {
             .or_default();
         for tag in tags {
             entry.insert(tag);
+        }
+        // A unit module's top-level declarations execute while the runtime
+        // package is still GLOBAL. Mirror variable exports under the declared
+        // module name, just as exported subs are mirrored above, so a tagged
+        // `our &alias is export(:tag)` is visible to a later `use Module :tag`.
+        if let Some(unit_mod) = self.unit_module_loading_stack.last().cloned() {
+            let mirror = crate::runtime::cow_table_mut(&mut self.exported_vars)
+                .entry(unit_mod)
+                .or_default()
+                .entry(mirror_name.clone())
+                .or_default();
+            for tag in &mirror_tags {
+                mirror.insert(tag.clone());
+            }
+        }
+        // Use the requested compunit path as a second key when a file's
+        // declared `unit module` name differs from that path. This mirrors
+        // the variable's export metadata to the namespace import_module
+        // actually receives.
+        if self.unit_module_loading_stack.last().is_some()
+            && let Some(module) = self.module_load_stack.last().cloned()
+        {
+            let mirror = crate::runtime::cow_table_mut(&mut self.exported_vars)
+                .entry(module)
+                .or_default()
+                .entry(mirror_name.clone())
+                .or_default();
+            for tag in &mirror_tags {
+                mirror.insert(tag.clone());
+            }
         }
     }
 
@@ -584,6 +680,35 @@ impl Interpreter {
                     }
                 })
                 .collect();
+            // A unit module's top-level multi candidates are registered under
+            // GLOBAL::name/<arity>, while the unit-module export table records
+            // the public name under the module. The ordinary exact-key lookup
+            // above therefore finds nothing (and the EXPORT::ALL fallback can
+            // only recover a single candidate). Reuse the global candidate
+            // family when this is a unit export so every dispatch alternative
+            // is imported.
+            if function_entries.is_empty() && unit_global_subs.contains_key(&name) {
+                let global_single = format!("GLOBAL::{name}");
+                let global_prefix = format!("GLOBAL::{name}/");
+                function_entries = self
+                    .registry()
+                    .functions
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        let ks = k.resolve();
+                        if ks == global_single {
+                            Some((Symbol::intern(&target_single), v.clone()))
+                        } else if ks.starts_with(&global_prefix) {
+                            Some((
+                                Symbol::intern(&ks.replacen(&global_prefix, &target_prefix, 1)),
+                                v.clone(),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+            }
             // Fallback for a re-import (`use Foo; use Foo :tag`) of a `unit
             // module Foo` sub: the sub is registered under `GLOBAL::name`, not
             // `Foo::name`, and an earlier default `use Foo` already stripped the
@@ -603,6 +728,24 @@ impl Interpreter {
                         .cloned()
                     {
                         function_entries.push((Symbol::intern(&target_single), def));
+                    }
+                    let alias_prefix = format!("{alias}/");
+                    let candidates: Vec<(Symbol, Arc<FunctionDef>)> = self
+                        .registry()
+                        .functions
+                        .iter()
+                        .filter_map(|(key, def)| {
+                            let key = key.resolve();
+                            key.strip_prefix(&alias_prefix).map(|suffix| {
+                                (
+                                    Symbol::intern(&format!("{target_prefix}{suffix}")),
+                                    def.clone(),
+                                )
+                            })
+                        })
+                        .collect();
+                    function_entries.extend(candidates);
+                    if !function_entries.is_empty() {
                         break;
                     }
                 }

@@ -356,6 +356,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     quoted: true,
                 },
             };
+            let (r_final, method_expr) =
+                crate::parser::expr::postfix_expr_continue(r_final, method_expr)?;
             let stmt = if name == "_" {
                 Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_topic_dotassign"),
@@ -431,6 +433,11 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             modifier: None,
             quoted: false,
         };
+        // The statement-level shortcut parses `.=method` directly so the
+        // lvalue writeback stays visible to the compiler. Continue the method
+        // call before wrapping it, though: `$x .= Numeric.Rat` is one mutating
+        // call chain, not `$x .= Numeric` followed by a topic method call.
+        let (r, expr) = crate::parser::expr::postfix_expr_continue(r, expr)?;
         // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
         // so it can reassign a read-only whole-container topic while a plain
         // `$_ = ...` still throws X::Assignment::RO.

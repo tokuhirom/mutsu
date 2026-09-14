@@ -19,8 +19,8 @@ pub(super) use super::simple_expr_stmt::{expr_stmt, let_stmt, temp_stmt};
 
 use super::{
     block, ident, is_stmt_modifier_keyword, keyword, parse_comma_or_expr,
-    parse_comma_or_expr_item_no_word_logical, parse_statement_modifier, parse_stmt_call_args,
-    parse_stmt_call_args_no_paren, statement,
+    parse_comma_or_expr_item_no_word_logical, parse_statement_modifier,
+    parse_stmt_call_args_no_paren, parse_stmt_call_args_paren, statement,
 };
 
 // Themed submodules. This file is the facade: it owns the parser-state statics
