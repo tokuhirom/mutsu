@@ -757,6 +757,10 @@ impl Interpreter {
         let (source_path, inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
+        crate::runtime::cow_table_mut(&mut self.module_source_packages).insert(
+            crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
+            crate::symbol::Symbol::intern(module),
+        );
         // Detect distribution context for $?DISTRIBUTION.
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.

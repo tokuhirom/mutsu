@@ -19,4 +19,4 @@ pub(crate) use pow_negate::{arith_negate, arith_pow};
 
 // Helpers used by external callers (vm/, runtime/).
 pub(crate) use rat::{big_int_add, big_int_mul, big_int_sub, exact_round_scaled, real_to_rat};
-pub(crate) use temporal::{is_temporal_operand, make_duration_value};
+pub(crate) use temporal::{instance_instant_value, is_temporal_operand, make_duration_value};

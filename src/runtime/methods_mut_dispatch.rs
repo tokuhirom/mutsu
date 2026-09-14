@@ -1152,6 +1152,9 @@ impl Interpreter {
                     fn resolve_splice_raw(v: &Value, len: usize) -> Option<i64> {
                         match v.view() {
                             ValueView::Int(i) => Some(i),
+                            _ if crate::runtime::utils::is_integer_value(v) => {
+                                Some(crate::runtime::to_int(v))
+                            }
                             ValueView::Whatever => Some(len as i64),
                             ValueView::Str(s) => s.parse::<i64>().ok(),
                             ValueView::Num(n) => Some(n as i64),
@@ -1395,13 +1398,11 @@ impl Interpreter {
                     // X::Multi::NoMatch (roast .../multi-no-match.t), not coerce.
                     fn is_valid_splice_index(v: &Value) -> bool {
                         match v.view() {
-                            ValueView::Int(_)
-                            | ValueView::BigInt(_)
-                            | ValueView::Whatever
-                            | ValueView::Sub(..)
-                            | ValueView::WeakSub(..) => true,
+                            ValueView::Whatever | ValueView::Sub(..) | ValueView::WeakSub(..) => {
+                                true
+                            }
                             ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
-                            _ => false,
+                            _ => crate::runtime::utils::is_integer_value(v),
                         }
                     }
                     for idx in 0..2 {
