@@ -507,6 +507,13 @@ the existing semicolon case. The focused regression is
 other Red failures, including `Red::Driver::Mock` and
 `Red::Driver::SQLite::SchemaReader`, remain independent slices.
 
+The targeted remeasurement on 2026-09-14 (mutsu `9d921b3fc`, Rakudo 2026.07,
+bubblewrap) records `Red::Driver::CommonSQL` as `ok`. Its dependents now reach
+their own role-composition failures instead of inheriting the parse error, and
+`Red::Driver::SQLite` reaches the separate `SchemaReader` token-category
+failure. Red remains `blocked_load` because those independent failures still
+prevent the distribution's complete module load.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
