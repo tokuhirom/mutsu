@@ -136,8 +136,32 @@ impl Interpreter {
         if candidate.delegation.is_some() {
             return required.is_private == candidate.is_private;
         }
-        Self::method_positional_signature(required) == Self::method_positional_signature(candidate)
-            && required.is_private == candidate.is_private
+        if Self::method_positional_signature(required)
+            != Self::method_positional_signature(candidate)
+            || required.is_private != candidate.is_private
+        {
+            return false;
+        }
+        // A literal positional parameter is part of a multi candidate's
+        // dispatch signature. `multi method f(Str) { ... }` is not satisfied
+        // by `multi method f("") { ... }`, and the latter must not be counted
+        // as a second implementation of the former's role requirement. The
+        // positional type signature above deliberately omits literals for
+        // diagnostics and role ancestry, so compare them here where candidate
+        // applicability matters.
+        if required.is_multi && candidate.is_multi {
+            let positionals = |def: &MethodDef| -> Vec<Option<Value>> {
+                def.param_defs
+                    .iter()
+                    .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
+                    .map(|pd| pd.literal_value.clone())
+                    .collect()
+            };
+            if positionals(required) != positionals(candidate) {
+                return false;
+            }
+        }
+        true
     }
 
     /// The invocant parameter's type constraint (`::?CLASS:U`, `Foo:D`, ...),

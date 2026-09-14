@@ -661,6 +661,28 @@ parse failure to the independent typed-hash `%!relationships` / `Bool`
 failure. Red remains `blocked_load`; `Red::Driver::Cache::Memory`, the
 relationship/migration leads, and the SQLite chain remain separate slices.
 
+## 21. Campaign slice: literal multi candidates and role stubs (2026-09-15)
+
+The next Red lead was the required `prepare` method conflict while loading
+`Red::Driver::Cache::Memory`. `Red::Driver::Cache` requires a multi
+`prepare(Str)`, while its parent `Red::Driver` also supplies the literal
+`prepare("")` candidate. The role-stub matcher compared only positional type
+signatures, so mutsu counted the literal candidate as a second implementation
+of the general requirement and rejected the composed class.
+
+Role-stub matching now includes literal values in the multi candidate
+signature. A literal candidate therefore remains distinct from a general
+implementation, while a general candidate cannot satisfy a literal role stub.
+Runtime multi dispatch also ranks a matching literal candidate ahead of its
+general type candidate. The focused regression is
+`t/oo/role/role-stub-literal-candidate.t`, which passes identically under mutsu
+and rakudo.
+
+The targeted Red remeasurement for this slice is recorded in the ledger after
+the release build. It changes `Red::Driver::Cache::Memory` past the role
+composition failure; the typed-hash `%!relationships` / `Bool`, migration and
+relationship, and SQLite leads remain separate #7988 slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
