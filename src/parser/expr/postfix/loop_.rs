@@ -267,7 +267,13 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         }
     }
 
-    if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input) {
+    // `->` is the pointy-lambda declarator, not the user-defined `-` prefix
+    // operator followed by `>`.  A custom `prefix:<->` (Red::Operators is one
+    // real example) must not consume the leading `-` before `primary` gets a
+    // chance to parse the lambda.
+    if !input.starts_with("->")
+        && let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_prefix_op(input)
+    {
         let after_op = &input[len..];
         // If the text immediately after the operator is a hyper marker (<< or «),
         // fall through to the hyper prefix handler instead of treating as a regular call.
