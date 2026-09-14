@@ -5,8 +5,8 @@ use Test;
 
 # ADR-0088 issue #8033: ordinary scalar interpolation is retained in the
 # shared RegexTree, exposed through RakuAST, and lowered to the existing
-# match-time VarInterp atom. Array/hash interpolation, code interpolation,
-# named aliases, and subrules remain separate boundaries.
+# match-time VarInterp atom. Hash interpolation, code interpolation, named
+# aliases, and subrules remain separate boundaries.
 
 plan 12;
 

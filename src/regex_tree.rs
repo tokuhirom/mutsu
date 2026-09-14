@@ -136,7 +136,12 @@ impl RegexTree {
     /// still receives the original pattern, while the converter reports an
     /// honest unsupported boundary for a construct without a source tree.
     pub(crate) fn parse_static(source: &str, declaration: bool) -> Option<Self> {
-        Self::parse_static_with_options(source, declaration, false)
+        // Array interpolation keeps the existing match-time runtime path, but
+        // its source form is still part of the RakuAST regex tree. The
+        // execution lowerer deliberately declines these nodes and the value
+        // parser reparses them uncached, so retaining them here does not turn
+        // dynamic array contents into a static plan.
+        Self::parse_static_with_options(source, declaration, true)
     }
 
     fn parse_static_with_options(
