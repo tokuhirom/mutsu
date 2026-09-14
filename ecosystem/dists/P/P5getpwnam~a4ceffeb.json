@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.25,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.0,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "NativeCall: symbol '_getpwuid' not found in 'this process': dlsym failed",
         "nok": 0,
-        "ok": 1,
+        "ok": 16,
         "plan": 16,
         "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/getpwnam.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.93,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -73,13 +72,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/5G/P5GETPWNAM/ab4003e1764a489c341328954c7524936a07fa12.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 22,
     "baseline_files": 2,
-    "mutsu_assertions": 7,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 22,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }

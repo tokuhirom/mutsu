@@ -16,22 +16,23 @@
   "dist": "Terminal::Tests",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Redeclaration of routine 'MAIN'. Did you mean to declare a multi-sub?",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.76,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.93,
+        "secs": 11.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,10 +46,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -59,13 +60,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_TESTS/a5e9be5817502b68db390effae494be0fe5be6bb.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 1,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.18"
 }

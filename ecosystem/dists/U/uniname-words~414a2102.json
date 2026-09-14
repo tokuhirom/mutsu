@@ -13,23 +13,23 @@
   "dist": "uniname-words",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "all 1 code points have indeed a word 'LOVE' in them",
-        "nok": 38836,
-        "ok": 38837,
-        "plan": 21,
-        "secs": 219.9,
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "timeout"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 7.41,
+        "secs": 14.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,10 +41,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -59,7 +59,7 @@
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 1,
-    "mutsu_assertions": 21,
+    "mutsu_assertions": 0,
     "parity_files": 0,
     "regressed_files": 1
   },

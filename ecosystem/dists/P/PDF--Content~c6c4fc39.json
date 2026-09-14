@@ -30,7 +30,7 @@
   "dist": "PDF::Content",
   "files": [],
   "load": {
-    "PDF::Content": "raku_also_fails",
+    "PDF::Content": "expected statement: expected right-hand expression after '=' or '.' or digits or generic radix literal or unicode numeric literal or ... [at PDF/Content/Ops.rakumod:248]",
     "PDF::Content::API": "ok",
     "PDF::Content::Canvas": "expected statement: expected right-hand expression after '=' or '.' or digits or generic radix literal or unicode numeric literal or ... [at PDF/Content/Ops.rakumod:248]",
     "PDF::Content::Color": "ok",
@@ -64,10 +64,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

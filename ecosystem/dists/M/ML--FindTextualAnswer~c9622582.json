@@ -33,17 +33,41 @@
     "unresolved": []
   },
   "dist": "ML::FindTextualAnswer",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: Lived where?\tAustrian Empire, United States Worked where?\tContinental Edison, Edison Machine Works ",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-llm-results-post-processing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 103.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "ML::FindTextualAnswer": "Unknown function: openai-base-url",
-    "ML::FindTextualAnswer::LLM::TextualAnswer": "No such method 'attribute_table' for invocant of type 'Perl6::Metamodel::ClassHOW'"
+    "ML::FindTextualAnswer": "ok",
+    "ML::FindTextualAnswer::LLM::TextualAnswer": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,13 +78,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_FINDTEXTUALANSWER/ad9e56e9bba51d6af429e5e4021991f3cc9577e7.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 4,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.2.8"
 }

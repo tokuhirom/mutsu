@@ -1,0 +1,64 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "L10N::LV",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expression statement or '{' [at dist/t/01-latvian.t:119]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-latvian.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 19.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "L10N::LV": "ok",
+    "RakuAST::Deparse::L10N::LV": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-14",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "eba9d2a",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/10/L10N_LV/63b55130063bcda1eac79816ff13fc914145f0cb.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 16,
+    "baseline_files": 1,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "0.0.1"
+}

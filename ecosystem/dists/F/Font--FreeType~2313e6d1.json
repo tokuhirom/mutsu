@@ -15,11 +15,11 @@
       "cmp": "no_baseline",
       "path": "t/00-basic.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 1,
         "ok": 43,
         "plan": null,
-        "secs": 37.2,
+        "secs": 33.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.92,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.64,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_5x7bdf.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 22,
         "plan": 1897,
-        "secs": 1.98,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.08,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.46,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 27,
-        "secs": 0.97,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.81,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,11 +112,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_postscript.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.94,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -126,11 +126,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_verasans.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 1057,
         "plan": 2717,
-        "secs": 2.68,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,11 +140,11 @@
       "cmp": "no_baseline",
       "path": "t/20bitmap.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 1.63,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -154,11 +154,11 @@
       "cmp": "no_baseline",
       "path": "t/30render.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 1,
         "plan": 41,
-        "secs": 1.66,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -171,7 +171,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -181,7 +181,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.38,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,11 +191,11 @@
       "cmp": "no_baseline",
       "path": "t/load-flags.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b6/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1fyav1b",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cps/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6z9f0cp",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.5,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,7 +209,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 1.69,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -222,7 +222,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.97,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -232,7 +232,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.75,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,10 +260,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

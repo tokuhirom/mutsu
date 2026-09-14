@@ -15,11 +15,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Str:D, Str:D); none of these signatures matches:",
+        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.0,
+        "secs": 11.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 169.21,
+        "secs": 161.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,11 +38,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Str:D, Str:D); none of these signatures matches:",
+        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.93,
+        "secs": 11.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.77,
+        "secs": 3.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 4,
         "plan": null,
-        "secs": 10.2,
+        "secs": 11.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 3.89,
+        "secs": 3.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 9.97,
+        "secs": 11.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.75,
+        "secs": 3.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,11 +107,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Any:D, Str:D); none of these signatures matches:",
+        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 9.87,
+        "secs": 10.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.51,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 5,
-        "secs": 10.97,
+        "secs": 10.88,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.78,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 10.18,
+        "secs": 10.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -167,7 +167,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.34,
+        "secs": 3.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,10 +223,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
