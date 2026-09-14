@@ -600,6 +600,8 @@ impl Interpreter {
             .get(module)
             .cloned()
             .unwrap_or_default();
+        let bare_file_module =
+            subs.is_empty() && unit_global_subs.is_empty() && !owned_subs.is_empty();
         if subs.is_empty()
             && vars.is_empty()
             && unit_global_subs.is_empty()
@@ -685,11 +687,13 @@ impl Interpreter {
         // functions live under `MOD::name` (a plain `use` renamed the hidden
         // tagged ones there; DEFAULT ones stay `GLOBAL::name` and are already
         // imported, so the re-alias below is a harmless no-op for them).
-        for (name, tags) in owned_subs.iter() {
-            merged_subs
-                .entry(name.clone())
-                .or_default()
-                .extend(tags.iter().cloned());
+        if bare_file_module {
+            for (name, tags) in owned_subs.iter() {
+                merged_subs
+                    .entry(name.clone())
+                    .or_default()
+                    .extend(tags.iter().cloned());
+            }
         }
 
         for (name, symbol_tags) in merged_subs {
@@ -727,7 +731,7 @@ impl Interpreter {
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
             let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
-            let bare_file_multi = owned_subs.contains_key(&name)
+            let bare_file_multi = bare_file_module
                 && self
                     .registry()
                     .functions
@@ -743,13 +747,19 @@ impl Interpreter {
                         .proto_functions
                         .contains_key(&Symbol::intern(&format!("GLOBAL::{name}"))))
                 || bare_file_multi;
-            let global_family_present = owned_subs.contains_key(&name)
+            let global_family_present = bare_file_module
                 && self
                     .registry()
                     .functions
                     .keys()
                     .any(|key| key.resolve().starts_with(&format!("GLOBAL::{name}/")));
-            if imported_proto || global_family_present {
+            // A top-level package-block import such as Zef::CLI's exported
+            // `proto MAIN` has no target family to hide: the module's own
+            // promoted GLOBAL candidates are the family we are importing.
+            // Shadow an imported proto in a lexical scope, or a preloaded
+            // GLOBAL family for a bare-file module, but do not shadow a
+            // package-qualified proto merely because the source has one.
+            if (imported_proto && !self.import_scope_stack.is_empty()) || global_family_present {
                 self.shadow_imported_proto_family(&target_single);
             }
 
@@ -869,8 +879,7 @@ impl Interpreter {
                     if *k == *source_single
                         || (unit_global_subs.contains_key(&name)
                             && *k == Symbol::intern(&format!("GLOBAL::{name}")))
-                        || (owned_subs.contains_key(&name)
-                            && *k == Symbol::intern(&format!("GLOBAL::{name}")))
+                        || (bare_file_module && *k == Symbol::intern(&format!("GLOBAL::{name}")))
                     {
                         Some((Symbol::intern(&target_single), v.clone()))
                     } else {
