@@ -1709,13 +1709,9 @@ impl Interpreter {
             if method == "splice" {
                 fn is_valid_splice_index(v: &Value) -> bool {
                     match v.view() {
-                        ValueView::Int(_)
-                        | ValueView::BigInt(_)
-                        | ValueView::Whatever
-                        | ValueView::Sub(..)
-                        | ValueView::WeakSub(..) => true,
+                        ValueView::Whatever | ValueView::Sub(..) | ValueView::WeakSub(..) => true,
                         ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
-                        _ => false,
+                        _ => crate::runtime::utils::is_integer_value(v),
                     }
                 }
                 for v in args.iter().take(2) {

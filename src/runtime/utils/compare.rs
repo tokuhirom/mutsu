@@ -403,3 +403,18 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         _ => 0,
     }
 }
+
+/// Whether a value has the boxed integer representation used by native
+/// integer values.  `nqp::box_i` preserves an `Int` subclass as an instance,
+/// so callers that accept an `Int` argument must recognize its reserved
+/// payload just like the ordinary `Int` and `BigInt` variants.
+pub(crate) fn is_integer_value(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Int(_) | ValueView::BigInt(_) => true,
+        ValueView::Mixin(inner, _) => is_integer_value(inner),
+        ValueView::Instance { attributes, .. } => {
+            attributes.as_map().contains_key("__mutsu_int_value")
+        }
+        _ => false,
+    }
+}

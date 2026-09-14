@@ -28,6 +28,14 @@ fn bool_int(b: bool) -> Value {
     Value::int(i64::from(b))
 }
 
+fn cmp_result(ordering: std::cmp::Ordering) -> i64 {
+    match ordering {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
 /// Binary read/write flag decoding (see `nqp_const_value`): the low 2 bits
 /// are the endianness (0 native / 1 little / 2 big — Raku's `Endian` enum),
 /// the bits above select the size as `1 << (flags >> 2)` bytes.
@@ -124,6 +132,33 @@ impl Interpreter {
             "add_i" => Ok(Value::int(iarg(args, 0).wrapping_add(iarg(args, 1)))),
             "sub_i" => Ok(Value::int(iarg(args, 0).wrapping_sub(iarg(args, 1)))),
             "mul_i" => Ok(Value::int(iarg(args, 0).wrapping_mul(iarg(args, 1)))),
+            // nqp::div_i uses floor division, unlike Rust's `/` for negative
+            // operands.  Array::Sorted::Util uses this to choose the midpoint
+            // of its binary search, so this is observable in ordinary module
+            // code rather than only in low-level NQP callers.
+            "div_i" => {
+                let lhs = iarg(args, 0);
+                let rhs = iarg(args, 1);
+                if rhs == 0 {
+                    Err(RuntimeError::new("nqp::div_i: division by zero"))
+                } else {
+                    // The native-int overflow case traps in MoarVM.  Keep the
+                    // operation defined in mutsu instead of allowing Rust's
+                    // checked arithmetic to panic in debug builds, matching
+                    // the wrapping convention of the other *_i operations.
+                    let quotient = if lhs == i64::MIN && rhs == -1 {
+                        i64::MIN
+                    } else {
+                        let quotient = lhs / rhs;
+                        if lhs % rhs != 0 && (lhs < 0) != (rhs < 0) {
+                            quotient - 1
+                        } else {
+                            quotient
+                        }
+                    };
+                    Ok(Value::int(quotient))
+                }
+            }
             "neg_i" => Ok(Value::int(iarg(args, 0).wrapping_neg())),
             "abs_i" => Ok(Value::int(iarg(args, 0).wrapping_abs())),
             "bitor_i" => Ok(Value::int(iarg(args, 0) | iarg(args, 1))),
@@ -154,6 +189,7 @@ impl Interpreter {
             "isle_i" => Ok(bool_int(iarg(args, 0) <= iarg(args, 1))),
             "isgt_i" => Ok(bool_int(iarg(args, 0) > iarg(args, 1))),
             "isge_i" => Ok(bool_int(iarg(args, 0) >= iarg(args, 1))),
+            "cmp_i" => Ok(Value::int(cmp_result(iarg(args, 0).cmp(&iarg(args, 1))))),
             "not_i" => Ok(bool_int(iarg(args, 0) == 0)),
 
             // -- native num arithmetic --
@@ -171,10 +207,31 @@ impl Interpreter {
             "isle_n" => Ok(bool_int(narg(args, 0) <= narg(args, 1))),
             "isgt_n" => Ok(bool_int(narg(args, 0) > narg(args, 1))),
             "isge_n" => Ok(bool_int(narg(args, 0) >= narg(args, 1))),
+            "cmp_n" => Ok(Value::int(
+                narg(args, 0)
+                    .partial_cmp(&narg(args, 1))
+                    .map_or(0, cmp_result),
+            )),
             "isnanorinf" => Ok(bool_int({
                 let n = narg(args, 0);
                 n.is_nan() || n.is_infinite()
             })),
+
+            // -- native str comparison --
+            "cmp_s" => {
+                let lhs = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let rhs = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                Ok(Value::int(cmp_result(lhs.cmp(&rhs))))
+            }
+            "iseq_s" => Ok(bool_int(
+                args.first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default()
+                    == args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
+            )),
 
             // -- type test --
             "istype" => {

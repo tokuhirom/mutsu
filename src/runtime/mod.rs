@@ -2771,6 +2771,10 @@ pub struct Interpreter {
     /// `our`/class-body names, while the VM's env fallback must only redirect
     /// aliases imported from a nested module.
     pub(crate) module_imported_lexical_names: std::sync::Arc<PackageKeyed<bool>>,
+    /// The module name owning each loaded source file. Ordinary (non-`unit`)
+    /// module files register top-level routines under `GLOBAL`, but their
+    /// private file-scope names remain lexical to the module.
+    pub(crate) module_source_packages: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// Compilation units declared by `unit module`/`unit class` files, keyed by
     /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
     /// its routines need this metadata after the load has finished in order to

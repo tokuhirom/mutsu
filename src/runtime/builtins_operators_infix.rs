@@ -465,6 +465,16 @@ impl Interpreter {
             }
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
+            // `cmp` is value-oriented, but an argument that came from a
+            // scalar variable or positional access can still carry the
+            // transient VarRef/ContainerRef wrappers here. Strip those
+            // before the numeric bridge so both Instant operands take the
+            // same path; otherwise only the variable side is Numeric'ed and
+            // the array-element side falls through to representation text.
+            if op == "cmp" {
+                lhs = lhs.unwrap_varref().deref_container().deitemize_element();
+                rhs = rhs.unwrap_varref().deref_container().deitemize_element();
+            }
             if self.infix_uses_numeric_bridge(op) {
                 // Genuinely-numeric ops reject non-numeric strings; the generic
                 // comparators (cmp/before/after/min/max) compare them as strings.

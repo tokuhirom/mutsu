@@ -152,15 +152,21 @@ impl Interpreter {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
                 );
+                if let ValueView::Instance { attributes, .. } = v.view()
+                    && let Some(payload) = attributes.as_map().get("__mutsu_int_value")
+                {
+                    return Some(Ok(Value::int(crate::runtime::to_int(payload))));
+                }
                 Ok(Value::int(
                     crate::runtime::nativecall::value_c_address(&v) as i64
                 ))
             }
             // nqp::box_i($i, Type): the inverse. A `Pointer`/`Pointer[T]` target
             // yields a pointer at that address (`Pointer.new(0)` is a legitimate
-            // defined value, so a zero address stays defined); anything else
-            // boxes as a plain `Int`, which is what every non-pointer nqp target
-            // amounts to here.
+            // defined value, so a zero address stays defined). A user subclass
+            // of Int needs an instance carrying the native payload so that
+            // `nqp::istype` and value coercion still see the requested type;
+            // plain Int targets remain the immediate scalar below.
             "box_i" => {
                 let n = args.first().map(crate::runtime::to_int).unwrap_or(0);
                 let target = args
@@ -181,6 +187,14 @@ impl Interpreter {
                         Some(of) => crate::runtime::nativecall::make_typed_pointer(addr, of),
                         None => crate::runtime::nativecall::make_pointer_object(addr),
                     }));
+                }
+                if !target.is_empty()
+                    && target != "Int"
+                    && self.class_mro(&target).iter().any(|name| name == "Int")
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("__mutsu_int_value".to_string(), Value::int(n));
+                    return Some(Ok(Value::make_instance(Symbol::intern(&target), attrs)));
                 }
                 Ok(Value::int(n))
             }
@@ -393,6 +407,17 @@ impl Interpreter {
         // in-place mutations the caller then performs land on the same `Gc`
         // the Map value holds.
         if let ValueView::Hash(_) = obj.view() {
+            return Some(obj.clone());
+        }
+        // Rakudo represents a slurpy List's reified storage as the value of
+        // `$!reified`.  mutsu stores List/Array elements directly in the
+        // Array value, so expose that same backing value to nqp code such as
+        // Array::Sorted::Util's `insert-also`.
+        if matches!(obj.view(), ValueView::Array(..))
+            && Self::nqp_attr_keys(name)
+                .iter()
+                .any(|key| matches!(key.as_str(), "reified" | "storage"))
+        {
             return Some(obj.clone());
         }
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,

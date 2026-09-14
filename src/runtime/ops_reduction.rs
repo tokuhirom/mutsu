@@ -545,6 +545,34 @@ impl Interpreter {
                 Ok(super::make_order(ord))
             }
             "cmp" => {
+                // Method dispatch and positional access can hand reduction
+                // operators a first-class container for an array element.
+                // `cmp` is value-oriented, so compare the contents rather
+                // than the container's representation (`Instant` values
+                // otherwise fell through to their container string form).
+                let left_value = left
+                    .unwrap_varref()
+                    .deref_container()
+                    .deitemize_element()
+                    .deref_container()
+                    .deitemize_element();
+                let right_value = right
+                    .unwrap_varref()
+                    .deref_container()
+                    .deitemize_element()
+                    .deref_container()
+                    .deitemize_element();
+                let left = &left_value;
+                let right = &right_value;
+                if let (Some(left_instant), Some(right_instant)) = (
+                    crate::builtins::arith::instance_instant_value(left),
+                    crate::builtins::arith::instance_instant_value(right),
+                ) {
+                    let ord = left_instant
+                        .partial_cmp(&right_instant)
+                        .unwrap_or(std::cmp::Ordering::Equal);
+                    return Ok(super::make_order(ord));
+                }
                 if let Some(ord) = Self::blob_ordering(left, right)? {
                     return Ok(super::make_order(ord));
                 }
