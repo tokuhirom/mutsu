@@ -7,19 +7,92 @@
     "unresolved": []
   },
   "dist": "Grok",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-moppet-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-wisp-basic.rakutest",
+      "raku": {
+        "first_failure": "Could not find Test::Output in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-grok-sample-types.rakutest",
+      "raku": {
+        "first_failure": "Could not find Test::Output in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Grok": "Variable $!thing used where no 'self' is available",
-    "Grok::Moppet": "Variable $!thing used where no 'self' is available",
+    "Grok": "ok",
+    "Grok::Moppet": "ok",
     "Grok::Utils": "ok",
-    "Grok::Wisp": "Variable $!thing used where no 'self' is available"
+    "Grok::Wisp": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "host": "linux-x86_64",
+    "mutsu_commit": "8c0499e8f",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -30,12 +103,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RO/GROK/776569d102aa5fbcbca5cbc748f681dea8f31989.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 4,
+    "baseline_files": 2,
+    "mutsu_assertions": 4,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.3"

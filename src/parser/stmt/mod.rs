@@ -198,6 +198,53 @@ const STMT_PARSERS: &[StmtParser] = &[
 
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
+
+    // Rakudo accepts a leading pipe before a declaration, including the
+    // `|# ...` spelling used for a documentation line before a method.  The
+    // pipe is an expression prefix in other contexts, but declaration parsers
+    // need to see the keyword at the start of the statement or a method/has
+    // declaration is misparsed as an expression followed by a detached block.
+    // Strip it only when the following token is a declaration keyword; plain
+    // `|` expressions keep their normal parsing path below.
+    if let Some(after_pipe) = input.strip_prefix('|') {
+        let (after_pipe_ws, _) = ws(after_pipe)?;
+        const DECLARATION_KEYWORDS: &[&str] = &[
+            "also",
+            "anon",
+            "class",
+            "constant",
+            "declare",
+            "does",
+            "enum",
+            "grammar",
+            "has",
+            "let",
+            "method",
+            "module",
+            "my",
+            "native",
+            "package",
+            "proto",
+            "role",
+            "rule",
+            "state",
+            "sub",
+            "submethod",
+            "subset",
+            "temp",
+            "token",
+            "trusts",
+            "unit",
+        ];
+        if DECLARATION_KEYWORDS
+            .iter()
+            .any(|keyword_name| keyword(keyword_name, after_pipe_ws).is_some())
+            && let Ok(result) = statement(after_pipe)
+        {
+            return Ok(result);
+        }
+    }
+
     if let Some(cached) = STMT_MEMO.get(input) {
         // See `STMT_ANON_STATES_TLS`: the replayed statement's bare `$`s were
         // recorded into the scope of the parse that filled the memo.
