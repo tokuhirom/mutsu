@@ -2403,6 +2403,14 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("assertion"), interpolated));
             (RakuAstClass::RegexAssertionLookahead, fields)
         }
+        RegexNode::CodeAssertion { body, negated, .. } => {
+            let mut fields = Vec::new();
+            if *negated {
+                fields.push(leaf_field(Some("negated"), Value::truth(true)));
+            }
+            fields.push(node_field(Some("block"), block_node(body)?));
+            (RakuAstClass::RegexAssertionPredicateBlock, fields)
+        }
         RegexNode::NamedLookaround {
             assertion,
             is_behind,

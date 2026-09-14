@@ -2725,6 +2725,8 @@ impl Interpreter {
                                     code,
                                     negated,
                                     is_assertion: true,
+                                    body: None,
+                                    code_cache_id: 0,
                                 }
                             }
                         } else {
@@ -4119,6 +4121,8 @@ impl Interpreter {
                         code,
                         negated: false,
                         is_assertion: false,
+                        body: None,
+                        code_cache_id: 0,
                     }
                 }
                 '~' => RegexAtom::TildeMarker,

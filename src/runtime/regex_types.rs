@@ -917,6 +917,11 @@ pub(crate) enum RegexAtom {
         code: String,
         negated: bool,
         is_assertion: bool,
+        /// Parser-produced code bodies can bypass the string reparse while
+        /// retaining the same inline execution path as legacy regex values.
+        body: Option<std::sync::Arc<Vec<crate::ast::Stmt>>>,
+        /// Stable carrier-compile cache key for a parser-produced body.
+        code_cache_id: u64,
     },
     /// `<{ code }>` — closure interpolation: evaluate code and match result as regex
     ClosureInterpolation {
