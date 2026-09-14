@@ -582,10 +582,14 @@ impl Interpreter {
                 new_caps.ast = outcome.made;
                 return Some((pos, new_caps));
             }
-            RegexAtom::ClosureInterpolation { code } => {
+            RegexAtom::ClosureInterpolation { code, body } => {
                 let target: String = chars.iter().collect();
-                let pattern_str =
-                    self.eval_regex_closure_interpolation(code, current_caps, &target);
+                let pattern_str = self.eval_regex_closure_interpolation(
+                    code,
+                    body.as_ref(),
+                    current_caps,
+                    &target,
+                );
                 if let Some(ref pat_str) = pattern_str
                     && Interpreter::contains_dangerous_regex_code(pat_str)
                 {

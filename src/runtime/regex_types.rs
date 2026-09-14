@@ -926,6 +926,9 @@ pub(crate) enum RegexAtom {
     /// `<{ code }>` — closure interpolation: evaluate code and match result as regex
     ClosureInterpolation {
         code: String,
+        /// Parser-produced bodies avoid reparsing the source string while
+        /// retaining the existing scratch-interpreter execution model.
+        body: Option<std::sync::Arc<Vec<crate::ast::Stmt>>>,
     },
     UnicodeProp {
         name: String,

@@ -112,6 +112,7 @@ impl Interpreter {
     pub(super) fn eval_regex_closure_interpolation(
         &mut self,
         code: &str,
+        parsed_body: Option<&std::sync::Arc<Vec<crate::ast::Stmt>>>,
         caps: &RegexCaptures,
         target: &str,
     ) -> Option<String> {
@@ -119,7 +120,11 @@ impl Interpreter {
         // Set $_ to the match target string. After `make_regex_eval_env`, which
         // installs the `:my`/`:let` lexicals — the topic must win over them.
         env.insert("_".to_string(), Value::str(target.to_string()));
-        let stmts = self.parse_regex_code_cached(code)?;
+        let stmts = if let Some(body) = parsed_body {
+            std::sync::Arc::clone(body)
+        } else {
+            self.parse_regex_code_cached(code)?
+        };
         let mut interp = Interpreter {
             env,
             // The scratch runs in this package. Both the string and its interned

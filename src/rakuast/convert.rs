@@ -2415,6 +2415,15 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             RakuAstClass::RegexBlock,
             vec![node_field(None, block_node(body)?)],
         ),
+        RegexNode::InterpolatedBlock {
+            body, sequential, ..
+        } => (
+            RakuAstClass::RegexAssertionInterpolatedBlock,
+            vec![
+                node_field(Some("block"), block_node(body)?),
+                leaf_field(Some("sequential"), Value::truth(*sequential)),
+            ],
+        ),
         RegexNode::NamedLookaround {
             assertion,
             is_behind,

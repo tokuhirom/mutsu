@@ -6,7 +6,8 @@
   bare-subrule, anchor, explicit-static-lookaround,
   named-static-lookaround, nested-static-lookaround, escaped-lookaround,
   lookaround-interpolation, array-lookaround, named-array-lookaround,
-  predicate-block-code-assertion, and plain-code-block slices implemented
+  predicate-block-code-assertion, plain-code-block, and
+  interpolated-code-block slices implemented
   2026-09-12 through
   2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
@@ -795,10 +796,30 @@ non-assertion code atom. This preserves the distinction between a block that
 executes as part of a match and a predicate assertion, including nested
 lookarounds, without evaluating code during `.AST` conversion or adding a VM
 fallback. Legacy P5-style quantifier spellings remain on the existing parser
-path. Interpolated blocks (`<{ ... }>`), code interpolation, and other
-runtime-valued regex bodies remain deferred until their source and execution
-semantics can be represented together.
+path. Code interpolation and other runtime-valued regex bodies remain deferred
+until their source and execution semantics can be represented together.
 
 The focused regression is `t/regex/regex-tree-code-block.t`. It pins the
 dual-oracle AST shape, nested lookaround, execution polarity, side-effect
 count, and constructed-tree EVAL behavior.
+
+## 28. Interpolated regex code block slice (2026-09-14)
+
+Interpolated code blocks (`<{ ... }>`) evaluate their result as a regex rather
+than making a zero-width predicate decision. They now retain their source
+structure as `RakuAST::Regex::Assertion::InterpolatedBlock`, including the
+nested `RakuAST::Block` and the measured `sequential => False` field. The
+existing `<!{ ... }>` predicate spelling remains
+`Regex::Assertion::PredicateBlock`.
+
+The parser stores the original code and parsed statement body in the shared
+regex tree. Execution lowers that node to the existing
+`RegexAtom::ClosureInterpolation` matcher and passes the parsed body into its
+scratch interpreter, so constructed trees and parser-created regexes share the
+same closure-interpolation path without evaluating code during `.AST`
+conversion or adding a VM fallback.
+
+The focused regression is `t/regex/regex-tree-interpolated-block.t`. It pins
+the dual-oracle AST shape, node accessors, match-time lexical reassignment,
+returned-pattern execution, and constructed-tree EVAL. Sequential/dynamic
+variants and other runtime-valued regex bodies remain deferred.

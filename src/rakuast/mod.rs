@@ -72,6 +72,7 @@ pub enum RakuAstClass {
     RegexAssertionLookahead,
     RegexAssertionInterpolatedVar,
     RegexAssertionPredicateBlock,
+    RegexAssertionInterpolatedBlock,
     RegexInterpolation,
     RegexAlternation,
     RegexSequentialAlternation,
@@ -293,6 +294,7 @@ impl RakuAstClass {
             RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
             RegexAssertionInterpolatedVar => "RakuAST::Regex::Assertion::InterpolatedVar",
             RegexAssertionPredicateBlock => "RakuAST::Regex::Assertion::PredicateBlock",
+            RegexAssertionInterpolatedBlock => "RakuAST::Regex::Assertion::InterpolatedBlock",
             RegexInterpolation => "RakuAST::Regex::Interpolation",
             RegexAlternation => "RakuAST::Regex::Alternation",
             RegexSequentialAlternation => "RakuAST::Regex::SequentialAlternation",
@@ -524,6 +526,7 @@ impl RakuAstClass {
             | RegexAssertionLookahead
             | RegexAssertionInterpolatedVar
             | RegexAssertionPredicateBlock
+            | RegexAssertionInterpolatedBlock
             | RegexInterpolation
             | RegexWithWhitespace
             | RegexBlock => &[
@@ -685,6 +688,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Assertion::Lookahead"
         | "RakuAST::Regex::Assertion::InterpolatedVar"
         | "RakuAST::Regex::Assertion::PredicateBlock"
+        | "RakuAST::Regex::Assertion::InterpolatedBlock"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace"
         | "RakuAST::Regex::Block" => &[
@@ -783,6 +787,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionLookahead,
     RakuAstClass::RegexAssertionInterpolatedVar,
     RakuAstClass::RegexAssertionPredicateBlock,
+    RakuAstClass::RegexAssertionInterpolatedBlock,
     RakuAstClass::RegexInterpolation,
     RakuAstClass::RegexAlternation,
     RakuAstClass::RegexSequentialAlternation,
@@ -1679,6 +1684,35 @@ pub fn construct(
             fields,
         }))));
     }
+    if class_name == "RakuAST::Regex::Assertion::InterpolatedBlock" && method == "new" {
+        let block = named_arg(args, "block").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::InterpolatedBlock.new requires block")
+        })?;
+        require_rakuast_class(
+            &block,
+            RakuAstClass::Block,
+            "RakuAST::Regex::Assertion::InterpolatedBlock.new",
+        )?;
+        let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
+        if !matches!(sequential.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::InterpolatedBlock.new expects sequential to be Bool",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionInterpolatedBlock,
+            fields: vec![
+                RakuAstField {
+                    name: Some("block"),
+                    value: RakuAstFieldValue::Node(block),
+                },
+                RakuAstField {
+                    name: Some("sequential"),
+                    value: RakuAstFieldValue::Node(sequential),
+                },
+            ],
+        }))));
+    }
     if class_name == "RakuAST::QuotedRegex" && method == "new" {
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedRegex.new requires `body`"))?;
@@ -1902,6 +1936,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAssertionLookahead
                     | RakuAstClass::RegexAssertionInterpolatedVar
                     | RakuAstClass::RegexAssertionPredicateBlock
+                    | RakuAstClass::RegexAssertionInterpolatedBlock
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexSequentialAlternation
@@ -2248,6 +2283,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAssertionLookahead
             | RakuAstClass::RegexAssertionInterpolatedVar
             | RakuAstClass::RegexAssertionPredicateBlock
+            | RakuAstClass::RegexAssertionInterpolatedBlock
             | RakuAstClass::RegexInterpolation
             | RakuAstClass::RegexQuantifiedAtom
             | RakuAstClass::RegexQuantifierZeroOrMore
