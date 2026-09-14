@@ -67,6 +67,7 @@ pub enum RakuAstClass {
     RegexCapturingGroup,
     RegexNamedCapture,
     RegexAssertionNamed,
+    RegexAssertionNamedArgs,
     RegexAssertionAlias,
     RegexAssertionNamedRegexArg,
     RegexAssertionLookahead,
@@ -292,6 +293,7 @@ impl RakuAstClass {
             RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
             RegexNamedCapture => "RakuAST::Regex::NamedCapture",
             RegexAssertionNamed => "RakuAST::Regex::Assertion::Named",
+            RegexAssertionNamedArgs => "RakuAST::Regex::Assertion::Named::Args",
             RegexAssertionAlias => "RakuAST::Regex::Assertion::Alias",
             RegexAssertionNamedRegexArg => "RakuAST::Regex::Assertion::Named::RegexArg",
             RegexAssertionLookahead => "RakuAST::Regex::Assertion::Lookahead",
@@ -526,6 +528,7 @@ impl RakuAstClass {
             | RegexCapturingGroup
             | RegexNamedCapture
             | RegexAssertionNamed
+            | RegexAssertionNamedArgs
             | RegexAssertionAlias
             | RegexAssertionNamedRegexArg
             | RegexAssertionLookahead
@@ -689,6 +692,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::CapturingGroup"
         | "RakuAST::Regex::NamedCapture"
         | "RakuAST::Regex::Assertion::Named"
+        | "RakuAST::Regex::Assertion::Named::Args"
         | "RakuAST::Regex::Assertion::Alias"
         | "RakuAST::Regex::Assertion::Named::RegexArg"
         | "RakuAST::Regex::Assertion::Lookahead"
@@ -789,6 +793,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexCapturingGroup,
     RakuAstClass::RegexNamedCapture,
     RakuAstClass::RegexAssertionNamed,
+    RakuAstClass::RegexAssertionNamedArgs,
     RakuAstClass::RegexAssertionAlias,
     RakuAstClass::RegexAssertionNamedRegexArg,
     RakuAstClass::RegexAssertionLookahead,
@@ -1573,6 +1578,52 @@ pub fn construct(
             fields,
         }))));
     }
+    if class_name == "RakuAST::Regex::Assertion::Named::Args" && method == "new" {
+        let name = named_arg(args, "name").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Named::Args.new requires `name`")
+        })?;
+        require_rakuast_class(
+            &name,
+            RakuAstClass::Name,
+            "RakuAST::Regex::Assertion::Named::Args.new",
+        )?;
+        let args_node = named_arg(args, "args").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Regex::Assertion::Named::Args.new requires `args`")
+        })?;
+        require_rakuast_class(
+            &args_node,
+            RakuAstClass::ArgList,
+            "RakuAST::Regex::Assertion::Named::Args.new",
+        )?;
+        let capturing = named_arg(args, "capturing").unwrap_or_else(|| Value::truth(false));
+        if !matches!(capturing.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::Assertion::Named::Args.new expects `capturing` to be Bool",
+            ));
+        }
+        let mut fields = vec![RakuAstField {
+            name: Some("name"),
+            value: RakuAstFieldValue::Node(name),
+        }];
+        if let ValueView::RakuAst(args_ast) = args_node.view()
+            && !args_ast.fields.is_empty()
+        {
+            fields.push(RakuAstField {
+                name: Some("args"),
+                value: RakuAstFieldValue::Node(args_node),
+            });
+        }
+        if matches!(capturing.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("capturing"),
+                value: RakuAstFieldValue::Node(capturing),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::RegexAssertionNamedArgs,
+            fields,
+        }))));
+    }
     if class_name == "RakuAST::Regex::Assertion::Alias" && method == "new" {
         let name = named_arg(args, "name").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::Alias.new requires `name`")
@@ -2024,6 +2075,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexCapturingGroup
                     | RakuAstClass::RegexNamedCapture
                     | RakuAstClass::RegexAssertionNamed
+                    | RakuAstClass::RegexAssertionNamedArgs
                     | RakuAstClass::RegexAssertionAlias
                     | RakuAstClass::RegexAssertionNamedRegexArg
                     | RakuAstClass::RegexAssertionLookahead
@@ -2377,6 +2429,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexCapturingGroup
             | RakuAstClass::RegexNamedCapture
             | RakuAstClass::RegexAssertionNamed
+            | RakuAstClass::RegexAssertionNamedArgs
             | RakuAstClass::RegexAssertionAlias
             | RakuAstClass::RegexAssertionNamedRegexArg
             | RakuAstClass::RegexAssertionLookahead

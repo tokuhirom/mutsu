@@ -163,6 +163,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("regex", Absent::Required),
         ],
         RegexAssertionNamed => &[("name", Absent::Required), ("capturing", Absent::False)],
+        RegexAssertionNamedArgs => &[
+            ("name", Absent::Required),
+            ("args", Absent::EmptyNode(RakuAstClass::ArgList)),
+            ("capturing", Absent::False),
+        ],
         RegexAssertionAlias => &[("name", Absent::Required), ("assertion", Absent::Required)],
         RegexAssertionNamedRegexArg => {
             &[("name", Absent::Required), ("regex-arg", Absent::Required)]

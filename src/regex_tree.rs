@@ -42,6 +42,13 @@ fn default_regex_value_sigil() -> char {
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubruleArgs {
+    pub(crate) args: Vec<crate::ast::Expr>,
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+}
+
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RegexNode {
     Literal(String),
     Quote(String),
@@ -59,6 +66,14 @@ pub(crate) enum RegexNode {
     Subrule {
         name: String,
         capturing: bool,
+        /// `None` is an argument-less subrule; `Some` retains an explicit
+        /// argument list, including an empty `()`/`:` list. The runtime
+        /// matcher still receives the source spelling and evaluates these
+        /// expressions at match time. Box the metadata so the structural
+        /// regex tree remains small enough for deeply recursive source
+        /// parsing.
+        #[serde(default)]
+        args: Option<Box<SubruleArgs>>,
     },
     SubruleAlias {
         alias: String,
@@ -940,9 +955,23 @@ impl RegexNode {
                 let sigil = if *array { '@' } else { '$' };
                 format!("{sigil}<{name}> = {}", regex.to_source())
             }
-            Self::Subrule { name, capturing } => {
+            Self::Subrule {
+                name,
+                capturing,
+                args,
+            } => {
                 let prefix = if *capturing { "" } else { "." };
-                format!("<{prefix}{name}>")
+                let Some(args) = args.as_deref() else {
+                    return format!("<{prefix}{name}>");
+                };
+                let rendered = args.source.clone().or_else(|| {
+                    args.args
+                        .iter()
+                        .map(expression_source)
+                        .collect::<Option<Vec<_>>>()
+                        .map(|parts| parts.join(", "))
+                });
+                format!("<{prefix}{name}({})>", rendered.unwrap_or_default())
             }
             Self::SubruleAlias { alias, name } => format!("<{alias}={name}>"),
             Self::Lookaround {
@@ -1884,9 +1913,11 @@ impl Parser {
         } else {
             (true, contents.as_str())
         };
-        is_subrule_name(name).then(|| RegexNode::Subrule {
-            name: name.to_string(),
+        let (name, args) = parse_subrule_target(name)?;
+        is_subrule_name(&name).then(|| RegexNode::Subrule {
+            name,
             capturing,
+            args,
         })
     }
 
@@ -1957,6 +1988,74 @@ fn is_simple_subrule_name(name: &str) -> bool {
 /// a long name on the alias side, while the called rule may be qualified.
 fn is_subrule_name(name: &str) -> bool {
     !name.is_empty() && name.split("::").all(is_simple_subrule_name)
+}
+
+/// Parse the source-level target of a named subrule assertion. The ordinary
+/// runtime parser already supports both `<name(args)>` and `<name: args>`;
+/// retain the same expression list here so RakuAST can expose the argument
+/// tree without changing that execution path.
+fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>>)> {
+    let source = source.trim();
+    let colon = source.char_indices().find_map(|(index, ch)| {
+        if ch != ':' || index > 0 && source[..index].ends_with(':') {
+            return None;
+        }
+        if source[index + ch.len_utf8()..].starts_with(':') {
+            return None;
+        }
+        Some(index)
+    });
+    if let Some(open) = source.find('(')
+        && source.ends_with(')')
+        && colon.is_none_or(|colon| open < colon)
+    {
+        let name = source[..open].trim();
+        if !is_subrule_name(name) {
+            return None;
+        }
+        let args_source = source[open + 1..source.len() - 1].trim();
+        let args = if args_source.is_empty() {
+            Vec::new()
+        } else {
+            let (rest, args) = crate::parser::parse_regex_call_arg_list(args_source)?;
+            if !rest.trim().is_empty() {
+                return None;
+            }
+            args
+        };
+        return Some((
+            name.to_string(),
+            Some(Box::new(SubruleArgs {
+                args,
+                source: Some(args_source.to_string()),
+            })),
+        ));
+    }
+
+    let Some(colon) = colon else {
+        return Some((source.to_string(), None));
+    };
+    let name = source[..colon].trim();
+    if !is_subrule_name(name) {
+        return None;
+    }
+    let args_source = source[colon + 1..].trim();
+    let args = if args_source.is_empty() {
+        Vec::new()
+    } else {
+        let (rest, args) = crate::parser::parse_regex_call_arg_list(args_source)?;
+        if !rest.trim().is_empty() {
+            return None;
+        }
+        args
+    };
+    Some((
+        name.to_string(),
+        Some(Box::new(SubruleArgs {
+            args,
+            source: Some(args_source.to_string()),
+        })),
+    ))
 }
 
 fn contains_subrule(node: &RegexNode) -> bool {

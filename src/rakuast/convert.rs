@@ -2370,17 +2370,34 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("regex"), regex_node(regex)?));
             (RakuAstClass::RegexNamedCapture, fields)
         }
-        RegexNode::Subrule { name, capturing } => {
+        RegexNode::Subrule {
+            name,
+            capturing,
+            args,
+            ..
+        } => {
             let name_node = if name.contains("::") {
                 name_from_identifier_parts(name)
             } else {
                 name_from_identifier(name)
             };
             let mut fields = vec![node_field(Some("name"), name_node)];
+            if let Some(args) = args
+                && !args.args.is_empty()
+            {
+                fields.push(node_field(Some("args"), arg_list(&args.args)?));
+            }
             if *capturing {
                 fields.push(leaf_field(Some("capturing"), Value::truth(true)));
             }
-            (RakuAstClass::RegexAssertionNamed, fields)
+            (
+                if args.is_some() {
+                    RakuAstClass::RegexAssertionNamedArgs
+                } else {
+                    RakuAstClass::RegexAssertionNamed
+                },
+                fields,
+            )
         }
         RegexNode::SubruleAlias { alias, name } => (
             RakuAstClass::RegexAssertionAlias,
@@ -2391,6 +2408,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                     regex_node(&RegexNode::Subrule {
                         name: name.clone(),
                         capturing: true,
+                        args: None,
                     })?,
                 ),
             ],
