@@ -15,7 +15,13 @@ use Test;
 # dependency under a different name, where both ends compute their exports in
 # `sub EXPORT` -- and it blocked ten distributions from loading at all.
 
-plan 6;
+plan 7;
+
+{
+    use ChainExportMultiOuter;
+    is chain-multi-outer(), 'inner',
+        'a multi EXPORT hook can use another module with an EXPORT hook';
+}
 
 {
     use ChainExportOuter;
