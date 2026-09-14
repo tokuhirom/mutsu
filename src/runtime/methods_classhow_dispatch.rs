@@ -1375,6 +1375,23 @@ impl Interpreter {
                 let values = self.collect_attribute_objects(&owner_class, local_only);
                 Ok(Value::array(values))
             }
+            "attribute_table" if !args.is_empty() => {
+                let owner_class = self.mop_receiver_owner(&args[0]);
+                let values = self.collect_attribute_objects(&owner_class, true);
+                let mut table = ValueMap::default();
+                for value in values {
+                    let name = match value.view() {
+                        ValueView::Instance { attributes, .. } => {
+                            attributes.as_map().get("name").map(Value::to_string_value)
+                        }
+                        _ => None,
+                    };
+                    if let Some(name) = name {
+                        table.insert(name, value);
+                    }
+                }
+                Ok(Value::hash(table))
+            }
             "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
             "pun" if !args.is_empty() => {
                 let role_name = match args[0].view() {

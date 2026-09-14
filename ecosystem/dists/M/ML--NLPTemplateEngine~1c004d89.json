@@ -43,16 +43,16 @@
   "dist": "ML::NLPTemplateEngine",
   "files": [],
   "load": {
-    "ML::NLPTemplateEngine": "Unknown function: openai-base-url",
-    "ML::NLPTemplateEngine::Core": "Unknown function: openai-base-url",
+    "ML::NLPTemplateEngine": "ok",
+    "ML::NLPTemplateEngine::Core": "ok",
     "ML::NLPTemplateEngine::Ingestion": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-15",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "host": "linux-x86_64",
+    "mutsu_commit": "4c8c5126e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -63,7 +63,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_NLPTEMPLATEENGINE/719260f3f33b7a598b0c6e847302568ed3102c3d.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

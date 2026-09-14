@@ -383,7 +383,18 @@ impl Interpreter {
             .registry()
             .functions
             .keys()
-            .filter(|k| Self::is_toplevel_global_routine_key(&k.resolve()))
+            .filter(|k| {
+                Self::is_toplevel_global_routine_key(&k.resolve())
+                    // A nested module must continue to see the package-less
+                    // aliases installed by a dependency that is already
+                    // loaded. They are module-owned registrations, not the
+                    // enclosing compunit's private top-level routines. In
+                    // particular, a unit module may `use` a dependency before
+                    // its `unit module` declaration; a later nested load must
+                    // still resolve that dependency's helpers while its own
+                    // body runs.
+                    && !self.module_registered_functions.contains(k)
+            })
             .copied()
             .collect();
         let mut functions = Vec::with_capacity(keys.len());
@@ -400,6 +411,9 @@ impl Interpreter {
                 k.strip_prefix('&').is_some_and(|name| {
                     !name.is_empty()
                         && Self::is_toplevel_global_routine_key(&format!("GLOBAL::{name}"))
+                        && !self
+                            .module_registered_functions
+                            .contains(&Symbol::intern(&format!("GLOBAL::{name}")))
                 })
             })
             .collect();

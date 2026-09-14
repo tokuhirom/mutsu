@@ -442,13 +442,19 @@ impl Interpreter {
                 return Ok(());
             }
             self.rerun_module_export(module)?;
-            // A module-defined EXPORT receives the use arguments itself and
-            // returns the complete import map. Those arguments are not export
-            // tags (`use JSON::Fast <immutable !pretty>` is the canonical
-            // example), so do not feed them through the metadata importer a
-            // second time or it will reject them as unknown tags.
+            // A module-defined EXPORT receives the use arguments itself. Its
+            // returned map is combined with ordinary `is export` declarations
+            // (Rakudo's custom EXPORT and default export surfaces coexist),
+            // but the use arguments are not export tags (`use JSON::Fast
+            // <immutable !pretty>` is the canonical example). Import the
+            // metadata with the default tag set so those arguments are not
+            // rejected as unknown tags.
             if self.module_export_defs.contains_key(module) {
-                return Ok(());
+                return match self.import_module(module, &[]) {
+                    Ok(()) => Ok(()),
+                    Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
+                    Err(err) => Err(err),
+                };
             }
             return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
@@ -919,8 +925,14 @@ impl Interpreter {
                     .extend(package_globals);
             }
             if import
-                && !self.module_export_defs.contains_key(module)
-                && let Err(err) = self.import_module(module, tags)
+                && let Err(err) = self.import_module(
+                    module,
+                    if self.module_export_defs.contains_key(module) {
+                        &[]
+                    } else {
+                        tags
+                    },
+                )
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);
