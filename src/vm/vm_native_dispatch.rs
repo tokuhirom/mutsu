@@ -743,6 +743,16 @@ impl Interpreter {
             .any(|a| matches!(a.view(), ValueView::LazyList(_)))
         {
             let name = name_sym.resolve();
+            if name == "reverse"
+                && args.len() == 1
+                && let ValueView::LazyList(ll) = args[0].view()
+                && !ll.is_genuinely_lazy()
+            {
+                return Some(self.force_lazy_list_vm(&ll).map(|mut items| {
+                    items.reverse();
+                    Value::seq(items)
+                }));
+            }
             if matches!(name.as_str(), "any" | "all" | "one" | "none") {
                 // Junction constructors need concrete eigenstates. In
                 // particular, a finite gather/map/grep pipeline must be

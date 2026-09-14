@@ -420,18 +420,28 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         } else {
             (r, vec![])
         };
+        let method_expr = Expr::MethodCall {
+            target: Box::new(method_target),
+            name: Symbol::intern(method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        };
+        // Leave another `.=` for the assignment-expression parser. If the
+        // postfix loop sees it here, it treats the first method result as the
+        // next lvalue (`($x.uc) .= flip`) instead of threading the original
+        // variable through the chained dot-assign operations.
+        let (r, method_expr) = {
+            let (r_peek, _) = ws(rest)?;
+            if r_peek.starts_with(".=") {
+                (rest, method_expr)
+            } else {
+                crate::parser::expr::postfix_expr_continue(rest, method_expr)?
+            }
+        };
         return Ok((
-            rest,
-            super::super::super::expr::dot_assign_to_name(
-                name,
-                Expr::MethodCall {
-                    target: Box::new(method_target),
-                    name: Symbol::intern(method_name),
-                    args,
-                    modifier: None,
-                    quoted: false,
-                },
-            ),
+            r,
+            super::super::super::expr::dot_assign_to_name(name, method_expr),
         ));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {

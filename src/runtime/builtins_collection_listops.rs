@@ -286,6 +286,19 @@ impl Interpreter {
             items.reverse();
             return Ok(Value::seq(items));
         }
+        // `gather` produces a finite LazyList whose elements are supplied by
+        // a VM coroutine. The native single-argument reverse routine cannot
+        // see that coroutine through `ValueView`, so it would treat the whole
+        // lazy list as one item (`reverse gather ...` => `()`). Reify finite
+        // lazy lists at this eager list-op boundary; genuinely lazy sources
+        // remain on the native path and keep their existing lazy semantics.
+        if let ValueView::LazyList(list) = args[0].view()
+            && !list.is_genuinely_lazy()
+        {
+            let mut items = self.force_lazy_list_vm(&list)?;
+            items.reverse();
+            return Ok(Value::seq(items));
+        }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
         // that lacked Range/Slip/shaped arms.

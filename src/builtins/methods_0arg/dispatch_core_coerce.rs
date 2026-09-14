@@ -1204,7 +1204,13 @@ pub(super) fn dispatch(
                         .unwrap_or(0.0);
                     Value::num(numeric)
                 }
-                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                // Rational values stay exact under `.Numeric`; converting a
+                // `Rat` through f64 loses large denominators (and turns
+                // `1/100000` into the nearby `1/99999` when it is converted
+                // back to Rat). `Numeric.Rat` is the identity in Rakudo.
+                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
+                    target.clone()
+                }
                 ValueView::Str(s) => {
                     if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                         v
@@ -1215,7 +1221,11 @@ pub(super) fn dispatch(
                     }
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                ValueView::Complex(r, _) => Value::num(r),
+                // `.Numeric` preserves Complex values. Converting a Complex to
+                // a real type belongs to `.Num`/`.Real`, where a non-zero
+                // imaginary component is rejected; dropping that component
+                // here made `Complex.Numeric.Rat` silently discard it.
+                ValueView::Complex(_, _) => target.clone(),
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Hash(h) => Value::int(h.len() as i64),
                 ValueView::Instance {
