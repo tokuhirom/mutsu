@@ -2453,11 +2453,15 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("var"), var_lexical("$", name)),
             ],
         ),
-        RegexNode::RegexValueInterpolation { name, sequential } => (
+        RegexNode::RegexValueInterpolation {
+            name,
+            sequential,
+            sigil,
+        } => (
             RakuAstClass::RegexAssertionInterpolatedVar,
             vec![
                 leaf_field(Some("sequential"), Value::truth(*sequential)),
-                node_field(Some("var"), var_lexical("$", name)),
+                node_field(Some("var"), var_lexical(&sigil.to_string(), name)),
             ],
         ),
         RegexNode::ArrayInterpolation { name, sequential } => (
