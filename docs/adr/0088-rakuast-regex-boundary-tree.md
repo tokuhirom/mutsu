@@ -5,7 +5,8 @@
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
   bare-subrule, anchor, explicit-static-lookaround,
   named-static-lookaround, nested-static-lookaround, escaped-lookaround, and
-  lookaround-interpolation slices implemented 2026-09-12 through 2026-09-14;
+  lookaround-interpolation and array-lookaround slices implemented 2026-09-12
+  through 2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
@@ -710,3 +711,26 @@ at match time through `RegexAtom::VarInterp`. This slice is limited to scalar
 variables; array interpolation, code interpolation, and other runtime-valued
 branches remain deferred until their source and execution semantics can be
 represented together.
+
+## 24. Direct array lookaround slice (2026-09-14)
+
+Direct array lookahead assertions (`<?@name>` and `<!@name>`) now retain their
+source shape as `Regex::Assertion::InterpolatedVar` beneath the existing
+`Regex::Assertion::Lookahead` node. The ordinary named regex-argument form
+(`<?before @name>`) remains outside this slice because its nested array
+interpolation is a different runtime boundary from the existing direct array
+assertion parser path.
+
+The write direction accepts constructed `InterpolatedVar` assertions and
+lowers them back to the original source spelling. Execution deliberately
+uses the established array-variable lookahead matcher rather than freezing the
+array into a cached `RegexPattern`: Rakudo rereads the array after regex
+construction, so reassignment before a later match must be visible. The
+source-tree cache therefore bypasses its static-plan entry for this node while
+the normal Parser -> Compiler -> VM matcher remains unchanged.
+
+The focused regression is `t/regex/regex-tree-array-lookaround.t`. It pins the
+dual-oracle `InterpolatedVar` shape, positive and negative zero-width matching,
+array reassignment, constructor accessors, and constructed-tree EVAL. Named
+regex-argument array interpolation, code assertions, and other runtime-valued
+lookaround bodies remain separate boundaries.

@@ -74,6 +74,13 @@ pub(crate) enum RegexNode {
         name: String,
         sequential: bool,
     },
+    /// `<?@name>` / `<!@name>` — a zero-width assertion over the current
+    /// elements of an array interpolation. The runtime parser resolves the
+    /// array at match time; the source form is retained for RakuAST.
+    ArrayLookaround {
+        name: String,
+        negated: bool,
+    },
     Quantified {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
@@ -125,6 +132,14 @@ impl RegexTree {
         let mut names = Vec::new();
         self.body.collect_interpolation_names(&mut names);
         names
+    }
+
+    /// Array-valued interpolation is source-representable, but its execution
+    /// semantics are owned by the runtime parser, which resolves the current
+    /// array elements for each match. Such trees must not enter the static
+    /// plan cache, whose key does not include array contents.
+    pub(crate) fn contains_array_interpolation(&self) -> bool {
+        self.body.contains_array_interpolation()
     }
 
     /// Anchored patterns with outer lexical interpolation retain the legacy
@@ -546,6 +561,7 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                RegexNode::ArrayLookaround { .. } => None,
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -620,6 +636,7 @@ impl RegexNode {
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
             Self::Lookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
+            Self::ArrayLookaround { .. } => {}
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -629,6 +646,35 @@ impl RegexNode {
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
             | Self::CharClassDigit => {}
+        }
+    }
+
+    fn contains_array_interpolation(&self) -> bool {
+        match self {
+            Self::Interpolation { .. } => false,
+            Self::ArrayLookaround { .. } => true,
+            Self::Sequence(nodes)
+            | Self::Alternation(nodes)
+            | Self::SequentialAlternation(nodes) => {
+                nodes.iter().any(Self::contains_array_interpolation)
+            }
+            Self::Group(child)
+            | Self::CapturingGroup(child)
+            | Self::Quantified { atom: child, .. }
+            | Self::WithWhitespace(child) => child.contains_array_interpolation(),
+            Self::NamedCapture { regex, .. } => regex.contains_array_interpolation(),
+            Self::Lookaround { assertion, .. } | Self::NamedLookaround { assertion, .. } => {
+                assertion.contains_array_interpolation()
+            }
+            Self::Literal(_)
+            | Self::Quote(_)
+            | Self::Subrule { .. }
+            | Self::SubruleAlias { .. }
+            | Self::AnchorBeginningOfString
+            | Self::AnchorBeginningOfLine
+            | Self::AnchorEndOfString
+            | Self::AnchorEndOfLine
+            | Self::CharClassDigit => false,
         }
     }
 
@@ -653,6 +699,7 @@ impl RegexNode {
             | Self::Subrule { .. }
             | Self::SubruleAlias { .. }
             | Self::Interpolation { .. }
+            | Self::ArrayLookaround { .. }
             | Self::CharClassDigit => false,
         }
     }
@@ -742,6 +789,10 @@ impl RegexNode {
                 format!("<{prefix}{keyword} {}>", assertion.to_source())
             }
             Self::Interpolation { name, .. } => format!("${name}"),
+            Self::ArrayLookaround { name, negated } => {
+                let marker = if *negated { '!' } else { '?' };
+                format!("<{marker}@{name}>")
+            }
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
                     RegexQuantifier::ZeroOrMore => '*',
@@ -1010,6 +1061,20 @@ impl Parser {
             }
             _ => (false, false, true),
         };
+
+        // `<?@name>` and `<!@name>` are the direct array-interpolation
+        // assertion forms. They have a distinct RakuAST node from the
+        // `<?before @name>` form, even though both are zero-width assertions
+        // over the current array value.
+        if explicit && self.chars.get(self.pos) == Some(&'@') {
+            self.pos += 1;
+            let name = self.parse_variable_name()?;
+            if !self.consume_if('>') {
+                self.pos = start;
+                return None;
+            }
+            return Some(RegexNode::ArrayLookaround { name, negated });
+        }
 
         let is_behind = if self.chars[self.pos..].starts_with(&['a', 'f', 't', 'e', 'r']) {
             self.pos += "after".chars().count();
@@ -1361,6 +1426,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         RegexNode::Literal(_)
         | RegexNode::Quote(_)
         | RegexNode::Interpolation { .. }
+        | RegexNode::ArrayLookaround { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
@@ -1383,6 +1449,7 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
         | RegexNode::SubruleAlias { .. }
+        | RegexNode::ArrayLookaround { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString

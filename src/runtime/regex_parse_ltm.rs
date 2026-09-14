@@ -1603,6 +1603,13 @@ impl Interpreter {
         let Some(tree) = value.regex_source_tree() else {
             return self.parse_regex(&pattern);
         };
+        // Array interpolation is retained in the source tree for RakuAST,
+        // but the established parser resolves its elements at match time.
+        // Do not cache the resulting execution plan under the source-tree
+        // fingerprint, which has no array-content component.
+        if tree.contains_array_interpolation() {
+            return self.parse_regex(&pattern);
+        }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
         // plain scalar case. Regex values, collections, and other objects
