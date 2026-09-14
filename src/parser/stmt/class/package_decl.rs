@@ -408,7 +408,11 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = ws1(r2)?;
-                let (r2, trait_name) = crate::parser::stmt::ident(r2)?;
+                // A unit role can inherit from a qualified type, for example
+                // Red's `unit role MetamodelX::Red::SubModelHOW is
+                // Metamodel::SubsetHOW`.  Parse the complete parent name so
+                // the `::SubsetHOW` suffix is not left as a stray term.
+                let (r2, trait_name) = qualified_ident(r2)?;
                 if trait_name == "rw" {
                     role_is_rw = true;
                     let r2 = skip_balanced_parens(r2);

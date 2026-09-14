@@ -583,6 +583,26 @@ role-composition failure. The next independent load failures are the missing
 method conflict in `Red::Driver::Cache::Memory`, and the existing parser and
 relationship/migration gaps; these remain leads for later #7988 slices.
 
+## 18. Campaign slice: qualified `is` parents on roles (2026-09-14)
+
+The next Red lead was `unit role MetamodelX::Red::SubModelHOW is
+Metamodel::SubsetHOW`. Both block and unit role parsers read the name after
+`is` with `ident()`, so they stopped at `Metamodel` and left `::SubsetHOW` in
+the input. Red consequently failed with `Unknown role: Metamodel`, even
+though Rakudo loaded the role successfully.
+
+Both role declaration paths now use `qualified_ident()`, matching the class
+and grammar declaration parsers. The focused regression is
+`t/oo/role/role-qualified-is-parent.t`, with the unit-role fixture in
+`t/lib/QualifiedRoleIsParent.rakumod`.
+
+The targeted Red remeasurement on 2026-09-14 (mutsu `21a85185f`, Rakudo
+2026.07, bubblewrap) changes `MetamodelX::Red::SubModelHOW` from the parse
+failure to `ok`. Red remains `blocked_load` because the independent
+`Red::Driver::SQLite::SQLiteMaster` type-object attribute lookup failure still
+blocks its SQLite chain; `Red::Driver::Cache::Memory` and migration/relationship
+leads remain separate slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
