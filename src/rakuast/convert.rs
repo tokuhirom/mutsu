@@ -1287,6 +1287,29 @@ fn name_from_identifier(s: &str) -> RakuAstNode {
     }
 }
 
+/// A qualified identifier is represented by simple name-part nodes. Rakudo's
+/// renderer exposes the segment boundary through
+/// `Name.from-identifier-parts(...)`, so retaining one opaque `G::foo` string
+/// would lose observable RakuAST structure.
+fn name_from_identifier_parts(s: &str) -> RakuAstNode {
+    let parts = s
+        .split("::")
+        .map(|part| {
+            Value::rakuast(Box::new(RakuAstNode {
+                class: RakuAstClass::NamePartSimple,
+                fields: vec![leaf_field(None, Value::str(part.to_string()))],
+            }))
+        })
+        .collect();
+    RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![RakuAstField {
+            name: Some("parts"),
+            value: RakuAstFieldValue::List(parts),
+        }],
+    }
+}
+
 /// True when a type constraint is a plain (possibly `::`-qualified) identifier
 /// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`)
 /// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
@@ -2348,7 +2371,12 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             (RakuAstClass::RegexNamedCapture, fields)
         }
         RegexNode::Subrule { name, capturing } => {
-            let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+            let name_node = if name.contains("::") {
+                name_from_identifier_parts(name)
+            } else {
+                name_from_identifier(name)
+            };
+            let mut fields = vec![node_field(Some("name"), name_node)];
             if *capturing {
                 fields.push(leaf_field(Some("capturing"), Value::truth(true)));
             }

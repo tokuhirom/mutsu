@@ -13,6 +13,11 @@ use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     let name = node.class.printed_name();
+    if node.class == RakuAstClass::Name
+        && let Some(rendered) = render_identifier_parts(node)
+    {
+        return rendered;
+    }
     // A bare-class-name node (e.g. `RakuAST::Parameter::Slurpy::Flattened`) has no
     // constructor call at all.
     if node.class.renders_bare() {
@@ -78,6 +83,45 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s.push_str(&" ".repeat(indent));
     s.push(')');
     s
+}
+
+/// Render the qualified-name constructor form. Qualified names are stored as
+/// `Name::Part::Simple` children so `.parts` remains walkable, but Rakudo uses
+/// the dedicated `from-identifier-parts` constructor in `.gist`/`.raku`.
+fn render_identifier_parts(node: &RakuAstNode) -> Option<String> {
+    let field = node
+        .fields
+        .iter()
+        .find(|field| field.name == Some("parts"))?;
+    let RakuAstFieldValue::List(parts) = &field.value else {
+        return None;
+    };
+    if parts.len() < 2 {
+        return None;
+    }
+    let identifiers = parts
+        .iter()
+        .map(|part| {
+            let ValueView::RakuAst(part) = part.view() else {
+                return None;
+            };
+            if part.class != RakuAstClass::NamePartSimple {
+                return None;
+            }
+            let field = part.fields.first()?;
+            if field.name.is_some() {
+                return None;
+            }
+            let RakuAstFieldValue::Node(value) = &field.value else {
+                return None;
+            };
+            matches!(value.view(), ValueView::Str(_)).then(|| render_leaf(value))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(format!(
+        "RakuAST::Name.from-identifier-parts({})",
+        identifiers.join(", ")
+    ))
 }
 
 /// Rakudo keeps `Regex::NamedCapture.array` observable through its accessor,

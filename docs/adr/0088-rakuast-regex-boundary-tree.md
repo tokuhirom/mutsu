@@ -10,7 +10,7 @@
   interpolated-code-block, sequential-interpolated-code-block, and
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
-  angle-aggregate-interpolation slices implemented
+  angle-aggregate-interpolation, and qualified-subrule slices implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -984,3 +984,25 @@ The focused regression is `t/regex/regex-tree-angle-interpolation.t`. It pins
 the dual-oracle array and hash assertion shapes, sequential context, nested
 lookaround, array reassignment, and constructed-node EVAL. Qualified and
 argumented subrules remain deferred to separate boundaries.
+
+## 36. Qualified regex subrule slice (2026-09-14)
+
+Qualified subrule calls such as `<G::foo>` and `<.G::foo>` now retain
+Rakudo's `RakuAST::Regex::Assertion::Named` shape. Their `Name` child stores
+one `RakuAST::Name::Part::Simple` node per `::`-separated segment and renders
+through `RakuAST::Name.from-identifier-parts(...)`, rather than hiding the
+qualification inside one opaque string. Short aliases such as
+`<alias=G::foo>` retain the same qualified assertion child.
+
+The parser accepts only ordinary identifier segments for this slice. The
+existing package-aware runtime matcher still resolves the written name
+relative to the active package, and the execution lowerer emits the same
+qualified spelling for constructed RakuAST trees. No new matcher or dispatch
+path is introduced. Qualified subrules nested inside unsupported lookaround
+bodies, argumented subrules, and long names on the alias side remain explicit
+follow-up boundaries.
+
+The focused regression is
+`t/rakuast/rakuast-regex-qualified-subrules.t`. It pins the positive and
+dot-suppressed AST shapes, qualified name-part accessors and construction,
+qualified alias lowering, grammar EVAL, and repeated execution.

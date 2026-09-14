@@ -94,6 +94,8 @@ pub enum RakuAstClass {
     CallName,
     CallNameWithoutParentheses,
     Name,
+    // A static qualified name, as in `Name.from-identifier-parts("G", "foo")`.
+    NamePartSimple,
     // A dynamic name part, as in `::("x")`, is not itself a RakuAST::Node in
     // Rakudo, but it is carried by the same model value here so the immutable
     // tree can retain the exact Name shape.
@@ -317,6 +319,7 @@ impl RakuAstClass {
             CallName => "RakuAST::Call::Name",
             CallNameWithoutParentheses => "RakuAST::Call::Name::WithoutParentheses",
             Name => "RakuAST::Name",
+            NamePartSimple => "RakuAST::Name::Part::Simple",
             NamePartExpression => "RakuAST::Name::Part::Expression",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
@@ -813,6 +816,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallName,
     RakuAstClass::CallNameWithoutParentheses,
     RakuAstClass::Name,
+    RakuAstClass::NamePartSimple,
     RakuAstClass::NamePartExpression,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
@@ -1049,6 +1053,37 @@ pub fn construct(
                     value: RakuAstFieldValue::Node(term),
                 },
             ],
+        }))));
+    }
+    if class_name == "RakuAST::Name" && method == "from-identifier-parts" {
+        if args.is_empty() {
+            return Err(RuntimeError::new(
+                "RakuAST::Name.from-identifier-parts expects at least one argument",
+            ));
+        }
+        let parts = args
+            .iter()
+            .map(|arg| {
+                let ValueView::Str(name) = arg.view() else {
+                    return Err(RuntimeError::new(
+                        "RakuAST::Name.from-identifier-parts expects string arguments",
+                    ));
+                };
+                Ok(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::NamePartSimple,
+                    fields: vec![RakuAstField {
+                        name: None,
+                        value: RakuAstFieldValue::Node(Value::str(name.to_string())),
+                    }],
+                })))
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Name,
+            fields: vec![RakuAstField {
+                name: Some("parts"),
+                value: RakuAstFieldValue::List(parts),
+            }],
         }))));
     }
     if class_name == "RakuAST::StatementList" && method == "new" {
@@ -2094,6 +2129,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
+        ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
@@ -2243,6 +2279,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
             if matches!(class, RakuAstClass::Name | RakuAstClass::TermEnum) =>
         {
             names.push("from-identifier");
+            if class == RakuAstClass::Name {
+                names.push("from-identifier-parts");
+            }
         }
         Constructor::New if constructor_is_supported(class) => names.push("new"),
         _ => {}
@@ -2360,6 +2399,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TokenDeclaration
             | RakuAstClass::RuleDeclaration
             | RakuAstClass::Grammar
+            | RakuAstClass::NamePartSimple
             | RakuAstClass::NamePartExpression
             | RakuAstClass::Pragma
     )
