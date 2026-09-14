@@ -998,6 +998,19 @@ impl Compiler {
                             self.compile_expr(value);
                             let name_idx = self.code.add_constant(Value::str(name.clone()));
                             self.code.emit(OpCode::AssignExpr(name_idx, false));
+                        } else if let Expr::DoStmt(decl_stmt) = &elements[i]
+                            && let Stmt::VarDecl { name, .. } = decl_stmt.as_ref()
+                        {
+                            // `(my $x = $a, 6)[0] = 10`: an inline declaration
+                            // in a list literal denotes the freshly-declared
+                            // variable's own container (#7556 section F), so
+                            // the store writes through it exactly like the
+                            // `Expr::Var` case above -- run the declaration
+                            // (and its initializer) first for its side effect.
+                            self.compile_stmt(decl_stmt);
+                            self.compile_expr(value);
+                            let name_idx = self.code.add_constant(Value::str(name.clone()));
+                            self.code.emit(OpCode::AssignExpr(name_idx, false));
                         } else {
                             // Assigning to a literal element — emit code
                             // that throws X::Assignment::RO at runtime.
