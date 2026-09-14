@@ -343,7 +343,24 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
     let (open, close) = match after_tc.as_bytes().first() {
         Some(b'[') => ('[', ']'),
         Some(b'(') => ('(', ')'),
-        _ => return parse_for_pointy_param(input),
+        _ => {
+            // A sigiled parameter may carry a parenthesised or bracketed
+            // sub-signature after its name, too: `-> $key, % (:$count)`.
+            // The first parameter has a caller-side path that attaches this
+            // suffix, but later parameters come through this helper and used
+            // to leave the opener unconsumed for the block parser. Reuse the
+            // complete signature parser here so defaults, traits, and nested
+            // named destructuring keep the same representation as ordinary
+            // sub declarations.
+            if matches!(input.as_bytes().first(), Some(b'$' | b'@' | b'%' | b'&'))
+                && let Ok((r, mut p)) = super::super::sub_param::parse_single_param(input)
+                && p.sub_signature.is_some()
+            {
+                p.block_param = true;
+                return Ok((r, p));
+            }
+            return parse_for_pointy_param(input);
+        }
     };
     let (r, _) = parse_char(after_tc, open)?;
     let (r, _) = ws(r)?;
