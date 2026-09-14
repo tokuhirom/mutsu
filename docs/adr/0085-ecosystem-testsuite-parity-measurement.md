@@ -678,7 +678,7 @@ general type candidate. The focused regression is
 `t/oo/role/role-stub-literal-candidate.t`, which passes identically under mutsu
 and rakudo.
 
-The targeted Red remeasurement on 2026-09-15 (mutsu `dc6ab2369`, Rakudo
+The targeted Red remeasurement on 2026-09-15 (mutsu `63fe9c1f5`, Rakudo
 2026.07, bubblewrap, three attempts) changes `Red::Driver::Cache::Memory` to
 `ok`. Red remains `blocked_load`; the typed-hash `%!relationships` / `Bool`,
 migration and relationship, and SQLite leads remain separate #7988 slices.
