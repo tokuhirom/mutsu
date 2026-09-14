@@ -649,6 +649,21 @@ impl Interpreter {
                     }
                     let bare_name: String = chars[name_start..j].iter().collect();
                     let sigiled_name = format!("@{bare_name}");
+                    let preserve_array_interpolation =
+                        crate::runtime::regex_parse::PRESERVE_ARRAY_INTERPOLATION
+                            .with(|flag| flag.get());
+                    if preserve_array_interpolation {
+                        // The structural `<@name>` arm reads the array from
+                        // the match environment. This is needed for a bare
+                        // `@name` inside a named lookaround: expanding it to
+                        // text here would capture the array's old contents
+                        // when the regex is reused after reassignment.
+                        out.push('<');
+                        out.push_str(&sigiled_name);
+                        out.push('>');
+                        i = j;
+                        continue;
+                    }
                     let value = self
                         .env
                         .get(&sigiled_name)

@@ -148,6 +148,13 @@ thread_local! {
     pub(crate) static PARSE_CONSULTED_AMBIENT_STATE: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
 
+    /// Keep bare array interpolations in the source form while parsing a
+    /// lookaround body. The structural parser can then resolve `<@name>` at
+    /// match time instead of `interpolate_regex_scalars` freezing the current
+    /// array contents into the nested pattern.
+    pub(crate) static PRESERVE_ARRAY_INTERPOLATION: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+
     /// The source text of the regex currently being parsed at TOP level, so a
     /// `<~~>` found at any nesting depth inside it can record what "recurse into
     /// myself" refers to. A sub-pattern parse (a group, a lookaround body, an
@@ -204,6 +211,24 @@ impl Drop for TopLevelSourceScope {
         if self.0 {
             PARSING_TOP_LEVEL_SOURCE.with(|s| *s.borrow_mut() = None);
         }
+    }
+}
+
+/// RAII guard for preserving bare array interpolation syntax while a nested
+/// lookaround body is parsed. Nested parses restore the previous state rather
+/// than disabling an enclosing guard.
+pub(crate) struct PreserveArrayInterpolationScope(bool);
+
+impl PreserveArrayInterpolationScope {
+    pub(crate) fn enter() -> Self {
+        let previous = PRESERVE_ARRAY_INTERPOLATION.with(|flag| flag.replace(true));
+        Self(previous)
+    }
+}
+
+impl Drop for PreserveArrayInterpolationScope {
+    fn drop(&mut self) {
+        PRESERVE_ARRAY_INTERPOLATION.with(|flag| flag.set(self.0));
     }
 }
 

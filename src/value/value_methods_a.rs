@@ -39,11 +39,12 @@ impl Value {
         pattern: Arc<String>,
         scope: Arc<ValueMap>,
         signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
+        source_tree: Option<Box<crate::regex_tree::RegexTree>>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern,
             scope: Some(scope),
-            source_tree: None,
+            source_tree,
             signature,
         }))
     }
