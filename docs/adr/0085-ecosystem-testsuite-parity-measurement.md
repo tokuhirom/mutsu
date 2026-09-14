@@ -576,7 +576,7 @@ graph is used for this decision, while value-level constraints remain distinct
 candidates. The focused regression is
 `t/routines/dispatch/transitive-multi-override.t`.
 
-The targeted Red remeasurement on 2026-09-14 (mutsu `98ffa3c8e`, Rakudo
+The targeted Red remeasurement on 2026-09-14 (mutsu `f6d3f5c35`, Rakudo
 2026.07, bubblewrap) confirms that `Red` and `Red::Driver::Pg` load past the
 role-composition failure. The next independent load failures are the missing
 `Metamodel` role in `MetamodelX::Red::SubModelHOW`, the required `prepare`

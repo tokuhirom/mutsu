@@ -159,7 +159,7 @@
     "date": "2026-09-14",
     "harness": 2,
     "host": "linux-x86_64",
-    "mutsu_commit": "98ffa3c8e",
+    "mutsu_commit": "f6d3f5c35",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
