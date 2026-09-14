@@ -3778,7 +3778,7 @@ impl Interpreter {
                                     .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                                 {
                                     return Err(RuntimeError::assignment_ro_typename(
-                                        &list_type_name,
+                                        list_type_name,
                                         &list_gist,
                                     ));
                                 }
@@ -4925,7 +4925,7 @@ impl Interpreter {
                                     })
                                 {
                                     return Err(RuntimeError::assignment_ro_typename(
-                                        &list_type_name,
+                                        list_type_name,
                                         &list_gist,
                                     ));
                                 }
