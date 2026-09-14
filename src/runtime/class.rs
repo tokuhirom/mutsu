@@ -166,6 +166,106 @@ impl Interpreter {
             })
     }
 
+    pub(super) fn role_base_name(name: &str) -> &str {
+        name.split_once('[').map(|(base, _)| base).unwrap_or(name)
+    }
+
+    /// Whether `child` inherits methods from `ancestor` through its role
+    /// parents. A role's methods are flattened while it is registered, so a
+    /// class composing a role can otherwise see both a child role's override
+    /// and the ancestor candidate it replaced. Keep this relation here rather
+    /// than on MethodDef: the latter deliberately stores the source role, not
+    /// the role graph that made the source reachable.
+    pub(super) fn role_is_descendant_of(&self, child: &str, ancestor: &str) -> bool {
+        let child = Self::role_base_name(child);
+        let ancestor = Self::role_base_name(ancestor);
+        if child == ancestor {
+            return false;
+        }
+        let mut pending = vec![child.to_string()];
+        let mut seen = HashSet::new();
+        while let Some(role_name) = pending.pop() {
+            if !seen.insert(role_name.clone()) {
+                continue;
+            }
+            let parents = self
+                .registry()
+                .role_parents
+                .get(&role_name)
+                .cloned()
+                .unwrap_or_default();
+            for parent in parents {
+                let parent = Self::role_base_name(&parent);
+                if parent == ancestor {
+                    return true;
+                }
+                if self.registry().roles.contains_key(parent) {
+                    pending.push(parent.to_string());
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether a role source is hidden by a more-derived source in the same
+    /// method candidate set. A role explicitly composed by the class is kept:
+    /// it is an independent composition even when another directly composed
+    /// role derives from it.
+    pub(super) fn role_source_is_shadowed(
+        &self,
+        class_name: &str,
+        source: &str,
+        sources: &[String],
+    ) -> bool {
+        let direct_role_bases: HashSet<String> = self
+            .registry()
+            .class_direct_composed_roles
+            .get(class_name)
+            .into_iter()
+            .flat_map(|roles| roles.iter())
+            .map(|role| Self::role_base_name(role).to_string())
+            .collect();
+        let source = Self::role_base_name(source);
+        !direct_role_bases.contains(source)
+            && sources.iter().any(|child| {
+                let child = Self::role_base_name(child);
+                child != source && self.role_is_descendant_of(child, source)
+            })
+    }
+
+    /// Whether a multi candidate was inherited from a role ancestor that a
+    /// more-derived role has replaced with the same signature.
+    pub(super) fn role_method_is_shadowed(
+        &self,
+        class_name: &str,
+        candidate: &MethodDef,
+        defs: &[MethodDef],
+    ) -> bool {
+        let Some(source) = candidate
+            .original_role
+            .as_ref()
+            .or(candidate.role_origin.as_ref())
+        else {
+            return false;
+        };
+        let sources: Vec<String> = defs
+            .iter()
+            .filter(|other| {
+                other.is_multi
+                    && Self::method_signatures_match(candidate, other)
+                    && !Self::multi_constraints_distinguish(candidate, other)
+            })
+            .filter_map(|other| {
+                other
+                    .original_role
+                    .as_ref()
+                    .or(other.role_origin.as_ref())
+                    .cloned()
+            })
+            .collect();
+        self.role_source_is_shadowed(class_name, source, &sources)
+    }
+
     pub(super) fn detect_unresolved_role_method_conflicts(
         &self,
         class_name: &str,
@@ -279,6 +379,24 @@ impl Interpreter {
                                 roles_for_sig.push(r.clone());
                             }
                         }
+                    }
+                    if roles_for_sig.len() > 1 && !class_resolves {
+                        // A role can replace an inherited multi candidate with
+                        // the same signature. The flattened method table still
+                        // carries the ancestor's source role, but Rakudo does
+                        // not demand a class resolution for that shadowed
+                        // candidate. An ancestor explicitly composed by the
+                        // class remains a real independent candidate: `class C
+                        // does Child does Base` must still report a conflict.
+                        let all_sources = roles_for_sig.clone();
+                        let shadowed_sources: HashSet<String> = roles_for_sig
+                            .iter()
+                            .filter(|source| {
+                                self.role_source_is_shadowed(class_name, source, &all_sources)
+                            })
+                            .cloned()
+                            .collect();
+                        roles_for_sig.retain(|role| !shadowed_sources.contains(role));
                     }
                     if roles_for_sig.len() > 1 && !class_resolves {
                         return Err(RuntimeError::new(format!(

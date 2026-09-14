@@ -404,6 +404,16 @@ impl Interpreter {
                         .any(|cm| Self::method_signatures_match_with_invocant(m, cm))
                 });
             }
+            // A child role's same-signature multi replaces the inherited
+            // candidate from its role parent. Remove that shadowed copy before
+            // dispatch, not only from conflict detection, so the child method
+            // wins at runtime as it does in Rakudo.
+            let role_candidates = concrete.clone();
+            concrete.retain(|candidate| {
+                !candidate.is_multi
+                    || candidate.role_origin.is_none()
+                    || !self.role_method_is_shadowed(class_name, candidate, &role_candidates)
+            });
             // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
             // comment in registration_class_body_method.rs. Safe even though
             // this loop can still return `Err` on a later `method_name`

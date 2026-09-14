@@ -559,6 +559,30 @@ from `EXPORT` redeclaration to the independent
 `X::Role::Composition::Conflict` in `Red::Driver::Pg`; the latter remains for a
 separate #7988 slice.
 
+## 17. Campaign slice: transitive role multi overrides (2026-09-14)
+
+The next Red lead was the `X::Role::Composition::Conflict` raised while loading
+`Red::Driver::Pg`. `Red::Driver::CommonSQL` does `Red::Driver` and defines
+same-signature `multi` methods such as `is-valid-table-name` and `inflate`.
+Rakudo treats the child role's candidate as replacing the inherited candidate;
+mutsu retained both in the class method table and rejected the class before
+dispatch.
+
+Role composition now identifies role sources that are ancestors of a more
+derived source with the same multi signature. The inherited source is removed
+before dispatch unless the class explicitly composes that ancestor as well;
+`class C does Child does Parent` therefore keeps the real conflict. The role
+graph is used for this decision, while value-level constraints remain distinct
+candidates. The focused regression is
+`t/routines/dispatch/transitive-multi-override.t`.
+
+The targeted Red remeasurement on 2026-09-14 (mutsu `f6d3f5c35`, Rakudo
+2026.07, bubblewrap) confirms that `Red` and `Red::Driver::Pg` load past the
+role-composition failure. The next independent load failures are the missing
+`Metamodel` role in `MetamodelX::Red::SubModelHOW`, the required `prepare`
+method conflict in `Red::Driver::Cache::Memory`, and the existing parser and
+relationship/migration gaps; these remain leads for later #7988 slices.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
