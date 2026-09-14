@@ -13,14 +13,13 @@
   "dist": "JobQueue",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "regression",
       "mutsu": {
         "first_failure": "Unknown function: uuid-v4",
         "nok": 0,
         "ok": 0,
         "plan": 24,
-        "secs": 0.35,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +29,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 6.74,
+        "secs": 17.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 0.35,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +52,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.46,
+        "secs": 5.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.19,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +75,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.65,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,7 +98,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.21,
+        "secs": 3.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,10 +116,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -133,11 +132,11 @@
   },
   "status": "red",
   "totals": {
-    "baseline_assertions": 27,
-    "baseline_files": 3,
+    "baseline_assertions": 51,
+    "baseline_files": 4,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 3
+    "regressed_files": 4
   },
   "version": "0.1.1"
 }

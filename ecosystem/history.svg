@@ -31,7 +31,7 @@
 </style>
 <rect class="bg" width="100%" height="100%"/>
 <text class="title" x="78" y="34">mutsu ecosystem parity against rakudo</text>
-<text class="subtitle" x="78" y="55">latest sweep 2026-09-13  ·  1583 of 1626 distributions measured  ·  43 blocked on dependencies  ·  baseline rakudo 2026.07</text>
+<text class="subtitle" x="78" y="55">latest sweep 2026-09-14  ·  1587 of 1630 distributions measured  ·  43 blocked on dependencies  ·  baseline rakudo 2026.07</text>
 <line class="grid" x1="78" y1="548.0" x2="1070" y2="548.0"/>
 <text class="tick" x="68" y="552.0" text-anchor="end">0%</text>
 <line class="grid" x1="78" y1="500.6" x2="1070" y2="500.6"/>
@@ -58,30 +58,34 @@
 <line class="axis" x1="78" y1="74" x2="78" y2="548"/>
 <text class="tick" x="78.0" y="570" text-anchor="middle">2026-09-11</text>
 <text class="tick" x="78.0" y="570" text-anchor="middle">2026-09-11</text>
-<text class="tick" x="574.0" y="570" text-anchor="middle">2026-09-12</text>
-<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-09-13</text>
-<polyline class="series-a" points="78.0,352.7 78.0,353.2 574.0,341.3 1070.0,341.3" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text class="tick" x="408.7" y="570" text-anchor="middle">2026-09-12</text>
+<text class="tick" x="739.3" y="570" text-anchor="middle">2026-09-13</text>
+<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-09-14</text>
+<polyline class="series-a" points="78.0,352.7 78.0,353.2 408.7,341.3 739.3,341.3 1070.0,336.6" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-a" cx="78.0" cy="352.7" r="3.4" stroke="none"/>
 <circle class="series-a" cx="78.0" cy="353.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="574.0" cy="341.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="1070.0" cy="341.3" r="3.4" stroke="none"/>
-<text class="value series-a" x="1079.0" y="345.3" stroke="none">43.6%</text>
+<circle class="series-a" cx="408.7" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="739.3" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1070.0" cy="336.6" r="3.4" stroke="none"/>
+<text class="value series-a" x="1079.0" y="340.6" stroke="none">44.6%</text>
 <line class="series-a" x1="1094" y1="80.0" x2="1118" y2="80.0" stroke-width="3.2"/>
 <text class="legend" x="1124" y="84.0">dist parity (published)</text>
-<polyline class="series-b" points="78.0,293.9 78.0,294.9 574.0,294.4 1070.0,287.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-b" points="78.0,293.9 78.0,294.9 408.7,294.4 739.3,287.3 1070.0,283.0" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-b" cx="78.0" cy="293.9" r="2.6" stroke="none"/>
 <circle class="series-b" cx="78.0" cy="294.9" r="2.6" stroke="none"/>
-<circle class="series-b" cx="574.0" cy="294.4" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1070.0" cy="287.3" r="2.6" stroke="none"/>
-<text class="value series-b" x="1079.0" y="291.3" stroke="none">55.0%</text>
+<circle class="series-b" cx="408.7" cy="294.4" r="2.6" stroke="none"/>
+<circle class="series-b" cx="739.3" cy="287.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1070.0" cy="283.0" r="2.6" stroke="none"/>
+<text class="value series-b" x="1079.0" y="287.0" stroke="none">55.9%</text>
 <line class="series-b" x1="1094" y1="101.0" x2="1118" y2="101.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="105.0">file parity (steers the work)</text>
-<polyline class="series-c" points="78.0,252.2 78.0,248.9 574.0,242.3 1070.0,231.8" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-c" points="78.0,252.2 78.0,248.9 408.7,242.3 739.3,231.8 1070.0,229.9" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-c" cx="78.0" cy="252.2" r="2.6" stroke="none"/>
 <circle class="series-c" cx="78.0" cy="248.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="574.0" cy="242.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1070.0" cy="231.8" r="2.6" stroke="none"/>
-<text class="value series-c" x="1079.0" y="235.8" stroke="none">66.7%</text>
+<circle class="series-c" cx="408.7" cy="242.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="739.3" cy="231.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1070.0" cy="229.9" r="2.6" stroke="none"/>
+<text class="value series-c" x="1079.0" y="233.9" stroke="none">67.1%</text>
 <line class="series-c" x1="1094" y1="122.0" x2="1118" y2="122.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="126.0">assertion parity</text>
 </svg>

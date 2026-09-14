@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-config.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1789334418: Read-only file system",
+        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1789424093: Read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 11,
-        "secs": 20.76,
+        "secs": 27.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "t/02-run.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1789334424' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1789424102' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 12,
-        "secs": 3.18,
+        "secs": 4.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.58,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 22.21,
+        "secs": 35.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.57,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.17,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +111,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 8,
-        "secs": 0.81,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.5,
+        "secs": 4.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.42,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.94,
+        "secs": 5.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,11 +153,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-10ahdt8\",\"state\":\"running\"}",
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-9jokj2\",\"state\":\"running\"}",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 0.77,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -167,7 +167,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 9.26,
+        "secs": 10.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +180,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.76,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -190,7 +190,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.58,
+        "secs": 8.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,7 +203,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.86,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.65,
+        "secs": 6.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,7 +226,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 9,
-        "secs": 0.86,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -236,7 +236,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.11,
+        "secs": 4.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,11 +246,11 @@
       "cmp": "no_baseline",
       "path": "t/11-isolation.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1789334502' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1789424221' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 2.19,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -259,11 +259,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-11zi2f6\",\"state\":\"running\"}",
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-101u1zm\",\"state\":\"running\"}",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.66,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -273,7 +273,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.79,
+        "secs": 3.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -282,11 +282,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-yz6844\",\"state\":\"running\"}",
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\t{\"job\":\"j1-1a5mcfr\",\"state\":\"running\"}",
         "nok": 0,
         "ok": 1,
         "plan": 5,
-        "secs": 0.81,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -296,7 +296,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.13,
+        "secs": 3.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -308,7 +308,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.22,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -318,7 +318,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.34,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -333,10 +333,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -12,6 +12,7 @@
       "JSON::Marshal",
       "JSON::Name",
       "JSON::OptIn",
+      "JSON::Tiny",
       "JSON::Unmarshal",
       "LibCurl",
       "LibraryMake",
@@ -42,10 +43,10 @@
   "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-09-13",
+    "date": "2026-09-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "2d8228e",
+    "mutsu_commit": "eba9d2a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,7 +55,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AK/RAKUAST_RAKUDOC_RENDER/1cd3503845aa53fe60bd785e282a6bc29c65a527.tar.gz"
+    "url": "https://360.zef.pm/R/AK/RAKUAST_RAKUDOC_RENDER/daf3a6ba2d33df4cf17d0c32584a900bb6fab0a7.tar.gz"
   },
   "status": "blocked_dep",
   "totals": {
@@ -64,5 +65,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "1.0.18"
+  "version": "1.1.0"
 }
