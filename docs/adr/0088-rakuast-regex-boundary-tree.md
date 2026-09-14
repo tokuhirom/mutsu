@@ -7,7 +7,8 @@
   named-static-lookaround, nested-static-lookaround, escaped-lookaround,
   lookaround-interpolation, array-lookaround, named-array-lookaround,
   predicate-block-code-assertion, plain-code-block, and
-  interpolated-code-block slices implemented
+  interpolated-code-block, sequential-interpolated-code-block, and
+  ordinary-array-interpolation slices implemented
   2026-09-12 through
   2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
@@ -847,3 +848,24 @@ the dual-oracle sequential-alternation shape, the `True` field, branch
 fallback, match-time reassignment, and constructed-tree execution. Predicate
 blocks, array/code interpolation, and other runtime-valued regex bodies remain
 separate boundaries.
+
+## 30. Ordinary array interpolation slice (2026-09-14)
+
+Ordinary aggregate interpolation in a regex body, such as `@parts`, now
+retains Rakudo's `RakuAST::Regex::Interpolation` shape with the aggregate
+lexical sigil and the measured `sequential` field. The same node is emitted
+for an interpolation after `||`, where the field is `True` and the node sits
+under `RakuAST::Regex::SequentialAlternation`.
+
+The parser retains the source tree for these values, while execution continues
+through the existing runtime regex parser. Array contents are read at match
+time and the tree is never entered into the static execution-plan cache, whose
+key does not include array contents. Constructed RakuAST trees therefore share
+the same live array behavior without evaluating or snapshotting the array
+during `.AST` conversion.
+
+The focused regression is `t/regex/regex-tree-array-interpolation.t`. It pins
+the dual-oracle AST shape, sequential field, direct and constructed matching,
+match-time reassignment, and the existing named-lookaround boundary. Hash
+interpolation, code interpolation, and other runtime-valued regex bodies
+remain separate boundaries.
