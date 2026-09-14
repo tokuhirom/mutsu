@@ -107,6 +107,8 @@ OVERRIDES: dict[str, str] = {
     "generics-nominalizable-class": "types",
     # `is-eqv` compares values structurally: an equivalence-semantics test.
     "is-eqv": "types",
+    # The Time::localtime compatibility surface is a temporal type/module test.
+    "time-localtime": "types/temporal",
     # Running out of native stack is a VM-execution property (mutsu runs a Raku
     # call as a Rust call), not a property of recursion as a language feature.
     "deep-recursion-raises-instead-of-aborting": "vm",

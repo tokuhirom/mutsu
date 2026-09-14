@@ -61,6 +61,7 @@ impl Interpreter {
                 fatal_mode: self.fatal_mode,
                 monkey_typing: self.monkey_typing,
                 scope_classes,
+                imported_env_aliases: self.imported_env_aliases.clone(),
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -73,8 +74,18 @@ impl Interpreter {
     /// has nothing on `import_scope_stack` to record against, and its
     /// imports are meant to persist anyway.
     pub(crate) fn record_import_env_key(&mut self, key: &str) {
+        let key_sym = Symbol::intern(key);
+        let display = if key.starts_with(['$', '@', '%', '&'])
+            || key.chars().next().is_some_and(|c| c.is_uppercase())
+        {
+            key.to_string()
+        } else {
+            format!("${key}")
+        };
+        self.imported_env_aliases
+            .insert(key_sym, Symbol::intern(&display));
         if let Some(top) = self.import_scope_stack.last_mut() {
-            top.imported_env_keys.insert(Symbol::intern(key));
+            top.imported_env_keys.insert(key_sym);
         }
     }
 
@@ -109,6 +120,7 @@ impl Interpreter {
                 shadowed_proto_functions,
                 shadowed_proto_names: _,
                 imported_env_keys,
+                imported_env_aliases,
                 imported_routine_aliases,
                 newline_mode,
                 strict_mode,
@@ -235,6 +247,7 @@ impl Interpreter {
             self.fatal_mode = fatal_mode;
             self.monkey_typing = monkey_typing;
             self.imported_routine_aliases = imported_routine_aliases;
+            self.imported_env_aliases = imported_env_aliases;
             // Removing imported functions when a lexical import scope pops must
             // invalidate the name-keyed function-resolution caches: a sub that
             // was OTF-compiled and cached under its bare name while in scope

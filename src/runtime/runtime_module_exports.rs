@@ -124,7 +124,12 @@ impl Interpreter {
             Some(snapshot) => snapshot
                 .shadowed_proto_names
                 .insert(target_single.to_string()),
-            None => false,
+            // A top-level import has no scope snapshot because its aliases are
+            // meant to persist. It still has to replace an already-visible
+            // family, for example a bare-file dependency preloaded a
+            // `GLOBAL::localtime` family before `Time::localtime` imported its
+            // own wrapper.
+            None => true,
         };
         if !should_shadow {
             return;
@@ -141,7 +146,14 @@ impl Interpreter {
                     .copied()
                     .collect()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                self.registry()
+                    .functions
+                    .keys()
+                    .filter(|key| **key == *target_single || key.resolve().starts_with(&prefix))
+                    .copied()
+                    .collect()
+            });
         let keys: Vec<Symbol> = self
             .registry()
             .functions
@@ -164,12 +176,17 @@ impl Interpreter {
             .registry_mut()
             .proto_functions_mut()
             .remove(&proto_key)
-            .filter(|_| proto_was_visible);
+            .filter(|_| self.import_scope_stack.is_empty() || proto_was_visible);
         if let Some(snapshot) = self.import_scope_stack.last_mut() {
             snapshot.shadowed_functions.extend(shadowed_functions);
             if let Some(def) = shadowed_proto {
                 snapshot.shadowed_proto_functions.insert(proto_key, def);
             }
+        } else {
+            // There is no enclosing registry snapshot to restore at top level.
+            // Replace the old proto marker along with its candidate family.
+            self.registry_mut()
+                .proto_subs_retain(|key| key != target_single);
         }
         self.invalidate_fn_resolution();
     }
@@ -249,6 +266,17 @@ impl Interpreter {
                     .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&pkg_export))
                     .or_insert_with(|| def.clone());
+                if let Some(owner) = self
+                    .module_load_stack
+                    .last()
+                    .filter(|owner| owner.as_str() != package)
+                {
+                    let owner_export = format!("{}::EXPORT::{}::{}", owner, tag, name);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&owner_export))
+                        .or_insert_with(|| def.clone());
+                }
             }
             // Always register under EXPORT::ALL::name
             if !tags.contains(&"ALL".to_string()) {
@@ -261,7 +289,18 @@ impl Interpreter {
                 self.registry_mut()
                     .functions_mut()
                     .entry(crate::symbol::Symbol::intern(&pkg_all))
-                    .or_insert_with(|| def);
+                    .or_insert_with(|| def.clone());
+                if let Some(owner) = self
+                    .module_load_stack
+                    .last()
+                    .filter(|owner| owner.as_str() != package)
+                {
+                    let owner_all = format!("{}::EXPORT::ALL::{}", owner, name);
+                    self.registry_mut()
+                        .functions_mut()
+                        .entry(crate::symbol::Symbol::intern(&owner_all))
+                        .or_insert_with(|| def.clone());
+                }
             }
         } else if !candidate_defs.is_empty() {
             for tag in &tags {
@@ -276,6 +315,18 @@ impl Interpreter {
                         .functions_mut()
                         .entry(crate::symbol::Symbol::intern(&pkg_export))
                         .or_insert_with(|| candidate.clone());
+                    if let Some(owner) = self
+                        .module_load_stack
+                        .last()
+                        .filter(|owner| owner.as_str() != package)
+                    {
+                        let owner_export =
+                            format!("{}::EXPORT::{}::{}/{}", owner, tag, name, suffix);
+                        self.registry_mut()
+                            .functions_mut()
+                            .entry(crate::symbol::Symbol::intern(&owner_export))
+                            .or_insert_with(|| candidate.clone());
+                    }
                 }
             }
             if !tags.contains(&"ALL".to_string()) {
@@ -290,6 +341,17 @@ impl Interpreter {
                         .functions_mut()
                         .entry(crate::symbol::Symbol::intern(&pkg_all))
                         .or_insert_with(|| candidate.clone());
+                    if let Some(owner) = self
+                        .module_load_stack
+                        .last()
+                        .filter(|owner| owner.as_str() != package)
+                    {
+                        let owner_all = format!("{}::EXPORT::ALL::{}/{}", owner, name, suffix);
+                        self.registry_mut()
+                            .functions_mut()
+                            .entry(crate::symbol::Symbol::intern(&owner_all))
+                            .or_insert_with(|| candidate.clone());
+                    }
                 }
             }
         }
@@ -393,6 +455,21 @@ impl Interpreter {
                 .or_default();
             for tag in &mirror_tags {
                 mirror.insert(tag.clone());
+            }
+        }
+        // Bare-file modules execute their top-level declarations in GLOBAL,
+        // so an exported `our` variable is registered under GLOBAL rather
+        // than under the module path. Attribute the export to the module that
+        // is loading as well, allowing `use Module :tag` to import it and to
+        // expose it through the importing lexical pseudo-stash.
+        if let Some(owner) = self.module_load_stack.last().cloned() {
+            let mirror = crate::runtime::cow_table_mut(&mut self.exported_vars)
+                .entry(owner)
+                .or_default()
+                .entry(mirror_name)
+                .or_default();
+            for tag in mirror_tags {
+                mirror.insert(tag);
             }
         }
     }
@@ -649,6 +726,13 @@ impl Interpreter {
             let source_prefix = format!("{module}::{name}/");
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
+            let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
+            let bare_file_multi = owned_subs.contains_key(&name)
+                && self
+                    .registry()
+                    .functions
+                    .keys()
+                    .any(|key| key.resolve().starts_with(&module_export_prefix));
             let imported_proto = self
                 .registry()
                 .proto_functions
@@ -657,8 +741,15 @@ impl Interpreter {
                     && self
                         .registry()
                         .proto_functions
-                        .contains_key(&Symbol::intern(&format!("GLOBAL::{name}"))));
-            if imported_proto {
+                        .contains_key(&Symbol::intern(&format!("GLOBAL::{name}"))))
+                || bare_file_multi;
+            let global_family_present = owned_subs.contains_key(&name)
+                && self
+                    .registry()
+                    .functions
+                    .keys()
+                    .any(|key| key.resolve().starts_with(&format!("GLOBAL::{name}/")));
+            if imported_proto || global_family_present {
                 self.shadow_imported_proto_family(&target_single);
             }
 
@@ -777,6 +868,8 @@ impl Interpreter {
                 .filter_map(|(k, v)| {
                     if *k == *source_single
                         || (unit_global_subs.contains_key(&name)
+                            && *k == Symbol::intern(&format!("GLOBAL::{name}")))
+                        || (owned_subs.contains_key(&name)
                             && *k == Symbol::intern(&format!("GLOBAL::{name}")))
                     {
                         Some((Symbol::intern(&target_single), v.clone()))
