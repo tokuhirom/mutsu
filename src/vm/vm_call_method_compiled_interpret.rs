@@ -461,11 +461,10 @@ impl Interpreter {
                 }
             }
         }
-        // User-defined ^method (metamethod) dispatch:
-        // Foo.^bar passes Foo as the first positional argument.
-        // A user-declared metamethod shadows the native ClassHOW one of the
-        // same name for its own type (see `methods_call_dispatch.rs`), so the
-        // `has_user_method` check below — not a name pre-filter — is the gate.
+        // A user-declared `method ^bar` remains on the type's own method
+        // table. Preserve its established calling convention before trying
+        // the receiver's HOW, which is where a custom metaclass's `bar`
+        // method lives.
         if method.starts_with('^') && method.len() > 1 {
             let class_name = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
@@ -475,12 +474,28 @@ impl Interpreter {
             if let Some(cn) = class_name
                 && self.has_user_method(cn, method)
             {
-                let mut how_args = vec![target.clone()];
-                how_args.extend(args);
-                // CARRIER: user-defined ^metamethod dispatch (MOP). See ledger §C.
+                let mut user_args = Vec::with_capacity(args.len() + 1);
+                user_args.push(target.clone());
+                user_args.extend(args);
                 crate::vm::vm_stats::record_method_fallback(method);
-                return loan_env!(self, call_method_with_values(target, method, how_args));
+                return loan_env!(self, call_method_with_values(target, method, user_args));
             }
+        }
+        // `Foo.^bar` is otherwise dispatched as `Foo.HOW.bar(Foo, ...)`.
+        // Falling through to the ordinary compiled lookup binds `self` to
+        // `Foo`, which breaks custom metaclasses such as Red's
+        // `.^add-relationship` during class declaration.
+        if let Some(meta_method) = method.strip_prefix('^')
+            && !meta_method.is_empty()
+            && meta_method != "name"
+        {
+            let how = loan_env!(self, call_method_with_values(target.clone(), "HOW", vec![]))?;
+            let mut how_args = Vec::with_capacity(args.len() + 1);
+            how_args.push(target.clone());
+            how_args.extend(args);
+            // CARRIER: MOP dispatch through the receiver's HOW. See ledger §C.
+            crate::vm::vm_stats::record_method_fallback(method);
+            return loan_env!(self, call_method_with_values(how, meta_method, how_args));
         }
         // Only attempt compiled path for Instance or Package targets. Reuse the
         // receiver's already-interned class Symbol and borrow its string
