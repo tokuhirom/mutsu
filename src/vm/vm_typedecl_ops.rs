@@ -348,6 +348,35 @@ impl Interpreter {
             let is_hoisted_shell = custom_traits
                 .iter()
                 .any(|(trait_name, _)| trait_name == "__hoisted");
+            // A DECLARE'd class can use its HOW while the class body is being
+            // registered.  Red's `is relationship` attribute trait is one
+            // such case: its trait handler calls `.^add-relationship` on the
+            // class before the body has finished.  Install the HOW instance
+            // before entering `register_class_decl`, but defer the protocol
+            // (`new_type`/`add_method`) until after the body has registered its
+            // own attributes and methods, as before.
+            let declare_how_keyword = custom_traits
+                .iter()
+                .find(|(trait_name, _)| trait_name == "__mutsu_declare_how")
+                .and_then(|(_, arg)| arg.as_ref())
+                .and_then(crate::opcode::DeclTraitArg::literal)
+                .map(|kw| kw.to_string_value());
+            let (declare_how_installed, declare_how_has_compose) =
+                if let Some(keyword) = declare_how_keyword {
+                    let how_type = self
+                        .get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{keyword}"))
+                        .or_else(|| self.slang_declarator_how(&keyword));
+                    if let Some(how_type) = how_type {
+                        (
+                            true,
+                            self.install_custom_class_how(&storage_name, how_type)?,
+                        )
+                    } else {
+                        (false, false)
+                    }
+                } else {
+                    (false, false)
+                };
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
@@ -374,7 +403,13 @@ impl Interpreter {
                         is_hoisted_shell,
                     },
                 )
-            )?;
+            )
+            .map_err(|err| {
+                if declare_how_installed {
+                    self.registry_mut().class_how_values.remove(&storage_name);
+                }
+                err
+            })?;
             // Take the rollback snapshot `register_class_decl` leaves behind
             // for a deferred `is` trait IMMEDIATELY, into a local: a nested
             // declaration in this class's own body runs its own
@@ -562,33 +597,15 @@ impl Interpreter {
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&storage_name, language_version);
 
-            // A class declared with an EXPORTHOW::DECLARE declarator (the
-            // `__mutsu_declare_how` marker trait carries the keyword): attach
-            // an instance of the declarator's HOW type — installed by the
-            // `use`d module as the EXPORTHOW::DECLARE::<keyword> constant — as
-            // the class's meta-object, drive the HOW registration protocol
-            // (`new_type`, `add_method` per declared method), and queue the
-            // user `compose` to run after the custom `is` traits (same
-            // protocol as the EXPORTHOW `class` metaclass mapping below).
-            if let Some(kw) = custom_traits
-                .iter()
-                .find(|(t, _)| t == "__mutsu_declare_how")
-                .and_then(|(_, arg)| arg.as_ref())
-                .and_then(crate::opcode::DeclTraitArg::literal)
-            {
-                let keyword = kw.to_string_value();
-                let how_type = self
-                    .get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{}", keyword))
-                    .or_else(|| self.slang_declarator_how(&keyword));
-                if let Some(how_type) = how_type {
-                    let has_user_compose =
-                        self.install_custom_class_how(&storage_name, how_type)?;
-                    self.declare_drive_how_protocol(&storage_name)?;
-                    if has_user_compose {
-                        self.registry_mut()
-                            .pending_class_compose
-                            .push(storage_name.clone());
-                    }
+            // The HOW instance was installed before the class body so body
+            // traits could dispatch through it.  Drive the user protocol only
+            // after the body has registered its own declarations.
+            if declare_how_installed {
+                self.declare_drive_how_protocol(&storage_name)?;
+                if declare_how_has_compose {
+                    self.registry_mut()
+                        .pending_class_compose
+                        .push(storage_name.clone());
                 }
             }
 
