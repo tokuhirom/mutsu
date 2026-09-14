@@ -684,6 +684,23 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     rest = r2;
                     continue;
                 }
+                // A custom attribute trait may take a bare block, as in
+                // Red's `is relationship{ .foreign-key }`.  Keep the block
+                // as an Expr so the trait dispatcher evaluates it to a
+                // Callable; treating it as a bare trait would pass Bool::True
+                // and leave the following block to be parsed separately.
+                if r_ws.starts_with('{') {
+                    let (after_block, trait_arg) =
+                        crate::parser::primary::misc::block_or_hash_expr(r_ws)?;
+                    unknown_traits.push((
+                        "is".to_string(),
+                        trait_name.to_string(),
+                        Some(trait_arg),
+                    ));
+                    let (r2, _) = ws(after_block)?;
+                    rest = r2;
+                    continue;
+                }
                 unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
             }
             let (r, _) = ws(r)?;
@@ -1059,8 +1076,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // terminated in Raku, so a following declaration on the next line is a new
     // statement, not a second term. Only fire when the preceding token is NOT `}`.
     let consumed = input.len().saturating_sub(pre_ws_rest.len());
-    let block_terminated =
-        consumed > 0 && input.as_bytes().get(consumed - 1).copied() == Some(b'}');
+    let block_terminated = consumed > 0 && input[..consumed].trim_end().ends_with('}');
     if !block_terminated
         && let Some(first) = rest.chars().next()
         && (first.is_alphabetic() || first == '_' || matches!(first, '$' | '@' | '%' | '&'))
