@@ -349,6 +349,18 @@ impl Interpreter {
             && self.resolve_function_with_alias(name, args).is_some())
             || self.user_only_sub_hides_builtin(name, args);
         if !user_shadows_builtin {
+            // A core routine can be wrapped through its first-class code value
+            // (`&term:<time>.wrap: { ... }`). Check the wrap chain before the
+            // native-function table, whose direct result would otherwise
+            // bypass the wrapper entirely. `is_wrap_dispatching` lets the
+            // wrapper's `callsame`/native delegate reach that table without
+            // recursing.
+            if let Some(sub_id) = self.wrap_sub_id_for_name(name)
+                && !self.is_wrap_dispatching(sub_id)
+                && let Some(sub_val) = self.get_wrapped_sub(name)
+            {
+                return self.call_sub_value(sub_val, args.to_vec(), false);
+            }
             // ADR-0044 D1: `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/
             // `splice` as native function-form routines, reached here
             // whenever the compiler's `CallMethodMut` fast path did not fire

@@ -12,7 +12,9 @@ use crate::parser::stmt::assign::{
     compound_assigned_value_expr, parse_assign_expr_or_comma, parse_colon_args,
     parse_comma_or_expr, parse_compound_assign_op, parse_set_compound_assign_op,
 };
-use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
+use crate::parser::stmt::modifier::{
+    is_stmt_modifier_keyword, parse_statement_modifier, stmt_ends_with_block,
+};
 use crate::parser::stmt::simple::{
     TMP_INDEX_COUNTER, add_xor_sink_warnings, parse_hyper_assign_op,
 };
@@ -1614,13 +1616,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, *stmt);
     }
     let stmt = Stmt::Expr(expr.clone());
-    // For block-valued expressions (try { ... }, gather { ... }),
+    // For block-valued expressions,
     // pass pre-whitespace rest so parse_statement_modifier can detect
     // newline separation and avoid treating the next line's `if`/`for`
     // as a statement modifier.
-    // Only the BLOCK forms (`try { ... }`, `gather { ... }`) end their statement
-    // at the closing brace, so a following line's `if`/`for` starts a new
-    // statement rather than modifying them. The statement-prefix forms
+    // including assignments whose RHS is a block-taking call, end their
+    // statement at the closing brace, so a following line's `if`/`for` starts
+    // a new statement rather than modifying them. The statement-prefix forms
     // (`try foo($x)`, `gather take $_`) end like any other expression, and a
     // statement modifier may continue on the next line:
     //
@@ -1636,7 +1638,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     //
     // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
     if separated_by_newline
-        && matches!(expr, Expr::Try { .. } | Expr::Gather(_))
+        && stmt_ends_with_block(&stmt)
         && crate::parser::expr::consumed_span(input, rest_before_ws)
             .is_some_and(|consumed| consumed.trim_end().ends_with('}'))
     {
