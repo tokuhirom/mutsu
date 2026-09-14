@@ -21,6 +21,12 @@ mod stmt;
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws};
 
+/// Parse a regex callable's argument list without exposing the parser's
+/// private diagnostic type to the source-level regex tree.
+pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate::ast::Expr>)> {
+    primary::parse_call_arg_list(input).ok()
+}
+
 /// Reuse the parser's proven compound-assignment expansion from consumers that
 /// cannot name the parser's private parse-error type (such as RakuAST lowering).
 pub(crate) fn expand_compound_assign_expr(

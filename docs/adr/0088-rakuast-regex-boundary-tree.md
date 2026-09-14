@@ -8,7 +8,8 @@
   lookaround-interpolation, array-lookaround, named-array-lookaround,
   predicate-block-code-assertion, plain-code-block, and
   interpolated-code-block, sequential-interpolated-code-block, and
-  ordinary-array-interpolation, and callable-interpolation slices implemented
+  ordinary-array-interpolation, callable-interpolation, and
+  callable-interpolation-arguments slices implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -896,23 +897,41 @@ dynamic boundary was code interpolation.
 ## 32. Argument-less callable interpolation slice (2026-09-14)
 
 Argument-less callable interpolation (`<&name>` and the empty-call spelling
-`<&name()>`) now retains Rakudo's
+`<&name()>`) retains Rakudo's
 `RakuAST::Regex::Assertion::Callable` shape with a lexical `&name` callee.
-Both spellings intentionally normalize to the same source tree; a non-empty
-argument list remains represented by the node's separate `args => ArgList`
-field and is deferred to a later slice.
+Both spellings intentionally normalize to the same source tree.
 
-The parser recognizes only the argument-less forms and keeps their source
-provenance in `RegexNode::Callable`. Execution lowering deliberately leaves
-the node on the existing runtime parser path, so this slice does not invent a
-new VM dispatch route or evaluate a callable while converting `.AST`.
-Constructed Callable nodes with an empty argument list lower back through the
-same regex value path; non-empty argument lists remain an explicit lowering
-boundary.
+The parser keeps the source provenance in `RegexNode::Callable`. Execution
+lowering deliberately leaves the node on the existing runtime parser path, so
+this slice does not invent a new VM dispatch route or evaluate a callable while
+converting `.AST`. Constructed Callable nodes with an empty argument list lower
+back through the same regex value path.
 
 The focused regression is `t/regex/regex-tree-callable.t`. It pins the dual-
 oracle AST shape for both spellings, the callee and optional-argument
 accessors, sequence nesting, construction, and the EVAL round trip.
 
-The next open dynamic boundary is callable interpolation with non-empty
-arguments, followed by the remaining runtime-valued regex bodies.
+## 33. Callable interpolation with arguments (2026-09-14)
+
+Callable interpolation with non-empty arguments, such as `<&name("value")>`
+and the colon form `<&name: "value">`, now retains Rakudo's
+`RakuAST::Regex::Assertion::Callable` node with a non-empty
+`RakuAST::ArgList`. The parser reuses the ordinary call-argument parser for
+the expression tree and retains the exact argument source needed by the
+existing runtime regex parser; colon syntax is normalized to the same model
+as parenthesized syntax.
+
+The read direction converts every parsed argument into the `ArgList` child,
+and the write direction lowers positional child expressions back into the
+shared callable node. `RakuAST::ArgList.new(...)` now accepts positional
+RakuAST nodes, so a constructed callable can be lowered and evaluated as a
+regex as well. Execution remains on the established runtime parser path, and
+hand-built arguments outside the bounded source-rendering subset are rejected
+by the lowerer rather than rendered incorrectly.
+
+The focused regression is `t/regex/regex-tree-callable.t`. It pins the exact
+dual-oracle tree, colon normalization, argument-list construction, constructed
+regex EVAL, and parser-created matching behavior.
+
+The remaining open dynamic boundaries are code interpolation and other
+runtime-valued regex bodies.

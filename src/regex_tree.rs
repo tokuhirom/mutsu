@@ -88,11 +88,18 @@ pub(crate) enum RegexNode {
         name: String,
         negated: bool,
     },
-    /// `<&name>` / `<&name()>` — call a lexical routine and interpolate its
-    /// return value as a regex. Argument-bearing calls remain on the legacy
-    /// parser path until their argument tree has its own bounded slice.
+    /// `<&name>` / `<&name(...)>` — call a lexical routine and interpolate its
+    /// return value as a regex. Execution remains on the legacy parser path
+    /// while the argument tree and source are retained for RakuAST.
     Callable {
         name: String,
+        args: Vec<crate::ast::Expr>,
+        /// Preserve the written argument source for the existing runtime
+        /// parser. The internal expression tree is not a general-purpose
+        /// source printer, so constructed RakuAST nodes fill this from the
+        /// representable argument subset.
+        #[serde(default)]
+        arg_source: Option<String>,
     },
     /// `<?{ ... }>` / `<!{ ... }>` — a zero-width predicate whose body runs
     /// inline in the real interpreter. Keep both the source spelling and the
@@ -897,7 +904,23 @@ impl RegexNode {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}@{name}>")
             }
-            Self::Callable { name } => format!("<&{name}>"),
+            Self::Callable {
+                name,
+                args,
+                arg_source,
+            } => {
+                if args.is_empty() {
+                    format!("<&{name}>")
+                } else {
+                    let rendered = arg_source.clone().or_else(|| {
+                        args.iter()
+                            .map(expression_source)
+                            .collect::<Option<Vec<_>>>()
+                            .map(|parts| parts.join(", "))
+                    });
+                    format!("<&{name}({})>", rendered.unwrap_or_default())
+                }
+            }
             Self::CodeAssertion { code, negated, .. } => {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}{{{code}}}>")
@@ -949,6 +972,76 @@ fn collapse_alternation(nodes: Vec<RegexNode>) -> RegexNode {
 
 fn has_whitespace_after(node: &RegexNode) -> bool {
     matches!(node, RegexNode::WithWhitespace(_))
+}
+
+/// Render the small expression subset needed when a hand-built RakuAST
+/// callable is lowered back to the existing string-based regex parser.
+/// Parser-created trees retain their exact argument source in
+/// `RegexNode::Callable::arg_source`; this is only the construction fallback.
+pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
+    fn quote_string(value: &str) -> String {
+        let mut out = String::with_capacity(value.len() + 2);
+        out.push('\'');
+        for ch in value.chars() {
+            match ch {
+                '\\' => out.push_str("\\\\"),
+                '\'' => out.push_str("\\'"),
+                _ => out.push(ch),
+            }
+        }
+        out.push('\'');
+        out
+    }
+
+    fn join_args(args: &[crate::ast::Expr]) -> Option<String> {
+        args.iter()
+            .map(expression_source)
+            .collect::<Option<Vec<_>>>()
+            .map(|parts| parts.join(", "))
+    }
+
+    match expr {
+        crate::ast::Expr::Literal(value) => match value.view() {
+            crate::value::ValueView::Str(value) => Some(quote_string(&value)),
+            crate::value::ValueView::Int(_)
+            | crate::value::ValueView::BigInt(_)
+            | crate::value::ValueView::Num(_)
+            | crate::value::ValueView::Bool(_)
+            | crate::value::ValueView::Rat(..)
+            | crate::value::ValueView::FatRat(..)
+            | crate::value::ValueView::BigRat(..)
+            | crate::value::ValueView::Complex(..)
+            | crate::value::ValueView::Nil => Some(value.to_string_value()),
+            _ => None,
+        },
+        crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
+        crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
+        crate::ast::Expr::Var(name) => Some(format!("${name}")),
+        crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
+        crate::ast::Expr::ArrayVar(name) => Some(format!("@{name}")),
+        crate::ast::Expr::HashVar(name) => Some(format!("%{name}")),
+        crate::ast::Expr::CodeVar(name) => Some(format!("&{name}")),
+        crate::ast::Expr::BareWord(name) => Some(name.clone()),
+        crate::ast::Expr::Unary { op, expr } => Some(format!(
+            "{}{}",
+            crate::compiler::helpers_ops::token_kind_to_op_name(op),
+            expression_source(expr)?
+        )),
+        crate::ast::Expr::Binary { left, op, right } => Some(format!(
+            "{} {} {}",
+            expression_source(left)?,
+            crate::compiler::helpers_ops::token_kind_to_op_name(op),
+            expression_source(right)?
+        )),
+        crate::ast::Expr::Call { name, args }
+        | crate::ast::Expr::UserRoutineCall { name, args } => {
+            Some(format!("{}({})", name.resolve(), join_args(args)?))
+        }
+        crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
+        crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
+        crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
+        _ => None,
+    }
 }
 
 struct Parser {
@@ -1345,19 +1438,105 @@ impl Parser {
             return None;
         };
         self.skip_whitespace();
+        let mut args = Vec::new();
+        let mut arg_source = None;
         if self.consume_if('(') {
+            let args_start = self.pos;
             self.skip_whitespace();
+            if self.chars.get(self.pos) != Some(&')') {
+                let remaining: String = self.chars[self.pos..].iter().collect();
+                let Some((rest, parsed_args)) =
+                    crate::parser::parse_regex_call_arg_list(&remaining)
+                else {
+                    self.pos = start;
+                    return None;
+                };
+                let consumed = remaining.chars().count() - rest.chars().count();
+                self.pos += consumed;
+                args = parsed_args;
+                if !args.is_empty() {
+                    arg_source = Some(self.chars[args_start..self.pos].iter().collect());
+                }
+            }
             if !self.consume_if(')') {
                 self.pos = start;
                 return None;
             }
+        } else if self.consume_if(':') {
+            let args_start = self.pos;
             self.skip_whitespace();
+            let mut paren_depth = 0usize;
+            let mut bracket_depth = 0usize;
+            let mut brace_depth = 0usize;
+            let mut angle_depth = 0usize;
+            let mut quote = None;
+            let mut escaped = false;
+            let mut args_end = None;
+            for index in self.pos..self.chars.len() {
+                let ch = self.chars[index];
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if ch == '\\' {
+                    escaped = true;
+                    continue;
+                }
+                if let Some(closer) = quote {
+                    if ch == closer {
+                        quote = None;
+                    }
+                    continue;
+                }
+                match ch {
+                    '\'' | '"' => quote = Some(ch),
+                    '(' => paren_depth += 1,
+                    ')' if paren_depth > 0 => paren_depth -= 1,
+                    '[' => bracket_depth += 1,
+                    ']' if bracket_depth > 0 => bracket_depth -= 1,
+                    '{' => brace_depth += 1,
+                    '}' if brace_depth > 0 => brace_depth -= 1,
+                    '<' => angle_depth += 1,
+                    '>' if angle_depth > 0 => angle_depth -= 1,
+                    '>' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                        args_end = Some(index);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let Some(args_end) = args_end else {
+                self.pos = start;
+                return None;
+            };
+            let remaining: String = self.chars[self.pos..args_end].iter().collect();
+            if !remaining.is_empty() {
+                let Some((rest, parsed_args)) =
+                    crate::parser::parse_regex_call_arg_list(&remaining)
+                else {
+                    self.pos = start;
+                    return None;
+                };
+                if !rest.is_empty() {
+                    self.pos = start;
+                    return None;
+                }
+                args = parsed_args;
+                if !args.is_empty() {
+                    arg_source = Some(self.chars[args_start..args_end].iter().collect());
+                }
+            }
+            self.pos = args_end;
         }
         if !self.consume_if('>') {
             self.pos = start;
             return None;
         }
-        Some(RegexNode::Callable { name })
+        Some(RegexNode::Callable {
+            name,
+            args,
+            arg_source,
+        })
     }
 
     fn parse_code_block(&mut self) -> Option<RegexNode> {
