@@ -11,6 +11,7 @@
   ordinary-array-interpolation slices implemented
   2026-09-12 through
   2026-09-14;
+  direct hash interpolation is reserved by Rakudo and mutsu;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
@@ -869,3 +870,25 @@ the dual-oracle AST shape, sequential field, direct and constructed matching,
 match-time reassignment, and the existing named-lookaround boundary. Hash
 interpolation, code interpolation, and other runtime-valued regex bodies
 remain separate boundaries.
+
+## 31. Hash interpolation remains a reserved boundary (2026-09-14)
+
+Direct hash interpolation is not a missing regex-tree node in the current
+Rakudo language. Rakudo rejects `/%var/` and `m/%var/` with
+`X::Syntax::Reserved`; it also rejects a scalar interpolation whose runtime
+value is a `Hash` with the same exception. The same cases are already pinned
+by `roast/S05-interpolation/regex-in-variable.t` and
+`t/regex/regex-tree-interpolation.t`.
+
+The source-level consequence is deliberate: a direct `%name` spelling must
+not be added to `RegexNode`, and the RakuAST converter must not invent a hash
+interpolation model node for syntax Rakudo rejects. A scalar source such as
+`$hash` may still retain the ordinary `Regex::Interpolation` shape because
+its type is dynamic, but execution must keep the existing runtime reservation
+check rather than snapshotting or lowering the hash as a regex.
+
+This slice therefore changes no parser or matcher behavior. It settles the
+hash-interpolation remainder as an explicit language boundary; if Rakudo
+later assigns semantics to hash interpolation, that syntax needs a fresh
+measurement and a new ADR-0088 slice. The next open dynamic boundary remains
+code interpolation.
