@@ -2411,6 +2411,10 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             fields.push(node_field(Some("block"), block_node(body)?));
             (RakuAstClass::RegexAssertionPredicateBlock, fields)
         }
+        RegexNode::CodeBlock { body, .. } => (
+            RakuAstClass::RegexBlock,
+            vec![node_field(None, block_node(body)?)],
+        ),
         RegexNode::NamedLookaround {
             assertion,
             is_behind,

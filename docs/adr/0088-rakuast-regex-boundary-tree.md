@@ -5,8 +5,9 @@
   scalar-interpolation, named-capture, array-capture, subrule-alias, and
   bare-subrule, anchor, explicit-static-lookaround,
   named-static-lookaround, nested-static-lookaround, escaped-lookaround,
-  lookaround-interpolation, array-lookaround, and named-array-lookaround slices
-  and predicate-block-code-assertion slices implemented 2026-09-12 through
+  lookaround-interpolation, array-lookaround, named-array-lookaround,
+  predicate-block-code-assertion, and plain-code-block slices implemented
+  2026-09-12 through
   2026-09-14;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
@@ -780,3 +781,24 @@ together.
 The focused regression is `t/regex/regex-tree-code-assertion.t`. It pins the
 dual-oracle AST shape, nested lookaround, polarity, side-effect count, and
 constructed-tree EVAL behavior.
+
+## 27. Plain regex code block slice (2026-09-14)
+
+Plain regex code blocks (`{ ... }`) now retain their source structure as
+`RakuAST::Regex::Block`, with a positional `RakuAST::Block` child. The parser
+stores the original block text and parsed statement body in the shared regex
+tree; the read direction converts that body to `Regex::Block`, and the write
+direction lowers a constructed block back to the same tree node.
+
+Execution lowers the node to the existing ADR-0009 inline-code matcher as a
+non-assertion code atom. This preserves the distinction between a block that
+executes as part of a match and a predicate assertion, including nested
+lookarounds, without evaluating code during `.AST` conversion or adding a VM
+fallback. Legacy P5-style quantifier spellings remain on the existing parser
+path. Interpolated blocks (`<{ ... }>`), code interpolation, and other
+runtime-valued regex bodies remain deferred until their source and execution
+semantics can be represented together.
+
+The focused regression is `t/regex/regex-tree-code-block.t`. It pins the
+dual-oracle AST shape, nested lookaround, execution polarity, side-effect
+count, and constructed-tree EVAL behavior.

@@ -62,6 +62,7 @@ pub enum RakuAstClass {
     RegexLiteral,
     RegexQuote,
     RegexWithWhitespace,
+    RegexBlock,
     RegexGroup,
     RegexCapturingGroup,
     RegexNamedCapture,
@@ -282,6 +283,7 @@ impl RakuAstClass {
             RegexLiteral => "RakuAST::Regex::Literal",
             RegexQuote => "RakuAST::Regex::Quote",
             RegexWithWhitespace => "RakuAST::Regex::WithWhitespace",
+            RegexBlock => "RakuAST::Regex::Block",
             RegexGroup => "RakuAST::Regex::Group",
             RegexCapturingGroup => "RakuAST::Regex::CapturingGroup",
             RegexNamedCapture => "RakuAST::Regex::NamedCapture",
@@ -523,7 +525,8 @@ impl RakuAstClass {
             | RegexAssertionInterpolatedVar
             | RegexAssertionPredicateBlock
             | RegexInterpolation
-            | RegexWithWhitespace => &[
+            | RegexWithWhitespace
+            | RegexBlock => &[
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
@@ -683,7 +686,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Assertion::InterpolatedVar"
         | "RakuAST::Regex::Assertion::PredicateBlock"
         | "RakuAST::Regex::Interpolation"
-        | "RakuAST::Regex::WithWhitespace" => &[
+        | "RakuAST::Regex::WithWhitespace"
+        | "RakuAST::Regex::Block" => &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
@@ -769,6 +773,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexLiteral,
     RakuAstClass::RegexQuote,
     RakuAstClass::RegexWithWhitespace,
+    RakuAstClass::RegexBlock,
     RakuAstClass::RegexGroup,
     RakuAstClass::RegexCapturingGroup,
     RakuAstClass::RegexNamedCapture,
@@ -1887,6 +1892,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexLiteral
                     | RakuAstClass::RegexQuote
                     | RakuAstClass::RegexWithWhitespace
+                    | RakuAstClass::RegexBlock
                     | RakuAstClass::RegexGroup
                     | RakuAstClass::RegexCapturingGroup
                     | RakuAstClass::RegexNamedCapture
@@ -2012,6 +2018,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Regex::Group", "new") => RakuAstClass::RegexGroup,
         ("RakuAST::Regex::CapturingGroup", "new") => RakuAstClass::RegexCapturingGroup,
         ("RakuAST::Regex::WithWhitespace", "new") => RakuAstClass::RegexWithWhitespace,
+        ("RakuAST::Regex::Block", "new") => RakuAstClass::RegexBlock,
         ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
         _ => return None,
     })
@@ -2231,6 +2238,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexLiteral
             | RakuAstClass::RegexQuote
             | RakuAstClass::RegexWithWhitespace
+            | RakuAstClass::RegexBlock
             | RakuAstClass::RegexGroup
             | RakuAstClass::RegexCapturingGroup
             | RakuAstClass::RegexNamedCapture

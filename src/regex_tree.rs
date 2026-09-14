@@ -96,6 +96,13 @@ pub(crate) enum RegexNode {
         negated: bool,
         body: Vec<crate::ast::Stmt>,
     },
+    /// `{ ... }` — an inline code block that participates in matching rather
+    /// than asserting zero width. Keep the source spelling and parsed body for
+    /// the same shared RakuAST/execution boundary as predicate assertions.
+    CodeBlock {
+        code: String,
+        body: Vec<crate::ast::Stmt>,
+    },
     Quantified {
         atom: Box<RegexNode>,
         quantifier: RegexQuantifier,
@@ -605,6 +612,17 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                RegexNode::CodeBlock { code, body } => Some(vec![token(
+                    crate::runtime::RegexAtom::CodeAssertion {
+                        code: code.clone(),
+                        negated: false,
+                        is_assertion: false,
+                        body: Some(std::sync::Arc::new(body.clone())),
+                        code_cache_id: crate::value::next_instance_id(),
+                    },
+                    crate::runtime::RegexQuant::One,
+                    ratchet,
+                )]),
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -681,7 +699,8 @@ impl RegexNode {
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
-            | Self::CodeAssertion { .. } => {}
+            | Self::CodeAssertion { .. }
+            | Self::CodeBlock { .. } => {}
             Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -698,7 +717,7 @@ impl RegexNode {
         match self {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
-            Self::CodeAssertion { .. } => false,
+            Self::CodeAssertion { .. } | Self::CodeBlock { .. } => false,
             Self::Sequence(nodes)
             | Self::Alternation(nodes)
             | Self::SequentialAlternation(nodes) => {
@@ -748,6 +767,7 @@ impl RegexNode {
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::CodeAssertion { .. }
+            | Self::CodeBlock { .. }
             | Self::CharClassDigit => false,
         }
     }
@@ -846,6 +866,7 @@ impl RegexNode {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}{{{code}}}>")
             }
+            Self::CodeBlock { code, .. } => format!("{{{code}}}"),
             Self::Quantified { atom, quantifier } => {
                 let suffix = match quantifier {
                     RegexQuantifier::ZeroOrMore => '*',
@@ -1089,6 +1110,7 @@ impl Parser {
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
             '<' => self.parse_lookaround().or_else(|| self.parse_subrule()),
+            '{' => self.parse_code_block(),
             _ => self.parse_literal(),
         }
     }
@@ -1119,10 +1141,9 @@ impl Parser {
             _ => (false, false, true),
         };
 
-        // Predicate blocks are the one code-bearing form in this slice. They
-        // are source-representable in RakuAST and the existing matcher already
-        // evaluates them inline; interpolated blocks (`<{ ... }>`), plain code
-        // blocks, and code interpolation remain outside this boundary.
+        // Predicate blocks are source-representable in RakuAST and the
+        // existing matcher already evaluates them inline. Interpolated blocks
+        // (`<{ ... }>`), and code interpolation remain outside this boundary.
         if explicit && self.chars.get(self.pos) == Some(&'{') {
             return self.parse_code_assertion(negated);
         }
@@ -1235,6 +1256,38 @@ impl Parser {
 
     fn parse_code_assertion(&mut self, negated: bool) -> Option<RegexNode> {
         let start = self.pos;
+        let (code, body) = self.parse_code_body()?;
+        if self.chars.get(self.pos) != Some(&'>') {
+            self.pos = start;
+            return None;
+        }
+        self.pos += 1; // '>'
+        Some(RegexNode::CodeAssertion {
+            code,
+            negated,
+            body,
+        })
+    }
+
+    fn parse_code_block(&mut self) -> Option<RegexNode> {
+        let start = self.pos;
+        let (code, body) = self.parse_code_body()?;
+        // `{2,3}` and `{2,}` are legacy P5-style quantifiers. Leave those on
+        // the existing parser path rather than interpreting them as code.
+        let trimmed = code.trim();
+        if let Some((lower, upper)) = trimmed.split_once(',')
+            && !lower.trim().is_empty()
+            && lower.trim().chars().all(|ch| ch.is_ascii_digit())
+            && (upper.trim().is_empty() || upper.trim().chars().all(|ch| ch.is_ascii_digit()))
+        {
+            self.pos = start;
+            return None;
+        }
+        Some(RegexNode::CodeBlock { code, body })
+    }
+
+    fn parse_code_body(&mut self) -> Option<(String, Vec<crate::ast::Stmt>)> {
+        let start = self.pos;
         self.pos += 1; // '{'
         let body_start = self.pos;
         let mut depth = 1usize;
@@ -1278,17 +1331,11 @@ impl Parser {
         }
         let code: String = self.chars[body_start..self.pos].iter().collect();
         self.pos += 1; // '}'
-        if self.chars.get(self.pos) != Some(&'>') {
+        let Ok((body, _)) = crate::parser::parse_fragment(&code) else {
             self.pos = start;
             return None;
-        }
-        self.pos += 1; // '>'
-        let (body, _) = crate::parser::parse_fragment(&code).ok()?;
-        Some(RegexNode::CodeAssertion {
-            code,
-            negated,
-            body,
-        })
+        };
+        Some((code, body))
     }
 
     fn parse_quote(&mut self, quote: char) -> Option<RegexNode> {
@@ -1558,6 +1605,7 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::ArrayLookaround { .. }
         | RegexNode::CodeAssertion { .. }
+        | RegexNode::CodeBlock { .. }
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
@@ -1577,7 +1625,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
         RegexNode::Interpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
-        | RegexNode::CodeAssertion { .. } => true,
+        | RegexNode::CodeAssertion { .. }
+        | RegexNode::CodeBlock { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::Subrule { .. }
