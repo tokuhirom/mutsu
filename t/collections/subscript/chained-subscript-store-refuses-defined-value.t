@@ -1,6 +1,6 @@
 use Test;
 
-plan 23;
+plan 29;
 
 # A chained subscript store autovivifies only through an UNDEFINED slot.
 # A slot already holding a defined value with no writable container behind it
@@ -135,4 +135,39 @@ plan 23;
     @n[0] = eager gather { take-rw @spot[1] };
     @n[0][0] = 999;
     is @spot[1], 999, 'a List holding a live container is still written through';
+}
+
+# --- a List holding BARE (non-container) elements: refused, naming the List
+# itself, not the reached element (#7556, the bare-valued-List row) ---------
+
+{
+    my @a = (1, 2, 3), 4;
+    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
+        message => 'Cannot modify an immutable List ((1 2 3))',
+        'a List of bare elements refuses a store, naming the whole List';
+    is-deeply @a[0], (1, 2, 3), 'and the List is untouched';
+}
+
+{
+    my @a = (1, 2, 3), 4;
+    throws-like { @a[0][99] = 9 }, X::Assignment::RO,
+        message => 'Cannot modify an immutable List ((1 2 3))',
+        'an out-of-range inner index refuses the same way';
+}
+
+{
+    # The 3+ level walk's twin of the 2-level case above.
+    my %h = a => [(1, 2), 3];
+    throws-like { %h<a>[0][0] = 9 }, X::Assignment::RO,
+        message => 'Cannot modify an immutable List ((1 2))',
+        'the deep-nested walk refuses a bare List element too';
+    is-deeply %h<a>[0], (1, 2), 'and leaves it alone';
+}
+
+{
+    # A real (mutable) Array element store must not be affected by the List
+    # check above -- only ArrayKind::List/ItemList are refused.
+    my @c = [1, 2], [3, 4];
+    @c[0][0] = 99;
+    is @c[0][0], 99, 'a real Array element is still written through';
 }

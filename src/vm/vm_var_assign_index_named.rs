@@ -3747,9 +3747,41 @@ impl Interpreter {
                             &outer_key,
                             val.clone(),
                         )?;
-                    } else if let Some(r) =
-                        arr[inner_i].with_array_mut(|inner_arr, _| -> Result<(), RuntimeError> {
+                    } else if let Some(r) = {
+                        // #7556 C2's bare-valued-List row: a `List`/`ItemList`
+                        // (`@a[0]` reached via `@a = (1,2), 3`) is not a
+                        // container of its own, so a store into one of its
+                        // BARE elements is refused naming the List itself
+                        // (rakudo: "Cannot modify an immutable List ((1 2))",
+                        // unconditionally on the List's own gist -- not the
+                        // element, and not affected by an out-of-range index).
+                        // An element a producer already promoted to a shared
+                        // cell (`take-rw @spot[1]` landing in a one-element
+                        // List) is untouched by this and keeps writing
+                        // through, which is why the refusal cannot be decided
+                        // on the outer ArrayKind alone at the DESCENT point
+                        // (`subscript_descent_refusal_at` above deliberately
+                        // treats every ArrayKind as descendable) -- only here,
+                        // once the specific reached element's own shape is
+                        // known.
+                        let list_type_name = crate::runtime::utils::value_type_name(&arr[inner_i]);
+                        let list_gist = crate::runtime::utils::gist_value(&arr[inner_i]);
+                        arr[inner_i].with_array_mut(|inner_arr, kind| -> Result<(), RuntimeError> {
                             if let Ok(j) = outer_key.parse::<usize>() {
+                                if matches!(
+                                    *kind,
+                                    crate::value::ArrayKind::List
+                                        | crate::value::ArrayKind::ItemList
+                                ) && !inner_arr
+                                    .items()
+                                    .get(j)
+                                    .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                                {
+                                    return Err(RuntimeError::assignment_ro_typename(
+                                        &list_type_name,
+                                        &list_gist,
+                                    ));
+                                }
                                 // Container identity (§3): write through a
                                 // shared inner node (a `ContainerRef` cell
                                 // alias, a by-value holder).
@@ -3759,7 +3791,7 @@ impl Interpreter {
                             }
                             Ok(())
                         })
-                    {
+                    } {
                         r?;
                     } else {
                         let _ = arr[inner_i].with_hash_mut(|inner_hash| {
@@ -4872,18 +4904,42 @@ impl Interpreter {
                     .unwrap_or_else(|| val.clone());
                 unsafe {
                     let cur = &mut *current;
-                    if let Some(r) = cur.with_array_mut(|arr_arc, _| -> Result<(), RuntimeError> {
-                        if let Ok(i) = key.parse::<usize>() {
-                            let arr = crate::value::gc_data_mut(arr_arc);
-                            Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
-                            if bind_cell.is_some() {
-                                arr[i] = leaf_val.clone();
-                            } else {
-                                Value::assign_element_slot(&mut arr[i], leaf_val.clone());
+                    // #7556 C2's bare-valued-List row (3+ level chain twin of
+                    // the 2-level fix above): `cur` here is always an already-
+                    // reached intermediate value, never the untouched root
+                    // variable, so refusing a plain (non-`:=`) store into one
+                    // of a `List`/`ItemList`'s bare elements is safe here too.
+                    let list_type_name = crate::runtime::utils::value_type_name(cur);
+                    let list_gist = crate::runtime::utils::gist_value(cur);
+                    if let Some(r) =
+                        cur.with_array_mut(|arr_arc, kind| -> Result<(), RuntimeError> {
+                            if let Ok(i) = key.parse::<usize>() {
+                                if bind_cell.is_none()
+                                    && matches!(
+                                        *kind,
+                                        crate::value::ArrayKind::List
+                                            | crate::value::ArrayKind::ItemList
+                                    )
+                                    && !arr_arc.items().get(i).is_some_and(|v| {
+                                        matches!(v.view(), ValueView::ContainerRef(_))
+                                    })
+                                {
+                                    return Err(RuntimeError::assignment_ro_typename(
+                                        &list_type_name,
+                                        &list_gist,
+                                    ));
+                                }
+                                let arr = crate::value::gc_data_mut(arr_arc);
+                                Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
+                                if bind_cell.is_some() {
+                                    arr[i] = leaf_val.clone();
+                                } else {
+                                    Value::assign_element_slot(&mut arr[i], leaf_val.clone());
+                                }
                             }
-                        }
-                        Ok(())
-                    }) {
+                            Ok(())
+                        })
+                    {
                         r?;
                     } else if cur
                         .with_hash_mut(|hash_arc| {
