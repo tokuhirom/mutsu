@@ -7,7 +7,7 @@ use Test;
 # Regex::Assertion::InterpolatedBlock while execution continues through the
 # existing closure-interpolation matcher.
 
-plan 11;
+plan 19;
 
 is Q[/foo <{ "bar" }>/].AST.gist, q:to/END/.chomp, 'an interpolated block retains its RakuAST shape';
 RakuAST::StatementList.new(
@@ -77,3 +77,29 @@ my $constructed-block = RakuAST::Regex::Assertion::InterpolatedBlock.new(
 );
 ok $constructed-block ~~ RakuAST::Regex::Assertion::InterpolatedBlock,
     'the constructor accepts a block and sequential field';
+
+my $sequential = Q[/foo || <{ "bar" }>/].AST.statements[0].expression.body;
+ok $sequential ~~ RakuAST::Regex::SequentialAlternation,
+    'a sequential interpolated block retains the sequential alternation';
+my $sequential-block = $sequential.branches[1];
+ok $sequential-block ~~ RakuAST::Regex::Assertion::InterpolatedBlock,
+    'the sequential branch retains its interpolated-block node';
+is $sequential-block.sequential, True,
+    'the interpolated block records that it follows a sequential separator';
+
+my $sequential-value = 'bar';
+my $sequential-rx = /foo || <{ $sequential-value }>/;
+my $sequential-match = 'bar' ~~ $sequential-rx;
+ok $sequential-match,
+    'a sequential interpolated block matches after the earlier branch fails';
+is ~$sequential-match, 'bar',
+    'the sequential interpolated branch supplies the matched value';
+$sequential-value = 'baz';
+ok 'baz' ~~ $sequential-rx,
+    'a sequential interpolated block reads its lexical at match time';
+nok 'bar' ~~ $sequential-rx,
+    'a sequential interpolated block does not retain a stale lexical value';
+
+my $constructed-sequential = EVAL(Q[/foo || <{ $sequential-value }>/].AST);
+ok 'baz' ~~ $constructed-sequential,
+    'a constructed sequential interpolated tree uses the existing matcher';

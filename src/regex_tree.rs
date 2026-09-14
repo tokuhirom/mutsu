@@ -631,11 +631,7 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                RegexNode::InterpolatedBlock {
-                    code,
-                    body,
-                    sequential,
-                } if !sequential => Some(vec![token(
+                RegexNode::InterpolatedBlock { code, body, .. } => Some(vec![token(
                     crate::runtime::RegexAtom::ClosureInterpolation {
                         code: code.clone(),
                         body: Some(std::sync::Arc::new(body.clone())),
@@ -643,7 +639,6 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                RegexNode::InterpolatedBlock { .. } => None,
                 RegexNode::Quantified { atom, quantifier } => {
                     let quant = match quantifier {
                         RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
@@ -1135,7 +1130,9 @@ impl Parser {
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
             '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
-            '<' => self.parse_lookaround().or_else(|| self.parse_subrule()),
+            '<' => self
+                .parse_lookaround(sequential_interpolation)
+                .or_else(|| self.parse_subrule()),
             '{' => self.parse_code_block(),
             _ => self.parse_literal(),
         }
@@ -1148,7 +1145,7 @@ impl Parser {
     /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
     /// characters and ordinary scalar interpolations are accepted when the
     /// nested tree already has a source and execution representation.
-    fn parse_lookaround(&mut self) -> Option<RegexNode> {
+    fn parse_lookaround(&mut self, sequential_interpolation: bool) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1; // '<'
         let (negated, explicit, capturing) = match self.chars.get(self.pos).copied() {
@@ -1178,7 +1175,7 @@ impl Parser {
         // as a regex. `<!{ ... }>` above is the separate predicate assertion
         // form and must remain zero-width.
         if !explicit && self.chars.get(self.pos) == Some(&'{') {
-            return self.parse_code_interpolation();
+            return self.parse_code_interpolation(sequential_interpolation);
         }
 
         // `<?@name>` and `<!@name>` are the direct array-interpolation
@@ -1302,7 +1299,7 @@ impl Parser {
         })
     }
 
-    fn parse_code_interpolation(&mut self) -> Option<RegexNode> {
+    fn parse_code_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         let start = self.pos;
         let (code, body) = self.parse_code_body()?;
         if self.chars.get(self.pos) != Some(&'>') {
@@ -1313,7 +1310,7 @@ impl Parser {
         Some(RegexNode::InterpolatedBlock {
             code,
             body,
-            sequential: false,
+            sequential,
         })
     }
 
