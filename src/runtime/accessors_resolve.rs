@@ -281,6 +281,35 @@ impl Interpreter {
             .map(|i| i as u64)
     }
 
+    /// Build a first-class Sub for a native routine that has no registry
+    /// FunctionDef. Native functions normally enter through name dispatch, but
+    /// Raku exposes the same routines as code values (`&sleep`,
+    /// `&term:<now>`, ...), including for `.wrap`/`.unwrap`.
+    fn native_callable_sub(&self, value_name: &str, dispatch_name: &str) -> Value {
+        let mut env = self.env.clone();
+        env.insert(
+            "__mutsu_routine_name".to_string(),
+            Value::str(dispatch_name.to_string()),
+        );
+        if value_name != dispatch_name {
+            // Term code references retain their introspection name while their
+            // calls use the ordinary native function name (`now`/`time`).
+            env.insert(
+                "__mutsu_wrap_name".to_string(),
+                Value::str(dispatch_name.to_string()),
+            );
+        }
+        Value::make_sub(
+            Symbol::intern("GLOBAL"),
+            Symbol::intern(value_name),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            env,
+        )
+    }
+
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
         // Handle package-qualified names: strip pseudo-package prefixes and
         // resolve the bare function name.
@@ -461,6 +490,20 @@ impl Interpreter {
                     None
                 }
             });
+        if def.is_none() && core_visible {
+            match lookup_name {
+                "sleep" | "now" | "time" => {
+                    return self.native_callable_sub(lookup_name, lookup_name);
+                }
+                "term:<now>" => {
+                    return self.native_callable_sub("term:<now>", "now");
+                }
+                "term:<time>" => {
+                    return self.native_callable_sub("term:<time>", "time");
+                }
+                _ => {}
+            }
+        }
         // Whether concrete multi-candidate bodies exist for this name,
         // regardless of whether it also has an explicit `proto sub`. This
         // must use the normal lexical package search, rather than checking

@@ -909,7 +909,11 @@ impl Interpreter {
             // block), the old wrap chain should be cleared.  We detect redefinition by
             // checking the __mutsu_callable_id for this function name in the env: if it
             // differs from what was stored at first-wrap time, the sub was redefined.
-            let func_name = data.name.resolve();
+            let func_name = data
+                .env
+                .get("__mutsu_wrap_name")
+                .map(Value::to_string_value)
+                .unwrap_or_else(|| data.name.resolve().to_string());
             let current_callable_id = if !func_name.is_empty() {
                 let key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), &func_name);
                 self.env
@@ -1038,7 +1042,11 @@ impl Interpreter {
                 );
             }
             // Look up original sub_id by name, since &foo creates a fresh Sub each time
-            let func_name = data.name.resolve();
+            let func_name = data
+                .env
+                .get("__mutsu_wrap_name")
+                .map(Value::to_string_value)
+                .unwrap_or_else(|| data.name.resolve().to_string());
             let sub_id = self
                 .wrap_sub_names
                 .iter()

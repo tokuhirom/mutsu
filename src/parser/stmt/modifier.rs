@@ -292,6 +292,13 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
                 None => false,
             }
         }
+        // Index assignment preserves the assigned expression as its final
+        // source term. This matters for `%hash<key> = &routine.wrap: { ... }`
+        // followed by a prefix statement on the next line: the assignment's
+        // closing block is the statement terminator, just like a direct call's.
+        Expr::IndexAssign { value, .. } | Expr::MultiDimIndexAssign { value, .. } => {
+            expr_ends_with_block(value)
+        }
         _ => false,
     }
 }
@@ -304,7 +311,7 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
 /// postfix modifier. Without this, `my @a = gather { ... }\nif COND { ... }`
 /// mis-parses `if COND` as a modifier (rewriting the decl to run its init only
 /// when COND) and turns the `{ ... }` into a separate bare block.
-fn stmt_ends_with_block(stmt: &Stmt) -> bool {
+pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e) => expr_ends_with_block(e),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_ends_with_block(expr),

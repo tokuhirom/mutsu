@@ -470,7 +470,14 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             }
         }
         // :name followed by ( or [ or nothing
-        if let Ok((r, name)) = ident(r) {
+        // `:name => value` is a positional Pair whose key is the boolean
+        // colonpair `:name`, not the named argument `:name => value`.
+        // Leave this spelling to the expression parser below; consuming only
+        // `:name` as a named argument strands the following fat arrow in a
+        // statement-level/listop call (e.g. Test::Time's throws-like call).
+        if let Ok((r, name)) = ident(r)
+            && !r.trim_start().starts_with("=>")
+        {
             // Check for statement modifier keywords - don't parse as named arg
             if matches!(
                 name.as_str(),
