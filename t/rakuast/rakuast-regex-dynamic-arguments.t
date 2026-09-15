@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 7;
+plan 13;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -33,3 +33,28 @@ ok GDynamicMethodArgument.parse('A').defined,
 $value = 'b';
 ok GDynamicMethodArgument.parse('B').defined,
     'the dynamic method-call argument observes reassignment at match time';
+
+my @values = <a b>;
+my $index = 0;
+my $indexed_ast = Q[/<word(@values[$index])>/].AST;
+my $indexed_gist = $indexed_ast.gist;
+ok $indexed_gist.contains('RakuAST::Postcircumfix::ArrayIndex'),
+    'an indexed argument keeps its array-index postfix';
+ok $indexed_gist.contains('RakuAST::Var::Lexical.new("\\@values")'),
+    'the indexed argument keeps its array target';
+ok $indexed_gist.contains('RakuAST::Var::Lexical.new("\\$index")'),
+    'the indexed argument keeps its dynamic index expression';
+
+my $indexed_regex = EVAL($indexed_ast);
+ok $indexed_regex ~~ Regex,
+    'a RakuAST regex with an indexed argument lowers successfully';
+
+grammar GDynamicIndexedArgument {
+    token TOP { <word(@values[$index])> }
+    token word($expected) { $expected }
+}
+ok GDynamicIndexedArgument.parse('a').defined,
+    'an indexed argument reaches the subrule matcher';
+$index = 1;
+ok GDynamicIndexedArgument.parse('b').defined,
+    'the indexed argument observes index reassignment at match time';

@@ -11,7 +11,7 @@
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
   angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
-  argumented-subrule-alias slices implemented
+  argumented-subrule-alias, and indexed-dynamic-argument slices implemented
   2026-09-12 through
   2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1069,11 +1069,28 @@ or quoted method name. The renderer recursively accepts the same argument
 expression subset already supported by `expression_source`, and emits a
 parenthesized method call so the established match-time regex argument
 evaluator can execute it. No method is invoked while converting `.AST`, and no
-new matcher or VM path is introduced. Array indexing, ternaries, modified or
-quoted method calls, and other dynamic argument expressions remain explicit
-follow-up boundaries.
+new matcher or VM path is introduced. Ternaries, modified or quoted method
+calls, and other dynamic argument expressions remain explicit follow-up
+boundaries.
 
 The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`. It pins the method-call AST
 nodes, RakuAST EVAL lowering, direct grammar matching, and lexical
 reassignment between matches.
+
+## 40. Indexed dynamic argument slice (2026-09-15)
+
+Ordinary indexed expressions in argumented subrules, such as
+`<word(@values[$index])>`, now lower from their existing
+`ApplyPostfix`/`Postcircumfix::ArrayIndex` RakuAST shape back to the regex
+parser. The expression renderer recursively emits the target and index using
+the positional bracket spelling, leaving evaluation to the established
+match-time subrule-argument path. Consequently both the array and the index
+continue to observe lexical reassignment between matches.
+
+No index is evaluated during `.AST` conversion or RakuAST lowering, and this
+adds no matcher or VM path. Ternaries, modified or quoted method calls, and
+other dynamic argument expressions remain separate boundaries. The focused
+regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the index
+node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic index
+reassignment.

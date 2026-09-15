@@ -1174,6 +1174,21 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             name.resolve(),
             join_args(args)?
         )),
+        // Argumented subrules retain their expressions structurally.  When a
+        // constructed RakuAST tree returns through the existing regex parser,
+        // preserve an ordinary subscript rather than rejecting the whole
+        // assertion at the source-rendering boundary.
+        crate::ast::Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Some(format!(
+            "{}{}{}{}",
+            expression_source(target)?,
+            if *is_positional { '[' } else { '{' },
+            expression_source(index)?,
+            if *is_positional { ']' } else { '}' },
+        )),
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
