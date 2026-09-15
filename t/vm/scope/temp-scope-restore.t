@@ -1,6 +1,6 @@
 use Test;
 
-plan 11;
+plan 12;
 
 # `temp` saves a variable's value and restores it when the enclosing scope
 # exits. These cover the cases that previously failed: restoration on *sub*
@@ -69,5 +69,16 @@ plan 11;
 # Temping a never-declared dynamic variable throws.
 throws-like { temp $*undeclared-dyn = 42 }, X::Dynamic::NotFound,
     'temp on a non-existent dynamic throws X::Dynamic::NotFound';
+
+# `$*OUT` has `$*OUT` and `*OUT` environment aliases.  `temp` must restore
+# both after a redirected handle closes (App::ByWord 0.0.5).
+subtest 'temp $*OUT restores after a closed redirect', {
+    my $null = '/dev/null'.IO.open(:w);
+    lives-ok({
+        temp $*OUT = $null;
+        say 'hidden';
+    }, 'redirected output completes');
+    $null.close;
+}
 
 # vim: expandtab shiftwidth=4
