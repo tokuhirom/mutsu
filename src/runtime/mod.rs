@@ -3867,12 +3867,14 @@ pub struct Interpreter {
     /// the same base name, so a candidate gather that used to iterate the whole
     /// functions map — several times per call, formatting a prefix `String` per
     /// package and resolving every key back to a `&str` — iterates a handful of
-    /// keys instead. Filled lazily per base name and invalidated by
-    /// `fn_resolve_gen`, like the other generation-guarded caches (and audited
+    /// keys instead. Filled lazily per base name.
+    ///
+    /// Evicted per base name by `invalidate_fn_resolution_for_keys` (and
+    /// wholesale by `invalidate_fn_resolution`), not polled against
+    /// `fn_resolve_gen` like the other five dispatch caches — and audited
     /// against a fresh scan in debug builds, so a registry mutation that misses
-    /// its generation bump fails CI rather than silently mis-dispatching).
+    /// its invalidation fails CI rather than silently mis-dispatching.
     pub(crate) fn_keys_by_base: rustc_hash::FxHashMap<Symbol, std::sync::Arc<[Symbol]>>,
-    pub(crate) fn_keys_by_base_gen: u64,
     /// Memo for [`Interpreter::bare_name_packages_syms`], keyed by the only two
     /// inputs that list is derived from: the current package and the innermost
     /// routine frame's lexical package.

@@ -35,7 +35,7 @@ pub(crate) fn function_key_strip_arity_suffix(key: &str) -> &str {
 /// `infix:</>`) is never digit-followed, so it survives. The same extraction
 /// is applied to both registry keys and query names, so any exotic spelling
 /// degrades to a consistent (never wrong) bucket.
-fn function_key_base_name(key: &str) -> &str {
+pub(crate) fn function_key_base_name(key: &str) -> &str {
     let head = function_key_strip_arity_suffix(key);
     // A hand-rolled reverse scan for `::`: `str::rfind` builds a two-way
     // searcher per call, which is most of what this function cost on the
@@ -145,8 +145,15 @@ impl Interpreter {
     /// instead of the whole functions map. An empty slice is also the negative
     /// gate [`Self::fn_base_name_registered`] answers with.
     ///
-    /// Filled lazily per base name and dropped wholesale when `fn_resolve_gen`
-    /// moves, which every function registration/removal bumps.
+    /// Filled lazily per base name and evicted **per base name** by
+    /// [`Interpreter::invalidate_fn_resolution_for_keys`], or wholesale by
+    /// [`Interpreter::invalidate_fn_resolution`] when the mutating site cannot
+    /// say which keys it touched.
+    ///
+    /// Invalidation is pushed rather than polled: this used to compare its own
+    /// `fn_keys_by_base_gen` against `fn_resolve_gen` and `clear()` on
+    /// mismatch, which meant one `my sub` re-registration threw away the index
+    /// for every unrelated base name too (#8314).
     pub(crate) fn fn_keys_for_base(&mut self, name: &str) -> std::sync::Arc<[Symbol]> {
         let base = function_key_base_name(name);
         self.fn_keys_for_base_inner(base, Symbol::intern(base))
@@ -180,11 +187,6 @@ impl Interpreter {
     /// same already-reduced base name in its two forms.
     fn fn_keys_for_base_inner(&mut self, base: &str, base_sym: Symbol) -> std::sync::Arc<[Symbol]> {
         crate::vm::vm_stats::record_fn_keys_base_lookup();
-        if self.fn_keys_by_base_gen != self.fn_resolve_gen {
-            crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
-            self.fn_keys_by_base.clear();
-            self.fn_keys_by_base_gen = self.fn_resolve_gen;
-        }
         if let Some(cached) = self.fn_keys_by_base.get(&base_sym) {
             // Staleness is audited once per resolution in
             // `fn_base_name_registered`, not here — see the note there.
@@ -785,6 +787,7 @@ impl Interpreter {
 #[cfg(test)]
 mod base_name_tests {
     use super::function_key_base_name;
+    use crate::symbol::Symbol;
 
     /// The hand-rolled `::` scan must agree with the `rfind` it replaced on
     /// every key shape the registry produces: bare, package-qualified, with
@@ -802,5 +805,61 @@ mod base_name_tests {
         assert_eq!(function_key_base_name("::"), "");
         assert_eq!(function_key_base_name(""), "");
         assert_eq!(function_key_base_name("a"), "a");
+    }
+
+    /// The base-name index survives a registration that touched a DIFFERENT
+    /// base name, and does not survive one that touched its own.
+    ///
+    /// This is the contract #8314 introduced: `fn_keys_by_base` is evicted per
+    /// base name by `invalidate_fn_resolution_for_keys`, not dropped wholesale
+    /// every time `fn_resolve_gen` moves. A routine that declares an inner
+    /// `my sub` installs it on entry and gives it back on exit, twice per
+    /// *call*, and the whole index used to go with it.
+    ///
+    /// The other direction — that a base name whose keys DID change is never
+    /// served stale — is pinned by the debug-only audit in
+    /// `fn_base_name_registered`, which re-scans the registry on every
+    /// resolution and runs over the entire `prove t/` suite.
+    #[test]
+    fn base_name_index_survives_an_unrelated_registration() {
+        let mut i = crate::runtime::Interpreter::new();
+        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
+            .expect("setup program runs");
+
+        // Fill the index for both base names.
+        let alpha_before = i.fn_keys_for_base("alpha");
+        let beta_before = i.fn_keys_for_base("beta");
+        assert!(!alpha_before.is_empty(), "alpha is registered");
+        assert!(!beta_before.is_empty(), "beta is registered");
+        assert!(i.fn_keys_by_base.contains_key(&Symbol::intern("alpha")));
+        assert!(i.fn_keys_by_base.contains_key(&Symbol::intern("beta")));
+
+        // A registration that names only `alpha` evicts only `alpha`.
+        let gen_before = i.fn_resolve_gen;
+        i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::alpha/0")]);
+        assert!(
+            i.fn_resolve_gen > gen_before,
+            "the five generation-guarded caches still see the change"
+        );
+        assert!(
+            !i.fn_keys_by_base.contains_key(&Symbol::intern("alpha")),
+            "the named base name is evicted"
+        );
+        assert!(
+            i.fn_keys_by_base.contains_key(&Symbol::intern("beta")),
+            "an unrelated base name survives"
+        );
+
+        // The wholesale form still drops everything, for a mutating site that
+        // cannot say which keys it touched.
+        i.invalidate_fn_resolution();
+        assert!(
+            i.fn_keys_by_base.is_empty(),
+            "the wholesale form clears the index"
+        );
+
+        // Refilling answers the same key sets as before the eviction.
+        assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha_before);
+        assert_eq!(&*i.fn_keys_for_base("beta"), &*beta_before);
     }
 }
