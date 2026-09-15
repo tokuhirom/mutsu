@@ -191,6 +191,37 @@ Concretely:
   idle wait — §3.3/§3.4 are the review checklist for every pool PR, and both have
   deterministic detectors (`MUTSU_GC_VERIFY`, STW timeout logging).
 
+### 5.1 Blocking `await` is not just a perf tax — it can also be a correctness bug
+
+[#8380](https://github.com/tokuhirom/mutsu/issues/8380) (2026-09-14, the `Test::Time`/
+`Test::Scheduler` ecosystem deadlock) is a concrete case where §2's fork matters for
+*correctness*, not only thread count. `Test::Scheduler.advance-by` relies on `.keep()`ing an
+awaited `Promise` deterministically driving the awaiter's continuation forward — up through its
+*next* blocking point — before `.keep()`'s caller (here, `!run-due`'s `await @working`)
+proceeds to its own next step. Real Rakudo's continuation-based `await` gives that guarantee for
+free. mutsu's blocking-condvar `await` does not: the woken worker thread resumes on the OS
+scheduler's own timing, asynchronously and unordered with respect to the keeping thread's
+subsequent code.
+
+Confirmed with `rust-gdb -batch` thread dumps plus an instrumented local copy of
+`Test::Scheduler.cue`/`advance-by` (see the issue for the full trace): `$*SCHEDULER.advance-by`
+routinely returns having found nothing due, races ahead to the next `advance-by` call, and only
+*then* observes the FutureEvent that the resumed `start`-block thread was still in the middle of
+registering — computed against a `$!virtual-time` that has since moved on. With enough slack
+between the total `advance-by` budget and the sleep delays the race resolves by luck (as in the
+issue's own minimal reduction); with a tighter budget (the actual `t/01-tdd.t` subtest) the
+straggling registration lands strictly after the last `advance-by` call, so the corresponding
+`sleep` never wakes and both the `start`-block worker and the `await`ing main thread block
+forever — a genuine deadlock, not a slowdown.
+
+This does not change §3's decision (fork (a) stays; a virtual-time test scheduler is not itself
+a reason to take on a VM-scale continuation rework) but it upgrades fork (b)'s cost-benefit: the
+"if that shape ever matters" in the bullet above is no longer hypothetical-perf-only. Any user
+code that assumes `await`'s continuation runs synchronously-enough to be observed by the thread
+that kept the Promise (schedulers, cooperative test harnesses, anything built like
+`Test::Scheduler`) is exposed to this class of race, independent of how large the worker pool
+is allowed to grow.
+
 ## 6. Implementation status
 
 - [x] Preliminary slice: reclassify the 5 no-user-code sites to `spawn_gc_helper_thread`.
