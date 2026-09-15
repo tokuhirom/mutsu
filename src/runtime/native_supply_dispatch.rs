@@ -477,6 +477,36 @@ impl Interpreter {
                 let chomp = Self::named_value(&args, "chomp")
                     .map(|v| v.truthy())
                     .unwrap_or(true);
+                // A live (Supplier-backed) source gets a real pipeline stage:
+                // its own derived supplier, fed by a lines-transform tap on
+                // the source, exactly as `map`/`grep`/`flat` do. It used to
+                // keep the SOURCE's supplier_id and ride an `is_lines`
+                // marker attribute consumed at tap time, which made `lines`
+                // uncomposable in both directions (issue #8474). A
+                // channel-backed source (Proc::Async output, no real
+                // `supplier_id`) keeps the existing marker-forwarding
+                // mechanism below -- that is a different, unrelated live
+                // path (see the `head` combinator's `has_channel` arm for
+                // the twin case).
+                if let Some(source_sid) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_lines_transform_tap(source_sid, downstream_sid, chomp);
+
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // rakudo answers False for `.lines.live` even over a live
+                    // source (unlike `.map`/`.grep`, which stay live) --
+                    // matches `produce`/`batch`'s own `live: FALSE`.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
                 let source_values = match attributes.get("values").map(Value::view) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
@@ -699,12 +729,31 @@ impl Interpreter {
                         None => 1,
                     }
                 };
-                if has_supplier {
-                    // For live (supplier-backed) supplies, create a transformed supply
-                    // that preserves the supplier connection but limits emissions.
-                    let mut new_attrs = attributes.clone();
-                    new_attrs.insert("head_limit".to_string(), Value::int(count as i64));
+                if let Some(source_sid) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    // A live (Supplier-backed) source gets a real pipeline
+                    // stage: its own derived supplier, fed by a head tap on
+                    // the source, exactly as `map`/`grep`/`flat` do. It used
+                    // to keep the SOURCE's supplier_id and ride a
+                    // `head_limit` attribute consumed at tap time, which made
+                    // `head` uncomposable in both directions -- the next
+                    // combinator registered on the shared id and dropped the
+                    // limit entirely (issue #8474).
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_head_tap(source_sid, downstream_sid, count);
+
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // rakudo answers False for `.head(...).live` even over a
+                    // live source (unlike `.map`/`.grep`) -- matches
+                    // `produce`/`batch`'s own `live: FALSE`.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
                     Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
                 } else if has_channel {
                     // Same shape as `.lines`: a derived Supply with a fresh
@@ -953,6 +1002,27 @@ impl Interpreter {
                 Ok(self.make_supply_from_values(combed, attributes))
             }
             "words" => {
+                // Live (Supplier-backed) source: real pipeline stage, same
+                // shape as `lines` above (issue #8474). A channel-backed
+                // source keeps the existing marker-forwarding path below.
+                if let Some(source_sid) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_words_transform_tap(source_sid, downstream_sid);
+
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // rakudo answers False for `.words.live` -- see the
+                    // `.lines` comment above.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
                 let source_values = match attributes.get("values").map(Value::view) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),

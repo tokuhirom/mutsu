@@ -431,31 +431,35 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let interval = args.first().map(Value::to_f64).unwrap_or(0.0).max(0.0);
 
-        if let Some(ValueView::Int(supplier_id)) = attributes.get("supplier_id").map(Value::view)
-            && supplier_id > 0
+        // A live (Supplier-backed) source gets a real pipeline stage: its
+        // own derived supplier, fed by an elems-transform tap on the
+        // source, exactly as `map`/`grep`/`flat` do. It used to keep the
+        // SOURCE's supplier_id and ride an `elems_filter` marker attribute
+        // consumed at tap time, which made `elems` uncomposable in both
+        // directions (issue #8474). `initial_count` still seeds the
+        // running count from whatever the source already emitted before
+        // this tap registered.
+        if let Some(source_sid) = crate::runtime::native_methods::supplier_id_from_attrs(attributes)
         {
-            let (emitted, done, quit_reason) =
-                crate::runtime::native_methods::supplier_snapshot(supplier_id as u64);
+            let (emitted, ..) = crate::runtime::native_methods::supplier_snapshot(source_sid);
+            let downstream_sid = crate::runtime::native_methods::next_supplier_id();
+            crate::runtime::native_methods::register_supplier_elems_transform_tap(
+                source_sid,
+                downstream_sid,
+                interval,
+                emitted.len() as i64,
+            );
+
             let mut elems_attrs = HashMap::new();
             elems_attrs.insert("values".to_string(), Value::array(Vec::new()));
             elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            elems_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+            // rakudo answers False for `.elems.live` even over a live
+            // source (unlike `.map`/`.grep`) -- matches `produce`/`batch`'s
+            // own `live: FALSE`.
             elems_attrs.insert("live".to_string(), Value::FALSE);
-            elems_attrs.insert("supplier_id".to_string(), Value::int(supplier_id));
-            // ADR-0028 Slice 2: deferred to tap-time — copy `"scheduler"`
-            // forward so the `"tap"|"act"` chokepoint still classifies it
-            // when the eventual `.tap()` runs.
             if let Some(scheduler) = attributes.get("scheduler") {
                 elems_attrs.insert("scheduler".to_string(), scheduler.clone());
-            }
-            elems_attrs.insert("supplier_done".to_string(), Value::truth(done));
-            elems_attrs.insert("elems_filter".to_string(), Value::TRUE);
-            elems_attrs.insert("elems_interval".to_string(), Value::num(interval));
-            elems_attrs.insert(
-                "elems_initial_count".to_string(),
-                Value::int(emitted.len() as i64),
-            );
-            if let Some(reason) = quit_reason {
-                elems_attrs.insert("quit_reason".to_string(), reason);
             }
             return Ok(Value::make_instance(Symbol::intern("Supply"), elems_attrs));
         }

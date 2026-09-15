@@ -38,11 +38,11 @@ impl Interpreter {
 
     pub(super) fn async_supplier_done_value(&mut self, supplier_id: u64) {
         supplier_done(supplier_id);
-        for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-            let _ = self.call_sub_value(tap, vec![emitted], true);
+        for (dsid, emitted) in flush_supplier_line_taps(supplier_id) {
+            let _ = self.handle_supply_forward(dsid, emitted);
         }
-        for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-            let _ = self.call_sub_value(tap, vec![emitted], true);
+        for (dsid, emitted) in flush_supplier_words_taps(supplier_id) {
+            let _ = self.handle_supply_forward(dsid, emitted);
         }
         for done_cb in take_supplier_done_callbacks(supplier_id) {
             let _ = self.invoke_done_callback(done_cb);

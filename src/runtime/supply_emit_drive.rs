@@ -65,9 +65,8 @@ impl Interpreter {
                     self.call_supply_tap(tap, vec![emitted], true)?;
                 }
                 SupplierEmitAction::UniqueCheck {
-                    callback,
+                    downstream_supplier_id,
                     value,
-                    delay_seconds,
                     as_fn,
                     with_fn,
                     tap_index,
@@ -81,8 +80,7 @@ impl Interpreter {
                         self.supplier_unique_check_seen(supplier_id, tap_index, &key, &with_fn)?;
                     if !is_dup {
                         supplier_unique_mark_seen(supplier_id, tap_index, key);
-                        Self::sleep_for_supply_delay(delay_seconds);
-                        self.call_sub_value(callback, vec![value], true)?;
+                        self.handle_supply_forward(downstream_supplier_id, value)?;
                     }
                 }
                 SupplierEmitAction::ClassifyCheck { value, tap_index } => {
