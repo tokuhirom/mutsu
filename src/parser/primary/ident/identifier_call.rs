@@ -818,6 +818,31 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        // `let`/`temp` used as a TERM. They are statement prefixes over an
+        // assignment, and the value of the assignment is the value of the term,
+        // so one stands wherever a term may — including as an ARGUMENT:
+        // `MapIterator.new(THIS, 'push', let %!record .= push: @values)`
+        // (Data::Record::Map, #7954). Only the parenthesized form `(let $x = 5)`
+        // had a branch (`container/paren.rs`), which demands the `)` immediately
+        // after, so an argument-position one was not a term in any reading.
+        // The `ws1` guard keeps a user-defined `sub let` callable as `let()`.
+        "let" | "temp" => {
+            if ws1(rest).is_ok() {
+                let parsed = if name == "let" {
+                    crate::parser::stmt::let_stmt_pub(input)
+                } else {
+                    crate::parser::stmt::temp_stmt_pub(input)
+                };
+                if let Ok((r, stmt)) = parsed {
+                    // The statement parser swallows the terminator; put it back,
+                    // or the enclosing listop keeps reading its argument list
+                    // across the `;` (`undefine temp $b; say 2` became
+                    // `undefine(temp $b say 2)`). Same reason the `do` arm does it.
+                    let r = restore_do_stmt_terminator(input, r);
+                    return Ok((r, Expr::DoStmt(Box::new(stmt))));
+                }
+            }
+        }
         "my" | "our" | "state" => {
             // my/our/state declaration in expression context
             // e.g., (my $x = 5) or (state $x = 3)

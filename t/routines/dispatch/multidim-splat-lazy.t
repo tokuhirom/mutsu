@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 14;
+plan 15;
 
 # Pin for `%h{|| @list}` (dimension splat over a hash) and unbounded-end range
 # dimensions (`@a[1^..*;1]`) — the remaining plan-mismatch blocks of
@@ -26,6 +26,21 @@ plan 14;
       '|| hash changed correctly';
     is-deeply %hash{|| "b"}, { d => 444 },
       '|| single key handled correctly';
+}
+
+# The splat must survive being the lvalue of a PARENTHESIZED assignment, which
+# reaches a different lvalue parser: that one parses the subscript body as an
+# ordinary expression, so once `||` became a term in its own right (the stacked
+# Slip contextualizer, #7954) it started claiming the subscript and degrading the
+# splat to a one-dimensional slice. Every assertion above uses the parenthesized
+# form via `is-deeply (…)`, but only this one fails with the hash left INTACT, so
+# it is spelled out.
+{
+    my %hash;
+    my @indices := <a b>, <c>;
+    my $assigned = (%hash{|| @indices} = 42, 666);
+    is-deeply %hash, { a => { c => 42 }, b => { c => 666 } },
+      '|| splat survives a parenthesized assignment lvalue';
 }
 
 # --- unbounded-end range dimensions ---

@@ -2971,8 +2971,19 @@ impl Compiler {
                 // `let`/`temp` saves inside the topicalizer, so a `with`
                 // branch resolves a save before execution continues after the
                 // enclosing `if`.
+                //
+                // A STATEMENT MODIFIER is the exception, for the same reason it
+                // is excluded from the topic rebind, the block-local scope and
+                // the dynamic scope above: `EXPR with $c` is not a block, so it
+                // opens no `let`/`temp` scope and the save belongs to the
+                // enclosing routine. `temp $x = 2 with $c; say $x` must still
+                // see `2`; this frame restored it at the modifier instead. That
+                // was invisible while the restore wrote only the mirror slot and
+                // `env`, and became a DESTROYED attribute once the restore
+                // started writing `self`'s cell too -- Template::Mustache's
+                // `temp $!logger.level = $_ with $log-level` lost its logger.
                 let needs_value = Self::has_real_let_deep(body);
-                let let_frame = Self::has_let_deep(body).then(|| {
+                let let_frame = (Self::has_let_deep(body) && !*is_statement_modifier).then(|| {
                     self.code.emit(OpCode::LetBlock {
                         body_end: 0,
                         value_on_stack: needs_value,
@@ -4418,7 +4429,18 @@ impl Compiler {
                 let slot = if has_index {
                     None
                 } else {
-                    self.local_map.get(name).copied()
+                    self.local_map.get(name).copied().or_else(|| {
+                        // An ATTRIBUTE read or written in a method body lives in a
+                        // local slot of that body (`emit_set_named_var`), and the
+                        // slot is allocated by the FIRST such access. A
+                        // `temp $!x = 2` whose method never touched `$!x` before it
+                        // therefore reached here with no slot baked, so the restore
+                        // fell back to writing `env` by name — which nothing in the
+                        // body reads — and the attribute kept the temporized value
+                        // past the scope. Allocating the slot here is the same slot
+                        // the assignment below would allocate a moment later.
+                        (name.starts_with('!') && name.len() > 1).then(|| self.alloc_local(name))
+                    })
                 };
                 if let Some(idx_expr) = index {
                     self.compile_expr(idx_expr);

@@ -7,6 +7,49 @@ use crate::parser::stmt::modifier::parse_statement_modifier;
 use crate::parser::stmt::pub_shims::ident_pub;
 use crate::value::Value;
 
+/// A `let`/`temp` whose variable is followed by a COMPOUND assignment
+/// (`let %h .= push: @v`, `temp $x //= 5`).
+///
+/// `let`/`temp` are statement prefixes over an assignment, and a compound one is
+/// an assignment like any other — but only the plain `=` form had a branch, so
+/// the bare `let %h` was taken alone and the `.= push` that followed became a
+/// *topic* dot-assign: the push landed on `$_` and the container was left
+/// untouched (`let %!r .= push: (a => 1); say %!r` answered `{}` where rakudo
+/// answers `{a => 1}`). Parse the assignment as an ordinary expression from the
+/// variable and run it after the save, the same lowering `temp $s[1]<k> = 23`
+/// already uses.
+///
+/// `var_start` is the input positioned AT the variable; `rest` is what follows
+/// its name. Returns `None` when no compound assignment follows.
+fn let_compound_assign_stmt<'a>(
+    var_start: &'a str,
+    rest: &str,
+    full_name: String,
+    is_temp: bool,
+) -> Option<PResult<'a, Stmt>> {
+    if !rest.starts_with(".=")
+        && crate::parser::stmt::assign::parse_compound_assign_op(rest).is_none()
+    {
+        return None;
+    }
+    Some((|| {
+        let (r, assign_expr) = expression(var_start)?;
+        parse_statement_modifier(
+            r,
+            Stmt::SyntheticBlock(vec![
+                Stmt::Let {
+                    name: full_name,
+                    index: None,
+                    value: None,
+                    is_temp,
+                    undefine_first: false,
+                },
+                Stmt::Expr(assign_expr),
+            ]),
+        )
+    })())
+}
+
 /// Parse `let` statement: `let $var = expr`, `let $var`, `let @arr[idx] = expr`.
 pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
@@ -19,13 +62,25 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     if sigil != '$' && sigil != '@' && sigil != '%' {
         return Err(PError::expected("variable after let"));
     }
+    let var_start = rest;
     let rest_after_sigil = &rest[1..];
+    // An ATTRIBUTE is as temporizable as a lexical: `let %!record`, `temp $!x`.
+    // Only the plain spelling was recognized here, so `let $!x = 2` fell out of
+    // this parser entirely and came back as the bareword `let` followed by an
+    // ordinary assignment — the save was silently dropped — while the term-position
+    // form `(let %!record)` (Data::Record::Map, #7954) was a hard parse error.
+    // The attribute's env key carries the twigil (`%!r`, `!x`), exactly as
+    // `HashVar("!r")` / `Var("!x")` spell it everywhere else.
+    let (rest_after_sigil, twigil) = match rest_after_sigil.strip_prefix('!') {
+        Some(after) => (after, "!"),
+        None => (rest_after_sigil, ""),
+    };
     let (rest, var_name) = ident(rest_after_sigil)?;
-    // Env key: scalars strip $, arrays/hashes keep sigil
+    // Env key: scalars strip $, arrays/hashes keep sigil; both keep the twigil.
     let full_name = if sigil == '$' {
-        var_name.clone()
+        format!("{}{}", twigil, var_name)
     } else {
-        format!("{}{}", sigil, var_name)
+        format!("{}{}{}", sigil, twigil, var_name)
     };
     let (rest, _) = ws(rest)?;
 
@@ -96,6 +151,10 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 undefine_first: false,
             },
         );
+    }
+
+    if let Some(parsed) = let_compound_assign_stmt(var_start, rest, full_name.clone(), false) {
+        return parsed;
     }
 
     // Check for assignment: let $var = expr
@@ -303,9 +362,20 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     if sigil != '$' && sigil != '@' && sigil != '%' {
         return Err(PError::expected("variable after temp"));
     }
+    let var_start = rest;
     let after_sigil = &rest[1..];
     // Handle special variables: $/, $!
-    if sigil == '$' && (after_sigil.starts_with('/') || after_sigil.starts_with('!')) {
+    //
+    // `$!` names the error variable only when nothing follows it: `$!x` is the
+    // ATTRIBUTE `x`, and reading its `!` as the special variable made
+    // `temp $!x = 2` a `temp $!` followed by an assignment to a stray lexical
+    // `x`, so the attribute was never written at all (`say $!x` answered 1 where
+    // rakudo answers 2). The twigil branch below is what handles it.
+    if sigil == '$'
+        && (after_sigil.starts_with('/')
+            || (after_sigil.starts_with('!')
+                && !after_sigil[1..].starts_with(crate::parser::helpers::is_raku_identifier_start)))
+    {
         let special_char = &after_sigil[..1];
         let rest_after = &after_sigil[1..];
         let full_name = special_char.to_string();
@@ -437,6 +507,10 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 undefine_first: false,
             },
         );
+    }
+
+    if let Some(parsed) = let_compound_assign_stmt(var_start, rest, full_name.clone(), true) {
+        return parsed;
     }
 
     // Check for assignment: temp $*CWD = expr

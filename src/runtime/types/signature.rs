@@ -666,7 +666,12 @@ pub(in crate::runtime) fn collect_nested_named_alias_keys(sub_params: &[ParamDef
         let sp = worklist[idx];
         idx += 1;
         if sp.named {
-            keys.push(sp.name.strip_prefix(':').unwrap_or(&sp.name).to_string());
+            // The sigil is part of the VARIABLE's spelling, never of the key:
+            // `:h(:@hi)` answers to `hi`. Stripping only a leading `:` left
+            // `@hi` here, so the caller's `hi` matched nothing and the argument
+            // was rejected as unexpected — while `:h(:$hi)`, whose inner name
+            // carries no sigil, worked.
+            keys.push(crate::ast::named_param_external_key(&sp.name).to_string());
         }
         if let Some(nested) = &sp.sub_signature {
             worklist.extend(nested.iter());

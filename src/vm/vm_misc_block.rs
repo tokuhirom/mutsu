@@ -352,17 +352,31 @@ impl Interpreter {
         // an env-first read would snapshot the decl-seed `Any` instead of the real
         // value. The matching restore side (`restore_let_value`) already prefers the
         // baked slot.
-        let old_val = match slot {
-            Some(s) if (s as usize) < self.locals.len() => self.locals[s as usize].clone(),
-            _ => self
-                .get_env_with_main_alias(&name)
-                .or_else(|| {
-                    code.locals
-                        .iter()
-                        .position(|n| n == &name)
-                        .map(|i| self.locals[i].clone())
-                })
-                .unwrap_or(Value::NIL),
+        // An ATTRIBUTE is the one name whose source of truth is neither of those:
+        // it lives in `self`'s shared attribute cell, which `exec_get_local_op`
+        // re-reads on every `$!x`, and which the restore side writes back
+        // (`restore_let_value`). Reading the slot or `env` for one can snapshot a
+        // value the attribute never held — `temp $!logger.level` emits a `LetSave`
+        // naming `!logger`, and in a method body that has not otherwise touched it
+        // both the slot and `env` are empty, so the snapshot was `Nil` and the
+        // restore wrote that `Nil` over a live object. Save and restore have to
+        // read and write the same store.
+        let old_val = match crate::value::attr_twigil_base(&name)
+            .and_then(|_| self.read_self_attr_cell(&name))
+        {
+            Some(attr_val) => attr_val,
+            None => match slot {
+                Some(s) if (s as usize) < self.locals.len() => self.locals[s as usize].clone(),
+                _ => self
+                    .get_env_with_main_alias(&name)
+                    .or_else(|| {
+                        code.locals
+                            .iter()
+                            .position(|n| n == &name)
+                            .map(|i| self.locals[i].clone())
+                    })
+                    .unwrap_or(Value::NIL),
+            },
         };
         // A boxed (shared-cell) scalar saves its INNER value, decoupled from the
         // cell: otherwise the snapshot would be the same Arc that the dynamic-scope

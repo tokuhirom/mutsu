@@ -107,6 +107,17 @@ pub(crate) struct ParamDef {
     pub(crate) block_param: bool,
 }
 
+/// The external argument key a named parameter's spelling denotes: the name with
+/// its sigil, `:` marker and twigil stripped. `:@hi` answers to the key `hi`
+/// exactly as `:$hi` does, so every site that matches a caller's key against a
+/// signature has to strip the same way — a second, sigil-blind copy of this rule
+/// is what made `sub h(:h(:@hi))` reject `h(hi => …)` as an unexpected named
+/// argument while `:h(:$hi)` accepted it.
+pub(crate) fn named_param_external_key(name: &str) -> &str {
+    name.trim_start_matches(|c: char| "$@%&:".contains(c))
+        .trim_start_matches(['!', '.'])
+}
+
 /// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
 /// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
 /// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
@@ -288,11 +299,7 @@ impl ParamDef {
         if !self.named {
             return Vec::new();
         }
-        let strip = |n: &str| {
-            n.trim_start_matches(|c: char| "$@%&:".contains(c))
-                .trim_start_matches(['!', '.'])
-                .to_string()
-        };
+        let strip = |n: &str| named_param_external_key(n).to_string();
         let mut keys = vec![strip(&self.name)];
         if self.named_alias
             && let Some(aliases) = &self.sub_signature
