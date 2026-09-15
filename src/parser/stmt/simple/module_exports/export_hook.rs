@@ -123,3 +123,72 @@ pub(super) fn source_declares_export_sub(source: &str) -> bool {
         .expect("valid EXPORT-hook regex")
         .is_match(source)
 }
+
+/// The unit-scope `sub EXPORT`'s own body, if this module declares one —
+/// same descent through a `unit module Foo;` wrapper as [`declares_export_sub`].
+fn find_export_sub_body(stmts: &[Stmt]) -> Option<&[Stmt]> {
+    stmts.iter().find_map(|stmt| match stmt {
+        Stmt::SubDecl { name, body, .. } if name.resolve() == "EXPORT" => Some(body.as_slice()),
+        Stmt::Package {
+            body,
+            is_unit: true,
+            ..
+        } => find_export_sub_body(body),
+        _ => None,
+    })
+}
+
+/// A second idiom `sub EXPORT` modules use, distinct from the `UNIT::`-grep
+/// [`collect_unit_scope_routines`] approximates: building the exported names as
+/// LOCAL declarations inside the hook's own body and hand-assembling the
+/// returned `Map` from them (French's `my &infix:<et> = sub (...) {...}`,
+/// `my \vrai = True;`, ...; lizmat's ecosystem leans on `UNIT::` instead, but
+/// not every `sub EXPORT` module does).
+///
+/// A routine declared this way (`my &name = sub {...}`, or the operator-slot
+/// spelling `my &infix:<op> = ...`) needs no extra help: nothing here sees it,
+/// but the parser's custom-infix-word matcher (`parse_custom_infix_word` in
+/// `parser::expr::precedence::custom_infix`) already accepts ANY non-reserved
+/// word speculatively and resolves it at run time, so `1 et 2` parses
+/// regardless of whether the scan ever learns "et" is a declared operator.
+///
+/// A plain VALUE term (`my \vrai = True;`) has no such fallback: an unknown
+/// bareword defaults to a listop-call head, so `vrai et 2` misparsed as
+/// `vrai(et, 2)` and died evaluating `et` as if it were a zero-arg call
+/// (`Unknown function: et`) — the infix guess never even got a chance,
+/// because the term guess ran first and swallowed it as an argument.
+///
+/// `my \x = ...` compiles to a `VarDecl` immediately followed by a sibling
+/// `MarkSigillessReadonly` naming the same variable (the parser's marker for
+/// a sigilless declaration); this walks the hook's body — including into the
+/// `SyntheticBlock`/`Block` wrapper such a pair is nested in — collecting
+/// every one it finds, so the importer's parse learns `vrai` is a term with
+/// no arguments to swallow, the same way an exported `constant` already does.
+fn collect_export_body_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
+    for (i, stmt) in stmts.iter().enumerate() {
+        match stmt {
+            Stmt::VarDecl { name, .. } => {
+                if let Some(Stmt::MarkSigillessReadonly(marked)) = stmts.get(i + 1)
+                    && marked == name
+                {
+                    out.push(name.clone());
+                }
+            }
+            Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {
+                collect_export_body_value_terms(inner, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Extend `out` with the value terms an `EXPORT` hook declares locally in its
+/// own body — see [`collect_export_body_value_terms`]. A no-op unless this
+/// module actually declares the hook (checked again here rather than trusting
+/// the caller, since the AST walk and the `declares_export_sub` regex
+/// fallback can disagree on best-effort-parsed sources).
+pub(super) fn collect_export_hook_value_terms(stmts: &[Stmt], out: &mut Vec<String>) {
+    if let Some(body) = find_export_sub_body(stmts) {
+        collect_export_body_value_terms(body, out);
+    }
+}
