@@ -1689,6 +1689,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Bareword followed by => — Pair constructor (higher precedence than operators)
     // e.g., b => "foo" should parse as Pair even in `%a ~~ b => "foo"`
+    //
+    // Only a SIMPLE identifier makes a term-level pair. Raku's `<fatarrow>` term
+    // rule keys on `<identifier>`, which admits no `::`, so a qualified name
+    // (`OpCode::A`) is an ordinary term and the `=>` after it is the ordinary
+    // infix at its own (very loose) precedence. Claiming it here would bind the
+    // arrow to the qualified name alone and steal it from a tighter infix on the
+    // left: `OpCode::A | OpCode::B => 3` is `any(A, B) => 3` in raku, not
+    // `any(A, B => 3)`. The loose reading is built by `expression`'s own fat-arrow
+    // handler once this returns the bareword term.
     let (r, _) = ws(rest)?;
     // If ws() consumed unspace (e.g., `foo\ .lc` → r = ".lc"), record this so
     // we can prevent parsing `.lc` as a listop argument below.
@@ -1701,25 +1710,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             "X::Comp: Unspace is not allowed in the middle of an identifier".to_string(),
         ));
     }
-    if r.starts_with("=>") && !r.starts_with("==>") {
+    if r.starts_with("=>") && !r.starts_with("==>") && !name.contains("::") {
         let r2 = &r[2..];
         let (r2, _) = ws(r2)?;
         // Use parse_fat_arrow_value for right-associative chaining:
         // a => b => c parses as a => (b => c)
         let (r2, value) = parse_fat_arrow_value(r2)?;
-        // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it is
-        // evaluated to its value, so `Bool::True => "a"` has the Bool *value* as
-        // its (positional) key, matching raku.
-        if name.contains("::") {
-            return Ok((
-                r2,
-                Expr::PositionalPair(Box::new(Expr::Binary {
-                    left: Box::new(Expr::BareWord(name)),
-                    op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(value),
-                })),
-            ));
-        }
         return Ok((
             r2,
             Expr::Binary {

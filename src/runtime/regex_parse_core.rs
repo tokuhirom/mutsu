@@ -881,6 +881,141 @@ impl Interpreter {
     /// Pure in `interpolated` given the grammar-token registry and (for a
     /// `<~~>`-bearing pattern) `PARSING_TOP_LEVEL_SOURCE` — which is what lets
     /// [`Interpreter::parse_regex_uncached`] memoize around it.
+    /// Scan the body of a regex GROUP that has just had its opening `open_ch`
+    /// consumed, up to and including the matching `close_ch`, and return
+    /// `(body, remaining_depth)` — a non-zero depth means the group was never
+    /// closed.
+    ///
+    /// `(...)` and `[...]` differ only in which bracket nests; everything else
+    /// about how a group body reads is shared, and getting any of it wrong ends
+    /// the group early, so the ENCLOSING construct is what fails to parse:
+    ///
+    /// - A backslash escape never affects anything (`[<?[\]]>||$]`, Cro::Uri).
+    /// - `#` outside any `<...>` starts a line comment.
+    /// - A `<...>` is one stack entry, and the three kinds read their contents by
+    ///   DIFFERENT rules, so one flag could never cover them:
+    ///   - a **character class** (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`)
+    ///     holds literal members, so neither a quote (`<-['"]>`) nor a group
+    ///     bracket (`<[.)]>`) means anything there — and its own `[`/`]` are
+    ///     counted so that a `>` written as a member (`<-[>]>`, the shape
+    ///     `Ident`'s `verpart` token uses) does not close the class;
+    ///   - a **lookaround** (`<before …>`, `<?after …>`, …) holds a nested regex,
+    ///     so the quote in `<!before '>}}'>` really does open a string and the
+    ///     `>` inside it does not close the assertion (Blogin);
+    ///   - anything else — a word-list alternation (`< ! ' # >`), a named rule, a
+    ///     code assertion (`<!{ … }>`) — has no string syntax at all, so a quote
+    ///     in it is an ordinary character.
+    /// - Outside every `<...>`, a quoted string's content is literal, so `']'`
+    ///   does not close a `[...]` and `')'` does not close a `(...)`.
+    fn scan_regex_group_body(
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+        open_ch: char,
+        close_ch: char,
+    ) -> (String, u32) {
+        /// One open `<...>`: whether it is a character class, how deep inside
+        /// that class's own `[...]` we are, and where its body starts in `body`
+        /// (so a lookaround keyword can be recognised when a quote turns up).
+        struct AngleFrame {
+            char_class: bool,
+            class_bracket_depth: u32,
+            body_start: usize,
+        }
+        /// A `<...>` whose body starts with one of these holds a nested REGEX,
+        /// where a quote is a string delimiter. Every other non-class `<...>`
+        /// treats it as an ordinary character.
+        const LOOKAROUND_PREFIXES: [&str; 8] = [
+            "before ", "?before ", "!before ", ".before ", "after ", "?after ", "!after ",
+            ".after ",
+        ];
+
+        let mut body = String::new();
+        let mut depth = 1u32;
+        let mut in_comment = false;
+        let mut angles: Vec<AngleFrame> = Vec::new();
+        while let Some(ch) = chars.next() {
+            if in_comment {
+                body.push(ch);
+                if ch == '\n' {
+                    in_comment = false;
+                }
+                continue;
+            }
+            if ch == '\\' {
+                body.push(ch);
+                if let Some(next) = chars.next() {
+                    body.push(next);
+                }
+                continue;
+            }
+            let in_char_class = angles.last().is_some_and(|f| f.char_class);
+            if ch == '<' {
+                let char_class = matches!(chars.peek(), Some('[' | '-' | '+' | ':'));
+                body.push(ch);
+                angles.push(AngleFrame {
+                    char_class,
+                    class_bracket_depth: 0,
+                    body_start: body.len(),
+                });
+                continue;
+            }
+            if ch == '>'
+                && let Some(frame) = angles.last()
+                && frame.class_bracket_depth == 0
+            {
+                angles.pop();
+                body.push(ch);
+                continue;
+            }
+            if in_char_class && (ch == '[' || ch == ']') {
+                // The class's own brackets, counted so a `>` member cannot end
+                // the class early and so neither bracket reaches the group depth.
+                if let Some(frame) = angles.last_mut() {
+                    if ch == '[' {
+                        frame.class_bracket_depth += 1;
+                    } else {
+                        frame.class_bracket_depth = frame.class_bracket_depth.saturating_sub(1);
+                    }
+                }
+                body.push(ch);
+                continue;
+            }
+            if ch == '#' && angles.is_empty() {
+                in_comment = true;
+                body.push(ch);
+                continue;
+            }
+            if ch == '\'' || ch == '"' {
+                let opens_string = match angles.last() {
+                    None => true,
+                    Some(frame) if frame.char_class => false,
+                    Some(frame) => LOOKAROUND_PREFIXES
+                        .iter()
+                        .any(|kw| body[frame.body_start..].starts_with(kw)),
+                };
+                body.push(ch);
+                if opens_string {
+                    for q in chars.by_ref() {
+                        body.push(q);
+                        if q == ch {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            if ch == open_ch && !in_char_class {
+                depth += 1;
+            } else if ch == close_ch && !in_char_class {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            body.push(ch);
+        }
+        (body, depth)
+    }
+
     fn parse_regex_structural(
         &self,
         interpolated: &str,
@@ -3711,102 +3846,7 @@ impl Interpreter {
                 }
                 '(' => {
                     // Capture group: (...)
-                    let mut group_pattern = String::new();
-                    let mut depth = 1;
-                    let mut in_comment = false;
-                    // One entry per open `<...>`, true when it is a character
-                    // CLASS (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`)
-                    // rather than an assertion or subrule call. The two read
-                    // their contents by opposite rules and this scanner has to
-                    // honour both: a class's members are literal, so a quote in
-                    // `<-['"]>` opens nothing; an assertion holds a nested
-                    // regex, so the quote in `<!before '>}}'>` does open a
-                    // string and the `>` inside it does NOT close the assertion
-                    // (Blogin). Tracking one `angle_depth` and keying both rules
-                    // off it could only ever get one of the two right.
-                    let mut angle_kinds: Vec<bool> = Vec::new();
-                    while let Some(ch) = chars.next() {
-                        let in_char_class = angle_kinds.last().copied().unwrap_or(false);
-                        if in_comment {
-                            group_pattern.push(ch);
-                            if ch == '\n' {
-                                in_comment = false;
-                            }
-                            continue;
-                        }
-                        if ch == '<' {
-                            angle_kinds.push(matches!(chars.peek(), Some('[' | '-' | '+' | ':')));
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '>' && !angle_kinds.is_empty() {
-                            angle_kinds.pop();
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '#' && angle_kinds.is_empty() {
-                            in_comment = true;
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '\\' {
-                            // Backslash escape — push both chars without interpreting
-                            group_pattern.push(ch);
-                            if let Some(next) = chars.next() {
-                                group_pattern.push(next);
-                            }
-                            continue;
-                        }
-                        if ch == '\'' && !in_char_class {
-                            // Single-quoted string — skip until closing quote.
-                            // Inside a character CLASS a quote is a literal member
-                            // (e.g. `<-['"]>`), not a string delimiter, so it must
-                            // not swallow the group.
-                            group_pattern.push(ch);
-                            for sq in chars.by_ref() {
-                                group_pattern.push(sq);
-                                if sq == '\'' {
-                                    break;
-                                }
-                            }
-                            continue;
-                        }
-                        if ch == '"' && !in_char_class {
-                            // Double-quoted string — skip until closing quote.
-                            // Inside a character CLASS a `"` is a literal member
-                            // (e.g. `<-["]>`), not a string delimiter — without this
-                            // guard it swallowed the closing `)` and produced a
-                            // spurious "Unmatched ( in regex".
-                            group_pattern.push(ch);
-                            for dq in chars.by_ref() {
-                                group_pattern.push(dq);
-                                if dq == '"' {
-                                    break;
-                                }
-                            }
-                            continue;
-                        }
-                        if ch == '(' && !in_char_class {
-                            depth += 1;
-                            group_pattern.push(ch);
-                        } else if ch == ')' && !in_char_class {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            group_pattern.push(ch);
-                        } else {
-                            // Inside a `<...>` assertion / char class a paren is a
-                            // literal member, not a nesting bracket — the same rule
-                            // the `'` and `"` guards above already follow. Counting
-                            // it ended the group at the `)` of `<[.)]>`, so
-                            // `( \d+ <[.)]> )` died on the leftover `]`
-                            // (Markdown::Lex, Blogin — #7954). Balanced parens in a
-                            // `<{ ... }>` code assertion are unaffected: they cancel
-                            // out either way.
-                            group_pattern.push(ch);
-                        }
-                    }
+                    let (group_pattern, depth) = Self::scan_regex_group_body(&mut chars, '(', ')');
                     // If depth > 0, the group was never closed — parse error
                     if depth > 0 {
                         PENDING_REGEX_ERROR.with(|e| {
@@ -3940,31 +3980,15 @@ impl Interpreter {
                 }
                 '[' => {
                     // In Raku regex, [...] is a non-capturing group (alternation)
-                    // Parse as alternation: [a|b|c]
-                    let mut group_pattern = String::new();
-                    let mut depth = 1;
-                    while let Some(ch) = chars.next() {
-                        if ch == '\\' {
-                            // An escaped character never affects bracket depth:
-                            // `[<?[\]]>||$]` must not close the group at the
-                            // char class's escaped `\]` (Cro::Uri IPv4address).
-                            group_pattern.push(ch);
-                            if let Some(esc) = chars.next() {
-                                group_pattern.push(esc);
-                            }
-                        } else if ch == '[' {
-                            depth += 1;
-                            group_pattern.push(ch);
-                        } else if ch == ']' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            group_pattern.push(ch);
-                        } else {
-                            group_pattern.push(ch);
-                        }
-                    }
+                    // Parse as alternation: [a|b|c]. It reads its body by exactly
+                    // the rules `( ... )` does, so it uses the same scanner: a
+                    // quoted `]` is a literal (`[[ ']' x ]]`), and so is one
+                    // inside a character class (`[<[.)]>]`). Scanning brackets
+                    // raw made a quoted `]` close the group one level down,
+                    // which is why `Code::Coverable` (and `Code::Coverage` /
+                    // `Test::Coverage` through it) failed at the `while` FAR
+                    // above the regex that actually broke (#7954).
+                    let (group_pattern, _depth) = Self::scan_regex_group_body(&mut chars, '[', ']');
                     // An empty non-capturing group `[]` is a null regex.
                     if group_pattern.trim().is_empty() {
                         PENDING_REGEX_ERROR

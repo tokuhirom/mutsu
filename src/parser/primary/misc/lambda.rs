@@ -419,9 +419,71 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
 /// directly in it must not be classified per-call — see
 /// `simple::anon_state_is_per_call`.
 pub(crate) fn parse_block_body_routine(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    parse_block_body_routine_with_params(input, &[])
+}
+
+/// Collect the parameter names an anonymous routine literal's body parse needs
+/// in scope: sigilless parameters become TERM symbols, `&name` parameters become
+/// routines. Destructuring sub-signatures are walked too, exactly as
+/// `sub_decl`'s own registration does for a named routine.
+fn collect_routine_param_names<'p>(
+    param_defs: &'p [crate::ast::ParamDef],
+    term_names: &mut Vec<&'p str>,
+    code_names: &mut Vec<&'p str>,
+) {
+    for pd in param_defs {
+        let name = pd.name.trim_start_matches('\\');
+        if !name.is_empty() {
+            if pd.sigilless {
+                term_names.push(name);
+            } else if let Some(bare) = name.strip_prefix('&')
+                && !bare.is_empty()
+                && !bare.contains(':')
+            {
+                code_names.push(bare);
+            }
+        }
+        if let Some(sub) = &pd.sub_signature {
+            collect_routine_param_names(sub, term_names, code_names);
+        }
+    }
+}
+
+/// Like [`parse_block_body_routine`], but with an anonymous routine literal's
+/// own parameters in scope for the body parse.
+///
+/// A sigilless parameter (`method (\m, \z, \k) { ... }`) declares a TERM, and a
+/// `&name` parameter declares a routine — inside the body a bare `m` IS that
+/// binding. A named `sub`/`method` declaration already registers both
+/// (`sub_decl::register_sigilless_terms`); the anonymous literal did not, so its
+/// body was parsed against what the name means OUTSIDE it. For a name that also
+/// spells a quote-like operator that is not merely a wrong lookup but a
+/// different LEX: `[m, z, k]` read `m` as a match, took `,` for its delimiter
+/// and swallowed the signature's own `\z` as a regex escape, so the reported
+/// error was "Unsupported use of \z as end-of-string matcher" from a construct
+/// several lines up (#7954, `PDF::Content`).
+pub(crate) fn parse_block_body_routine_with_params<'a>(
+    input: &'a str,
+    param_defs: &[crate::ast::ParamDef],
+) -> PResult<'a, Vec<crate::ast::Stmt>> {
+    let mut term_names: Vec<&str> = Vec::new();
+    let mut code_names: Vec<&str> = Vec::new();
+    collect_routine_param_names(param_defs, &mut term_names, &mut code_names);
     let (r, _) = parse_char(input, '{')?;
+    // A fresh parse generation for the same reason `block_with_pointy_params`
+    // needs one: the memo is keyed by the input slice alone, so an entry made
+    // by a speculative pass over this body — before these names existed — would
+    // otherwise be replayed here at its old meaning.
+    let _generation = (!term_names.is_empty() || !code_names.is_empty())
+        .then(crate::parser::memo::begin_parse_generation);
     crate::parser::stmt::simple::push_scope();
     crate::parser::stmt::simple::mark_current_scope_routine_body();
+    for name in term_names {
+        crate::parser::stmt::simple::register_user_term_symbol(name);
+    }
+    for name in code_names {
+        crate::parser::stmt::simple::register_user_sub(name);
+    }
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
