@@ -1080,13 +1080,12 @@ pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
     // every scan, so the two table lookups it skips are worth an explicit
     // branch (#8450). Controls -- `\r` above all, whose CRLF pair is handled
     // just below -- are excluded and fall through.
-    if let Some(&c) = chars.get(pos) {
-        if c.is_ascii()
-            && !c.is_ascii_control()
-            && chars.get(pos + 1).is_none_or(|next| next.is_ascii())
-        {
-            return pos + 1;
-        }
+    if let Some(&c) = chars.get(pos)
+        && c.is_ascii()
+        && !c.is_ascii_control()
+        && chars.get(pos + 1).is_none_or(|next| next.is_ascii())
+    {
+        return pos + 1;
     }
     // \r\n is a single grapheme cluster in Raku
     if pos < chars.len() && chars[pos] == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
