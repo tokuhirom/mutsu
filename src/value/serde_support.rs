@@ -522,9 +522,13 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Seq(items) => Value::Seq(crate::value::SeqBody::reified(
             items.into_iter().map(ser_to_value).collect(),
         )),
-        SerValue::Slip(items) => {
-            Value::Slip(Arc::new(items.into_iter().map(ser_to_value).collect()))
-        }
+        // Like `SerValue::Hash`, the itemization flag is not carried: an AST
+        // literal is never `$`-itemized (itemization happens at store time),
+        // so the serialized shape stays as it was.
+        SerValue::Slip(items) => Value::Slip(
+            Arc::new(items.into_iter().map(ser_to_value).collect()),
+            false,
+        ),
         SerValue::Version {
             parts,
             plus,

@@ -670,6 +670,12 @@ pub(super) fn dispatch(
                 Some(Ok(Value::array_with_kind(items.clone(), kind.itemize())))
             }
             ValueView::LazyList(_) => None, // fall through to runtime to force
+            // A Slip records the `$` container as a flag on the value and NOT
+            // as a `Scalar` wrapper, because a `$`-held Slip still flattens:
+            // `(1, slip(5, 6).item, 2).elems` is 4 and `my @a = 1, $(slip(5,
+            // 6)), 2` splices, while a `Scalar` wrapper would make it one
+            // opaque element. `.raku` still shows the container.
+            ValueView::Slip(_) => Some(Ok(target.clone().with_slip_itemized(true))),
             // A Hash (and any other aggregate) is wrapped in a `Scalar`
             // container so it behaves as a single non-flattening element in
             // list context (e.g. passed to `map`). `.raku`/`.perl` on the

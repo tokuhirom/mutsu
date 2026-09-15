@@ -950,6 +950,12 @@ impl Interpreter {
                 Value::array_with_kind(items.clone(), kind.itemize())
             }
             ValueView::Hash(_) => val.with_hash_itemized(true),
+            // A `Slip` records the `$` container on the value too (`slip(5, 6)
+            // .item.raku` is `$(slip(5, 6))`), as a second tag over the same
+            // element `Arc`. It must NOT become a `Scalar` wrapper: that is the
+            // "stop flattening" marker, and a `$`-held Slip still flattens
+            // (`my $x = slip(5, 6); (1, $x, 2).elems` is 4).
+            ValueView::Slip(_) => val.with_slip_itemized(true),
             ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => val,
             ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
                 Value::seq_body(body.as_item_list_view())
@@ -1008,6 +1014,13 @@ impl Interpreter {
             // `HashData` Gc, so `=`-shared mutation still tracks, and the view
             // stays a plain hash so every consumer is transparent.
             ValueView::Hash(_) => val.with_hash_itemized(true),
+            // A `Slip` stored in a `$` scalar container is itemized on the
+            // value, by the same second-tag mechanism as the Hash arm above:
+            // `my $x = slip(5, 6); $x.raku` is `$(slip(5, 6))` while a bare
+            // `slip(5, 6).raku` stays `slip(5, 6)`. The view stays a `Slip`,
+            // so the value keeps flattening everywhere it did before — a
+            // `Scalar` wrapper would mean the opposite (stop flattening).
+            ValueView::Slip(_) => val.with_slip_itemized(true),
             // A deferred `.cache` result is a List-view handle rather than a
             // real Array. Retag the handle without pulling its source, exactly
             // as the Array arm changes List -> ItemList without copying data.

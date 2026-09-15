@@ -109,6 +109,12 @@ pub(in crate::value) enum Kind {
     HyperSeq,
     RaceSeq,
     Slip,
+    /// A `$`-itemized `Slip` (`my $x = slip(5, 6)`, `.item`) — the same
+    /// `Arc<Vec<Value>>` payload as [`Kind::Slip`], viewing as the same
+    /// `ValueView::Slip`. The second tag is what lets `.raku` render the
+    /// scalar container without any consumer that matches a `Slip` losing
+    /// its flattening, exactly as [`Kind::HashItemized`] does for a hash.
+    SlipItemized,
     JunctionAny,
     JunctionAll,
     JunctionOne,
@@ -404,6 +410,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::IntBoxed => arc_op::<i64>(bits, op),
             Kind::Seq | Kind::HyperSeq | Kind::RaceSeq => arc_op::<crate::value::SeqBody>(bits, op),
             Kind::Slip
+            | Kind::SlipItemized
             | Kind::JunctionAny
             | Kind::JunctionAll
             | Kind::JunctionOne
