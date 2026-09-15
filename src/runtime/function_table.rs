@@ -8,7 +8,7 @@
 //! computed this answer under".
 //!
 //! The answer used to be a counter on the interpreter that every registry
-//! mutation incremented ([`Interpreter::fn_resolve_gen`]). Counting steps makes
+//! mutation incremented (`Interpreter::fn_resolve_gen`). Counting steps makes
 //! the answer wrong in one specific, extremely common direction: a map that
 //! goes away and *comes back* — which is exactly what a routine-local `my sub`
 //! does on every single call — reads as two different states, so every memo
