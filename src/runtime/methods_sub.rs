@@ -2,7 +2,10 @@ use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
-use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
+use crate::value::signature::{
+    SubSignatureKey, cache_sub_signature, cached_sub_signature, extract_sig_info,
+    make_signature_value, param_defs_to_sig_info,
+};
 
 /// Build a structured `X::Routine::Unwrap` error (`&f.unwrap($bad-handle)`).
 pub(super) fn routine_unwrap_error(message: &str) -> RuntimeError {
@@ -172,6 +175,10 @@ impl Interpreter {
         if method == "signature" && args.is_empty() {
             let candidates = self.routine_candidate_subs(package, name);
             if candidates.is_empty() {
+                let cache_key = SubSignatureKey::from_routine_handle(package, name);
+                if let Some(cached) = cached_sub_signature(&cache_key) {
+                    return Some(Ok(cached));
+                }
                 let (params, param_defs) = self.callable_signature(target);
                 let defs = if !param_defs.is_empty() {
                     param_defs
@@ -206,7 +213,9 @@ impl Interpreter {
                 };
                 let return_type = self.routine_return_spec_by_name(name);
                 let info = param_defs_to_sig_info(&defs, return_type);
-                return Some(Ok(make_signature_value(info, Some(&*self))));
+                let signature = make_signature_value(info, Some(&*self));
+                cache_sub_signature(cache_key, signature.clone());
+                return Some(Ok(signature));
             }
             if candidates.len() == 1 {
                 return Some(self.call_method_with_values(

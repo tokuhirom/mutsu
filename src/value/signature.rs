@@ -148,6 +148,44 @@ pub(crate) enum SubSignatureKey {
     /// candidates, matching the sub-side comment above on why a name-only key
     /// is wrong.
     Method(String),
+    /// A name-based `Routine` handle with no materialized candidate (such as
+    /// `&say`). The package disambiguates same-named builtins and methods.
+    RoutineHandle(String),
+    /// A regex value. Each variant owns the payload `Arc`, keeping its
+    /// allocation live for as long as the cache key can name it.
+    Regex(RegexSignatureKey),
+}
+
+/// The owned payload identity of a NaN-boxed regex value.
+// `RegexClosure` and `RegexAdverbs` contain interior-mutability-reachable
+// values, but equality and hashing below use only their allocation addresses.
+pub(crate) enum RegexSignatureKey {
+    Plain(std::sync::Arc<String>),
+    Adverbs(std::sync::Arc<crate::value::RegexAdverbs>),
+    Closure(std::sync::Arc<crate::value::RegexClosure>),
+}
+
+impl PartialEq for RegexSignatureKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Plain(a), Self::Plain(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Self::Adverbs(a), Self::Adverbs(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Self::Closure(a), Self::Closure(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for RegexSignatureKey {}
+
+impl std::hash::Hash for RegexSignatureKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Plain(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
+            Self::Adverbs(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
+            Self::Closure(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
+        }
+    }
 }
 
 impl PartialEq for SubSignatureKey {
@@ -157,6 +195,8 @@ impl PartialEq for SubSignatureKey {
             (Self::Code(a), Self::Code(b)) => std::sync::Arc::ptr_eq(a, b),
             (Self::Id(a), Self::Id(b)) => a == b,
             (Self::Method(a), Self::Method(b)) => a == b,
+            (Self::RoutineHandle(a), Self::RoutineHandle(b)) => a == b,
+            (Self::Regex(a), Self::Regex(b)) => a == b,
             _ => false,
         }
     }
@@ -171,6 +211,8 @@ impl std::hash::Hash for SubSignatureKey {
             Self::Code(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
             Self::Id(id) => id.hash(state),
             Self::Method(key) => key.hash(state),
+            Self::RoutineHandle(key) => key.hash(state),
+            Self::Regex(key) => key.hash(state),
         }
     }
 }
@@ -187,6 +229,12 @@ impl SubSignatureKey {
     }
     pub(crate) fn from_method(owner: &str, name: &str, candidate_idx: usize) -> Self {
         Self::Method(format!("{owner}::{name}#{candidate_idx}"))
+    }
+    pub(crate) fn from_routine_handle(package: &str, name: &str) -> Self {
+        Self::RoutineHandle(format!("{package}::{name}"))
+    }
+    pub(crate) fn from_regex(key: RegexSignatureKey) -> Self {
+        Self::Regex(key)
     }
 }
 

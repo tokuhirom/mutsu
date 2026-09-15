@@ -82,7 +82,22 @@ impl Interpreter {
         let declared = declared.as_deref().map(Vec::as_slice).unwrap_or(&[]);
         let info = Self::regex_routine_sig_info("Mu", declared);
         match method {
-            "signature" => crate::value::signature::make_signature_value(info, Some(self)),
+            "signature" => {
+                if let Some(regex_key) = target.regex_signature_cache_key() {
+                    let key = crate::value::signature::SubSignatureKey::from_regex(regex_key);
+                    if let Some(cached) = crate::value::signature::cached_sub_signature(&key) {
+                        return cached;
+                    }
+                    let signature = crate::value::signature::make_signature_value(info, Some(self));
+                    crate::value::signature::cache_sub_signature(key, signature.clone());
+                    signature
+                } else {
+                    // The caller only reaches this method for regex values. Keep
+                    // the result correct if a future representation falls
+                    // outside the owned-payload variants above.
+                    crate::value::signature::make_signature_value(info, Some(self))
+                }
+            }
             "arity" => Value::int(Self::signature_required_positional_count(&info)),
             _ => Self::signature_count_value(&info),
         }

@@ -19,6 +19,16 @@ unsafe fn peek_arc<'a, T>(bits: u64) -> &'a T {
     unsafe { &*std::ptr::with_exposed_provenance::<T>(addr_of_payload(bits)) }
 }
 
+/// Clone the owned `Arc` held by a live word without consuming its reference.
+///
+/// # Safety
+/// `bits` must be a live word packed with an `Arc<T>` payload.
+#[inline]
+unsafe fn clone_arc<T>(bits: u64) -> Arc<T> {
+    let arc = ManuallyDrop::new(unsafe { take_arc::<T>(bits) });
+    Arc::clone(&arc)
+}
+
 /// Borrow the pointee of a `Gc`-kind word.
 ///
 /// # Safety
@@ -285,6 +295,34 @@ impl NanBox {
         unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
             .signature
             .as_ref()
+    }
+
+    /// An owned identity key for a regex's materialized `Signature`.
+    /// Owning the `Arc` prevents a released payload address from being reused
+    /// by a later, distinct regex declaration.
+    #[inline]
+    pub(in crate::value) fn regex_signature_cache_key(
+        &self,
+    ) -> Option<crate::value::signature::RegexSignatureKey> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Regex) => {
+                Some(crate::value::signature::RegexSignatureKey::Plain(unsafe {
+                    clone_arc::<String>(bits)
+                }))
+            }
+            Classified::Kind(Kind::RegexWithAdverbs) => {
+                Some(crate::value::signature::RegexSignatureKey::Adverbs(
+                    unsafe { clone_arc::<RegexAdverbs>(bits) },
+                ))
+            }
+            Classified::Kind(Kind::RegexCaptured) => {
+                Some(crate::value::signature::RegexSignatureKey::Closure(
+                    unsafe { clone_arc::<crate::value::RegexClosure>(bits) },
+                ))
+            }
+            _ => None,
+        }
     }
 
     /// Whether this word is a `Proxy` — a pure tag probe (same motivation as
