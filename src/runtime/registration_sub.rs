@@ -926,9 +926,12 @@ impl Interpreter {
                     .filter(|(fp, _)| *fp == site_fp)
                     .map(|(_, arc)| arc.clone())
             {
-                self.registry_mut()
-                    .functions_mut()
-                    .insert(fq_sym, cached.clone());
+                // `install_function`, not a plain insert: this is THE per-call
+                // re-install, and `cached` is the very `Arc` the previous call
+                // installed, so the map lands in a state it has already been in
+                // and the version stamp should say so rather than name a new one
+                // (#8314, `runtime::function_table`).
+                self.registry_mut().install_function(fq_sym, cached.clone());
                 // Invalidate name-keyed resolution caches. Exactly one key
                 // moved, so the base-name index keeps every other base name:
                 // this path is the per-call re-install of a routine-local

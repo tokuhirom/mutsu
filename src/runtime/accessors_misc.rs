@@ -81,7 +81,7 @@ impl Interpreter {
     /// common "nothing was declared" caller pays no copy at all.
     pub(crate) fn reinstate_module_functions(
         &self,
-        functions: &mut std::sync::Arc<rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>>,
+        functions: &mut std::sync::Arc<crate::runtime::function_table::FunctionTable>,
         include_global_aliases: bool,
     ) {
         if self.module_registered_functions.is_empty() {
@@ -109,7 +109,9 @@ impl Interpreter {
         }
         drop(registry);
         if !missing.is_empty() {
-            crate::runtime::cow_table_mut(functions).extend(missing);
+            crate::runtime::cow_table_mut(functions)
+                .map_mut()
+                .extend(missing);
         }
     }
 

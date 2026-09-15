@@ -89,11 +89,6 @@ impl Interpreter {
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
         let is_multi = self.has_multi_candidates_cached_sym(name_sym);
-        if self.fn_resolve_cache_gen != self.fn_resolve_gen {
-            self.fn_resolve_cache.clear();
-            self.multi_compiled_key_cache.clear();
-            self.fn_resolve_cache_gen = self.fn_resolve_gen;
-        }
         // A name some loaded compunit kept private resolves differently
         // depending on which unit is asking; this cache is keyed by
         // (name, package, arity, types) only, so such a name must bypass it
@@ -107,7 +102,8 @@ impl Interpreter {
             )
         });
         if let Some(cache_key) = &cache_key
-            && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(cache_key)
+            && let Some((cached_key, cached_fp, _)) =
+                self.fn_resolve_cache.get(self.fn_resolve_gen, cache_key)
             && let Some(cf) = compiled_fns.get(cached_key)
             && cf.fingerprint == *cached_fp
         {
@@ -162,7 +158,10 @@ impl Interpreter {
             type_sig: type_sig.clone(),
         });
         if let Some(memo_key) = &multi_memo_key
-            && let Some(hit) = self.multi_compiled_key_cache.get(memo_key).copied()
+            && let Some(hit) = self
+                .multi_compiled_key_cache
+                .get(self.fn_resolve_gen, memo_key)
+                .copied()
         {
             match hit {
                 None => return None,
@@ -324,7 +323,8 @@ impl Interpreter {
             });
         }
         if let Some(memo_key) = multi_memo_key {
-            self.multi_compiled_key_cache.insert(memo_key, found_key);
+            self.multi_compiled_key_cache
+                .insert(self.fn_resolve_gen, memo_key, found_key);
         }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups
@@ -332,8 +332,11 @@ impl Interpreter {
                 .map(|def| def.package.resolve())
                 .unwrap_or_else(|| self.current_package().to_string());
             if let Some(cache_key) = cache_key {
-                self.fn_resolve_cache
-                    .insert(cache_key, (key, expected_fingerprint, cached_pkg));
+                self.fn_resolve_cache.insert(
+                    self.fn_resolve_gen,
+                    cache_key,
+                    (key, expected_fingerprint, cached_pkg),
+                );
             }
             compiled_fns.get(&key)
         } else {

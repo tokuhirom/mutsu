@@ -835,12 +835,7 @@ mod base_name_tests {
         assert!(i.fn_keys_by_base.contains_key(&Symbol::intern("beta")));
 
         // A registration that names only `alpha` evicts only `alpha`.
-        let gen_before = i.fn_resolve_gen;
         i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::alpha/0")]);
-        assert!(
-            i.fn_resolve_gen > gen_before,
-            "the five generation-guarded caches still see the change"
-        );
         assert!(
             !i.fn_keys_by_base.contains_key(&Symbol::intern("alpha")),
             "the named base name is evicted"
@@ -861,5 +856,63 @@ mod base_name_tests {
         // Refilling answers the same key sets as before the eviction.
         assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha_before);
         assert_eq!(&*i.fn_keys_for_base("beta"), &*beta_before);
+    }
+
+    /// `fn_resolve_gen` names the functions map's content, so it moves when —
+    /// and only when — that map is written, and it comes *back* when a scope
+    /// restore reinstalls a map the program has already run under (#8314).
+    ///
+    /// The generation-tagged memos (`fn_resolve_cache`,
+    /// `multi_compiled_key_cache`, `multi_candidates_cache`,
+    /// `declared_fn_cache`, `multi_fn_cache`) hang off exactly this value, so
+    /// the round trip below is what lets an answer computed before a routine
+    /// declared its inner `my sub` still be there after the routine returns.
+    #[test]
+    fn the_generation_names_the_map_and_returns_with_it() {
+        let mut i = crate::runtime::Interpreter::new();
+        i.run("sub alpha() { 1 }\n").expect("setup program runs");
+
+        let base = i.fn_resolve_gen;
+        assert_eq!(
+            base,
+            i.registry().functions_version(),
+            "the interpreter's generation mirrors the map's own stamp"
+        );
+
+        // An announcement with no write behind it changes nothing: the map is
+        // the same map, so every memo over it is still good. (This is what
+        // absorbs the sites that announce one registration twice.)
+        i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::alpha/0")]);
+        assert_eq!(i.fn_resolve_gen, base, "no write, no new generation");
+
+        // A routine scope installing a lexical sub: a real write, a new
+        // generation.
+        let snapshot = i.snapshot_routine_registry();
+        let def = i
+            .registry()
+            .functions
+            .get(&Symbol::intern("GLOBAL::alpha"))
+            .cloned()
+            .expect("alpha is registered");
+        i.registry_mut()
+            .functions_mut()
+            .insert(Symbol::intern("GLOBAL::inner"), def);
+        i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::inner")]);
+        let inside = i.fn_resolve_gen;
+        assert_ne!(inside, base, "a write mints a fresh generation");
+
+        // The routine returns. The restore puts the snapshot's own `Arc` back,
+        // version and all.
+        i.restore_routine_registry(snapshot);
+        assert_eq!(
+            i.fn_resolve_gen, base,
+            "the pre-excursion generation is live again"
+        );
+        assert!(
+            !i.registry()
+                .functions
+                .contains_key(&Symbol::intern("GLOBAL::inner")),
+            "and it names the pre-excursion content"
+        );
     }
 }
