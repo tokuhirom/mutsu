@@ -10,7 +10,7 @@
   interpolated-code-block, sequential-interpolated-code-block, and
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
-  angle-aggregate-interpolation, and qualified-subrule slices implemented
+  angle-aggregate-interpolation, argumented-subrule, and qualified-subrule slices implemented
   2026-09-12 through
   2026-09-14;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1006,3 +1006,28 @@ The focused regression is
 `t/rakuast/rakuast-regex-qualified-subrules.t`. It pins the positive and
 dot-suppressed AST shapes, qualified name-part accessors and construction,
 qualified alias lowering, grammar EVAL, and repeated execution.
+
+## 37. Argumented regex subrule slice (2026-09-15)
+
+Argumented subrule calls such as `<word("a")>`, `<.word: "a", 2>`, and
+`<G::word("a")>` now retain Rakudo's
+`RakuAST::Regex::Assertion::Named::Args` shape. The assertion owns an
+`RakuAST::ArgList` child, while the `Name` child continues to preserve
+qualified segments and the optional `capturing` field keeps the positive and
+dot-suppressed forms distinct.
+
+The parser reuses the ordinary call-argument parser for both parenthesized and
+colon forms. The source tree retains argument provenance for the existing
+package-aware runtime matcher, and the RakuAST lowerer renders the supported
+static expression subset back into the same subrule spelling. Empty argument
+lists remain an argumented assertion so their explicit call boundary is not
+lost. Execution therefore stays on the established Parser -> Compiler -> VM
+path; no new VM dispatch or match-time argument evaluation is introduced by
+the AST conversion.
+
+The focused regression is
+`t/rakuast/rakuast-regex-argumented-subrules.t`. It pins parenthesized and
+colon AST shapes, qualified names, argument-node accessors, empty calls,
+direct grammar matching, AST EVAL, and constructed-tree execution.
+Qualified subrules inside unsupported lookarounds, argumented subrule aliases,
+and other dynamic argument expressions remain separate boundaries.

@@ -1614,6 +1614,40 @@ fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> 
     Ok(name.to_string())
 }
 
+fn lower_regex_subrule_args(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+    let Some(field) = node.fields.iter().find(|field| field.name == Some("args")) else {
+        return Ok(Vec::new());
+    };
+    let args = child_node(&field.value)?;
+    if args.class != RakuAstClass::ArgList {
+        return Err(unsupported(node));
+    }
+    let mut lowered = Vec::with_capacity(args.fields.len());
+    for field in &args.fields {
+        if field.name.is_some() {
+            return Err(unsupported(node));
+        }
+        lowered.push(lower_expr(child_node(&field.value)?)?);
+    }
+    Ok(lowered)
+}
+
+fn regex_subrule_arg_source(
+    args: &[Expr],
+    node: &RakuAstNode,
+) -> Result<Option<String>, RuntimeError> {
+    if args.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(
+        args.iter()
+            .map(crate::regex_tree::expression_source)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| unsupported(node))?
+            .join(", "),
+    ))
+}
+
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
@@ -1673,7 +1707,19 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexAssertionNamed => Ok(RegexNode::Subrule {
             name: lower_regex_subrule_name(named_child(node, "name")?)?,
             capturing: bool_field(node, "capturing")?,
+            args: None,
         }),
+        RakuAstClass::RegexAssertionNamedArgs => {
+            let args = lower_regex_subrule_args(node)?;
+            Ok(RegexNode::Subrule {
+                name: lower_regex_subrule_name(named_child(node, "name")?)?,
+                capturing: bool_field(node, "capturing")?,
+                args: Some(Box::new(crate::regex_tree::SubruleArgs {
+                    source: regex_subrule_arg_source(&args, node)?,
+                    args,
+                })),
+            })
+        }
         RakuAstClass::RegexAssertionAlias => {
             let assertion = named_child(node, "assertion")?;
             if assertion.class != RakuAstClass::RegexAssertionNamed
