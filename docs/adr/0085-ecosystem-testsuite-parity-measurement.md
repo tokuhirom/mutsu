@@ -705,6 +705,32 @@ bubblewrap, three attempts) moves `Red::Driver::Mock`, `Red::Driver::SQLite`,
 missing `declares_method` method on `MetamodelX::Red::Model`. The migration
 `Column` and `Table` API failures remain separate leads.
 
+## 23. Campaign slice: local metamodel `declares_method` introspection (2026-09-15)
+
+The next shared Red lead was a missing
+`Metamodel::MethodContainer.declares_method` method while `MetamodelX::Red::Model`
+composed its model roles. Red uses the local-declaration probe to decide whether
+it must wrap a model's `BUILD` or `TWEAK`; an MRO lookup would be incorrect
+because an inherited method must not count as a declaration by the model.
+
+Class and grammar HOW dispatch now implements `declares_method` from the
+canonical registry. It reports public methods, submethods, public accessors,
+role-composed methods, and grammar tokens declared by the target itself. It
+does not report private methods or inherited declarations. The native-MOP
+dispatch gates and ClassHOW lookup recognize the method so both
+`Type.^declares_method($name)` and the explicit HOW call form reach the same
+implementation. The focused regression is
+`t/oo/mop/metamodel-declares-method.t`, which passes under both mutsu and
+rakudo.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `ac3c83e2b`, Rakudo
+2026.07, bubblewrap, three attempts) moves `Red::Driver::Mock`,
+`Red::Driver::SQLite`, `Red::Driver::SQLite::SQLiteMaster`,
+`Red::Driver::SQLite::SchemaReader`, and `Red::Migration::Migration` past the
+missing method to the independent `Unknown function: create-resultseq` lead.
+Red remains `blocked_load`; the migration `Column` and `Table` API failures
+remain separate leads.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
