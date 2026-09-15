@@ -102,6 +102,16 @@ impl Interpreter {
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
+        // The body's lexical effects are kept on purpose (a class-scoped `my`
+        // may be read by a later method), but the *topic* is not one of
+        // them: each statement publishes its value through `$_` (mirroring
+        // `compile_unit`'s tail-statement-becomes-topic treatment, meant for
+        // a real routine/mainline return path), and class registration can
+        // happen inside a `with`/`given` block, so the topic is restored
+        // once the body has finished running — same fix already applied to
+        // role/augment deferred-body execution in
+        // `registration_class_compose_body.rs`/`registration_class_augment.rs`.
+        let saved_topic = self.env.get("_").cloned();
         self.set_current_package(name.to_string());
         self.env
             .insert("?CLASS".to_string(), Value::package(Symbol::intern(name)));
@@ -290,6 +300,13 @@ impl Interpreter {
             self.env = cx.saved_env.clone();
             return Err(e);
         }
+        // Restore the borrowed topic (see `saved_topic` above) now that the
+        // body has finished running successfully; the error path above
+        // already restores it as part of reverting the whole env.
+        match saved_topic {
+            Some(topic) => self.env.insert("_".to_string(), topic),
+            None => self.env.remove("_"),
+        };
         Ok(cx.class_def)
     }
 
