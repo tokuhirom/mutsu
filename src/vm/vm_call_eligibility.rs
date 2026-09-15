@@ -145,7 +145,14 @@ impl Interpreter {
                     // in `type_constraint` as `"::T"`; now it is its own field
                     // and the gate has to name it (#7984).
                     && pd.captured_type_name().is_none()
-                    && pd.traits.is_empty();
+                    && pd.traits.is_empty()
+                    // An attributive parameter (`$!x`/`$.x`/`:$!x`, #8452)
+                    // binds straight to `self`'s attribute cell, which only
+                    // the general binder's post-bind mirror step performs
+                    // (`mirror_attributive_params_to_cell`, called from
+                    // `call_compiled_function_named_inner`). Excluded here so
+                    // such a sub always takes that path.
+                    && Self::attr_twigil_base(&pd.name).is_none();
                 if !common {
                     return false;
                 }
@@ -319,6 +326,13 @@ impl Interpreter {
                     && !pd.name.starts_with('*')
                     // Exclude $_ topic param (used implicitly by regex, ff, etc.)
                     && pd.name != "_"
+                    // An attributive parameter (`$!x`/`$.x`, #8452) binds
+                    // straight to `self`'s attribute cell, which only the
+                    // general binder's post-bind mirror step performs
+                    // (`mirror_attributive_params_to_cell`, called from
+                    // `call_compiled_function_named_inner`). Excluded here so
+                    // such a sub always takes that path.
+                    && Self::attr_twigil_base(&pd.name).is_none()
             })
     }
 

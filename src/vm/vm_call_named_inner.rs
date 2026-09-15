@@ -311,6 +311,15 @@ impl Interpreter {
                 }
             }
         }
+        // #8452: a plain `sub` nested directly in a method body may bind an
+        // attributive parameter (`sub s($!t) { ... }`) — Raku's rule is
+        // lexical, so it closes over the same `self` the enclosing method's
+        // attribute cell belongs to. Mirror it in, exactly like a method's own
+        // attributive parameter (`mirror_attributive_params_to_cell`, called
+        // from `call_compiled_method`): a no-op when `self` is unavailable, and
+        // for every `sub` NOT nested in a method the parser already rejects any
+        // such parameter at parse time (`reject_attr_params_in_sub`).
+        self.mirror_attributive_params_to_cell(&cf.code, &cf.param_defs);
         // A named sub's `state` scope is its REGISTRATION clone id (refreshed
         // on every RegisterSub execution): a nested named sub re-registers per
         // enclosing call, and raku re-initializes its `state` per clone, while

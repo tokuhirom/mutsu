@@ -544,6 +544,27 @@ pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>
     parse_block_body_with_line_tracking(input, false)
 }
 
+/// Like [`parse_block_body`], but clears `self`-availability in the pushed
+/// scope. Used for the expression-position `class { ... }` / `role { ... }` /
+/// `grammar { ... }` bodies (`anon_decl.rs`): a fresh package body has no
+/// `self` of its own, even when the expression itself sits lexically inside a
+/// method (#8452) — matching the statement-position declarators, whose bodies
+/// go through `stmt::package_body_block` for the same reason.
+pub(crate) fn parse_block_body_no_self(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    let (r, _) = parse_char(input, '{')?;
+    crate::parser::stmt::simple::push_scope();
+    crate::parser::stmt::simple::clear_current_scope_self_available();
+    let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, _) = ws_inner(r);
+        let (r, _) = parse_char(r, '}')?;
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
+        Ok((r, stmts))
+    })();
+    crate::parser::stmt::simple::pop_scope();
+    result
+}
+
 /// Parse a block body with a source-line marker for each contained statement.
 ///
 /// Most expression blocks inherit their enclosing statement's source line, but

@@ -1,6 +1,6 @@
 use Test;
 
-plan 11;
+plan 16;
 
 # A `$.attr` accessor used where no `self` is available is X::Syntax::NoSelf.
 # This is distinct from bare `self` (X::Syntax::Self::WithoutObject).
@@ -59,3 +59,48 @@ lives-ok {
 throws-like
     'class A8 { has $!x; sub helper() { $!x } }',
     X::Syntax::NoSelf;
+
+# An attributive PARAMETER (`$!x` in a signature) is rejected by
+# `reject_attr_params_in_sub` at parse time -- distinct from the plain
+# variable-reference check above. Raku's rule is lexical: a plain `sub`
+# closes over `self` only when it is nested directly in a method/submethod
+# body (with no intervening class/role/grammar/package body). (#8452)
+
+# Top level: no enclosing method at all.
+throws-like
+    'sub s($!t) { }',
+    X::Syntax::NoSelf,
+    'an attributive param on a top-level sub is X::Syntax::NoSelf';
+
+# Directly in a class body (not inside a method): still no self.
+throws-like
+    'class B1 { has $!t; sub s($!t) { } }',
+    X::Syntax::NoSelf,
+    'an attributive param on a sub declared directly in a class body is X::Syntax::NoSelf';
+
+# Nested directly in a method body: self IS available, and the parameter
+# binds through to the object's attribute (#8452 gap 2).
+is-deeply
+    EVAL('class B2 {
+        has $!t = "orig";
+        method m {
+            sub s($!t) { }
+            s("new");
+            $!t;
+        }
+    }; B2.new.m'),
+    "new",
+    'an attributive param on a sub nested directly in a method body is accepted and binds self.attr';
+
+# A nested class inside the method resets self-availability: its own body
+# has no `self` of its own.
+throws-like
+    'class B3 { has $!t; method m { class D { sub s($!t) { } } } }',
+    X::Syntax::NoSelf,
+    'an attributive param on a sub nested in a class nested in a method is still X::Syntax::NoSelf';
+
+# Same for a nested role.
+throws-like
+    'class B4 { has $!t; method m { role R { sub s($!t) { } } } }',
+    X::Syntax::NoSelf,
+    'an attributive param on a sub nested in a role nested in a method is still X::Syntax::NoSelf';

@@ -9,7 +9,7 @@ use crate::parser::expr::expression;
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, take_while1};
 use crate::parser::stmt::sub::parse_indirect_decl_name;
-use crate::parser::stmt::{block, keyword, qualified_ident};
+use crate::parser::stmt::{keyword, package_body_block, qualified_ident};
 
 /// Parse the `:ver<...>` / `:auth(...)` / `:api(...)` adverbs that follow a type
 /// name in its declarator.
@@ -319,7 +319,7 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
         }
         break;
     }
-    let (rest, body) = block(rest)?;
+    let (rest, body) = package_body_block(rest)?;
     Ok((
         rest,
         Stmt::AugmentClass {
@@ -372,7 +372,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         r = r2;
     }
-    let (rest, body) = block(r)?;
+    let (rest, body) = package_body_block(r)?;
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
@@ -610,7 +610,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     super::super::simple::register_user_type(&name);
     let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
-        block(r)?
+        package_body_block(r)?
     };
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;

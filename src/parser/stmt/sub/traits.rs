@@ -454,9 +454,15 @@ pub(crate) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
 }
 
 /// Reject invocant markers (':') in non-method signatures (sub, pointy block).
-/// Reject attribute twigil parameters ($!x, $.x, @!a, @.a, %!h, %.h) in sub signatures.
-/// These require `self`, which subs don't have.
+/// Reject attribute twigil parameters ($!x, $.x, @!a, @.a, %!h, %.h) in sub signatures
+/// UNLESS `self` is lexically available — a plain `sub` nested directly in a
+/// method/submethod body (with no intervening class/role/grammar/package body)
+/// closes over the method's invocant, so it may bind an attributive parameter
+/// exactly as the method itself can (#8452).
 pub(crate) fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PError> {
+    if super::super::simple::self_available() {
+        return Ok(());
+    }
     for p in params {
         // $! is the error variable, not an attribute; only reject $!name (attribute twigil)
         if (p.name.starts_with('!') && p.name != "!") || p.name.starts_with('.') {

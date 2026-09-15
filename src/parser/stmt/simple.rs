@@ -70,10 +70,12 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
-    current_scope_anon_state_count, current_scope_anon_state_names_from, finish_block_anon_states,
-    is_test_assertion_callable, lookup_compile_time_constant, mark_current_scope_routine_body,
-    pop_scope, prepend_anon_state_decls, push_scope, record_anon_state_name,
-    register_compile_time_constant, suppress_worries, worries_suppressed,
+    clear_current_scope_self_available, current_scope_anon_state_count,
+    current_scope_anon_state_names_from, finish_block_anon_states, is_test_assertion_callable,
+    lookup_compile_time_constant, mark_current_scope_routine_body,
+    mark_current_scope_self_available, pop_scope, prepend_anon_state_decls, push_scope,
+    record_anon_state_name, register_compile_time_constant, self_available, suppress_worries,
+    worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
@@ -173,6 +175,16 @@ pub(in crate::parser) struct LexicalScope {
     /// `state` machinery's per-clone identity. NOT inherited by nested scopes
     /// (reset in `push_scope`). See `record_anon_state_name`.
     anon_states: Vec<String>,
+    /// Whether `self` is available in this scope: true inside a
+    /// method/submethod body and anything lexically nested in it (a plain
+    /// `sub`, an `if`/`for`/... block, ...), UNLIKE `is_routine_body` this IS
+    /// inherited by nested scopes via `push_scope`'s clone — a `sub` closes
+    /// over the enclosing method's `self` transitively. A nested
+    /// class/role/grammar/package body clears it explicitly (see
+    /// `clear_current_scope_self_available`), since that is a fresh package
+    /// with no `self` of its own. Drives whether `reject_attr_params_in_sub`
+    /// rejects an attributive parameter (`$!x`) on a plain `sub`.
+    self_available: bool,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

@@ -821,7 +821,7 @@ impl Interpreter {
         // method body's cell-direct reads of `$!x` see the parameter value (not
         // the stale entry value) and the mutation is visible to every alias. This
         // removes the attributive-param case from the exit-time reconcile.
-        self.mirror_attributive_params_to_cell(cc, method_def);
+        self.mirror_attributive_params_to_cell(cc, &method_def.param_defs);
         // A method body's `state` is keyed by the method itself — its
         // `state_locals` keys already carry the owning package and method name —
         // NOT by whatever closure the CALLER happened to be running in. Clearing
@@ -1447,12 +1447,19 @@ impl Interpreter {
     /// twigil name (`!x`, `@!a`, …); this pushes it through to the cell so that
     /// cell-direct body reads and cross-frame aliases observe it, taking the
     /// attributive-param case out of the exit-time `reconcile_attrs`.
-    fn mirror_attributive_params_to_cell(
+    ///
+    /// Shared with a plain `sub`'s call path (`call_compiled_function_named_inner`):
+    /// a `sub` nested directly in a method body may bind an attributive
+    /// parameter too (#8452) — it closes over the same `self` the method's own
+    /// attribute cell belongs to, so the mirror is a no-op (`write_self_attr_cell`
+    /// finds no `self`) for any other `sub`, whose parameters the parser already
+    /// rejects at parse time (`reject_attr_params_in_sub`).
+    pub(super) fn mirror_attributive_params_to_cell(
         &self,
         code: &CompiledCode,
-        method_def: &crate::runtime::MethodDef,
+        param_defs: &[crate::ast::ParamDef],
     ) {
-        for pd in &method_def.param_defs {
+        for pd in param_defs {
             if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
                 continue;
             }

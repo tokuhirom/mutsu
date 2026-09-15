@@ -148,6 +148,43 @@ pub(crate) fn mark_current_scope_routine_body() {
     });
 }
 
+/// Mark the current (innermost) scope as having `self` available. Called by
+/// the method/submethod body parsers right after they push the body's scope.
+/// Unlike `mark_current_scope_routine_body`, the flag this sets IS inherited
+/// by every scope nested inside it (`push_scope` clones it), so a plain `sub`
+/// declared anywhere inside a method body — directly or nested in further
+/// blocks — sees `self` as available too, matching Raku's lexical rule.
+pub(crate) fn mark_current_scope_self_available() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.self_available = true;
+        }
+    });
+}
+
+/// Clear `self` availability in the current (innermost) scope. Called by the
+/// class/role/grammar/package body parsers right after they push the body's
+/// scope, so a plain `sub` declared directly in such a body does NOT inherit
+/// `self` from an enclosing method even though it is lexically nested inside
+/// it — a fresh package body has no `self` of its own.
+pub(crate) fn clear_current_scope_self_available() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.self_available = false;
+        }
+    });
+}
+
+/// Whether `self` is available in the current (innermost) lexical scope.
+pub(crate) fn self_available() -> bool {
+    SCOPES.with(|s| {
+        s.borrow()
+            .last()
+            .map(|scope| scope.self_available)
+            .unwrap_or(false)
+    })
+}
+
 /// Pop the current lexical scope (called when leaving a `{ }` block).
 pub(crate) fn pop_scope() {
     SCOPES.with(|s| {
