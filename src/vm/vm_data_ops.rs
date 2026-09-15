@@ -58,19 +58,38 @@ impl Interpreter {
             // A `WrapVarRef`-tagged scalar variable element of a List (`($a, $b)`):
             // store the variable's shared `ContainerRef` cell so the List aliases
             // `$a`'s container and a later mutation is visible when the List is
-            // read. A ContainerRef is a scalar item, so it never flattens. (Only
-            // Lists carry this tag -- bracket arrays `[...]` decontainerize.)
+            // read. A ContainerRef is a scalar item, so it never flattens -- EXCEPT
+            // a `Slip`, which is the one value that flattens out of whatever
+            // container it was read from, aliased or not (issue #8465). A `Slip`
+            // splices its contents into the list right now, so there is nothing
+            // left to alias afterward. (Only Lists carry this tag -- bracket
+            // arrays `[...]` decontainerize.)
             if let ValueView::VarRef {
                 name: source_name,
                 value: inner,
                 ..
             } = val.view()
             {
+                if let ValueView::Slip(items) = inner.view() {
+                    elems.extend(items.iter().cloned());
+                    continue;
+                }
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
                 let slot_hint = val.varref_slot();
                 elems.push(self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint));
                 continue;
+            }
+            // A hash/array-element read reaches here as a live `ContainerRef` cell
+            // too (`%h<a> = slip(5, 6); (1, %h<a>, 2)`), for the same aliasing
+            // reason as the `VarRef` case above -- and the same `Slip` exception
+            // applies: flatten its contents rather than storing the cell whole.
+            if let ValueView::ContainerRef(_) = val.view() {
+                let inner = val.deref_container();
+                if let ValueView::Slip(items) = inner.view() {
+                    elems.extend(items.iter().cloned());
+                    continue;
+                }
             }
             // Reify a not-yet-read Seq source (deferred Iterator or
             // IO::Handle.lines — ADR-0034) into an eager array element.
