@@ -11,7 +11,8 @@
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
   angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
-  argumented-subrule-alias, and indexed-dynamic-argument slices implemented
+  argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
+  argument slices implemented
   2026-09-12 through
   2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1094,3 +1095,19 @@ other dynamic argument expressions remain separate boundaries. The focused
 regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the index
 node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic index
 reassignment.
+
+## 41. Ternary dynamic argument slice (2026-09-15)
+
+Ordinary ternary expressions in argumented subrules, such as
+`<word($which ?? 'a' !! 'b')>`, now lower from their existing
+`RakuAST::Ternary` shape back to the regex parser. The renderer groups the
+condition and both branches so the established match-time subrule-argument
+evaluator selects the branch. Consequently the condition keeps observing
+lexical reassignment between matches.
+
+No selector or branch is evaluated during `.AST` conversion or RakuAST
+lowering, and this adds no matcher or VM path. Modified or quoted method calls
+and other dynamic argument expressions remain separate boundaries. The focused
+regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the
+ternary node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic
+condition reassignment.
