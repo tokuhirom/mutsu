@@ -68,10 +68,13 @@ Two consequences worth spelling out:
   pass the issue's existing labels alongside it — read them first, or you silently drop its kind and
   tier labels. `gh issue edit --add-label` / `--remove-label` have no such hazard. The rest of the
   issue conventions are in [issue-workflow.md](issue-workflow.md).
-- **Watching CI is a polled read in both worlds.** Locally, a `run_in_background` loop over
-  `gh pr checks`. Remotely there is no shell command to loop on, so either call
-  `pull_request_read`/`get_check_runs` again after doing other work, or use
-  `subscribe_pr_activity` so CI results and review comments wake the session.
+- **Wait to be woken by CI; do not poll it.** Locally, ONE `run_in_background` command that blocks
+  until `gh pr checks` reports nothing pending and then exits — the harness notifies you when it
+  does. Remotely there is no shell command to block on, so use `subscribe_pr_activity` and let CI
+  results and review comments wake the session. Re-reading `pull_request_read`/`get_check_runs` on a
+  run that is still going buys nothing and is subject to the 30-minute polling floor in
+  [CLAUDE.md](../CLAUDE.md#waiting-for-a-long-job--the-30-minute-polling-floor); the same floor
+  governs `cargo build`, `make test` and `make roast`, which is where the cost actually is.
 
 ## Provisioning: rust, raku, the native C libraries and the sandbox
 
