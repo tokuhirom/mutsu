@@ -1367,17 +1367,23 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
         // `$_[0, 1]` and `$x.[0, 1]`. `expression` stops at the comma, so the
         // `]` check below failed and the whole term fell through to "Confused"
         // (Test::Async's `Test::Async::Base` writes `|.[0, 1]`).
-        let (r, index) = crate::parser::expr::parse_bracket_indices(r)?;
+        let (r, parsed) = crate::parser::expr::parse_bracket_indices_inner(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ']')?;
-        return Ok((
-            r,
-            Expr::Index {
-                target: Box::new(Expr::Var("_".to_string())),
+        let topic = Box::new(Expr::Var("_".to_string()));
+        let expr = match parsed {
+            crate::parser::expr::ParsedBracketIndex::Single(index) => Expr::Index {
+                target: topic,
                 index: Box::new(index),
                 is_positional: true,
             },
-        ));
+            crate::parser::expr::ParsedBracketIndex::MultiDim(dimensions) => Expr::MultiDimIndex {
+                target: topic,
+                dimensions,
+                is_positional: true,
+            },
+        };
+        return Ok((r, expr));
     }
     // .{index} — topicalized hash/associative lookup on $_
     if let Some(r) = r.strip_prefix('{') {

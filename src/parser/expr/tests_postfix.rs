@@ -121,6 +121,42 @@ fn parse_hyper_index_with_dot() {
 }
 
 #[test]
+fn parse_topic_multidimensional_index() {
+    let parsed = crate::parser::parse_program("given $set { .[2; .[0; 7]] = 'replacement' }");
+    assert!(parsed.is_ok(), "expected program to parse");
+    let (program, error) = match parsed {
+        Ok(parsed) => parsed,
+        Err(_) => return,
+    };
+    assert_eq!(error, None);
+    let given_body = program
+        .iter()
+        .find(|stmt| matches!(stmt, crate::ast::Stmt::Given { .. }))
+        .and_then(|stmt| match stmt {
+            crate::ast::Stmt::Given { body, .. } => Some(body),
+            _ => None,
+        });
+    assert!(given_body.is_some(), "expected given statement");
+    let dimensions = given_body.and_then(|body| {
+        body.iter().find_map(|stmt| {
+            if let crate::ast::Stmt::Expr(Expr::MultiDimIndexAssign { dimensions, .. }) = stmt {
+                Some(dimensions)
+            } else {
+                None
+            }
+        })
+    });
+    assert!(
+        dimensions.is_some(),
+        "expected multidimensional topic index assignment"
+    );
+    if let Some(dimensions) = dimensions {
+        assert_eq!(dimensions.len(), 2);
+        assert!(matches!(dimensions[1], Expr::MultiDimIndex { .. }));
+    }
+}
+
+#[test]
 fn parse_dot_ampersand_block_call() {
     let (rest, expr) = expression("$m.&{ 3 }").unwrap();
     assert_eq!(rest, "");
