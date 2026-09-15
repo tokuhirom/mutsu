@@ -334,7 +334,83 @@ Slices 1-3 are the ones that pay; 4 and 5 are bookkeeping that follows.
 
 ## 9. Implementation status
 
-Not started. Tracked by #8069 §4.1 and #8087 stage 4. Stages 1-3 of #8087
-(`MetaNs` + the gate + all 48 namespaces funnelled through it) are merged and are
-the prerequisite that makes slice 1 a change at one site per namespace rather
-than at twenty-eight.
+**Slice 1 is merged** (#8305, 2026-09-13): `src/binding_desc.rs` and
+`CompiledCode::binding_descs` exist on `main`, folding `plain_locals`,
+`simple_scalar_locals` and the five key-symbol vectors into one
+`Vec<BindingDesc>`. No namespace retired, no behaviour change, as designed.
+
+Stages 1-3 of #8087 (`MetaNs` + the gate + all 48 namespaces funnelled through
+it) are merged and are the prerequisite that makes each later slice a change at
+one site per namespace rather than at twenty-eight.
+
+**Slices 2-5 are not started.** §10 records why slice 2 as written is not a
+uniform next step.
+
+## 10. Slice 2 is five properties of different shapes, not one fold (2026-09-15)
+
+Investigating slice 2 before writing any code (`type`, `hash_key_type`,
+`shaped_array_dims`, `constant_var`, `deep_readonly`) found that none of the
+five is a drop-in extension of slice 1's mechanism — each needs either far more
+call-site surface, or a piece of the design §2 describes but slice 1
+deliberately did not build (the **runtime half**, per frame, parallel to
+`locals`). Recorded here so the next slice does not have to re-derive this by
+reading the same code again.
+
+- **`type` / `hash_key_type`.** 150 and 19 call sites respectively (`grep -c`
+  on `var_type_constraint*` / `var_hash_key_constraint*` outside their own
+  definitions), an order of magnitude past slice 1's twelve fields. Several
+  read sites hold only a `name: &str`, never a slot (attribute fallback in
+  `var_hash_key_constraint_sym`, `interpolate_regex_scalars`-style
+  post-compile consumers) — moving the write side onto a slot-addressed
+  descriptor still leaves those reads needing a name-keyed lane, so this is
+  not a clean retirement, only a partial one. The scoping semantics
+  (`set_var_type_constraint_routine_scoped` vs `_decl`, ADR-0042 slice 3's
+  Text::CSV history) are exactly the kind of thing #8107 warns gets fixed by
+  testing, not by reasoning — this namespace needs its own, careful slice.
+
+- **`constant_var`.** Only 3 real sites, but
+  `Interpreter::collect_eval_user_value_term_names` (`system_eval_string.rs`)
+  answers "every constant name currently in scope" by scanning
+  `self.env.keys()` for the `__mutsu_constant_var::` prefix, for EVAL bareword-
+  term resolution. A slot-addressed descriptor cannot answer that question at
+  all — there is no slot to enumerate *from* without first knowing the name,
+  which is the thing being asked for. The write site's own comment explains
+  the deeper reason this one may not be worth retiring even before that:
+  `interpolate_regex_scalars` "runs long after compilation, on a bare `&self`
+  with no compiler access", i.e. its reader never has a slot number to look
+  one up with. Not every name-keyed env entry is this ADR's target; a
+  consumer that has never had anything but a name is not a "name used as an
+  address", it is a name used as a name.
+
+- **`deep_readonly`.** The declaration-settled use
+  (`methods_mut_method_lvalue.rs`) is one of two. The other, and the one that
+  actually runs hot, is `vm_for_loop_body.rs`'s for-loop topic marker: `$_` is
+  marked and unmarked deep-readonly on every loop entry/exit depending on the
+  loop parameter's `is rw`-ness — dynamic, per-iteration, mutable state, not a
+  fact fixed at a `my`. (It reaches env through a literal
+  `"__mutsu_deep_readonly::_"`, not `MetaNs`, which is why
+  `check-magic-keys.sh` — matching only an interpolating `format!` literal —
+  does not flag it; a fixed literal for a fixed name has nothing to memoize.)
+  This half belongs with the **runtime half** below, not slice 2's premise.
+
+- **`shaped_array_dims`.** Confirmed against real `raku` that shape dims are
+  genuinely per-invocation, not per-declaration-site:
+  `sub f($n) { my @a[$n;$n]; ... }; f(2); f(4);` prints `(2 2)` then `(4 4)`.
+  `CompiledCode.binding_descs` is one `Vec` per compiled chunk, shared by every
+  call — exactly what slice 1's five properties are safe to live on, because
+  they truly are fixed at compile time. Caching a per-call value there would
+  be a correctness regression the first time a shaped declaration's dims
+  depend on a parameter. This needs the runtime half of §2 (an array parallel
+  to a *frame's* `locals`, not to the chunk's `CompiledCode`) — undesigned and
+  unbuilt: no frame-lifetime-scoped, slot-indexed storage exists yet, and
+  working out its lifecycle across closures and thread handoff is itself
+  slice-sized work, not a fold.
+
+**Conclusion:** slice 2's own grouping conflates "declaration-settled" with
+"compile-time-fixed" — `shaped_array_dims` and half of `deep_readonly` are
+neither. A useful next slice is narrower than the ADR's own list: either
+build the runtime-half array first (which unblocks `shaped_array_dims` and
+the loop-topic half of `deep_readonly` at once), or take `constant_var` on
+its own once someone has decided its EVAL-enumeration consumer's fate, or
+take `type`/`hash_key_type` alone as a dedicated slice given its call-site
+count and history. Bundling all five, as written, is not one PR.
