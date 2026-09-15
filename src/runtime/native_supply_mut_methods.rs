@@ -180,13 +180,6 @@ impl Interpreter {
                             delay_seconds,
                             limit as usize,
                         );
-                    } else if let Some(produce_callable) = attrs.get("produce_callable").cloned() {
-                        register_supplier_produce_tap(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            delay_seconds,
-                            produce_callable,
-                        );
                     } else {
                         register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }

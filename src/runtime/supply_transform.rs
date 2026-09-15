@@ -122,15 +122,8 @@ impl Interpreter {
                                     let _guard = emit_lock.lock().unwrap();
                                     supplier_emit(out_supplier_id, pval.clone());
                                     let actions = supplier_emit_callbacks(out_supplier_id, &pval);
-                                    for action in actions {
-                                        if let SupplierEmitAction::Call(tap, emitted, delay) =
-                                            action
-                                        {
-                                            Self::sleep_for_supply_delay(delay);
-                                            let _ =
-                                                winterp.call_sub_value(tap, vec![emitted], true);
-                                        }
-                                    }
+                                    let _ = winterp
+                                        .drive_supplier_emit_actions(out_supplier_id, actions);
                                     emitted_count
                                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 }
@@ -154,12 +147,7 @@ impl Interpreter {
                         let status_value = Value::hash(status_hash);
                         supplier_emit(status_id, status_value.clone());
                         let actions = supplier_emit_callbacks(status_id, &status_value);
-                        for action in actions {
-                            if let SupplierEmitAction::Call(tap, emitted, delay) = action {
-                                Self::sleep_for_supply_delay(delay);
-                                let _ = thread_interp.call_sub_value(tap, vec![emitted], true);
-                            }
-                        }
+                        let _ = thread_interp.drive_supplier_emit_actions(status_id, actions);
                     }
                     supplier_done(out_supplier_id);
                     for done_cb in take_supplier_done_callbacks(out_supplier_id) {
@@ -217,12 +205,7 @@ impl Interpreter {
                     }
                     supplier_emit(out_supplier_id, val.clone());
                     let actions = supplier_emit_callbacks(out_supplier_id, val);
-                    for action in actions {
-                        if let SupplierEmitAction::Call(tap, emitted, delay) = action {
-                            Self::sleep_for_supply_delay(delay);
-                            let _ = thread_interp.call_sub_value(tap, vec![emitted], true);
-                        }
-                    }
+                    let _ = thread_interp.drive_supplier_emit_actions(out_supplier_id, actions);
                 }
                 supplier_done(out_supplier_id);
                 for done_cb in take_supplier_done_callbacks(out_supplier_id) {
@@ -357,12 +340,7 @@ impl Interpreter {
         // Emit the inner Supply to the output supplier synchronously
         supplier_emit(output_supplier_id, supply_val.clone());
         let out_actions = supplier_emit_callbacks(output_supplier_id, &supply_val);
-        for out_action in out_actions {
-            if let SupplierEmitAction::Call(tap, emitted, delay) = out_action {
-                Self::sleep_for_supply_delay(delay);
-                let _ = self.call_sub_value(tap, vec![emitted], true);
-            }
-        }
+        let _ = self.drive_supplier_emit_actions(output_supplier_id, out_actions);
 
         // Run the block asynchronously. Pooled (ADR-0020 slice 3): fires per
         // emitted value — the hottest supply spawner, warm reuse pays here.
@@ -374,12 +352,7 @@ impl Interpreter {
             // Emit the result into the inner Supply
             supplier_emit(inner_supplier_id, result_val.clone());
             let inner_actions = supplier_emit_callbacks(inner_supplier_id, &result_val);
-            for action in inner_actions {
-                if let SupplierEmitAction::Call(tap, emitted, delay) = action {
-                    Self::sleep_for_supply_delay(delay);
-                    let _ = thread_interp.call_sub_value(tap, vec![emitted], true);
-                }
-            }
+            let _ = thread_interp.drive_supplier_emit_actions(inner_supplier_id, inner_actions);
             // Mark the inner supply as done
             supplier_done(inner_supplier_id);
             for done_cb in take_supplier_done_callbacks(inner_supplier_id) {

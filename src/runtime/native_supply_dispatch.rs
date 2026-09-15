@@ -798,22 +798,33 @@ impl Interpreter {
                 ) {
                     return Err(RuntimeError::new("Supply.produce requires a code argument"));
                 }
-                // For live (Supplier-backed) supplies, create a derived supply
-                // that stores the produce callable for deferred execution on tap.
-                if attributes.get("supplier_id").is_some() {
+                // A live (Supplier-backed) source gets a real pipeline stage:
+                // its own derived supplier, fed by a produce tap on the source,
+                // exactly as `map`/`grep` do. It used to keep the SOURCE's
+                // supplier_id and ride a `produce_callable` attribute consumed
+                // at tap time, which made `produce` uncomposable in both
+                // directions -- the next combinator registered on the shared id
+                // and dropped the attribute (`.produce(...).map(...)` mapped the
+                // raw values), and the previous stage's own derived supplier had
+                // no tap that would reach it.
+                if let Some(source_sid) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_produce_tap(source_sid, downstream_sid, reducer);
+
                     let mut new_attrs = HashMap::new();
                     new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    if let Some(sid) = attributes.get("supplier_id") {
-                        new_attrs.insert("supplier_id".to_string(), sid.clone());
-                    }
-                    // ADR-0028 Slice 2: deferred to tap-time — copy
-                    // `"scheduler"` forward (see the `.lines` comment above).
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // ADR-0028 Slice 2 / ADR-0043: the produce tap registers
+                    // immediately, but the user's tap on this derived Supply
+                    // still reaches the "tap"|"act" chokepoint through the
+                    // ordinary path — copy `"scheduler"` forward.
                     if let Some(scheduler) = attributes.get("scheduler") {
                         new_attrs.insert("scheduler".to_string(), scheduler.clone());
                     }
-                    new_attrs.insert("produce_callable".to_string(), reducer);
-                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    new_attrs.insert("live".to_string(), Value::TRUE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
                 let source_values = self.supply_get_values(attributes)?;
