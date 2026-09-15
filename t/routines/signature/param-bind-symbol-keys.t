@@ -16,7 +16,7 @@ use Test;
 # declaring-package switch are all built from, so the same class of mistake --
 # the wrong name reaching one of them -- is what these assertions catch.
 
-plan 80;
+plan 96;
 
 # --- the fixed per-call keys -------------------------------------------------
 
@@ -308,3 +308,80 @@ sub catcher() { try thrower(); return $!.defined ?? "caught" !! "clean" }
 is catcher(), "caught", 'a by-name call sees its own $! after a failed call';
 sub quiet() { return $!.defined ?? "stale" !! "fresh" }
 is quiet(), "fresh", 'a later routine starts with a fresh $!';
+
+# --- #7766 unit 2 item 4: the resolution layers below the named entry --------
+#
+# `fn_keys_for_base`, `resolve_function_multi_cached`,
+# `resolve_all_multi_candidates_cached` and `push_multi_dispatch_frame` now
+# take the callsite name's Symbol from the caller instead of re-interning it.
+# `fn_keys_for_base_sym` may only reuse that symbol when the name's BASE is the
+# whole name, because the key index is keyed by the base -- so a qualified or
+# arity-suffixed callee must still reach the same key set. A mix-up here shows
+# up as the WRONG routine's declaration answering a question about the callee:
+# its rw-ness, its candidate list, or its winner.
+
+# ADR-0067's rw-argument container gate (`MarkRwArgRefContext` ->
+# `named_routine_binds_container_at`) is the `fn_keys_for_base` consumer on the
+# per-op path. It must answer for the unqualified and the qualified spelling
+# alike, and must not borrow a same-named routine's answer from another package.
+class RwHolder { has $.slot is rw = 1 }
+sub bump($x is rw) { $x = $x + 10; $x }
+package Q {
+    our sub bump-q($x is rw) { $x = $x + 100; $x }
+}
+package R {
+    our sub bump($x) { $x + 1000 }
+}
+my $rw-h = RwHolder.new;
+is bump($rw-h.slot), 11, 'an unqualified is-rw callee binds the caller container';
+is $rw-h.slot, 11, 'and the write reached the attribute through it';
+my $rw-h2 = RwHolder.new;
+is Q::bump-q($rw-h2.slot), 101,
+    'a package-qualified is-rw callee binds the caller container too';
+is $rw-h2.slot, 101, 'and its write reached the attribute as well';
+is R::bump(5), 1005,
+    'a same-named sub in another package keeps its own non-rw signature';
+
+# Two protos of the same short name in different packages: the multi
+# resolution cache and the candidate memo are keyed on (package, name symbol),
+# so a wrong name symbol would serve one package's winner for the other.
+package M1 {
+    our proto mm($) {*}
+    our multi mm(Int $n) { "M1-int" }
+    our multi mm(Str $s) { "M1-str" }
+}
+package M2 {
+    our proto mm($) {*}
+    our multi mm(Int $n) { "M2-int" }
+    our multi mm(Str $s) { "M2-str" }
+}
+is M1::mm(1), "M1-int", 'a qualified multi call picks its own package Int candidate';
+is M2::mm(1), "M2-int", 'and the same short name in another package picks that one';
+is M1::mm("x"), "M1-str", 'the Str candidate of the first package is still reachable';
+is M2::mm("y"), "M2-str", 'and of the second';
+is M1::mm(2), "M1-int", 'the first package resolves again once both caches are warm';
+
+# A three-deep `nextsame` chain exercises the dispatch frame the
+# `push_multi_dispatch_frame_sym` path builds: the frame's `remaining` list
+# comes from the name-keyed candidate memo, so a wrong key would shorten or
+# misorder it.
+multi deep(Int $n) { "i" ~ nextsame }
+multi deep(Cool $n) { "c" ~ nextsame }
+multi deep(Any $n) { "a" }
+is deep(1), "a", 'a three-deep nextsame chain reaches the last candidate';
+is deep(1), "a", 'and does so again with the candidate memo warm';
+
+# `native_lever_a_user_override` now takes the method symbol from its caller.
+# A user method augmented onto a builtin must still win over the native row of
+# the same name, and an un-overridden native method must still be served.
+use MONKEY-TYPING;
+augment class Str { method shout() { self.uc ~ "!" } }
+is "hi".shout, "HI!", 'a user method augmented onto a builtin is dispatched';
+is "hi".uc, "HI", 'and an un-overridden native method still serves';
+
+# The parameter type-constraint and readonly marks travel through the two
+# `debug_assert`s this change stopped from interning; both must still bite.
+sub typed-again(Int $n) { $n * 2 }
+is typed-again(21), 42, 'a typed parameter still binds and runs';
+dies-ok { my $ro = sub ($a) { $a = 5 }; $ro(1) },
+    'a readonly parameter still refuses assignment';
