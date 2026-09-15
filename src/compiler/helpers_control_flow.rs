@@ -561,7 +561,21 @@ impl Compiler {
     /// `body` supplies the position-specific branch lowering while the frame
     /// consistently reads the value stack, preserving the enclosing topic.
     pub(super) fn compile_if_value_branch(&mut self, stmts: &[Stmt], body: impl FnOnce(&mut Self)) {
-        let let_frame = Self::has_let_deep(stmts).then(|| {
+        self.compile_if_value_branch_scoped(stmts, false, body)
+    }
+
+    /// As [`Compiler::compile_if_value_branch`], but told whether the branch is
+    /// a STATEMENT MODIFIER's body rather than a block. A modifier opens no
+    /// `let`/`temp` scope of its own -- see
+    /// [`Compiler::compile_if_statement_branch_scoped`], which makes the same
+    /// distinction for the statement position.
+    pub(super) fn compile_if_value_branch_scoped(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+        body: impl FnOnce(&mut Self),
+    ) {
+        let let_frame = (Self::has_let_deep(stmts) && !is_statement_modifier).then(|| {
             self.code.emit(OpCode::LetBlock {
                 body_end: 0,
                 value_on_stack: true,

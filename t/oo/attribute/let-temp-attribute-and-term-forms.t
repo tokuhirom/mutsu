@@ -22,7 +22,7 @@ use Test;
 #
 # Every assertion below is rakudo's own answer.
 
-plan 18;
+plan 25;
 
 # 1. An attribute is as temporizable as a lexical, and `temp` restores it.
 class Scalar-attr {
@@ -122,3 +122,38 @@ my $plain = 1;
 is $plain, 1, 'temp on a plain lexical still restores';
 try { die 'boom' };
 is $!.message, 'boom', '$! is still the error variable';
+
+# A `temp` whose lvalue reaches THROUGH an attribute (`temp $!o.attr = v`) saves
+# the attribute so it can be restored -- and an attribute's source of truth is
+# `self`'s shared cell, not this frame's mirror slot. The save read the slot and
+# `env`, which in a method body that has not otherwise touched `$!o` are both
+# empty, so it snapshotted `Nil`; the restore then wrote that `Nil` over the live
+# object and the attribute was destroyed. Caught by Template::Mustache's
+# `temp $!logger.level = $_ with $log-level`, whose next line delegates through
+# `$!logger` and died with "No such method 'log'".
+class Inner { has $.depth is rw = 'base'; method tag { 'inner' } }
+class Reaches-through {
+    has $.inner is rw;
+    submethod TWEAK { $!inner //= Inner.new }
+    method touch-sub-attribute($v) {
+        temp $!inner.depth = $_ with $v;
+        $!inner;
+    }
+}
+my $rt = Reaches-through.new;
+my $still = $rt.touch-sub-attribute('deep');
+ok $still.defined, 'temp through an attribute leaves the attribute defined';
+is $still.tag, 'inner', '... still the same object, so delegation through it works';
+is $rt.inner.depth, 'base', '... and the sub-attribute is restored';
+
+# A STATEMENT MODIFIER is not a block, so it opens no `let`/`temp` scope: the
+# save belongs to the enclosing routine and must still stand on the next
+# statement. mutsu gave the modifier its own `LetBlock` frame and restored there,
+# which stayed invisible while the restore wrote only the mirror slot and `env`.
+our $mod-x = 1;
+sub if-modifier($c) { temp $mod-x = 2 if $c; $mod-x }
+sub with-modifier($c) { temp $mod-x = 3 with $c; $mod-x }
+is if-modifier(1), 2, 'temp under an `if` modifier stands on the next statement';
+is $mod-x, 1, '... and is restored when the routine exits';
+is with-modifier(1), 3, 'temp under a `with` modifier stands on the next statement';
+is $mod-x, 1, '... and is restored when that routine exits';

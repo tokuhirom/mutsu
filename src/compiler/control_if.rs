@@ -123,7 +123,7 @@ impl Compiler {
         // execution, so its own `state` restarts each time — see
         // `OpCode::ResetStateLocals`.
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
-        self.compile_if_branch(then_branch, position);
+        self.compile_if_branch(then_branch, position, is_statement_modifier);
         self.patch_nested_block_state_reset(then_state_reset);
 
         // A statement-position chain with no `else` simply falls through; a
@@ -187,7 +187,7 @@ impl Compiler {
             } else {
                 let else_state_reset =
                     self.emit_branch_state_reset(else_branch, is_statement_modifier);
-                self.compile_if_branch(else_branch, position);
+                self.compile_if_branch(else_branch, position, is_statement_modifier);
                 self.patch_nested_block_state_reset(else_state_reset);
             }
             self.code.patch_jump(jump_end);
@@ -198,16 +198,25 @@ impl Compiler {
     }
 
     /// Emit one branch body of an `if` chain for the position it is compiled in.
-    fn compile_if_branch(&mut self, branch: &[Stmt], position: IfPosition) {
+    fn compile_if_branch(
+        &mut self,
+        branch: &[Stmt],
+        position: IfPosition,
+        is_statement_modifier: bool,
+    ) {
         match position {
             // The branch must leave exactly one value. `do_if_branch_supported`
             // (checked by every value-position caller) has already rejected the
             // phaser shapes the statement emitters below exist for, so
             // `compile_block_inline` covers everything that reaches here.
             IfPosition::Value => {
-                self.compile_if_value_branch(branch, |c| c.compile_block_inline(branch))
+                self.compile_if_value_branch_scoped(branch, is_statement_modifier, |c| {
+                    c.compile_block_inline(branch)
+                })
             }
-            IfPosition::Statement => self.compile_if_statement_branch(branch),
+            IfPosition::Statement => {
+                self.compile_if_statement_branch_scoped(branch, is_statement_modifier)
+            }
         }
     }
 
@@ -215,6 +224,25 @@ impl Compiler {
     /// `let`/`temp` save frame. This is shared with constant-condition folding,
     /// which bypasses the ordinary `compile_if_construct` path.
     pub(super) fn compile_if_statement_branch(&mut self, branch: &[Stmt]) {
+        self.compile_if_statement_branch_scoped(branch, false)
+    }
+
+    /// As [`Compiler::compile_if_statement_branch`], but told whether the branch
+    /// is a STATEMENT MODIFIER's body rather than a block.
+    ///
+    /// A statement modifier is not a block, so it opens no `let`/`temp` scope:
+    /// `temp $x = 2 with $c; say $x` must still see `2`, because the save is
+    /// restored when the enclosing ROUTINE exits, not at the modifier. Emitting
+    /// the `OpCode::LetBlock` frame for one restored it immediately, which was
+    /// invisible for as long as the restore wrote only the frame's mirror slot
+    /// and `env` -- nothing read those back for an attribute -- and became a
+    /// destroyed attribute once the restore started writing `self`'s cell too
+    /// (Template::Mustache's `temp $!logger.level = $_ with $log-level`).
+    pub(super) fn compile_if_statement_branch_scoped(
+        &mut self,
+        branch: &[Stmt],
+        is_statement_modifier: bool,
+    ) {
         if Self::has_block_enter_leave_phasers(branch) {
             // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
             // scope: its LEAVE must fire when the branch exits (OO::Monitors
@@ -249,7 +277,7 @@ impl Compiler {
             } else {
                 self.compile_block_local_branch(branch);
             }
-        } else if Self::has_let_deep(branch) {
+        } else if Self::has_let_deep(branch) && !is_statement_modifier {
             let needs_value = Self::has_real_let_deep(branch);
             let idx = self.code.emit(OpCode::LetBlock {
                 body_end: 0,

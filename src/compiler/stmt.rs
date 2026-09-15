@@ -2971,8 +2971,19 @@ impl Compiler {
                 // `let`/`temp` saves inside the topicalizer, so a `with`
                 // branch resolves a save before execution continues after the
                 // enclosing `if`.
+                //
+                // A STATEMENT MODIFIER is the exception, for the same reason it
+                // is excluded from the topic rebind, the block-local scope and
+                // the dynamic scope above: `EXPR with $c` is not a block, so it
+                // opens no `let`/`temp` scope and the save belongs to the
+                // enclosing routine. `temp $x = 2 with $c; say $x` must still
+                // see `2`; this frame restored it at the modifier instead. That
+                // was invisible while the restore wrote only the mirror slot and
+                // `env`, and became a DESTROYED attribute once the restore
+                // started writing `self`'s cell too -- Template::Mustache's
+                // `temp $!logger.level = $_ with $log-level` lost its logger.
                 let needs_value = Self::has_real_let_deep(body);
-                let let_frame = Self::has_let_deep(body).then(|| {
+                let let_frame = (Self::has_let_deep(body) && !*is_statement_modifier).then(|| {
                     self.code.emit(OpCode::LetBlock {
                         body_end: 0,
                         value_on_stack: needs_value,
