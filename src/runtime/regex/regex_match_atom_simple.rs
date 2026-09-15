@@ -1,5 +1,6 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
+use super::regex_casefold::casefold_eq;
 use super::regex_helpers::{
     CaseFoldIter, LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars,
     grapheme_end, is_grapheme_boundary, is_word_char, matches_named_builtin,
@@ -665,7 +666,7 @@ impl Interpreter {
                 if grapheme_end(chars, pos) > pos + 1 || !is_grapheme_boundary(chars, pos) {
                     false
                 } else if ignore_case {
-                    ch.to_lowercase().to_string() == c.to_lowercase().to_string()
+                    casefold_eq([*ch], [c])
                 } else {
                     *ch == c
                 }
@@ -680,7 +681,7 @@ impl Interpreter {
                 } else {
                     let subject = &chars[pos..pos + len];
                     if ignore_case {
-                        subject.iter().collect::<String>().to_lowercase() == g.to_lowercase()
+                        casefold_eq(g.chars(), subject.iter().copied())
                     } else {
                         g.chars().eq(subject.iter().copied())
                     }
@@ -698,8 +699,7 @@ impl Interpreter {
                 } else {
                     let slice = &chars[pos..pos + name_chars.len()];
                     if ignore_case {
-                        slice.iter().collect::<String>().to_lowercase()
-                            == name_chars.iter().collect::<String>().to_lowercase()
+                        casefold_eq(name_chars.iter().copied(), slice.iter().copied())
                     } else {
                         *slice == name_chars[..]
                     }

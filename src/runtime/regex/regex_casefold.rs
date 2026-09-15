@@ -3,12 +3,25 @@ use super::super::*;
 /// Unicode case-fold a single character. Returns the folded chars.
 /// Uses the "uppercase then lowercase" approximation of full Unicode case folding.
 /// Examples: 'ß' -> ['s','s'], 'ﬁ' -> ['f','i'], 'A' -> ['a']
-fn casefold_char(c: char) -> Vec<char> {
+pub(super) fn casefold_char(c: char) -> Vec<char> {
     c.to_uppercase()
         .collect::<String>()
         .to_lowercase()
         .chars()
         .collect()
+}
+
+/// Whether two character sequences have the same case-folded spelling.
+///
+/// Keep the comparison alongside [`casefold_char`]: regex atoms, graphemes,
+/// and named literal fallbacks must not each grow their own notion of `:i`.
+pub(super) fn casefold_eq(
+    left: impl IntoIterator<Item = char>,
+    right: impl IntoIterator<Item = char>,
+) -> bool {
+    left.into_iter()
+        .flat_map(casefold_char)
+        .eq(right.into_iter().flat_map(casefold_char))
 }
 
 /// Returns true if a character case-folds to more than one character.
