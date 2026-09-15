@@ -112,12 +112,42 @@ So `:h(:@highlight)` answered to `h` but not to `highlight`, and the call died w
 argument"; `:h(:$hi)`, whose inner name carries no sigil, worked, which is what hid it. Both sites
 share one `named_param_external_key` now.
 
+## Writing the attribute cell on restore needed the save to read it too
+
+Making the restore write `self`'s attribute cell is what the `temp $!x` fix above requires, and it
+unmasked two things the old, ineffective restore had been hiding. The bundled-battery gate found
+them: `Template::Mustache`'s `render` died with "No such method 'log'", because
+`temp $!logger.level = $_ with $log-level` destroyed `$!logger` and the next line delegates through
+it (`has $.logger handles <log>`).
+
+**The save was reading a different store from the restore.** `temp $!o.attr = v` emits a `LetSave`
+naming `!o`, and `exec_let_save_op` read the method frame's mirror slot and then `env`. In a body
+that has not otherwise touched `$!o` both are empty, so the snapshot was `Nil` — and the restore
+duly wrote that `Nil` over a live object. The save reads the cell now, so the two agree.
+
+**A statement modifier is not a block, so it opens no `let`/`temp` scope.** The save belongs to the
+enclosing routine and must still stand on the next statement: `temp $x = 2 with $c; say $x` says 2
+in rakudo and said 1 here — for a plain lexical, with no attribute involved, and on `main` as well.
+The modifier's branch was given its own `OpCode::LetBlock` frame and restored there. That was
+invisible for as long as the restore wrote only the mirror slot and `env`, which nothing reads back
+for an attribute, and became a destroyed attribute the moment the cell was in play. Both the
+statement-position and the value-position branch emitters skip the frame for a modifier now, beside
+the topic rebind, block-local scope and dynamic scope those same functions already excluded it from.
+
+Worth carrying forward: a restore that starts writing a *shared* store is not a local change. Every
+save feeding it has to be re-checked for reading the same store, and every scope that brackets it
+has to be re-checked for being a real scope — neither was observable while the restore was writing
+somewhere nothing read.
+
 ## Pins
 
 `t/lang/sigil-contextualizer-stacked-slip.t`, `t/routines/signature/param-type-then-type-capture.t`,
 `t/oo/attribute/let-temp-attribute-and-term-forms.t`,
 `t/routines/signature/anon-onearg-param-marker.t`,
 `t/routines/signature/named-arg-alias-external-key.t` — all five green under rakudo itself, so they
-pin rakudo's behaviour rather than mutsu's. `t/routines/dispatch/multidim-splat-lazy.t` grows the
+pin rakudo's behaviour rather than mutsu's. The `let`/`temp` file grew four more of the same kind:
+a `temp` reaching through an attribute leaves the attribute defined and the same object (so
+delegation through it still resolves), and an `if`/`with` modifier holds its save to the end of the
+enclosing routine. `t/routines/dispatch/multidim-splat-lazy.t` grows the
 parenthesized-lvalue case of the dimension splat (6.e behaviour, which mutsu implements
 unconditionally; verified against rakudo under `use v6.e.PREVIEW`).
