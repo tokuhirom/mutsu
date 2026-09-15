@@ -316,7 +316,35 @@ impl Interpreter {
     /// an `@` parameter. Raku asks the value for an iterator and binds the
     /// resulting cached List; this is deliberately part of signature binding
     /// so it also applies to indirect calls and multi candidates.
+    ///
+    /// `PositionalBindFailover` requires (in the "throws if you call it and
+    /// didn't override it" sense, not a compose-time MOP check) `cache` OR
+    /// `iterator` -- a user class may implement either one. Calling
+    /// `.iterator` unconditionally (as this used to) is wrong for a class
+    /// that only implements `.cache`: mutsu's `PositionalBindFailover`, like
+    /// rakudo's, does not synthesize a default `.iterator` in terms of
+    /// `.cache`, so the call dispatched to whatever generic fallback resolves
+    /// for an unknown method instead of the class's real data (#8456). So
+    /// prefer the user-defined `.iterator` when the class actually declares
+    /// one (own or inherited) and fall back to `.cache` otherwise. The real
+    /// `Seq`/`HyperSeq`/`RaceSeq` builtins always have a genuine native
+    /// `.iterator` and keep using it.
     fn coerce_positional_bind_failover(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        let has_own_iterator = match value.view() {
+            ValueView::Seq(..) | ValueView::HyperSeq(..) | ValueView::RaceSeq(..) => true,
+            ValueView::Instance { class_name, .. } => {
+                self.class_has_user_method(&class_name.resolve(), "iterator")
+            }
+            _ => false,
+        };
+        if !has_own_iterator {
+            let cached = self.call_method_with_values(value, "cache", vec![])?;
+            let items = crate::runtime::value_to_list(&cached);
+            return Ok(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            ));
+        }
         let iterator = self.call_method_with_values(value, "iterator", vec![])?;
         let items = if let ValueView::Instance {
             class_name,
