@@ -1119,21 +1119,37 @@ impl Compiler {
         }
         // Rewrite undefine($var) -> $var = Any (assign type object to the variable)
         if name == "undefine" && args.len() == 1 {
-            // Handle `undefine temp $var` — parsed as undefine(temp($var))
+            // Handle `undefine temp $var`. `temp`/`let` is a statement prefix, so
+            // the argument is a `DoStmt(Stmt::Let { .. })`; it used to reach here
+            // as `Call("temp", [$var])` only because `temp` was not a term and
+            // fell back to being read as a call, which #7954 changed. Both shapes
+            // are matched so either parse lands on the same lowering.
             // Emit: LetSave (temp), then $var = Any
-            if let Expr::Call {
-                name: inner_name,
-                args: inner_args,
-            } = &args[0]
-                && inner_name.resolve() == "temp"
-                && inner_args.len() == 1
-            {
-                let inner_var = match &inner_args[0] {
-                    Expr::Var(n) => Some(n.clone()),
-                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
-                    Expr::HashVar(n) => Some(format!("%{}", n)),
+            let inner_var = match &args[0] {
+                Expr::DoStmt(stmt) => match stmt.as_ref() {
+                    Stmt::Let {
+                        name: vname,
+                        index: None,
+                        value: None,
+                        undefine_first: false,
+                        ..
+                    } => Some(vname.clone()),
                     _ => None,
-                };
+                },
+                Expr::Call {
+                    name: inner_name,
+                    args: inner_args,
+                } if inner_name.resolve() == "temp" && inner_args.len() == 1 => {
+                    match &inner_args[0] {
+                        Expr::Var(n) => Some(n.clone()),
+                        Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                        Expr::HashVar(n) => Some(format!("%{}", n)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            {
                 if let Some(vname) = inner_var {
                     // Compile: temp $var (LetSave)
                     let let_stmt = Stmt::Let {

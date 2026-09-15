@@ -22,7 +22,7 @@ use Test;
 #
 # Every assertion below is rakudo's own answer.
 
-plan 16;
+plan 18;
 
 # 1. An attribute is as temporizable as a lexical, and `temp` restores it.
 class Scalar-attr {
@@ -101,6 +101,19 @@ is capture(0, let %pushed .= push: (a => 1)), '\\(0, {:a(1)})',
 
 my $t = 1;
 is capture(0, temp $t = 9), '\\(0, 9)', 'temp is a term in an argument list too';
+
+# A `let`/`temp` term must not swallow the statement TERMINATOR: the statement
+# parser consumes the `;`, so without putting it back the enclosing LISTOP keeps
+# reading its argument list across it (`undefine temp $b; say 2` became
+# `undefine(temp $b say 2)`).
+my $term = 1;
+my @log;
+push @log, temp $term = 9; push @log, 2;
+is @log.join(','), '9,2', 'a temp term does not swallow the statement terminator';
+my $lterm = 1;
+my @llog;
+push @llog, let $lterm = 9; push @llog, 2;
+is @llog.join(','), '9,2', '... nor does a let term';
 
 # The plain forms are unchanged, including the error variable `$!` (which is
 # what `temp $!x` was being mistaken for).

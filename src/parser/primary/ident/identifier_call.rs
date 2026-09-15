@@ -834,6 +834,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     crate::parser::stmt::temp_stmt_pub(input)
                 };
                 if let Ok((r, stmt)) = parsed {
+                    // The statement parser swallows the terminator; put it back,
+                    // or the enclosing listop keeps reading its argument list
+                    // across the `;` (`undefine temp $b; say 2` became
+                    // `undefine(temp $b say 2)`). Same reason the `do` arm does it.
+                    let r = restore_do_stmt_terminator(input, r);
                     return Ok((r, Expr::DoStmt(Box::new(stmt))));
                 }
             }
