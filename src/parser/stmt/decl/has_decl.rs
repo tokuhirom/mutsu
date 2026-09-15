@@ -1178,27 +1178,19 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // As above: only the `my`/`our` class-level spellings can bind.
         default_is_bind: false,
     };
-    // Collect every statement this declaration expands to into ONE flat
-    // `SyntheticBlock` — never a `SyntheticBlock` nested inside another —
-    // since the class-body attribute-discovery walk
-    // (`class_own_attribute_names`/`compile_class_attr_decls`) only flattens
-    // one level at the top of a class body, and would miss `decl` entirely
-    // if it sat inside a doubly-nested block.
-    let mut stmts = vec![decl];
-    if let Some((op, rhs)) = compound_assign_after_decl {
-        // Splice `has $!g //= EXPR;` into `has $!g; $!g //= EXPR;` (#8441
-        // gap 2) — the declared variable's own read expression, matching
-        // exactly how the ordinary variable parser represents each twigil
-        // form, feeds `compound_assigned_value_expr` (the same
-        // short-circuiting `//=`/`||=`/`&&=`/... expansion an ordinary
-        // compound-assignment statement gets), and the combined value is
-        // written back through the ordinary assignment shape for that
-        // twigil — `Stmt::Assign` for a private/alias attribute,
-        // `Expr::AssignExpr` (the dedicated dot-attr assignment node) for a
-        // public one, so a `$.g` target still goes through the real
-        // accessor and dies the same way rakudo's does when it isn't
-        // `is rw`.
-        let assign_stmt = if is_public {
+    // Splice `has $!g //= EXPR;` into `has $!g; $!g //= EXPR;` (#8441 gap 2)
+    // — the declared variable's own read expression, matching exactly how
+    // the ordinary variable parser represents each twigil form, feeds
+    // `compound_assigned_value_expr` (the same short-circuiting
+    // `//=`/`||=`/`&&=`/... expansion an ordinary compound-assignment
+    // statement gets), and the combined value is written back through the
+    // ordinary assignment shape for that twigil — `Stmt::Assign` for a
+    // private/alias attribute, `Expr::AssignExpr` (the dedicated dot-attr
+    // assignment node) for a public one, so a `$.g` target still goes
+    // through the real accessor and dies the same way rakudo's does when it
+    // isn't `is rw`.
+    let assign_stmt = compound_assign_after_decl.map(|(op, rhs)| {
+        if is_public {
             let var_name = format!(".{name}");
             let read = Expr::Var(var_name.clone());
             Stmt::Expr(Expr::AssignExpr {
@@ -1218,16 +1210,18 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 expr: compound_assigned_value_expr(read, op, rhs),
                 op: AssignOp::Assign,
             }
-        };
-        stmts.push(assign_stmt);
-    }
-    if let Some(sink) = modifier_sink {
-        stmts.push(sink);
-    }
-    let stmt = if stmts.len() == 1 {
-        stmts.pop().unwrap()
-    } else {
-        Stmt::SyntheticBlock(stmts)
+        }
+    });
+    // Combine into ONE flat `SyntheticBlock` — never a `SyntheticBlock`
+    // nested inside another — since the class-body attribute-discovery walk
+    // (`class_own_attribute_names`/`compile_class_attr_decls`) only flattens
+    // one level at the top of a class body, and would miss `decl` entirely
+    // if it sat inside a doubly-nested block.
+    let stmt = match (assign_stmt, modifier_sink) {
+        (None, None) => decl,
+        (Some(assign_stmt), None) => Stmt::SyntheticBlock(vec![decl, assign_stmt]),
+        (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
+        (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
     };
     Ok((rest, stmt))
 }
