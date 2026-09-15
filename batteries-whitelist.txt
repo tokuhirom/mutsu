@@ -86,6 +86,7 @@ DateTime::Parse	01-basic.t
 DateTime::Parse	01-nginx-accesslog-timestamps.t
 Digest	md5.t
 Digest	rfc4231.t
+Digest	ripemd.t
 Digest	sha.t
 Digest::HMAC	01-basic.t
 Digest::HMAC	02-block-size.t

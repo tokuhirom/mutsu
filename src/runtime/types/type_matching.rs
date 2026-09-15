@@ -414,10 +414,23 @@ impl Interpreter {
             // vendored `Test.rakumod` counts its tests in `my int` lexicals,
             // so every assertion paid the full gauntlet for `int` twice.
             match value.view() {
-                ValueView::Int(_) => constraint == "Int" || constraint == "int",
+                // Sized native int constraints (`uint32`, `int8`, `atomicint`,
+                // ...) match an Int/Bool value exactly as `type_matches`'s
+                // general checker does at its `is_native_int_type` arm --
+                // hoisted here so a `sub rotl(uint32 $n, ...)`-shaped hot loop
+                // (every RIPEMD round binds one) does not pay the ~15-comparison
+                // gauntlet in front of that arm on every call.
+                ValueView::Int(_) => {
+                    constraint == "Int"
+                        || constraint == "int"
+                        || crate::runtime::native_types::is_native_int_type(constraint)
+                }
                 ValueView::Num(_) => constraint == "Num" || constraint == "num",
                 ValueView::Str(_) => constraint == "Str" || constraint == "str",
-                ValueView::Bool(_) => constraint == "Bool",
+                ValueView::Bool(_) => {
+                    constraint == "Bool"
+                        || crate::runtime::native_types::is_native_int_type(constraint)
+                }
                 ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
                 // `LazyList` can present as `Array`, `List`, or `Seq` depending
                 // on context markers (`.List`/`.Array`/`.cache`) and whether it
@@ -467,6 +480,45 @@ impl Interpreter {
         }
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
+        }
+        // `PositionalBindFailover` is the implicit check `binding_signature.rs`
+        // runs on every parameter bind, not just `@`-sigil ones (the flag is
+        // computed before the sigil is looked at), to decide whether a
+        // non-Positional `@` argument needs coercing first. Only `Seq`/
+        // `HyperSeq`/`RaceSeq` and a user class that explicitly composes the
+        // role can ever satisfy it (`builtin_type_catalog.rs`); none of
+        // these plain value shapes can, by construction, so this rejects
+        // them in one match instead of walking the ~30-branch string
+        // gauntlet in `type_matches` down to the final `dispatch_mro`
+        // fallback, which always answered `false` for them anyway. A
+        // RIPEMD-shaped hot loop (`-> blob32 $h, @words { ... }`) runs this
+        // check on every round for both its `@`- and `$`-sigil parameters.
+        if constraint == "PositionalBindFailover"
+            && matches!(
+                value.view(),
+                ValueView::Int(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::Complex(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Set(..)
+                    | ValueView::Bag(..)
+                    | ValueView::Mix(..)
+                    | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
+            )
+        {
+            return false;
         }
         if constraint.trim_start().starts_with("subset ::")
             && let Some(resolved) = self.resolve_inline_subset_constraint(constraint)
