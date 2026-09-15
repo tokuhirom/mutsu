@@ -50,9 +50,15 @@ fn param_display_name(pd: &crate::ast::ParamDef) -> String {
 /// debug runs; `with_syms` drops a table whose length already disagrees.
 fn baked_param_name_sym(baked: &[Symbol], idx: usize, pd: &ParamDef) -> Option<Symbol> {
     let sym = *baked.get(idx)?;
+    // `lookup`, not `intern`: the assertion must not itself intern. `sym` can
+    // only exist because someone interned `pd.name`, so a present entry is the
+    // whole check -- and `Symbol::intern` here ran once per parameter per call
+    // in every debug build, `cargo test` included, which is where the
+    // `symbol::intern_calls()` budget tests take their debug calibration
+    // (#7766).
     debug_assert_eq!(
-        sym,
-        Symbol::intern(&pd.name),
+        Symbol::lookup(&pd.name),
+        Some(sym),
         "param_name_syms[{idx}] is not the symbol of param_defs[{idx}] ({:?})",
         pd.name,
     );

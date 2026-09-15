@@ -683,6 +683,28 @@ The targeted Red remeasurement on 2026-09-15 (mutsu `63fe9c1f5`, Rakudo
 `ok`. Red remains `blocked_load`; the typed-hash `%!relationships` / `Bool`,
 migration and relationship, and SQLite leads remain separate #7988 slices.
 
+## 22. Campaign slice: private typed object-hash union assignment (2026-09-15)
+
+The next Red lead was the typed-hash failure while loading
+`Red::Driver::SQLite::SQLiteMaster` and the related driver and migration
+modules. Red declares `%!relationships{Attribute}` and populates it with
+`%!relationships ∪= $attribute`. Set union stores `Bool` membership values, so
+the attribute writeback path must apply `Any` to values and `Attribute` to keys;
+it must not treat the complete `Any{Attribute}` declaration as a value type.
+
+Private attribute container assignment now splits object-hash constraints into
+their value and key parts, checks only the value part, and re-embeds both parts
+in the stored hash metadata. This also preserves the typed `Attribute` key
+after the set result is coerced back to a hash. The focused regression is
+`t/oo/private-typed-hash-set-union.t`.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `151f398fe`, Rakudo 2026.07,
+bubblewrap, three attempts) moves `Red::Driver::Mock`, `Red::Driver::SQLite`,
+`Red::Driver::SQLite::SQLiteMaster`, `Red::Driver::SQLite::SchemaReader`, and
+`Red::Migration::Migration` past the typed-hash failure to the independent
+missing `declares_method` method on `MetamodelX::Red::Model`. The migration
+`Column` and `Table` API failures remain separate leads.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

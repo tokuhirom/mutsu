@@ -68,10 +68,13 @@ Two consequences worth spelling out:
   pass the issue's existing labels alongside it — read them first, or you silently drop its kind and
   tier labels. `gh issue edit --add-label` / `--remove-label` have no such hazard. The rest of the
   issue conventions are in [issue-workflow.md](issue-workflow.md).
-- **Watching CI is a polled read in both worlds.** Locally, a `run_in_background` loop over
-  `gh pr checks`. Remotely there is no shell command to loop on, so either call
-  `pull_request_read`/`get_check_runs` again after doing other work, or use
-  `subscribe_pr_activity` so CI results and review comments wake the session.
+- **Wait to be woken by CI; do not poll it.** Locally, ONE `run_in_background` command that blocks
+  until `gh pr checks` reports nothing pending and then exits — the harness notifies you when it
+  does. Remotely there is no shell command to block on, so use `subscribe_pr_activity` and let CI
+  results and review comments wake the session. Re-reading `pull_request_read`/`get_check_runs` on a
+  run that is still going buys nothing and is subject to the 30-minute polling floor in
+  [CLAUDE.md](../CLAUDE.md#waiting-for-a-long-job--the-30-minute-polling-floor); the same floor
+  governs `cargo build`, `make test` and `make roast`, which is where the cost actually is.
 
 ## Provisioning: rust, raku, the native C libraries and the sandbox
 
@@ -131,7 +134,7 @@ the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
 |---|---|---|
 | `roast/6.c/S32-io/file-tests.t` | `Failed: 4` — tests 6-8, 10 | runs as `uid 0` |
 | `roast/S16-filehandles/filetest.t` | `Failed: 25` — tests 57-64, 69-72, 77-80, and 101/103/105/107/109/111/117/121/125 | runs as `uid 0` |
-| `roast/S16-io/eof.t` | exit 255, "planned 5 tests, but ran 1", `Failed to open '/proc/1/environ': Permission denied` | runs as `uid 0` |
+| `roast/S16-io/eof.t` | exit 255, "planned 5 ran 1", `Failed to open '/proc/1/environ': Permission denied` | runs as `uid 0`, restricted `/proc` |
 | `roast/S32-io/IO-Socket-Async.t` | exit 124, "planned 40 ran 17" | sandboxed network |
 
 The first two are the same cause: both `chmod` a file and then assert `.r` / `.w` / `.x` is `False`,
@@ -139,11 +142,13 @@ and **root bypasses the permission bits**, so every such assertion is `True`. Ch
 `0` means these cannot pass, no matter how correct the interpreter is. They pass in CI, which runs as
 an ordinary user.
 
-`eof.t` is the same cause reached from the other side. It gathers the files under `/proc/1` for which
-`.f && .r` holds and opens the first one; as root the permission bits say `environ` is readable
-(`"/proc/1/environ".IO.r` answers `True`), but the container's kernel refuses the `open` anyway, so
-the test dies on a file an ordinary user would have filtered out. Confirmed unrelated to any
-interpreter change by running the file on a `main` build and this one: byte-identical failure.
+`eof.t` is the same `uid 0` cause wearing a different shape. It scans `/proc/1` for the first entry
+where `$file.f && $file.r` holds and opens it. As root `.r` is `True` for `/proc/1/environ` (mode
+`-r--------`, owned by root), so the test picks it — and then the actual `open(2)` fails with
+`EACCES`, because this container's PID 1 lives outside our namespace. `head /proc/1/environ` fails
+as root too, so no interpreter change can make this pass here. An ordinary user gets `.r` `False`
+there and picks a readable entry instead, which is why CI is green. The test aborts the file at that
+point, which is why the shape is a bad plan rather than a `not ok`.
 
 `IO-Socket-Async.t` times out part-way through in this container and passes in CI; the container's
 network sandbox is the difference. The mechanism has not been pinned down further, so treat a *new*
@@ -158,8 +163,11 @@ local box, and for `make test` everywhere, a non-zero exit is a real failure.
 Two things this list is not:
 
 - **It is not a licence to skim the summary.** Read the `Test Summary Report` and confirm the failing
-  set is a subset of these three by name. A fourth file, or a different subtest range inside these,
-  is your change.
+  set is a subset of these four by name. A fifth file, or a different subtest range inside these,
+  is your change. The discriminator when you are unsure is the `raku` oracle: run the file under
+  `raku` itself (`raku roast/<path>.t`). Rakudo failing identically on this box proves the
+  container is the cause, since rakudo does not contain your change. That is how `eof.t` was
+  added here.
 - **It does not apply to the local box**, which runs as an ordinary user with a working network.
   There, `make roast` is expected to be green.
 

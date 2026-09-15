@@ -247,14 +247,18 @@ impl Interpreter {
                     let h = Value::hash(ValueMap::default());
                     // Register value type constraint for typed hash attributes
                     match declared_type {
-                        Some(tc) => self.tag_container_metadata(
-                            h,
-                            super::ContainerTypeInfo {
-                                value_type: tc,
-                                key_type: None,
-                                declared_type: None,
-                            },
-                        ),
+                        Some(tc) => {
+                            let (value_type, key_type) =
+                                crate::runtime::types::split_object_hash_constraint(&tc);
+                            self.tag_container_metadata(
+                                h,
+                                super::ContainerTypeInfo {
+                                    value_type: value_type.to_string(),
+                                    key_type: key_type.map(str::to_string),
+                                    declared_type: None,
+                                },
+                            )
+                        }
                         None => h,
                     }
                 }

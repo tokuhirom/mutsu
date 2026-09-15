@@ -973,8 +973,10 @@ impl Interpreter {
                             // The body must run under its *defining* package, not
                             // the callsite's (see `otf_call_cache`'s doc comment).
                             self.push_samewith_context(name_str, None, None);
-                            let pushed_dispatch =
-                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
+                            let pushed_dispatch = loan_env!(
+                                self,
+                                push_multi_dispatch_frame_sym(name_str, name_sym, &args)
+                            );
                             // The named-share writeback reads the arg sources;
                             // make them available to bind_function_args_values.
                             self.set_pending_call_arg_sources(decoded_sources);
@@ -1746,7 +1748,8 @@ impl Interpreter {
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
                 self.set_pending_call_arg_sources(arg_sources.clone());
-                let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
+                let pushed_dispatch =
+                    loan_env!(self, push_multi_dispatch_frame_sym(name, name_sym, &args));
                 self.push_samewith_context(name, None, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.

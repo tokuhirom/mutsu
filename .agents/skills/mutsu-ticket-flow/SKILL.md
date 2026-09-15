@@ -235,6 +235,10 @@ Two rules that go with the loop:
   waiting on CI (15-20 minutes per PR). Use that wait to read the next issue, reproduce it, and
   measure — just keep the result uncommitted (or stashed) until the current PR merges, then reset
   and commit onto the fresh branch. Do not open a second PR from the same branch.
+- **Do not spend that wait re-checking the PR.** CI, `cargo build`, `make test` and `make roast` all
+  wake you when they finish; a progress reading from one that has not is worth nothing and costs a
+  tool call plus a reply every time. `CLAUDE.md`'s 30-minute polling floor applies to this run as
+  much as to any other: either do the next ticket's reading, or end the turn and be woken.
 
 If a ticket genuinely needs two branches in flight, stop and ask the user rather than pushing
 elsewhere.

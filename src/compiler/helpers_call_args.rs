@@ -421,6 +421,56 @@ impl Compiler {
         }
     }
 
+    /// A bind-index marker needs the same aggregate decontainerization for a
+    /// block that returns an array/hash as it gets for a direct aggregate
+    /// variable. Ordinary call arguments deliberately do not use this rule:
+    /// `f(do { @a })` passes one item, while the marker's first argument is
+    /// consumed as the value to install in an element and must retain the
+    /// aggregate itself (`%h<k> := do { @a }`).
+    fn bind_target_returns_aggregate(expr: &Expr) -> bool {
+        match expr {
+            Expr::ArrayVar(_) | Expr::HashVar(_) => true,
+            Expr::Grouped(inner) => Self::bind_target_returns_aggregate(inner),
+            Expr::Literal(value) => value.is_nil(),
+            Expr::DoBlock { body, .. } => Self::bind_target_returns_aggregate_stmts(body),
+            Expr::DoStmt(stmt) => Self::bind_target_returns_aggregate_stmt(stmt),
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                Self::bind_target_returns_aggregate(then_expr)
+                    && Self::bind_target_returns_aggregate(else_expr)
+            }
+            _ => false,
+        }
+    }
+
+    fn bind_target_returns_aggregate_stmts(stmts: &[Stmt]) -> bool {
+        stmts
+            .last()
+            .is_some_and(Self::bind_target_returns_aggregate_stmt)
+    }
+
+    fn bind_target_returns_aggregate_stmt(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(expr) => Self::bind_target_returns_aggregate(expr),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                Self::bind_target_returns_aggregate_stmts(body)
+            }
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::bind_target_returns_aggregate_stmts(then_branch)
+                    && (else_branch.is_empty()
+                        || Self::bind_target_returns_aggregate_stmts(else_branch))
+            }
+            _ => false,
+        }
+    }
+
     /// Compile a function-call positional argument.
     /// Variable-like args are wrapped with source-name metadata so sigilless
     /// parameters (`\x`) can bind as writable aliases.
@@ -542,7 +592,7 @@ impl Compiler {
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });
-        if Self::needs_decont(arg) {
+        if Self::needs_decont(arg) || (is_bind_target && Self::bind_target_returns_aggregate(arg)) {
             self.code.emit(OpCode::Decont);
         }
         if !Self::is_named_arg_expr(arg) {

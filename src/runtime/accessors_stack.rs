@@ -666,7 +666,8 @@ impl Interpreter {
     /// by-name entry point re-hashed the package name on every named call
     /// (#7736).
     pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
-        debug_assert_eq!(sym, Symbol::intern(&pkg));
+        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+        debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
         *self.current_package.write().unwrap() = pkg;

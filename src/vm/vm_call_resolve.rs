@@ -88,7 +88,7 @@ impl Interpreter {
         let type_sig: Vec<&'static str> = args.iter().map(runtime::value_type_name).collect();
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
-        let is_multi = self.has_multi_candidates_cached(name);
+        let is_multi = self.has_multi_candidates_cached_sym(name_sym);
         if self.fn_resolve_cache_gen != self.fn_resolve_gen {
             self.fn_resolve_cache.clear();
             self.multi_compiled_key_cache.clear();
@@ -119,7 +119,10 @@ impl Interpreter {
         // resolution itself is still cacheable whenever the candidates are
         // type+arity deterministic, and for a `multi` this call was otherwise a
         // full candidate walk on every single dispatch.
-        let resolved_def = loan_env!(self, resolve_function_multi_cached(name, args));
+        let resolved_def = loan_env!(
+            self,
+            resolve_function_multi_cached_sym(name, name_sym, args)
+        );
         memo.clone_from(&resolved_def);
         let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.

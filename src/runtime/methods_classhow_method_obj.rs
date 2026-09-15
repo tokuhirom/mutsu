@@ -223,14 +223,15 @@ impl Interpreter {
         owner: &str,
         is_regex: bool,
     ) -> Value {
-        self.make_native_method_object_ex_loc(name, owner, is_regex, None, None)
+        self.make_native_method_object_ex_loc(name, owner, is_regex, None, None, None)
     }
 
     /// [`Self::make_native_method_object_ex`] plus an explicit `Code.line`/
-    /// `Code.file` -- used for a grammar `token`/`rule`/`regex`, whose
-    /// declaration site lives on its `FunctionDef` (`Registry::token_defs`),
-    /// not on a compiled body the way a `Sub`/`Method` carries it (ADR-0009:
-    /// a token/rule has no compiled body at all).
+    /// `Code.file` and the declared parameters -- used for a grammar
+    /// `token`/`rule`/`regex`, whose declaration site and signature both live
+    /// on its `FunctionDef` (`Registry::token_defs`), not on a compiled body
+    /// the way a `Sub`/`Method` carries them (ADR-0009: a token/rule has no
+    /// compiled body at all).
     pub(super) fn make_native_method_object_ex_loc(
         &self,
         name: &str,
@@ -238,6 +239,7 @@ impl Interpreter {
         is_regex: bool,
         line: Option<i64>,
         file: Option<String>,
+        declared_params: Option<&[crate::ast::ParamDef]>,
     ) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
@@ -246,12 +248,19 @@ impl Interpreter {
         attrs.insert("rw".to_string(), Value::FALSE);
         attrs.insert("readonly".to_string(), Value::TRUE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
+        // A grammar `token`/`rule`/`regex` has a real, declared signature --
+        // build the `Routine` shape a `Regex` answers (`Mu`-slot invocant
+        // replaced by the declaring grammar, plus the implicit `*%_`) rather
+        // than the raw-capture placeholder every genuinely-native method
+        // falls back to. Without this, `G.^lookup('foo').signature` answered
+        // `:(G $:: |)` where rakudo answers `:(G $:: $x, *%_)` (#8318).
+        let sig_info = match declared_params {
+            Some(params) => Self::regex_routine_sig_info(owner, params),
+            None => crate::value::signature::synthesize_native_signature(owner),
+        };
         attrs.insert(
             "signature".to_string(),
-            crate::value::signature::make_signature_value(
-                crate::value::signature::synthesize_native_signature(owner),
-                Some(self),
-            ),
+            crate::value::signature::make_signature_value(sig_info, Some(self)),
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
