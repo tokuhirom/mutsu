@@ -40,6 +40,21 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         };
         return Ok((&input[consumed_len..], expr));
     }
+    // A sigilless value term a `use`d module exports (`my \vrai = True;`
+    // inside its `sub EXPORT` hook, or a `constant ... is export`) lives in a
+    // SEPARATE registry (`imported_value_terms`) from a locally declared one
+    // (`term_symbols`, checked above) — see `register_imported_value_term`'s
+    // doc. Without also trying it here, an imported term fell through to
+    // `identifier_or_call`'s general bareword parsing, which has no "is this
+    // a zero-arg term" exclusion of its own and defaults to a listop-call
+    // head: French's `vrai et 2` misparsed as `vrai(et, 2)` and died
+    // evaluating `et` as if it were a zero-arg call ("Unknown function: et").
+    if let Ok((rest, name)) = crate::parser::stmt::parse_raku_ident(input)
+        && crate::parser::stmt::simple::is_imported_value_term(name)
+        && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
+    {
+        return Ok((rest, Expr::BareWord(name.to_string())));
+    }
     Err(PError::expected("declared term symbol"))
 }
 

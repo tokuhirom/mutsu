@@ -860,7 +860,15 @@ impl Compiler {
                 return;
             }
         }
-        self.compile_expr(left);
+        // `compile_call_arg`, not a plain `compile_expr`: a user-defined
+        // `infix:<op>` sub can declare either parameter `is rw` (French's
+        // `my &infix:<plus_égal> = sub ($a is rw, $b) { $a += $b }`, called as
+        // `$x plus_égal 5`), and only `compile_call_arg` attaches the
+        // `WrapVarRef` metadata a variable operand needs for that binding to
+        // reach the caller's own container — a plain `compile_expr` always
+        // leaves a bare value on the stack, which is what made every such
+        // call die "expects a writable container (variable) as an argument".
+        self.compile_call_arg(left);
         for r in right {
             // ADR-0021 I2/I3: a trailing colonpair adverb (`1 / 3 :round`,
             // appended into `right` by `attach_trailing_adverbs`) is a
@@ -874,7 +882,7 @@ impl Compiler {
             {
                 self.mint_named_pair = true;
             }
-            self.compile_expr(r);
+            self.compile_call_arg(r);
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let modifier_idx = modifier

@@ -97,17 +97,31 @@ impl Interpreter {
                 let right_val = right_vals.first().cloned().unwrap_or(Value::NIL);
                 if let Some(result) = self.try_user_infix(&infix_name, &left_val, &right_val)? {
                     result
-                } else if let Some(result) =
-                    self.core_unicode_arith_alias_infix(&name, &left_val, &right_val)?
-                {
-                    result
                 } else {
-                    self.call_infix_fallback(
-                        lookup_name.as_ref(),
-                        Some(&infix_name),
-                        call_args,
-                        compiled_fns,
-                    )?
+                    // `core_unicode_arith_alias_infix` is always native, so it
+                    // needs plain values -- unwrap ONLY for this call, into
+                    // throwaway copies. `left_val`/`right_val` themselves stay
+                    // wrapped: `call_infix_fallback` below may still resolve a
+                    // PURELY custom `infix:<op>` sub by name (one
+                    // `try_user_infix` never sees, because that helper only
+                    // competes against a CORE-recognized operator) whose
+                    // parameter is declared `is rw` (French's
+                    // `&infix:<plus_égal>`), and that still needs the
+                    // `WrapVarRef` tag to bind the caller's container.
+                    let left_plain = Self::unwrap_var_ref_value(left_val.clone());
+                    let right_plain = Self::unwrap_var_ref_value(right_val.clone());
+                    if let Some(result) =
+                        self.core_unicode_arith_alias_infix(&name, &left_plain, &right_plain)?
+                    {
+                        result
+                    } else {
+                        self.call_infix_fallback(
+                            lookup_name.as_ref(),
+                            Some(&infix_name),
+                            call_args,
+                            compiled_fns,
+                        )?
+                    }
                 }
             } else {
                 // For multi-arg calls (list-associative flattened chains),
@@ -358,10 +372,19 @@ impl Interpreter {
             call_args
         };
         if call_args.len() >= 2 {
-            let mut acc = call_args[0].clone();
+            // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
+            // junctions, ...) — never a call that could bind an `is rw`
+            // parameter — so unwrap the `WrapVarRef` tag
+            // `compile_expr_infix_func` attaches to a variable operand for
+            // that possibility (already tried and declined by every caller
+            // of this function). Left wrapped, the native op's own type
+            // matching (e.g. `arith_mod`) sees an unmatched `VarRef` view and
+            // silently defaults instead of computing the real value.
+            let mut acc = Self::unwrap_var_ref_value(call_args[0].clone());
             let mut reduced = true;
             for rhs in &call_args[1..] {
-                match crate::runtime::Interpreter::apply_reduction_op(name, &acc, rhs) {
+                let rhs = Self::unwrap_var_ref_value(rhs.clone());
+                match crate::runtime::Interpreter::apply_reduction_op(name, &acc, &rhs) {
                     Ok(value) => acc = value,
                     Err(_) => {
                         reduced = false;
@@ -373,6 +396,13 @@ impl Interpreter {
                 return Ok(acc);
             }
         }
+        // Past this point every remaining candidate is looked up by name
+        // (`call_user_routine_direct`, `call_function_compiled_first`, the
+        // core routine below) — including a purely custom `infix:<op>` sub
+        // that `try_user_infix` never saw because it only competes against a
+        // CORE-recognized operator name. Such a sub may still declare an
+        // `is rw` parameter (French's `&infix:<plus_égal>`), so `call_args`
+        // stays wrapped here; only the native reduction above is unwrapped.
         if let Some(op_name) = infix_name
             && let Ok(v) = loan_env!(self, call_user_routine_direct(op_name, call_args.clone()))
         {
