@@ -640,6 +640,7 @@ fn strip_marks_pattern_uncached(pattern: &RegexPattern) -> RegexPattern {
         ignore_case: pattern.ignore_case,
         ignore_mark: false,
         stripped_pattern: Arc::new(std::sync::OnceLock::new()),
+        first_chars: Arc::new(std::sync::OnceLock::new()),
     }
 }
 
@@ -692,6 +693,7 @@ pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
         ignore_case,
         ignore_mark,
         stripped_pattern: Arc::new(std::sync::OnceLock::new()),
+        first_chars: Arc::new(std::sync::OnceLock::new()),
     }
 }
 

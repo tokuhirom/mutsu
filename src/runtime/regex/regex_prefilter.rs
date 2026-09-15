@@ -111,11 +111,11 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
 /// full remaining-position list up front for every scan (as one call site
 /// already did before this module) is exactly the per-scan cost Stage 0
 /// exists to remove elsewhere, and this module must not reintroduce it here.
-pub(crate) fn regex_scan_positions<'c>(
-    pattern: &RegexPattern,
+pub(crate) fn regex_scan_positions<'c, 'p>(
+    pattern: &'p RegexPattern,
     chars: &'c [char],
     from: usize,
-) -> ScanPositions<'c> {
+) -> ScanPositions<'c, 'p> {
     let total = chars.len().saturating_sub(from);
     if prefilter_enabled() {
         if let Some(prefix) = required_literal_prefix(pattern) {
@@ -134,13 +134,10 @@ pub(crate) fn regex_scan_positions<'c>(
         }
         // No literal prefix: fall back to the weaker but far more widely
         // derivable fact, the set of characters a match can BEGIN with
-        // (#8248). Unlike the prefix above this is not memoized anywhere, so
-        // it is only derived once the scan is long enough to amortize the
-        // derivation many times over -- below the threshold the scan is
-        // byte-for-byte what it was before this existed.
-        if total >= FIRST_SET_MIN_POSITIONS
-            && let Some(set) = required_first_chars(pattern)
-        {
+        // (#8248). The derivation is memoized on the pattern, so a `.comb` or
+        // `:g` loop that restarts the scan after every match pays for it once,
+        // not once per match.
+        if let Some(set) = required_first_chars(pattern) {
             crate::vm::vm_stats::record_regex_prefilter_applied(total);
             return ScanPositions::FirstSet {
                 chars,
@@ -153,22 +150,9 @@ pub(crate) fn regex_scan_positions<'c>(
     ScanPositions::Range(from..=chars.len())
 }
 
-/// Remaining positions below which a scan does not bother deriving a
-/// first-character set.
-///
-/// The literal prefix above is a walk over the top-level token list and costs
-/// a few comparisons; a first-character set probes the matcher's own class
-/// predicate over all 256 Latin-1 characters per class atom, which is cheap in
-/// absolute terms but not free. Amortized over a 512-position scan it is under
-/// one probe per position, against the ~983 instructions each skipped position
-/// saves (ADR-0099 §2.4) -- and the shapes that need it are exactly the large
-/// subjects of #8248. Short-subject matching, which ADR-0099 §2.5 shows is
-/// ceremony-bound rather than scan-bound, is left untouched.
-const FIRST_SET_MIN_POSITIONS: usize = 512;
-
 /// Iterator returned by [`regex_scan_positions`]. See that function's doc
 /// comment for why this is an iterator rather than a `Vec`.
-pub(crate) enum ScanPositions<'c> {
+pub(crate) enum ScanPositions<'c, 'p> {
     Range(std::ops::RangeInclusive<usize>),
     Literal {
         chars: &'c [char],
@@ -177,12 +161,12 @@ pub(crate) enum ScanPositions<'c> {
     },
     FirstSet {
         chars: &'c [char],
-        set: FirstCharSet,
+        set: &'p FirstCharSet,
         pos: usize,
     },
 }
 
-impl Iterator for ScanPositions<'_> {
+impl Iterator for ScanPositions<'_, '_> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {

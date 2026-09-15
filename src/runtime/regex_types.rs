@@ -41,6 +41,14 @@ pub(crate) struct RegexPattern {
     /// through the regex parse cache, and scoped `:ignoremark` can enter the
     /// same pattern many times during one match.
     pub(crate) stripped_pattern: Arc<std::sync::OnceLock<Arc<RegexPattern>>>,
+    /// Lazily memoized scan prefilter fact: the set of characters a match of
+    /// this pattern can begin with, or `None` when no sound one is derivable.
+    /// Derived once per parsed pattern (which the regex parse cache itself
+    /// shares) rather than once per scan — `.comb`/`:g` restart the scan after
+    /// every match, so a per-scan derivation would be paid once per MATCH
+    /// ([#8248](https://github.com/tokuhirom/mutsu/issues/8248)).
+    pub(crate) first_chars:
+        Arc<std::sync::OnceLock<Option<crate::runtime::regex::regex_first_set::FirstCharSet>>>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).

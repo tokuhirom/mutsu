@@ -48,8 +48,9 @@ use super::regex_eval_class::char_class_matches;
 /// over-approximation (see the module docs).
 pub(crate) struct FirstCharSet {
     /// Membership for `U+0000..=U+00FF`, the range that covers essentially all
-    /// of the text mutsu scans at size.
-    latin1: [bool; 256],
+    /// of the text mutsu scans at size — as a 256-bit set, so that testing a
+    /// position is a shift and a mask, and a union is four `|`s.
+    latin1: [u64; 4],
     /// Whether *some* character at or above `U+0100` can begin a match. Set
     /// whenever the derivation cannot enumerate the possibilities, which keeps
     /// the set an over-approximation without a second, unbounded table.
@@ -59,12 +60,12 @@ pub(crate) struct FirstCharSet {
 /// A set this dense rejects too little to pay for the lookup, so the caller
 /// declines instead of filtering. `\w` sits at ~125 with `wide` set and stays
 /// worth applying; `.` reaches 256 and does not.
-const TOO_DENSE: usize = 224;
+const TOO_DENSE: u32 = 224;
 
 impl FirstCharSet {
     fn empty() -> Self {
         FirstCharSet {
-            latin1: [false; 256],
+            latin1: [0; 4],
             wide: false,
         }
     }
@@ -73,7 +74,7 @@ impl FirstCharSet {
     pub(crate) fn contains(&self, c: char) -> bool {
         let u = c as u32;
         if u < 256 {
-            self.latin1[u as usize]
+            self.latin1[(u >> 6) as usize] & (1u64 << (u & 63)) != 0
         } else {
             self.wide
         }
@@ -82,21 +83,21 @@ impl FirstCharSet {
     fn insert(&mut self, c: char) {
         let u = c as u32;
         if u < 256 {
-            self.latin1[u as usize] = true;
+            self.latin1[(u >> 6) as usize] |= 1u64 << (u & 63);
         } else {
             self.wide = true;
         }
     }
 
     fn union_with(&mut self, other: &FirstCharSet) {
-        for (slot, bit) in self.latin1.iter_mut().zip(other.latin1.iter()) {
-            *slot |= *bit;
+        for (slot, bits) in self.latin1.iter_mut().zip(other.latin1.iter()) {
+            *slot |= *bits;
         }
         self.wide |= other.wide;
     }
 
-    fn latin1_len(&self) -> usize {
-        self.latin1.iter().filter(|b| **b).count()
+    fn latin1_len(&self) -> u32 {
+        self.latin1.iter().map(|w| w.count_ones()).sum()
     }
 
     /// `true` when this set is dense enough that filtering with it would cost
@@ -109,15 +110,26 @@ impl FirstCharSet {
     /// class written as `\n` — the pair is one grapheme, so such a match
     /// really does start at the `\r`.
     fn close_over_crlf(&mut self) {
-        if self.latin1['\n' as usize] {
-            self.latin1['\r' as usize] = true;
+        if self.contains('\n') {
+            self.insert('\r');
         }
     }
 }
 
 /// The first-character set of `pattern`, or `None` when no sound one can be
 /// derived (the caller then scans every position, exactly as before).
-pub(crate) fn required_first_chars(pattern: &RegexPattern) -> Option<FirstCharSet> {
+///
+/// Memoized on the pattern: `.comb`, `:g` and `split` restart their scan after
+/// every match, so deriving per scan would charge the whole analysis once per
+/// MATCH rather than once per pattern — measurably worse than not filtering at
+/// all on a subject with tens of thousands of matches (#8248).
+pub(crate) fn required_first_chars(pattern: &RegexPattern) -> &Option<FirstCharSet> {
+    pattern
+        .first_chars
+        .get_or_init(|| derive_first_chars(pattern))
+}
+
+fn derive_first_chars(pattern: &RegexPattern) -> Option<FirstCharSet> {
     // `:m` matches against a mark-stripped image of the subject, so a set
     // derived from the pattern does not describe the characters the scan
     // loop actually indexes. (The already-stripped pattern the `:m` scan
@@ -275,8 +287,10 @@ mod tests {
             .expect("pattern should parse for this test")
     }
 
+    /// The derived set, computed directly rather than through the pattern's
+    /// memo so that each case reads as a fact about the pattern text.
     fn set_of(pattern: &str) -> Option<FirstCharSet> {
-        required_first_chars(&parse(pattern))
+        derive_first_chars(&parse(pattern))
     }
 
     /// Every character of `subject` that the set admits.

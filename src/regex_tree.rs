@@ -308,6 +308,7 @@ impl RegexTree {
                 ignore_case,
                 ignore_mark,
                 stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                first_chars: std::sync::Arc::new(std::sync::OnceLock::new()),
             }
         }
 

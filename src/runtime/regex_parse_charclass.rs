@@ -1039,6 +1039,7 @@ impl Interpreter {
                     ignore_case: false,
                     ignore_mark: false,
                     stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                    first_chars: std::sync::Arc::new(std::sync::OnceLock::new()),
                 },
                 negated: true,
                 is_behind: false,
@@ -1074,6 +1075,7 @@ impl Interpreter {
             ignore_case: false,
             ignore_mark: false,
             stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+            first_chars: std::sync::Arc::new(std::sync::OnceLock::new()),
         };
         // Prepend the subtraction guard (if any) to a branch pattern.
         let guard_pattern = |mut p: RegexPattern| {
