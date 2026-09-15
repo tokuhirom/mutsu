@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 13;
+plan 19;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -58,3 +58,27 @@ ok GDynamicIndexedArgument.parse('a').defined,
 $index = 1;
 ok GDynamicIndexedArgument.parse('b').defined,
     'the indexed argument observes index reassignment at match time';
+
+my $which = True;
+my $ternary_ast = Q[/<word($which ?? 'a' !! 'b')>/].AST;
+my $ternary_gist = $ternary_ast.gist;
+ok $ternary_gist.contains('RakuAST::Ternary.new('),
+    'a ternary argument keeps its selector node';
+ok $ternary_gist.contains('RakuAST::Var::Lexical.new("\\$which")'),
+    'the ternary argument keeps its dynamic condition';
+ok $ternary_gist.contains('RakuAST::QuotedString.new('),
+    'the ternary argument keeps both quoted branches';
+
+my $ternary_regex = EVAL($ternary_ast);
+ok $ternary_regex ~~ Regex,
+    'a RakuAST regex with a ternary argument lowers successfully';
+
+grammar GDynamicTernaryArgument {
+    token TOP { <word($which ?? 'a' !! 'b')> }
+    token word($expected) { $expected }
+}
+ok GDynamicTernaryArgument.parse('a').defined,
+    'a ternary argument reaches the subrule matcher';
+$which = False;
+ok GDynamicTernaryArgument.parse('b').defined,
+    'the ternary argument observes condition reassignment at match time';

@@ -1158,6 +1158,19 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
             expression_source(right)?
         )),
+        // Keep a dynamic selector grouped when a constructed RakuAST regex is
+        // lowered through the established string parser.  Its branches remain
+        // expressions for the existing match-time subrule-argument evaluator.
+        crate::ast::Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Some(format!(
+            "({} ?? {} !! {})",
+            expression_source(cond)?,
+            expression_source(then_expr)?,
+            expression_source(else_expr)?
+        )),
         crate::ast::Expr::Call { name, args }
         | crate::ast::Expr::UserRoutineCall { name, args } => {
             Some(format!("{}({})", name.resolve(), join_args(args)?))
