@@ -369,7 +369,7 @@ impl Interpreter {
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
                 use crate::runtime::native_methods::state::supplier_emit;
                 use crate::runtime::native_methods::state_supplier::{
-                    SupplierEmitAction, supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
+                    supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
                 };
                 let sids = ch.supplier_ids();
                 for sid in &sids {
@@ -397,12 +397,8 @@ impl Interpreter {
                 }
                 if !targets.is_empty() {
                     let (sid, tap_index) = targets[ch.next_supply_turn() % targets.len()];
-                    for action in supplier_emit_callbacks_for_tap(sid, tap_index, &value) {
-                        if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
-                            Self::sleep_for_supply_delay(delay_seconds);
-                            let _ = self.call_sub_value(tap, vec![emitted], true);
-                        }
-                    }
+                    let actions = supplier_emit_callbacks_for_tap(sid, tap_index, &value);
+                    let _ = self.drive_supplier_emit_actions(sid, actions);
                 }
                 ch.send(value);
                 Ok(Value::NIL)

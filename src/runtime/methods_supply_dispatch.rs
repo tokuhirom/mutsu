@@ -656,27 +656,6 @@ impl Interpreter {
         Err(err)
     }
 
-    /// Handle a `ForwardEmit` action: re-emit a value verbatim into the
-    /// downstream supplier and run its (plain) tap callbacks.
-    pub(in crate::runtime) fn handle_supply_forward(
-        &mut self,
-        downstream_supplier_id: u64,
-        value: Value,
-    ) -> Result<(), RuntimeError> {
-        use crate::runtime::native_methods::{
-            SupplierEmitAction, supplier_emit, supplier_emit_callbacks,
-        };
-        supplier_emit(downstream_supplier_id, value.clone());
-        let ds_actions = supplier_emit_callbacks(downstream_supplier_id, &value);
-        for da in ds_actions {
-            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = da {
-                Self::sleep_for_supply_delay(delay_seconds);
-                self.call_sub_value(tap, vec![emitted], true)?;
-            }
-        }
-        Ok(())
-    }
-
     /// Handle a `grep`/`map`/`do` transform tap emission on a live supply: run
     /// the callable on the value, then forward the (filtered, mapped, or
     /// original) result to the downstream supplier and drive its taps.

@@ -132,9 +132,16 @@ struct ProduceState {
     accumulator: Option<Value>,
     /// `Supply.reduce` shares `produce`'s accumulator, but emits nothing until
     /// the source is done and then emits the single final value to this
-    /// downstream supplier. `None` for a plain `produce`, which emits every
-    /// running value to its own tap callback as it goes.
+    /// downstream supplier. `None` for a plain `produce`.
     reduce_downstream: Option<u64>,
+    /// `Supply.produce`'s own derived supplier: every running accumulator value
+    /// is re-emitted here as it is computed, exactly as a `map`/`grep`
+    /// transform tap forwards to its downstream. Making `produce` a real
+    /// pipeline stage (rather than a `produce_callable` marker attribute
+    /// riding on the *source* supply's id) is what lets it be chained onto and
+    /// chained from -- `.map(...).produce(...).map(...)` lost the produce
+    /// entirely while the marker lived on the shared id.
+    produce_downstream: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -1009,6 +1016,10 @@ pub(in crate::runtime) enum SupplierEmitAction {
         accumulator: Option<Value>,
         delay_seconds: f64,
         tap_index: usize,
+        /// The derived supplier each running accumulator value is forwarded to
+        /// (`Supply.produce`); `None` for a `reduce` tap, which emits only at
+        /// done.
+        downstream_supplier_id: Option<u64>,
     },
     /// Start transform: run callable, wrap result in Supply, emit to output supplier
     StartCall {
@@ -1266,6 +1277,7 @@ fn supplier_emit_callbacks_inner(
                     accumulator: ps.accumulator.clone(),
                     delay_seconds: tap.delay_seconds,
                     tap_index: idx,
+                    downstream_supplier_id: ps.produce_downstream,
                 });
             } else if let Some(downstream_sid) = tap.flat_downstream {
                 // Flatten the emitted value and emit each element individually
@@ -1418,10 +1430,15 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
     }
 }
 
+/// Register a `Supply.produce` tap on a live supplier: fold every emission into
+/// a running accumulator and re-emit the running value to `downstream_sid`, the
+/// derived supply `produce` handed back. This mirrors
+/// [`register_supplier_transform_tap`] deliberately -- `produce` is a pipeline
+/// stage like `map` and `grep`, so it owns a supplier of its own and can sit
+/// anywhere in a chain.
 pub(in crate::runtime) fn register_supplier_produce_tap(
     supplier_id: u64,
-    tap: Value,
-    delay_seconds: f64,
+    downstream_sid: u64,
     callable: Value,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
@@ -1429,11 +1446,11 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
@@ -1443,6 +1460,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                     callable,
                     accumulator: None,
                     reduce_downstream: None,
+                    produce_downstream: Some(downstream_sid),
                 }),
                 start_state: None,
                 batch_state: None,
@@ -1488,6 +1506,7 @@ pub(in crate::runtime) fn register_supplier_reduce_tap(
                     callable,
                     accumulator: None,
                     reduce_downstream: Some(downstream_sid),
+                    produce_downstream: None,
                 }),
                 start_state: None,
                 batch_state: None,
@@ -2064,17 +2083,45 @@ pub(in crate::runtime) fn register_supplier_transform_tap(
     }
 }
 
-/// Get the downstream supplier ids of all `grep`/`map` transform taps on this
-/// supplier, so a source `done` can be propagated to the derived supplies.
+/// Get the downstream supplier ids of all `grep`/`map`/`produce`/`flat` taps on
+/// this supplier, so a source `done` can be propagated to the derived supplies.
+///
+/// The walk is **transitive**: each of those derived supplies may itself carry
+/// derived taps (`.map(...).map(...)`, `.map(...).produce(...)`), and a `done`
+/// that stopped after one hop left every stage past the first hanging on a
+/// completion that never arrived. `migrate`'s `forward_downstream` is
+/// deliberately excluded -- an inner supply finishing does not finish the
+/// migrate output.
 pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) -> Vec<u64> {
-    let mut result = Vec::new();
-    if let Ok(map) = supplier_subscriptions_map().lock()
-        && let Some(subs) = map.get(&supplier_id)
-    {
-        for tap in &subs.taps {
-            if let Some(ref ts) = tap.transform_state {
-                result.push(ts.downstream_supplier_id);
+    let mut result: Vec<u64> = Vec::new();
+    let mut pending: Vec<u64> = vec![supplier_id];
+    let mut seen: Vec<u64> = vec![supplier_id];
+    while let Some(sid) = pending.pop() {
+        let mut next: Vec<u64> = Vec::new();
+        if let Ok(map) = supplier_subscriptions_map().lock()
+            && let Some(subs) = map.get(&sid)
+        {
+            for tap in &subs.taps {
+                if let Some(ref ts) = tap.transform_state {
+                    next.push(ts.downstream_supplier_id);
+                }
+                if let Some(ref ps) = tap.produce_state
+                    && let Some(ds) = ps.produce_downstream
+                {
+                    next.push(ds);
+                }
+                if let Some(ds) = tap.flat_downstream {
+                    next.push(ds);
+                }
             }
+        }
+        for ds in next {
+            if seen.contains(&ds) {
+                continue;
+            }
+            seen.push(ds);
+            result.push(ds);
+            pending.push(ds);
         }
     }
     result
