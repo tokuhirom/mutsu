@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 25;
+plan 31;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -57,6 +57,30 @@ ok GDynamicModifiedMethodArgument.parse('B').defined,
     'a modified method-call argument observes reassignment at match time';
 ok !GDynamicModifiedMethodArgument.parse('A').defined,
     'a modified method-call argument retains its current lexical value';
+
+my $quoted_ast = Q[/<word($value."uc"())>/].AST;
+my $quoted_gist = $quoted_ast.gist;
+ok $quoted_gist.contains('RakuAST::Call::QuotedMethod'),
+    'a quoted method-call argument keeps its quoted-method node';
+ok $quoted_gist.contains('RakuAST::QuotedString.new('),
+    'a quoted method-call argument keeps its quoted method name';
+
+my $quoted_regex = EVAL($quoted_ast);
+ok $quoted_regex ~~ Regex,
+    'a RakuAST regex with a quoted method-call argument lowers successfully';
+
+grammar GDynamicQuotedMethodArgument {
+    token TOP { <word($value."uc"())> }
+    token word($expected) { $expected }
+}
+$value = 'a';
+ok GDynamicQuotedMethodArgument.parse('A').defined,
+    'a quoted method-call argument reaches the subrule matcher';
+$value = 'b';
+ok GDynamicQuotedMethodArgument.parse('B').defined,
+    'a quoted method-call argument observes reassignment at match time';
+ok !GDynamicQuotedMethodArgument.parse('A').defined,
+    'a quoted method-call argument retains its current lexical value';
 
 my @values = <a b>;
 my $index = 0;

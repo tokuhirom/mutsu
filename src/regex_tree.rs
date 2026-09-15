@@ -1205,6 +1205,22 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             name.resolve(),
             join_args(args)?
         )),
+        // A quoted method name deliberately bypasses pseudo-method macros.
+        // Keep its quoted spelling when a constructed RakuAST regex returns
+        // through the established string parser so the match-time argument
+        // evaluator retains that distinction.
+        crate::ast::Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted: true,
+        } => Some(format!(
+            "{}.\"{}\"({})",
+            expression_source(target)?,
+            name.resolve(),
+            join_args(args)?
+        )),
         // Argumented subrules retain their expressions structurally.  When a
         // constructed RakuAST tree returns through the existing regex parser,
         // preserve an ordinary subscript rather than rejecting the whole
