@@ -19,6 +19,11 @@ pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     user_listop_shadows: std::collections::HashSet<String>,
+    /// See [`crate::compiler::Compiler`]'s `provably_bare_receiver_vars` field
+    /// doc — cloned rather than reset so a nested block still sees an outer
+    /// `:=`-bound/`Seq`-holding variable's fact, and restored on exit so a
+    /// shadowing declaration inside the block cannot leak out.
+    provably_bare_receiver_vars: std::collections::HashSet<String>,
     constant_vars_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
     constant_values: ValueMap,
@@ -58,6 +63,7 @@ impl Compiler {
             dynamic_scope_all: self.dynamic_scope_all,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             user_listop_shadows: self.user_listop_shadows.clone(),
+            provably_bare_receiver_vars: self.provably_bare_receiver_vars.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
             // Inlinable constant values follow the same lifecycle: one declared
@@ -105,6 +111,7 @@ impl Compiler {
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;
+        self.provably_bare_receiver_vars = saved.provably_bare_receiver_vars;
         // Constants declared inside the exiting block are `our`-scoped: they stay
         // installed in the package, but their lexical local slot is no longer
         // valid, so drop them from the in-scope set. Subsequent bare-word access

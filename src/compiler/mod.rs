@@ -1202,6 +1202,20 @@ pub(crate) struct Compiler {
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// Names of `@`/`$` variables whose CURRENT declaration provably denotes a
+    /// value with no container behind its own items — a `:=` bind of an `@`
+    /// name to an immutable Positional (`my @a := (1,2,3)`), or a `$` name
+    /// (bound or plain-assigned) holding such a value (`my $s = (1,2,3).Seq`).
+    /// Populated at `Stmt::VarDecl` compile time (see its arm in `stmt.rs`) and
+    /// consulted by [`Compiler::receiver_provably_yields_bare_items`], which
+    /// extends the syntactic-literal oracle
+    /// ([`Compiler::for_iterable_yields_bare_items`]) to a bare variable
+    /// reference. Every declaration of a name updates or clears the entry, so
+    /// a later reassignment (`$s = 42`) or an inner shadowing `my` cannot leave
+    /// a stale `true` behind; scoped like `user_listop_shadows` in
+    /// [`crate::compiler::helpers_dynamic::LexicalScopeSnapshot`] so a nested
+    /// block's declarations do not leak into the enclosing scope.
+    provably_bare_receiver_vars: HashSet<String>,
     /// Sigil-less names of the enclosing routine's NATIVE-typed `is rw`
     /// parameters (`sub f(int $p is rw)` records `"p"`).
     ///
@@ -1673,6 +1687,7 @@ impl Compiler {
             lexical_dup_routines: HashSet::new(),
             hoisted_sub_plans: Vec::new(),
             local_types: HashMap::new(),
+            provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
@@ -3383,7 +3398,59 @@ impl Compiler {
             {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
             }
+            // `.Seq` reifies whatever items its target already has — it mints
+            // no fresh ones — so it inherits the target's bareness exactly:
+            // `(1,2,3).Seq.map({$_=5})` dies (the target `(1,2,3)` is bare)
+            // while `@a.Seq.map({$_=5})` still writes through (the target's
+            // own elements are Scalars). Unlike the arm above, this is not
+            // restricted to `@`/`%` variables: any expression's `.Seq` shares
+            // its target's verdict.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty() && *name == "Seq" => Self::for_iterable_yields_bare_items(target),
             _ => false,
+        }
+    }
+
+    /// [`Compiler::for_iterable_yields_bare_items`], widened to also answer for
+    /// a BARE variable reference by consulting `provably_bare_receiver_vars` —
+    /// the compile-time fact recorded at the variable's own declaration (see
+    /// that field's doc). Covers the two receiver shapes the purely syntactic
+    /// oracle cannot decide on its own: `my @a := (1,2,3); @a.map({$_=5})` and
+    /// `my $s = (1,2,3).Seq; $s.map({$_=5})` (issue #7556 section A).
+    /// Like [`Compiler::for_iterable_yields_bare_items`], but for deciding
+    /// whether a *stored* value (the RHS of a `$`/`@`(bound) declaration or
+    /// reassignment) makes that VARIABLE a provably-bare receiver later —
+    /// the fact `provably_bare_receiver_vars` caches. The difference is the
+    /// bare `Expr::Literal` case: a literal written directly as a `for`
+    /// loop's iterable (`for 5 { $_ = 1 }`) has `$_` itself as the bare
+    /// item, but once that same literal is STORED in a variable
+    /// (`my $a = 1;`), `$a` has its own `Scalar` container forever after —
+    /// `for $a {...}` binds to THAT container, never to "a bare 1". Marking
+    /// it bare here regressed `for $a -> $x is rw { $x = ... }` for every
+    /// scalar ever initialized from a literal
+    /// (`t/control/for-scalar-source-alias.t`). Only a genuine multi-item
+    /// collection shape — a list literal, a `Range`, `.Seq`/`.List`/... —
+    /// makes the STORED value itself bare, and those still go through
+    /// [`Compiler::for_iterable_yields_bare_items`]'s other arms unchanged.
+    fn value_expr_denotes_bare_receiver(expr: &Expr) -> bool {
+        match expr {
+            Expr::Literal(_) => false,
+            Expr::Grouped(inner) => Self::value_expr_denotes_bare_receiver(inner),
+            other => Self::for_iterable_yields_bare_items(other),
+        }
+    }
+
+    pub(crate) fn receiver_provably_yields_bare_items(&self, iterable: &Expr) -> bool {
+        match iterable {
+            Expr::Grouped(inner) => self.receiver_provably_yields_bare_items(inner),
+            Expr::ArrayVar(name) => self
+                .provably_bare_receiver_vars
+                .contains(&format!("@{name}")),
+            Expr::Var(name) => self
+                .provably_bare_receiver_vars
+                .contains(&format!("${name}")),
+            _ => Self::for_iterable_yields_bare_items(iterable),
         }
     }
 
