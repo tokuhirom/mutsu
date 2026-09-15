@@ -3089,6 +3089,7 @@ impl Interpreter {
             class_declaring_units: Default::default(),
             package_declaring_units: Default::default(),
             compunit_visible_packages: Default::default(),
+            module_granted_packages: Default::default(),
             prelude_sub_names: Default::default(),
             current_unit: crate::runtime::main_unit(),
             closures_created: 0,

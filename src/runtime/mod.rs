@@ -2080,6 +2080,20 @@ pub struct Interpreter {
     /// consulting this table, exactly as `prelude_visible_here` does for
     /// prelude splices.
     pub(crate) compunit_visible_packages: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
+    /// The package names one module's FIRST load granted to its importer
+    /// (`compunit_visible_packages`), keyed by the module name — its own
+    /// name, the `unit module`/`unit class` package it declares, every type
+    /// it registered under that prefix, and each of their top-level
+    /// `::`-segments.
+    ///
+    /// A re-`use` of an already-loaded module never re-runs that load, so it
+    /// cannot recompute the set; without replaying it, the second importer
+    /// only ever learns the module's own name. That is invisible while the
+    /// declared package matches the file name, and fatal when it does not:
+    /// `Acme/Cow.rakumod` says `unit module Cow;`, so a script whose first
+    /// load came from an `EVAL` (`Test`'s `use-ok`) reached `Cow::cow` only
+    /// through a grant its own `use Acme::Cow;` never made.
+    pub(crate) module_granted_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
