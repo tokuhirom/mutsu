@@ -373,17 +373,23 @@ impl Interpreter {
             // "Narrowness" tie-break: among equally-typed candidates, prefer the
             // one whose params carry more narrowing constraints. Ranked as a tuple
             // (higher wins lexicographically):
-            //   .0 = `where` clauses OR subset types (a subset is narrower than its
+            //   .0 = literal parameters (a literal is narrower than its type);
+            //   .1 = `where` clauses OR subset types (a subset is narrower than its
             //        base, whose nominal distance was resolved to the base above);
-            //   .1 = sigilled params (`@`/`%`/`&`) — the sigil imposes an implicit
+            //   .2 = sigilled params (`@`/`%`/`&`) — the sigil imposes an implicit
             //        Positional/Associative/Callable constraint, so `(@x, @y)` is
             //        narrower than `($a, $b)` for two array args (matching the sub
             //        dispatch's `typed_param_count`, which also counts sigils).
-            //   .2 = `is rw`/`is raw` params — the trait demands a writable
+            //   .3 = `is rw`/`is raw` params — the trait demands a writable
             //        container, so `(Int $b is rw)` is narrower than `(Int $b)`
             //        for a variable argument (matching `candidate_specificity_rank`,
             //        which counts the same traits on the sub-dispatch side).
-            let narrowness = |def: &MethodDef| -> (usize, usize, usize) {
+            let narrowness = |def: &MethodDef| -> (usize, usize, usize, usize) {
+                let literal = def
+                    .param_defs
+                    .iter()
+                    .filter(|p| p.literal_value.is_some())
+                    .count();
                 let where_subset = def
                     .param_defs
                     .iter()
@@ -413,13 +419,13 @@ impl Interpreter {
                     .iter()
                     .filter(|p| !p.is_invocant && p.traits.iter().any(|t| t == "rw" || t == "raw"))
                     .count();
-                (where_subset, sigil_typed, rw_typed)
+                (literal, where_subset, sigil_typed, rw_typed)
             };
             let best_where = tied
                 .iter()
                 .map(|&i| narrowness(&all_matches[i].1))
                 .max()
-                .unwrap_or((0, 0, 0));
+                .unwrap_or((0, 0, 0, 0));
             let mut narrowed: Vec<usize> = tied
                 .iter()
                 .copied()
