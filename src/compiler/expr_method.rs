@@ -296,7 +296,7 @@ impl Compiler {
             && !quoted
             && args.len() == 2
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
-        let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
+        let immutable_topic_cb = self.method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
         for (i, arg) in args.iter().enumerate() {
             // Only the closure literal itself is escaping (see
@@ -560,13 +560,14 @@ impl Compiler {
     /// reason. Conservative — a variable/derived receiver answers `false`, so
     /// `@a.map({ $_ = 5 })` and every shape mutsu cannot prove bare keep
     /// today's writable topic. See [`crate::opcode::CompiledCode::immutable_topic`].
-    pub(super) fn method_binds_immutable_topic(target: &Expr, mname: &str) -> bool {
+    pub(super) fn method_binds_immutable_topic(&self, target: &Expr, mname: &str) -> bool {
         // `.first` scans with the same topic binding `.grep` does — its matcher
         // block reaches `vm_call_on_value`, which already consults
         // `CompiledCode::immutable_topic` — so `(1, 2).first({ $_ = 5 })` is the
-        // same rejection. `@a.first({ $_ = 5 })` keeps writing through, because
-        // `@a` is not a provably-bare receiver.
-        matches!(mname, "map" | "grep" | "first") && Self::for_iterable_yields_bare_items(target)
+        // same rejection. `@a.first({ $_ = 5 })` keeps writing through, unless
+        // `@a` was itself `:=`-bound to a provably-bare Positional.
+        matches!(mname, "map" | "grep" | "first")
+            && self.receiver_provably_yields_bare_items(target)
     }
 
     /// A directly-written bare block argument (`{ ... }`), the only shape whose
@@ -786,7 +787,7 @@ impl Compiler {
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
         let esc = Self::method_escapes_closure_args(&mname);
-        let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
+        let immutable_topic_cb = self.method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
         for (i, arg) in args.iter().enumerate() {
             // See the sibling loop in `compile_expr_method_call`.

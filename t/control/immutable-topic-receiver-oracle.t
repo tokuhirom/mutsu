@@ -9,7 +9,7 @@ use Test;
 # Every row below was verified against rakudo; the file is designed to pass
 # under `raku` too, so a wrong expectation here fails against the oracle.
 
-plan 51;
+plan 61;
 
 # --- a `%` variable mints a fresh Pair per entry: the topic is that Pair,
 #     which is not in a Scalar, so `$_ = ...` is refused ------------------
@@ -247,4 +247,81 @@ plan 51;
     my $n;
     for (@a,) -> $v { $n = $v.elems }
     is $n, 2, 'for (@a,) -> $v (read-only) still binds';
+}
+
+# --- issue #7556 section A(rest): a receiver the oracle cannot decide from
+#     its own syntax, because it is a bare variable rather than a literal or
+#     a coercer chain written directly against one. Closing these needs a
+#     compile-time fact about what the VARIABLE denotes, tracked from its own
+#     declaration (`Compiler::provably_bare_receiver_vars`) rather than from
+#     the receiver expression alone. -------------------------------------
+
+# `.Seq` written directly (no intermediate variable): it reifies whatever
+# items its target already has, so it inherits the target's bareness exactly.
+{
+    dies-ok { (1, 2, 3).Seq.map({ $_ = 5 }).eager },
+        '(1,2,3).Seq.map({ $_ = ... }) dies';
+}
+{
+    dies-ok { (1, 2, 3).Seq.grep({ $_ = 5 }).eager },
+        '(1,2,3).Seq.grep({ $_ = ... }) dies';
+}
+# CONTROL: `.Seq` over a real array's own elements still writes through
+# (pinned above too, at line 172, for a `for` loop) — confirming the new
+# `.Seq` arm does not regress the case it must stay silent on.
+{
+    my @a = 1, 2;
+    @a.Seq.map({ $_ = 5 }).eager;
+    is-deeply @a, [5, 5], '@a.Seq.map({ $_ = ... }) still writes through';
+}
+
+# An `@`-variable `:=`-bound to a List literal: the bind itself denotes an
+# immutable Positional, and nothing in `@a.map(...)`'s own syntax says so.
+#
+# The declaration must live INSIDE the `dies-ok` block along with its use: a
+# block passed as a call argument (like `dies-ok`'s) compiles as a genuine
+# closure with its own fresh `Compiler`
+# (`Compiler::push_dynamic_scope_lexical`'s doc), which does not inherit the
+# calling `Compiler`'s `provably_bare_receiver_vars` — the same reason
+# `local_types` cannot see an outer scope's type constraint from inside a
+# nested closure either. Declaring `@a`/`$s` outside and using it only inside
+# would defeat the tracking, not exercise it.
+{
+    dies-ok { my @a := (1, 2, 3); @a.map({ $_ = 5 }).eager },
+        ':=-bound @a.map({ $_ = ... }) dies';
+}
+{
+    dies-ok { my @a := (1, 2, 3); @a.grep({ $_ = 5 }).eager },
+        ':=-bound @a.grep({ $_ = ... }) dies';
+}
+{
+    dies-ok { my @a := (1, 2, 3); for @a { $_ = 5 } },
+        'for a :=-bound @a { $_ = ... } dies';
+}
+
+# A `$`-variable holding a `.Seq`: same shape, scalar sigil.
+{
+    dies-ok { my $s = (1, 2, 3).Seq; $s.map({ $_ = 5 }).eager },
+        '$s (holding a Seq).map({ $_ = ... }) dies';
+}
+{
+    dies-ok { my $s = (1, 2, 3).Seq; $s.grep({ $_ = 5 }).eager },
+        '$s (holding a Seq).grep({ $_ = ... }) dies';
+}
+
+# CONTROL: the compile-time fact must not survive a REBIND/reassignment to
+# something that is not provably bare — that direction is a false positive
+# (a spurious throw raku does not have), never acceptable for this oracle.
+{
+    my @a := (1, 2, 3);
+    my @m = (9, 9, 9);
+    @a := @m;
+    @a.map({ $_ = 5 }).eager;
+    is-deeply @m, [5, 5, 5], 'rebinding away from a bare List drops the mark';
+}
+{
+    my $s = (1, 2, 3).Seq;
+    $s = [7, 8, 9];
+    $s.map({ $_ = 5 }).eager;
+    is-deeply $s, [5, 5, 5], 'reassigning away from a Seq drops the mark';
 }

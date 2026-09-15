@@ -1490,6 +1490,44 @@ impl Compiler {
                 // var was marked readonly purely as a bind signal).
                 let is_bound_container_vardecl =
                     bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
+                // Track whether this declaration provably denotes a value with
+                // no container behind its own items: a `:=` bind of an `@`
+                // name to an immutable Positional (`my @a := (1,2,3)`), or a
+                // plain scalar/sigilless name — bound or plain-assigned,
+                // either aliases the same value — holding one
+                // (`my $s = (1,2,3).Seq`). Read back by
+                // `Compiler::receiver_provably_yields_bare_items` so
+                // `@a.map({$_=5})`/`for @a {$_=5}` refuse the same way the
+                // direct literal already does (issue #7556 section A). Every
+                // declaration of `name` updates or clears the entry, and the
+                // matching `Stmt::Assign` arm does the same for a later plain
+                // reassignment or a bare `:=` rebind, so a stale fact cannot
+                // survive either (`my @a := (1,2,3); @a := @mutable` must NOT
+                // keep refusing). `%`-sigiled names are deliberately excluded:
+                // nothing on the lookup side (`ArrayVar`/`Var`) ever queries
+                // one, and including it would risk colliding with an
+                // unrelated `$`-name sharing the same bare spelling. See
+                // `provably_bare_receiver_vars`'s own doc for the scoping.
+                let is_plain_scalar_decl =
+                    !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&');
+                let is_bound_array_vardecl = bind_vardecl && name.starts_with('@');
+                if is_plain_scalar_decl || is_bound_array_vardecl {
+                    let bare = Self::value_expr_denotes_bare_receiver(expr);
+                    // See the matching `Stmt::Assign` arm for why the key
+                    // allocation is skipped when there's nothing to remove.
+                    if bare || !self.provably_bare_receiver_vars.is_empty() {
+                        let key = if is_bound_array_vardecl {
+                            name.clone()
+                        } else {
+                            format!("${name}")
+                        };
+                        if bare {
+                            self.provably_bare_receiver_vars.insert(key);
+                        } else {
+                            self.provably_bare_receiver_vars.remove(&key);
+                        }
+                    }
+                }
                 // A scalar `:=` bind (`my $x := EXPR`). Captured before the RHS
                 // branches consume `bind_vardecl`; recorded on the CompiledCode so
                 // `compute_free_vars` can vouch for it despite it reaching a call as
@@ -2047,6 +2085,38 @@ impl Compiler {
                 // parameter, the reserved `$self` lexical key names that
                 // parameter (which binds `"self"`).
                 let name = &self.resolve_self_lexical(name).to_string();
+                // Keep `provably_bare_receiver_vars` (see its doc, and the
+                // matching `Stmt::VarDecl` arm) live across a REASSIGNMENT
+                // too, not just the declaration: a plain scalar `=`/`:=` and a
+                // bare `@`-name `:=` rebind (`@a := (1,2,3);` with no `my`,
+                // legal in raku — the earlier `my @a := ...`'s VarDecl has
+                // already run) both change what the name denotes, and a stale
+                // `true` surviving such a rebind to something NOT provably
+                // bare would be a false positive (a spurious throw raku does
+                // not have), the one direction this oracle must never take.
+                let is_plain_scalar_reassign =
+                    !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&');
+                let is_bound_array_reassign = matches!(op, AssignOp::Bind) && name.starts_with('@');
+                if is_plain_scalar_reassign || is_bound_array_reassign {
+                    let bare = Self::value_expr_denotes_bare_receiver(expr);
+                    // Skip the key allocation on the common `remove` path for a
+                    // program that never populated the set at all — this arm
+                    // fires for every plain scalar assignment, including inside
+                    // hot loops (`$x = $x + 1`), so a `format!` on every one of
+                    // them would be a real, broad cost for no behavior change.
+                    if bare || !self.provably_bare_receiver_vars.is_empty() {
+                        let key = if is_bound_array_reassign {
+                            name.clone()
+                        } else {
+                            format!("${name}")
+                        };
+                        if bare {
+                            self.provably_bare_receiver_vars.insert(key);
+                        } else {
+                            self.provably_bare_receiver_vars.remove(&key);
+                        }
+                    }
+                }
                 // Handle $CALLER::varname = expr or $CALLER::varname := expr
                 if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
                     if matches!(op, AssignOp::Bind) {
