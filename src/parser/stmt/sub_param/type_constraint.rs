@@ -268,6 +268,14 @@ pub(crate) fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, Strin
         type_name.push_str(&rest[..2]);
         rest = &rest[2..];
     }
+    // The marker may be written apart from the type it marks: `method m(C:D :)`
+    // and `method m(C : $y)` (Tree::Binary::Role::BinaryTree writes the first)
+    // declare exactly the same anonymous typed invocant as the glued `C:D:`.
+    // Only the glued spelling was accepted, so a signature with a gap failed at
+    // its closing paren and took the whole enclosing file down with it.
+    let gapless = rest;
+    let (rest, _) = ws(rest).ok()?;
+    let had_gap = rest.len() != gapless.len();
     let after_colon = rest.strip_prefix(':')?;
     if after_colon.starts_with(':') {
         return None;
@@ -280,6 +288,13 @@ pub(crate) fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, Strin
         .next()
         .is_some_and(|c| c.is_alphanumeric() || c == '_')
     {
+        return None;
+    }
+    // A gap before the colon and a sigil right after it is a NAMED parameter
+    // carrying a type (`sub f(Int :$x)`), not an invocant — the invocant marker
+    // never binds the thing to its right. Without this the gap allowed above
+    // would swallow every typed named parameter in the language.
+    if had_gap && after_colon.starts_with(['$', '@', '%', '&']) {
         return None;
     }
     let (after_colon, _) = ws(after_colon).ok()?;

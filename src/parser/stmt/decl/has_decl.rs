@@ -1078,6 +1078,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let consumed = input.len().saturating_sub(pre_ws_rest.len());
     let block_terminated = consumed > 0 && input[..consumed].trim_end().ends_with('}');
     if !block_terminated
+        && !super::super::modifier::is_stmt_modifier_keyword(rest)
         && let Some(first) = rest.chars().next()
         && (first.is_alphabetic() || first == '_' || matches!(first, '$' | '@' | '%' | '&'))
     {
@@ -1102,32 +1103,56 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
+    // An attribute is installed when the class body is composed, so a *runtime*
+    // statement modifier cannot gate the declaration: rakudo keeps the attribute,
+    // its traits and its default whatever the condition says (`has $.x = 5 if 0`
+    // still reads back 5, and Test::Declare's `has $.class is required when
+    // !*.DEFINITE` is still required). What the modifier does still do is
+    // evaluate its own condition, once, as the class body runs. So the
+    // declaration stays unconditional and the modifier is re-attached to an
+    // empty statement, which preserves those side effects without gating
+    // anything. (`try_split_decl_modifier` makes the same compile-time-versus-
+    // runtime split for a `my $x = INIT if COND` declaration.)
+    let (rest, modifier_sink) = if super::super::modifier::is_stmt_modifier_keyword(rest) {
+        let (r, sink) = super::super::modifier::parse_statement_modifier(
+            rest,
+            Stmt::SyntheticBlock(Vec::new()),
+        )?;
+        (r, Some(sink))
+    } else {
+        (rest, None)
+    };
+
     let (rest, _) = opt_char(rest, ';');
+    let decl = Stmt::HasDecl {
+        name: Symbol::intern(&name),
+        is_public,
+        default,
+        handles,
+        is_rw,
+        is_readonly,
+        type_constraint,
+        type_smiley,
+        is_required,
+        sigil: sigil as char,
+        where_constraint,
+        is_alias,
+        is_embedded,
+        is_our: false,
+        is_my: false,
+        is_default: is_default_trait,
+        is_type,
+        deprecated_message,
+        is_built,
+        unknown_traits,
+        // As above: only the `my`/`our` class-level spellings can bind.
+        default_is_bind: false,
+    };
     Ok((
         rest,
-        Stmt::HasDecl {
-            name: Symbol::intern(&name),
-            is_public,
-            default,
-            handles,
-            is_rw,
-            is_readonly,
-            type_constraint,
-            type_smiley,
-            is_required,
-            sigil: sigil as char,
-            where_constraint,
-            is_alias,
-            is_embedded,
-            is_our: false,
-            is_my: false,
-            is_default: is_default_trait,
-            is_type,
-            deprecated_message,
-            is_built,
-            unknown_traits,
-            // As above: only the `my`/`our` class-level spellings can bind.
-            default_is_bind: false,
+        match modifier_sink {
+            Some(sink) => Stmt::SyntheticBlock(vec![decl, sink]),
+            None => decl,
         },
     ))
 }
