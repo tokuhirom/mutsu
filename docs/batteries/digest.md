@@ -105,14 +105,14 @@ transitively.
 
 ## Test-suite gate
 
-Upstream has 4 test files; 3 are whitelisted and run on every release:
+Upstream has 4 test files; all 4 are whitelisted and run on every release:
 
 | file | what it covers | status |
 | --- | --- | --- |
 | `t/md5.t` | RFC 1321 vectors + 100 random strings | **PASS** (2.2s) |
 | `t/sha.t` | SHA-1, all four SHA-2 widths, all four SHA-3 widths | **PASS** (1.5s) |
 | `t/rfc4231.t` | the RFC 4231 HMAC-SHA-2 test vectors | **PASS** (5.9s) |
-| `t/ripemd.t` | RIPEMD-160, incl. the 1,000,000-byte `'a' x 1e6` vector | not whitelisted — **correct but slow** |
+| `t/ripemd.t` | RIPEMD-160, incl. the 1,000,000-byte `'a' x 1e6` vector | **PASS** (~73s) |
 
 `t/ripemd.t` produces the right digest for all 9 vectors; it took ~513s
 against raku's ~46s when first measured, over the gate's 120s per-file
@@ -120,11 +120,13 @@ budget. The cost is structural, not a wrong answer: `rmd160` runs the two
 halves of each compression round in `start` blocks, so a 1 MB message
 spawns ~31k tasks. Successive campaigns (worker pool ADR-0020, per-task
 clone slimming, closure-setup allocations #5941, reduce compiled-first
-dispatch #5942) brought it to **~119s local (2026-08-05)** — right at the
-budget line, but the gate is a hard `timeout 120`, so it stays
-un-whitelisted until one more lever gives real margin on slower CI
-runners. Tracked in
-`todo/perf/digest-ripemd-start-per-block-overhead.md`.
+dispatch #5942, hot-path key memoization #7687) brought it to ~113.7s —
+right at the 120s budget line. The fast-path landed for
+[#7571](https://github.com/tokuhirom/mutsu/issues/7571) (a `type_matches_value`
+short-circuit for the implicit `PositionalBindFailover` check every
+parameter bind runs, and for sized native-int constraints like
+`uint32`) brought it to **~73s local**, real margin under the budget, and
+it joined the whitelist.
 
 ## Provenance and update procedure
 
