@@ -9,6 +9,26 @@ impl Interpreter {
         c: char,
         ignore_case: bool,
     ) -> bool {
+        class_matches_ignorecase(class, c, ignore_case)
+    }
+
+    pub(super) fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
+        class_matches(class, c)
+    }
+}
+
+/// Whether `c` is in `class`, with `:i` applied when `ignore_case`.
+///
+/// A free function, not an `Interpreter` method, because the whole
+/// class evaluator is pure — and the ADR-0099 Stage 1 scan prefilter
+/// (`regex_prefilter_analysis.rs`) needs to evaluate a class over the ASCII
+/// range at *analysis* time, where there is no `&mut Interpreter` to hand and
+/// where a second, independently-written membership table would be exactly the
+/// silent-drift hazard the ADR's constraint 1 warns about. Deriving the
+/// prefilter's first-set through the engine's own predicate makes the two
+/// unable to disagree.
+pub(super) fn class_matches_ignorecase(class: &CharClass, c: char, ignore_case: bool) -> bool {
+    {
         if ignore_case {
             if class.negated {
                 // For negated classes with :i, char matches only if ALL case
@@ -19,7 +39,7 @@ impl Interpreter {
                     items: class.items.clone(),
                 };
                 for variant in CaseFoldIter::new(c) {
-                    if self.regex_match_class(&pos_class, variant) {
+                    if class_matches(&pos_class, variant) {
                         return false;
                     }
                 }
@@ -27,16 +47,20 @@ impl Interpreter {
             }
             // For positive classes, any case variant matching is sufficient
             for variant in CaseFoldIter::new(c) {
-                if self.regex_match_class(class, variant) {
+                if class_matches(class, variant) {
                     return true;
                 }
             }
             return false;
         }
-        self.regex_match_class(class, c)
+        class_matches(class, c)
     }
+}
 
-    pub(super) fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
+/// Whether `c` is in `class` (case-sensitively). See
+/// [`class_matches_ignorecase`] for why this is a free function.
+pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
+    {
         let mut matched = false;
         for item in &class.items {
             match item {
@@ -168,7 +192,9 @@ impl Interpreter {
         }
         if class.negated { !matched } else { matched }
     }
+}
 
+impl Interpreter {
     /// Find all non-overlapping regex matches using the capturing path,
     /// returning (start, end) pairs and captures (including code blocks).
     pub(crate) fn regex_find_all_with_caps(

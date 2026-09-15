@@ -627,7 +627,8 @@ fn is_format_char(c: char) -> bool {
 pub(super) fn strip_marks_pattern(pattern: &RegexPattern) -> Arc<RegexPattern> {
     Arc::clone(
         pattern
-            .stripped_pattern
+            .derived
+            .stripped
             .get_or_init(|| Arc::new(strip_marks_pattern_uncached(pattern))),
     )
 }
@@ -639,7 +640,7 @@ fn strip_marks_pattern_uncached(pattern: &RegexPattern) -> RegexPattern {
         anchor_end: pattern.anchor_end,
         ignore_case: pattern.ignore_case,
         ignore_mark: false,
-        stripped_pattern: Arc::new(std::sync::OnceLock::new()),
+        derived: Default::default(),
     }
 }
 
@@ -691,7 +692,7 @@ pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
         anchor_end: false,
         ignore_case,
         ignore_mark,
-        stripped_pattern: Arc::new(std::sync::OnceLock::new()),
+        derived: Default::default(),
     }
 }
 

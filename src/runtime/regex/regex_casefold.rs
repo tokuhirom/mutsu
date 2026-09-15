@@ -13,6 +13,15 @@ fn casefold_char(c: char) -> Vec<char> {
 
 /// Returns true if a character case-folds to more than one character.
 fn has_multichar_fold(c: char) -> bool {
+    // No ASCII character has a multi-character fold, and answering that with a
+    // range check instead of two case conversions and a `Vec` matters: the
+    // whole-subject scan in [`needs_casefold_expansion`] runs this once per
+    // character on every `:i` match, which made a failing `:i` scan over a
+    // 640 KB ASCII subject spend most of its time deciding that no expansion
+    // was needed (ADR-0099 Stage 1, #8272).
+    if c.is_ascii() {
+        return false;
+    }
     casefold_char(c).len() > 1
 }
 
@@ -88,7 +97,7 @@ pub(super) fn casefold_pattern(pattern: &RegexPattern) -> RegexPattern {
         anchor_end: pattern.anchor_end,
         ignore_case: pattern.ignore_case,
         ignore_mark: pattern.ignore_mark,
-        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+        derived: Default::default(),
     }
 }
 
@@ -141,7 +150,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                 anchor_end: false,
                 ignore_case: false,
                 ignore_mark: false,
-                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                derived: Default::default(),
             };
             vec![RegexToken {
                 atom: RegexAtom::Group(group),
@@ -283,7 +292,7 @@ fn casefold_char_class(class: &CharClass) -> RegexAtom {
             anchor_end: false,
             ignore_case: false,
             ignore_mark: false,
-            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+            derived: Default::default(),
         }
     }));
     match branches.len() {
@@ -321,6 +330,6 @@ fn one_atom_pattern(atom: RegexAtom) -> RegexPattern {
         anchor_end: false,
         ignore_case: false,
         ignore_mark: false,
-        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+        derived: Default::default(),
     }
 }

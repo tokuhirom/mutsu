@@ -772,7 +772,7 @@ pub(super) fn single_token_pattern(
         anchor_end: false,
         ignore_case,
         ignore_mark,
-        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+        derived: Default::default(),
     }
 }
 
@@ -1272,7 +1272,7 @@ pub(super) fn rewrite_tilde_tokens(
                 anchor_end: false,
                 ignore_case,
                 ignore_mark,
-                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                derived: Default::default(),
             };
             out.push(RegexToken {
                 atom: RegexAtom::GoalMatch {
@@ -1471,7 +1471,7 @@ pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> Reg
             anchor_end: false,
             ignore_case,
             ignore_mark: false,
-            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+            derived: Default::default(),
         })
     }
 }

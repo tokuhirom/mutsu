@@ -37,10 +37,28 @@ pub(crate) struct RegexPattern {
     pub(crate) anchor_end: bool,
     pub(crate) ignore_case: bool,
     pub(crate) ignore_mark: bool,
-    /// Lazily memoized mark-stripped form. Static parsed patterns are shared
-    /// through the regex parse cache, and scoped `:ignoremark` can enter the
-    /// same pattern many times during one match.
-    pub(crate) stripped_pattern: Arc<std::sync::OnceLock<Arc<RegexPattern>>>,
+    /// Analyses derived from this pattern, each computed at most once and
+    /// shared by every holder of the pattern. See [`PatternDerived`].
+    pub(crate) derived: Arc<PatternDerived>,
+}
+
+/// The lazily-derived, pure-function-of-the-pattern analyses that hang off a
+/// [`RegexPattern`].
+///
+/// Static parsed patterns are shared through the regex parse cache, so a
+/// derivation paid here is paid once for every match that pattern will ever
+/// take part in — which is what makes the scan prefilter (ADR-0099 Stage 1)
+/// affordable at all: its first-set derivation walks the whole token tree and
+/// evaluates every character class over the ASCII range, far too much to
+/// repeat per `regex_scan_positions` call.
+#[derive(Default)]
+pub(crate) struct PatternDerived {
+    /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
+    /// pattern many times during one match).
+    pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
+    /// The unanchored-scan prefilter (ADR-0099 Stage 1).
+    pub(crate) prefilter:
+        std::sync::OnceLock<Arc<crate::runtime::regex::regex_prefilter::Prefilter>>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).

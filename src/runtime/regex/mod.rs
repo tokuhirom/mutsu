@@ -25,6 +25,8 @@ mod regex_match_public;
 mod regex_match_sep;
 mod regex_match_sep_lazy;
 pub(crate) mod regex_prefilter;
+pub(crate) mod regex_prefilter_analysis;
+pub(crate) mod regex_prefilter_firstset;
 mod regex_resolve;
 mod regex_subrule_lazy;
 mod regex_token_method;

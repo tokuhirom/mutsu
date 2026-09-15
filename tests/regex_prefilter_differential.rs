@@ -117,3 +117,117 @@ differential_case!(
     from_pos_scan_min_pos_offset,
     r#"say "aXaXaX".match(/ 'aX' /, :g).join(",");"#
 );
+
+// --- first-character-set / minimum-length shapes (the second Stage 1 slice) ---
+//
+// Everything below is narrowed by the derived first-character set or the
+// minimum match length rather than by a literal prefix, so these are the cases
+// where an over-promising analysis would silently drop a match.
+
+differential_case!(
+    class_led_scan,
+    r#"say ("abc123def456" ~~ m:g/ \d+ /).join(",");"#
+);
+differential_case!(
+    negated_class_led_scan,
+    r#"say ("aaabaaac" ~~ m:g/ <-[a]> /).join(",");"#
+);
+differential_case!(
+    alternation_first_set_union,
+    r#"say ("zzfoozzbarzz" ~~ m:g/ 'foo' | 'bar' /).join(",");"#
+);
+differential_case!(
+    alternation_with_a_nullable_branch,
+    r#"say ("xyz" ~~ / 'a' | '' /).Bool;"#
+);
+differential_case!(
+    ignorecase_literal_uses_the_fold_closure,
+    r#"say ("say STRASSE now" ~~ m:g/ :i 'strasse' /).join(",");"#
+);
+differential_case!(
+    ignorecase_class,
+    r#"say ("aXbYc" ~~ m:g/ :i <[xy]> /).join(",");"#
+);
+differential_case!(
+    ignorecase_kelvin_sign_folds_onto_ascii,
+    r#"say ("a\c[KELVIN SIGN]b" ~~ / :i 'k' /).Bool;"#
+);
+differential_case!(
+    ignorecase_long_s_folds_onto_ascii,
+    r#"say ("a\c[LATIN SMALL LETTER LONG S]b" ~~ / :i 's' /).Bool;"#
+);
+differential_case!(
+    minimum_length_prunes_the_tail,
+    r#"say ("abcde" ~~ m:g/ . . . /).join(",");"#
+);
+differential_case!(
+    minimum_length_with_a_repeat_quantifier,
+    r#"say ("aaaa" ~~ / a ** 3..5 /).Str;"#
+);
+differential_case!(
+    leading_zero_width_assertion,
+    r#"say ("foo\nbar" ~~ m:g/ ^^ \w /).join(",");"#
+);
+differential_case!(
+    leading_word_boundary,
+    r#"say ("one two three" ~~ m:g/ << \w /).join(",");"#
+);
+differential_case!(
+    leading_lookahead,
+    r#"say ("a1b2" ~~ m:g/ <?before \d> . /).join(",");"#
+);
+differential_case!(
+    leading_code_block_must_still_run_per_position,
+    r#"my $n = 0; my $m = "xxxz" ~~ / { $n++ } 'z' /; say $m.Str; say $n > 1;"#
+);
+differential_case!(
+    newline_atom_and_crlf,
+    r#"say ("a\r\nb" ~~ m:g/ \n /).elems;"#
+);
+differential_case!(
+    class_containing_newline_matches_at_cr,
+    r#"say ("a\r\nb" ~~ / <[\n]> /).Bool;"#
+);
+differential_case!(
+    grapheme_class_entry,
+    r#"say ("xe\x[301]y" ~~ / <[e\x[301]]> /).Bool;"#
+);
+differential_case!(
+    combining_mark_does_not_start_a_match,
+    r#"say ("a\x[094D]b" ~~ / \w /).Str;"#
+);
+differential_case!(
+    subrule_led_pattern_declines,
+    r#"
+grammar G { token thing { \d+ } }
+say ("ab123" ~~ / <G::thing> /).Str;
+"#
+);
+differential_case!(
+    backreference_after_a_class,
+    r#"say ("xabab" ~~ / (\w) (\w) $0 $1 /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_inside_a_plain_pattern,
+    r#"say ("xcafe\x[301]" ~~ / [:m 'cafe'] /).Bool;"#
+);
+differential_case!(
+    split_on_a_class,
+    r#"say "a1b22c".split(/ \d+ /).join("|");"#
+);
+differential_case!(
+    subst_with_a_class_pattern,
+    r#"say "a1b2".subst(/ \d /, "X", :g);"#
+);
+differential_case!(
+    non_ascii_subject_with_an_ascii_class,
+    r#"say ("日本語abc" ~~ / <[a..z]>+ /).Str;"#
+);
+differential_case!(
+    non_ascii_class_member,
+    r#"say ("abc日本" ~~ / <[日本]> /).Str;"#
+);
+differential_case!(
+    unicode_property_atom_declines_to_anything,
+    r#"say ("abcÀ" ~~ / <:Lu> /).Str;"#
+);

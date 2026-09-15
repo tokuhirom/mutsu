@@ -568,7 +568,7 @@ impl Interpreter {
             anchor_end: false,
             ignore_case,
             ignore_mark,
-            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+            derived: Default::default(),
         };
         RegexAtom::Lookaround {
             pattern: inner_pattern,
@@ -1118,7 +1118,7 @@ impl Interpreter {
                     anchor_end: false,
                     ignore_case,
                     ignore_mark,
-                    stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                    derived: Default::default(),
                 });
             } else if alt_patterns.len() == 1 {
                 return alt_patterns.into_iter().next();
@@ -1169,7 +1169,7 @@ impl Interpreter {
                     anchor_end: false,
                     ignore_case,
                     ignore_mark,
-                    stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                    derived: Default::default(),
                 });
             } else if conj_patterns.len() == 1 {
                 return conj_patterns.into_iter().next();
@@ -1266,7 +1266,7 @@ impl Interpreter {
                                 anchor_end: false,
                                 ignore_case,
                                 ignore_mark,
-                                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                                derived: Default::default(),
                             }),
                             quant,
                             named_capture: None,
@@ -2531,9 +2531,7 @@ impl Interpreter {
                                     anchor_end: false,
                                     ignore_case,
                                     ignore_mark,
-                                    stripped_pattern: std::sync::Arc::new(
-                                        std::sync::OnceLock::new(),
-                                    ),
+                                    derived: Default::default(),
                                 };
                                 RegexAtom::Lookaround {
                                     pattern: inner_pattern,
@@ -2678,9 +2676,7 @@ impl Interpreter {
                                     anchor_end: false,
                                     ignore_case,
                                     ignore_mark,
-                                    stripped_pattern: std::sync::Arc::new(
-                                        std::sync::OnceLock::new(),
-                                    ),
+                                    derived: Default::default(),
                                 }
                             } else {
                                 let _preserve_array_interpolation =
@@ -2801,9 +2797,7 @@ impl Interpreter {
                                                 anchor_end: false,
                                                 ignore_case,
                                                 ignore_mark,
-                                                stripped_pattern: std::sync::Arc::new(
-                                                    std::sync::OnceLock::new(),
-                                                ),
+                                                derived: Default::default(),
                                             }
                                         })
                                         .collect();
@@ -2952,9 +2946,7 @@ impl Interpreter {
                                         anchor_end: false,
                                         ignore_case,
                                         ignore_mark,
-                                        stripped_pattern: std::sync::Arc::new(
-                                            std::sync::OnceLock::new(),
-                                        ),
+                                        derived: Default::default(),
                                     };
                                     RegexAtom::Lookaround {
                                         pattern: inner_pattern,
@@ -3005,9 +2997,7 @@ impl Interpreter {
                                                 anchor_end: false,
                                                 ignore_case,
                                                 ignore_mark,
-                                                stripped_pattern: std::sync::Arc::new(
-                                                    std::sync::OnceLock::new(),
-                                                ),
+                                                derived: Default::default(),
                                             },
                                             negated: true,
                                             is_behind: false,
@@ -3091,9 +3081,7 @@ impl Interpreter {
                                                     anchor_end: false,
                                                     ignore_case,
                                                     ignore_mark,
-                                                    stripped_pattern: std::sync::Arc::new(
-                                                        std::sync::OnceLock::new(),
-                                                    ),
+                                                    derived: Default::default(),
                                                 })
                                             } else {
                                                 RegexAtom::CharClass(CharClass {
@@ -3120,9 +3108,7 @@ impl Interpreter {
                                                 anchor_end: false,
                                                 ignore_case,
                                                 ignore_mark,
-                                                stripped_pattern: std::sync::Arc::new(
-                                                    std::sync::OnceLock::new(),
-                                                ),
+                                                derived: Default::default(),
                                             };
                                             RegexAtom::Lookaround {
                                                 pattern: inner_pattern,
@@ -3459,9 +3445,7 @@ impl Interpreter {
                                             anchor_end: false,
                                             ignore_case,
                                             ignore_mark,
-                                            stripped_pattern: std::sync::Arc::new(
-                                                std::sync::OnceLock::new(),
-                                            ),
+                                            derived: Default::default(),
                                         })
                                     } else {
                                         RegexAtom::CharClass(CharClass {
@@ -3489,9 +3473,7 @@ impl Interpreter {
                                             anchor_end: false,
                                             ignore_case,
                                             ignore_mark,
-                                            stripped_pattern: std::sync::Arc::new(
-                                                std::sync::OnceLock::new(),
-                                            ),
+                                            derived: Default::default(),
                                         },
                                         negated: false,
                                         is_behind: false,
@@ -3672,9 +3654,7 @@ impl Interpreter {
                                                     anchor_end: false,
                                                     ignore_case,
                                                     ignore_mark,
-                                                    stripped_pattern: std::sync::Arc::new(
-                                                        std::sync::OnceLock::new(),
-                                                    ),
+                                                    derived: Default::default(),
                                                 })
                                             }
                                             _ => {
@@ -3923,7 +3903,7 @@ impl Interpreter {
                                 anchor_end: false,
                                 ignore_case,
                                 ignore_mark,
-                                stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                                derived: Default::default(),
                             };
                             RegexAtom::CaptureGroup(group_pat)
                         }
@@ -4420,7 +4400,7 @@ impl Interpreter {
                         anchor_end: false,
                         ignore_case,
                         ignore_mark,
-                        stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+                        derived: Default::default(),
                     }),
                     quant: RegexQuant::One,
                     named_capture: primary_named,
@@ -4480,7 +4460,7 @@ impl Interpreter {
             anchor_end,
             ignore_case,
             ignore_mark,
-            stripped_pattern: std::sync::Arc::new(std::sync::OnceLock::new()),
+            derived: Default::default(),
         })
     }
 }
