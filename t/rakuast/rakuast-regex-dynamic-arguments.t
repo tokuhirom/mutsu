@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 19;
+plan 25;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -33,6 +33,30 @@ ok GDynamicMethodArgument.parse('A').defined,
 $value = 'b';
 ok GDynamicMethodArgument.parse('B').defined,
     'the dynamic method-call argument observes reassignment at match time';
+
+my $modified_ast = Q[/<word($value.?uc)>/].AST;
+my $modified_gist = $modified_ast.gist;
+ok $modified_gist.contains('RakuAST::Call::Method'),
+    'a modified method-call argument keeps its method-call node';
+ok $modified_gist.contains('dispatch => ".?"'),
+    'a modified method-call argument keeps its dispatch modifier';
+
+my $modified_regex = EVAL($modified_ast);
+ok $modified_regex ~~ Regex,
+    'a RakuAST regex with a modified method-call argument lowers successfully';
+
+grammar GDynamicModifiedMethodArgument {
+    token TOP { <word($value.?uc)> }
+    token word($expected) { $expected }
+}
+$value = 'a';
+ok GDynamicModifiedMethodArgument.parse('A').defined,
+    'a modified method-call argument reaches the subrule matcher';
+$value = 'b';
+ok GDynamicModifiedMethodArgument.parse('B').defined,
+    'a modified method-call argument observes reassignment at match time';
+ok !GDynamicModifiedMethodArgument.parse('A').defined,
+    'a modified method-call argument retains its current lexical value';
 
 my @values = <a b>;
 my $index = 0;
