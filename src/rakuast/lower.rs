@@ -2476,16 +2476,29 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     quoted: false,
                 }),
                 // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
-                // QuotedString rather than a Name. Only a single-literal-segment
-                // name round-trips; an interpolated one is a different internal
-                // node (`MethodCallDynamic`).
-                RakuAstClass::CallQuotedMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&quoted_method_name(postfix)?),
-                    args: arg_exprs(postfix)?,
-                    modifier: None,
-                    quoted: true,
-                }),
+                // QuotedString rather than a Name. An interpolated name lowers
+                // to the existing DynamicMethodCall execution path.
+                RakuAstClass::CallQuotedMethod => {
+                    let name_expr = lower_expr(named_child(postfix, "name")?)?;
+                    match name_expr {
+                        Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
+                            Ok(Expr::MethodCall {
+                                target: Box::new(operand),
+                                name: crate::symbol::Symbol::intern(&value.to_string_value()),
+                                args: arg_exprs(postfix)?,
+                                modifier: None,
+                                quoted: true,
+                            })
+                        }
+                        name_expr => Ok(Expr::DynamicMethodCall {
+                            target: Box::new(operand),
+                            name_expr: Box::new(name_expr),
+                            args: arg_exprs(postfix)?,
+                            modifier: None,
+                            quoted: true,
+                        }),
+                    }
+                }
                 // `.^name` -> a metamethod call. Its `name` is a plain string,
                 // not a `Name` node, and mutsu keeps the `^` in the same
                 // `modifier` slot the dispatch modifiers use.

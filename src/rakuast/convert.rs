@@ -1846,6 +1846,26 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
+        // A dynamically interpolated quoted method name (`$value."$name"()`)
+        // keeps the name as a QuotedString expression.  It is distinct from an
+        // unquoted dynamic dispatch: Rakudo still exposes Call::QuotedMethod,
+        // whose name child contains the interpolation segments.
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier: None,
+            quoted: true,
+        } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyPostfix,
+            fields: vec![
+                node_field(Some("operand"), convert_expr(target)?),
+                node_field(
+                    Some("postfix"),
+                    call_quoted_method_expr(convert_expr(name_expr)?, args)?,
+                ),
+            ],
+        }),
         // Hyper method call `@a>>.abs` -> ApplyPostfix(operand,
         // postfix => MetaPostfix::Hyper(Call::Method(...))).
         Expr::HyperMethodCall {
@@ -3345,10 +3365,14 @@ fn call_method(
 /// [args => ArgList])`. Unlike `Call::Method`, the name is a QuotedString
 /// (a string literal) rather than a `Name.from-identifier`.
 fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = vec![node_field(
-        Some("name"),
-        quoted_string(Value::str(name.to_string())),
-    )];
+    call_quoted_method_expr(quoted_string(Value::str(name.to_string())), args)
+}
+
+/// Construct `Call::QuotedMethod` from the quoted-string expression that names
+/// it.  Dynamic quoted names retain their interpolation tree here rather than
+/// being flattened into a static method-name string.
+fn call_quoted_method_expr(name: RakuAstNode, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![node_field(Some("name"), name)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
     }
