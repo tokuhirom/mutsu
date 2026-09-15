@@ -89,11 +89,27 @@ Same benchmark, same method, debug build:
 | --- | --- | --- |
 | interns per assertion | 49.06 | **11.60** |
 
-−76%. Every targeted row reaches zero. Read through the budget tests, a `Test`
-assertion goes 58.0 → 10.0 interns, a `multi` call 36.0 → 15.0, a
-`where`-constrained call 70.0 → 53.0, a pointy-block call 2.0 → 1.0 and a
-bare-block call 1.0 → 0.0, all debug; the budgets are re-pinned to the new
-numbers so the assertions cannot silently come back.
+−76%. Every targeted row reaches zero.
+
+Read through the budget tests — which measure whole call shapes rather than
+one site — the result is this, and the interesting column is the right-hand
+pair:
+
+| shape | release before → after | debug before → after |
+| --- | --- | --- |
+| `Test` assertion (`ok 1, "x"`) | 21.0 → **10.0** | 64.0 → **10.0** |
+| `multi` call | 25.0 → **15.0** | 38.0 → **15.0** |
+| `where`-constrained sub call | 63.0 → **53.0** | 72.0 → **53.0** |
+| pointy-block call | 2.0 → **1.0** | 2.0 → **1.0** |
+| bare-block call | 1.0 → **0.0** | 1.0 → **0.0** |
+
+**The debug and release calibrations have converged.** Every intern-budget
+test in the repo carried two numbers, because a debug build measurably
+interned more; the gap was the assertions, and with them gone one budget
+serves both configurations. `tests/named_call_intern_budget.rs` loses its
+`budget(debug, release)` helper and gains a note saying why a new interning
+`debug_assert!` would not merely cost a debug build — it would silently
+inflate the number every test in that file reads.
 
 ## Two notes for whoever measures this next
 

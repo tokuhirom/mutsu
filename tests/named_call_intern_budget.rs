@@ -23,24 +23,20 @@
 //! Same method as `tests/regex_match_intern_budget.rs`; see that file for the
 //! rationale behind the two-length slope.
 //!
-//! Each budget comes in two calibrations. A **debug** build interns strictly
-//! more than a release one for reasons that have nothing to do with this
-//! change: `current_source_file_sym`'s `debug_assert_eq!` calls
-//! `source_file_sym_by_walk`, which interns `?FILE` and the whole declaring
-//! path on every routine entry, and is compiled out in release (#7766 records
-//! this trap). `cargo test` is a debug build everywhere in this repo, so the
-//! debug budget is the one CI enforces; both were measured before and after the
-//! change and both fail on the pre-change counts.
-
-/// The measured pre-change count, then the post-change one, for one shape --
-/// used only to document what each budget is protecting.
-const fn budget(debug: f64, release: f64) -> f64 {
-    if cfg!(debug_assertions) {
-        debug
-    } else {
-        release
-    }
-}
+//! **The debug and release calibrations have converged, and that is the point
+//! of the round that did it.** These budgets used to carry two numbers because
+//! a debug build interned far more than a release one — a `Test` assertion cost
+//! 64 interns in debug against 21 in release. That gap was not the code under
+//! test: it was seven `debug_assert!`s that checked a passed-in `Symbol`
+//! against its string by *interning the string again*, including
+//! `source_file_sym_by_walk`'s, which re-derived `?FILE` and the whole
+//! declaring path on every routine entry. They now use `Symbol::lookup`, which
+//! is the same check and interns nothing, so both configurations measure the
+//! same 10.0 and one budget serves both.
+//!
+//! Keep it that way. A new `debug_assert!` that interns does not just cost a
+//! debug build — it silently inflates the number every test in this file
+//! reads, since `cargo test` is a debug build everywhere in this repo.
 
 /// Interns performed while running `src`, measured after a warm-up run so that
 /// one-time interning (parsing, compiling, first pass through each code path)
@@ -91,11 +87,11 @@ fn interns_per_call(preamble: &str, body: &str) -> f64 {
 fn where_constrained_sub_call_does_not_intern_its_own_name() {
     let per_call = interns_per_call("sub w($a where * > 0) { $a }", r#"$hits = w(1);"#);
     eprintln!("where-constrained sub call: {per_call:.3} interns per call");
-    // Measured: release 63 -> 61, debug 72 -> 70. The budget sits close to the
-    // measurement because the rest is the `where`-constraint machinery, which
-    // this change does not touch; it moves only when the call *name* starts
-    // being re-hashed again.
-    let limit = budget(71.0, 62.0);
+    // Measured 53.0 in both configurations (release 63 -> 61 -> 53, debug
+    // 72 -> 70 -> 53). The budget sits close to the measurement because the
+    // rest is the `where`-constraint machinery, which these changes do not
+    // touch; it moves only when the call *name* starts being re-hashed again.
+    let limit = 55.0;
     assert!(
         per_call <= limit,
         "a by-name call to a compiled sub re-interns its name/package per call \
@@ -112,8 +108,9 @@ fn named_multi_call_does_not_intern_its_own_name() {
         r#"$hits = m(2, 3);"#,
     );
     eprintln!("named multi call: {per_call:.3} interns per call");
-    // Measured: release 25 -> 23, debug 38 -> 36.
-    let limit = budget(37.0, 24.0);
+    // Measured 15.0 in both configurations (release 25 -> 23 -> 15, debug
+    // 38 -> 36 -> 15).
+    let limit = 17.0;
     assert!(
         per_call <= limit,
         "a by-name call to a compiled multi re-interns its name/package per call \
@@ -129,10 +126,11 @@ fn test_assertion_does_not_intern_the_assertion_routine_names() {
     let per_assertion =
         interns_per_iteration(|n| format!("use Test;\nplan {n};\nfor ^{n} {{ ok 1, \"x\" }}\n"));
     eprintln!("Test assertion: {per_assertion:.3} interns per assertion");
-    // Measured: release 21.0 -> 15.0 (the ticket's headline number), debug
-    // 64.0 -> 58.0. The budget leaves room for the resolution layers unit 2
-    // still has open, and tightens as those land.
-    let limit = budget(61.0, 18.0);
+    // Measured 10.0 in both configurations (release 21.0 -> 15.0 -> 10.0,
+    // debug 64.0 -> 58.0 -> 10.0). The budget leaves room for the two pieces
+    // of unit 2 still open -- `user_method_overloads` (item 2) and
+    // `multi_arg_type_keys` (item 3), 2.0 each -- and tightens as those land.
+    let limit = 12.0;
     assert!(
         per_assertion <= limit,
         "a Test assertion re-interns its routine names per assertion \
