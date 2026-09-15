@@ -87,7 +87,7 @@ proportion. The per-start-position `CapStore::new` / `RegexCaptures::default` sh
 `regex_walk_ends_in_pkg`'s own 1.5% — about 101 instructions for each of the 29,854 positions —
 worth having eventually, but not the answer either.
 
-Pinned by `t/regex/regex-charclass-grapheme-fastpath.t`, whose expectations were all read off
+Pinned by `t/regex/syntax/regex-charclass-grapheme-fastpath.t`, whose expectations were all read off
 rakudo: a class holding a multi-codepoint cluster still matches it, and the classes that now take
 the short path still refuse to match the base of a synthetic grapheme or to start on a mark inside
 one.
