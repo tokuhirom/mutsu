@@ -429,11 +429,23 @@ impl Interpreter {
             {
                 let importer_unit = self.executing_unit_sym_for_module_load();
                 let top = module.split_once("::").map_or(module, |(top, _)| top);
+                // Replay the FULL set the first load granted, not just the
+                // module's own name: the packages a module declares are not
+                // derivable from the name it is `use`d by. `Acme/Cow.rakumod`
+                // says `unit module Cow;`, so granting only `Acme::Cow`/`Acme`
+                // here left `Cow::cow` unreachable for every importer after
+                // the first -- and `Test`'s `use-ok` makes the first importer
+                // an `EVAL` unit routinely, so the script's own `use` was the
+                // one that lost.
+                let recorded = self.module_granted_packages.get(module).cloned();
                 let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
                     .entry(importer_unit)
                     .or_default();
                 entry.insert(module.to_string());
                 entry.insert(top.to_string());
+                if let Some(recorded) = recorded {
+                    entry.extend(recorded);
+                }
             }
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even

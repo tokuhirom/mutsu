@@ -1327,14 +1327,26 @@ impl Interpreter {
         // `OpenSSL::Version::version_num()` in a top-level `constant`
         // without ever `use`ing `OpenSSL::Version` itself, only sibling
         // packages under the same `OpenSSL::` prefix).
+        let grant: HashSet<String> = granted_packages
+            .iter()
+            .flat_map(|pkg| {
+                let top = pkg.split_once("::").map_or(*pkg, |(top, _)| top);
+                [pkg.to_string(), top.to_string()]
+            })
+            .collect();
         let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
             .entry(importer_unit)
             .or_default();
-        for pkg in &granted_packages {
-            visible_here.insert(pkg.to_string());
-            let top = pkg.split_once("::").map_or(*pkg, |(top, _)| top);
-            visible_here.insert(top.to_string());
-        }
+        visible_here.extend(grant.iter().cloned());
+        // Remember the grant so a LATER importer of this same module gets it
+        // too. Its `use` will be an already-loaded no-op that never reaches
+        // this code, and the packages a module declares are not derivable
+        // from its name -- `Acme/Cow.rakumod` declares `unit module Cow;`.
+        // See `Interpreter::module_granted_packages`.
+        crate::runtime::cow_table_mut(&mut self.module_granted_packages)
+            .entry(module.to_string())
+            .or_default()
+            .extend(grant);
         // Make each newly-declared class/role's bare short name resolvable from
         // the IMPORTER's own package/class too, not just from the declaring
         // module's own package-ancestor chain. An ordinary `use Foo::Native;`

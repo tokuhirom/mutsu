@@ -592,6 +592,7 @@ impl Interpreter {
             class_declaring_units: self.class_declaring_units.clone(),
             package_declaring_units: self.package_declaring_units.clone(),
             compunit_visible_packages: self.compunit_visible_packages.clone(),
+            module_granted_packages: self.module_granted_packages.clone(),
             prelude_sub_names: self.prelude_sub_names.clone(),
             current_unit: self.current_unit,
             closures_created: 0,
