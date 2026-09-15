@@ -28,6 +28,14 @@ There is no ambiguity with the infix `||`. An infix is only ever looked for once
 parsed, so a `||` reached in term position has no left operand and cannot be one — which is why the
 `!input.starts_with("||")` guard the prefix carried was never protecting anything.
 
+It *was* protecting something else, though, by accident: a **subscript** opening with `||` is the
+6.e dimension splat (`%h{||@dims}` — the list supplies the semicolon dimensions), which the postfix
+parser lowers to a `MultiDimIndex`. The assignment-lvalue parser has its own subscript reader that
+parses the body as an ordinary expression, and it used to fail on `||` and hand the subscript back
+to the postfix path. Once `||` became a term that reader started succeeding, silently degrading
+`(%h{|| @dims} = 42, 666)` to a one-dimensional slice — so it now declines a `||` subscript body
+explicitly, which is the rule that was being relied on all along.
+
 ## A parameter's type capture may be written after its nominal type
 
 `::T Int:D $x` parsed; `Int:D ::T $x` did not. The branch that recognizes a variable after a type
@@ -110,4 +118,6 @@ share one `named_param_external_key` now.
 `t/oo/attribute/let-temp-attribute-and-term-forms.t`,
 `t/routines/signature/anon-onearg-param-marker.t`,
 `t/routines/signature/named-arg-alias-external-key.t` — all five green under rakudo itself, so they
-pin rakudo's behaviour rather than mutsu's.
+pin rakudo's behaviour rather than mutsu's. `t/routines/dispatch/multidim-splat-lazy.t` grows the
+parenthesized-lvalue case of the dimension splat (6.e behaviour, which mutsu implements
+unconditionally; verified against rakudo under `use v6.e.PREVIEW`).

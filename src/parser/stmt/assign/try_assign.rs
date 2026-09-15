@@ -221,6 +221,17 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
             let is_positional = closing == ']';
             let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
+            // A subscript body opening with `||` is the DIMENSION SPLAT
+            // (`%h{||@dims}`, `@a[||@dims]`): the list supplies the semicolon
+            // dimensions, and the postfix parser lowers it to a `MultiDimIndex`.
+            // It is not an index expression that happens to begin with a stacked
+            // Slip contextualizer, so decline it here and let that path have the
+            // subscript -- parsing it as an expression silently degrades the
+            // splat to a one-dimensional slice. (Until `||` became a term at all
+            // this branch failed on its own and the routing was accidental.)
+            if r_idx.starts_with("||") && !r_idx.starts_with("|||") {
+                return Err(PError::expected("assignment expression"));
+            }
             let (r_idx, _) = ws(r_idx)?;
             // Parse comma-separated index expressions inside brackets
             let (r_idx, first_expr) = expression(r_idx)?;
