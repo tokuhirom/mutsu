@@ -796,6 +796,76 @@ impl Interpreter {
                 let results = self.collect_can_methods(invocant, &method_name);
                 Ok(Value::array(results))
             }
+            "declares_method" if args.len() >= 2 => {
+                // `Metamodel::MethodContainer.declares_method` is a local
+                // declaration probe: unlike `.^lookup`/`.^find_method`, it
+                // must not walk the target type's MRO.  Red uses this to
+                // decide whether it should wrap a class's existing BUILD or
+                // TWEAK method while composing its model roles.
+                let target = &args[0];
+                let method_name = args.last().unwrap().to_string_value();
+                let how = self.dispatch_how(target, &[])?;
+                let how_name = match how.view() {
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => "Mu".to_string(),
+                };
+                let supported = matches!(
+                    how_name.as_str(),
+                    "Perl6::Metamodel::ClassHOW"
+                        | "Perl6::Metamodel::GrammarHOW"
+                        | "Perl6::Metamodel::EnumHOW"
+                ) || (self.is_metamodel_how_class(&how_name)
+                    && self
+                        .registry()
+                        .classes
+                        .get(&how_name)
+                        .is_some_and(|class_def| {
+                            class_def.mro.iter().any(|parent| {
+                                matches!(
+                                    parent.as_str(),
+                                    "Metamodel::ClassHOW"
+                                        | "Metamodel::GrammarHOW"
+                                        | "Perl6::Metamodel::ClassHOW"
+                                        | "Perl6::Metamodel::GrammarHOW"
+                                )
+                            })
+                        }));
+                if !supported {
+                    return Err(RuntimeError::method_not_found("declares_method", &how_name));
+                }
+
+                let owner = self.mop_receiver_owner(target);
+                let name = Symbol::intern(&method_name);
+                let registry = self.registry();
+                // `is_my` also represents a `submethod` in the canonical
+                // table.  Submethods are declarations for this probe, while
+                // lexical `my method`s never enter that table at all.
+                let user_method = registry
+                    .user_method_public_presence(Symbol::intern(&owner), name)
+                    == Some(true);
+                let proto_method = registry.method_entry_proto(&owner, &method_name).is_some();
+                let public_accessor =
+                    registry.accessor_is_public_sym(Symbol::intern(&owner), name) == Some(true);
+                let class_level_accessor = registry.classes.get(&owner).is_some_and(|class_def| {
+                    class_def.class_level_attrs.contains_key(&method_name)
+                });
+                let native_method = registry
+                    .classes
+                    .get(&owner)
+                    .is_some_and(|class_def| class_def.native_methods.contains(&method_name));
+                let grammar_token = registry
+                    .token_defs
+                    .contains_key(&Symbol::intern(&format!("{owner}::{method_name}")));
+
+                Ok(Value::int(
+                    (user_method
+                        || proto_method
+                        || public_accessor
+                        || class_level_accessor
+                        || native_method
+                        || grammar_token) as i64,
+                ))
+            }
             "does" if args.len() >= 2 => {
                 let invocant = &args[args.len() - 2];
                 let role_arg = args.last().unwrap();

@@ -545,6 +545,7 @@ impl Interpreter {
                 | "isa"
                 | "can"
                 | "does"
+                | "declares_method"
                 | "lookup"
                 | "find_method"
                 | "add_attribute"
