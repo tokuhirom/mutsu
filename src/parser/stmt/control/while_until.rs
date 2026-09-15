@@ -6,18 +6,25 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
+    let (rest, (param_binding, destructure_params)) = if rest.starts_with("->") {
+        let (rest, (param, param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single while pointy parameter", rest));
         }
-        (rest, param)
+        let destructure_params = param_def.and_then(|def| def.sub_signature);
+        (rest, (param, destructure_params))
     } else {
-        (rest, None::<String>)
+        (rest, (None::<String>, None))
     };
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, mut body) = block(rest)?;
+    if let (Some(param), Some(sub_params)) = (&param_binding, &destructure_params) {
+        let mut binds = Vec::new();
+        crate::param_destructure::destructure_binds(param, sub_params, &mut binds);
+        binds.append(&mut body);
+        body = binds;
+    }
     // ADR-0048 D5: an explicit signature wins over a placeholder — a
     // `$^name` in the body of a loop that already declares a pointy
     // parameter is raku's `X::Signature::Placeholder`, "Placeholder
@@ -83,18 +90,25 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, param_binding) = if rest.starts_with("->") {
-        let (rest, (param, _param_def, params, _params_def, _rw_block, _explicit_zero)) =
+    let (rest, (param_binding, destructure_params)) = if rest.starts_with("->") {
+        let (rest, (param, param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single until pointy parameter", rest));
         }
-        (rest, param)
+        let destructure_params = param_def.and_then(|def| def.sub_signature);
+        (rest, (param, destructure_params))
     } else {
-        (rest, None::<String>)
+        (rest, (None::<String>, None))
     };
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, mut body) = block(rest)?;
+    if let (Some(param), Some(sub_params)) = (&param_binding, &destructure_params) {
+        let mut binds = Vec::new();
+        crate::param_destructure::destructure_binds(param, sub_params, &mut binds);
+        binds.append(&mut body);
+        body = binds;
+    }
     // ADR-0048 D5: an explicit signature wins over a placeholder — a
     // `$^name` in the body of a loop that already declares a pointy
     // parameter is raku's `X::Signature::Placeholder`, "Placeholder
