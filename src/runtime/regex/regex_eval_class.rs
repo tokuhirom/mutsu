@@ -36,139 +36,145 @@ impl Interpreter {
         self.regex_match_class(class, c)
     }
 
+    #[inline]
     pub(super) fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
-        let mut matched = false;
-        for item in &class.items {
-            match item {
-                ClassItem::Range(a, b) => {
-                    if *a <= c && c <= *b {
-                        matched = true;
-                        break;
-                    }
-                }
-                // A multi-codepoint grapheme can never equal one `char`. The
-                // whole-grapheme comparison happens at the atom, which is the
-                // only place that has the subject text to compare against; see
-                // the `CharClass` arm in `regex_match_atom_simple`.
-                ClassItem::Grapheme(_) => {}
-                ClassItem::Char(ch) => {
-                    if *ch == c {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::Digit => {
-                    if c.is_ascii_digit() {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NegDigit => {
-                    if !c.is_ascii_digit() {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::Word => {
-                    if c.is_alphanumeric() || c == '_' {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NegWord => {
-                    if !(c.is_alphanumeric() || c == '_') {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::Space => {
-                    if c.is_whitespace() {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NegSpace => {
-                    if !c.is_whitespace() {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::HorizSpace => {
-                    if matches!(
-                        c,
-                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
-                    ) {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NegHorizSpace => {
-                    if !matches!(
-                        c,
-                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
-                    ) {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::VertSpace => {
-                    if matches!(
-                        c,
-                        '\n' | '\r'
-                            | '\u{000B}'
-                            | '\u{000C}'
-                            | '\u{0085}'
-                            | '\u{2028}'
-                            | '\u{2029}'
-                    ) {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NegVertSpace => {
-                    if !matches!(
-                        c,
-                        '\n' | '\r'
-                            | '\u{000B}'
-                            | '\u{000C}'
-                            | '\u{0085}'
-                            | '\u{2028}'
-                            | '\u{2029}'
-                    ) {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::NotNewline => {
-                    if c != '\n' && c != '\r' {
-                        matched = true;
-                        break;
-                    }
-                }
-                ClassItem::Any => {
+        char_class_matches(class, c)
+    }
+}
+
+/// Whether `class` matches the single character `c`.
+///
+/// This is the body of what used to be `Interpreter::regex_match_class`,
+/// lifted out of the `impl` because it never read `self` and because the scan
+/// prefilter has to ask the same question with no interpreter in hand:
+/// [`regex_first_set`](super::regex_first_set) probes it over Latin-1 to build
+/// a pattern's first-character set. Keeping ONE definition is the point — a
+/// second reading of `ClassItem` would drift, and the drift would silently
+/// narrow a prefilter until it dropped valid matches.
+pub(crate) fn char_class_matches(class: &CharClass, c: char) -> bool {
+    let mut matched = false;
+    for item in &class.items {
+        match item {
+            ClassItem::Range(a, b) => {
+                if *a <= c && c <= *b {
                     matched = true;
                     break;
                 }
-                ClassItem::NamedBuiltin(name) => {
-                    if matches_named_builtin(name, c) {
-                        matched = true;
-                        break;
-                    }
+            }
+            // A multi-codepoint grapheme can never equal one `char`. The
+            // whole-grapheme comparison happens at the atom, which is the
+            // only place that has the subject text to compare against; see
+            // the `CharClass` arm in `regex_match_atom_simple`.
+            ClassItem::Grapheme(_) => {}
+            ClassItem::Char(ch) => {
+                if *ch == c {
+                    matched = true;
+                    break;
                 }
-                ClassItem::UnicodePropItem { name, negated } => {
-                    let prop_match = check_unicode_property(name, c);
-                    if if *negated { !prop_match } else { prop_match } {
-                        matched = true;
-                        break;
-                    }
+            }
+            ClassItem::Digit => {
+                if c.is_ascii_digit() {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NegDigit => {
+                if !c.is_ascii_digit() {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::Word => {
+                if c.is_alphanumeric() || c == '_' {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NegWord => {
+                if !(c.is_alphanumeric() || c == '_') {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::Space => {
+                if c.is_whitespace() {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NegSpace => {
+                if !c.is_whitespace() {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::HorizSpace => {
+                if matches!(
+                    c,
+                    ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
+                        ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+                ) {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NegHorizSpace => {
+                if !matches!(
+                    c,
+                    ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
+                        ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+                ) {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::VertSpace => {
+                if matches!(
+                    c,
+                    '\n' | '\r' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+                ) {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NegVertSpace => {
+                if !matches!(
+                    c,
+                    '\n' | '\r' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+                ) {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::NotNewline => {
+                if c != '\n' && c != '\r' {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::Any => {
+                matched = true;
+                break;
+            }
+            ClassItem::NamedBuiltin(name) => {
+                if matches_named_builtin(name, c) {
+                    matched = true;
+                    break;
+                }
+            }
+            ClassItem::UnicodePropItem { name, negated } => {
+                let prop_match = check_unicode_property(name, c);
+                if if *negated { !prop_match } else { prop_match } {
+                    matched = true;
+                    break;
                 }
             }
         }
-        if class.negated { !matched } else { matched }
     }
+    if class.negated { !matched } else { matched }
+}
 
+impl Interpreter {
     /// Find all non-overlapping regex matches using the capturing path,
     /// returning (start, end) pairs and captures (including code blocks).
     pub(crate) fn regex_find_all_with_caps(

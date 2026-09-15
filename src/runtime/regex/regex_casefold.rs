@@ -13,6 +13,15 @@ fn casefold_char(c: char) -> Vec<char> {
 
 /// Returns true if a character case-folds to more than one character.
 fn has_multichar_fold(c: char) -> bool {
+    // `needs_casefold_expansion` asks this of EVERY character of the subject on
+    // every `:i` match, and `casefold_char` allocates a `Vec` and two `String`s
+    // to answer it — 655,344 of each on the 640 KB `:i` scan of
+    // [#8248](https://github.com/tokuhirom/mutsu/issues/8248). ASCII case
+    // mapping is 1:1 in both directions, so the overwhelmingly common answer
+    // costs one range check instead.
+    if c.is_ascii() {
+        return false;
+    }
     casefold_char(c).len() > 1
 }
 

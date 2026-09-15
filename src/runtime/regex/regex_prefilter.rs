@@ -9,18 +9,22 @@
 //! which is 212x on the same subject for the same literal-only question.
 //!
 //! This module wires that existing primitive to the scan loops in
-//! `regex_match_find.rs`, for the ONE case ADR-0099 §4 calls "not a new
+//! `regex_match_find.rs`, for the case ADR-0099 §4 calls "not a new
 //! optimization to invent — wiring an existing primitive": a pattern whose
 //! entire body (or a leading run of it) is a plain, unconditional, non-`:i`
-//! literal. Everything else — alternation-derived first-character sets, a
-//! required *inner* literal for patterns with no usable prefix, `:i`
-//! fold-closure first-sets, `:m` NFD-aware first-sets, subrule-derived
-//! prefixes keyed by package + `TOKEN_DEFS_GEN` — is explicitly OUT of scope
-//! here and simply declines (falls back to the unfiltered scan, exactly
-//! today's behavior). Declining is always safe; only applying a WRONG
-//! prefilter can silently drop a valid match, which is why this stays a
-//! deliberately narrow slice rather than the full four-bullet feature list —
-//! see the issue for what remains.
+//! literal.
+//!
+//! A pattern with no such prefix falls through to the ADR's second derived
+//! fact, the first-character set in [`regex_first_set`](super::regex_first_set)
+//! — which covers the alternation, `:i` literal and character-class shapes
+//! that made [#8248](https://github.com/tokuhirom/mutsu/issues/8248) mutsu's
+//! only outright loss on a large subject. A required *inner* literal for
+//! patterns whose first token is underivable, `:m` NFD-aware first-sets, and
+//! subrule-derived prefixes keyed by package + `TOKEN_DEFS_GEN` remain OUT of
+//! scope and simply decline (falling back to the unfiltered scan, exactly the
+//! pre-prefilter behavior). Declining is always safe; only applying a WRONG
+//! prefilter can silently drop a valid match, which is why each fact is added
+//! as its own narrow, separately-tested slice.
 //!
 //! Per ADR-0099 §4 constraint 1, this must be "the memoized static form of
 //! `ltm_litlen_at`'s construction table, not a second definition" so the two
@@ -35,6 +39,7 @@
 //! reading of the same pattern.
 
 use super::super::*;
+use super::regex_first_set::{FirstCharSet, required_first_chars};
 
 /// Whether the prefilter is enabled. `MUTSU_REGEX_PREFILTER=off` is the kill
 /// switch the ADR's testing section asks for: a bisect handle in production,
@@ -93,9 +98,12 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
 
 /// Candidate start positions for an unanchored scan of `pattern` over
 /// `chars`, from `from` onward inclusive. Narrowed to positions where
-/// [`required_literal_prefix`]'s prefix actually occurs when one exists and
-/// the kill switch is not `off`; otherwise every position in `[from,
-/// chars.len()]`, exactly as before this module existed.
+/// [`required_literal_prefix`]'s prefix actually occurs when one exists, else
+/// to positions whose character is in
+/// [`required_first_chars`](super::regex_first_set::required_first_chars)'
+/// set when THAT is derivable — and in either case only while the kill switch
+/// is not `off`. Otherwise every position in `[from, chars.len()]`, exactly as
+/// before this module existed.
 ///
 /// Returns a lazy iterator, not a `Vec`: the common case is "try the first
 /// few positions and return on the first match", and the un-prefiltered
@@ -108,26 +116,55 @@ pub(crate) fn regex_scan_positions<'c>(
     chars: &'c [char],
     from: usize,
 ) -> ScanPositions<'c> {
-    if prefilter_enabled()
-        && let Some(prefix) = required_literal_prefix(pattern)
-    {
-        let needle: Vec<char> = prefix.chars().collect();
-        let total = chars.len().saturating_sub(from);
-        let scanned = ScanPositions::Literal {
-            chars,
-            needle,
-            pos: from,
-        };
-        // Applied/declined + positions-skipped are recorded eagerly here
-        // (not lazily per `next()`) because "applied" is a fact about the
-        // SCAN, decided once, not about how far the caller happened to
-        // iterate before an early return.
-        crate::vm::vm_stats::record_regex_prefilter_applied(total);
-        return scanned;
+    let total = chars.len().saturating_sub(from);
+    if prefilter_enabled() {
+        if let Some(prefix) = required_literal_prefix(pattern) {
+            let needle: Vec<char> = prefix.chars().collect();
+            let scanned = ScanPositions::Literal {
+                chars,
+                needle,
+                pos: from,
+            };
+            // Applied/declined + positions-skipped are recorded eagerly here
+            // (not lazily per `next()`) because "applied" is a fact about the
+            // SCAN, decided once, not about how far the caller happened to
+            // iterate before an early return.
+            crate::vm::vm_stats::record_regex_prefilter_applied(total);
+            return scanned;
+        }
+        // No literal prefix: fall back to the weaker but far more widely
+        // derivable fact, the set of characters a match can BEGIN with
+        // (#8248). Unlike the prefix above this is not memoized anywhere, so
+        // it is only derived once the scan is long enough to amortize the
+        // derivation many times over -- below the threshold the scan is
+        // byte-for-byte what it was before this existed.
+        if total >= FIRST_SET_MIN_POSITIONS
+            && let Some(set) = required_first_chars(pattern)
+        {
+            crate::vm::vm_stats::record_regex_prefilter_applied(total);
+            return ScanPositions::FirstSet {
+                chars,
+                set,
+                pos: from,
+            };
+        }
     }
     crate::vm::vm_stats::record_regex_prefilter_declined();
     ScanPositions::Range(from..=chars.len())
 }
+
+/// Remaining positions below which a scan does not bother deriving a
+/// first-character set.
+///
+/// The literal prefix above is a walk over the top-level token list and costs
+/// a few comparisons; a first-character set probes the matcher's own class
+/// predicate over all 256 Latin-1 characters per class atom, which is cheap in
+/// absolute terms but not free. Amortized over a 512-position scan it is under
+/// one probe per position, against the ~983 instructions each skipped position
+/// saves (ADR-0099 §2.4) -- and the shapes that need it are exactly the large
+/// subjects of #8248. Short-subject matching, which ADR-0099 §2.5 shows is
+/// ceremony-bound rather than scan-bound, is left untouched.
+const FIRST_SET_MIN_POSITIONS: usize = 512;
 
 /// Iterator returned by [`regex_scan_positions`]. See that function's doc
 /// comment for why this is an iterator rather than a `Vec`.
@@ -136,6 +173,11 @@ pub(crate) enum ScanPositions<'c> {
     Literal {
         chars: &'c [char],
         needle: Vec<char>,
+        pos: usize,
+    },
+    FirstSet {
+        chars: &'c [char],
+        set: FirstCharSet,
         pos: usize,
     },
 }
@@ -152,6 +194,20 @@ impl Iterator for ScanPositions<'_> {
                     let candidate = *pos;
                     *pos += 1;
                     if chars[candidate..candidate + needle_len] == needle[..] {
+                        crate::vm::vm_stats::record_regex_prefilter_position_hit();
+                        return Some(candidate);
+                    }
+                }
+                None
+            }
+            ScanPositions::FirstSet { chars, set, pos } => {
+                // A first-character set is only derived for patterns that
+                // cannot match empty, so `chars.len()` itself is never a
+                // candidate -- there is no character there to admit.
+                while *pos < chars.len() {
+                    let candidate = *pos;
+                    *pos += 1;
+                    if set.contains(chars[candidate]) {
                         crate::vm::vm_stats::record_regex_prefilter_position_hit();
                         return Some(candidate);
                     }

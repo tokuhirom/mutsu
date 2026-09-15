@@ -117,3 +117,93 @@ differential_case!(
     from_pos_scan_min_pos_offset,
     r#"say "aXaXaX".match(/ 'aX' /, :g).join(",");"#
 );
+
+// ---------------------------------------------------------------------------
+// First-character-set cases (#8248).
+//
+// The first-set filter is only derived once a scan has at least 512 remaining
+// positions (`FIRST_SET_MIN_POSITIONS`), so every case below builds a ~2,400
+// character subject -- a short one would take the un-prefiltered range and
+// prove nothing about the new path. The subject is deliberately mixed-case
+// and punctuated so that the characters each derived set admits really do
+// occur in it: the engine is entered and rejects, which is the reject path
+// #8248 is about, rather than the filter trivially skipping everything.
+// ---------------------------------------------------------------------------
+
+macro_rules! long_subject_case {
+    ($name:ident, $body:expr) => {
+        differential_case!(
+            $name,
+            concat!(
+                r#"my $unit = "abc def GHI jkl MNO pqr stu vwx yz01 2345 67-8 \n"; my $big = $unit x 40; "#,
+                $body
+            )
+        );
+    };
+}
+
+long_subject_case!(
+    first_set_alternation_all_branches_fail,
+    r#"say so $big ~~ / [ 'zzq' | 'yyq' | 'xxq' | 'wwq' ] /;"#
+);
+long_subject_case!(
+    first_set_alternation_late_branch_hits,
+    r#"say ($big ~~ / [ 'zzq' | 'yyq' | 'xxq' | 'vwx ' ] /).Str;"#
+);
+long_subject_case!(
+    first_set_ignorecase_literal_hits,
+    r#"say ($big ~~ / :i 'ghi JKL' /).Str;"#
+);
+long_subject_case!(
+    first_set_ignorecase_literal_fails,
+    r#"say so $big ~~ / :i 'ZZZQ' /;"#
+);
+long_subject_case!(
+    first_set_digit_class_global,
+    r#"say $big.comb(/ \d+ /).elems;"#
+);
+long_subject_case!(first_set_word_run_fails, r#"say so $big ~~ / \w+ 'QQQ' /;"#);
+long_subject_case!(
+    first_set_word_run_ratcheted_fails,
+    r#"say so $big ~~ / :r \w+ 'QQQ' /;"#
+);
+long_subject_case!(
+    first_set_explicit_class_hits,
+    r#"say ($big ~~ / <[wxy]> 'z01' /).Str;"#
+);
+long_subject_case!(
+    first_set_negated_class_is_too_dense_to_filter,
+    r#"say ($big ~~ / <-[a..z]> 'NO' /).Str;"#
+);
+long_subject_case!(
+    first_set_newline_class_admits_carriage_return,
+    r#"say $big.comb(/ <[\n]> 'abc' /).elems;"#
+);
+long_subject_case!(
+    first_set_group_wrapped_alternation,
+    r#"say ($big ~~ / ( 'qqz' | 'yz0' ) /).Str;"#
+);
+long_subject_case!(
+    first_set_nullable_head_declines,
+    r#"say ($big ~~ / 'q'? 'yz01' /).Str;"#
+);
+long_subject_case!(
+    first_set_subst_global_over_a_long_subject,
+    r#"say $big.subst(/ [ 'yz01' | 'MNO' ] /, 'X', :g).chars;"#
+);
+long_subject_case!(
+    first_set_split_over_a_long_subject,
+    r#"say $big.split(/ <[0..9]>+ /).elems;"#
+);
+long_subject_case!(
+    first_set_match_g_positions,
+    r#"say $big.match(/ [ 'vwx' | 'stu' ] /, :g).elems;"#
+);
+long_subject_case!(
+    first_set_a_branch_head_outside_latin1_is_still_found,
+    r#"$big = $big ~ "\c[GREEK SMALL LETTER ALPHA]zq"; say ($big ~~ / [ 'zzq' | "\c[GREEK SMALL LETTER ALPHA]zq" ] /).Str;"#
+);
+long_subject_case!(
+    first_set_kelvin_sign_is_reachable_under_ignorecase,
+    r#"$big = $big ~ "\c[KELVIN SIGN]elvin"; say ($big ~~ / :i 'kelvin' /).Str;"#
+);

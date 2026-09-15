@@ -6,6 +6,7 @@ pub(crate) mod regex_dynparams;
 mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;
+mod regex_first_set;
 pub(crate) mod regex_helpers;
 mod regex_interpolate;
 mod regex_lexical_ref;
