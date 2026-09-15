@@ -890,29 +890,49 @@ impl Interpreter {
     /// about how a group body reads is shared, and getting any of it wrong ends
     /// the group early, so the ENCLOSING construct is what fails to parse:
     ///
-    /// - A backslash escape never affects depth (`[<?[\]]>||$]`, Cro::Uri).
-    /// - A quoted string's content is literal, so `']'` does not close a
-    ///   `[...]` and `')'` does not close a `(...)`.
-    /// - `<...>` is tracked one entry per opener, recording whether it is a
-    ///   character CLASS (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`) or an
-    ///   assertion / subrule call. The two read their contents by OPPOSITE
-    ///   rules and both have to be honoured: a class's members are literal, so
-    ///   the quote in `<-['"]>` opens nothing and the `)` in `<[.)]>` nests
-    ///   nothing; an assertion holds a nested regex, so the quote in
-    ///   `<!before '>}}'>` really does open a string. One `angle_depth` keyed
-    ///   to both could only ever get one of them right.
+    /// - A backslash escape never affects anything (`[<?[\]]>||$]`, Cro::Uri).
     /// - `#` outside any `<...>` starts a line comment.
+    /// - A `<...>` is one stack entry, and the three kinds read their contents by
+    ///   DIFFERENT rules, so one flag could never cover them:
+    ///   - a **character class** (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`)
+    ///     holds literal members, so neither a quote (`<-['"]>`) nor a group
+    ///     bracket (`<[.)]>`) means anything there — and its own `[`/`]` are
+    ///     counted so that a `>` written as a member (`<-[>]>`, the shape
+    ///     `Ident`'s `verpart` token uses) does not close the class;
+    ///   - a **lookaround** (`<before …>`, `<?after …>`, …) holds a nested regex,
+    ///     so the quote in `<!before '>}}'>` really does open a string and the
+    ///     `>` inside it does not close the assertion (Blogin);
+    ///   - anything else — a word-list alternation (`< ! ' # >`), a named rule, a
+    ///     code assertion (`<!{ … }>`) — has no string syntax at all, so a quote
+    ///     in it is an ordinary character.
+    /// - Outside every `<...>`, a quoted string's content is literal, so `']'`
+    ///   does not close a `[...]` and `')'` does not close a `(...)`.
     fn scan_regex_group_body(
         chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
         open_ch: char,
         close_ch: char,
     ) -> (String, u32) {
+        /// One open `<...>`: whether it is a character class, how deep inside
+        /// that class's own `[...]` we are, and where its body starts in `body`
+        /// (so a lookaround keyword can be recognised when a quote turns up).
+        struct AngleFrame {
+            char_class: bool,
+            class_bracket_depth: u32,
+            body_start: usize,
+        }
+        /// A `<...>` whose body starts with one of these holds a nested REGEX,
+        /// where a quote is a string delimiter. Every other non-class `<...>`
+        /// treats it as an ordinary character.
+        const LOOKAROUND_PREFIXES: [&str; 8] = [
+            "before ", "?before ", "!before ", ".before ", "after ", "?after ", "!after ",
+            ".after ",
+        ];
+
         let mut body = String::new();
         let mut depth = 1u32;
         let mut in_comment = false;
-        let mut angle_kinds: Vec<bool> = Vec::new();
+        let mut angles: Vec<AngleFrame> = Vec::new();
         while let Some(ch) = chars.next() {
-            let in_char_class = angle_kinds.last().copied().unwrap_or(false);
             if in_comment {
                 body.push(ch);
                 if ch == '\n' {
@@ -927,27 +947,58 @@ impl Interpreter {
                 }
                 continue;
             }
+            let in_char_class = angles.last().is_some_and(|f| f.char_class);
             if ch == '<' {
-                angle_kinds.push(matches!(chars.peek(), Some('[' | '-' | '+' | ':')));
+                let char_class = matches!(chars.peek(), Some('[' | '-' | '+' | ':'));
+                body.push(ch);
+                angles.push(AngleFrame {
+                    char_class,
+                    class_bracket_depth: 0,
+                    body_start: body.len(),
+                });
+                continue;
+            }
+            if ch == '>'
+                && let Some(frame) = angles.last()
+                && frame.class_bracket_depth == 0
+            {
+                angles.pop();
                 body.push(ch);
                 continue;
             }
-            if ch == '>' && !angle_kinds.is_empty() {
-                angle_kinds.pop();
+            if in_char_class && (ch == '[' || ch == ']') {
+                // The class's own brackets, counted so a `>` member cannot end
+                // the class early and so neither bracket reaches the group depth.
+                if let Some(frame) = angles.last_mut() {
+                    if ch == '[' {
+                        frame.class_bracket_depth += 1;
+                    } else {
+                        frame.class_bracket_depth = frame.class_bracket_depth.saturating_sub(1);
+                    }
+                }
                 body.push(ch);
                 continue;
             }
-            if ch == '#' && angle_kinds.is_empty() {
+            if ch == '#' && angles.is_empty() {
                 in_comment = true;
                 body.push(ch);
                 continue;
             }
-            if (ch == '\'' || ch == '"') && !in_char_class {
+            if ch == '\'' || ch == '"' {
+                let opens_string = match angles.last() {
+                    None => true,
+                    Some(frame) if frame.char_class => false,
+                    Some(frame) => LOOKAROUND_PREFIXES
+                        .iter()
+                        .any(|kw| body[frame.body_start..].starts_with(kw)),
+                };
                 body.push(ch);
-                for q in chars.by_ref() {
-                    body.push(q);
-                    if q == ch {
-                        break;
+                if opens_string {
+                    for q in chars.by_ref() {
+                        body.push(q);
+                        if q == ch {
+                            break;
+                        }
                     }
                 }
                 continue;

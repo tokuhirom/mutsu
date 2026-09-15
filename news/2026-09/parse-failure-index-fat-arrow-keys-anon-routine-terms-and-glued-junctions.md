@@ -82,8 +82,8 @@ Pin: `t/types/junction-nested-raku-output.t`.
 
 `[ ... ]` and `( ... )` are the same construct with a different bracket, and the body in between
 reads the same way: a backslash escape never moves the depth, a quoted string's content is literal,
-a character class's members are literal while an assertion holds a nested regex, and `#` outside any
-`<...>` starts a comment. The `(...)` scanner had learned all of that, the last of it in the
+`#` outside any `<...>` starts a comment, and a `<...>` is read by one of three sets of rules
+depending on what it is. The `(...)` scanner had learned most of that, the last of it in the
 previous batch; the `[...]` one still counted brackets raw, so a quoted `]` closed the group one
 level down:
 
@@ -100,7 +100,22 @@ failure it reported was `Unexpected block in infix position` at the `while` fift
 the enclosing construct, as usual for this index. `Code::Coverage` and `Test::Coverage` inherited it.
 
 Both scanners are one function now (`scan_regex_group_body`), so neither can drift from the other
-again, and the `[...]` form picked up the char-class and assertion rules it never had.
+again — and unifying them forced the `<...>` rules to be stated properly, because the `(...)` scanner
+had been getting two of the three kinds right by accident. A `<...>` is now one stack entry of a
+known kind:
+
+- a **character class** (`<[…]>`, `<-[…]>`, `<+[…]>`, `<:Letter>`) holds literal members, so neither
+  a quote (`<-['"]>`) nor a group bracket (`<[.)]>`) means anything in it — and its own `[`/`]` are
+  counted, so a `>` written as a member does not close the class. That last part only mattered once
+  the class's brackets stopped reaching the group depth: `token verpart { ':ver<' $<v>=[<-[>]>+] '>' }`
+  has a `>` member inside a `[…]` group, and the raw scanner it replaced got it right by letting the
+  class's own brackets cancel out against the group's.
+- a **lookaround** (`<before …>`, `<?after …>`, …) holds a nested regex, so the quote in
+  `<!before '>}}'>` really does open a string.
+- everything else — a word-list alternation (`< ! ' # >`), a named rule, a code assertion
+  (`<!{ … }>`) — has no string syntax at all, so a quote in it is an ordinary character. The `(...)`
+  scanner had been honouring quotes here too, which is only invisible because no group in the suite
+  wrote a bare quote in a word list until `[…]` started sharing the code.
 
 `Code::Coverable` now parses every module its META6 `provides` names.
 
