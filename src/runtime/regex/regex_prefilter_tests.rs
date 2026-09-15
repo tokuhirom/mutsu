@@ -44,6 +44,18 @@ fn a_trailing_non_literal_still_yields_the_leading_prefix() {
 }
 
 #[test]
+fn a_quoted_group_extends_the_prefix_before_the_trailing_pattern() {
+    // A quoted literal is represented as a transparent `Group` once it
+    // appears in a larger regex. Its entire body is still required at the
+    // start, so the substring prefilter must not fall back to the weaker
+    // required-inner-literal path (#8449).
+    assert_eq!(
+        required_literal_prefix(&parse(r"'67-8' \s $")),
+        Some("67-8".to_string())
+    );
+}
+
+#[test]
 fn quantified_leading_literal_declines() {
     // "a" is optional here, so it is not REQUIRED at all.
     assert_eq!(required_literal_prefix(&parse("a? bc")), None);
