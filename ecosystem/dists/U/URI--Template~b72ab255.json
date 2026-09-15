@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.13,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.71,
+        "secs": 0.74,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,20 +48,19 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.86,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.31,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +70,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.09,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +83,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 1.64,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.98,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,10 +103,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "3.2.2 Simple String Expansion",
-        "nok": 8,
-        "ok": 1,
+        "nok": 7,
+        "ok": 2,
         "plan": 9,
-        "secs": 2.35,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -117,7 +116,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.93,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +129,7 @@
         "nok": 2,
         "ok": 2,
         "plan": 4,
-        "secs": 0.98,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -140,30 +139,30 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.73,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "check the synopsis code is actually correct",
+        "nok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/060-synopsis.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,7 +184,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.68,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -197,10 +196,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -213,11 +212,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 21,
-    "baseline_files": 6,
-    "mutsu_assertions": 8,
-    "parity_files": 3,
-    "regressed_files": 3
+    "baseline_assertions": 56,
+    "baseline_files": 8,
+    "mutsu_assertions": 43,
+    "parity_files": 4,
+    "regressed_files": 4
   },
   "version": "0.0.11"
 }

@@ -9,23 +9,22 @@
   "dist": "Version::Repology",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller raku(Version::Repology:U: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
+        "ok": 36,
         "plan": 36,
-        "secs": 0.18,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 36,
         "plan": 36,
-        "secs": 2.24,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +37,7 @@
         "nok": 2,
         "ok": 546,
         "plan": 548,
-        "secs": 2.59,
+        "secs": 3.41,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +47,7 @@
         "nok": 0,
         "ok": 548,
         "plan": 548,
-        "secs": 1.36,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +60,7 @@
         "nok": 8,
         "ok": 16,
         "plan": 24,
-        "secs": 0.3,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -71,7 +70,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.64,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.65,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +105,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.25,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,46 +115,44 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.63,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too few positionals passed; expected 2 arguments but got 1",
         "nok": 0,
-        "ok": 8,
+        "ok": 17,
         "plan": 17,
-        "secs": 0.12,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-special.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.59,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller raku(Version::Repology:U: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
+        "ok": 30,
         "plan": 30,
-        "secs": 0.14,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-raku.rakutest",
       "raku": {
@@ -174,10 +171,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -192,9 +189,9 @@
   "totals": {
     "baseline_assertions": 701,
     "baseline_files": 7,
-    "mutsu_assertions": 611,
-    "parity_files": 1,
-    "regressed_files": 6
+    "mutsu_assertions": 686,
+    "parity_files": 4,
+    "regressed_files": 3
   },
   "version": "0.0.5"
 }

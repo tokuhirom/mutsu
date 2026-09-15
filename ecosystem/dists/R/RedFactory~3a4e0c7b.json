@@ -39,11 +39,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'declares_method' for invocant of type 'MetamodelX::Red::Model'",
+        "first_failure": "Any should do the Red::ResultSeq role",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.2,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 159.79,
+        "secs": 146.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,11 +62,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'declares_method' for invocant of type 'MetamodelX::Red::Model'",
+        "first_failure": "Any should do the Red::ResultSeq role",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.83,
+        "secs": 4.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 4.17,
+        "secs": 4.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.96,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 5.51,
+        "secs": 5.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
