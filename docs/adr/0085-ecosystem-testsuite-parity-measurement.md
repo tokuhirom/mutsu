@@ -698,7 +698,7 @@ in the stored hash metadata. This also preserves the typed `Attribute` key
 after the set result is coerced back to a hash. The focused regression is
 `t/vm/private-typed-hash-set-union.t`.
 
-The targeted Red remeasurement on 2026-09-15 (mutsu `PENDING`, Rakudo 2026.07,
+The targeted Red remeasurement on 2026-09-15 (mutsu `151f398fe`, Rakudo 2026.07,
 bubblewrap, three attempts) moves `Red::Driver::Mock`, `Red::Driver::SQLite`,
 `Red::Driver::SQLite::SQLiteMaster`, `Red::Driver::SQLite::SchemaReader`, and
 `Red::Migration::Migration` past the typed-hash failure to the independent
