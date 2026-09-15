@@ -12,19 +12,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 16,
-        "plan": 16,
+        "ok": 18,
+        "plan": 18,
         "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/01-basic.t",
+      "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 1.59,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -48,15 +48,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/A/CC/ACCOUNTABLEBAGHASH/4302f15daa35330e14316352383a9e6b2209d405.tar.gz"
+    "url": "https://360.zef.pm/A/CC/ACCOUNTABLEBAGHASH/0fb09c39cea3037655c2b20bc994f9662fd0bf52.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 16,
+    "baseline_assertions": 18,
     "baseline_files": 1,
-    "mutsu_assertions": 16,
+    "mutsu_assertions": 18,
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.0.7"
+  "version": "0.0.8"
 }

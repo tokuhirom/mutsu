@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 89.22,
+        "secs": 73.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,30 +61,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 45.1,
+        "secs": 40.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
-        "nok": 0,
+        "first_failure": "Project META file is good",
+        "nok": 1,
         "ok": 0,
-        "plan": null,
-        "secs": 0.54,
+        "plan": 1,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/99-meta.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 26.6,
+        "secs": 29.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,10 +96,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

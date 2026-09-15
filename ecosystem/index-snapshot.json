@@ -1,8 +1,8 @@
 {
-  "fetched": "2026-09-14",
+  "fetched": "2026-09-15",
   "fez": {
     "dists": 1630,
-    "sha256": "7331522cefacd837bd5690a5db48a95423625d95dac42fdce18f39a7af7ea55c",
+    "sha256": "e1aa30b4812561cefa9b82b1a208e0f317653688f4551251206acbf9d5a92964",
     "url": "https://360.zef.pm/"
   },
   "modules": 12857,

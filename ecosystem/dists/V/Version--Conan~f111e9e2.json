@@ -11,46 +11,44 @@
   "dist": "Version::Conan",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller raku(Version::Conan:U: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
+        "ok": 43,
         "plan": 43,
-        "secs": 0.19,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 3.73,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too few positionals passed; expected 2 arguments but got 1",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.3,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-from-range.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.77,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -76,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/V/ER/VERSION_CONAN/43318a3991bc3840585e8c3ec7c5237fcd531c8f.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 51,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 51,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

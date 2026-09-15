@@ -15,16 +15,54 @@
     "unresolved": []
   },
   "dist": "Code::Coverable",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: bytecode",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-identity.rakutest",
+      "raku": {
+        "first_failure": "No such method 'target' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Code::Coverable": "Failed to parse module 'Code::Coverable': Unexpected block in infix position (missing statement control word before the expression?) [at lib/Code/Coverable.rakumod:138]"
+    "Code::Coverable": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -35,13 +73,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OD/CODE_COVERABLE/1b4454a116456a307fab9eb9c46b8f1a9914e629.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.13"
 }
