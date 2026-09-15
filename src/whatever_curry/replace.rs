@@ -10,7 +10,7 @@
 //! to fit the enclosing numbering scheme.
 
 use crate::ast::Expr;
-use crate::parser::is_whatever;
+use crate::parser::{expand_compound_assign_expr, is_whatever};
 use crate::token_kind::TokenKind;
 
 /// Replace Whatever expressions with numbered parameter variables.
@@ -27,6 +27,27 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             Expr::Var(var_name)
         }
         Expr::Grouped(inner) => replace_whatever_numbered(inner, counter),
+        // A curried CompoundAssign retains its source marker for RakuAST, but
+        // its executable closure body must be the established expansion rebuilt
+        // with the substituted RHS. This also covers index and method lvalues,
+        // whose stored expansion is a desugared block rather than an AssignExpr.
+        Expr::CompoundAssign {
+            target, op, rhs, ..
+        } => {
+            let rhs = replace_whatever_numbered(rhs, counter);
+            op.strip_suffix('=')
+                .and_then(|op| expand_compound_assign_expr((**target).clone(), op, rhs).ok())
+                .unwrap_or_else(|| expr.clone())
+        }
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind,
+        } => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(replace_whatever_numbered(expr, counter)),
+            is_bind: *is_bind,
+        },
         Expr::WhateverCurry(inner) => replace_whatever_numbered(inner, counter),
         // A thunk barrier is opaque: each of its operands is its own priming
         // scope (already wrapped in a `WhateverCurry` by `super::plant`, which
@@ -206,6 +227,23 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
         e if crate::parser::is_frozen_whatever(e) => e.clone(),
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => Expr::Var("_".to_string()),
         Expr::Grouped(inner) => replace_whatever_single(inner),
+        Expr::CompoundAssign {
+            target, op, rhs, ..
+        } => {
+            let rhs = replace_whatever_single(rhs);
+            op.strip_suffix('=')
+                .and_then(|op| expand_compound_assign_expr((**target).clone(), op, rhs).ok())
+                .unwrap_or_else(|| expr.clone())
+        }
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind,
+        } => Expr::AssignExpr {
+            name: name.clone(),
+            expr: Box::new(replace_whatever_single(expr)),
+            is_bind: *is_bind,
+        },
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
         // See the matching arm in `replace_whatever_numbered`: the final
         // operand is exempt when the chain's last link is a

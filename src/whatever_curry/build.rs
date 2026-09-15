@@ -155,6 +155,8 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         // transparent.
         e if crate::parser::is_frozen_whatever(e) => false,
         Expr::Grouped(inner) => contains_hyperwhatever(inner),
+        Expr::AssignExpr { expr, .. } => contains_hyperwhatever(expr),
+        Expr::CompoundAssign { rhs, .. } => contains_hyperwhatever(rhs),
         Expr::HyperWhatever => true,
         Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
@@ -188,6 +190,11 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         e if crate::parser::is_frozen_whatever(e) => 0,
         e if is_whatever(e) => 1,
         Expr::Grouped(inner) => count_whatever(inner),
+        // The execution half of a compound assignment is an AssignExpr. A
+        // `WhateverCurry` wrapped around it must see the RHS placeholder so
+        // `$out ~= *` becomes `{ $out ~= $_ }`.
+        Expr::AssignExpr { expr, .. } => count_whatever(expr),
+        Expr::CompoundAssign { rhs, .. } => count_whatever(rhs),
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder
         // count. `count_whatever` already handles the chained-comparison
@@ -301,6 +308,8 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
 pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
     match expr {
         Expr::Grouped(inner) => expr_contains_topic(inner),
+        Expr::AssignExpr { expr, .. } => expr_contains_topic(expr),
+        Expr::CompoundAssign { rhs, .. } => expr_contains_topic(rhs),
         Expr::Var(name) if name == "_" => true,
         Expr::Whatever | Expr::WhateverArg => false,
         Expr::WhateverCurry(inner) => expr_contains_topic(inner),

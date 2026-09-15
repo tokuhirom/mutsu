@@ -193,8 +193,9 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         Expr::AssignExpr { expr, .. } => mark_value_leaf(expr),
         // A source-preserving compound assignment has three views of its
         // children: the source target/RHS used by RakuAST and the expanded
-        // execution expression used by the compiler. Mark all of them so a
-        // Whatever leaf has the same role whichever view is later consumed.
+        // execution expression used by the compiler. An enclosing
+        // `WhateverCurry`, when present, wraps this source marker and the
+        // closure builder reconstructs its execution expansion from `rhs`.
         Expr::CompoundAssign {
             target,
             rhs,
@@ -202,7 +203,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             ..
         } => {
             mark_expr(target);
-            mark_value_leaf(rhs);
+            mark_expr(rhs);
             mark_expr(expanded);
         }
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
