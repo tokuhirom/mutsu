@@ -9,7 +9,7 @@
 //! decomposable at a function boundary without semantic change.
 
 use crate::ast::Expr;
-use crate::parser::expr::{expression, expression_no_word_logical};
+use crate::parser::expr::{expression, expression_no_word_logical, is_angle_subscript_key_char};
 use crate::parser::helpers::{
     consume_unspace, delim_is_identifier_continuation, split_angle_words, ws,
 };
@@ -1314,31 +1314,29 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     if r.starts_with("<>") || r.starts_with("\u{ab}\u{bb}") {
         return Ok((r, Expr::Var("_".to_string())));
     }
-    // .<key> topical hash/associative lookup: equivalent to $_<key>
-    if r.starts_with('<') && !r.starts_with("<=") && !r.starts_with("<<") && !r.starts_with("<=>") {
+    // .<key> topical hash/associative lookup: equivalent to $_<key>.
+    //
+    // `<=` and `<=>` are NOT excluded: a leading dot is only ever a term here,
+    // and no term position in Raku can be followed by a comparison operator, so
+    // `.<=>` is the key `=` exactly as `%h<=>` is (rakudo agrees). `<<` stays
+    // out because it opens the interpolating word quote, which the postfix
+    // layer parses.
+    if r.starts_with('<') && !r.starts_with("<<") {
         let r2 = &r[1..];
         if let Some(end) = r2.find('>') {
             let content = &r2[..end];
             let keys = split_angle_words(content);
+            // `.<...>` is `$_<...>`, so its keys follow the same rule the undotted
+            // subscript does: `<...>` is a Q-style word quote, and every
+            // non-whitespace character is an ordinary member of a word. This used
+            // to be a third, more restrictive hand-written copy of that character
+            // set (missing `=`, `(`, `)`, `#`, `,`, ...), so `.<ref-obj-num,>`
+            // (PDF::IO::Writer) was not a subscript in any reading and the whole
+            // enclosing method failed to parse.
             if !keys.is_empty()
-                && keys.iter().all(|key| {
-                    !key.is_empty()
-                        && key.chars().all(|c| {
-                            c.is_alphanumeric()
-                                || c == '_'
-                                || c == '-'
-                                || c == '!'
-                                || c == '.'
-                                || c == ':'
-                                || c == '?'
-                                || c == '+'
-                                || c == '/'
-                                || c == '$'
-                                || c == '@'
-                                || c == '%'
-                                || c == '&'
-                        })
-                })
+                && keys
+                    .iter()
+                    .all(|key| !key.is_empty() && key.chars().all(is_angle_subscript_key_char))
             {
                 let rest = &r2[end + 1..];
                 let index_expr = if keys.len() == 1 {
