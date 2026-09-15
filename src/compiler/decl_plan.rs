@@ -470,15 +470,15 @@ impl Compiler {
     /// `class_body_has_decl` branches on `decl.is_our`/`decl.is_my` itself
     /// once it has the descriptor, so there is no reason for this table not
     /// to carry every `has` statement's descriptor. Traversal
-    /// (SyntheticBlock-flattened top level plus `has` nested directly
-    /// inside a body `sub`, recursively) is the same shape as
-    /// `class_own_attribute_names`/`collect_nested_has_decl_names`, which
-    /// the earlier `collect_attr_is_default_chunks` did NOT share,
-    /// double-pushing a nested-sub `has ... is default` (once from the
-    /// `SubDecl` arm's direct loop, once from its own recursive call
-    /// re-matching the same statement). This mirrors the registration-side
-    /// non-recursive-repeat exactly to avoid that trap, harmless as it was
-    /// under first-match-wins name-keyed lookup.
+    /// (SyntheticBlock-flattened top level, plus everything
+    /// [`crate::opcode::collect_nested_has_decl_stmts`] finds nested inside a
+    /// body `sub`/`method` or any control-flow block within either, #8441)
+    /// is the same shape `class_own_attribute_names`/
+    /// `collect_nested_has_decl_names` use, which the earlier
+    /// `collect_attr_is_default_chunks` did NOT share, double-pushing a
+    /// nested-sub `has ... is default` (once from the `SubDecl` arm's direct
+    /// loop, once from its own recursive call re-matching the same
+    /// statement). Sharing the one walker avoids that trap by construction.
     fn compile_class_attr_decls(
         &self,
         body: &[Stmt],
@@ -494,29 +494,14 @@ impl Compiler {
                 _ => None,
             })
             .collect();
-        self.collect_nested_class_attr_decls(body, &mut out);
-        out
-    }
-
-    fn collect_nested_class_attr_decls(
-        &self,
-        stmts: &[Stmt],
-        out: &mut Vec<(Symbol, crate::opcode::CompiledAttrDecl)>,
-    ) {
-        for s in stmts {
-            match s {
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-                Stmt::SubDecl { body, .. } => {
-                    for inner in body {
-                        if let Stmt::HasDecl { name, .. } = inner {
-                            out.push((*name, self.compile_class_attr_decl(inner)));
-                        }
-                    }
-                    self.collect_nested_class_attr_decls(body, out);
-                }
-                _ => {}
+        let mut nested = Vec::new();
+        crate::opcode::collect_nested_has_decl_stmts(body, &mut nested);
+        for stmt in nested {
+            if let Stmt::HasDecl { name, .. } = stmt {
+                out.push((*name, self.compile_class_attr_decl(stmt)));
             }
         }
+        out
     }
 
     /// Free plain-lexical names referenced by the attribute DEFAULT and

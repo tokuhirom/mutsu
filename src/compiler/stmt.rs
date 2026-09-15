@@ -3263,13 +3263,40 @@ impl Compiler {
                     attrs.insert("message".to_string(), Value::str(message));
                     Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs)
                 };
-                // A `has` reaching the VM only arises from mainline / EVAL'd
-                // source (a `has` in a normal class body is collected
-                // declaratively by `register_class_decl`, never compiled). Emit a
+                // A `has` reaching the VM arises from mainline / EVAL'd source
+                // (a class's own top-level `has` is collected declaratively by
+                // `register_class_decl`, never compiled this way), or from one
+                // nested inside a `sub`/`method`/control-flow block within a
+                // class body (#8441 gap 1) — `self.current_package` is that
+                // class's name in the latter case (`compile_method_body` calls
+                // `set_current_package` before compiling the method body this
+                // statement lives in), "GLOBAL" for genuine mainline source.
+                // A sub/method/closure body itself compiles with
+                // `current_package` overwritten by a synthetic
+                // `Pkg::&<closure>/N` state-scope pseudo-package (purely for
+                // `state`-variable key uniqueness); `self.enclosing_package`
+                // is captured before that override and is the real declaring
+                // package (see `Compiler::qualify_our_variable_name`'s doc
+                // comment) when set, falling back to stripping the `::&...`
+                // suffix from `current_package` itself otherwise. Emit a
                 // runtime op that, when a class is currently being defined
                 // (`class Foo { BEGIN EVAL q[has $.x] }`), registers the
-                // attribute onto that class; otherwise it throws the error above.
-                let spec = crate::opcode::RuntimeHasDeclSpec { decl, error: err };
+                // attribute onto that class; when the real enclosing class
+                // already has this exact attribute (the nested-declaration
+                // case, #8441 gap 1), no-ops; otherwise throws the error
+                // above.
+                let enclosing_class = self.enclosing_package.clone().unwrap_or_else(|| {
+                    self.current_package
+                        .split("::&")
+                        .next()
+                        .unwrap_or(&self.current_package)
+                        .to_string()
+                });
+                let spec = crate::opcode::RuntimeHasDeclSpec {
+                    decl,
+                    error: err,
+                    enclosing_class,
+                };
                 self.code.emit(OpCode::RuntimeHasDecl(Box::new(spec)));
             }
             // DoesDecl/TrustsDecl outside class context are no-ops
