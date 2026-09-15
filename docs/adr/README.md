@@ -128,3 +128,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented) |
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Proposed |
 | [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
+| [0104](0104-compiler-version-is-a-rakudo-release-coordinate.md) | `$*RAKU.compiler.version` is a Rakudo-release coordinate, not mutsu's package version | Accepted (implemented) |
