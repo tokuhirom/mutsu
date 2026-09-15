@@ -696,7 +696,7 @@ Private attribute container assignment now splits object-hash constraints into
 their value and key parts, checks only the value part, and re-embeds both parts
 in the stored hash metadata. This also preserves the typed `Attribute` key
 after the set result is coerced back to a hash. The focused regression is
-`t/vm/private-typed-hash-set-union.t`.
+`t/oo/private-typed-hash-set-union.t`.
 
 The targeted Red remeasurement on 2026-09-15 (mutsu `151f398fe`, Rakudo 2026.07,
 bubblewrap, three attempts) moves `Red::Driver::Mock`, `Red::Driver::SQLite`,
