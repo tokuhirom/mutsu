@@ -2509,8 +2509,17 @@ impl Interpreter {
                 // caller's container can consume what this asks for, so resolve
                 // the question against the callee's declaration before paying
                 // for an attribute promotion. See the opcode's doc comment.
+                // The callee name is a string constant, so its `Symbol` is an
+                // indexed load out of `const_syms` (#7736) -- taking it here
+                // drops both the per-op `String` and the re-intern the
+                // `&str` entry point would do (#7766).
+                let callee_sym = code.const_sym(*callee_idx);
                 let callee = Self::const_str(code, *callee_idx).to_string();
-                if self.named_routine_binds_container_at(&callee, *positional as usize) {
+                if self.named_routine_binds_container_at_sym(
+                    &callee,
+                    callee_sym,
+                    *positional as usize,
+                ) {
                     self.accessor_ref_pending = true;
                 }
                 *ip += 1;

@@ -887,6 +887,20 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Arc<FunctionDef>> {
+        self.resolve_function_multi_cached_sym(name, Symbol::intern(name), args)
+    }
+
+    /// [`Self::resolve_function_multi_cached`] for a caller that already holds
+    /// the callsite name's `Symbol`. `find_compiled_function_inner` is handed
+    /// one by #8346 and then re-interned the same name here for this cache's
+    /// key, once per dispatch (#7766 unit 2 item 4).
+    pub(crate) fn resolve_function_multi_cached_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        args: &[Value],
+    ) -> Option<Arc<FunctionDef>> {
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
             return self.resolve_function_with_types(name, args);
         };
@@ -894,7 +908,6 @@ impl Interpreter {
         // `RwLock` read plus a `String` heap allocation on a path that runs on
         // every multi call, and both spellings intern to the same symbol.
         let pkg_sym = self.current_package_sym();
-        let name_sym = Symbol::intern(name);
         if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
             return self.resolve_function_with_types(name, args);
         }
@@ -1376,8 +1389,17 @@ impl Interpreter {
 
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
     /// Returns true if a frame was pushed (i.e. there are remaining candidates).
-    pub(crate) fn push_multi_dispatch_frame(&mut self, name: &str, args: &[Value]) -> bool {
-        self.push_multi_dispatch_frame_with_winner(name, args, None)
+    ///
+    /// Takes the callsite name in both forms: every caller is a `CallFunc`-
+    /// shaped site holding the name's `Symbol` already, via
+    /// [`crate::opcode::CompiledCode::const_sym`] (#7766 unit 2 item 4).
+    pub(crate) fn push_multi_dispatch_frame_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        args: &[Value],
+    ) -> bool {
+        self.push_multi_dispatch_frame_with_winner_sym(name, name_sym, args, None)
     }
 
     /// [`Self::push_multi_dispatch_frame`], told which candidate is being
@@ -1397,12 +1419,25 @@ impl Interpreter {
         args: &[Value],
         winner: Option<&FunctionDef>,
     ) -> bool {
+        self.push_multi_dispatch_frame_with_winner_sym(name, Symbol::intern(name), args, winner)
+    }
+
+    /// [`Self::push_multi_dispatch_frame_with_winner`] for a caller that
+    /// already holds the callsite name's `Symbol` (#7766 unit 2 item 4).
+    pub(crate) fn push_multi_dispatch_frame_with_winner_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        args: &[Value],
+        winner: Option<&FunctionDef>,
+    ) -> bool {
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         // Collect ALL multi candidates regardless of arg matching. This is
         // needed because callwith() can re-dispatch with different args, so
         // candidates that don't match the original args may match the new ones.
         // Memoized per (name, package context, registry generation): the list
         // is identical from one call of the same multi to the next.
-        let all_candidates = self.resolve_all_multi_candidates_cached(name);
+        let all_candidates = self.resolve_all_multi_candidates_cached_sym(name, name_sym);
         // A name with no multi candidates at all is a plain sub: it establishes
         // no dispatcher, so `nextsame` from its body correctly dies with
         // X::NoDispatcher (`roast/S06-multi/redispatch.t` test 10).
@@ -1446,7 +1481,7 @@ impl Interpreter {
             Some(def) => Some(def),
             None => {
                 let saved_err = self.take_pending_dispatch_error();
-                resolved_def = self.resolve_function_multi_cached(name, args);
+                resolved_def = self.resolve_function_multi_cached_sym(name, name_sym, args);
                 if let Some(err) = saved_err {
                     self.set_pending_dispatch_error(err);
                 }

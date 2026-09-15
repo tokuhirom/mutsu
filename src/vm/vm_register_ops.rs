@@ -62,7 +62,16 @@ impl Interpreter {
         self.env()
             .get_sym(crate::symbol::wk::file())
             .and_then(|v| match v.view() {
-                ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+                // `lookup` first so the common case interns nothing: this
+                // walk runs on EVERY routine entry in a debug build and was
+                // the single largest debug-only entry in the #7766 per-
+                // assertion intern profile. Falling back to `intern` on a miss
+                // keeps the assertion's meaning exactly: a `?FILE` string that
+                // was never interned still yields a fresh symbol, which then
+                // differs from `Env::source_file_sym` and fires, as before.
+                ValueView::Str(s) => {
+                    Some(Symbol::lookup(s.as_str()).unwrap_or_else(|| Symbol::intern(s.as_str())))
+                }
                 _ => None,
             })
     }
