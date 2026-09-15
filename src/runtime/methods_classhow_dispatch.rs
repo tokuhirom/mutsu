@@ -803,7 +803,12 @@ impl Interpreter {
                 // decide whether it should wrap a class's existing BUILD or
                 // TWEAK method while composing its model roles.
                 let target = &args[0];
-                let method_name = args.last().unwrap().to_string_value();
+                let Some(method_arg) = args.last() else {
+                    return Err(RuntimeError::new(
+                        "declares_method requires a target type and method name",
+                    ));
+                };
+                let method_name = method_arg.to_string_value();
                 let how = self.dispatch_how(target, &[])?;
                 let how_name = match how.view() {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
