@@ -253,6 +253,10 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
+        // Whether the operator is written glued to the left operand — the one
+        // thing that settles `&` between an infix and a `&name` sigil term; see
+        // `parse_junction_infix_op_after`.
+        let glued_left = std::ptr::eq(r, rest);
         // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator
         // that shadows or extends a junction operator (`multi sub infix:<&>`,
         // `infix:<&&&>`) routes to the list-infix layer, which dispatches through
@@ -263,7 +267,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
         {
             let jlen = parse_junctive_op(r)
                 .map(|(_, l)| l)
-                .or_else(|| parse_junction_infix_op(r).map(|(_, l)| l))
+                .or_else(|| parse_junction_infix_op_after(r, glued_left).map(|(_, l)| l))
                 .unwrap_or(0);
             if jlen > 0 && ulen >= jlen {
                 break;
@@ -292,7 +296,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
             continue;
         }
         // Junction infix operators: |, &, ^
-        if let Some((op, len)) = parse_junction_infix_op(r) {
+        if let Some((op, len)) = parse_junction_infix_op_after(r, glued_left) {
             if let Some(prev) = last_junction
                 && matches!(
                     (prev, op),

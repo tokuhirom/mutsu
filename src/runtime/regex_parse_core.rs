@@ -881,6 +881,90 @@ impl Interpreter {
     /// Pure in `interpolated` given the grammar-token registry and (for a
     /// `<~~>`-bearing pattern) `PARSING_TOP_LEVEL_SOURCE` — which is what lets
     /// [`Interpreter::parse_regex_uncached`] memoize around it.
+    /// Scan the body of a regex GROUP that has just had its opening `open_ch`
+    /// consumed, up to and including the matching `close_ch`, and return
+    /// `(body, remaining_depth)` — a non-zero depth means the group was never
+    /// closed.
+    ///
+    /// `(...)` and `[...]` differ only in which bracket nests; everything else
+    /// about how a group body reads is shared, and getting any of it wrong ends
+    /// the group early, so the ENCLOSING construct is what fails to parse:
+    ///
+    /// - A backslash escape never affects depth (`[<?[\]]>||$]`, Cro::Uri).
+    /// - A quoted string's content is literal, so `']'` does not close a
+    ///   `[...]` and `')'` does not close a `(...)`.
+    /// - `<...>` is tracked one entry per opener, recording whether it is a
+    ///   character CLASS (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`) or an
+    ///   assertion / subrule call. The two read their contents by OPPOSITE
+    ///   rules and both have to be honoured: a class's members are literal, so
+    ///   the quote in `<-['"]>` opens nothing and the `)` in `<[.)]>` nests
+    ///   nothing; an assertion holds a nested regex, so the quote in
+    ///   `<!before '>}}'>` really does open a string. One `angle_depth` keyed
+    ///   to both could only ever get one of them right.
+    /// - `#` outside any `<...>` starts a line comment.
+    fn scan_regex_group_body(
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+        open_ch: char,
+        close_ch: char,
+    ) -> (String, u32) {
+        let mut body = String::new();
+        let mut depth = 1u32;
+        let mut in_comment = false;
+        let mut angle_kinds: Vec<bool> = Vec::new();
+        while let Some(ch) = chars.next() {
+            let in_char_class = angle_kinds.last().copied().unwrap_or(false);
+            if in_comment {
+                body.push(ch);
+                if ch == '\n' {
+                    in_comment = false;
+                }
+                continue;
+            }
+            if ch == '\\' {
+                body.push(ch);
+                if let Some(next) = chars.next() {
+                    body.push(next);
+                }
+                continue;
+            }
+            if ch == '<' {
+                angle_kinds.push(matches!(chars.peek(), Some('[' | '-' | '+' | ':')));
+                body.push(ch);
+                continue;
+            }
+            if ch == '>' && !angle_kinds.is_empty() {
+                angle_kinds.pop();
+                body.push(ch);
+                continue;
+            }
+            if ch == '#' && angle_kinds.is_empty() {
+                in_comment = true;
+                body.push(ch);
+                continue;
+            }
+            if (ch == '\'' || ch == '"') && !in_char_class {
+                body.push(ch);
+                for q in chars.by_ref() {
+                    body.push(q);
+                    if q == ch {
+                        break;
+                    }
+                }
+                continue;
+            }
+            if ch == open_ch && !in_char_class {
+                depth += 1;
+            } else if ch == close_ch && !in_char_class {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            body.push(ch);
+        }
+        (body, depth)
+    }
+
     fn parse_regex_structural(
         &self,
         interpolated: &str,
@@ -3711,102 +3795,7 @@ impl Interpreter {
                 }
                 '(' => {
                     // Capture group: (...)
-                    let mut group_pattern = String::new();
-                    let mut depth = 1;
-                    let mut in_comment = false;
-                    // One entry per open `<...>`, true when it is a character
-                    // CLASS (`<[...]>`, `<-[...]>`, `<+[...]>`, `<:Letter>`)
-                    // rather than an assertion or subrule call. The two read
-                    // their contents by opposite rules and this scanner has to
-                    // honour both: a class's members are literal, so a quote in
-                    // `<-['"]>` opens nothing; an assertion holds a nested
-                    // regex, so the quote in `<!before '>}}'>` does open a
-                    // string and the `>` inside it does NOT close the assertion
-                    // (Blogin). Tracking one `angle_depth` and keying both rules
-                    // off it could only ever get one of the two right.
-                    let mut angle_kinds: Vec<bool> = Vec::new();
-                    while let Some(ch) = chars.next() {
-                        let in_char_class = angle_kinds.last().copied().unwrap_or(false);
-                        if in_comment {
-                            group_pattern.push(ch);
-                            if ch == '\n' {
-                                in_comment = false;
-                            }
-                            continue;
-                        }
-                        if ch == '<' {
-                            angle_kinds.push(matches!(chars.peek(), Some('[' | '-' | '+' | ':')));
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '>' && !angle_kinds.is_empty() {
-                            angle_kinds.pop();
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '#' && angle_kinds.is_empty() {
-                            in_comment = true;
-                            group_pattern.push(ch);
-                            continue;
-                        }
-                        if ch == '\\' {
-                            // Backslash escape — push both chars without interpreting
-                            group_pattern.push(ch);
-                            if let Some(next) = chars.next() {
-                                group_pattern.push(next);
-                            }
-                            continue;
-                        }
-                        if ch == '\'' && !in_char_class {
-                            // Single-quoted string — skip until closing quote.
-                            // Inside a character CLASS a quote is a literal member
-                            // (e.g. `<-['"]>`), not a string delimiter, so it must
-                            // not swallow the group.
-                            group_pattern.push(ch);
-                            for sq in chars.by_ref() {
-                                group_pattern.push(sq);
-                                if sq == '\'' {
-                                    break;
-                                }
-                            }
-                            continue;
-                        }
-                        if ch == '"' && !in_char_class {
-                            // Double-quoted string — skip until closing quote.
-                            // Inside a character CLASS a `"` is a literal member
-                            // (e.g. `<-["]>`), not a string delimiter — without this
-                            // guard it swallowed the closing `)` and produced a
-                            // spurious "Unmatched ( in regex".
-                            group_pattern.push(ch);
-                            for dq in chars.by_ref() {
-                                group_pattern.push(dq);
-                                if dq == '"' {
-                                    break;
-                                }
-                            }
-                            continue;
-                        }
-                        if ch == '(' && !in_char_class {
-                            depth += 1;
-                            group_pattern.push(ch);
-                        } else if ch == ')' && !in_char_class {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            group_pattern.push(ch);
-                        } else {
-                            // Inside a `<...>` assertion / char class a paren is a
-                            // literal member, not a nesting bracket — the same rule
-                            // the `'` and `"` guards above already follow. Counting
-                            // it ended the group at the `)` of `<[.)]>`, so
-                            // `( \d+ <[.)]> )` died on the leftover `]`
-                            // (Markdown::Lex, Blogin — #7954). Balanced parens in a
-                            // `<{ ... }>` code assertion are unaffected: they cancel
-                            // out either way.
-                            group_pattern.push(ch);
-                        }
-                    }
+                    let (group_pattern, depth) = Self::scan_regex_group_body(&mut chars, '(', ')');
                     // If depth > 0, the group was never closed — parse error
                     if depth > 0 {
                         PENDING_REGEX_ERROR.with(|e| {
@@ -3940,31 +3929,15 @@ impl Interpreter {
                 }
                 '[' => {
                     // In Raku regex, [...] is a non-capturing group (alternation)
-                    // Parse as alternation: [a|b|c]
-                    let mut group_pattern = String::new();
-                    let mut depth = 1;
-                    while let Some(ch) = chars.next() {
-                        if ch == '\\' {
-                            // An escaped character never affects bracket depth:
-                            // `[<?[\]]>||$]` must not close the group at the
-                            // char class's escaped `\]` (Cro::Uri IPv4address).
-                            group_pattern.push(ch);
-                            if let Some(esc) = chars.next() {
-                                group_pattern.push(esc);
-                            }
-                        } else if ch == '[' {
-                            depth += 1;
-                            group_pattern.push(ch);
-                        } else if ch == ']' {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            group_pattern.push(ch);
-                        } else {
-                            group_pattern.push(ch);
-                        }
-                    }
+                    // Parse as alternation: [a|b|c]. It reads its body by exactly
+                    // the rules `( ... )` does, so it uses the same scanner: a
+                    // quoted `]` is a literal (`[[ ']' x ]]`), and so is one
+                    // inside a character class (`[<[.)]>]`). Scanning brackets
+                    // raw made a quoted `]` close the group one level down,
+                    // which is why `Code::Coverable` (and `Code::Coverage` /
+                    // `Test::Coverage` through it) failed at the `while` FAR
+                    // above the regex that actually broke (#7954).
+                    let (group_pattern, _depth) = Self::scan_regex_group_body(&mut chars, '[', ']');
                     // An empty non-capturing group `[]` is a null regex.
                     if group_pattern.trim().is_empty() {
                         PENDING_REGEX_ERROR

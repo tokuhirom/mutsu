@@ -638,13 +638,32 @@ impl JunctionInfixOp {
 }
 
 pub(super) fn parse_junction_infix_op(input: &str) -> Option<(JunctionInfixOp, usize)> {
+    parse_junction_infix_op_after(input, false)
+}
+
+/// [`parse_junction_infix_op`], told whether the operator is written GLUED to
+/// the left operand (no whitespace between them).
+///
+/// It only changes the `&` case, and only to narrow the sigil guard below. A
+/// `&name` term is what makes `f &g` pass `&g` to the listop `f` rather than
+/// all-junction two calls — but a sigil opens a TERM, and a term cannot begin
+/// in the middle of a token, so `f&g` has no such reading and the `&` there is
+/// the infix. rakudo agrees on both: `sub f($x) {...}; f &g` binds `&g`, while
+/// `f&g` is "Calling f() will never work with declared signature ($x)", i.e.
+/// two operands of `&`. Without this, every glued all-junction of two barewords
+/// — `Int&Str`, `A&B` over an enum's values — was a hard parse error (#7954).
+pub(super) fn parse_junction_infix_op_after(
+    input: &str,
+    glued_left: bool,
+) -> Option<(JunctionInfixOp, usize)> {
     // | but not || or |=
     if input.starts_with('|') && !input.starts_with("||") && !input.starts_with("|=") {
         Some((JunctionInfixOp::Any, 1))
     // & but not && or &=
     } else if input.starts_with('&') && !input.starts_with("&&") && !input.starts_with("&=") {
         // Make sure it's not a sigil (e.g. &func)
-        if let Some(&c) = input.as_bytes().get(1)
+        if !glued_left
+            && let Some(&c) = input.as_bytes().get(1)
             && (c.is_ascii_alphabetic()
                 || c == b'_'
                 || c == b'?'

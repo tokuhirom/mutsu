@@ -1212,6 +1212,22 @@ pub fn raku_value(v: &Value) -> String {
                 raku_value(inner)
             }
         }
+        // A Junction renders as its constructor call over its `.raku`-rendered
+        // eigenstates (`any(OpCode::A, OpCode::B)`), the same shape the
+        // interpreter's own `.raku` builds for a top-level one. Without an arm
+        // here a junction nested in another value — a Pair KEY above all, which
+        // is exactly what `A|B => 3` makes — fell through to `to_string_value`
+        // and came back gisted, so an enum eigenstate lost its qualification.
+        ValueView::Junction { kind, values } => {
+            let kind_name = match kind {
+                crate::value::JunctionKind::Any => "any",
+                crate::value::JunctionKind::All => "all",
+                crate::value::JunctionKind::One => "one",
+                crate::value::JunctionKind::None => "none",
+            };
+            let elems = values.iter().map(raku_value).collect::<Vec<_>>().join(", ");
+            format!("{}({})", kind_name, elems)
+        }
         // A WhateverCode (`*+1`) renders as `WhateverCode.new`, including when it
         // appears as an element of an array/list being `.raku`-rendered.
         ValueView::Sub(data)
