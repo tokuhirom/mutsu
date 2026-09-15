@@ -213,6 +213,11 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         e if is_frozen_whatever(e) => false,
         // Parentheses group, they do not hide a `*` from its priming scope.
         Expr::Grouped(inner) => contains_whatever(inner),
+        // `OP=` is a metaoperator: unlike a plain assignment RHS, its RHS is
+        // an operand that can prime the complete read-modify-write expression.
+        // The source marker is retained for RakuAST; closure construction later
+        // rebuilds its execution expansion from this RHS.
+        Expr::CompoundAssign { rhs, .. } => contains_whatever(rhs),
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
         // `notandthen`, and the ternary) are **opaque** to the enclosing
