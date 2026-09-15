@@ -7,425 +7,16 @@
     "unresolved": []
   },
   "dist": "FunctionalParsers",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/00-sanity.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 31.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "not ok 3 -",
-        "nok": 6,
-        "ok": 5,
-        "plan": 11,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-infix-set-style.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-basic-transformers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "bracketed on : { one four }",
-        "nok": 2,
-        "ok": 3,
-        "plan": 5,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/03-pack-combinators.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-many-and-list-of.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/06-chain-left-and-right.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 11,
-        "ok": 15,
-        "plan": 26,
-        "secs": 0.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/07-ebnf-parsing-from-tokens.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 26,
-        "plan": 26,
-        "secs": 2.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 14,
-        "ok": 13,
-        "plan": 27,
-        "secs": 0.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/08-ebnf-parsing.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 2.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'parser' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-ebnf-parser-generation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller sequence(Block:D, Block:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/10-shorcuts.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 10,
-        "ok": 11,
-        "plan": 21,
-        "secs": 0.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/11-ebnf-parsing-styled.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 13.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "<1 2 3> || 1 of first match on : one two three",
-        "nok": 4,
-        "ok": 8,
-        "plan": 12,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/12-alternatives-first-match.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 0.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller sequence(Block:D, Block:D, Block:D); none of these signatures matches",
-        "nok": 0,
-        "ok": 7,
-        "plan": null,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/13-extra-parsers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/14-ebnf-mermaid-js-generation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Comma separated",
-        "nok": 9,
-        "ok": 0,
-        "plan": 9,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/15-ebnf-parsing-any-sequences.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 1.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'parser' for invocant of type 'Int'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/16-random-sentence.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 1.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot assign to a readonly variable or a value",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/17-grammar-graph.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 1.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/18-fuzzy-symbol.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "FunctionalParsers": "ok",
-    "FunctionalParsers::EBNF": "ok",
+    "FunctionalParsers::EBNF": "Runtime error: Failed to parse module 'FunctionalParsers::EBNF::Actions::MermaidJS::Common': Unrecognized regex metacharacter > (must be quoted to match literally)",
     "FunctionalParsers::EBNF::Actions::Common": "ok",
     "FunctionalParsers::EBNF::Actions::EBNF::Standard": "ok",
     "FunctionalParsers::EBNF::Actions::Java::FuncJ": "ok",
     "FunctionalParsers::EBNF::Actions::MermaidJS::ASTTracer": "ok",
-    "FunctionalParsers::EBNF::Actions::MermaidJS::Common": "ok",
-    "FunctionalParsers::EBNF::Actions::MermaidJS::Graph": "ok",
+    "FunctionalParsers::EBNF::Actions::MermaidJS::Common": "Runtime error: Failed to parse module 'FunctionalParsers::EBNF::Actions::MermaidJS::Common': Unrecognized regex metacharacter > (must be quoted to match literally)",
+    "FunctionalParsers::EBNF::Actions::MermaidJS::Graph": "Runtime error: Failed to parse module 'FunctionalParsers::EBNF::Actions::MermaidJS::Common': Unrecognized regex metacharacter > (must be quoted to match literally)",
     "FunctionalParsers::EBNF::Actions::Raku::AST": "ok",
     "FunctionalParsers::EBNF::Actions::Raku::Class": "ok",
     "FunctionalParsers::EBNF::Actions::Raku::ClassAttr": "ok",
@@ -434,17 +25,17 @@
     "FunctionalParsers::EBNF::Actions::Raku::Random": "ok",
     "FunctionalParsers::EBNF::Actions::WL::Code": "ok",
     "FunctionalParsers::EBNF::Actions::WL::Grammar": "ok",
-    "FunctionalParsers::EBNF::Actions::WL::Graph": "ok",
+    "FunctionalParsers::EBNF::Actions::WL::Graph": "Runtime error: Failed to parse module 'FunctionalParsers::EBNF::Actions::WL::Graph': Unrecognized regex metacharacter > (must be quoted to match literally)",
     "FunctionalParsers::EBNF::Parser::FromTokens": "ok",
     "FunctionalParsers::EBNF::Parser::Standard": "ok",
     "FunctionalParsers::EBNF::Parser::Styled": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -455,13 +46,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/UN/FUNCTIONALPARSERS/7d24a6b3508cdb864a174196f5ceb4293e718142.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 187,
-    "baseline_files": 18,
-    "mutsu_assertions": 100,
-    "parity_files": 6,
-    "regressed_files": 12
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.1.10"
 }

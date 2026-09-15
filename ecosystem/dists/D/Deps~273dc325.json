@@ -7,9 +7,33 @@
     "unresolved": []
   },
   "dist": "Deps",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'parent' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 8.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Deps": "expected statement: expected expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ... [at Deps-0.0.1/lib/Deps.rakumod:122]",
+    "Deps": "ok",
     "Deps::Funcs": "ok",
     "Deps::Item": "ok",
     "Deps::Item::New": "ok",
@@ -21,10 +45,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -35,13 +59,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/EP/DEPS/bea77f64935dfde9372eabc6b688325d150d3f48.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 74,
+    "baseline_files": 1,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }

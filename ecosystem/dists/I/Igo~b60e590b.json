@@ -27,16 +27,75 @@
     "unresolved": []
   },
   "dist": "Igo",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.12,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.03,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-user.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 49.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/020-attributes.t",
+      "raku": {
+        "first_failure": "Igo-0.0.8/LICENCE exists",
+        "nok": 12,
+        "ok": 11,
+        "plan": 23,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "Igo": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration."
+    "Igo": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -47,12 +106,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/GO/IGO/33f3bead817cfe110dac5a1da791b8b316811710.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 2,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.8"

@@ -44,7 +44,82 @@
     "unresolved": []
   },
   "dist": "cro",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Correct name (defaulted to id)",
+        "nok": 1,
+        "ok": 73,
+        "plan": 74,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/tools-crofile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 3.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Failed to slurp 't/tools-services-test-dir/service1/.cro.yml': No such file or directory (os error 2)",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/tools-link-editor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 4.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tools-runner.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tools-services.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "Cro::Tools::CLI": "ok",
     "Cro::Tools::CroFile": "ok",
@@ -58,20 +133,20 @@
     "Cro::Tools::Serve": "raku_also_fails",
     "Cro::Tools::Services": "ok",
     "Cro::Tools::Template": "ok",
-    "Cro::Tools::Template::Common": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
-    "Cro::Tools::Template::HTTPService": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
-    "Cro::Tools::Template::ReactReduxSPA": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
-    "Cro::Tools::Template::ZeroMQWorkSinkService": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
-    "Cro::Tools::Template::ZeroMQWorkerService": "Can't use unknown trait 'is' -> 'json-skip-null' in an attribute declaration.",
+    "Cro::Tools::Template::Common": "ok",
+    "Cro::Tools::Template::HTTPService": "ok",
+    "Cro::Tools::Template::ReactReduxSPA": "ok",
+    "Cro::Tools::Template::ZeroMQWorkSinkService": "ok",
+    "Cro::Tools::Template::ZeroMQWorkerService": "ok",
     "Cro::Tools::TemplateLocator": "ok",
     "Cro::Tools::Web": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-14",
+    "date": "2026-09-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "eba9d2a",
+    "mutsu_commit": "d0afe15",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -82,13 +157,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/RO/CRO/a5a43185d592498a4f2bc93865c66bed383123fc.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 82,
+    "baseline_files": 2,
+    "mutsu_assertions": 73,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.8.10"
 }
