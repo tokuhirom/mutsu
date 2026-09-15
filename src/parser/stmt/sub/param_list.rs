@@ -92,7 +92,16 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
         } else {
             format!("${}", name)
         };
-        if !seen.insert(display_name.clone()) {
+        // A named ALIAS's outer name is the external argument KEY, not a variable
+        // it declares: `:s(:$font-size)` declares `$font-size` and nothing
+        // spelled `$s`. Counting it as a declared variable made an ordinary
+        // positional `$s` in the same signature a false X::Redeclaration —
+        // `multi sub html-table-highlight(Str:D $s, …, :s(:$font-size) = Whatever)`
+        // (Data::Translators, #7954) is perfectly good Raku. The variable the
+        // alias really binds is the inner sub-signature param, collected into
+        // `all_var_names` below; the KEY's uniqueness is the NameClash check
+        // that follows, which is also the error rakudo reports for a repeat.
+        if !p.named_alias && !seen.insert(display_name.clone()) {
             let msg = format!(
                 "X::Redeclaration: Redeclaration of symbol '{}'",
                 display_name
@@ -110,7 +119,12 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
             let base = name_without_sigil.to_string();
             if !base.is_empty() {
                 if let Some(prev_display) = seen_named_bases.get(&base) {
-                    if *prev_display != display_name {
+                    // Same base spelled differently (`:$a` and `:@a`) is a
+                    // NameClash; spelled identically it is an ordinary duplicate
+                    // and the Redeclaration above already reported it — except
+                    // for an alias, which that check no longer sees, and whose
+                    // repeated key rakudo calls a NameClash anyway.
+                    if *prev_display != display_name || p.named_alias {
                         let msg = format!(
                             "X::Signature::NameClash: Name {} used for more than one named parameter",
                             base

@@ -17,6 +17,36 @@ pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((rest, p))
 }
 
+/// A nominal type may be followed by a **type capture** of the same parameter:
+/// `Int:D ::T $x`, `::?CLASS:_ ::THIS: $x` (`Data::Record`, #7984).
+///
+/// The capture-first order (`::T Int:D $x`) is parsed by the capture branch in
+/// [`parse_single_param_inner`]; this is the very same parameter written the
+/// other way round, so it delegates to that branch and hangs the nominal half
+/// back on the result. Keeping one branch is what makes every shape the capture
+/// path already knows — a bare capture, an invocant marker, a default, traits, a
+/// `where` clause — work in this order too, for free.
+///
+/// Returns `None` when what follows the type is not a capture at all, so the
+/// caller falls through to its own reading of it (`:$x` is a NAMED parameter,
+/// `::?ROLE` a pseudo-type, `::($t)` an indirect one).
+fn param_with_leading_type_capture<'a>(
+    rest: &'a str,
+    tc: &str,
+    named: bool,
+    slurpy: bool,
+) -> Option<PResult<'a, ParamDef>> {
+    super::type_constraint::strip_type_capture(rest)?;
+    Some(parse_single_param_inner(rest).map(|(r, mut p)| {
+        if p.type_constraint.is_none() {
+            p.type_constraint = Some(tc.to_string());
+        }
+        p.named |= named;
+        p.slurpy |= slurpy;
+        (r, p)
+    }))
+}
+
 fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     let mut rest = input;
     let mut named = false;
@@ -155,6 +185,23 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         onearg = true;
         rest = &rest[1..];
     }
+    // A BARE `+` is the ANONYMOUS one-arg-rule slurpy — the `+@` spelling with
+    // the sigil left off, exactly as `*@` may be written `*@`: rakudo accepts
+    // `proto MAKEOP(Str:D, +) {*}` (Data::Record::Test, #7954). Only the
+    // sigilled (`+@a`) and sigilless-NAME (`+foo`) forms were parameters at all,
+    // so a signature holding a bare `+` failed at its closing paren. It binds the
+    // same anonymous array the `+@` path mints.
+    if let Some(after_plus) = rest.strip_prefix('+') {
+        let tail = after_plus.trim_start();
+        if tail.is_empty() || tail.starts_with([')', ',', ';']) || tail.starts_with("-->") {
+            let mut p = super::helpers::make_param("@__ANON_ARRAY__".to_string());
+            p.onearg = true;
+            p.named = named;
+            p.type_constraint = type_constraint;
+            return Ok((after_plus, p));
+        }
+    }
+
     // Sigilless single-argument rule slurpy: +foo
     if rest.starts_with('+') && rest.len() > 1 && rest.as_bytes()[1].is_ascii_alphabetic() {
         let r = &rest[1..];
@@ -246,6 +293,14 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
+        // `::?CLASS:_ ::THIS: $x` — the pseudo-type is captured under a name of
+        // its own before the invocant marker. See
+        // `param_with_leading_type_capture`; without it the `::THIS` fell into
+        // the whitespace-separated-invocant-marker arm below, which left the
+        // capture's own `::` for the parameter-list loop to choke on.
+        if let Some(parsed) = param_with_leading_type_capture(r, &tc, named, slurpy) {
+            return parsed;
+        }
         // A NAMED parameter may follow the pseudo-type just as a positional one
         // can: `method create(::?ROLE:D :from(:$for)!)` constrains the named
         // parameter, it does not declare an invocant (an invocant's `:` is
@@ -499,6 +554,13 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             }
         }
 
+        // `Int:D ::T $x is raw` — a capture of the parameter's type written
+        // AFTER the nominal one. It has to be tested before the `:` arm below,
+        // which would otherwise read the capture's first colon as the named
+        // marker and leave `:T $x` behind.
+        if let Some(parsed) = param_with_leading_type_capture(r2, &tc, named, slurpy) {
+            return parsed;
+        }
         if r2.starts_with('$')
             || r2.starts_with('@')
             || r2.starts_with('%')

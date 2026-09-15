@@ -4418,7 +4418,18 @@ impl Compiler {
                 let slot = if has_index {
                     None
                 } else {
-                    self.local_map.get(name).copied()
+                    self.local_map.get(name).copied().or_else(|| {
+                        // An ATTRIBUTE read or written in a method body lives in a
+                        // local slot of that body (`emit_set_named_var`), and the
+                        // slot is allocated by the FIRST such access. A
+                        // `temp $!x = 2` whose method never touched `$!x` before it
+                        // therefore reached here with no slot baked, so the restore
+                        // fell back to writing `env` by name — which nothing in the
+                        // body reads — and the attribute kept the temporized value
+                        // past the scope. Allocating the slot here is the same slot
+                        // the assignment below would allocate a moment later.
+                        (name.starts_with('!') && name.len() > 1).then(|| self.alloc_local(name))
+                    })
                 };
                 if let Some(idx_expr) = index {
                     self.compile_expr(idx_expr);
