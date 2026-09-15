@@ -43,63 +43,122 @@ impl Interpreter {
         }
     }
 
-    /// Publish a multi routine bound through an `OUR::` code stash entry.
+    /// The export tag a package name denotes when it names a module's export
+    /// stash: `EXPORT::DEFAULT` -> `DEFAULT`, `Foo::EXPORT::ALL` -> `ALL`.
+    /// Any other package (including a deeper `EXPORT::A::B`) is not one.
+    fn export_stash_tag(package: &str) -> Option<&str> {
+        let tag = match package.strip_prefix("EXPORT::") {
+            Some(tag) => tag,
+            None => package.split_once("::EXPORT::")?.1,
+        };
+        (!tag.is_empty() && !tag.contains("::")).then_some(tag)
+    }
+
+    /// Publish a routine bound through an `OUR::` code stash entry.
     ///
     /// A binding such as `OUR::{'&trait_mod:<is>'} := &trait_mod:<is>` creates
     /// the code value in the package stash, but the normal name-based dispatcher
-    /// still searches `Registry::functions`.  The RHS is a materialized multi
-    /// dispatcher, so copy the currently visible candidate definitions into the
-    /// package's registry namespace as well. Keep those aliases in the persistent
-    /// `our_scoped_functions` table: an import scope may otherwise remove the
-    /// temporary `GLOBAL::` aliases installed while the binding's source module
-    /// was loaded, making the stash entry callable but invisible to later users.
+    /// still searches `Registry::functions`.  The RHS is a materialized routine,
+    /// so copy the currently visible definitions (every candidate, for a multi)
+    /// into the package's registry namespace as well. Keep those aliases in the
+    /// persistent `our_scoped_functions` table: an import scope may otherwise
+    /// remove the temporary `GLOBAL::` aliases installed while the binding's
+    /// source module was loaded, making the stash entry callable but invisible
+    /// to later users.
+    ///
+    /// When the binding lands in a module's own export stash — the re-export
+    /// idiom `my package EXPORT::DEFAULT { OUR::{'&name'} := &name }`, which
+    /// `JSON::Class` uses to re-export `JSON::Marshal`'s attribute traits — the
+    /// stash contents ARE that module's export list, so the aliases go under the
+    /// loading module's name and the routine is recorded as one of its exports.
+    /// Without that, `use`-ing the re-exporting module imported nothing at all.
     pub(crate) fn register_our_code_alias(&mut self, name: &str, value: &Value) {
         let ValueView::Sub(data) = value.view() else {
             return;
         };
-        if !data.env.contains_key("__mutsu_multi_dispatch_candidates") {
-            return;
-        }
+        let is_multi = data.env.contains_key("__mutsu_multi_dispatch_candidates");
         let Some(name) = name.strip_prefix("&OUR::") else {
             return;
         };
         if name.is_empty() {
             return;
         }
-
-        let candidates = self.resolve_all_multi_candidates(name);
-        if candidates.is_empty() {
+        let current_pkg = self.current_package();
+        // `module_load_stack` names the compunit being loaded, which is the
+        // namespace `import_module` reads an export back out of.
+        let export_target = Self::export_stash_tag(&current_pkg)
+            .map(str::to_string)
+            .and_then(|tag| {
+                self.module_load_stack
+                    .last()
+                    .cloned()
+                    .map(|module| (module, tag))
+            });
+        if !is_multi && export_target.is_none() {
             return;
         }
-        let target_pkg = self.current_package();
-        let source_prefixes: Vec<String> = self
-            .bare_name_packages()
-            .into_iter()
-            .map(|pkg| format!("{pkg}::{name}/"))
-            .collect();
-        let entries: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter_map(|(key, def)| {
-                let key_str = key.as_str();
-                let source_prefix = source_prefixes
-                    .iter()
-                    .find(|prefix| key_str.starts_with(prefix.as_str()))?;
-                if !candidates
-                    .iter()
-                    .any(|candidate| Arc::ptr_eq(candidate, def))
-                {
-                    return None;
-                }
-                let suffix = key_str.strip_prefix(source_prefix)?;
-                Some((format!("{target_pkg}::{name}/{suffix}"), def.clone()))
-            })
-            .collect();
+        let target_pkg = match &export_target {
+            Some((module, _)) => module.clone(),
+            None => current_pkg,
+        };
+
+        let candidates = if is_multi {
+            self.resolve_all_multi_candidates(name)
+        } else {
+            Vec::new()
+        };
+        if is_multi && candidates.is_empty() {
+            return;
+        }
+        let source_packages = self.bare_name_packages();
+        let entries: Vec<(String, Arc<FunctionDef>)> = if is_multi {
+            let source_prefixes: Vec<String> = source_packages
+                .iter()
+                .map(|pkg| format!("{pkg}::{name}/"))
+                .collect();
+            self.registry()
+                .functions
+                .iter()
+                .filter_map(|(key, def)| {
+                    let key_str = key.as_str();
+                    let source_prefix = source_prefixes
+                        .iter()
+                        .find(|prefix| key_str.starts_with(prefix.as_str()))?;
+                    if !candidates
+                        .iter()
+                        .any(|candidate| Arc::ptr_eq(candidate, def))
+                    {
+                        return None;
+                    }
+                    let suffix = key_str.strip_prefix(source_prefix)?;
+                    Some((format!("{target_pkg}::{name}/{suffix}"), def.clone()))
+                })
+                .collect()
+        } else {
+            // A single routine has one registry entry, under whichever
+            // enclosing package the binding's source resolved in.
+            source_packages
+                .iter()
+                .find_map(|pkg| {
+                    let def = self
+                        .registry()
+                        .functions
+                        .get(&Symbol::intern(&format!("{pkg}::{name}")))?
+                        .clone();
+                    Some(vec![(format!("{target_pkg}::{name}"), def)])
+                })
+                .unwrap_or_default()
+        };
 
         let mut changed = false;
         for (target_key, def) in entries {
-            let installed_key = self.import_multi_candidate_merged(&target_key, def.clone());
+            let installed_key = if target_key.contains('/') {
+                self.import_multi_candidate_merged(&target_key, def.clone())
+            } else {
+                let key = Symbol::intern(&target_key);
+                self.registry_mut().functions_mut().insert(key, def.clone());
+                key
+            };
             self.registry_mut()
                 .our_scoped_functions
                 .insert(installed_key, def);
@@ -109,6 +168,9 @@ impl Interpreter {
         }
         if changed {
             self.invalidate_fn_resolution();
+            if let Some((module, tag)) = export_target {
+                self.register_exported_sub(module, name.to_string(), vec![tag]);
+            }
         }
     }
 
