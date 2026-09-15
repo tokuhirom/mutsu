@@ -45,16 +45,27 @@
 //! pattern and must never be stored in the pattern-keyed memo — which is why
 //! [`Analyzer::resolved_subrule`] reports whether it did.
 //!
+//! # Looking through a scoped `:ignoremark`
+//!
+//! The engine matches a `:m` sub-pattern as `strip_marks_pattern(p)` against
+//! the mark-stripped subject, so [`walk_pattern`] walks exactly that derived
+//! tree — off the same memo the matcher uses, so there is no second reading of
+//! what `:m` means to drift from. What comes out is a statement about the
+//! *stripped* subject, so the set is flagged and
+//! [`super::regex_prefilter_firstset::FirstSet::admits_at`] carries it back to
+//! the original one; the length bound is dropped outright, because stripping is
+//! not injective on positions.
+//!
 //! # Out of scope (declines)
 //!
 //! Anything that runs user code before the first character is consumed
 //! (constraint 3 — a leading `{ … }` block runs once per start position in
-//! both mutsu and rakudo, ADR-0009), backreferences, `<~~>`, and `:m`
-//! sub-patterns.
+//! both mutsu and rakudo, ADR-0009), backreferences, and `<~~>`.
 
 use super::super::*;
 use super::regex_prefilter_firstset::{
-    FirstSet, class_first_set, literal_first_set, newline_first_set, whitespace_first_set,
+    FirstSet, class_first_set, literal_first_set, newline_first_set, unicode_prop_first_set,
+    whitespace_first_set,
 };
 use crate::symbol::Symbol;
 
@@ -217,13 +228,28 @@ pub(super) fn walk_pattern(
     pkg: Symbol,
     depth: u32,
 ) -> Option<Seq> {
-    // `:m` matches against a mark-stripped subject through a separately
-    // stripped pattern; a scoped one inside an otherwise unstripped pattern
-    // would make the characters analyzed here the wrong ones. The scan paths
-    // hand this module the already-stripped pattern for a top-level `:m`, so
-    // this only declines the scoped case.
+    // A scoped `:m` sub-pattern is matched by the engine as
+    // `strip_marks_pattern(pattern)` against the mark-STRIPPED subject, so that
+    // is what is walked — the same derived tree the matcher itself uses, off
+    // the same memo, rather than a second reading of what `:m` means. The
+    // characters that come out are a statement about the stripped text, which
+    // is why the result is flagged: see [`FirstSet::admits_at`] for how a scan
+    // maps it back onto the original subject. (A top-level `:m` never reaches
+    // here as itself — the scan paths hand this module the already-stripped
+    // pattern.)
     if pattern.ignore_mark {
-        return None;
+        let stripped = super::regex_helpers::strip_marks_pattern(pattern);
+        let mut seq = walk_pattern(an, &stripped, pkg, depth)?;
+        seq.first.set_mark_skewed();
+        // The length bound does NOT survive the mapping back. Stripping is not
+        // injective on positions: both characters of a `\r\n` cluster map to
+        // the cluster's start, so a sub-pattern consuming two STRIPPED
+        // characters there covers zero ORIGINAL ones — and a bound that is not
+        // a lower bound would prune a viable start. Claiming nothing is always
+        // sound, and the tail-pruning it gives up is the weakest of the three
+        // mechanisms anyway.
+        seq.min_len = 0;
+        return Some(seq);
     }
     walk_tokens(
         an,
@@ -316,13 +342,28 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
             ctx,
         )),
         RegexAtom::Newline => Some(Info::consuming(newline_first_set(), ctx)),
-        // `.` matches every character; `\N` and a `<:prop>` / `<+a-b>` class
-        // are decidable in principle but only through tables this module
-        // declines to restate, so both widen to "anything".
-        RegexAtom::Any
-        | RegexAtom::NotNewline
-        | RegexAtom::UnicodeProp { .. }
-        | RegexAtom::CompositeClass { .. } => Some(Info::consuming(FirstSet::universal(), ctx)),
+        // A `<:prop>` atom is answered the same way a character class is: by
+        // calling the engine's own property predicate over the ASCII range,
+        // never by restating a property table.
+        RegexAtom::UnicodeProp {
+            name,
+            negated,
+            args,
+        } => Some(Info::consuming(
+            unicode_prop_first_set(name, *negated, args.as_deref()),
+            ctx,
+        )),
+        // `.` matches every character. A `<+a -b>` composite class is a
+        // `<subrule>` in disguise and widens with it: a `NamedBuiltin` item the
+        // built-in predicate rejects falls back to resolving a grammar token of
+        // that name and matching it against the REMAINING INPUT, so its members
+        // are neither package-independent nor even a set of single characters.
+        // Answering it would need the package-and-generation-keyed memo (and
+        // `mentions_subrule` would have to report it), which is a slice of its
+        // own.
+        RegexAtom::Any | RegexAtom::NotNewline | RegexAtom::CompositeClass { .. } => {
+            Some(Info::consuming(FirstSet::universal(), ctx))
+        }
         // `<.ws>` is `\s+` between two word characters and `\s*` anywhere
         // else, so it may match empty — but when it does consume, it consumes
         // whitespace.

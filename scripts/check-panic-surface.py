@@ -22,6 +22,12 @@ real (if approximate) Rust-comment/string/brace scan rather than a line-based
 grep, because `#[cfg(test)]` blocks nest at arbitrary depth and are not
 always the last item in a file.
 
+A test module split into its own file -- `#[cfg(test)] #[path = "x_tests.rs"]
+mod tests;`, which is how a module keeps its unit tests while staying inside
+the repository's 500-line limit -- is excluded as a whole file. Nothing in it
+is reachable outside `cfg(test)`, so counting it would make following that
+convention cost production budget.
+
     scripts/check-panic-surface.py              # check against the baseline
     scripts/check-panic-surface.py --update     # re-baseline after a change
 
@@ -44,6 +50,15 @@ PANIC_RE = re.compile(
 ALLOW_RE = re.compile(r"#\[allow\(")
 
 CFG_TEST_ATTR_RE = re.compile(r"#\[cfg\(test\)\]")
+# `#[cfg(test)] #[path = "foo_tests.rs"] mod tests;`, in either attribute
+# order and with other attributes stacked in between. Matched against the RAW
+# source (not the masked form) because the path is a string literal.
+CFG_TEST_PATH_MOD_RE = re.compile(
+    r"#\[cfg\(test\)\]\s*(?:#\[[^\]]*\]\s*)*?#\[path\s*=\s*\"(?P<path>[^\"]+)\"\]"
+    r"\s*(?:#\[[^\]]*\]\s*)*mod\s+\w+\s*;"
+    r"|#\[path\s*=\s*\"(?P<path2>[^\"]+)\"\]\s*(?:#\[[^\]]*\]\s*)*?#\[cfg\(test\)\]"
+    r"\s*(?:#\[[^\]]*\]\s*)*mod\s+\w+\s*;"
+)
 CHAR_LIT_RE = re.compile(r"'(\\u\{[0-9a-fA-F]+\}|\\.|[^'\\])'")
 
 
@@ -212,9 +227,31 @@ def counts_for_file(path: Path) -> tuple[int, int]:
     return len(PANIC_RE.findall(masked)), len(ALLOW_RE.findall(masked))
 
 
+def test_only_module_files() -> set[Path]:
+    """Files declared as a whole module behind `#[cfg(test)]` via `#[path]`.
+
+    Such a file is unit-test scaffolding in its entirety -- it has no other
+    declaration site, so nothing in it compiles outside `cfg(test)` -- and is
+    skipped rather than blanked, since there is no `#[cfg(test)]` attribute
+    inside it for `blank_test_regions` to key on.
+    """
+    found: set[Path] = set()
+    for path in sorted(SRC.rglob("*.rs")):
+        src = path.read_text(encoding="utf-8")
+        for m in CFG_TEST_PATH_MOD_RE.finditer(src):
+            rel = m.group("path") or m.group("path2")
+            target = (path.parent / rel).resolve()
+            if target.is_file():
+                found.add(target)
+    return found
+
+
 def total_counts() -> tuple[int, int]:
     panics = allows = 0
+    skip = test_only_module_files()
     for path in sorted(SRC.rglob("*.rs")):
+        if path.resolve() in skip:
+            continue
         p, a = counts_for_file(path)
         panics += p
         allows += a
@@ -312,10 +349,55 @@ def self_test() -> int:
             )
             failures += 1
 
+    # The file-level rule, which the snippet cases above cannot reach: a
+    # `#[path]` module is skipped only when it is ALSO behind `#[cfg(test)]`.
+    # Getting this wrong in the permissive direction would let production code
+    # hide from the ratchet behind a `#[path]`, so the negative case matters
+    # as much as the positive ones.
+    path_cases: list[tuple[str, str, str | None]] = [
+        (
+            "cfg(test) before path",
+            '#[cfg(test)]\n#[path = "a_tests.rs"]\nmod tests;\n',
+            "a_tests.rs",
+        ),
+        (
+            "path before cfg(test)",
+            '#[path = "b_tests.rs"]\n#[cfg(test)]\nmod tests;\n',
+            "b_tests.rs",
+        ),
+        (
+            "stacked attribute in between",
+            '#[cfg(test)]\n#[allow(dead_code)]\n#[path = "c_tests.rs"]\nmod tests;\n',
+            "c_tests.rs",
+        ),
+        (
+            "path module without cfg(test) is production code",
+            '#[path = "d.rs"]\nmod d;\n',
+            None,
+        ),
+        (
+            "cfg(test) module without path is blanked, not skipped",
+            "#[cfg(test)]\nmod tests { fn f() { x.unwrap(); } }\n",
+            None,
+        ),
+    ]
+    for name, src, expected_path in path_cases:
+        m = CFG_TEST_PATH_MOD_RE.search(src)
+        got_path = (m.group("path") or m.group("path2")) if m else None
+        if got_path != expected_path:
+            print(
+                f"check-panic-surface self-test FAILED: {name!r}: "
+                f"expected path={expected_path!r}, got path={got_path!r}",
+                file=sys.stderr,
+            )
+            failures += 1
     if failures:
         print(f"check-panic-surface self-test: {failures} failure(s)", file=sys.stderr)
         return 1
-    print(f"check-panic-surface self-test: all {len(cases)} cases pass")
+    print(
+        f"check-panic-surface self-test: all "
+        f"{len(cases) + len(path_cases)} cases pass"
+    )
     return 0
 
 

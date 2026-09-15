@@ -104,7 +104,7 @@ impl Iterator for ScanPositions<'_> {
                 while *pos <= *last {
                     let candidate = *pos;
                     *pos += 1;
-                    if set.contains(chars[candidate]) {
+                    if set.admits_at(chars, candidate) {
                         crate::vm::vm_stats::record_regex_prefilter_position_hit();
                         return Some(candidate);
                     }
@@ -130,7 +130,7 @@ impl Iterator for ScanPositions<'_> {
                             }
                             let candidate = *pos;
                             *pos += 1;
-                            if set.is_none_or(|s| s.contains(chars[candidate])) {
+                            if set.is_none_or(|s| s.admits_at(chars, candidate)) {
                                 crate::vm::vm_stats::record_regex_prefilter_position_hit();
                                 return Some(candidate);
                             }
