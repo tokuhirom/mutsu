@@ -417,8 +417,23 @@ Stage 1 is [#8272](https://github.com/tokuhirom/mutsu/issues/8272) (`todo:deep`)
 ADR moved to `Accepted`. Its three constraints — reuse ADR-0022's litlen table rather than defining
 a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
 non-declarative — are the work, not footnotes, and the differential property test against the
-prefilter-disabled engine is its gate. Stage 2 is a question, not work, until Stage 0 lands and
-grammars are re-profiled.
+prefilter-disabled engine is its gate. Two of its four derived facts have landed:
+
+| derived fact | status |
+|---|---|
+| required literal prefix → substring search | shipped (`regex_prefilter.rs`), but declines on a *quoted* literal, which parses into a `Group` — [#8449](https://github.com/tokuhirom/mutsu/issues/8449) |
+| first-character set → reject a start position by one bit test | shipped (`regex_first_set.rs`), memoized on the `RegexPattern`; covers alternation, `:i` literals and character classes, `news/2026-09/regex-scans-reject-a-position-without-entering-the-engine.md` |
+| minimum match length | not started |
+| required *inner* literal for patterns with no usable prefix | not started |
+
+The first-character set settles §2.4's asymptotic loss for every shape whose set is *sparse*: on the
+640 KB subject the failing alternation goes 1,133 → 124 ms (rakudo 801), the `:i` literal 246 → 16 ms
+(rakudo 9), and `.comb(/\d+/)` 127 → 48 ms (rakudo 461). What it cannot reach is a *dense* set —
+`\w` admits ~85% of ordinary text, so `\w+ 'QQQ'` only moves 716 → 619 ms against rakudo's 340 and is
+now the residue, tracked as [#8450](https://github.com/tokuhirom/mutsu/issues/8450). That residue is
+the per-position reject constant itself, which is the measurement Stage 2's question wants.
+
+Stage 2 remains a question, not work, until Stage 0 lands and grammars are re-profiled.
 
 Revision history: first draft 2026-09-13, reviewed the same day. The review inverted §2.2 (the
 grammar claim had been measured on a simplified grammar over five iterations including rakudo's
