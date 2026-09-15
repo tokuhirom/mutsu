@@ -4699,12 +4699,40 @@ impl Interpreter {
 
             // -- Error handling --
             OpCode::RuntimeHasDecl(spec) => {
-                // A `has`-attribute declaration that reached the VM (mainline /
-                // EVAL'd source). If a class body is currently being registered
-                // (`class Foo { BEGIN EVAL q[has $.x] }`), attach the attribute
-                // to that class; otherwise throw the pre-built X::Attribute error.
+                // A `has`-attribute declaration that reached the VM instead of
+                // being installed declaratively by `register_class_decl`. Three
+                // cases:
+                // 1. A class body is currently being registered (`class Foo {
+                //    BEGIN EVAL q[has $.x] }`) — attach the attribute to that
+                //    class.
+                // 2. This declaration sits inside a `sub`/`method` (or a
+                //    control-flow block within either) lexically nested in a
+                //    class body (`class C { method m { has $!g = 3 } }`, #8441
+                //    gap 1). `collect_nested_has_decl_stmts` (opcode.rs) already
+                //    surfaced it to that class's composition, so the attribute
+                //    (with its default wired for per-instance construction, the
+                //    same way an ordinary top-level `has` is) is already on
+                //    `current_package()`'s definition by the time any method
+                //    runs — rakudo treats `has` as a compile-time declarator
+                //    whose runtime control-flow position is irrelevant, so
+                //    reaching this statement a second (or first) time at
+                //    runtime is a no-op, never a re-declaration.
+                // 3. Neither: throw the pre-built X::Attribute error.
                 if let Some(class_name) = self.defining_class.clone() {
                     self.register_runtime_attribute(&class_name, spec)?;
+                    *ip += 1;
+                } else if self
+                    .registry()
+                    .classes
+                    .get(&spec.enclosing_class)
+                    .is_some_and(|class_def| {
+                        class_def
+                            .attributes
+                            .iter()
+                            .any(|a| a.name == spec.decl.name && a.sigil == spec.decl.sigil)
+                            || class_def.class_level_attrs.contains_key(&spec.decl.name)
+                    })
+                {
                     *ip += 1;
                 } else {
                     let val = spec.error.clone();

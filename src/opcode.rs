@@ -627,18 +627,31 @@ impl CompiledMethodDecl {
 }
 
 /// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather
-/// than being collected declaratively by `register_class_decl`) only arises from
-/// mainline / EVAL'd source — e.g. `class Foo { BEGIN EVAL q[has $.x] }`. At
-/// runtime the op checks whether a class is currently being defined
-/// (`Interpreter::defining_class`): if so it registers the attribute onto that
-/// class; otherwise it throws the pre-built `error` (`X::Attribute::NoPackage`
-/// or `X::Attribute::Package`). Boxed to keep `size_of::<OpCode>()` small.
+/// than being collected declaratively by `register_class_decl`) arises from
+/// mainline / EVAL'd source (e.g. `class Foo { BEGIN EVAL q[has $.x] }`), or
+/// from a declaration nested inside a `sub`/`method`/control-flow block within
+/// a class body (`class C { method m { has $!g = 3 } }`, #8441 gap 1) — that
+/// case was already surfaced to the class's own composition by
+/// `collect_nested_has_decl_stmts` (opcode.rs), so reaching it here is a
+/// no-op, not a fresh declaration. At runtime the op checks whether a class is
+/// currently being defined (`Interpreter::defining_class`): if so it registers
+/// the attribute onto that class; otherwise, if `enclosing_class` already has
+/// this exact attribute (the nested-declaration case above), it is a no-op;
+/// otherwise it throws the pre-built `error` (`X::Attribute::NoPackage` or
+/// `X::Attribute::Package`). Boxed to keep `size_of::<OpCode>()` small.
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeHasDeclSpec {
     pub(crate) decl: CompiledAttrDecl,
     /// The `X::Attribute::*` error to throw when this `has` runs outside a
     /// class-definition context.
     pub(crate) error: Value,
+    /// The class/role/package this declaration's compiler was lexically
+    /// compiling under (`Compiler::current_package` at the time this
+    /// statement was compiled — "GLOBAL" for genuine mainline source). Used
+    /// only to look up whether the attribute is already declared there; it is
+    /// never itself a declaration target the way `Interpreter::defining_class`
+    /// is.
+    pub(crate) enclosing_class: String,
 }
 
 /// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: the captured
@@ -3420,35 +3433,29 @@ fn is_stub_routine_body(body: &[Stmt]) -> bool {
     )
 }
 
-/// Recursively surface `has`-attribute names nested inside a `sub` within a
-/// class body (`class C { sub f { has $.x } }`), mirroring
-/// `collect_nested_has_decl_stmts` below, which `class_body_plan` uses to
-/// give each such nested declaration its own trailing `Attr` op (ADR-0019
-/// D6-4). Descends into `sub` bodies but not into a nested `class`/`role`,
-/// which owns its own attribute scope. `our`/`my` (class-level) attributes
+/// Recursively surface `has`-attribute names nested inside a `sub`/`method`
+/// within a class body (`class C { sub f { has $.x } }`,
+/// `class C { method m { has $.x } }`), or inside any control-flow block
+/// nested within either (`class C { method m { if $c { has $.y } } } }`,
+/// #8441) — a thin projection over [`collect_nested_has_decl_stmts`] below,
+/// which `class_body_plan` uses to give each such nested declaration its own
+/// trailing `Attr` op (ADR-0019 D6-4). `our`/`my` (class-level) attributes
 /// are excluded here, as they are not part of per-instance `$!attr`
 /// validation.
 fn collect_nested_has_decl_names(stmts: &[Stmt], out: &mut Vec<Symbol>) {
-    for s in stmts {
-        match s {
-            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-            Stmt::SubDecl { body, .. } => {
-                for inner in body {
-                    if let Stmt::HasDecl {
-                        name,
-                        is_our,
-                        is_my,
-                        ..
-                    } = inner
-                        && !*is_our
-                        && !*is_my
-                    {
-                        out.push(*name);
-                    }
-                }
-                collect_nested_has_decl_names(body, out);
-            }
-            _ => {}
+    let mut found = Vec::new();
+    collect_nested_has_decl_stmts(stmts, &mut found);
+    for stmt in found {
+        if let Stmt::HasDecl {
+            name,
+            is_our,
+            is_my,
+            ..
+        } = stmt
+            && !*is_our
+            && !*is_my
+        {
+            out.push(*name);
         }
     }
 }
@@ -3851,25 +3858,77 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
         .collect()
 }
 
-/// `has` declarations inside a body `sub`, as statement references rather
-/// than just names (unlike [`collect_nested_has_decl_names`]) — unfiltered,
-/// so a class-level `our`/`my` nested `has` gets its own `Attr` op too (its
-/// `raw` field is `class_body_has_decl`'s only source for it, since
-/// `attr_decls` excludes it).
-fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+/// `has` declarations nested inside a `sub`/`method` within a class body, or
+/// inside any control-flow block nested within either (#8441 — rakudo treats
+/// `has` as a compile-time declarator that installs the attribute wherever it
+/// lexically sits in the class, regardless of the runtime control flow
+/// enclosing it: `class C { method m($go) { if $go { has $.g = 3 } } }`
+/// installs `$!g`, with default `3`, on every instance whether or not `$go`
+/// is ever true), as statement references rather than just names (unlike
+/// [`collect_nested_has_decl_names`]) — unfiltered, so a class-level
+/// `our`/`my` nested `has` gets its own `Attr` op too (its `raw` field is
+/// `class_body_has_decl`'s only source for it, since `attr_decls` excludes
+/// it). Never descends into a nested `class`/`role`, which owns its own
+/// attribute scope.
+pub(crate) fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
     for s in stmts {
         match s {
             Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-            Stmt::SubDecl { body, .. } => {
-                for inner in body {
-                    if matches!(inner, Stmt::HasDecl { .. }) {
-                        out.push(inner);
-                    }
-                }
-                collect_nested_has_decl_stmts(body, out);
+            Stmt::SubDecl { body, .. } | Stmt::MethodDecl { body, .. } => {
+                collect_has_decls_in_scope(body, out);
             }
+            other => {
+                for body in nested_scope_bodies(other) {
+                    collect_has_decls_in_scope(body, out);
+                }
+            }
+        }
+    }
+}
+
+/// A `has`-attribute scan of one `sub`/`method`/control-flow BODY already
+/// entered by [`collect_nested_has_decl_stmts`]: every direct `HasDecl`
+/// (including one from a flattened `has ($a, $b)` list form's own
+/// `SyntheticBlock` — nothing else has pre-flattened this body, unlike the
+/// class's own top level), plus a further recursive descent via
+/// [`collect_nested_has_decl_stmts`] for anything nested deeper still.
+fn collect_has_decls_in_scope<'a>(body: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+    for inner in body {
+        match inner {
+            Stmt::HasDecl { .. } => out.push(inner),
+            Stmt::SyntheticBlock(list) => collect_has_decls_in_scope(list, out),
             _ => {}
         }
+    }
+    collect_nested_has_decl_stmts(body, out);
+}
+
+/// The nested statement lists of a control-flow construct that shares its
+/// enclosing routine's attribute/package scope — a Raku block does not open a
+/// new package — i.e. everything [`collect_nested_has_decl_stmts`] should
+/// look inside without treating it as a `sub`/`method` boundary of its own.
+/// Deliberately excludes `Stmt::SyntheticBlock`: that one is unwrapped
+/// directly by [`collect_has_decls_in_scope`] instead, so it is not a
+/// container this list needs to name.
+fn nested_scope_bodies(stmt: &Stmt) -> Vec<&[Stmt]> {
+    match stmt {
+        Stmt::Block(body)
+        | Stmt::While { body, .. }
+        | Stmt::Loop { body, .. }
+        | Stmt::For { body, .. }
+        | Stmt::React { body, .. }
+        | Stmt::Whenever { body, .. }
+        | Stmt::Given { body, .. }
+        | Stmt::When { body, .. }
+        | Stmt::Default(body)
+        | Stmt::Catch(body)
+        | Stmt::Control(body) => vec![body.as_slice()],
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => vec![then_branch.as_slice(), else_branch.as_slice()],
+        _ => vec![],
     }
 }
 
