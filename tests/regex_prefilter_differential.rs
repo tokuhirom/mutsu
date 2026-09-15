@@ -231,3 +231,91 @@ differential_case!(
     unicode_property_atom_declines_to_anything,
     r#"say ("abcÀ" ~~ / <:Lu> /).Str;"#
 );
+
+// --- required-inner-literal shapes (the third Stage 1 slice) ---
+//
+// These have no usable leading prefix, so they are narrowed by a literal that
+// must appear somewhere *inside* the match. That makes the dangerous direction
+// a different one: the analysis can be wrong about how far before the literal a
+// match may start, and the symptom is a dropped match at the window's edge.
+
+differential_case!(
+    inner_literal_after_an_unbounded_quantifier,
+    r#"say ("ab=>cd" ~~ / \w+ '=>' /).Str;"#
+);
+differential_case!(
+    inner_literal_absent_from_the_subject,
+    r#"say ("abcd" ~~ / \w+ '=>' /).defined;"#
+);
+differential_case!(
+    inner_literal_at_the_very_start_of_the_subject,
+    r#"say ("=>x" ~~ / \w* '=>' /).Str;"#
+);
+differential_case!(
+    inner_literal_at_the_very_end_of_the_subject,
+    r#"say ("ab=>" ~~ / \w+ '=>' /).Str;"#
+);
+differential_case!(
+    inner_literal_global_scan,
+    r#"say ("x=>y z=>w q" ~~ m:g/ \w '=>' \w /).join(",");"#
+);
+differential_case!(
+    inner_literal_with_a_bounded_window,
+    r#"say ("zzabczz zzbczz" ~~ m:g/ 'a'? 'bc' /).join(",");"#
+);
+differential_case!(
+    inner_literal_between_two_unbounded_runs,
+    r#"say ("a1-2b" ~~ / \d+ '-' \d+ /).Str;"#
+);
+differential_case!(
+    inner_literal_after_a_fixed_width_lead_in,
+    r#"say ("abc:def" ~~ m:g/ ... ':' /).join(",");"#
+);
+differential_case!(
+    inner_literal_inside_a_mandatory_group,
+    r#"say ("a1 => b" ~~ / \w+ \s [ '=>' ] \s /).Str;"#
+);
+differential_case!(
+    inner_literal_in_an_optional_group_must_not_be_required,
+    r#"say ("abc" ~~ / \w+ [ '=>' ]? /).Str;"#
+);
+differential_case!(
+    inner_literal_in_an_alternation_must_not_be_required,
+    r#"say ("ab->cd" ~~ / \w+ [ '=>' | '->' ] /).Str;"#
+);
+differential_case!(
+    inner_literal_declines_under_ignorecase,
+    r#"say ("ab=>cd" ~~ / :i \w+ '=>' /).Str;"#
+);
+differential_case!(
+    inner_literal_declines_when_a_code_block_follows,
+    r#"my $n = 0; my $m = ("xyz" ~~ / \w+ { $n++ } 'q' /); say $m.defined; say $n > 1;"#
+);
+differential_case!(
+    inner_literal_subst_global,
+    r#"say "k1=>v1,k2=>v2".subst(/ \w+ '=>' /, "X", :g);"#
+);
+differential_case!(
+    inner_literal_split,
+    r#"say "a1--b22--c".split(/ \d+ '--' /).join("|");"#
+);
+differential_case!(
+    inner_literal_overlapping_occurrences,
+    r#"say ("aaaa" ~~ m:g/ 'a' 'a' /).elems;"#
+);
+differential_case!(
+    inner_literal_with_a_backreference_lead_in,
+    r#"say ("xabab!z" ~~ / (\w) (\w) $0 $1 '!' /).Str;"#
+);
+differential_case!(
+    inner_literal_non_ascii,
+    r#"say ("foo日本bar" ~~ / \w+ '日本' /).Str;"#
+);
+differential_case!(
+    inner_literal_with_a_repeat_quantifier_lead_in,
+    r#"say ("xx12:34" ~~ / \d ** 2 ':' \d ** 2 /).Str;"#
+);
+differential_case!(
+    inner_literal_lead_in_can_match_empty,
+    r#"say ("=>" ~~ / \w* '=>' /).Str;"#
+);
