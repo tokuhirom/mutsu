@@ -152,18 +152,135 @@ fn a_character_class_scan_only_offers_class_members() {
 }
 
 #[test]
-fn a_pattern_the_analysis_declines_on_still_walks_every_position() {
-    // The complement of the property above: declining is always allowed, and
-    // this pins that it is what happens for a subrule call rather than some
-    // narrowing nobody checked. Also the control for the tests above -- if
-    // `declined` were what every case reported, they would prove nothing.
+fn a_subrule_led_scan_is_narrowed_by_the_rules_own_first_set() {
+    // ADR-0099 §4 constraint 3's "keyed by invocant package and
+    // `TOKEN_DEFS_GEN`, or decline", taken by its first half: the same
+    // alternation written inline is narrowed to two characters, and hiding it
+    // behind a rule name must not put the scan back to linear.
+    let grammar = r#"grammar G { token kw { 'zzzq' | 'qqqz' } }"#;
+    let scan = |repeats: usize| {
+        prefilter_stats(&format!(
+            "{grammar}\n{}",
+            failing_scan("/ <G::kw> /", repeats)
+        ))
+    };
+    let small = scan(100);
+    let large = scan(800);
+
+    assert!(
+        small.first_char_set >= 1 && large.first_char_set >= 1,
+        "a subrule-led pattern got no first-character set:\n{}\n{}",
+        small.line,
+        large.line
+    );
+    assert!(
+        large.positions_offered > small.positions_offered * 4,
+        "positions_offered did not grow with the subject: {} vs {}",
+        small.positions_offered,
+        large.positions_offered
+    );
+    // Neither branch's leading character occurs in the subject, so the engine
+    // is never entered however long the subject gets.
+    assert_eq!(
+        small.position_hits, 0,
+        "a rule whose every branch starts with an absent character still reached the engine: {}",
+        small.line
+    );
+    assert_eq!(
+        large.position_hits, 0,
+        "a rule whose every branch starts with an absent character still reached the engine: {}",
+        large.line
+    );
+}
+
+#[test]
+fn a_rule_reached_through_another_rule_is_still_narrowed() {
+    // The walk follows the call chain, and each body resolves its own
+    // unqualified references against the package that DEFINED it.
+    let stats = prefilter_stats(&format!(
+        "grammar G {{ token outer {{ <inner> }} token inner {{ 'zzzq' }} }}\n{}",
+        failing_scan("/ <G::outer> /", 200)
+    ));
+    assert!(
+        stats.first_char_set >= 1,
+        "a rule reached through another rule got no first-character set: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, 0,
+        "the inner rule's leading character does not occur in the subject: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_left_recursive_rule_declines_rather_than_unrolling() {
+    // The first-set must be a SUPERSET of what can match, and a rule reached
+    // from itself before anything is consumed can only be walked to a subset
+    // -- the one unsound direction. So it is answered "unknown", which walks
+    // every position.
     let stats = prefilter_stats(
-        r#"grammar G { token thing { \w } }
+        r#"grammar G { token thing { <thing> 'a' | 'b' } }
+say ("xbz" ~~ / <G::thing> /).Bool;"#,
+    );
+    assert!(
+        stats.first_char_set == 0 && stats.literal_prefix == 0 && stats.inner_literal == 0,
+        "a left-recursive rule must not be narrowed: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_right_recursive_rule_is_still_narrowed_by_what_it_consumes_first() {
+    // The complement: recursion only blocks the derivation while it can still
+    // be reached without consuming anything. `'a' <thing>` has already fixed
+    // the first character by the time the recursive call is seen, so the
+    // decline on the call costs nothing and the set is exactly {a, b}.
+    let stats = prefilter_stats(&format!(
+        "grammar G {{ token thing {{ 'z' <thing> | 'q' }} }}\n{}",
+        failing_scan("/ <G::thing> /", 200)
+    ));
+    assert!(
+        stats.first_char_set >= 1,
+        "a right-recursive rule got no first-character set: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, 0,
+        "neither 'z' nor 'q' occurs in the subject: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_pattern_the_analysis_declines_on_still_walks_every_position() {
+    // The control for the tests above -- if `declined` were what every case
+    // reported, they would prove nothing. A rule body that opens with a code
+    // block is the shape that must still decline: ADR-0009 makes that block
+    // run once per start position in both mutsu and rakudo, so no position may
+    // be skipped before it.
+    let stats = prefilter_stats(
+        r#"grammar G { token thing { { 1 } \w } }
 say ("abc" ~~ / <G::thing> /).Bool;"#,
     );
     assert!(
         stats.first_char_set == 0 && stats.literal_prefix == 0 && stats.inner_literal == 0,
-        "a subrule-led pattern must not be narrowed (ADR-0099 §4 constraint 3): {}",
+        "a rule whose body opens with a code block must not be narrowed (ADR-0009): {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_subrule_call_with_arguments_still_walks_every_position() {
+    // A parameterized call resolves per call against values the memo key does
+    // not carry, so it declines however narrow the body looks.
+    let stats = prefilter_stats(
+        r#"grammar G { token thing($x) { 'zzzq' } }
+say ("abc" ~~ / <G::thing(1)> /).Bool;"#,
+    );
+    assert!(
+        stats.first_char_set == 0 && stats.literal_prefix == 0 && stats.inner_literal == 0,
+        "a parameterized subrule call must not be narrowed: {}",
         stats.line
     );
 }

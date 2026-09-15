@@ -56,9 +56,32 @@ pub(crate) struct PatternDerived {
     /// Mark-stripped form, for scoped `:ignoremark` (which can enter the same
     /// pattern many times during one match).
     pub(crate) stripped: std::sync::OnceLock<Arc<RegexPattern>>,
-    /// The unanchored-scan prefilter (ADR-0099 Stage 1).
+    /// The unanchored-scan prefilter (ADR-0099 Stage 1), for a pattern that
+    /// mentions no rule name — a pure function of the pattern, so one slot.
     pub(crate) prefilter:
         std::sync::OnceLock<Arc<crate::runtime::regex::regex_prefilter::Prefilter>>,
+    /// Whether the pattern mentions a `<subrule>` anywhere, which is what
+    /// decides between the two memos above and below. Derived once because it
+    /// is asked on every scan.
+    pub(crate) mentions_subrule: std::sync::OnceLock<bool>,
+    /// The same prefilter for a pattern that DOES mention a rule name, where
+    /// the derivation is not a pure function of the pattern: the same name
+    /// resolves to different bodies in different packages (`grammar H is G`
+    /// overriding `token x`) and to different bodies after any (re)definition.
+    /// So the entries are keyed by both, exactly as ADR-0099 §4 constraint 3
+    /// requires — see the `regex_prefilter_subrule` module (private to
+    /// `runtime::regex`, so not linkable from here).
+    ///
+    /// A short vector rather than a map: one pattern is scanned from a handful
+    /// of packages at most, and a stale `TOKEN_DEFS_GEN` clears the lot.
+    pub(crate) prefilter_in_pkg: std::sync::Mutex<Vec<PkgPrefilter>>,
+}
+
+/// One package's entry in [`PatternDerived::prefilter_in_pkg`].
+pub(crate) struct PkgPrefilter {
+    pub(crate) pkg: crate::symbol::Symbol,
+    pub(crate) token_defs_gen: u64,
+    pub(crate) prefilter: Arc<crate::runtime::regex::regex_prefilter::Prefilter>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).

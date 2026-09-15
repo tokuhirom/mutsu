@@ -403,7 +403,7 @@ only the costs it is shaped to see, and this one was shaped around one-shot cost
 
 ## 8. Implementation status
 
-Nothing implemented. Stage 0 is fully filed, ordered as in §4:
+Stage 0 is fully filed and not yet implemented, ordered as in §4:
 
 | item | issue | measured cost |
 |---|---|---|
@@ -414,7 +414,13 @@ Nothing implemented. Stage 0 is fully filed, ordered as in §4:
 | 5. parse-cache key, scan, and interpolated bypass | [#8270](https://github.com/tokuhirom/mutsu/issues/8270) | 4.5% of `bench-regex-match` |
 
 Stage 1 is [#8272](https://github.com/tokuhirom/mutsu/issues/8272) (`todo:deep`), filed when this
-ADR moved to `Accepted`. Its three constraints — reuse ADR-0022's litlen table rather than defining
+ADR moved to `Accepted`, and is **landing in slices** — required literal prefix
+([#8285](https://github.com/tokuhirom/mutsu/issues/8285)), first-character set and minimum match
+length ([#8446](https://github.com/tokuhirom/mutsu/issues/8446)), required inner literal
+([#8457](https://github.com/tokuhirom/mutsu/issues/8457)), and the first-character set through a
+`<subrule>` keyed by package + `TOKEN_DEFS_GEN` (this slice). The issue stays open for what remains:
+NFD-aware first-sets for a *scoped* `:ignoremark`, and §5's NFA over the declarative prefix. Its
+three constraints — reuse ADR-0022's litlen table rather than defining
 a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
 non-declarative — are the work, not footnotes, and the differential property test against the
 prefilter-disabled engine is its gate. Stage 2 is a question, not work, until Stage 0 lands and

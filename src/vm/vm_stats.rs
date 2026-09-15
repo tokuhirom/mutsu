@@ -228,6 +228,12 @@ static REGEX_PREFILTER_APPLIED_INNER: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_DECLINED: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_POSITIONS_OFFERED: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_POSITION_HITS: AtomicU64 = AtomicU64::new(0);
+// `subrule_*` count package-keyed DERIVATIONS (one per pattern x package x
+// token generation), not scans: a pattern naming a rule whose first-set was
+// derived through it, against one whose rule reference the analysis declined
+// to look through (ADR-0099 §4 constraint 3).
+static REGEX_PREFILTER_SUBRULE_RESOLVED: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_SUBRULE_DECLINED: AtomicU64 = AtomicU64::new(0);
 
 /// Which of the prefilter's narrowing mechanisms a scan used. Counted apart so
 /// that "the first-character set stopped engaging" is visible even while the
@@ -255,6 +261,22 @@ pub(crate) fn record_regex_prefilter_applied(kind: RegexPrefilterKind, positions
         }
         .fetch_add(1, Ordering::Relaxed);
         REGEX_PREFILTER_POSITIONS_OFFERED.fetch_add(positions_offered as u64, Ordering::Relaxed);
+    }
+}
+
+/// Record one package-keyed prefilter derivation for a pattern that names a
+/// rule (ADR-0099 §4 constraint 3): `resolved` is whether the analysis
+/// actually looked through a rule name, as opposed to declining on one. Both
+/// are worth seeing, because "it stopped engaging" and "it was never
+/// applicable here" are different regressions.
+#[inline]
+pub(crate) fn record_regex_prefilter_subrule(resolved: bool) {
+    if enabled() {
+        if resolved {
+            REGEX_PREFILTER_SUBRULE_RESOLVED.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_PREFILTER_SUBRULE_DECLINED.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -1410,8 +1432,10 @@ pub(crate) fn dump() {
     let prefilter_declined = REGEX_PREFILTER_DECLINED.load(Ordering::Relaxed);
     let prefilter_positions_offered = REGEX_PREFILTER_POSITIONS_OFFERED.load(Ordering::Relaxed);
     let prefilter_position_hits = REGEX_PREFILTER_POSITION_HITS.load(Ordering::Relaxed);
+    let prefilter_subrule_resolved = REGEX_PREFILTER_SUBRULE_RESOLVED.load(Ordering::Relaxed);
+    let prefilter_subrule_declined = REGEX_PREFILTER_SUBRULE_DECLINED.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits}"
+        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits} subrule_derivations=(resolved={prefilter_subrule_resolved} declined={prefilter_subrule_declined})"
     );
     let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
     let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);

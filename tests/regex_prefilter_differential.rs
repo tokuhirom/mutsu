@@ -197,10 +197,99 @@ differential_case!(
     r#"say ("a\x[094D]b" ~~ / \w /).Str;"#
 );
 differential_case!(
-    subrule_led_pattern_declines,
+    subrule_led_pattern,
     r#"
 grammar G { token thing { \d+ } }
 say ("ab123" ~~ / <G::thing> /).Str;
+"#
+);
+// The package-keyed derivation (ADR-0099 §4 constraint 3): the SAME pattern
+// source `/ <x> /` is shared through the regex parse cache, so one frozen
+// first-set would answer for both packages and drop half the matches.
+differential_case!(
+    same_subrule_name_in_two_packages,
+    r#"
+package A { our token x { 'aaa' }; our sub scan($s) { so $s ~~ / <x> / } }
+package B { our token x { 'bbb' }; our sub scan($s) { so $s ~~ / <x> / } }
+for <aaa bbb ccc> -> $s { say "{A::scan(qq{zz $s})} {B::scan(qq{zz $s})}" }
+"#
+);
+differential_case!(
+    subrule_reached_through_another_subrule,
+    r#"
+grammar G { token outer { <inner> } token inner { <[xy]> \d } }
+say ("ab x7 cd" ~~ / <G::outer> /).Str;
+say ("ab z7 cd" ~~ / <G::outer> /).defined;
+"#
+);
+differential_case!(
+    left_recursive_subrule,
+    r#"
+grammar G { token thing { <thing> 'a' | 'b' } }
+say ("xbz" ~~ / <G::thing> /).Str;
+"#
+);
+differential_case!(
+    right_recursive_subrule,
+    r#"
+grammar G { token thing { 'a' <thing> | 'b' } }
+say ("zzab" ~~ / <G::thing> /).Str;
+say ("zzq" ~~ / <G::thing> /).defined;
+"#
+);
+differential_case!(
+    subrule_with_a_leading_code_block,
+    r#"
+my $runs = 0;
+grammar G { token thing { { $runs++ } 'q' } }
+say ("abc" ~~ / <G::thing> /).defined;
+"#
+);
+differential_case!(
+    subrule_that_can_match_empty,
+    r#"
+grammar G { token thing { \d* } }
+say ("abc" ~~ / <G::thing> 'b' /).Str;
+"#
+);
+differential_case!(
+    proto_token_subrule_candidates,
+    r#"
+grammar G {
+    proto token op { * }
+    token op:sym<plus> { '+' }
+    token op:sym<star> { '*' }
+}
+say ("a + b" ~~ / <G::op> /).Str;
+say ("a b" ~~ / <G::op> /).defined;
+"#
+);
+differential_case!(
+    subrule_under_ignorecase,
+    r#"
+grammar G { token thing { 'ZQ' } }
+say ("aa zq bb" ~~ / :i <G::thing> /).Str;
+"#
+);
+differential_case!(
+    subrule_call_with_arguments,
+    r#"
+grammar G { token thing($n) { \d ** {$n} } }
+say ("ab123" ~~ / <G::thing(2)> /).Str;
+"#
+);
+differential_case!(
+    subrule_naming_a_lexical_regex,
+    r#"
+my regex thing { 'zq' };
+say ("aa zq bb" ~~ / <&thing> /).Str;
+"#
+);
+differential_case!(
+    subrule_in_a_global_scan,
+    r#"
+grammar G { token kw { 'aa' | 'bb' } }
+say ("xaaybbz" ~~ m:g/ <G::kw> /).join(",");
 "#
 );
 differential_case!(

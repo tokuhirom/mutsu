@@ -34,16 +34,30 @@
 //! match, so one substring search answers the whole scan. It lives in
 //! [`super::regex_prefilter_inner`], which states the claim it makes exactly.
 //!
-//! Still out of scope, and still simply declining: subrule-derived prefixes
-//! keyed by package + `TOKEN_DEFS_GEN`, and `:m` NFD-aware first-sets for a
-//! *scoped* `:ignoremark` (a top-level one already arrives here
-//! mark-stripped).
+//! The first-set analysis also looks *through* a `<subrule>`, which is what
+//! ADR-0099 §4 constraint 3 asks for ("keyed by invocant package and
+//! `TOKEN_DEFS_GEN` ... or decline") rather than the decline the first three
+//! slices took. That makes such a derivation no longer a pure function of the
+//! pattern, so it lives in a second, package-and-generation-keyed memo —
+//! [`pattern_prefilter_in_pkg`] — while a pattern that mentions no rule name
+//! keeps the single pattern-keyed slot and the path it had before. The
+//! resolution and everything it still declines on are in
+//! [`super::regex_prefilter_subrule`].
+//!
+//! Still out of scope, and still simply declining: `:m` NFD-aware first-sets
+//! for a *scoped* `:ignoremark` (a top-level one already arrives here
+//! mark-stripped), and the required literal prefix / required inner literal
+//! through a rule name (both make a claim about *text*, and the inner
+//! literal's decline on anything that can run code is deliberately stronger
+//! than the first-set's — see [`super::regex_prefilter_inner`]).
 
 use super::super::*;
-use super::regex_prefilter_analysis::{Derivation, derive};
+use super::regex_prefilter_analysis::{Analyzer, Derivation, derive};
 use super::regex_prefilter_firstset::FirstSet;
 use super::regex_prefilter_inner::{InnerLiteral, required_inner_literal};
+use super::regex_prefilter_memo::{mentions_subrule, pattern_prefilter, pattern_prefilter_in_pkg};
 use super::regex_prefilter_scan::ScanPositions;
+use crate::symbol::Symbol;
 use crate::vm::vm_stats::RegexPrefilterKind;
 use std::sync::Arc;
 
@@ -80,8 +94,8 @@ pub(crate) struct Prefilter {
 }
 
 impl Prefilter {
-    fn build(pattern: &RegexPattern) -> Prefilter {
-        let Derivation { first, min_len } = derive(pattern);
+    pub(super) fn build(an: &mut Analyzer, pattern: &RegexPattern, pkg: Symbol) -> Prefilter {
+        let Derivation { first, min_len } = derive(an, pattern, pkg);
         let prefix = required_literal_prefix(pattern)
             .map(|p| p.chars().collect::<Vec<char>>().into_boxed_slice());
         Prefilter {
@@ -98,14 +112,6 @@ impl Prefilter {
             min_len,
         }
     }
-}
-
-/// This pattern's memoized [`Prefilter`].
-pub(crate) fn pattern_prefilter(pattern: &RegexPattern) -> &Arc<Prefilter> {
-    pattern
-        .derived
-        .prefilter
-        .get_or_init(|| Arc::new(Prefilter::build(pattern)))
 }
 
 /// The required literal prefix of `pattern`, or `None` when the pattern has
@@ -166,7 +172,7 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
 }
 
 /// Candidate start positions for an unanchored scan of `pattern` over
-/// `chars`, from `from` onward inclusive. Narrowed by whichever of the
+/// `chars`, from `from` onward inclusive, as invoked from `pkg`. Narrowed by whichever of the
 /// prefilter's mechanisms applies; otherwise every position in `[from,
 /// chars.len()]`, exactly as before this module existed.
 ///
@@ -177,15 +183,24 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
 /// already did before this module) is exactly the per-scan cost Stage 0
 /// exists to remove elsewhere, and this module must not reintroduce it here.
 pub(crate) fn regex_scan_positions<'c>(
+    interp: &mut Interpreter,
     pattern: &RegexPattern,
     chars: &'c [char],
     from: usize,
+    pkg: Symbol,
 ) -> ScanPositions<'c> {
     if !prefilter_enabled() {
         crate::vm::vm_stats::record_regex_prefilter_declined();
         return ScanPositions::Range(from..=chars.len());
     }
-    let prefilter = Arc::clone(pattern_prefilter(pattern));
+    // Only a pattern that names a rule needs the package-keyed derivation;
+    // every other one keeps the single pattern-keyed slot, so the common case
+    // pays neither the lock nor the generation read.
+    let prefilter = if mentions_subrule(pattern) {
+        pattern_prefilter_in_pkg(interp, pattern, pkg)
+    } else {
+        Arc::clone(pattern_prefilter(pattern))
+    };
     // Applied/declined + positions-offered are recorded eagerly here (not
     // lazily per `next()`) because "applied" is a fact about the SCAN, decided
     // once, not about how far the caller happened to iterate before an early
@@ -276,9 +291,13 @@ mod tests {
     }
 
     fn positions(pattern: &str, subject: &str) -> Vec<usize> {
-        let parsed = parse(pattern);
+        let mut interp = crate::runtime::Interpreter::new();
+        let parsed = interp
+            .parse_regex(pattern)
+            .expect("pattern should parse for this test");
         let chars: Vec<char> = subject.chars().collect();
-        regex_scan_positions(&parsed, &chars, 0).collect()
+        let pkg = interp.current_package_sym();
+        regex_scan_positions(&mut interp, &parsed, &chars, 0, pkg).collect()
     }
 
     #[test]

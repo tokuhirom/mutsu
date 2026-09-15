@@ -460,7 +460,11 @@ impl Interpreter {
     /// an embedded `{ ... }` code block as opaque, so a sigil that only appears
     /// inside one — `token part { \w+ { $n++ } }`, the overwhelmingly common
     /// case — does not make the parse value-dependent at all.
-    fn rule_body_edges_are_generation_stable(&mut self, name: &str, pkg: Symbol) -> bool {
+    pub(super) fn rule_body_edges_are_generation_stable(
+        &mut self,
+        name: &str,
+        pkg: Symbol,
+    ) -> bool {
         self.resolve_token_patterns_static_in_pkg(name, pkg)
             .iter()
             .all(|(pattern, _, _)| pattern_text_is_static_outside_code_blocks(pattern))
