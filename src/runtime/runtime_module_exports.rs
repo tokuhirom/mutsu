@@ -86,14 +86,13 @@ impl Interpreter {
         let current_pkg = self.current_package();
         // `module_load_stack` names the compunit being loaded, which is the
         // namespace `import_module` reads an export back out of.
-        let export_target = Self::export_stash_tag(&current_pkg)
-            .map(str::to_string)
-            .and_then(|tag| {
-                self.module_load_stack
-                    .last()
-                    .cloned()
-                    .map(|module| (module, tag))
-            });
+        let export_target = match (
+            Self::export_stash_tag(&current_pkg),
+            self.module_load_stack.last(),
+        ) {
+            (Some(tag), Some(module)) => Some((module.clone(), tag.to_string())),
+            _ => None,
+        };
         if !is_multi && export_target.is_none() {
             return;
         }
