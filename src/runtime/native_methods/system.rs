@@ -303,6 +303,42 @@ impl Interpreter {
     pub(in crate::runtime) const COMPILER_NAME: &'static str = "mutsu";
     pub(in crate::runtime) const COMPILER_AUTH: &'static str = "github.com/tokuhirom";
 
+    /// The Rakudo release whose language level mutsu targets, reported as
+    /// `$*RAKU.compiler.version` / `$*PERL.compiler.version`.
+    ///
+    /// That field is not "which build of this interpreter am I" — the ecosystem
+    /// uses it as a *language-level coordinate expressed in Rakudo release
+    /// dates*, and the only comparisons ever made against it are with Rakudo
+    /// releases:
+    ///
+    /// ```raku
+    /// use RakudoPrereq v2017.06;                              # RakudoPrereq
+    /// use Foo::Pre201812:if($*PERL.compiler.version < v2018.12);  # Net::BGP
+    /// ```
+    ///
+    /// Answering those with mutsu's own crate version (`v0.23.0`) is not a
+    /// neutral non-answer: as a Version it sorts below every Rakudo release
+    /// ever made, so every such gate resolves to its worst branch — modules
+    /// refuse to load at all (`Proc::Q`, see ADR-0104), and conditional shims
+    /// select their pre-2018 code path even though mutsu implements the modern
+    /// semantics. Naming the release mutsu is actually measured against is both
+    /// more accurate and fails in the useful direction: a feature mutsu has not
+    /// implemented yet surfaces as a concrete "not implemented" error the
+    /// ecosystem board can act on, instead of a spurious version block.
+    ///
+    /// mutsu's *own* release stays truthful and reachable, and mutsu never
+    /// claims to be Rakudo: `.name` is `mutsu` (so `RakudoPrereq`'s
+    /// `rakudo-only` and every `compiler.name ne 'rakudo'` check still
+    /// discriminate correctly), `.release` is the crate version, `.id` is
+    /// `mutsu-<crate version>`, and `.verbose-config`'s `mutsu` section carries
+    /// the build facts.
+    ///
+    /// Bump this together with the Rakudo version the ecosystem sweep and the
+    /// roast baseline are run against (`ecosystem/dists/**` `measured.raku_version`,
+    /// `TODO_roast/raku-baseline.md`) — it is a claim about compatibility, so it
+    /// must be backed by a measurement, not raised speculatively.
+    pub(in crate::runtime) const RAKUDO_COMPAT_VERSION: &'static str = "2026.07";
+
     pub(in crate::runtime) fn native_perl(&self, attributes: &AttrMap, method: &str) -> Value {
         match method {
             // `Compiler.id` works on the type object (empty attributes) as well as
@@ -313,13 +349,12 @@ impl Interpreter {
                 let mut compiler_attrs = HashMap::new();
                 compiler_attrs.insert("name".to_string(), Value::str_from(Self::COMPILER_NAME));
                 compiler_attrs.insert("auth".to_string(), Value::str_from(Self::COMPILER_AUTH));
-                // Read the real crate version rather than a hardcoded literal:
-                // `.id` was already derived from `CARGO_PKG_VERSION`, so a fixed
-                // `0.1.0` here made `$*RAKU.compiler.version` (v0.1.0) and
-                // `.id` (mutsu-0.22.0) disagree about the same build.
+                // A Rakudo release date, not the crate version: see
+                // [`Interpreter::RAKUDO_COMPAT_VERSION`]. The build's own
+                // identity lives in `.release` / `.id` just below.
                 compiler_attrs.insert(
                     "version".to_string(),
-                    Value::version_from_str(env!("CARGO_PKG_VERSION")),
+                    Value::version_from_str(Self::RAKUDO_COMPAT_VERSION),
                 );
                 compiler_attrs.insert(
                     "signature".to_string(),
@@ -333,6 +368,8 @@ impl Interpreter {
                     "desc".to_string(),
                     Value::str_from("mutsu Raku interpreter"),
                 );
+                // mutsu's own release. This is where `.version` used to answer
+                // "which build is this", and it still does.
                 compiler_attrs.insert(
                     "release".to_string(),
                     Value::str_from(env!("CARGO_PKG_VERSION")),

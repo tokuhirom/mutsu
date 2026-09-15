@@ -2,29 +2,116 @@
 use super::*;
 
 impl Interpreter {
-    /// Announce that the registry's **functions** map changed, invalidating
-    /// every name-keyed dispatch cache built over it.
+    /// Announce that something a name-keyed dispatch cache depends on changed,
+    /// **other than** the registry's functions map itself — a routine was
+    /// wrapped or unwrapped, a lexical import scope popped, a proto marker
+    /// moved, an `our`-scoped alias was installed.
     ///
-    /// This is the single entry point for `fn_resolve_gen`; six caches
-    /// self-refresh off it at their own read sites — `fn_resolve_cache` and
-    /// `multi_compiled_key_cache` (`find_compiled_function_inner`'s compiled-key
-    /// probes), `multi_candidates_cache`, `declared_fn_cache`, `multi_fn_cache`
-    /// (the three bare-name existence probes) and `fn_keys_by_base` (the
-    /// base-name key index every candidate gather runs on). Each drops
-    /// **wholesale**, so a bump is not a cheap marker: it is an
-    /// O(registered routines) string re-scan spread across the next few
-    /// dispatches.
+    /// Such a change leaves no trace in `Registry::functions`, so the map's
+    /// version stamp (see `runtime::function_table`) cannot retire the affected
+    /// answers and this call has to drop them outright. That is why it is the
+    /// expensive form: every generation-tagged memo is emptied, not just the
+    /// entries for one name, and the base-name key index goes with it.
     ///
-    /// Call it for any insert, remove or `retain` on `Registry::functions`, and
-    /// do NOT call it for a registration that left the map byte-identical — a
-    /// bump per *call* rather than per *declaration* is the pathology
-    /// [#8300](https://github.com/tokuhirom/mutsu/issues/8300) is about, and
-    /// `MUTSU_VM_STATS=1`'s `fn-resolve-gen-bumps` line attributes every bump to
-    /// its source location so a new one is visible.
+    /// **Prefer [`Self::invalidate_fn_resolution_for_keys`]** for the ordinary
+    /// case of "I inserted or removed these registry keys". That form keeps
+    /// every memo whose generation the map itself will retire, which is what
+    /// makes a per-call `my sub` re-registration affordable
+    /// ([#8314](https://github.com/tokuhirom/mutsu/issues/8314)).
+    ///
+    /// `MUTSU_VM_STATS=1`'s `fn-resolve-gen-bumps` line attributes every
+    /// generation *change* to its source location, so a new one is visible.
     #[track_caller]
-    #[inline]
     pub(crate) fn invalidate_fn_resolution(&mut self) {
-        self.fn_resolve_gen += 1;
+        // Drop the generation-tagged memos outright. Retiring them by version
+        // movement would not be enough here: the functions map may well be
+        // about to travel back to a version these entries are tagged with (a
+        // scope restore reinstalls a map this program has already run under),
+        // and the change being announced would then be undone for the caches
+        // but not for the interpreter -- a wrapped routine answering with its
+        // pre-wrap resolution. Emptying them has no such failure mode.
+        self.fn_resolve_cache.clear();
+        self.multi_compiled_key_cache.clear();
+        self.multi_candidates_cache.clear();
+        self.declared_fn_cache.clear();
+        self.multi_fn_cache.clear();
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
+        self.fn_keys_by_base.clear();
+        // ...and give the map a version it has never had, so that the caches
+        // which self-refresh off the generation rather than being cleared here
+        // -- `light_call_cache`, `pos_light_call_cache`, `otf_call_cache`,
+        // `func_multi_resolve_cache`, the ADR-0066 callsite inline-cache epoch --
+        // see the change too. Mirroring the unchanged version instead left a
+        // `&wrapped.wrap(...)` invisible to a call site that had already run
+        // (`t/routines/call/call-inline-cache.t` test 6): nothing about the
+        // functions map moved, so nothing retired the resolution those caches
+        // were holding. Keeping `fn_resolve_gen == functions_version()` as a
+        // whole-program invariant is also what makes the mirror easy to reason
+        // about: there is exactly one name for "which map is installed".
+        self.registry_mut().renew_functions_version();
+        self.sync_fn_resolve_gen();
+    }
+
+    /// [`Self::invalidate_fn_resolution`] for the ordinary case: the caller
+    /// wrote `Registry::functions` and knows exactly which registry keys it
+    /// inserted or removed.
+    ///
+    /// Nothing is cleared wholesale here. The map stamped itself with a fresh
+    /// version when the caller wrote it, so every memo tagged with the previous
+    /// version is retired by that stamp alone — and, crucially, becomes live
+    /// again if the map is later restored to the state it named. Entering
+    /// `unjsonify-string` installs `JSON::Fast::fetch-codepoint` and leaving it
+    /// removes that one key again, so the steady-state map is back after every
+    /// call; the memos describing it now survive the round trip instead of
+    /// being rebuilt from a full registry scan on the far side.
+    ///
+    /// The keys are still needed for `fn_keys_by_base`, which is a per-base-name
+    /// index rather than a generation-tagged memo: only the base names the
+    /// change actually touched are evicted.
+    ///
+    /// Passing a key that did NOT change is harmless (a spurious eviction);
+    /// MISSING one that did is a stale index, which the debug-only audit in
+    /// [`Self::fn_base_name_registered`] turns into a located panic on the next
+    /// resolution rather than a silent mis-dispatch.
+    #[track_caller]
+    pub(crate) fn invalidate_fn_resolution_for_keys(
+        &mut self,
+        keys: impl IntoIterator<Item = Symbol>,
+    ) {
+        let mut evicted = 0usize;
+        for key in keys {
+            let spelled = key.resolve();
+            let base = crate::runtime::dispatch_resolve::function_key_base_name(&spelled);
+            let base_sym = Symbol::intern(base);
+            if self.fn_keys_by_base.remove(&base_sym).is_some() {
+                evicted += 1;
+            }
+        }
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(evicted);
+        self.sync_fn_resolve_gen();
+    }
+
+    /// Re-read `fn_resolve_gen` from the functions map's own version stamp.
+    ///
+    /// `fn_resolve_gen` is a mirror of `Registry::functions_version()`, not a
+    /// counter of its own: the map names its content and this field just
+    /// carries that name to the memo read sites, which cannot take a registry
+    /// guard on every probe. Mirroring rather than incrementing is what lets a
+    /// generation *recur* -- a scope restore reinstalls the very `Arc` the
+    /// snapshot took, version included, so the value here goes back to what it
+    /// was before the excursion and the memos from before it are valid again.
+    ///
+    /// A call that finds the version unmoved is a no-op, which quietly absorbs
+    /// the several places that announce one registry write twice (the
+    /// `RegisterSub` opcode invalidates after `register_compiled_sub_decl`,
+    /// which already invalidated on whichever install path it took).
+    #[track_caller]
+    fn sync_fn_resolve_gen(&mut self) {
+        let version = self.registry().functions_version();
+        if self.fn_resolve_gen == version {
+            return;
+        }
+        self.fn_resolve_gen = version;
         crate::vm::vm_stats::record_fn_resolve_gen_bump(std::panic::Location::caller());
     }
 
@@ -623,7 +710,8 @@ impl Interpreter {
     /// by-name entry point re-hashed the package name on every named call
     /// (#7736).
     pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
-        debug_assert_eq!(sym, Symbol::intern(&pkg));
+        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+        debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
         *self.current_package.write().unwrap() = pkg;

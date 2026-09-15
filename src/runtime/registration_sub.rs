@@ -231,7 +231,11 @@ impl Interpreter {
         // `preregister_inline_package_subs` registers a `multi trait_mod:<is>`
         // and then asks `has_multi_candidates("trait_mod:<is>")` about the
         // candidate it has just inserted.
-        self.invalidate_fn_resolution();
+        //
+        // The key written is `base_key` or `base_key__m{N}`; the `__m{N}`
+        // tiebreak sits inside the arity suffix, so both spell the same base
+        // name and one eviction covers whichever was taken (#8314).
+        self.invalidate_fn_resolution_for_keys([Symbol::intern(base_key)]);
     }
 
     /// If `name` is an operator (`infix:<…>`/`prefix:<…>`/`postfix:<…>`) that was
@@ -922,11 +926,18 @@ impl Interpreter {
                     .filter(|(fp, _)| *fp == site_fp)
                     .map(|(_, arc)| arc.clone())
             {
-                self.registry_mut()
-                    .functions_mut()
-                    .insert(fq_sym, cached.clone());
-                // Invalidate name-keyed resolution caches.
-                self.invalidate_fn_resolution();
+                // `install_function`, not a plain insert: this is THE per-call
+                // re-install, and `cached` is the very `Arc` the previous call
+                // installed, so the map lands in a state it has already been in
+                // and the version stamp should say so rather than name a new one
+                // (#8314, `runtime::function_table`).
+                self.registry_mut().install_function(fq_sym, cached.clone());
+                // Invalidate name-keyed resolution caches. Exactly one key
+                // moved, so the base-name index keeps every other base name:
+                // this path is the per-call re-install of a routine-local
+                // `my sub`, which runs on every call and used to throw the
+                // whole index away (#8314).
+                self.invalidate_fn_resolution_for_keys([fq_sym]);
                 self.registered_fn_fingerprints
                     .insert(fq_sym, (site_fp, cached));
                 if pkg != "GLOBAL" {
@@ -1340,8 +1351,10 @@ impl Interpreter {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
-            // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
+            // Invalidate name-keyed resolution caches. Every key the `retain`
+            // above can drop is `Pkg::name` or `Pkg::name/…`, so they all share
+            // one base name (#8314).
+            self.invalidate_fn_resolution_for_keys([Symbol::intern(&lexical_single)]);
         }
         // A `multi` that lexically shadows a same-named *single* takes the name
         // over completely, exactly as the `!multi` case above does — otherwise
@@ -1419,8 +1432,9 @@ impl Interpreter {
                         .entry(Symbol::intern(&fq))
                         .or_insert(std::sync::Arc::new(def.clone()));
                     // Same missed invalidation as `insert_multi_overload`: this
-                    // arm also adds a key (#8300).
-                    self.invalidate_fn_resolution();
+                    // arm also adds a key (#8300) — a single one, named here so
+                    // the base-name index keeps the rest (#8314).
+                    self.invalidate_fn_resolution_for_keys([Symbol::intern(&fq)]);
                 }
             }
         } else {
@@ -1461,8 +1475,8 @@ impl Interpreter {
                 self.registered_fn_fingerprints.remove(&fq_sym);
             }
             self.registry_mut().functions_mut().insert(fq_sym, arc);
-            // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
+            // Invalidate name-keyed resolution caches — one key moved (#8314).
+            self.invalidate_fn_resolution_for_keys([fq_sym]);
         }
         // A proto can be exported before its multi candidates are declared.
         // Keep the candidate family in the module's EXPORT stash as each

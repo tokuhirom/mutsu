@@ -81,7 +81,7 @@ impl Interpreter {
     /// common "nothing was declared" caller pays no copy at all.
     pub(crate) fn reinstate_module_functions(
         &self,
-        functions: &mut std::sync::Arc<rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>>,
+        functions: &mut std::sync::Arc<crate::runtime::function_table::FunctionTable>,
         include_global_aliases: bool,
     ) {
         if self.module_registered_functions.is_empty() {
@@ -109,7 +109,9 @@ impl Interpreter {
         }
         drop(registry);
         if !missing.is_empty() {
-            crate::runtime::cow_table_mut(functions).extend(missing);
+            crate::runtime::cow_table_mut(functions)
+                .map_mut()
+                .extend(missing);
         }
     }
 
@@ -260,6 +262,27 @@ impl Interpreter {
                 }
             }
         }
+        // The base names whose registry keys this restore adds or drops. A
+        // routine scope typically installs one or two inner `my sub`s on entry
+        // and gives them back here, so the set is tiny next to the map — and
+        // naming it keeps `fn_keys_by_base` alive for every OTHER base name
+        // (#8314). The diff runs once per restore, where the wholesale drop it
+        // replaces cost one full registry re-scan per base name per resolution
+        // until the index refilled.
+        let mut touched_keys: Vec<Symbol> = Vec::new();
+        {
+            let registry = self.registry();
+            for key in registry.functions.keys() {
+                if !functions.contains_key(key) {
+                    touched_keys.push(*key);
+                }
+            }
+            for key in functions.keys() {
+                if !registry.functions.contains_key(key) {
+                    touched_keys.push(*key);
+                }
+            }
+        }
         let mut registry = self.registry_mut();
         registry.functions = functions;
         registry.proto_functions = proto_functions;
@@ -289,6 +312,11 @@ impl Interpreter {
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
             for (key, def) in new_our {
+                // Re-inserted AFTER the diff above, and sourced from
+                // `our_scoped_functions` rather than from either diffed map, so
+                // this key may be in neither — name it explicitly or its base
+                // name keeps a stale index entry.
+                touched_keys.push(key);
                 registry.functions_mut().insert(key, def);
             }
         }
@@ -308,7 +336,12 @@ impl Interpreter {
         // self-refreshes off one of these two counters at its own read site,
         // per the same by-construction reasoning as F5's `exec_register_sub_op`
         // cutover), not a corpus-sampled cutover.
-        self.invalidate_fn_resolution();
+        //
+        // `reinstate_module_functions` mutates the snapshot map before the diff
+        // runs, so its keys are already accounted for; the our-scoped
+        // re-inserts happen after it and add themselves to `touched_keys` at
+        // their own site.
+        self.invalidate_fn_resolution_for_keys(touched_keys);
     }
 
     pub(crate) fn block_scope_depth(&self) -> usize {

@@ -683,6 +683,71 @@ The targeted Red remeasurement on 2026-09-15 (mutsu `63fe9c1f5`, Rakudo
 `ok`. Red remains `blocked_load`; the typed-hash `%!relationships` / `Bool`,
 migration and relationship, and SQLite leads remain separate #7988 slices.
 
+## 22. Campaign slice: private typed object-hash union assignment (2026-09-15)
+
+The next Red lead was the typed-hash failure while loading
+`Red::Driver::SQLite::SQLiteMaster` and the related driver and migration
+modules. Red declares `%!relationships{Attribute}` and populates it with
+`%!relationships ∪= $attribute`. Set union stores `Bool` membership values, so
+the attribute writeback path must apply `Any` to values and `Attribute` to keys;
+it must not treat the complete `Any{Attribute}` declaration as a value type.
+
+Private attribute container assignment now splits object-hash constraints into
+their value and key parts, checks only the value part, and re-embeds both parts
+in the stored hash metadata. This also preserves the typed `Attribute` key
+after the set result is coerced back to a hash. The focused regression is
+`t/oo/private-typed-hash-set-union.t`.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `151f398fe`, Rakudo 2026.07,
+bubblewrap, three attempts) moves `Red::Driver::Mock`, `Red::Driver::SQLite`,
+`Red::Driver::SQLite::SQLiteMaster`, `Red::Driver::SQLite::SchemaReader`, and
+`Red::Migration::Migration` past the typed-hash failure to the independent
+missing `declares_method` method on `MetamodelX::Red::Model`. The migration
+`Column` and `Table` API failures remain separate leads.
+
+## 23. Campaign slice: local metamodel `declares_method` introspection (2026-09-15)
+
+The next shared Red lead was a missing
+`Metamodel::MethodContainer.declares_method` method while `MetamodelX::Red::Model`
+composed its model roles. Red uses the local-declaration probe to decide whether
+it must wrap a model's `BUILD` or `TWEAK`; an MRO lookup would be incorrect
+because an inherited method must not count as a declaration by the model.
+
+Class and grammar HOW dispatch now implements `declares_method` from the
+canonical registry. It reports public methods, submethods, public accessors,
+role-composed methods, and grammar tokens declared by the target itself. It
+does not report private methods or inherited declarations. The native-MOP
+dispatch gates and ClassHOW lookup recognize the method so both
+`Type.^declares_method($name)` and the explicit HOW call form reach the same
+implementation. The focused regression is
+`t/oo/mop/metamodel-declares-method.t`, which passes under both mutsu and
+rakudo.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `ac3c83e2b`, Rakudo
+2026.07, bubblewrap, three attempts) moves `Red::Driver::Mock`,
+`Red::Driver::SQLite`, `Red::Driver::SQLite::SQLiteMaster`,
+`Red::Driver::SQLite::SchemaReader`, and `Red::Migration::Migration` past the
+missing method to the independent `Unknown function: create-resultseq` lead.
+Red remains `blocked_load`; the migration `Column` and `Table` API failures
+remain separate leads.
+
+## 24. Campaign slice: exported routines in unit roles (2026-09-15)
+
+`Red::ResultSeq` is a unit role which exports `create-resultseq`.  mutsu
+deferred every role-body statement until composition, so `use Red::ResultSeq`
+did not install that routine before `MetamodelX::Red::Model` called it while
+composing a model.  Ordinary unit-module exports were unaffected.
+
+Exported role-body subs now register at role declaration time in the role's
+own package.  Their bodies still run only when called; the existing deferred
+role-body path continues to handle composition-time statements.  The focused
+regression covers ordinary, raw, capture-parameter, and unit-role exports.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `04e87f887`, Rakudo
+2026.07, bubblewrap, three attempts) moves `Red::Driver::Mock` past the
+`create-resultseq` failure to `raku_also_fails`.  The SQLite and migration
+leads remain independent.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

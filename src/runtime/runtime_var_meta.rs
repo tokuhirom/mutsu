@@ -254,7 +254,8 @@ impl Interpreter {
         constraint: Option<String>,
         tag_env_value: bool,
     ) {
-        debug_assert!(name_sym.is_none_or(|sym| sym == Symbol::intern(name)));
+        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+        debug_assert!(name_sym.is_none_or(|sym| Symbol::lookup(name) == Some(sym)));
         if let Some(constraint) = constraint {
             let name_sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
             let meta_key = Self::type_meta_key_for_sym(name_sym);
@@ -364,7 +365,8 @@ impl Interpreter {
         name_sym: Symbol,
         constraint: Option<String>,
     ) {
-        debug_assert_eq!(name_sym, Symbol::intern(name));
+        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         if name.starts_with('@') || name.starts_with('%') {
             let constraint = self.keep_object_hash_key_type(name, constraint);
             self.set_var_type_constraint(name, constraint);

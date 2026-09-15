@@ -973,8 +973,10 @@ impl Interpreter {
                             // The body must run under its *defining* package, not
                             // the callsite's (see `otf_call_cache`'s doc comment).
                             self.push_samewith_context(name_str, None, None);
-                            let pushed_dispatch =
-                                loan_env!(self, push_multi_dispatch_frame(name_str, &args));
+                            let pushed_dispatch = loan_env!(
+                                self,
+                                push_multi_dispatch_frame_sym(name_str, name_sym, &args)
+                            );
                             // The named-share writeback reads the arg sources;
                             // make them available to bind_function_args_values.
                             self.set_pending_call_arg_sources(decoded_sources);
@@ -1061,10 +1063,10 @@ impl Interpreter {
             );
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
-                && self.fn_resolve_cache_gen == self.fn_resolve_gen
                 && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
-                && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
+                && let Some((cached_key, cached_fp, _)) =
+                    self.fn_resolve_cache.get(self.fn_resolve_gen, &cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)
@@ -1746,7 +1748,8 @@ impl Interpreter {
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
                 self.set_pending_call_arg_sources(arg_sources.clone());
-                let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
+                let pushed_dispatch =
+                    loan_env!(self, push_multi_dispatch_frame_sym(name, name_sym, &args));
                 self.push_samewith_context(name, None, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.

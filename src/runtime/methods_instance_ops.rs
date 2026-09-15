@@ -2359,8 +2359,28 @@ impl Interpreter {
             // `Registry::token_defs` keeps the declaring file but no line), so
             // the honest answer is `Nil`. See
             // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
-            "line" | "file" if args.is_empty() && matches!(target.view(), ValueView::Regex(..)) => {
+            "line" | "file"
+                if args.is_empty()
+                    && matches!(
+                        target.view(),
+                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                    ) =>
+            {
                 Ok(Value::NIL)
+            }
+            // A Raku `Regex` is a `Method`, so it answers the `Routine`
+            // introspection surface too — and with the cursor invocant and
+            // implicit `*%_` every method signature carries, so even a
+            // parameterless `rx/a/` has `:(Mu $:: *%_)`. See
+            // `methods_regex_routine.rs` and #8318.
+            "signature" | "arity" | "count"
+                if args.is_empty()
+                    && matches!(
+                        target.view(),
+                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                    ) =>
+            {
+                Ok(self.regex_value_routine_introspection(&target, method))
             }
             // `.is_dispatcher`/`.multi` on a Method/Submethod value obtained from
             // `.^lookup`/`.^find_method`/`.can` (a `Sub`-shaped callable, not the

@@ -10,9 +10,11 @@
   interpolated-code-block, sequential-interpolated-code-block, and
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
-  angle-aggregate-interpolation, argumented-subrule, and qualified-subrule slices implemented
+  angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
+  argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
+  argument slices implemented
   2026-09-12 through
-  2026-09-14;
+  2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
@@ -1031,3 +1033,81 @@ colon AST shapes, qualified names, argument-node accessors, empty calls,
 direct grammar matching, AST EVAL, and constructed-tree execution.
 Qualified subrules inside unsupported lookarounds, argumented subrule aliases,
 and other dynamic argument expressions remain separate boundaries.
+
+## 38. Argumented subrule alias slice (2026-09-15)
+
+Argumented subrule aliases such as `<alias=word("a")>` and
+`<alias=.word("a")>` now retain the alias node around a
+`RakuAST::Regex::Assertion::Named::Args` child. The child keeps its qualified
+`Name`, positional `ArgList`, and capture-suppression state, while an empty
+argument list remains distinct from an argument-less alias.
+
+The shared tree records the target's dot suppression and argument provenance.
+Read conversion emits the same nested model shape measured from Rakudo, and
+write conversion accepts both `Named` and `Named::Args` assertion children.
+The existing package-aware runtime parser still receives the alias spelling,
+including its arguments, so alias and original capture behavior remains on the
+established Parser -> Compiler -> VM path.
+
+The focused regression is
+`t/rakuast/rakuast-regex-argumented-aliases.t`. It pins positive and
+dot-suppressed AST shapes, qualified names, empty calls, constructor support,
+parser-created captures, and a grammar lowered from RakuAST. Argumented
+aliases with dynamic argument expressions, code-bearing targets, and other
+runtime-valued forms remain explicit follow-up boundaries.
+
+## 39. Method-call dynamic argument slice (2026-09-15)
+
+Ordinary method-call expressions in argumented subrules, such as
+`<word($value.uc)>`, now retain their existing RakuAST expression tree. The
+parser and read converter already represented the method as
+`ApplyPostfix`/`Call::Method`; the missing boundary was the write direction's
+small source renderer, which previously rejected `Expr::MethodCall` when a
+converted RakuAST tree was lowered back to the existing regex parser.
+
+This slice accepts only ordinary named method calls without a method modifier
+or quoted method name. The renderer recursively accepts the same argument
+expression subset already supported by `expression_source`, and emits a
+parenthesized method call so the established match-time regex argument
+evaluator can execute it. No method is invoked while converting `.AST`, and no
+new matcher or VM path is introduced. Ternaries, modified or quoted method
+calls, and other dynamic argument expressions remain explicit follow-up
+boundaries.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`. It pins the method-call AST
+nodes, RakuAST EVAL lowering, direct grammar matching, and lexical
+reassignment between matches.
+
+## 40. Indexed dynamic argument slice (2026-09-15)
+
+Ordinary indexed expressions in argumented subrules, such as
+`<word(@values[$index])>`, now lower from their existing
+`ApplyPostfix`/`Postcircumfix::ArrayIndex` RakuAST shape back to the regex
+parser. The expression renderer recursively emits the target and index using
+the positional bracket spelling, leaving evaluation to the established
+match-time subrule-argument path. Consequently both the array and the index
+continue to observe lexical reassignment between matches.
+
+No index is evaluated during `.AST` conversion or RakuAST lowering, and this
+adds no matcher or VM path. Ternaries, modified or quoted method calls, and
+other dynamic argument expressions remain separate boundaries. The focused
+regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the index
+node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic index
+reassignment.
+
+## 41. Ternary dynamic argument slice (2026-09-15)
+
+Ordinary ternary expressions in argumented subrules, such as
+`<word($which ?? 'a' !! 'b')>`, now lower from their existing
+`RakuAST::Ternary` shape back to the regex parser. The renderer groups the
+condition and both branches so the established match-time subrule-argument
+evaluator selects the branch. Consequently the condition keeps observing
+lexical reassignment between matches.
+
+No selector or branch is evaluated during `.AST` conversion or RakuAST
+lowering, and this adds no matcher or VM path. Modified or quoted method calls
+and other dynamic argument expressions remain separate boundaries. The focused
+regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the
+ternary node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic
+condition reassignment.

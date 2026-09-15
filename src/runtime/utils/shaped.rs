@@ -294,6 +294,22 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 let a_val = a_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
                 let b_val = b_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
                 a_val == b_val
+            } else if a_name == b_name && a_name == "IO::Handle" {
+                // An `IO::Handle` value is a thin wrapper around an entry in the
+                // interpreter's handle table, and mutsu re-wraps the same entry
+                // into a fresh instance whenever a handle is handed back --
+                // `$*OUT.open(:w)` returns the standard handle itself, which
+                // raku reports as `=== $*OUT`. Two wrappers over the same table
+                // id are therefore the same handle. An unopened handle
+                // (`IO::Handle.new(:path($p))`) carries no id and keeps plain
+                // instance identity, so two of those are not `===`.
+                match (
+                    a_attrs.as_map().get("handle"),
+                    b_attrs.as_map().get("handle"),
+                ) {
+                    (Some(a_h), Some(b_h)) => a_h.to_string_value() == b_h.to_string_value(),
+                    _ => a_id == b_id,
+                }
             } else if a_name == b_name
                 && a_name.starts_with("Perl6::Metamodel::")
                 && a_name.ends_with("HOW")

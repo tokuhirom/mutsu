@@ -14,6 +14,11 @@ fn decode_utf8_strict(bytes: Vec<u8>) -> Result<String, RuntimeError> {
     })
 }
 
+/// The `IO::Handle.open` options that mean something for a handle already
+/// attached to a live stream; every other option selects a file open mode,
+/// which such a handle has no use for.
+const IN_PLACE_OPEN_OPTIONS: [&str; 6] = ["chomp", "nl-in", "nl-out", "out-buffer", "bin", "enc"];
+
 impl Interpreter {
     /// Mutable dispatch for `IO::Handle` methods that mutate the receiver in
     /// place. Currently only `.open`: in Raku `$fh.open(...)` opens the handle
@@ -53,6 +58,65 @@ impl Interpreter {
             "No native mutable method '{}' on 'IO::Handle'",
             method
         )))
+    }
+
+    /// Re-open a handle that is already attached to a live stream (a standard
+    /// handle, `$*ARGFILES`, a socket): there is nothing to open, so only the
+    /// per-handle options the caller passed explicitly are applied, in place.
+    ///
+    /// Only *explicit* arguments are honoured: Rakudo defaults each of these
+    /// options to the handle's current value, so `$*OUT.open(:w)` must leave an
+    /// earlier `$*OUT.nl-out = "|"` alone rather than resetting it to `"\n"`.
+    fn apply_open_options_in_place(
+        &mut self,
+        handle: &Value,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        let explicit: std::collections::HashSet<String> = args
+            .iter()
+            .filter_map(|arg| match arg.view() {
+                ValueView::Pair(name, _) => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        if !IN_PLACE_OPEN_OPTIONS
+            .iter()
+            .any(|key| explicit.contains(*key))
+        {
+            return Ok(());
+        }
+        let (.., bin, line_chomp, line_separators, out_buffer_capacity, nl_out, enc, _, _) =
+            self.parse_io_flags_values(args);
+        self.with_handle_mut(handle, |state| {
+            if explicit.contains("chomp") {
+                state.line_chomp = line_chomp;
+            }
+            if explicit.contains("nl-in") {
+                state.line_separators = line_separators;
+            }
+            if explicit.contains("nl-out") {
+                state.nl_out = nl_out.unwrap_or_else(|| "\n".to_string());
+            }
+            if explicit.contains("out-buffer") {
+                state.out_buffer_capacity = out_buffer_capacity;
+            }
+            if explicit.contains("bin") {
+                state.bin = bin;
+                state.encoding = if bin {
+                    "bin".to_string()
+                } else {
+                    "utf-8".to_string()
+                };
+            }
+            if explicit.contains("enc")
+                && let Some(enc) = enc
+            {
+                state.bin = false;
+                state.encoding = enc;
+            }
+            Ok(())
+        })?;
+        Ok(())
     }
 
     pub(crate) fn native_io_handle(
@@ -194,6 +258,28 @@ impl Interpreter {
                 Ok(Value::str(format!("IO::Handle.new({})", parts.join(", "))))
             }
             "open" => {
+                // A handle already bound to a standard stream has no filesystem
+                // path to reopen: its `path` attribute is the sentinel name
+                // ("STDOUT"/"STDERR"/"STDIN"), which `.path` reports as
+                // `IO::Special.new("<STDOUT>")`. Resolving that name as a file
+                // would create a real file called `STDOUT` in the CWD *and*,
+                // because `.open` writes the opened handle back over the
+                // receiver, silently redirect the process's own output into it.
+                // Rakudo instead re-applies the given per-handle options to the
+                // live stream and returns `self`, so `$*OUT.open(:w) === $*OUT`.
+                // (The `open` *sub* on `$*OUT.path` keeps its own fresh-handle
+                // behaviour, which matches Rakudo too; see `builtin_open`.)
+                if let Some(id) = Self::handle_id_from_value(&target_val)
+                    && self
+                        .io_handles()
+                        .map
+                        .get(&id)
+                        .is_some_and(|state| state.target != IoHandleTarget::File)
+                {
+                    self.apply_open_options_in_place(&target_val, &args)?;
+                    return Ok(target_val);
+                }
+
                 // IO::Handle.new(:path(...)).open(:w, :nl-out(...))
                 // Merge instance attributes with open args (args override instance attrs)
                 let path_str = target

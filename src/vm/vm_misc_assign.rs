@@ -24,7 +24,17 @@ impl Interpreter {
         let Some(tc) = self.self_attr_type_constraint(name) else {
             return Ok(val);
         };
-        if matches!(tc.as_str(), "Mu" | "Any") {
+        // An object-hash declaration stores its key constraint alongside the
+        // value constraint (`has %!h{Key}` is recorded as `Any{Key}`).  The
+        // values produced by a hash/set assignment are still governed by the
+        // value side only; treating the complete `Any{Key}` spelling as a
+        // value type rejects the `Bool` values used by set union.
+        let (value_type, key_type) = if name.starts_with('%') {
+            crate::runtime::types::split_object_hash_constraint(&tc)
+        } else {
+            (tc.as_str(), None)
+        };
+        if matches!(value_type, "Mu" | "Any") && key_type.is_none() {
             return Ok(val);
         }
         let elems: Option<Vec<Value>> = match val.view() {
@@ -36,17 +46,20 @@ impl Interpreter {
             return Ok(val);
         };
         for item in &elems {
-            if !item.is_nil() && !self.type_matches_value(&tc, item) {
+            if !matches!(value_type, "Mu" | "Any")
+                && !item.is_nil()
+                && !self.type_matches_value(value_type, item)
+            {
                 return Err(runtime::utils::type_check_element_typed_error(
-                    name, &tc, item,
+                    name, value_type, item,
                 ));
             }
         }
         val = self.tag_container_metadata(
             val,
             crate::runtime::ContainerTypeInfo {
-                value_type: tc,
-                key_type: None,
+                value_type: value_type.to_string(),
+                key_type: key_type.map(str::to_string),
                 declared_type: None,
             },
         );

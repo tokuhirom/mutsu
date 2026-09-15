@@ -410,7 +410,17 @@ impl Interpreter {
                 // This mirrors the fast re-install path just above (the
                 // `prepared_fn_defs` branch), which already only bumps
                 // `fn_resolve_gen` for the identical "install a sub" event.
-                self.invalidate_fn_resolution();
+                //
+                // Every registry key this installation can produce — the plain
+                // `Pkg::name`, the arity key `Pkg::name/<arity>`, the typed key
+                // `Pkg::name/<arity>:<types>`, a `__m<n>` multi tiebreak, and an
+                // export alias in another package — reduces to `resolved_name`'s
+                // base name under `function_key_base_name`, so naming that one
+                // key evicts all of them and leaves the rest of
+                // `fn_keys_by_base` standing (#8314). A missed key would be a
+                // stale index, which the debug-only audit in
+                // `fn_base_name_registered` turns into a located panic.
+                self.invalidate_fn_resolution_for_keys([Symbol::intern(&resolved_name)]);
                 // Record `&`-sigil parameter names so calls to a same-named routine
                 // inside this sub bypass the name-keyed light-call caches (the param
                 // can shadow a package sub of the same name).

@@ -1722,14 +1722,30 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         }
         RakuAstClass::RegexAssertionAlias => {
             let assertion = named_child(node, "assertion")?;
-            if assertion.class != RakuAstClass::RegexAssertionNamed
-                || !bool_field(assertion, "capturing")?
-            {
-                return Err(unsupported(node));
-            }
+            let (name, capturing, args) = match assertion.class {
+                RakuAstClass::RegexAssertionNamed => (
+                    lower_regex_subrule_name(named_child(assertion, "name")?)?,
+                    bool_field(assertion, "capturing")?,
+                    None,
+                ),
+                RakuAstClass::RegexAssertionNamedArgs => {
+                    let args = lower_regex_subrule_args(assertion)?;
+                    (
+                        lower_regex_subrule_name(named_child(assertion, "name")?)?,
+                        bool_field(assertion, "capturing")?,
+                        Some(Box::new(crate::regex_tree::SubruleArgs {
+                            source: regex_subrule_arg_source(&args, assertion)?,
+                            args,
+                        })),
+                    )
+                }
+                _ => return Err(unsupported(node)),
+            };
             Ok(RegexNode::SubruleAlias {
                 alias: leaf_str(node, "name")?,
-                name: lower_regex_subrule_name(named_child(assertion, "name")?)?,
+                name,
+                capturing,
+                args,
             })
         }
         RakuAstClass::RegexAssertionLookahead => {

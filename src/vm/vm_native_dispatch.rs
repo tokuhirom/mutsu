@@ -263,7 +263,7 @@ impl Interpreter {
                 target.view(),
                 ValueView::Instance { .. } | ValueView::Package(_)
             )
-            && self.native_lever_a_user_override(target, &method_name)
+            && self.native_lever_a_user_override_sym(target, method_sym)
         {
             return None;
         }

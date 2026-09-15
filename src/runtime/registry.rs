@@ -37,6 +37,7 @@ use crate::symbol::Symbol;
 use crate::value::{EnumValue, RuntimeError, Value};
 
 use super::dispatch_key;
+use super::function_table::{FunctionTable, FunctionTableTransitions};
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
@@ -426,7 +427,16 @@ pub(crate) struct Registry {
     /// block, #7887) — a refcount bump instead of an O(registered routines)
     /// copy that the overwhelmingly common declaration-free body then throws
     /// away unused.
-    pub(crate) functions: std::sync::Arc<HashMap<Symbol, std::sync::Arc<FunctionDef>>>,
+    ///
+    /// The `Arc` points at a [`FunctionTable`] rather than at the bare map: the
+    /// table carries the version stamp that every name-keyed dispatch memo is
+    /// tagged with, so restoring a snapshot restores the version along with the
+    /// content it names (#8314 — see `runtime::function_table`).
+    pub(crate) functions: std::sync::Arc<FunctionTable>,
+    /// What each `install_function` write did to [`Registry::functions`]'s
+    /// version stamp, so that repeating a write the program has made before
+    /// names the state it produced before. See `runtime::function_table`.
+    pub(crate) fn_transitions: FunctionTableTransitions,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
@@ -1322,9 +1332,59 @@ impl Registry {
     /// Copy-on-write mutable access to [`Registry::functions`]. The only way to
     /// write the map: it is the `Arc::make_mut` that the copy-on-write share
     /// described on that field needs.
+    ///
+    /// Going through `FunctionTable::map_mut` renews the table's version stamp,
+    /// which is what makes "is this still the map that memo was computed under"
+    /// answerable without every mutating site having to say so (#8314).
     #[inline]
     pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
-        crate::runtime::cow_table_mut(&mut self.functions)
+        crate::runtime::cow_table_mut(&mut self.functions).map_mut()
+    }
+
+    /// Install `def` under `key`, recognising the map state this produces when
+    /// it is one this program has already been in.
+    ///
+    /// Use it in place of `functions_mut().insert(..)` wherever the same key is
+    /// re-installed with the same `Arc<FunctionDef>` over and over — the
+    /// per-call re-install of a routine-local `my sub` above all. The version
+    /// then alternates between the two states the routine's scope alternates
+    /// between, instead of naming a new one on every call, so the memos taken on
+    /// either side of the boundary both survive it (#8314; see
+    /// `runtime::function_table`).
+    ///
+    /// For a one-off registration it behaves exactly like the plain insert, at
+    /// the cost of one hash lookup.
+    pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
+        let table = crate::runtime::cow_table_mut(&mut self.functions);
+        // `functions` and `fn_transitions` are disjoint fields; the split
+        // borrow is what lets the memo drive the table's stamp.
+        let transitions = &mut self.fn_transitions;
+        transitions.install(table, key, def);
+    }
+
+    /// Give [`Registry::functions`] a version it has never had before, without
+    /// changing its content.
+    ///
+    /// The way to retire every memo tagged with the current version when what
+    /// changed is not the map itself. See
+    /// `Interpreter::invalidate_fn_resolution` for what that covers and why the
+    /// content-naming invariant (`fn_resolve_gen == functions_version()`) is
+    /// worth keeping even for those callers.
+    pub(crate) fn renew_functions_version(&mut self) {
+        crate::runtime::cow_table_mut(&mut self.functions).renew_version();
+    }
+
+    /// The version stamp of the currently installed functions map.
+    ///
+    /// This is the value [`Interpreter::invalidate_fn_resolution`] mirrors into
+    /// `fn_resolve_gen`; a memo tagged with it stays valid for exactly as long
+    /// as this map is installed, across any number of intervening scope
+    /// excursions that put it back.
+    ///
+    /// [`Interpreter::invalidate_fn_resolution`]: super::Interpreter::invalidate_fn_resolution
+    #[inline]
+    pub(crate) fn functions_version(&self) -> u64 {
+        self.functions.version()
     }
 
     /// Copy-on-write mutable access to [`Registry::proto_functions`].

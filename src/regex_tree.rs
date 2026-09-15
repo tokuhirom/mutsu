@@ -41,6 +41,10 @@ fn default_regex_value_sigil() -> char {
     '$'
 }
 
+fn default_subrule_alias_capturing() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SubruleArgs {
     pub(crate) args: Vec<crate::ast::Expr>,
@@ -78,6 +82,15 @@ pub(crate) enum RegexNode {
     SubruleAlias {
         alias: String,
         name: String,
+        /// Whether the aliased subrule keeps its own named capture. The
+        /// default preserves the historical `<alias=subrule>` shape; a
+        /// dot-prefixed target (`<alias=.subrule>`) suppresses it.
+        #[serde(default = "default_subrule_alias_capturing")]
+        capturing: bool,
+        /// `None` is an argument-less alias; `Some` retains an explicit call
+        /// boundary, including an empty argument list.
+        #[serde(default)]
+        args: Option<Box<SubruleArgs>>,
     },
     Lookaround {
         assertion: Box<RegexNode>,
@@ -590,8 +603,15 @@ impl RegexTree {
                     // instead of reducing it to a generic Named atom here.
                     None
                 }
-                RegexNode::SubruleAlias { alias, name } => Some(vec![token(
-                    crate::runtime::RegexAtom::Named(format!("{alias}={name}").into()),
+                RegexNode::SubruleAlias {
+                    alias,
+                    name,
+                    capturing,
+                    args,
+                } => Some(vec![token(
+                    crate::runtime::RegexAtom::Named(
+                        subrule_alias_inner_source(alias, name, *capturing, args).into(),
+                    ),
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
@@ -973,7 +993,15 @@ impl RegexNode {
                 });
                 format!("<{prefix}{name}({})>", rendered.unwrap_or_default())
             }
-            Self::SubruleAlias { alias, name } => format!("<{alias}={name}>"),
+            Self::SubruleAlias {
+                alias,
+                name,
+                capturing,
+                args,
+            } => format!(
+                "<{}>",
+                subrule_alias_inner_source(alias, name, *capturing, args)
+            ),
             Self::Lookaround {
                 assertion,
                 negated,
@@ -1130,10 +1158,50 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
             expression_source(right)?
         )),
+        // Keep a dynamic selector grouped when a constructed RakuAST regex is
+        // lowered through the established string parser.  Its branches remain
+        // expressions for the existing match-time subrule-argument evaluator.
+        crate::ast::Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Some(format!(
+            "({} ?? {} !! {})",
+            expression_source(cond)?,
+            expression_source(then_expr)?,
+            expression_source(else_expr)?
+        )),
         crate::ast::Expr::Call { name, args }
         | crate::ast::Expr::UserRoutineCall { name, args } => {
             Some(format!("{}({})", name.resolve(), join_args(args)?))
         }
+        crate::ast::Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted: false,
+        } => Some(format!(
+            "{}.{}({})",
+            expression_source(target)?,
+            name.resolve(),
+            join_args(args)?
+        )),
+        // Argumented subrules retain their expressions structurally.  When a
+        // constructed RakuAST tree returns through the existing regex parser,
+        // preserve an ordinary subscript rather than rejecting the whole
+        // assertion at the source-rendering boundary.
+        crate::ast::Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Some(format!(
+            "{}{}{}{}",
+            expression_source(target)?,
+            if *is_positional { '[' } else { '{' },
+            expression_source(index)?,
+            if *is_positional { ']' } else { '}' },
+        )),
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
@@ -1899,11 +1967,23 @@ impl Parser {
             return None;
         }
         let contents: String = self.chars[start..self.pos - 1].iter().collect();
-        if let Some((alias, name)) = contents.split_once('=') {
-            if is_simple_subrule_name(alias) && is_subrule_name(name) {
+        if let Some((alias, target)) = contents.split_once('=') {
+            let alias = alias.trim();
+            let target = target.trim();
+            let (capturing, target) = if let Some(target) = target.strip_prefix('.') {
+                (false, target.trim())
+            } else {
+                (true, target)
+            };
+            if is_simple_subrule_name(alias)
+                && let Some((name, args)) = parse_subrule_target(target)
+                && is_subrule_name(&name)
+            {
                 return Some(RegexNode::SubruleAlias {
                     alias: alias.to_string(),
-                    name: name.to_string(),
+                    name,
+                    capturing,
+                    args,
                 });
             }
             return None;
@@ -1988,6 +2068,32 @@ fn is_simple_subrule_name(name: &str) -> bool {
 /// a long name on the alias side, while the called rule may be qualified.
 fn is_subrule_name(name: &str) -> bool {
     !name.is_empty() && name.split("::").all(is_simple_subrule_name)
+}
+
+fn subrule_alias_inner_source(
+    alias: &str,
+    name: &str,
+    capturing: bool,
+    args: &Option<Box<SubruleArgs>>,
+) -> String {
+    let target = if let Some(args) = args.as_deref() {
+        let rendered = args.source.clone().or_else(|| {
+            args.args
+                .iter()
+                .map(expression_source)
+                .collect::<Option<Vec<_>>>()
+                .map(|parts| parts.join(", "))
+        });
+        format!(
+            "{}{}({})",
+            if capturing { "" } else { "." },
+            name,
+            rendered.unwrap_or_default()
+        )
+    } else {
+        format!("{}{}", if capturing { "" } else { "." }, name)
+    };
+    format!("{alias}={target}")
 }
 
 /// Parse the source-level target of a named subrule assertion. The ordinary
