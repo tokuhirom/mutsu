@@ -1073,6 +1073,21 @@ pub(super) fn class_has_only_exact_chars(class: &CharClass) -> bool {
 /// combining marks (Unicode category M) so that a single regex atom
 /// consumes the full grapheme, matching Raku's grapheme-level semantics.
 pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
+    // Fast path: no ASCII codepoint is a combining mark, so a non-control
+    // ASCII base followed by ASCII (or by nothing) is a cluster of its own and
+    // the general path below would walk zero marks to say so. This is the
+    // whole of ordinary text, and it is on the per-character reject path of
+    // every scan, so the two table lookups it skips are worth an explicit
+    // branch (#8450). Controls -- `\r` above all, whose CRLF pair is handled
+    // just below -- are excluded and fall through.
+    if let Some(&c) = chars.get(pos) {
+        if c.is_ascii()
+            && !c.is_ascii_control()
+            && chars.get(pos + 1).is_none_or(|next| next.is_ascii())
+        {
+            return pos + 1;
+        }
+    }
     // \r\n is a single grapheme cluster in Raku
     if pos < chars.len() && chars[pos] == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
         return pos + 2;
@@ -1147,6 +1162,13 @@ pub(super) fn is_grapheme_boundary(chars: &[char], pos: usize) -> bool {
     }
     if chars[pos] == '\n' && chars[pos - 1] == '\r' {
         return false;
+    }
+    // Fast path, for the same reason as `grapheme_end`'s: neither an ASCII
+    // codepoint nor an ASCII predecessor can be a combining mark, so the
+    // mark-run walk below would find an empty run and return `true`. CRLF is
+    // the one ASCII pair that is not a boundary, and it was just ruled out.
+    if chars[pos].is_ascii() && chars[pos - 1].is_ascii() {
+        return true;
     }
     // Find the start of the combining-mark run this position sits in or after.
     let mut run_start = pos;
