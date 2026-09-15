@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 31;
+plan 37;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -81,6 +81,31 @@ ok GDynamicQuotedMethodArgument.parse('B').defined,
     'a quoted method-call argument observes reassignment at match time';
 ok !GDynamicQuotedMethodArgument.parse('A').defined,
     'a quoted method-call argument retains its current lexical value';
+
+my $quoted_name = 'uc';
+my $dynamic_quoted_ast = Q[/<word($value."$quoted_name"())>/].AST;
+my $dynamic_quoted_gist = $dynamic_quoted_ast.gist;
+ok $dynamic_quoted_gist.contains('RakuAST::Call::QuotedMethod'),
+    'a dynamic quoted method-call argument keeps its quoted-method node';
+ok $dynamic_quoted_gist.contains('RakuAST::Var::Lexical.new("\\$quoted_name")'),
+    'a dynamic quoted method-call argument keeps its interpolated name';
+
+my $dynamic_quoted_regex = EVAL($dynamic_quoted_ast);
+ok $dynamic_quoted_regex ~~ Regex,
+    'a RakuAST regex with a dynamic quoted method-call argument lowers successfully';
+
+grammar GDynamicQuotedMethodNameArgument {
+    token TOP { <word($value."$quoted_name"())> }
+    token word($expected) { $expected }
+}
+$value = 'a';
+ok GDynamicQuotedMethodNameArgument.parse('A').defined,
+    'a dynamic quoted method name reaches the subrule matcher';
+$quoted_name = 'lc';
+ok GDynamicQuotedMethodNameArgument.parse('a').defined,
+    'a dynamic quoted method name observes reassignment at match time';
+ok !GDynamicQuotedMethodNameArgument.parse('A').defined,
+    'a dynamic quoted method name retains its current lexical value';
 
 my @values = <a b>;
 my $index = 0;

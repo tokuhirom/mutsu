@@ -1187,6 +1187,22 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             name.resolve(),
             join_args(args)?
         )),
+        // Dynamic quoted names must retain their quoted interpolation spelling
+        // when a constructed RakuAST regex returns through the established
+        // string parser. The matcher continues to resolve the name at match
+        // time; this renderer merely reconstructs the bounded source form.
+        crate::ast::Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier: None,
+            quoted: true,
+        } => Some(format!(
+            "{}.{}({})",
+            expression_source(target)?,
+            dynamic_quoted_method_name_source(name_expr)?,
+            join_args(args)?
+        )),
         // Preserve the ordinary dispatch modifiers of a method call when a
         // constructed RakuAST regex returns through the established string
         // parser.  The matcher continues to evaluate the call at match time;
@@ -1241,6 +1257,36 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
         _ => None,
     }
+}
+
+/// Render the interpolated `QuotedString` expression used by a dynamic quoted
+/// method name. This intentionally accepts the source subset parser-created
+/// regex arguments retain: literal runs and lexical sigil interpolation.
+fn dynamic_quoted_method_name_source(expr: &crate::ast::Expr) -> Option<String> {
+    let crate::ast::Expr::StringInterpolation(parts) = expr else {
+        return None;
+    };
+    let mut body = String::new();
+    for part in parts {
+        match part {
+            crate::ast::Expr::Literal(value) => match value.view() {
+                crate::value::ValueView::Str(text) => {
+                    body.push_str(
+                        &text
+                            .replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                            .replace('$', "\\$"),
+                    );
+                }
+                _ => return None,
+            },
+            crate::ast::Expr::Var(_)
+            | crate::ast::Expr::ArrayVar(_)
+            | crate::ast::Expr::HashVar(_) => body.push_str(&expression_source(part)?),
+            _ => return None,
+        }
+    }
+    Some(format!("\"{body}\""))
 }
 
 struct Parser {
