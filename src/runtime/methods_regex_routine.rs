@@ -66,6 +66,17 @@ impl Interpreter {
     ///
     /// `method` must be one of those three and `target` must be a regex; the
     /// caller's match arm guarantees both.
+    ///
+    /// TODO: the `Signature` is rebuilt on every read, so
+    /// `$t.signature === $t.signature` is `False` where rakudo says `True`
+    /// (and a mixin on it does not stick). `cached_sub_signature` is the
+    /// mechanism for this, but every `SubSignatureKey` variant deliberately
+    /// holds the `Arc` it keys on rather than its address -- a bare address
+    /// aliased two unrelated declarations under `MUTSU_GC=on` -- and a
+    /// NaN-boxed regex word hands out only a borrow of its payload. Keying on
+    /// the pattern text is not a substitute: rakudo answers `False` for two
+    /// textually identical declarations. Needs a key design, not a lookup:
+    /// #8417, which covers the same gap on name-based `Routine` handles.
     pub(super) fn regex_value_routine_introspection(&self, target: &Value, method: &str) -> Value {
         let declared = target.regex_signature();
         let declared = declared.as_deref().map(Vec::as_slice).unwrap_or(&[]);
