@@ -1654,6 +1654,27 @@ impl Interpreter {
                     return result;
                 }
                 let cn = class_name.resolve();
+                // A `Method`/`Regex` Instance from `.^lookup`/`.^find_method`
+                // (built by `make_native_method_object_ex`/
+                // `make_method_object_with_owner_ex`) is a `Routine` in real
+                // Rakudo and answers `.arity`/`.count` like any other, but
+                // neither name is a stored attribute the generic accessor
+                // fallback below can serve. Both numbers are derivable from
+                // the `signature` attribute this Instance already carries
+                // (#8416), so read the `SigInfo` back off the materialized
+                // `Signature` rather than recomputing it from scratch --
+                // that keeps them from ever drifting apart.
+                if matches!(cn.as_str(), "Method" | "Regex")
+                    && matches!(method, "arity" | "count")
+                    && let Some(sig_val) = attributes.as_map().get("signature")
+                    && let Some(info) = crate::value::signature::extract_sig_info(sig_val)
+                {
+                    return Ok(if method == "arity" {
+                        Value::int(Self::signature_required_positional_count(&info))
+                    } else {
+                        Self::signature_count_value(&info)
+                    });
+                }
                 let class_attrs = self.collect_class_attributes(&cn);
                 // A grammar *cursor* -- the invocant Raku hands to `FAILGOAL`
                 // and friends -- is an instance of the grammar itself, and

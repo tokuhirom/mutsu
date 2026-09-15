@@ -280,6 +280,7 @@ impl Interpreter {
                     true,
                     first.source_line,
                     first.source_file.clone(),
+                    Some(&first.param_defs),
                 ));
             }
         }

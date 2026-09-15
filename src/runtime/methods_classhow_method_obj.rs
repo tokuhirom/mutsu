@@ -223,7 +223,7 @@ impl Interpreter {
         owner: &str,
         is_regex: bool,
     ) -> Value {
-        self.make_native_method_object_ex_loc(name, owner, is_regex, None, None)
+        self.make_native_method_object_ex_loc(name, owner, is_regex, None, None, None)
     }
 
     /// [`Self::make_native_method_object_ex`] plus an explicit `Code.line`/
@@ -238,6 +238,7 @@ impl Interpreter {
         is_regex: bool,
         line: Option<i64>,
         file: Option<String>,
+        param_defs: Option<&[crate::ast::ParamDef]>,
     ) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
@@ -246,12 +247,33 @@ impl Interpreter {
         attrs.insert("rw".to_string(), Value::FALSE);
         attrs.insert("readonly".to_string(), Value::TRUE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
+        // A grammar `token`/`rule`/`regex` (the only caller passing
+        // `param_defs`, #8416) has real declared parameters to report,
+        // unlike an actual native (Rust-implemented) method -- thread them
+        // through the same invocant + `*%_` shape `.^lookup` builds for an
+        // ordinary Method (`make_method_object_with_owner_ex`), instead of
+        // the generic single-argument-capture signature every OTHER native
+        // method still answers (ADR-0019 Phase F box F1, no per-method
+        // fidelity data for those).
+        let sig_info = match param_defs {
+            Some(defs) => {
+                let has_explicit_invocant = defs
+                    .iter()
+                    .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+                let mut full_param_defs = Vec::with_capacity(defs.len() + 1);
+                if !has_explicit_invocant {
+                    full_param_defs.push(Self::make_invocant_param(owner));
+                }
+                full_param_defs.extend(
+                    crate::method_signature_shared::effective_method_param_defs(defs, false),
+                );
+                crate::value::signature::param_defs_to_sig_info(&full_param_defs, None)
+            }
+            None => crate::value::signature::synthesize_native_signature(owner),
+        };
         attrs.insert(
             "signature".to_string(),
-            crate::value::signature::make_signature_value(
-                crate::value::signature::synthesize_native_signature(owner),
-                Some(self),
-            ),
+            crate::value::signature::make_signature_value(sig_info, Some(self)),
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
