@@ -89,6 +89,7 @@ impl Interpreter {
             method,
             "can"
                 | "does"
+                | "declares_method"
                 | "isa"
                 | "lookup"
                 | "find_method"
