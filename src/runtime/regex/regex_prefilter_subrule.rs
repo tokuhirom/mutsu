@@ -18,7 +18,7 @@
 //! whenever any rule is (re)defined, and the same name resolves to different
 //! bodies in different packages — `grammar H is G { token x { ... } }`
 //! overriding `G`'s `x` is ordinary Raku. The memo this feeds
-//! ([`super::regex_prefilter::pattern_prefilter_in_pkg`]) therefore carries
+//! ([`super::regex_prefilter_memo::pattern_prefilter_in_pkg`]) therefore carries
 //! both, and a pattern that mentions no rule name at all never reaches it.
 //!
 //! But two more things can change a rule's *parse* without moving the

@@ -69,7 +69,8 @@ pub(crate) struct PatternDerived {
     /// resolves to different bodies in different packages (`grammar H is G`
     /// overriding `token x`) and to different bodies after any (re)definition.
     /// So the entries are keyed by both, exactly as ADR-0099 §4 constraint 3
-    /// requires — see [`crate::runtime::regex::regex_prefilter_subrule`].
+    /// requires — see the `regex_prefilter_subrule` module (private to
+    /// `runtime::regex`, so not linkable from here).
     ///
     /// A short vector rather than a map: one pattern is scanned from a handful
     /// of packages at most, and a stale `TOKEN_DEFS_GEN` clears the lot.

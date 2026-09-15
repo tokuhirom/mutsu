@@ -28,10 +28,11 @@
 //! an error. That applies to character classes just as much as to the
 //! declarative literal prefix: `\w`, `<:Lu>`, `<[a..z]>` and every negated or
 //! `:i` combination of them have a single definition in
-//! [`class_matches_ignorecase`], and this module derives a class's first-set
-//! by *calling* it over the ASCII range rather than by restating its table.
-//! Non-ASCII is admitted wholesale instead (see [`FirstSet`]), which needs no
-//! table at all.
+//! [`super::regex_eval_class::class_matches_ignorecase`], and the per-atom
+//! first-set constructors this module composes ([`class_first_set`] and its
+//! neighbours) derive a class's set by *calling* that evaluator over the ASCII
+//! range rather than by restating its table. Non-ASCII is admitted wholesale
+//! instead (see [`FirstSet`]), which needs no table at all.
 //!
 //! # Looking through a `<subrule>`
 //!
@@ -39,7 +40,7 @@
 //! actually asks for ("keyed by invocant package and `TOKEN_DEFS_GEN` ... or
 //! decline"). The resolution, and every shape it still declines on, is
 //! [`super::regex_prefilter_subrule`]; the key itself is
-//! [`super::regex_prefilter::pattern_prefilter_in_pkg`]. A derivation that
+//! [`super::regex_prefilter_memo::pattern_prefilter_in_pkg`]. A derivation that
 //! looked through a rule name is therefore *not* a pure function of the
 //! pattern and must never be stored in the pattern-keyed memo — which is why
 //! [`Analyzer::resolved_subrule`] reports whether it did.
