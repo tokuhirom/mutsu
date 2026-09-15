@@ -731,6 +731,23 @@ missing method to the independent `Unknown function: create-resultseq` lead.
 Red remains `blocked_load`; the migration `Column` and `Table` API failures
 remain separate leads.
 
+## 24. Campaign slice: exported routines in unit roles (2026-09-15)
+
+`Red::ResultSeq` is a unit role which exports `create-resultseq`.  mutsu
+deferred every role-body statement until composition, so `use Red::ResultSeq`
+did not install that routine before `MetamodelX::Red::Model` called it while
+composing a model.  Ordinary unit-module exports were unaffected.
+
+Exported role-body subs now register at role declaration time in the role's
+own package.  Their bodies still run only when called; the existing deferred
+role-body path continues to handle composition-time statements.  The focused
+regression covers ordinary, raw, capture-parameter, and unit-role exports.
+
+The targeted Red remeasurement on 2026-09-15 (mutsu `04e87f887`, Rakudo
+2026.07, bubblewrap, three attempts) moves `Red::Driver::Mock` past the
+`create-resultseq` failure to `raku_also_fails`.  The SQLite and migration
+leads remain independent.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
