@@ -12,7 +12,8 @@
   callable-interpolation-arguments, angle-scalar-interpolation, and
   angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
   argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
-  argument, and modified-method-call dynamic-argument slices implemented
+  argument, modified-method-call dynamic-argument, and quoted-method-call
+  dynamic-argument slices implemented
   2026-09-12 through
   2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1125,4 +1126,19 @@ No method is invoked during `.AST` conversion or RakuAST lowering, and this
 adds no matcher or VM path. Quoted method names and other dynamic argument
 expressions remain separate boundaries. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the dispatch field,
+RakuAST EVAL lowering, direct grammar matching, and lexical reassignment.
+
+## 43. Quoted method-call dynamic argument slice (2026-09-15)
+
+Quoted method-call expressions in argumented subrules, such as
+`<word($value."uc"())>`, now lower from their existing
+`ApplyPostfix`/`Call::QuotedMethod` tree through the shared expression renderer.
+The renderer preserves the quoted name and explicit empty call, so the existing
+match-time regex argument evaluator keeps the quoted-method boundary and its
+lexical lookup behavior.
+
+No method is invoked during `.AST` conversion or RakuAST lowering, and this
+adds no matcher or VM path. Dynamic quoted names and other dynamic argument
+expressions remain separate boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the quoted method node,
 RakuAST EVAL lowering, direct grammar matching, and lexical reassignment.
