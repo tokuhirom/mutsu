@@ -41,6 +41,10 @@ fn default_regex_value_sigil() -> char {
     '$'
 }
 
+fn default_subrule_alias_capturing() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SubruleArgs {
     pub(crate) args: Vec<crate::ast::Expr>,
@@ -78,6 +82,15 @@ pub(crate) enum RegexNode {
     SubruleAlias {
         alias: String,
         name: String,
+        /// Whether the aliased subrule keeps its own named capture. The
+        /// default preserves the historical `<alias=subrule>` shape; a
+        /// dot-prefixed target (`<alias=.subrule>`) suppresses it.
+        #[serde(default = "default_subrule_alias_capturing")]
+        capturing: bool,
+        /// `None` is an argument-less alias; `Some` retains an explicit call
+        /// boundary, including an empty argument list.
+        #[serde(default)]
+        args: Option<Box<SubruleArgs>>,
     },
     Lookaround {
         assertion: Box<RegexNode>,
@@ -590,8 +603,15 @@ impl RegexTree {
                     // instead of reducing it to a generic Named atom here.
                     None
                 }
-                RegexNode::SubruleAlias { alias, name } => Some(vec![token(
-                    crate::runtime::RegexAtom::Named(format!("{alias}={name}").into()),
+                RegexNode::SubruleAlias {
+                    alias,
+                    name,
+                    capturing,
+                    args,
+                } => Some(vec![token(
+                    crate::runtime::RegexAtom::Named(
+                        subrule_alias_inner_source(alias, name, *capturing, args).into(),
+                    ),
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
@@ -973,7 +993,15 @@ impl RegexNode {
                 });
                 format!("<{prefix}{name}({})>", rendered.unwrap_or_default())
             }
-            Self::SubruleAlias { alias, name } => format!("<{alias}={name}>"),
+            Self::SubruleAlias {
+                alias,
+                name,
+                capturing,
+                args,
+            } => format!(
+                "<{}>",
+                subrule_alias_inner_source(alias, name, *capturing, args)
+            ),
             Self::Lookaround {
                 assertion,
                 negated,
@@ -1899,11 +1927,23 @@ impl Parser {
             return None;
         }
         let contents: String = self.chars[start..self.pos - 1].iter().collect();
-        if let Some((alias, name)) = contents.split_once('=') {
-            if is_simple_subrule_name(alias) && is_subrule_name(name) {
+        if let Some((alias, target)) = contents.split_once('=') {
+            let alias = alias.trim();
+            let target = target.trim();
+            let (capturing, target) = if let Some(target) = target.strip_prefix('.') {
+                (false, target.trim())
+            } else {
+                (true, target)
+            };
+            if is_simple_subrule_name(alias)
+                && let Some((name, args)) = parse_subrule_target(target)
+                && is_subrule_name(&name)
+            {
                 return Some(RegexNode::SubruleAlias {
                     alias: alias.to_string(),
-                    name: name.to_string(),
+                    name,
+                    capturing,
+                    args,
                 });
             }
             return None;
@@ -1988,6 +2028,32 @@ fn is_simple_subrule_name(name: &str) -> bool {
 /// a long name on the alias side, while the called rule may be qualified.
 fn is_subrule_name(name: &str) -> bool {
     !name.is_empty() && name.split("::").all(is_simple_subrule_name)
+}
+
+fn subrule_alias_inner_source(
+    alias: &str,
+    name: &str,
+    capturing: bool,
+    args: &Option<Box<SubruleArgs>>,
+) -> String {
+    let target = if let Some(args) = args.as_deref() {
+        let rendered = args.source.clone().or_else(|| {
+            args.args
+                .iter()
+                .map(expression_source)
+                .collect::<Option<Vec<_>>>()
+                .map(|parts| parts.join(", "))
+        });
+        format!(
+            "{}{}({})",
+            if capturing { "" } else { "." },
+            name,
+            rendered.unwrap_or_default()
+        )
+    } else {
+        format!("{}{}", if capturing { "" } else { "." }, name)
+    };
+    format!("{alias}={target}")
 }
 
 /// Parse the source-level target of a named subrule assertion. The ordinary

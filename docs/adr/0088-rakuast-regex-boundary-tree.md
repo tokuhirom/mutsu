@@ -10,9 +10,10 @@
   interpolated-code-block, sequential-interpolated-code-block, and
   ordinary-array-interpolation, callable-interpolation,
   callable-interpolation-arguments, angle-scalar-interpolation, and
-  angle-aggregate-interpolation, argumented-subrule, and qualified-subrule slices implemented
+  angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
+  argumented-subrule-alias slices implemented
   2026-09-12 through
-  2026-09-14;
+  2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
@@ -1031,3 +1032,25 @@ colon AST shapes, qualified names, argument-node accessors, empty calls,
 direct grammar matching, AST EVAL, and constructed-tree execution.
 Qualified subrules inside unsupported lookarounds, argumented subrule aliases,
 and other dynamic argument expressions remain separate boundaries.
+
+## 38. Argumented subrule alias slice (2026-09-15)
+
+Argumented subrule aliases such as `<alias=word("a")>` and
+`<alias=.word("a")>` now retain the alias node around a
+`RakuAST::Regex::Assertion::Named::Args` child. The child keeps its qualified
+`Name`, positional `ArgList`, and capture-suppression state, while an empty
+argument list remains distinct from an argument-less alias.
+
+The shared tree records the target's dot suppression and argument provenance.
+Read conversion emits the same nested model shape measured from Rakudo, and
+write conversion accepts both `Named` and `Named::Args` assertion children.
+The existing package-aware runtime parser still receives the alias spelling,
+including its arguments, so alias and original capture behavior remains on the
+established Parser -> Compiler -> VM path.
+
+The focused regression is
+`t/rakuast/rakuast-regex-argumented-aliases.t`. It pins positive and
+dot-suppressed AST shapes, qualified names, empty calls, constructor support,
+parser-created captures, and a grammar lowered from RakuAST. Argumented
+aliases with dynamic argument expressions, code-bearing targets, and other
+runtime-valued forms remain explicit follow-up boundaries.

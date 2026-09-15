@@ -2399,20 +2399,42 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
                 fields,
             )
         }
-        RegexNode::SubruleAlias { alias, name } => (
-            RakuAstClass::RegexAssertionAlias,
-            vec![
-                leaf_field(Some("name"), Value::str(alias.clone())),
-                node_field(
-                    Some("assertion"),
-                    regex_node(&RegexNode::Subrule {
-                        name: name.clone(),
-                        capturing: true,
-                        args: None,
-                    })?,
-                ),
-            ],
-        ),
+        RegexNode::SubruleAlias {
+            alias,
+            name,
+            capturing,
+            args,
+        } => {
+            let name_node = if name.contains("::") {
+                name_from_identifier_parts(name)
+            } else {
+                name_from_identifier(name)
+            };
+            let mut assertion_fields = vec![node_field(Some("name"), name_node)];
+            if let Some(args) = args
+                && !args.args.is_empty()
+            {
+                assertion_fields.push(node_field(Some("args"), arg_list(&args.args)?));
+            }
+            if *capturing {
+                assertion_fields.push(leaf_field(Some("capturing"), Value::truth(true)));
+            }
+            let assertion = RakuAstNode {
+                class: if args.is_some() {
+                    RakuAstClass::RegexAssertionNamedArgs
+                } else {
+                    RakuAstClass::RegexAssertionNamed
+                },
+                fields: assertion_fields,
+            };
+            (
+                RakuAstClass::RegexAssertionAlias,
+                vec![
+                    leaf_field(Some("name"), Value::str(alias.clone())),
+                    node_field(Some("assertion"), assertion),
+                ],
+            )
+        }
         RegexNode::Lookaround {
             assertion,
             negated,
