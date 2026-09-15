@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 12;
+plan 13;
 
 # A custom `new` that routes through `self.bless(...)` must still default
 # unassigned `@!`/`%!` attributes to an empty Array/Hash, not leave them Nil.
@@ -61,4 +61,19 @@ plan 12;
 {
     class F { has $!s; method probe { $!s } }
     is F.bless.probe.^name, 'Any', 'direct bless: $! attr with no default stays Any';
+}
+
+# `WWW::DuckDuckGo` uses this shape: its custom constructor calls `.bless`,
+# while a private hash attribute defaults from a multi-pair list. The default
+# follows ordinary %-assignment rules, so it must become a Hash before a
+# method indexes it.
+{
+    class DefaultsViaBless {
+        has $.type;
+        has %.type-long-definitions = A => 'article', D => 'disambiguation';
+        method new($type) { self.bless(:$type) }
+        method long { %!type-long-definitions{$!type} }
+    }
+    my $d = DefaultsViaBless.new('A');
+    is $d.long, 'article', 'custom bless coerces a %-attribute default to Hash';
 }
