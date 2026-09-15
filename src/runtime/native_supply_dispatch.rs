@@ -824,7 +824,11 @@ impl Interpreter {
                     if let Some(scheduler) = attributes.get("scheduler") {
                         new_attrs.insert("scheduler".to_string(), scheduler.clone());
                     }
-                    new_attrs.insert("live".to_string(), Value::TRUE);
+                    // rakudo answers False for `.produce(...).live` even over a
+                    // live source (unlike `.map`/`.grep`, which stay live), so
+                    // say so explicitly rather than letting the `live` method
+                    // infer it from the supplier_id this now carries.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
                 let source_values = self.supply_get_values(attributes)?;
