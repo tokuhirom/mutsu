@@ -124,7 +124,7 @@ smaller box makes that gate slower, not optional.
 
 `make roast` cannot come back fully green in a remote container, for reasons that have nothing to do
 with any change. Re-deriving this every session is pure waste, so here is the whole set. **These
-three files, and only these three, may be red when you publish**; anything else is a real failure and
+four files, and only these four, may be red when you publish**; anything else is a real failure and
 the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
 
 | File | Shape | Why |
@@ -132,11 +132,18 @@ the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
 | `roast/6.c/S32-io/file-tests.t` | `Failed: 4` — tests 6-8, 10 | runs as `uid 0` |
 | `roast/S16-filehandles/filetest.t` | `Failed: 25` — tests 57-64, 69-72, 77-80, and 101/103/105/107/109/111/117/121/125 | runs as `uid 0` |
 | `roast/S32-io/IO-Socket-Async.t` | exit 124, "planned 40 ran 17" | sandboxed network |
+| `roast/S16-io/eof.t` | exit 255, "planned 5 ran 1", `Failed to open '/proc/1/environ': Permission denied` at line 25 | runs as `uid 0` |
 
 The first two are the same cause: both `chmod` a file and then assert `.r` / `.w` / `.x` is `False`,
 and **root bypasses the permission bits**, so every such assertion is `True`. Check with `id -u` —
 `0` means these cannot pass, no matter how correct the interpreter is. They pass in CI, which runs as
 an ordinary user.
+
+`eof.t` is the same cause as the first two wearing a different shape. It scans `/proc/1` for the
+first entry where `$file.f && $file.r` holds and opens it. As root `.r` is `True` for
+`/proc/1/environ` (mode `-r--------`, owned by root), so the test picks it — and then the
+container's hardened procfs denies the actual `open` with `EPERM`, aborting the file. An ordinary
+user gets `.r` `False` there and picks a readable entry instead, which is why CI is green.
 
 `IO-Socket-Async.t` times out part-way through in this container and passes in CI; the container's
 network sandbox is the difference. The mechanism has not been pinned down further, so treat a *new*
@@ -144,15 +151,18 @@ failure shape there (a concrete `not ok`, rather than the timeout) as real.
 
 Since [#8221](https://github.com/tokuhirom/mutsu/issues/8221) `make roast` propagates a failing
 suite into its **exit status** (it used to report `tee`'s, always 0). So in a remote container the
-target exits non-zero on these three alone: here, and only here, the status is not by itself the
+target exits non-zero on these four alone: here, and only here, the status is not by itself the
 verdict — read the `Test Summary Report` and check the failing set against the table above. On the
 local box, and for `make test` everywhere, a non-zero exit is a real failure.
 
 Two things this list is not:
 
 - **It is not a licence to skim the summary.** Read the `Test Summary Report` and confirm the failing
-  set is a subset of these three by name. A fourth file, or a different subtest range inside these,
-  is your change.
+  set is a subset of these four by name. A fifth file, or a different subtest range inside these,
+  is your change. The discriminator when you are unsure is the `raku` oracle: run the file under
+  `raku` itself (`raku roast/<path>.t`). Rakudo failing identically on this box proves the
+  container is the cause, since rakudo does not contain your change. That is how `eof.t` was
+  added here.
 - **It does not apply to the local box**, which runs as an ordinary user with a working network.
   There, `make roast` is expected to be green.
 
