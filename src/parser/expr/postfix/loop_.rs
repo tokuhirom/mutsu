@@ -600,8 +600,8 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // which made a term-position `||` unparsable. There is no ambiguity with the
     // infix `||`: an infix is only ever looked for once a term has been parsed,
     // so a `||` reached here has no left operand and cannot be one.
-    if input.starts_with('|') {
-        let (rest, _) = ws(&input[1..])?;
+    if let Some(after_pipe) = input.strip_prefix('|') {
+        let (rest, _) = ws(after_pipe)?;
         let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
