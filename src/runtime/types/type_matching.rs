@@ -339,6 +339,50 @@ impl Interpreter {
         compiled
     }
 
+    /// Materialize the anonymous subset syntax accepted in an object-hash key
+    /// constraint (`%.h{subset :: of Str where ...}`). Attribute declarations
+    /// carry the key constraint as text, unlike an ordinary `subset` term,
+    /// so the normal registry lookup cannot find its predicate. Parse a
+    /// private generated declaration once and let the ordinary subset checker
+    /// handle base-type coercion, predicate execution, and caching.
+    fn resolve_inline_subset_constraint(&mut self, constraint: &str) -> Option<String> {
+        let constraint = constraint.trim();
+        let rest = constraint.strip_prefix("subset")?.trim_start();
+        let rest = rest.strip_prefix("::")?.trim_start();
+        if rest.is_empty() {
+            return None;
+        }
+        if let Some(name) = self.inline_subset_constraints.get(constraint) {
+            return Some(name.clone());
+        }
+
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        constraint.hash(&mut hasher);
+        let name = format!("__mutsu_anon_hash_key_subset_{:x}", hasher.finish());
+        if self.registry().subsets.contains_key(&name) {
+            self.inline_subset_constraints
+                .insert(constraint.to_string(), name.clone());
+            return Some(name);
+        }
+        let source = format!("subset {name} {rest};");
+        let (statements, _) = crate::parser::parse_fragment(&source).ok()?;
+        let (base, predicate, version) =
+            statements.iter().find_map(|statement| match statement {
+                Stmt::SubsetDecl {
+                    base,
+                    predicate,
+                    version,
+                    ..
+                } => Some((base.clone(), predicate.clone(), version.clone())),
+                _ => None,
+            })?;
+        self.register_subset_decl(&name, &base, predicate.as_ref(), &version, true);
+        self.inline_subset_constraints
+            .insert(constraint.to_string(), name.clone());
+        Some(name)
+    }
+
     /// Record the exception raised by a subset `where` predicate that failed by
     /// throwing (a `fail "msg"` inside the `where`). Only genuine failures /
     /// user exceptions are kept — a control-flow signal (`return`/`last`/…) is
@@ -423,6 +467,11 @@ impl Interpreter {
         }
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
+        }
+        if constraint.trim_start().starts_with("subset ::")
+            && let Some(resolved) = self.resolve_inline_subset_constraint(constraint)
+        {
+            return self.type_matches_value(&resolved, value);
         }
         // A grammar's Match is typed by the grammar itself, so a grammar
         // declared under `X::` (`Crane` has one inside

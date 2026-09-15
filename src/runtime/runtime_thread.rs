@@ -705,6 +705,7 @@ impl Interpreter {
             map_grep_compile_cache: HashMap::new(),
             gather_compile_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
+            inline_subset_constraints: HashMap::new(),
             container_element_proxy: None,
             subset_where_fail: None,
             private_zeroarg_method_cache: HashMap::new(),

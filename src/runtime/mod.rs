@@ -2698,6 +2698,11 @@ pub struct Interpreter {
     /// Cleared per-name on subset redeclaration; starts empty per thread (the
     /// cache is a pure recomputable optimization). See `type_matches_value`.
     subset_predicate_cache: HashMap<String, SubsetPredicateCompiled>,
+    /// Runtime-generated names for inline object-hash key subsets such as
+    /// `subset :: of Str where ...`. The declaration parser keeps those key
+    /// constraints as source text, so materialize each one lazily on its first
+    /// type check and reuse the registered predicate thereafter.
+    inline_subset_constraints: HashMap<String, String>,
     /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
     /// container subclass's NATIVE `AT-KEY` when a user override asks for it
     /// with `nextcallee`. Built on first use; see `container_element_proxy`.

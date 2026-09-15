@@ -2379,6 +2379,27 @@ impl Interpreter {
                                 crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
                             )),
                         }
+                    } else if matches!(
+                        val.view(),
+                        ValueView::Array(..)
+                            | ValueView::Hash(_)
+                            | ValueView::Seq(_)
+                            | ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. }
+                    ) {
+                        // A computed aggregate has no source name for the
+                        // compiler's VarRef path, but `:=` still binds the
+                        // destination to the aggregate itself. Give it a
+                        // fresh cell so a hash element does not apply the
+                        // ordinary element-store itemization (`$[...]` /
+                        // `${...}`) to the bound value.
+                        Some((
+                            None,
+                            crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                        ))
                     } else {
                         None
                     }
