@@ -781,15 +781,27 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         ValueView::Slip(items) => {
+            // The empty slip is `Empty`, with no container shown even when a
+            // `$` holds one (`my $e = slip(); $e.raku` is `Empty`).
             if items.is_empty() {
                 return "Empty".to_string();
             }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             // A one-element slip keeps the list's trailing comma: `slip(3,)`.
-            if items.len() == 1 {
+            let rendered = if items.len() == 1 {
                 format!("slip({},)", inner)
             } else {
                 format!("slip({})", inner)
+            };
+            // A Slip read out of a `$` container renders the container too,
+            // exactly as the `Seq` arm above does from its `ItemSeq` tag:
+            // `my $x = slip(5, 6)` shows `$(slip(5, 6))` while a `:=`-bound or
+            // bare one does not. The flag is the `Kind::SlipItemized` tag, so
+            // it is invisible to every non-renderer consumer of the Slip.
+            if v.slip_is_itemized() {
+                format!("$({})", rendered)
+            } else {
+                rendered
             }
         }
         ValueView::Str(s) => escape_raku_str(&s),

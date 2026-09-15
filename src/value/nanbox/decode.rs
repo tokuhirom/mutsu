@@ -34,7 +34,8 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::Seq => ValueRepr::Seq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
         Kind::HyperSeq => ValueRepr::HyperSeq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
         Kind::RaceSeq => ValueRepr::RaceSeq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
-        Kind::Slip => ValueRepr::Slip(unsafe { take_arc::<Vec<Value>>(bits) }),
+        Kind::Slip => ValueRepr::Slip(unsafe { take_arc::<Vec<Value>>(bits) }, false),
+        Kind::SlipItemized => ValueRepr::Slip(unsafe { take_arc::<Vec<Value>>(bits) }, true),
         Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone => {
             ValueRepr::Junction {
                 kind: match kind {

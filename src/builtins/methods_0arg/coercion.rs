@@ -262,7 +262,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 };
                 Some(Ok(Value::slip_arc(std::sync::Arc::new(vec))))
             }
-            ValueView::Slip(_) => Some(Ok(target.clone())),
+            // `.Slip` on a Slip is the identity, but it hands out the VALUE
+            // rather than the container: `my $x = slip(5, 6); $x.Slip.raku` is
+            // `slip(5, 6)`, so the `$` itemization is dropped.
+            ValueView::Slip(_) => Some(Ok(target.clone().with_slip_itemized(false))),
             ValueView::LazyList(ll) => {
                 if ll.scan_spec.is_some() {
                     let items = ll.force_scan_to(200_000);
@@ -489,6 +492,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // (`my %h; ($%h)<>.raku` is `{}`, not `${}`).
             ValueView::Hash(_) if target.hash_is_itemized() => {
                 Some(Ok(target.clone().with_hash_itemized(false)))
+            }
+            // A Slip carries its itemization the same way (a second kind tag),
+            // so `$x<>` clears it too: `my $x = slip(5, 6); $x<>.raku` is
+            // `slip(5, 6)`, not `$(slip(5, 6))`.
+            ValueView::Slip(_) if target.slip_is_itemized() => {
+                Some(Ok(target.clone().with_slip_itemized(false)))
             }
             ValueView::Scalar(inner) => Some(Ok((*inner).clone())),
             ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {

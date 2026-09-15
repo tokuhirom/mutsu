@@ -169,6 +169,12 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::HashItemized))
     }
 
+    /// Whether this word is an itemized `Slip` (the `slip_is_itemized` probe).
+    #[inline]
+    pub(in crate::value) fn is_slip_itemized(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::SlipItemized))
+    }
+
     /// Element slice if this is an Array/Seq/Slip (optionally Hyper/Race),
     /// borrowed from the payload (the `as_list_items*` accessors).
     #[inline]
@@ -185,7 +191,7 @@ impl NanBox {
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
             | Kind::ArrayLazy => Some(&unsafe { peek_gc::<ArrayData>(bits) }.items[..]),
-            Kind::Slip => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
+            Kind::Slip | Kind::SlipItemized => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
             Kind::Seq => Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..]),
             Kind::HyperSeq | Kind::RaceSeq if with_hyper => {
                 Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..])
@@ -449,6 +455,7 @@ impl NanBox {
                     | Kind::Proxy
                     | Kind::Seq
                     | Kind::Slip
+                    | Kind::SlipItemized
                     | Kind::LazyList
                     | Kind::ContainerRef
                     | Kind::ContainerRefItemized
@@ -554,6 +561,7 @@ impl NanBox {
                     | Kind::ArrayShaped
                     | Kind::ArrayLazy
                     | Kind::Slip
+                    | Kind::SlipItemized
                     | Kind::Seq
                     | Kind::HyperSeq
                     | Kind::RaceSeq
@@ -612,6 +620,10 @@ impl NanBox {
                 | Kind::ArrayShaped
                 | Kind::ArrayLazy => VARIANT_ARRAY,
                 Kind::HashPlain | Kind::HashItemized => VARIANT_HASH,
+                // Both Slip tags view as `ValueView::Slip`, so a variant
+                // comparison must not split them (as it must not split the
+                // two Hash tags).
+                Kind::Slip | Kind::SlipItemized => VARIANT_KIND_BASE + Kind::Slip as u8,
                 Kind::ContainerRef | Kind::ContainerRefItemized => {
                     VARIANT_KIND_BASE + Kind::ContainerRef as u8
                 }
@@ -655,7 +667,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::Seq => ValueView::Seq(arc_guard(bits)),
             Kind::HyperSeq => ValueView::HyperSeq(arc_guard(bits)),
             Kind::RaceSeq => ValueView::RaceSeq(arc_guard(bits)),
-            Kind::Slip => ValueView::Slip(arc_guard(bits)),
+            Kind::Slip | Kind::SlipItemized => ValueView::Slip(arc_guard(bits)),
             Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone => {
                 ValueView::Junction {
                     kind: match kind {

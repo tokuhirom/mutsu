@@ -839,19 +839,13 @@ pub(super) fn dispatch(
             };
             Some(Ok(Value::str(format!("({})", inner))))
         }
-        ValueView::Slip(items) if method == "raku" || method == "perl" => {
-            if items.is_empty() {
-                // Empty slip is represented as "Empty" in Raku
-                Some(Ok(Value::str_from("Empty")))
-            } else {
-                let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                // A one-element slip keeps the list's trailing comma: `slip(3,)`.
-                if items.len() == 1 {
-                    Some(Ok(Value::str(format!("slip({},)", inner))))
-                } else {
-                    Some(Ok(Value::str(format!("slip({})", inner))))
-                }
-            }
+        // Delegate to the single Slip renderer in `raku_repr` rather than
+        // repeating it: this arm used to carry its own copy of the `Empty` /
+        // trailing-comma rules, so the `$`-itemization the nested renderer
+        // learned (`my $x = slip(5, 6); $x.raku` is `$(slip(5, 6))`) never
+        // reached a top-level `.raku` call.
+        ValueView::Slip(_) if method == "raku" || method == "perl" => {
+            Some(Ok(Value::str(raku_value(target))))
         }
         ValueView::Junction { .. } if method == "raku" || method == "perl" => None,
         // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for

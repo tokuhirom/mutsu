@@ -465,7 +465,7 @@ impl Value {
         )
     }
     pub fn slip(items: Vec<Value>) -> Self {
-        Value::Slip(Arc::new(items))
+        Value::Slip(Arc::new(items), false)
     }
     pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
         Value::from_repr(ValueRepr::Junction {

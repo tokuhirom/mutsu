@@ -150,7 +150,14 @@ impl NanBox {
             ValueRepr::Seq(items) => pack_arc(Kind::Seq, items),
             ValueRepr::HyperSeq(items) => pack_arc(Kind::HyperSeq, items),
             ValueRepr::RaceSeq(items) => pack_arc(Kind::RaceSeq, items),
-            ValueRepr::Slip(items) => pack_arc(Kind::Slip, items),
+            ValueRepr::Slip(items, itemized) => pack_arc(
+                if itemized {
+                    Kind::SlipItemized
+                } else {
+                    Kind::Slip
+                },
+                items,
+            ),
             ValueRepr::LazyList(l) => pack_gc(Kind::LazyList, l),
             ValueRepr::Version {
                 parts,
