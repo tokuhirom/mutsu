@@ -1162,6 +1162,18 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         | crate::ast::Expr::UserRoutineCall { name, args } => {
             Some(format!("{}({})", name.resolve(), join_args(args)?))
         }
+        crate::ast::Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted: false,
+        } => Some(format!(
+            "{}.{}({})",
+            expression_source(target)?,
+            name.resolve(),
+            join_args(args)?
+        )),
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
