@@ -1496,6 +1496,10 @@ pub(crate) struct Compiler {
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
     pub(super) prebound_placeholder_params: std::collections::HashSet<String>,
+    /// While compiling a `with`/`without` condition, replace the ordinary
+    /// index read with `TagElementSource` so the topicalizing `given` can write
+    /// back the element without evaluating an effectful index twice.
+    with_element_source_capture: Option<(String, bool)>,
     /// Set true immediately before compiling a *synthesized* `Stmt::Block`
     /// (an if/while/loop/control branch body the compiler wraps at compile time,
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
@@ -1714,6 +1718,7 @@ impl Compiler {
             enclosing_sigilless: std::collections::HashSet::new(),
             enclosing_local_names: std::collections::HashSet::new(),
             prebound_placeholder_params: std::collections::HashSet::new(),
+            with_element_source_capture: None,
             last_source_line: None,
             begin_site_seq: std::collections::HashMap::new(),
             pending_index_rw_writebacks: Vec::new(),

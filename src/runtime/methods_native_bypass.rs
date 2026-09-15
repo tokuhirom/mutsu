@@ -159,6 +159,36 @@ impl Interpreter {
         )
     }
 
+    /// Whether a user method on a bare type object is applicable to this call.
+    ///
+    /// Most native-shadow checks only need the presence of a user method.  The
+    /// representation methods are different: a type object may inherit a
+    /// multi `raku`/`gist`/`perl` candidate constrained to `:D`, which is not
+    /// applicable to the type object.  Rakudo then uses Mu's representation
+    /// instead of turning that inapplicable candidate into a dispatch error.
+    /// Keep the ordinary presence check for every other method and for calls
+    /// with arguments, where the normal binding error remains observable.
+    pub(crate) fn package_has_applicable_user_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> bool {
+        let ValueView::Package(class_name) = target.view() else {
+            return false;
+        };
+        let class_name = class_name.resolve();
+        if !self.has_user_method(&class_name, method) {
+            return false;
+        }
+        if matches!(method, "gist" | "raku" | "perl") && args.is_empty() {
+            return self
+                .resolve_method_with_owner_invocant(&class_name, method, args, target)
+                .is_some();
+        }
+        true
+    }
+
     /// Check if a method on LazyList should force evaluation.
     pub(super) fn should_force_lazy_list(method: &str) -> bool {
         matches!(
@@ -527,7 +557,7 @@ impl Interpreter {
             ValueView::Package(class_name) => {
                 let class_name = class_name.resolve();
                 !is_pseudo_method
-                    && (self.has_user_method(&class_name, method)
+                    && (self.package_has_applicable_user_method(target, method, args)
                         || (self.has_class_level_attr(&class_name, method)
                             && !self.has_public_accessor(&class_name, method)))
             }

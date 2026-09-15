@@ -705,10 +705,18 @@ impl Interpreter {
         let is_parametric_array =
             type_name.starts_with("Array[") || type_name.starts_with("array[");
         let array_subclass = self.is_type_array_subclass_element(type_name);
-        if array_subclass.is_none()
-            && !is_parametric_array
-            && self.type_matches_value(type_name, &value)
-        {
+        let already_declared_container = match type_name {
+            // `Array` is a subtype of `List` for dispatch, but an `is List`
+            // attribute owns a List container specifically. Keep an existing
+            // List and rebuild an Array supplied by a caller (Raku's
+            // `has @.x is List` does not silently change its declared shape).
+            "List" => matches!(
+                value.view(),
+                ValueView::Array(_, crate::value::ArrayKind::List)
+            ),
+            _ => self.type_matches_value(type_name, &value),
+        };
+        if array_subclass.is_none() && !is_parametric_array && already_declared_container {
             return Ok(value);
         }
         // The declared container name (for `.^name`) and the element type: a
@@ -745,6 +753,25 @@ impl Interpreter {
                 },
             );
             Ok(arr)
+        } else if type_name == "List" {
+            // `List.new(@values)` treats `@values` as one positional argument,
+            // but an `is List` attribute receives its caller's list contents.
+            // Convert an Array's contents directly so `:x(@values)` does not
+            // become a one-element List containing the Array. This also
+            // de-itemizes the Array wrapper produced when a named hash is
+            // slurped with `|%args`; Rakudo treats that wrapper's contents as
+            // the values for an `is List` attribute.
+            let items = match value.view() {
+                ValueView::Array(items, _) => items.clone(),
+                _ => {
+                    let coerced = Self::coerce_attr_value_by_sigil(value, '@');
+                    match coerced.view() {
+                        ValueView::Array(items, _) => items.clone(),
+                        _ => crate::gc::Gc::new(crate::value::ArrayData::new(vec![coerced])),
+                    }
+                }
+            };
+            Ok(Value::array_with_kind(items, crate::value::ArrayKind::List))
         } else {
             // A non-Array container type (Buf, BagHash, ...): dispatch to its
             // `.new` with the provided (sigil-coerced) value, just like the

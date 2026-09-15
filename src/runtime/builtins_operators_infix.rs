@@ -393,6 +393,10 @@ impl Interpreter {
         for rhs in &args[1..] {
             let pair_args = vec![acc.clone(), rhs.clone()];
             let infix_name = format!("infix:<{}>", op);
+            if let Some(value) = self.try_user_infix(&infix_name, &pair_args[0], &pair_args[1])? {
+                acc = value;
+                continue;
+            }
             if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args) {
                 crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
                 acc = self.call_routine_def(&def, pair_args)?;

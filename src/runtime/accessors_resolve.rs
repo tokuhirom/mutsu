@@ -258,6 +258,54 @@ impl Interpreter {
         self.materialize_routine_mixins_shared(sub_val, &def.package.resolve(), &def.name.resolve())
     }
 
+    /// Build a first-class dispatcher that captures every visible candidate of
+    /// a multi routine. Code values returned by a custom `EXPORT` hook need the
+    /// same treatment as a directly resolved multi: the hook may return
+    /// `&infix:<op>`, and that value must retain the private multi candidates
+    /// declared by the exporting compilation unit after its load scope ends.
+    fn sub_value_from_multi_candidates(
+        &self,
+        name: &str,
+        candidates: Vec<std::sync::Arc<crate::runtime::FunctionDef>>,
+    ) -> Value {
+        let candidate_subs: Vec<Value> = candidates
+            .iter()
+            .map(|cand| {
+                Value::make_sub_for_routine(
+                    cand.package,
+                    cand.name,
+                    cand.params.clone(),
+                    cand.param_defs.clone(),
+                    cand.body.clone(),
+                    cand.is_rw,
+                    self.env.clone(),
+                    cand.compiled.clone(),
+                )
+            })
+            .collect();
+        let mut dispatcher_env = self.env.clone();
+        dispatcher_env.insert(
+            "__mutsu_multi_dispatch_candidates".to_string(),
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(candidate_subs)),
+                crate::value::ArrayKind::List,
+            ),
+        );
+        dispatcher_env.insert(
+            "__mutsu_multi_dispatch_name".to_string(),
+            Value::str(name.to_string()),
+        );
+        Value::make_sub(
+            Symbol::intern(&self.current_package()),
+            Symbol::intern(name),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            dispatcher_env,
+        )
+    }
+
     /// The registration clone id for a named routine `package::name`, i.e. the
     /// env marker `__mutsu_callable_id::package::name` that `RegisterSub`
     /// refreshes on every execution (see `Self::sub_state_scope_id`, which
@@ -354,6 +402,19 @@ impl Interpreter {
                         return val.clone();
                     }
                     _ => {}
+                }
+            }
+            // A user operator sub with concrete multi candidates must become a
+            // first-class dispatcher too. This is especially important for a
+            // custom `sub EXPORT` returning `&infix:<op>`: the operator's
+            // candidates are private to the exporting compilation unit, so a
+            // lazy by-name Routine would lose them as soon as module loading
+            // restores the caller's scope.
+            if !normalized_name.starts_with("postcircumfix:<") {
+                let multi_candidates = self.resolve_all_multi_candidates(&normalized_name);
+                if !multi_candidates.is_empty() {
+                    return self
+                        .sub_value_from_multi_candidates(&normalized_name, multi_candidates);
                 }
             }
             // A user operator sub with a single concrete def must become a
@@ -543,42 +604,7 @@ impl Interpreter {
             // the actual routine regardless of whether the short name used
             // to capture it is still lexically visible).
             let candidates = self.resolve_all_multi_candidates(lookup_name);
-            let mut candidate_subs = Vec::new();
-            for cand in &candidates {
-                let captured_env = self.env.clone();
-                let sub_val = Value::make_sub_for_routine(
-                    cand.package,
-                    cand.name,
-                    cand.params.clone(),
-                    cand.param_defs.clone(),
-                    cand.body.clone(),
-                    cand.is_rw,
-                    captured_env,
-                    cand.compiled.clone(),
-                );
-                candidate_subs.push(sub_val);
-            }
-            let mut dispatcher_env = self.env.clone();
-            dispatcher_env.insert(
-                "__mutsu_multi_dispatch_candidates".to_string(),
-                Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(candidate_subs)),
-                    crate::value::ArrayKind::List,
-                ),
-            );
-            dispatcher_env.insert(
-                "__mutsu_multi_dispatch_name".to_string(),
-                Value::str(lookup_name.to_string()),
-            );
-            Value::make_sub(
-                Symbol::intern(&self.current_package()),
-                Symbol::intern(lookup_name),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                false,
-                dispatcher_env,
-            )
+            self.sub_value_from_multi_candidates(lookup_name, candidates)
         } else if self.has_proto(lookup_name)
             || self.resolve_token_defs(lookup_name).is_some()
             || self.has_proto_token(lookup_name)

@@ -191,8 +191,18 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         {
             given_body.insert(0, pointy_topic_bind(pd));
         }
+        let given_topic = if topic_is_element_lvalue {
+            tmp_var.clone()
+        } else {
+            cond_expr.clone()
+        };
         with_body = vec![Stmt::Given {
-            topic: cond_expr.clone(),
+            // Plain variables can be topicalized directly, preserving their
+            // source container. An element subscript uses the hidden temp;
+            // its already-evaluated source is tagged while compiling the
+            // condition so the body still writes back without re-running an
+            // effectful index expression.
+            topic: given_topic,
             body: given_body,
             is_statement_modifier: false,
             with_kind: block_topic,

@@ -486,10 +486,18 @@ impl Interpreter {
                         // (META6's `multi method new(*%items) { self.bless(|%items) }`
                         // passes `provides => ("Test::META" => "lib/...",)`).
                         let sigil = plan.class_attrs[i].sigil;
-                        attributes.insert(
-                            plan.attr_syms[i],
-                            Self::coerce_provided_attr_value_by_sigil(value.clone(), sigil),
-                        )
+                        let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str())
+                        {
+                            // An `is Type` container is owned by its declared
+                            // container type, not by the generic sigil
+                            // assignment. In particular, `has @.x is List`
+                            // must keep a supplied List as a List when
+                            // `self.bless(|%args)` is used by a custom `new`.
+                            self.coerce_value_to_is_type(type_name, sigil, value.clone())?
+                        } else {
+                            Self::coerce_provided_attr_value_by_sigil(value.clone(), sigil)
+                        };
+                        attributes.insert(plan.attr_syms[i], coerced)
                     }
                     // Raku's default BUILDALL ignores a named argument that names
                     // no attribute; storing it would make `eqv` compare a key the

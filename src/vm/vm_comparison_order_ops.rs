@@ -520,6 +520,13 @@ impl Interpreter {
     pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // `cmp` also has user multi candidates. An exported first-class
+        // operator value (for example Version::Semverish's custom family)
+        // must take precedence over the structural/numeric fallback below.
+        if let Some(value) = self.try_user_infix("infix:<cmp>", &left, &right)? {
+            self.stack.push(value);
+            return Ok(());
+        }
         if let Some(ord) = Self::blob_ordering(&left, &right)? {
             self.stack.push(runtime::make_order(ord));
             return Ok(());
@@ -721,6 +728,14 @@ impl Interpreter {
     /// `apply_reduction_op` fold instead, so `cmp-ok $consumed1, 'eqv',
     /// $consumed2` silently answered `False` where the operator throws.
     pub(crate) fn eqv_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // A user `multi sub infix:<eqv>` is part of the operator's candidate
+        // set. It must get first refusal for object operands (for example,
+        // Version::Semverish exports an eqv candidate that delegates to its
+        // semantic `.eqv` method); structural `Value::eqv` is only the core
+        // implementation after user candidates decline.
+        if let Some(value) = self.try_user_infix("infix:<eqv>", &left, &right)? {
+            return Ok(value);
+        }
         // `eqv` on two lazy iterables of the SAME type cannot be answered without
         // iterating them, so it throws X::Cannot::Lazy (action `eqv`). Two lazy
         // iterables of DIFFERENT type are trivially not-eqv (no iteration needed),
