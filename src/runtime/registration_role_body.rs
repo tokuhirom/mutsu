@@ -564,4 +564,38 @@ impl Interpreter {
             self.register_exported_var(export_pkg, export_short, export_tags.clone());
         }
     }
+
+    /// Register `is export` routines declared directly in a role body when the
+    /// role is declared, rather than waiting for a later composition.
+    ///
+    /// Like an exported subset, an exported routine is a declaration that a
+    /// consumer can import immediately.  Deferring it until composition loses
+    /// `use Red::ResultSeq`'s `create-resultseq` export: Red's custom HOW calls
+    /// that routine while composing a model, before anything has composed the
+    /// `Red::ResultSeq` role itself.
+    pub(crate) fn register_role_body_exported_subs(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+    ) -> Result<(), RuntimeError> {
+        let saved_package = self.current_package().to_string();
+        self.set_current_package(role_name.to_string());
+        for op in deferred_body_ops {
+            if !matches!(
+                &op.raw,
+                Stmt::SubDecl {
+                    is_export: true,
+                    ..
+                }
+            ) {
+                continue;
+            }
+            if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
+                self.set_current_package(saved_package);
+                return Err(error);
+            }
+        }
+        self.set_current_package(saved_package);
+        Ok(())
+    }
 }
