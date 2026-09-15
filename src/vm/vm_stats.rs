@@ -362,13 +362,59 @@ pub(crate) fn record_fn_keys_base_invalidation(entries: usize) {
     }
 }
 
-/// Per-site histogram of `fn_resolve_gen` bumps — every one of which drops SIX
-/// name-keyed dispatch caches wholesale (`fn_resolve_cache`,
-/// `multi_compiled_key_cache`, `multi_candidates_cache`, `declared_fn_cache`,
-/// `multi_fn_cache`, `fn_keys_by_base`). A steady-state program should bump
+/// Generation-tagged dispatch memo probes: `fn_resolve_cache`,
+/// `multi_compiled_key_cache`, `multi_candidates_cache`, `declared_fn_cache`
+/// and `multi_fn_cache` (`runtime::gen_cache`).
+///
+/// `stale` counts the probes that found an entry for the key but computed under
+/// a different functions map. It is the honest cost of a registry write: those
+/// answers have to be recomputed. A `stale` count that grows with the number of
+/// CALLS rather than with the number of *declarations* means the map is being
+/// churned per call and the memos never settle (#8314).
+static GEN_CACHE_PROBES: AtomicU64 = AtomicU64::new(0);
+static GEN_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+static GEN_CACHE_STALE: AtomicU64 = AtomicU64::new(0);
+
+/// Record one generation-tagged memo probe. `hit` is an answer served; `stale`
+/// is an answer found but discarded because it named a different map.
+#[inline]
+pub(crate) fn record_gen_cache_probe(hit: bool, stale: bool) {
+    if enabled() {
+        GEN_CACHE_PROBES.fetch_add(1, Ordering::Relaxed);
+        if hit {
+            GEN_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+        } else if stale {
+            GEN_CACHE_STALE.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Functions-map installs that landed in a state the map had already been in,
+/// so the version stamp was reused rather than freshly minted
+/// (`runtime::function_table`). Reported as `fn-table-transitions`.
+static FN_TABLE_TRANSITION_REUSES: AtomicU64 = AtomicU64::new(0);
+static FN_TABLE_TRANSITION_MINTS: AtomicU64 = AtomicU64::new(0);
+
+/// Record one `Registry::install_function`: `reused` when the resulting map
+/// state already had a name.
+#[inline]
+pub(crate) fn record_fn_table_transition(reused: bool) {
+    if enabled() {
+        if reused {
+            FN_TABLE_TRANSITION_REUSES.fetch_add(1, Ordering::Relaxed);
+        } else {
+            FN_TABLE_TRANSITION_MINTS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Per-site histogram of `fn_resolve_gen` changes — each one retiring every
+/// memo tagged with the outgoing generation. A steady-state program should move
 /// this only while it is actually declaring routines; a count that grows with
-/// the number of CALLS means some registration path re-registers an unchanged
-/// routine and pays the whole cache rebuild for it (#8300).
+/// the number of CALLS means some registration path rewrites the functions map
+/// per call (#8300). Note that a *return* to a previous generation (a scope
+/// restore putting a previous map back) is recorded here too, and is the
+/// cheap direction: the memos it makes current again were never discarded.
 fn fn_resolve_gen_by_site() -> &'static Mutex<HashMap<String, u64>> {
     static BY_SITE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_SITE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -1357,6 +1403,17 @@ pub(crate) fn dump() {
     let fn_keys_invalidations = FN_KEYS_BASE_INVALIDATIONS.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] fn-keys-by-base: lookups={fn_keys_lookups} scans={fn_keys_scans} scan_keys={fn_keys_scan_keys} invalidated_entries={fn_keys_invalidations}"
+    );
+    let gen_cache_probes = GEN_CACHE_PROBES.load(Ordering::Relaxed);
+    let gen_cache_hits = GEN_CACHE_HITS.load(Ordering::Relaxed);
+    let gen_cache_stale = GEN_CACHE_STALE.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] gen-tagged-dispatch-memos: probes={gen_cache_probes} hits={gen_cache_hits} stale={gen_cache_stale}"
+    );
+    let fn_table_reuses = FN_TABLE_TRANSITION_REUSES.load(Ordering::Relaxed);
+    let fn_table_mints = FN_TABLE_TRANSITION_MINTS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] fn-table-transitions: reused={fn_table_reuses} minted={fn_table_mints}"
     );
     let program_table_cow_clones = PROGRAM_TABLE_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] program-table-cow: clones={program_table_cow_clones}");

@@ -45,6 +45,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
+use crate::runtime::gen_cache::GenCache;
 use crate::value::ValueView;
 use crate::value::{
     ArrayKind, AttrMap, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel,
@@ -620,7 +621,9 @@ mod end_phasers;
 mod eval_check;
 mod eval_routine_magicals;
 mod exception_message;
+pub(crate) mod function_table;
 mod gc_roots;
+mod gen_cache;
 mod handle;
 mod handle_io;
 mod handle_open;
@@ -3820,9 +3823,16 @@ pub struct Interpreter {
     /// returns), so building a probe key costs one `Vec` and no `String` — this
     /// key is rebuilt on every call that reaches `find_compiled_function`.
     pub(crate) fn_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, Symbol, usize, Vec<&'static str>), (Symbol, u64, String)>,
+        GenCache<(Symbol, Symbol, usize, Vec<&'static str>), (Symbol, u64, String)>,
+    /// The version stamp of the registry functions map every generation-tagged
+    /// memo above is read and written under: a mirror of
+    /// `Registry::functions_version()`, refreshed by
+    /// [`Interpreter::invalidate_fn_resolution_for_keys`] and its wholesale
+    /// sibling. It is a *name for the map's content*, not a step counter, so it
+    /// goes back to its previous value when a scope restore puts a previous map
+    /// back — which is what lets a memo outlive the excursion that a
+    /// routine-local `my sub` makes of every call (#8314).
     pub(crate) fn_resolve_gen: u64,
-    pub(crate) fn_resolve_cache_gen: u64,
     /// Memo for the compiled-key probe chain of a `multi` name
     /// (`find_compiled_function_inner`). `fn_resolve_cache` above deliberately
     /// withholds itself from a multi, because its key cannot tell two calls
@@ -3833,11 +3843,10 @@ pub struct Interpreter {
     /// fingerprint sidesteps that: the resolution itself is the sound part, and
     /// the probe outcome is a pure function of this key. Unlike
     /// `fn_resolve_cache` this memo also stores the NEGATIVE answer, which is
-    /// the whole point (#7573). Invalidated wholesale with `fn_resolve_cache`
-    /// on a `fn_resolve_gen` change.
-    pub(crate) multi_compiled_key_cache: rustc_hash::FxHashMap<MultiCompiledKey, Option<Symbol>>,
-    pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
-    pub(crate) multi_candidates_cache_gen: u64,
+    /// the whole point (#7573). Retired with `fn_resolve_cache` by
+    /// `fn_resolve_gen`, per entry.
+    pub(crate) multi_compiled_key_cache: GenCache<MultiCompiledKey, Option<Symbol>>,
+    pub(crate) multi_candidates_cache: GenCache<Symbol, bool>,
     /// Memo for [`Self::has_proto`], keyed by the full bare-name lookup
     /// context `(current_package, innermost lexical_package, name)` — the
     /// exact inputs `bare_name_packages()` derives the search list from — so
@@ -3851,14 +3860,12 @@ pub struct Interpreter {
     /// Memo for [`Self::has_declared_function`], same key shape as
     /// `has_proto_cache`; guarded by `fn_resolve_gen` like
     /// `multi_candidates_cache` (the `functions` map is what it reads).
-    pub(crate) declared_fn_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
-    pub(crate) declared_fn_cache_gen: u64,
+    pub(crate) declared_fn_cache: GenCache<(Symbol, Option<Symbol>, Symbol), bool>,
     /// Memo for [`Self::has_multi_function`], same key shape as
     /// `has_proto_cache`; guarded by `fn_resolve_gen`. The uncached probe
     /// scans EVERY registry function key with a `String` resolve per key,
     /// per call.
-    pub(crate) multi_fn_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
-    pub(crate) multi_fn_cache_gen: u64,
+    pub(crate) multi_fn_cache: GenCache<(Symbol, Option<Symbol>, Symbol), bool>,
     /// Registry function keys grouped by their BASE name — the index behind
     /// [`Interpreter::fn_keys_for_base`].
     ///
@@ -4403,8 +4410,10 @@ pub(crate) fn eval_unit_parent(unit: Symbol) -> Option<Symbol> {
 
 pub(crate) type RoutineRegistrySnapshot = (
     // The three copy-on-write registry tables: an `Arc` bump each, not a copy
-    // (see `Registry::functions`).
-    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
+    // (see `Registry::functions`). The functions table is the versioned
+    // `FunctionTable`, so putting this snapshot back also puts back the version
+    // its content was stamped with (#8314).
+    Arc<crate::runtime::function_table::FunctionTable>,
     Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
     Arc<rustc_hash::FxHashSet<String>>,
     rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,

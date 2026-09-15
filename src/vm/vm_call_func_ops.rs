@@ -1063,10 +1063,10 @@ impl Interpreter {
             );
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
-                && self.fn_resolve_cache_gen == self.fn_resolve_gen
                 && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
-                && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
+                && let Some((cached_key, cached_fp, _)) =
+                    self.fn_resolve_cache.get(self.fn_resolve_gen, &cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)

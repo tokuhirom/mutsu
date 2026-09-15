@@ -59,15 +59,12 @@ impl Interpreter {
     /// `&str` form only to re-`intern` it hashed the name string on every call —
     /// it profiled as the `hash_one` + `memcmp` pair on the OTF dispatch path.
     pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
-        if self.multi_candidates_cache_gen != self.fn_resolve_gen {
-            self.multi_candidates_cache.clear();
-            self.multi_candidates_cache_gen = self.fn_resolve_gen;
-        }
-        if let Some(&cached) = self.multi_candidates_cache.get(&sym) {
+        let generation = self.fn_resolve_gen;
+        if let Some(&cached) = self.multi_candidates_cache.get(generation, &sym) {
             return cached;
         }
         let result = self.has_multi_candidates(&sym.resolve());
-        self.multi_candidates_cache.insert(sym, result);
+        self.multi_candidates_cache.insert(generation, sym, result);
         result
     }
 
@@ -109,16 +106,13 @@ impl Interpreter {
     /// Cached [`Self::has_declared_function`]; guarded by `fn_resolve_gen`
     /// like `multi_candidates_cache`, with the package context in the key.
     pub(crate) fn has_declared_function_cached(&mut self, name: &str) -> bool {
-        if self.declared_fn_cache_gen != self.fn_resolve_gen {
-            self.declared_fn_cache.clear();
-            self.declared_fn_cache_gen = self.fn_resolve_gen;
-        }
+        let generation = self.fn_resolve_gen;
         let key = self.bare_name_ctx_key(Symbol::intern(name));
-        if let Some(&cached) = self.declared_fn_cache.get(&key) {
+        if let Some(&cached) = self.declared_fn_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_declared_function(name);
-        self.declared_fn_cache.insert(key, result);
+        self.declared_fn_cache.insert(generation, key, result);
         result
     }
 
@@ -126,16 +120,13 @@ impl Interpreter {
     /// the package context in the key. The uncached probe resolves EVERY
     /// registry function key to a `String` and prefix-compares it, per call.
     pub(crate) fn has_multi_function_cached(&mut self, name: &str) -> bool {
-        if self.multi_fn_cache_gen != self.fn_resolve_gen {
-            self.multi_fn_cache.clear();
-            self.multi_fn_cache_gen = self.fn_resolve_gen;
-        }
+        let generation = self.fn_resolve_gen;
         let key = self.bare_name_ctx_key(Symbol::intern(name));
-        if let Some(&cached) = self.multi_fn_cache.get(&key) {
+        if let Some(&cached) = self.multi_fn_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_multi_function(name);
-        self.multi_fn_cache.insert(key, result);
+        self.multi_fn_cache.insert(generation, key, result);
         result
     }
 
