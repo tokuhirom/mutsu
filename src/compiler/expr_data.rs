@@ -459,6 +459,27 @@ impl Compiler {
         let saved_raw_list_elem_terminal = self.raw_list_elem_terminal;
         self.raw_list_elem_terminal = false;
 
+        // A `with`/`without` condition already owns the one evaluation of an
+        // element's index. Reuse that evaluation's value and record the
+        // source for the following topicalizing `given`; compiling the normal
+        // target/index/read sequence here would run an effectful index twice.
+        if let Some((container, positional)) = self.with_element_source_capture.take() {
+            if matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
+                && positional == is_positional
+            {
+                self.compile_subscript_index(index);
+                let container_idx = self.code.add_constant(Value::str(container));
+                self.code.emit(OpCode::TagElementSource {
+                    container_idx,
+                    positional,
+                });
+                self.bind_terminal = saved_terminal;
+                self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
+                return;
+            }
+            self.with_element_source_capture = Some((container, positional));
+        }
+
         // Special case: CALLERS::<$*x> stash-subscript access — the "any caller
         // scope" twin below. It carries the twigil case (roast `CALLERS::<$*foo>`)
         // that the `$CALLERS::x` symbolic form cannot spell. Must precede the

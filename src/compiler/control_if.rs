@@ -84,6 +84,7 @@ impl Compiler {
         let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
 
         let mut deferred_container_decl = None;
+        let mut has_element_source_capture = false;
         if let Some(var_name) = binding_var {
             // Desugar `if EXPR -> $var { BODY }` into `{ my $var = EXPR; if $var
             // { BODY } }`. A binding never coexists with `needs_cond_value`
@@ -92,7 +93,12 @@ impl Compiler {
             deferred_container_decl = deferred;
             self.compile_condition_expr(&desugared_cond);
         } else {
+            let saved_element_source_capture = self.with_element_source_capture.take();
+            let element_source_capture = crate::with_desugar::condition_element_source(cond);
+            has_element_source_capture = element_source_capture.is_some();
+            self.with_element_source_capture = element_source_capture;
             self.compile_condition_expr(cond);
+            self.with_element_source_capture = saved_element_source_capture;
         }
         if needs_cond_value {
             // Duplicate the condition value: one copy for `JumpIfFalse`'s
@@ -123,6 +129,9 @@ impl Compiler {
         // A statement-position chain with no `else` simply falls through; a
         // value-position one still has to leave something behind.
         if else_branch.is_empty() && !value_mode {
+            if has_element_source_capture {
+                self.code.emit(OpCode::ClearElementSource);
+            }
             self.code.patch_jump(jump_else);
             if needs_cond_value {
                 // Pop the leftover duplicated condition value on the false
@@ -132,6 +141,9 @@ impl Compiler {
         } else {
             let jump_end = self.code.emit(OpCode::Jump(0));
             self.code.patch_jump(jump_else);
+            if has_element_source_capture {
+                self.code.emit(OpCode::ClearElementSource);
+            }
             if needs_cond_value {
                 self.code.emit(OpCode::Pop);
             }

@@ -335,7 +335,7 @@ impl Interpreter {
 
     /// Try to dispatch a binary operation to a user-defined infix operator.
     /// Returns Some(result) if a user-defined candidate matched, None otherwise.
-    pub(super) fn try_user_infix(
+    pub(crate) fn try_user_infix(
         &mut self,
         op_name: &str,
         left: &Value,
@@ -352,6 +352,41 @@ impl Interpreter {
             return Ok(None);
         }
         let args = vec![left.clone(), right.clone()];
+        // A custom EXPORT hook can return a materialized `&infix:<op>` value
+        // whose candidates were private to the exporting compilation unit.
+        // They are intentionally captured in the Sub, not left in the global
+        // registry. Dispatch that captured family directly here; resolving the
+        // operator by name would otherwise find the core candidate and lose the
+        // exported overload. A non-matching captured candidate must decline so
+        // the ordinary core operator can still handle recursive calls on values
+        // such as `Order` made from inside the exported candidate itself.
+        let captured_candidates =
+            self.env()
+                .get(&format!("&{op_name}"))
+                .and_then(|value| match value.view() {
+                    ValueView::Sub(data) => data
+                        .env
+                        .get("__mutsu_multi_dispatch_candidates")
+                        .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
+                    _ => None,
+                });
+        if let Some(candidates) = captured_candidates {
+            for candidate in &candidates {
+                if let ValueView::Sub(candidate_data) = candidate.view()
+                    && self
+                        .bind_function_args_values(
+                            &candidate_data.param_defs,
+                            &candidate_data.params,
+                            &args,
+                        )
+                        .is_ok()
+                {
+                    let result = self.call_sub_value(candidate.clone(), args, false)?;
+                    return Ok(Some(result));
+                }
+            }
+            return Ok(None);
+        }
         if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
             // The native implementation is a *candidate*, not a fallback
             // (ADR-0071): a user `multi infix:<+>($a, $b)` joins the operator's

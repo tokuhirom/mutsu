@@ -256,6 +256,17 @@ impl Interpreter {
                     None
                 }
             }
+            Some(ValueView::Sub(data)) => {
+                data.env
+                    .get("__mutsu_multi_dispatch_name")
+                    .and_then(|value| match value.view() {
+                        ValueView::Str(target) => {
+                            let target = target.to_string();
+                            (target != name && is_operator(&target)).then_some(target)
+                        }
+                        _ => None,
+                    })
+            }
             _ => None,
         }
     }
@@ -833,6 +844,13 @@ impl Interpreter {
         // the alias marker is consumed so another local declaration still
         // raises X::Redeclaration.
         let imported_routine_alias = !is_our_scoped && self.imported_routine_alias(&package, name);
+        // `constant &infix:<alias> := &infix:<target>` installs a routine
+        // value in the lexical environment, but Rakudo permits later `multi`
+        // candidates on that alias and makes them visible through both names.
+        // The candidate registration below merges the two registry families;
+        // do not mistake the constant's routine value for a conflicting
+        // ordinary sub declaration.
+        let operator_alias = multi && self.operator_alias_target(name).is_some();
         // Idempotent re-registration fast path. A `RegisterSub` re-executes every
         // time its enclosing frame runs (e.g. a `my sub` inside a hot routine),
         // but the declaration it installs is constant. When a structurally
@@ -1157,6 +1175,7 @@ impl Interpreter {
                 && !allow_lexical_shadow
                 && !imported_routine_alias
                 && !is_method_value_decl
+                && !operator_alias
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }

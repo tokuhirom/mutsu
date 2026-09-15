@@ -283,6 +283,13 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // Numeric comparison has a user-defined candidate set too. An
+            // imported `multi infix:<==>` for an object type must get first
+            // refusal before the core candidate tries `Numeric` (which is
+            // precisely what Version::Semverish relies on).
+            if let Some(value) = vm.try_user_infix("infix:<==>", &l, &r)? {
+                return Ok(value);
+            }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -388,6 +395,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        if let Some(value) = self.try_user_infix("infix:<!=>", &left, &right)? {
+            return Ok(value);
+        }
         let eq_result = self.num_eq_values(left, right)?;
         Ok(Value::truth(!eq_result.truthy()))
     }
@@ -423,31 +433,11 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Fall through to standard != logic
-        let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::FALSE);
-            }
-            if let (Some(a), Some(b)) =
-                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
-                && (is_rationalish(&l) || is_rationalish(&r))
-            {
-                Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
-            } else if !l.same_variant(&r) || l.is_nil() {
-                // Mirror `==` exactly: operands of different shapes (a Str and
-                // an Int, say) compare as floats. Structural equality here made
-                // `"" != 0` answer True while `"" == 0` answered False.
-                Ok(Value::truth(
-                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
-                ))
-            } else {
-                Ok(Value::truth(l == r))
-            }
-        })?;
-        self.stack.push(Value::truth(!eq_result.truthy()));
+        // Fall through to the shared negated-equality path. In particular,
+        // `!=` is `not ==`, so a junction must be collapsed after equality
+        // autothreading rather than negated element by element.
+        let result = self.num_ne_values(left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -460,20 +450,26 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        let has_override = self.user_infix_override("infix:<<>");
         // Fast path: Int/Int or Num/Num, skipping the generic BigRat-capable
         // `compare` path (its conversions + allocation are wasted on the
         // overwhelmingly common case of two native-shaped operands).
-        if let ValueView::Int(a) = left.view()
+        if !has_override
+            && let ValueView::Int(a) = left.view()
             && let ValueView::Int(b) = right.view()
         {
             return Ok(Value::truth(a < b));
         }
-        if let ValueView::Num(a) = left.view()
+        if !has_override
+            && let ValueView::Num(a) = left.view()
             && let ValueView::Num(b) = right.view()
         {
             return Ok(Value::truth(a < b));
         }
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(value) = vm.try_user_infix("infix:<<>", &l, &r)? {
+                return Ok(value);
+            }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -487,17 +483,23 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Int(a) = left.view()
+        let has_override = self.user_infix_override("infix:<<=>");
+        if !has_override
+            && let ValueView::Int(a) = left.view()
             && let ValueView::Int(b) = right.view()
         {
             return Ok(Value::truth(a <= b));
         }
-        if let ValueView::Num(a) = left.view()
+        if !has_override
+            && let ValueView::Num(a) = left.view()
             && let ValueView::Num(b) = right.view()
         {
             return Ok(Value::truth(a <= b));
         }
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(value) = vm.try_user_infix("infix:<<=>", &l, &r)? {
+                return Ok(value);
+            }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -511,17 +513,23 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Int(a) = left.view()
+        let has_override = self.user_infix_override("infix:<>>");
+        if !has_override
+            && let ValueView::Int(a) = left.view()
             && let ValueView::Int(b) = right.view()
         {
             return Ok(Value::truth(a > b));
         }
-        if let ValueView::Num(a) = left.view()
+        if !has_override
+            && let ValueView::Num(a) = left.view()
             && let ValueView::Num(b) = right.view()
         {
             return Ok(Value::truth(a > b));
         }
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(value) = vm.try_user_infix("infix:<>>", &l, &r)? {
+                return Ok(value);
+            }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -535,17 +543,23 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Int(a) = left.view()
+        let has_override = self.user_infix_override("infix:<>=>");
+        if !has_override
+            && let ValueView::Int(a) = left.view()
             && let ValueView::Int(b) = right.view()
         {
             return Ok(Value::truth(a >= b));
         }
-        if let ValueView::Num(a) = left.view()
+        if !has_override
+            && let ValueView::Num(a) = left.view()
             && let ValueView::Num(b) = right.view()
         {
             return Ok(Value::truth(a >= b));
         }
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(value) = vm.try_user_infix("infix:<>=>", &l, &r)? {
+                return Ok(value);
+            }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;

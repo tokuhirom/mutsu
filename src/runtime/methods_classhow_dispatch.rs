@@ -1023,27 +1023,64 @@ impl Interpreter {
                         )
                         .filter(|defs| defs.iter().any(|d| d.is_multi))
                 })();
-                // Filter out invocant params from param_defs since MethodDef
-                // stores only the user-visible parameters (the invocant is
-                // added implicitly during dispatch).
-                let filtered_param_defs: Vec<ParamDef> = sub_data
-                    .param_defs
-                    .iter()
-                    .filter(|pd| !pd.is_invocant)
-                    .cloned()
-                    .collect();
+                // A plain block passed to `^add_method` receives the invocant
+                // as its first positional argument. Unlike a `method` literal,
+                // that parameter is visible in the block's signature
+                // (`A.^add_method('m', -> $x {...})` has `($x)`, not an
+                // implicit `self` plus `$x`). Turn that first block parameter
+                // into the same body-local alias as a named method invocant:
+                // the method binder owns the receiver, while `$x` remains
+                // available to the recompiled body. Keeping it in
+                // `param_defs` and marking it as an invocant would make the
+                // binder consume it without installing the block's `$x`
+                // binding. Ordinary method literals retain the existing
+                // implicit-invocant filtering.
+                let is_plain_block = sub_data.is_bare_block
+                    || sub_data
+                        .compiled_code
+                        .as_ref()
+                        .is_some_and(|code| code.is_pointy_block);
+                let block_invocant: Option<String> = is_plain_block
+                    .then(|| {
+                        sub_data
+                            .param_defs
+                            .first()
+                            .map(|pd| pd.name.clone())
+                            .or_else(|| sub_data.params.first().cloned())
+                    })
+                    .flatten()
+                    .map(|name| name.trim_start_matches(['$', '\\']).to_string())
+                    .filter(|name| !name.is_empty());
+                let mut filtered_param_defs: Vec<ParamDef> = if is_plain_block {
+                    sub_data.param_defs.iter().cloned().collect()
+                } else {
+                    sub_data
+                        .param_defs
+                        .iter()
+                        .filter(|pd| !pd.is_invocant)
+                        .cloned()
+                        .collect()
+                };
+                if is_plain_block && block_invocant.is_some() && !filtered_param_defs.is_empty() {
+                    filtered_param_defs.remove(0);
+                }
                 // A NAMED invocant other than `self` (`anon method (Mu \SELF:
                 // |) {...}` — OO::Monitors' POPULATE hook) is dropped from the
                 // params like any invocant, but the body refers to it by name,
                 // so prepend a `SELF := self` binding and let the dispatch
                 // recompile the adjusted body on demand.
-                let named_invocant: Option<String> = sub_data
-                    .param_defs
-                    .iter()
-                    .find(|pd| pd.is_invocant)
-                    .map(|pd| pd.name.trim_start_matches(['$', '\\']).to_string())
-                    .filter(|n| !n.is_empty() && n != "self");
-                let (method_body, method_compiled) = match named_invocant {
+                let named_invocant: Option<String> = (!is_plain_block)
+                    .then(|| {
+                        sub_data
+                            .param_defs
+                            .iter()
+                            .find(|pd| pd.is_invocant)
+                            .map(|pd| pd.name.trim_start_matches(['$', '\\']).to_string())
+                            .filter(|n| !n.is_empty() && n != "self")
+                    })
+                    .flatten();
+                let body_invocant = block_invocant.clone().or(named_invocant);
+                let (method_body, method_compiled) = match body_invocant {
                     Some(inv_name) => {
                         let mut body = vec![
                             crate::ast::Stmt::VarDecl {
@@ -1094,14 +1131,22 @@ impl Interpreter {
                     .filter(|pd| pd.is_invocant)
                     .map(|pd| pd.name.as_str())
                     .collect();
-                let filtered_params: Vec<String> = sub_data
-                    .params
-                    .iter()
-                    .filter(|p| {
-                        !invocant_names.contains(p.trim_start_matches(['$', '@', '%', '&']))
-                    })
-                    .cloned()
-                    .collect();
+                let filtered_params: Vec<String> = if is_plain_block {
+                    if block_invocant.is_some() {
+                        sub_data.params.iter().skip(1).cloned().collect()
+                    } else {
+                        sub_data.params.to_vec()
+                    }
+                } else {
+                    sub_data
+                        .params
+                        .iter()
+                        .filter(|p| {
+                            !invocant_names.contains(p.trim_start_matches(['$', '@', '%', '&']))
+                        })
+                        .cloned()
+                        .collect()
+                };
                 let def = MethodDef {
                     lexical_package: sub_data.package,
                     params: filtered_params,

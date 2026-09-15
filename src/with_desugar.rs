@@ -37,9 +37,11 @@ pub(crate) fn next_tmp_name() -> String {
 ///
 /// The `DoStmt(VarDecl)` declares the temp in the current scope and evaluates
 /// to the condition's value, so the body can topicalize on the temp instead of
-/// re-evaluating the source expression.
+/// re-evaluating the source expression. For an lvalue condition, the temp is a
+/// binding to that lvalue: this preserves `with $x`/`with @a` writeback while
+/// still evaluating an effectful subscript only once.
 pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) -> Expr {
-    let init = Expr::DoStmt(Box::new(Stmt::VarDecl {
+    let decl = Stmt::VarDecl {
         name: tmp_name.to_string(),
         expr: cond_expr,
         type_constraint: None,
@@ -50,7 +52,8 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
         where_constraint: None,
-    }));
+    };
+    let init = Expr::DoStmt(Box::new(decl));
     let defined = Expr::MethodCall {
         target: Box::new(init),
         name: Symbol::intern("defined"),
@@ -68,27 +71,58 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
     }
 }
 
+/// Recover the simple element source from the hidden condition used by a
+/// `with`/`without` scaffold. The condition evaluates the source once; the
+/// compiler uses this metadata to tag that already-evaluated element for the
+/// topicalizing `given`, instead of compiling the subscript a second time.
+pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, bool)> {
+    let cond = match cond {
+        Expr::Unary { expr, .. } => expr.as_ref(),
+        other => other,
+    };
+    let Expr::MethodCall { target, name, .. } = cond else {
+        return None;
+    };
+    if name.resolve() != "defined" {
+        return None;
+    }
+    let Expr::DoStmt(stmt) = target.as_ref() else {
+        return None;
+    };
+    let decl = match stmt.as_ref() {
+        Stmt::VarDecl { name, expr, .. } if name.starts_with("__with_tmp_") => expr,
+        _ => return None,
+    };
+    let Expr::Index {
+        target,
+        is_positional,
+        ..
+    } = decl
+    else {
+        return None;
+    };
+    let container = match target.as_ref() {
+        Expr::Var(name) if !name.starts_with(['!', '.']) => name.clone(),
+        Expr::ArrayVar(name) if !name.starts_with(['!', '.']) => format!("@{name}"),
+        Expr::HashVar(name) if !name.starts_with(['!', '.', '?']) => format!("%{name}"),
+        _ => return None,
+    };
+    Some((container, *is_positional))
+}
+
 /// The topic the parameterless block form's scaffold `given` runs on.
 ///
-/// An lvalue condition topicalizes on the *source* so mutations through `$_`
-/// write back to it, and a literal topicalizes on the literal so `$_` keeps
-/// `given`'s read-only semantics; anything else uses the once-evaluated temp.
+/// An lvalue condition is represented by a bound once-evaluated temp, so it
+/// topicalizes on that temp and mutations through `$_` still write back to the
+/// source. A literal topicalizes on the literal so `$_` keeps `given`'s
+/// read-only semantics; anything else uses the once-evaluated temp.
 /// Mirrors the routing in `parser::stmt::control::with_stmt` for the case with
 /// no pointy parameter -- keep the two in step.
 pub(crate) fn body_topic(cond_expr: &Expr, tmp_var: &Expr) -> Expr {
-    let is_element_lvalue = matches!(
+    if matches!(
         cond_expr,
-        Expr::Index { target, .. }
-            if matches!(
-                target.as_ref(),
-                Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-            )
-    );
-    let is_lvalue = matches!(
-        cond_expr,
-        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
-    ) || is_element_lvalue;
-    if is_lvalue || matches!(cond_expr, Expr::Literal(_)) {
+        Expr::Literal(_) | Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+    ) {
         cond_expr.clone()
     } else {
         tmp_var.clone()

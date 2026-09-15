@@ -1934,6 +1934,9 @@ pub(crate) enum OpCode {
         container_idx: u32,
         positional: bool,
     },
+    /// Clear a pending `TagElementSource` when a `with`/`without` condition
+    /// takes its false branch without entering the topicalizing `given`.
+    ClearElementSource,
 
     /// Clear an aggregate variable (@/%) in-place so references see the change.
     UndefineAggregate(u32),

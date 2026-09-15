@@ -365,14 +365,19 @@ impl Interpreter {
         let sigil = key.chars().next();
         if let Some('&') = sigil {
             let op = &key[1..];
+            let normalized_op = Interpreter::normalize_categorical_operator_name(op);
             if matches!(
                 op.split_once(":<").map(|(c, _)| c),
                 Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
             ) {
                 crate::runtime::cow_table_mut(&mut self.imported_operator_names)
                     .insert(op.to_string());
+                if normalized_op != op {
+                    crate::runtime::cow_table_mut(&mut self.imported_operator_names)
+                        .insert(normalized_op.clone());
+                }
             }
-            if op.starts_with("infix:<") {
+            if normalized_op.starts_with("infix:<") {
                 // Exported: visible in the importing unit, so no
                 // declaring-file restriction (see the field's doc comment:
                 // an empty file set means "visible everywhere"). This must
@@ -386,7 +391,7 @@ impl Interpreter {
                 // named it instead of (by a since-fixed bug, #8008) the
                 // unit that had triggered the module's load.
                 crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
-                    .insert(op.to_string(), std::collections::HashSet::new());
+                    .insert(normalized_op, std::collections::HashSet::new());
                 crate::vm::vm_jit::note_user_infix_decl();
             }
         }
@@ -399,11 +404,25 @@ impl Interpreter {
             Some('$') => key[1..].to_string(),
             _ => key,
         };
+        let normalized_env_key = if sigil == Some('&') {
+            let op = &env_key[1..];
+            let normalized_op = Interpreter::normalize_categorical_operator_name(op);
+            format!("&{normalized_op}")
+        } else {
+            env_key.clone()
+        };
+        self.unsuppress_name(&normalized_env_key);
         if sigil == Some('&') {
             let package = self.current_package();
             self.record_imported_routine_alias(&package, &env_key[1..]);
+            if normalized_env_key != env_key {
+                self.record_imported_routine_alias(&package, &normalized_env_key[1..]);
+            }
         }
-        self.env.insert(env_key, value);
+        self.env.insert(env_key.clone(), value.clone());
+        if normalized_env_key != env_key {
+            self.env.insert(normalized_env_key, value);
+        }
         self.invalidate_fn_resolution();
     }
 }

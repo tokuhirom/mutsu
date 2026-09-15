@@ -4317,6 +4317,10 @@ impl Interpreter {
                 self.element_source = Some((container, index, positional));
                 *ip += 1;
             }
+            OpCode::ClearElementSource => {
+                self.element_source = None;
+                *ip += 1;
+            }
 
             OpCode::UndefineAggregate(name_idx) => {
                 let name = Self::const_str(code, *name_idx);

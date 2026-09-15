@@ -2002,7 +2002,7 @@ impl Interpreter {
                 return Err(make_method_not_found_error(pm_name, &name.resolve(), true));
             }
             // Package (type object) dispatch -- check user-defined methods
-            if self.has_user_method(&name.resolve(), method) {
+            if self.package_has_applicable_user_method(&target, method, &args) {
                 // ADR-0019 F6: VM-level direct-dispatch path first (see
                 // `try_dispatch_compiled_method_direct`'s doc comment).
                 if let Some(result) =
