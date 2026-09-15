@@ -144,6 +144,20 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
     if pattern.ignore_case || pattern.ignore_mark {
         return None;
     }
+    let (prefix, _) = required_literal_prefix_walk(pattern);
+    (!prefix.is_empty()).then_some(prefix)
+}
+
+/// Walk the literal-only part of one pattern level, returning both the text
+/// accumulated so far and whether every token at this level was consumed.
+///
+/// A transparent group can contribute a required prefix, but the enclosing
+/// level may continue after it only when its entire body was a literal run.
+/// This is the same distinction `ltm_litlen_walk` makes for a `Group`.
+fn required_literal_prefix_walk(pattern: &RegexPattern) -> (String, bool) {
+    if pattern.ignore_case || pattern.ignore_mark {
+        return (String::new(), false);
+    }
     let mut prefix = String::new();
     for token in &pattern.tokens {
         // Mirrors `ltm_litlen_walk`'s own chain-ending conditions exactly
@@ -152,30 +166,37 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
         // separator), or a capture alias all end the declarative chain there,
         // whatever accumulated before it stays valid as a required prefix.
         if token.from_runtime_interpolation {
-            break;
+            return (prefix, false);
         }
         if !matches!(token.quant, RegexQuant::One) || token.separator.is_some() {
-            break;
+            return (prefix, false);
         }
         if token.named_capture.is_some()
             || token.secondary_named_capture.is_some()
             || token.hash_capture.is_some()
         {
-            break;
+            return (prefix, false);
         }
         match &token.atom {
             RegexAtom::Literal(ch) => prefix.push(*ch),
             // A grapheme literal is still a fixed run of codepoints, so it
             // extends the required prefix like any other literal.
             RegexAtom::LiteralGrapheme(g) => prefix.extend(g.chars()),
-            _ => break,
+            // Quoted regex literals parse as transparent groups. A
+            // capture-isolated group is likewise invisible to the enclosing
+            // match's capture result, unlike `CaptureGroup`, so both may
+            // extend a required prefix when their entire body is literal.
+            RegexAtom::Group(inner) | RegexAtom::CaptureIsolatedGroup(inner) => {
+                let (inner_prefix, inner_complete) = required_literal_prefix_walk(inner);
+                prefix.push_str(&inner_prefix);
+                if !inner_complete {
+                    return (prefix, false);
+                }
+            }
+            _ => return (prefix, false),
         }
     }
-    if prefix.is_empty() {
-        None
-    } else {
-        Some(prefix)
-    }
+    (prefix, true)
 }
 
 /// Candidate start positions for an unanchored scan of `pattern` over
