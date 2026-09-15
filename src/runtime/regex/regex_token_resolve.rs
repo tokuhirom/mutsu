@@ -111,7 +111,8 @@ impl Interpreter {
         name_sym: Symbol,
         pkg: Symbol,
     ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
-        debug_assert_eq!(name_sym, Symbol::intern(name));
+        // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         let cache_key = (pkg, name_sym);

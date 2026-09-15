@@ -75,10 +75,13 @@ fn pointy_block_call_does_not_intern_its_parameter_names() {
     // mark, the writeback's parameter-name set, and three by-name `Env`
     // probes), the defining file, `@_`, and the four `__mutsu_*` dispatcher
     // metadata keys.
+    // #7766's assertion round took it further: the remaining one was the
+    // parameter name, re-interned by `baked_param_name_sym`'s own
+    // `debug_assert!`. Measured 1.0 now, in debug and release alike.
     assert!(
-        per_call <= 6.0,
+        per_call <= 3.0,
         "a closure call re-interns its own names per call \
-         ({per_call:.3} interns/call, budget 6, was 18 before the fix); see #8302"
+         ({per_call:.3} interns/call, budget 3, was 18 before #8302); see #7766"
     );
 }
 
@@ -105,9 +108,12 @@ fn bare_block_call_does_not_intern_its_topic_handling() {
     // A bare block binds `$_` rather than a named parameter, so it never paid
     // the parameter-name bucket — but it did pay the metadata probes and the
     // defining-file intern. Measured: 6 before, 1 after.
+    // The last one was the defining-file intern, which was
+    // `current_source_file_sym`'s own `debug_assert!` re-deriving `?FILE`.
+    // Measured 0.0 now.
     assert!(
-        per_call <= 4.0,
+        per_call <= 2.0,
         "a bare-block call re-interns a fixed env key per call \
-         ({per_call:.3} interns/call, budget 4, was 6 before the fix); see #8302"
+         ({per_call:.3} interns/call, budget 2, was 6 before #8302); see #7766"
     );
 }

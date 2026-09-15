@@ -48,17 +48,23 @@ impl Interpreter {
     /// memo (`multi_dispatch_candidates_memo`): the same list, shared, for a repeat call
     /// of the same name from the same package context under an unchanged
     /// registry.
-    pub(crate) fn resolve_all_multi_candidates_cached(
+    /// Takes the callsite name in both forms: the memo is `Symbol`-keyed, and
+    /// the sole caller (`push_multi_dispatch_frame_with_winner_sym`) holds the
+    /// symbol already, so re-hashing the name here once per multi dispatch was
+    /// pure overhead (#7766 unit 2 item 4).
+    pub(crate) fn resolve_all_multi_candidates_cached_sym(
         &mut self,
         name: &str,
+        name_sym: Symbol,
     ) -> crate::runtime::MultiCandidateList {
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let generation = (self.fn_resolve_gen, self.registry().proto_generation());
         if self.multi_dispatch_candidates_memo_gen != generation {
             self.multi_dispatch_candidates_memo.clear();
             self.multi_dispatch_candidates_memo_gen = generation;
         }
         let key = (
-            Symbol::intern(name),
+            name_sym,
             self.current_package_sym(),
             self.routine_stack()
                 .last()
@@ -203,11 +209,23 @@ mod indexed_gather_equivalence_tests {
         // The memoized gather answers the same list, and a later registration
         // (which moves `fn_resolve_gen`) refreshes it rather than serving the
         // stale one.
-        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 3);
-        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 3);
+        assert_eq!(
+            i.resolve_all_multi_candidates_cached_sym("f", Symbol::intern("f"))
+                .len(),
+            3
+        );
+        assert_eq!(
+            i.resolve_all_multi_candidates_cached_sym("f", Symbol::intern("f"))
+                .len(),
+            3
+        );
         i.run("multi sub f(Num $x, Num $y, Num $z) { 4 }")
             .expect("a fourth candidate registers");
-        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 4);
+        assert_eq!(
+            i.resolve_all_multi_candidates_cached_sym("f", Symbol::intern("f"))
+                .len(),
+            4
+        );
         assert_eq!(i.resolve_all_multi_candidates_indexed("f").len(), 4);
     }
 }

@@ -148,14 +148,43 @@ impl Interpreter {
     /// Filled lazily per base name and dropped wholesale when `fn_resolve_gen`
     /// moves, which every function registration/removal bumps.
     pub(crate) fn fn_keys_for_base(&mut self, name: &str) -> std::sync::Arc<[Symbol]> {
+        let base = function_key_base_name(name);
+        self.fn_keys_for_base_inner(base, Symbol::intern(base))
+    }
+
+    /// [`Self::fn_keys_for_base`] for a caller that already holds the callsite
+    /// name's `Symbol` — every `CallFunc`-shaped site does, via
+    /// [`crate::opcode::CompiledCode::const_sym`] (#7736).
+    ///
+    /// The index is keyed by the name's BASE, which is a suffix slice of
+    /// `name`, so the caller's symbol is usable exactly when the base *is* the
+    /// whole name — the ordinary unqualified case. A qualified name
+    /// (`Pkg::f`, `f/2:Int`) still interns its shorter base, which is what the
+    /// `&str` entry point above does for everyone (#7766 unit 2).
+    pub(crate) fn fn_keys_for_base_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+    ) -> std::sync::Arc<[Symbol]> {
+        debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
+        let base = function_key_base_name(name);
+        let base_sym = if base.len() == name.len() {
+            name_sym
+        } else {
+            Symbol::intern(base)
+        };
+        self.fn_keys_for_base_inner(base, base_sym)
+    }
+
+    /// Shared body of the two entry points above: `base` and `base_sym` are the
+    /// same already-reduced base name in its two forms.
+    fn fn_keys_for_base_inner(&mut self, base: &str, base_sym: Symbol) -> std::sync::Arc<[Symbol]> {
         crate::vm::vm_stats::record_fn_keys_base_lookup();
         if self.fn_keys_by_base_gen != self.fn_resolve_gen {
             crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
             self.fn_keys_by_base.clear();
             self.fn_keys_by_base_gen = self.fn_resolve_gen;
         }
-        let base = function_key_base_name(name);
-        let base_sym = Symbol::intern(base);
         if let Some(cached) = self.fn_keys_by_base.get(&base_sym) {
             // Staleness is audited once per resolution in
             // `fn_base_name_registered`, not here — see the note there.

@@ -163,7 +163,7 @@ impl Interpreter {
             || args
                 .iter()
                 .any(|a| matches!(a.view(), ValueView::Junction { .. }))
-            || self.native_lever_a_user_override(target, method)
+            || self.native_lever_a_user_override_sym(target, method_sym)
         {
             return None;
         }

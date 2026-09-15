@@ -487,7 +487,8 @@ impl Interpreter {
     ) -> bool {
         let readonly = match name_sym {
             Some(sym) => {
-                debug_assert_eq!(sym, Symbol::intern(name));
+                // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
+                debug_assert_eq!(Symbol::lookup(name), Some(sym));
                 self.is_readonly_sym(sym)
             }
             None => self.is_readonly(name),

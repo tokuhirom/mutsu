@@ -38,6 +38,29 @@ impl Interpreter {
         positional: usize,
     ) -> bool {
         let keys = self.fn_keys_for_base(name);
+        self.keys_bind_container_at(&keys, positional)
+    }
+
+    /// [`Self::named_routine_binds_container_at`] for a caller that already
+    /// holds the callee name's `Symbol`. `MarkRwArgRefContext` carries the name
+    /// as a string constant, so `CompiledCode::const_sym` hands the symbol over
+    /// and the `&str` form's `to_string()` + re-intern both disappear (#7766).
+    pub(crate) fn named_routine_binds_container_at_sym(
+        &mut self,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+        positional: usize,
+    ) -> bool {
+        let keys = self.fn_keys_for_base_sym(name, name_sym);
+        self.keys_bind_container_at(&keys, positional)
+    }
+
+    /// Shared body of the two entry points above.
+    fn keys_bind_container_at(
+        &mut self,
+        keys: &[crate::symbol::Symbol],
+        positional: usize,
+    ) -> bool {
         if keys.is_empty() {
             return false;
         }
