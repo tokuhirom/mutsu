@@ -1315,28 +1315,25 @@ impl Interpreter {
     /// Check if a string represents a single regex atom (used to guard LTM expansion).
     /// Returns true for single characters, bracket groups, angle-bracket assertions,
     /// quoted strings, backslash escapes, and dot (any).
+    ///
+    /// Delegates to [`Self::split_first_atom`] — the same balanced-delimiter atom
+    /// scanner the separator-splitting code uses — and checks that consuming one
+    /// atom exhausts the whole string. A naive first-char/last-char check (the
+    /// previous implementation) is fooled by a multi-atom sequence that merely
+    /// happens to start and end with matching delimiters: `'x'?\d**2..'b'` (the
+    /// `**`-preceding text of `'x'? \d ** 2 . . 'b' ** 1..3`, captured whole by
+    /// the greedy count-spec regex because it itself contains a nested `**`)
+    /// starts with `'` and ends with `'`, so the old check misclassified the
+    /// entire multi-token prefix as one bare string literal and string-expanded
+    /// it as if `'b' ** 1..3` alone were being repeated — corrupting the
+    /// `\d ** 2` quantifier and dropping the two `.` atoms in the process
+    /// (issue #8453).
     fn is_single_regex_atom(s: &str) -> bool {
         if s.is_empty() {
             return false;
         }
-        let chars: Vec<char> = s.chars().collect();
-        // Single character
-        if chars.len() == 1 {
-            return true;
-        }
-        // Backslash escape: \x
-        if chars[0] == '\\' && chars.len() == 2 {
-            return true;
-        }
-        // Bracket groups: [...], (...), <...>, '...'
-        match chars[0] {
-            '[' => *chars.last().unwrap_or(&' ') == ']',
-            '(' => *chars.last().unwrap_or(&' ') == ')',
-            '<' => *chars.last().unwrap_or(&' ') == '>',
-            '\'' => chars.len() >= 2 && *chars.last().unwrap_or(&' ') == '\'',
-            '"' => chars.len() >= 2 && *chars.last().unwrap_or(&' ') == '"',
-            _ => false,
-        }
+        let (first, rest) = Self::split_first_atom(s);
+        !first.is_empty() && rest.is_empty()
     }
 
     fn build_ltm_expansion(
