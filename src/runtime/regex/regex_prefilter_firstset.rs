@@ -14,6 +14,7 @@
 
 use super::super::*;
 use super::regex_eval_class::class_matches_ignorecase;
+use crate::runtime::unicode::{check_unicode_property, check_unicode_property_with_args};
 
 /// A superset of the characters that can appear at the first position of a
 /// match.
@@ -34,6 +35,13 @@ pub(crate) struct FirstSet {
     /// `None` — every non-ASCII character may start a match; `Some(list)` —
     /// only these (sorted, deduplicated, and in practice at most a handful).
     non_ascii: Option<Vec<char>>,
+    /// Some part of this set was derived through a *scoped* `:ignoremark`,
+    /// whose sub-pattern is matched against the mark-stripped subject rather
+    /// than against the subject itself. The characters are then a statement
+    /// about the stripped text, which only lines up with the original text at
+    /// a grapheme-cluster boundary — see [`FirstSet::admits_at`], which is
+    /// what every scan must consult instead of [`FirstSet::contains`].
+    mark_skewed: bool,
 }
 
 impl FirstSet {
@@ -42,6 +50,7 @@ impl FirstSet {
         FirstSet {
             ascii: [0; 2],
             non_ascii: Some(Vec::new()),
+            mark_skewed: false,
         }
     }
 
@@ -51,6 +60,7 @@ impl FirstSet {
         FirstSet {
             ascii: [0; 2],
             non_ascii: None,
+            mark_skewed: false,
         }
     }
 
@@ -59,6 +69,7 @@ impl FirstSet {
         FirstSet {
             ascii: [u64::MAX; 2],
             non_ascii: None,
+            mark_skewed: false,
         }
     }
 
@@ -79,7 +90,25 @@ impl FirstSet {
         }
     }
 
+    /// Record that this set was derived against the mark-stripped subject, so
+    /// every scan consulting it must allow for the stripping (see the field's
+    /// doc comment and [`FirstSet::admits_at`]).
+    ///
+    /// Every non-ASCII character is admitted along with the flag, and that is
+    /// not a precision choice but the soundness of the whole derivation: under
+    /// `:ignoremark` a precomposed `é` is stripped to `e`, so the set's `'e'`
+    /// is a claim about a subject character that may be spelled any number of
+    /// ways. The reverse mapping is bounded only by Unicode's composition
+    /// tables, which is exactly the enumeration this module does not do.
+    pub(super) fn set_mark_skewed(&mut self) {
+        self.mark_skewed = true;
+        self.non_ascii = None;
+    }
+
     pub(super) fn union(&mut self, other: &FirstSet) {
+        // One skewed contributor skews the union: the scan cannot tell which
+        // branch's characters a given position was rejected by.
+        self.mark_skewed |= other.mark_skewed;
         self.ascii[0] |= other.ascii[0];
         self.ascii[1] |= other.ascii[1];
         match (self.non_ascii.as_mut(), other.non_ascii.as_ref()) {
@@ -108,6 +137,46 @@ impl FirstSet {
                 Some(list) => list.binary_search(&c).is_ok(),
             }
         }
+    }
+
+    /// Whether a match may begin at `chars[i]` — the question a scan actually
+    /// asks, and the one every scan must ask instead of [`FirstSet::contains`].
+    ///
+    /// For an ordinary set the two are the same: the engine matches the
+    /// pattern's leading atom against `chars[i]` itself, so a character the set
+    /// rejects provably cannot start a match.
+    ///
+    /// A **mark-skewed** set is a statement about the *stripped* subject, and
+    /// the engine enters a scoped `:ignoremark` sub-pattern at
+    /// `original_to_stripped(i)` — the first stripped character whose grapheme
+    /// starts at or after `i`. Two facts make the ASCII bits usable anyway:
+    ///
+    /// - when `i` starts a grapheme cluster whose first base is `chars[i]`, the
+    ///   stripped subject there begins with exactly `chars[i]`, so the set
+    ///   answers about the right character. An ASCII character is never a
+    ///   combining mark, a Prepend or a Format character, so it is always its
+    ///   cluster's first base;
+    /// - when `i` does *not* start a cluster, stripping skips forward past it
+    ///   and the set says nothing about `chars[i]` — so such a position must be
+    ///   admitted unconditionally.
+    ///
+    /// The cheap sufficient test for the first case is that `chars[i - 1]` is
+    /// ASCII and the pair is not `\r\n`: UAX #29 breaks between every other
+    /// pair of ASCII characters (Prepend, Extend, ZWJ, regional indicators,
+    /// Hangul and Extended_Pictographic are all non-ASCII), and a non-ASCII
+    /// `chars[i]` is admitted by the set already. Anything else falls back to
+    /// admitting the position, which costs one wasted engine entry near a
+    /// non-ASCII character and never a wrong answer.
+    #[inline]
+    pub(crate) fn admits_at(&self, chars: &[char], i: usize) -> bool {
+        if self.contains(chars[i]) {
+            return true;
+        }
+        if !self.mark_skewed || i == 0 {
+            return false;
+        }
+        let prev = chars[i - 1];
+        !prev.is_ascii() || (prev == '\r' && chars[i] == '\n')
     }
 
     /// A set that admits everything constrains nothing, so applying it would
@@ -201,6 +270,31 @@ fn class_is_ascii_only(class: &CharClass, ignore_case: bool) -> bool {
         ClassItem::Digit => true,
         _ => false,
     })
+}
+
+/// The characters a `<:prop>` atom can match at a start position, derived by
+/// asking the engine's own property predicate about each ASCII character
+/// rather than by restating any property table (see the module doc comment).
+///
+/// The engine's arm tests `chars[pos]` directly — no case folding (`:i` does
+/// not reach a property test) and no `\r\n` substitution — so the ASCII half is
+/// exact. It also refuses a position that is not a grapheme boundary, which
+/// only ever removes matches, so ignoring that here stays on the safe side.
+/// Every non-ASCII character is admitted: enumerating a property's members over
+/// the whole of Unicode would cost far more than the scan it saves.
+pub(super) fn unicode_prop_first_set(name: &str, negated: bool, args: Option<&str>) -> FirstSet {
+    let mut set = FirstSet::ascii_none_rest_all();
+    for cp in 0u8..128 {
+        let c = cp as char;
+        let holds = match args {
+            Some(a) => check_unicode_property_with_args(name, a, c),
+            None => check_unicode_property(name, c),
+        };
+        if holds != negated {
+            set.insert(c);
+        }
+    }
+    set
 }
 
 /// `\n` as the engine's `Newline` atom defines it.

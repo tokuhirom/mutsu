@@ -417,9 +417,12 @@ Stage 1 is [#8272](https://github.com/tokuhirom/mutsu/issues/8272) (`todo:deep`)
 ADR moved to `Accepted`, and is **landing in slices** — required literal prefix
 ([#8285](https://github.com/tokuhirom/mutsu/issues/8285)), first-character set and minimum match
 length ([#8446](https://github.com/tokuhirom/mutsu/issues/8446)), required inner literal
-([#8457](https://github.com/tokuhirom/mutsu/issues/8457)), and the first-character set through a
-`<subrule>` keyed by package + `TOKEN_DEFS_GEN` (this slice). The issue stays open for what remains:
-NFD-aware first-sets for a *scoped* `:ignoremark`, and §5's NFA over the declarative prefix. Its
+([#8457](https://github.com/tokuhirom/mutsu/issues/8457)), the first-character set through a
+`<subrule>` keyed by package + `TOKEN_DEFS_GEN`
+([#8464](https://github.com/tokuhirom/mutsu/issues/8464)), and first-sets for a `<:prop>` atom and
+for a *scoped* `:ignoremark` (this slice). The issue stays open for what remains: §5's NFA over the
+declarative prefix, and a `<+a -b>` composite class — whose `NamedBuiltin` items fall back to
+resolving a grammar token against the remaining input, making it a `<subrule>` in disguise. Its
 three constraints — reuse ADR-0022's litlen table rather than defining
 a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
 non-declarative — are the work, not footnotes, and the differential property test against the

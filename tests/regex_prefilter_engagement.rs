@@ -376,3 +376,113 @@ fn a_code_block_after_the_literal_declines_so_it_keeps_running() {
         stats.line
     );
 }
+
+#[test]
+fn a_unicode_property_scan_only_offers_property_members() {
+    // `<:Lu>` was answered "anything" until the property predicate was called
+    // over the ASCII range the same way a character class already was, so this
+    // scan was completely unfiltered. The unit is all lowercase and
+    // punctuation, so no position is a member.
+    let small = prefilter_stats(&failing_scan("/ <:Lu> <:Lu> /", 100));
+    let large = prefilter_stats(&failing_scan("/ <:Lu> <:Lu> /", 800));
+
+    assert!(
+        small.first_char_set >= 1 && large.first_char_set >= 1,
+        "a leading `<:prop>` atom got no first-character set:\n{}\n{}",
+        small.line,
+        large.line
+    );
+    assert!(
+        large.positions_offered > small.positions_offered * 4,
+        "positions_offered did not grow with the subject: {} vs {}",
+        small.positions_offered,
+        large.positions_offered
+    );
+    assert_eq!(
+        small.position_hits, 0,
+        "the subject holds no uppercase letter, so no position should have reached the engine: {}",
+        small.line
+    );
+    assert_eq!(
+        large.position_hits, 0,
+        "the subject holds no uppercase letter, so no position should have reached the engine: {}",
+        large.line
+    );
+}
+
+#[test]
+fn a_negated_unicode_property_is_narrowed_by_its_complement() {
+    // The predicate is called and the answer inverted, rather than the atom
+    // widening to "anything" because it carries a `!`. Every character of this
+    // subject is a digit, so a `<:!Nd>` scan must reject all of them -- which a
+    // universal set could not do.
+    let stats =
+        prefilter_stats(r#"my $big = "0123456789" x 200; say ($big ~~ / <:!Nd> <:!Nd> /).Bool;"#);
+    assert!(
+        stats.first_char_set >= 1,
+        "a negated `<:prop>` atom got no first-character set: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, 0,
+        "every character is a digit, so no position should have reached the engine: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_scoped_ignoremark_scan_is_sublinear_in_subject_length() {
+    // A `:m` sub-pattern is matched against the mark-stripped subject, so its
+    // first-set is derived from the stripped pattern and carried back by
+    // `FirstSet::admits_at`. Before that it sank the whole derivation, which
+    // made hiding a literal behind `:m` a 60x cliff rather than a shortfall.
+    let small = prefilter_stats(&failing_scan("/ [:m 'zzzq'] /", 100));
+    let large = prefilter_stats(&failing_scan("/ [:m 'zzzq'] /", 800));
+
+    assert!(
+        small.first_char_set >= 1 && large.first_char_set >= 1,
+        "a scoped `:ignoremark` group got no first-character set:\n{}\n{}",
+        small.line,
+        large.line
+    );
+    assert!(
+        large.positions_offered > small.positions_offered * 4,
+        "positions_offered did not grow with the subject: {} vs {}",
+        small.positions_offered,
+        large.positions_offered
+    );
+    // The subject is pure ASCII, so every position is decided by the bitmap
+    // alone and `z` occurs nowhere.
+    assert_eq!(
+        small.position_hits, 0,
+        "a scoped `:m` needle that does not occur still reached the engine: {}",
+        small.line
+    );
+    assert_eq!(
+        large.position_hits, 0,
+        "a scoped `:m` needle that does not occur still reached the engine: {}",
+        large.line
+    );
+}
+
+#[test]
+fn a_scoped_ignoremark_admits_every_position_next_to_a_non_ascii_character() {
+    // The soundness escape hatch, pinned so it cannot be optimized away: mark
+    // stripping skips a position that does not start a grapheme cluster, and
+    // the set then says nothing about the character sitting there. Every
+    // character of this subject is either non-ASCII (admitted by the set) or
+    // preceded by one (admitted by `admits_at`), so the scan must offer the
+    // engine every position rather than rejecting on the bitmap.
+    let stats = prefilter_stats(r#"my $s = "e\x[301]" x 40; say ($s ~~ / [:m 'zzzq'] /).Bool;"#);
+    assert!(
+        stats.first_char_set >= 1,
+        "a scoped `:ignoremark` group got no first-character set: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits + 1,
+        stats.positions_offered,
+        "a mark-skewed set must not reject a position it cannot speak for: {}",
+        stats.line
+    );
+}

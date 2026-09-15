@@ -316,10 +316,7 @@ differential_case!(
     non_ascii_class_member,
     r#"say ("abc日本" ~~ / <[日本]> /).Str;"#
 );
-differential_case!(
-    unicode_property_atom_declines_to_anything,
-    r#"say ("abcÀ" ~~ / <:Lu> /).Str;"#
-);
+differential_case!(unicode_property_atom, r#"say ("abcÀ" ~~ / <:Lu> /).Str;"#);
 
 // --- required-inner-literal shapes (the third Stage 1 slice) ---
 //
@@ -407,4 +404,101 @@ differential_case!(
 differential_case!(
     inner_literal_lead_in_can_match_empty,
     r#"say ("=>" ~~ / \w* '=>' /).Str;"#
+);
+
+// --- `<:prop>` first-sets and scoped `:ignoremark` (the fifth Stage 1 slice) ---
+//
+// Both used to widen the derivation to "anything" or sink it outright, so
+// these are shapes that were previously correct by never being narrowed at
+// all. The `:m` cases are the dangerous ones: the set is derived against the
+// MARK-STRIPPED subject, so a position whose original character was stripped
+// away -- or which sits inside a grapheme cluster -- must still be offered.
+
+differential_case!(
+    unicode_property_global_scan,
+    r#"say ("aBcD1e" ~~ m:g/ <:Lu> /).join(",");"#
+);
+differential_case!(
+    unicode_property_negated,
+    r#"say ("ab12cd" ~~ m:g/ <:!Nd> /).join(",");"#
+);
+differential_case!(
+    unicode_property_non_ascii_member,
+    r#"say ("abcΩd" ~~ / <:Greek> /).Str;"#
+);
+differential_case!(
+    unicode_property_matching_no_ascii_character,
+    r#"say ("abc" ~~ / <:Greek> /).defined;"#
+);
+differential_case!(
+    unicode_property_on_a_combining_mark,
+    r#"say ("a\x[094D]b" ~~ / <:Mn> /).defined;"#
+);
+differential_case!(
+    unicode_property_with_a_value_argument,
+    r#"say ("ab1" ~~ m:g/ <:Nv(1)> /).elems;"#
+);
+differential_case!(
+    unicode_property_quantified,
+    r#"say ("abCDEf" ~~ / <:Lu>+ /).Str;"#
+);
+differential_case!(
+    unicode_property_in_an_alternation,
+    r#"say ("zzΩzz" ~~ / <:Lu> | <:Greek> /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_precomposed_subject,
+    r#"say ("xcaf\x[e9]zz" ~~ / [:m 'cafe'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_decomposed_subject,
+    r#"say ("xcafe\x[301]zz" ~~ / [:m 'cafe'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_no_match,
+    r#"say ("zzz" ~~ / [:m 'cafe'] /).defined;"#
+);
+differential_case!(
+    scoped_ignoremark_after_an_optional_literal,
+    r#"say ("qx" ~~ / 'q'? [:m 'x'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_at_a_bare_combining_mark,
+    r#"say ("\x[0300]x" ~~ / [:m 'x'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_after_a_prepend_character,
+    r#"say ("\x[0600]x" ~~ / [:m 'x'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_across_a_crlf_cluster,
+    r#"say ("a\r\nb" ~~ / [:m "\nb"] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_global_scan,
+    r#"say ("caf\x[e9] cafe caf" ~~ m:g/ [:m 'cafe'] /).elems;"#
+);
+differential_case!(
+    scoped_ignoremark_class,
+    r#"say ("zz\x[e9]zz" ~~ / [:m <[a..e]>] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_under_ignorecase,
+    r#"say ("zzCAF\x[c9]zz" ~~ / [:m :i 'cafe'] /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_nullable_body,
+    r#"say ("abc" ~~ / [:m 'z'?] 'b' /).Str;"#
+);
+differential_case!(
+    scoped_ignoremark_subst_global,
+    r#"say "caf\x[e9]-cafe".subst(/ [:m 'cafe'] /, "X", :g);"#
+);
+differential_case!(
+    scoped_ignoremark_split,
+    r#"say "acaf\x[e9]b".split(/ [:m 'cafe'] /).join("|");"#
+);
+differential_case!(
+    scoped_ignoremark_on_an_all_marks_subject,
+    r#"say ("\x[0300]\x[0301]\x[0302]" ~~ / [:m 'a'] /).defined;"#
 );

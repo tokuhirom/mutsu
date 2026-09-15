@@ -44,12 +44,19 @@
 //! resolution and everything it still declines on are in
 //! [`super::regex_prefilter_subrule`].
 //!
-//! Still out of scope, and still simply declining: `:m` NFD-aware first-sets
-//! for a *scoped* `:ignoremark` (a top-level one already arrives here
-//! mark-stripped), and the required literal prefix / required inner literal
-//! through a rule name (both make a claim about *text*, and the inner
-//! literal's decline on anything that can run code is deliberately stronger
-//! than the first-set's — see [`super::regex_prefilter_inner`]).
+//! A *scoped* `:ignoremark` is derived too, rather than sinking the pattern it
+//! sits in: the engine matches such a sub-pattern against the mark-stripped
+//! subject, so the analysis walks the same stripped tree the matcher does and
+//! flags the resulting set as a statement about *stripped* text — which
+//! `FirstSet::admits_at` maps back onto the original subject. (A top-level
+//! `:ignoremark` already arrives here mark-stripped.)
+//!
+//! Still out of scope, and still simply declining: a `<+a -b>` composite class
+//! (a `<subrule>` in disguise — see [`super::regex_prefilter_analysis`]), and
+//! the required literal prefix / required inner literal through a rule name
+//! (both make a claim about *text*, and the inner literal's decline on
+//! anything that can run code is deliberately stronger than the first-set's —
+//! see [`super::regex_prefilter_inner`]).
 
 use super::super::*;
 use super::regex_prefilter_analysis::{Analyzer, Derivation, derive};
@@ -280,148 +287,5 @@ pub(crate) fn regex_scan_positions<'c>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(pattern: &str) -> std::sync::Arc<RegexPattern> {
-        let interp = crate::runtime::Interpreter::new();
-        interp
-            .parse_regex(pattern)
-            .expect("pattern should parse for this test")
-    }
-
-    fn positions(pattern: &str, subject: &str) -> Vec<usize> {
-        let mut interp = crate::runtime::Interpreter::new();
-        let parsed = interp
-            .parse_regex(pattern)
-            .expect("pattern should parse for this test");
-        let chars: Vec<char> = subject.chars().collect();
-        let pkg = interp.current_package_sym();
-        regex_scan_positions(&mut interp, &parsed, &chars, 0, pkg).collect()
-    }
-
-    #[test]
-    fn plain_literal_is_a_usable_prefix() {
-        assert_eq!(
-            required_literal_prefix(&parse("'hello'")),
-            Some("hello".to_string())
-        );
-        assert_eq!(
-            required_literal_prefix(&parse("hello")),
-            Some("hello".to_string())
-        );
-    }
-
-    #[test]
-    fn a_trailing_non_literal_still_yields_the_leading_prefix() {
-        // "abc" must occur, whatever \d+ then requires -- the required
-        // prefix is a valid (if not tight) necessary condition either way.
-        assert_eq!(
-            required_literal_prefix(&parse(r"abc \d+")),
-            Some("abc".to_string())
-        );
-    }
-
-    #[test]
-    fn quantified_leading_literal_declines() {
-        // "a" is optional here, so it is not REQUIRED at all.
-        assert_eq!(required_literal_prefix(&parse("a? bc")), None);
-    }
-
-    #[test]
-    fn case_insensitive_declines() {
-        assert_eq!(required_literal_prefix(&parse(":i 'ABC'")), None);
-    }
-
-    #[test]
-    fn ignoremark_declines() {
-        assert_eq!(required_literal_prefix(&parse(":m 'cafe'")), None);
-    }
-
-    #[test]
-    fn alternation_has_no_top_level_literal_prefix() {
-        assert_eq!(required_literal_prefix(&parse("'foo' | 'bar'")), None);
-    }
-
-    #[test]
-    fn a_named_capture_ends_the_chain_immediately() {
-        assert_eq!(required_literal_prefix(&parse("$<x>=[a] bc")), None);
-    }
-
-    #[test]
-    fn scan_positions_finds_the_literal_and_nothing_else() {
-        assert_eq!(positions("'ab'", "xxabxxabxx"), vec![2, 6]);
-    }
-
-    #[test]
-    fn scan_positions_respects_the_kill_switch() {
-        // `prefilter_enabled` memoizes process-wide on first read, so a test
-        // cannot flip it; this only pins that a real occurrence is never
-        // missed either way.
-        assert_eq!(positions("'zz'", "no zz here at all"), vec![3]);
-    }
-
-    #[test]
-    fn a_subrule_call_declines_so_every_position_is_kept() {
-        // A prefix derived through `<foo>` would have to be keyed by invocant
-        // package and `TOKEN_DEFS_GEN` to survive a dynamic override
-        // (ADR-0099 §4 constraint 3), so the analysis declines instead.
-        assert_eq!(positions("<foo>", "abc"), vec![0, 1, 2, 3]);
-    }
-
-    #[test]
-    fn a_character_class_narrows_the_scan_to_its_members() {
-        assert_eq!(positions(r"\d+", "ab1cd2"), vec![2, 5]);
-        assert_eq!(positions(r"<[xyz]>", "axbycz"), vec![1, 3, 5]);
-    }
-
-    #[test]
-    fn a_negated_class_narrows_to_its_complement() {
-        assert_eq!(positions(r"<-[abc]>", "abXcd"), vec![2, 4]);
-    }
-
-    #[test]
-    fn an_alternation_unions_its_branches_first_characters() {
-        // Only the two branch-leading characters are candidates -- and the
-        // last two positions are ruled out by the 3-character minimum both
-        // branches share.
-        assert_eq!(positions("'foo' | 'bar'", "zfoozbarz"), vec![1, 5]);
-    }
-
-    #[test]
-    fn ignorecase_uses_the_fold_closure_not_a_folded_needle() {
-        // Both cases of the leading letter are candidates, and nothing else.
-        assert_eq!(positions(":i 'z'", "aZbzc"), vec![1, 3]);
-    }
-
-    #[test]
-    fn a_leading_zero_width_assertion_is_passed_through() {
-        // `^^` consumes nothing, so the first-set is still the literal's.
-        assert_eq!(positions("^^ 'a'", "xaya"), vec![1, 3]);
-    }
-
-    #[test]
-    fn a_nullable_pattern_keeps_every_position() {
-        assert_eq!(positions(r"\d*", "ab"), vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn a_leading_code_block_declines_so_it_still_runs_per_position() {
-        // ADR-0009: a leading `{ … }` runs once per start position in both
-        // mutsu and rakudo, so the prefilter must not skip any.
-        assert_eq!(positions(r"{ 1 } 'z'", "ab"), vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn a_minimum_length_truncates_the_tail_of_the_range() {
-        // `. . .` has a universal first-set (so no character filtering) but
-        // still cannot start within two characters of the end.
-        assert_eq!(positions(". . .", "abcde"), vec![0, 1, 2]);
-        assert!(positions(". . .", "ab").is_empty());
-    }
-
-    #[test]
-    fn a_literal_prefix_longer_than_the_subject_yields_nothing() {
-        assert!(positions("'abcdef'", "abc").is_empty());
-    }
-}
+#[path = "regex_prefilter_tests.rs"]
+mod tests;
