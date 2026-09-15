@@ -271,7 +271,7 @@ impl Interpreter {
                         caps
                     });
             }
-            for start in regex_scan_positions(&stripped_parsed, stripped_chars, 0) {
+            for start in regex_scan_positions(self, &stripped_parsed, stripped_chars, 0, pkg) {
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     stripped_chars,
@@ -361,7 +361,7 @@ impl Interpreter {
                     caps
                 });
         }
-        for start in regex_scan_positions(parsed, chars, 0) {
+        for start in regex_scan_positions(self, parsed, chars, 0, pkg) {
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {

@@ -33,17 +33,29 @@
 //! Non-ASCII is admitted wholesale instead (see [`FirstSet`]), which needs no
 //! table at all.
 //!
+//! # Looking through a `<subrule>`
+//!
+//! A rule call is walked rather than declined, which is what constraint 3
+//! actually asks for ("keyed by invocant package and `TOKEN_DEFS_GEN` ... or
+//! decline"). The resolution, and every shape it still declines on, is
+//! [`super::regex_prefilter_subrule`]; the key itself is
+//! [`super::regex_prefilter::pattern_prefilter_in_pkg`]. A derivation that
+//! looked through a rule name is therefore *not* a pure function of the
+//! pattern and must never be stored in the pattern-keyed memo — which is why
+//! [`Analyzer::resolved_subrule`] reports whether it did.
+//!
 //! # Out of scope (declines)
 //!
-//! `<subrule>` calls (constraint 3: a prefix derived through one would have to
-//! be keyed by invocant package and `TOKEN_DEFS_GEN`), anything that runs user
-//! code before the first character is consumed (constraint 3 again — a leading
-//! `{ … }` block runs once per start position in both mutsu and rakudo, ADR-0009),
-//! backreferences, `<~~>`, and `:m` sub-patterns.
+//! Anything that runs user code before the first character is consumed
+//! (constraint 3 — a leading `{ … }` block runs once per start position in
+//! both mutsu and rakudo, ADR-0009), backreferences, `<~~>`, and `:m`
+//! sub-patterns.
 
 use super::super::*;
-use super::regex_eval_class::class_matches_ignorecase;
-use super::regex_prefilter_firstset::FirstSet;
+use super::regex_prefilter_firstset::{
+    FirstSet, class_first_set, literal_first_set, newline_first_set, whitespace_first_set,
+};
+use crate::symbol::Symbol;
 
 /// What one pass over a pattern established.
 pub(crate) struct Derivation {
@@ -57,10 +69,10 @@ pub(crate) struct Derivation {
 
 /// Guard against a pathologically nested pattern recursing this analysis into
 /// a stack overflow. Reaching it declines, like any other unanswerable shape.
-const MAX_DEPTH: u32 = 48;
+pub(super) const MAX_DEPTH: u32 = 48;
 
 #[derive(Clone, Copy)]
-struct Ctx {
+pub(super) struct Ctx {
     /// The `:i` flag of the pattern whose tokens are being walked — which is
     /// exactly what the engine passes to `regex_match_atom_in_pkg` for those
     /// tokens (`regex_match_atom_simple.rs` reads `pattern.ignore_case` of the
@@ -69,15 +81,21 @@ struct Ctx {
     /// the enclosing one keeps this exact: a *negated* class matches FEWER
     /// characters under `:i` (`<-[a]>` rejects `A` there), so widening the
     /// flag would have narrowed the set — the one direction that is unsound.
-    ignore_case: bool,
-    depth: u32,
+    pub(super) ignore_case: bool,
+    /// The package a `<subrule>` reference in these tokens resolves against.
+    /// A candidate body resolves its own unqualified references against the
+    /// package that DEFINED it, not against the caller's — the same rule
+    /// `subrule_candidate_ends` matches under — so this follows the candidate
+    /// down rather than staying at the scan's invocant.
+    pub(super) pkg: Symbol,
+    pub(super) depth: u32,
 }
 
 /// Per-token analysis result, in the same three terms as [`Seq`].
-struct Info {
-    first: FirstSet,
-    nullable: bool,
-    min_len: usize,
+pub(super) struct Info {
+    pub(super) first: FirstSet,
+    pub(super) nullable: bool,
+    pub(super) min_len: usize,
 }
 
 impl Info {
@@ -107,18 +125,72 @@ impl Info {
 }
 
 /// A token sequence's analysis.
-struct Seq {
+pub(super) struct Seq {
     /// Characters that may appear at the sequence's first consumed position.
-    first: FirstSet,
+    pub(super) first: FirstSet,
     /// The whole sequence can match without consuming anything.
-    nullable: bool,
-    min_len: usize,
+    pub(super) nullable: bool,
+    pub(super) min_len: usize,
 }
 
-/// Derive the prefilter facts for `pattern`. Never fails: an unanalyzable
-/// pattern yields the empty derivation, which filters nothing.
-pub(crate) fn derive(pattern: &RegexPattern) -> Derivation {
-    let Some(seq) = walk_pattern(pattern, 0) else {
+/// How many `<subrule>` references one derivation may resolve before it gives
+/// up. A rule cone is walked breadth-first with no per-rule memo, so a
+/// pathological grammar could otherwise make the derivation cost more than the
+/// scan it saves; exhausting the budget declines, like any other unanswerable
+/// shape.
+const SUBRULE_BUDGET: u32 = 256;
+
+/// The mutable state one derivation carries: the interpreter a `<subrule>` is
+/// resolved through, the rule nodes currently on the resolution stack, and
+/// whether any rule name was looked through at all.
+pub(crate) struct Analyzer<'i> {
+    /// `None` runs the pattern-only analysis every slice before this one ran:
+    /// a rule call simply declines, and the result is a pure function of the
+    /// pattern.
+    pub(super) interp: Option<&'i mut Interpreter>,
+    /// `(pkg, name)` nodes being walked right now. A rule reached from itself
+    /// is answered "unknown" rather than unrolled — see
+    /// [`super::regex_prefilter_subrule`].
+    pub(super) active: Vec<(Symbol, Symbol)>,
+    pub(super) budget: u32,
+    pub(super) resolved_subrule: bool,
+}
+
+impl<'i> Analyzer<'i> {
+    /// The pattern-only analysis: `<subrule>` declines, so the result depends
+    /// on nothing but the pattern and may be memoized against it.
+    pub(crate) fn pattern_only() -> Analyzer<'i> {
+        Analyzer {
+            interp: None,
+            active: Vec::new(),
+            budget: 0,
+            resolved_subrule: false,
+        }
+    }
+
+    /// The analysis that may look through a rule name, resolving against
+    /// `interp`.
+    pub(crate) fn with_interpreter(interp: &'i mut Interpreter) -> Analyzer<'i> {
+        Analyzer {
+            interp: Some(interp),
+            active: Vec::new(),
+            budget: SUBRULE_BUDGET,
+            resolved_subrule: false,
+        }
+    }
+
+    /// Whether the derivation actually looked through a rule name. When it
+    /// did, the result is specific to the invocant package and the current
+    /// `TOKEN_DEFS_GEN` and must not reach the pattern-keyed memo.
+    pub(crate) fn resolved_subrule(&self) -> bool {
+        self.resolved_subrule
+    }
+}
+
+/// Derive the prefilter facts for `pattern`, as seen from `pkg`. Never fails:
+/// an unanalyzable pattern yields the empty derivation, which filters nothing.
+pub(crate) fn derive(an: &mut Analyzer, pattern: &RegexPattern, pkg: Symbol) -> Derivation {
+    let Some(seq) = walk_pattern(an, pattern, pkg, 0) else {
         return Derivation {
             first: None,
             min_len: 0,
@@ -138,7 +210,12 @@ pub(crate) fn derive(pattern: &RegexPattern) -> Derivation {
     }
 }
 
-fn walk_pattern(pattern: &RegexPattern, depth: u32) -> Option<Seq> {
+pub(super) fn walk_pattern(
+    an: &mut Analyzer,
+    pattern: &RegexPattern,
+    pkg: Symbol,
+    depth: u32,
+) -> Option<Seq> {
     // `:m` matches against a mark-stripped subject through a separately
     // stripped pattern; a scoped one inside an otherwise unstripped pattern
     // would make the characters analyzed here the wrong ones. The scan paths
@@ -148,15 +225,17 @@ fn walk_pattern(pattern: &RegexPattern, depth: u32) -> Option<Seq> {
         return None;
     }
     walk_tokens(
+        an,
         &pattern.tokens,
         Ctx {
             ignore_case: pattern.ignore_case,
+            pkg,
             depth,
         },
     )
 }
 
-fn walk_tokens(tokens: &[RegexToken], ctx: Ctx) -> Option<Seq> {
+fn walk_tokens(an: &mut Analyzer, tokens: &[RegexToken], ctx: Ctx) -> Option<Seq> {
     if ctx.depth > MAX_DEPTH {
         return None;
     }
@@ -164,7 +243,7 @@ fn walk_tokens(tokens: &[RegexToken], ctx: Ctx) -> Option<Seq> {
     let mut nullable = true;
     let mut min_len: usize = 0;
     for token in tokens {
-        match analyze_token(token, ctx) {
+        match analyze_token(an, token, ctx) {
             Some(info) => {
                 if nullable {
                     first.union(&info.first);
@@ -192,8 +271,8 @@ fn walk_tokens(tokens: &[RegexToken], ctx: Ctx) -> Option<Seq> {
     })
 }
 
-fn analyze_token(token: &RegexToken, ctx: Ctx) -> Option<Info> {
-    let atom = analyze_atom(&token.atom, ctx)?;
+fn analyze_token(an: &mut Analyzer, token: &RegexToken, ctx: Ctx) -> Option<Info> {
+    let atom = analyze_atom(an, &token.atom, ctx)?;
     let (min_reps, optional) = match &token.quant {
         RegexQuant::One | RegexQuant::OneOrMore => (1usize, false),
         RegexQuant::ZeroOrMore | RegexQuant::ZeroOrOne => (0, true),
@@ -212,20 +291,29 @@ fn analyze_token(token: &RegexToken, ctx: Ctx) -> Option<Info> {
     })
 }
 
-fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
+fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
     let deeper = Ctx {
         depth: ctx.depth + 1,
         ..ctx
     };
     match atom {
-        RegexAtom::Literal(ch) => Some(Info::consuming(literal_first_set(*ch, ctx), ctx)),
+        RegexAtom::Literal(ch) => Some(Info::consuming(
+            literal_first_set(*ch, ctx.ignore_case),
+            ctx,
+        )),
         // A grapheme literal consumes its whole cluster, but only its first
         // codepoint decides whether the scan position is worth entering.
         RegexAtom::LiteralGrapheme(g) => {
             let lead = g.chars().next()?;
-            Some(Info::consuming(literal_first_set(lead, ctx), ctx))
+            Some(Info::consuming(
+                literal_first_set(lead, ctx.ignore_case),
+                ctx,
+            ))
         }
-        RegexAtom::CharClass(class) => Some(Info::consuming(class_first_set(class, ctx), ctx)),
+        RegexAtom::CharClass(class) => Some(Info::consuming(
+            class_first_set(class, ctx.ignore_case),
+            ctx,
+        )),
         RegexAtom::Newline => Some(Info::consuming(newline_first_set(), ctx)),
         // `.` matches every character; `\N` and a `<:prop>` / `<+a-b>` class
         // are decidable in principle but only through tables this module
@@ -243,7 +331,7 @@ fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
             min_len: 0,
         }),
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
-            let seq = walk_pattern(p, deeper.depth)?;
+            let seq = walk_pattern(an, p, ctx.pkg, deeper.depth)?;
             Some(Info {
                 first: seq.first,
                 nullable: seq.nullable,
@@ -258,7 +346,7 @@ fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
             let mut nullable = false;
             let mut min_len = usize::MAX;
             for branch in branches {
-                let seq = walk_pattern(branch, deeper.depth)?;
+                let seq = walk_pattern(an, branch, ctx.pkg, deeper.depth)?;
                 first.union(&seq.first);
                 nullable |= seq.nullable;
                 min_len = min_len.min(seq.min_len);
@@ -274,7 +362,7 @@ fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
         RegexAtom::Conjunction(branches) => {
             let seq = branches
                 .iter()
-                .find_map(|branch| walk_pattern(branch, deeper.depth))?;
+                .find_map(|branch| walk_pattern(an, branch, ctx.pkg, deeper.depth))?;
             Some(Info {
                 first: seq.first,
                 nullable: seq.nullable,
@@ -306,12 +394,14 @@ fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
                 Some(Info::zero_width())
             }
         }
-        // Declines. `Named` is constraint 3 (a subrule-derived set would have
-        // to be keyed by invocant package and `TOKEN_DEFS_GEN`); the code
-        // atoms are ADR-0009 (they must keep running once per start position);
-        // the rest match text that is not known until match time.
-        RegexAtom::Named(_)
-        | RegexAtom::CodeAssertion { .. }
+        // A rule call is walked, not declined — constraint 3's "or decline"
+        // taken by its first half. The resolution and its own declines are
+        // [`super::regex_prefilter_subrule`].
+        RegexAtom::Named(name) => super::regex_prefilter_subrule::analyze_subrule(an, name, ctx),
+        // Declines. The code atoms are ADR-0009 (they must keep running once
+        // per start position); the rest match text that is not known until
+        // match time.
+        RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }
         | RegexAtom::VarDecl { .. }
         | RegexAtom::Backref(_)
@@ -321,108 +411,6 @@ fn analyze_atom(atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
         | RegexAtom::TildeMarker
         | RegexAtom::GoalMatch { .. } => None,
     }
-}
-
-/// The characters a literal atom can match at a start position.
-///
-/// Without `:i` that is the character itself. With it, the engine's test is
-/// `ch.to_lowercase().to_string() == c.to_lowercase().to_string()`
-/// (`regex_match_atom_simple.rs`), which this enumerates exactly over ASCII —
-/// the fold closure, not a folded needle: a folded needle is unsound because
-/// multi-character folds (`ß`/`SS`, `ﬁ`/`fi`) make a case-folded literal
-/// *variable-length* (ADR-0099 §4 constraint 2). Every non-ASCII character is
-/// admitted, since the reverse closure over Unicode reaches ASCII targets from
-/// far away (`K` U+212A lowercases to `k`, `ſ` U+017F to `s`).
-fn literal_first_set(ch: char, ctx: Ctx) -> FirstSet {
-    if !ctx.ignore_case {
-        return FirstSet::single(ch);
-    }
-    let want = ch.to_lowercase().to_string();
-    let mut set = FirstSet::ascii_none_rest_all();
-    for cp in 0u8..128 {
-        let c = cp as char;
-        if c.to_lowercase().to_string() == want {
-            set.insert(c);
-        }
-    }
-    set
-}
-
-/// The characters a character-class atom can match at a start position,
-/// derived by asking the engine's own evaluator about each ASCII character
-/// rather than by restating its table (see the module doc comment).
-fn class_first_set(class: &CharClass, ctx: Ctx) -> FirstSet {
-    let mut set = if class_is_ascii_only(class, ctx) {
-        FirstSet::empty()
-    } else {
-        FirstSet::ascii_none_rest_all()
-    };
-    for cp in 0u8..128 {
-        let c = cp as char;
-        if class_matches_ignorecase(class, c, ctx.ignore_case) {
-            set.insert(c);
-        }
-    }
-    // `\r\n` is one grapheme, and the class arm accepts a class containing
-    // `\n` at the `\r` that starts it.
-    if set.contains('\n') {
-        set.insert('\r');
-    }
-    // A `Grapheme` item matches a whole multi-codepoint cluster, which the
-    // per-character evaluator above necessarily answers `false` for — the
-    // comparison happens at the atom, where the subject text is. Its leading
-    // codepoint is the one a scan position would be tested at.
-    for item in &class.items {
-        if let ClassItem::Grapheme(g) = item
-            && let Some(lead) = g.chars().next()
-        {
-            set.insert(lead);
-        }
-    }
-    set
-}
-
-/// Whether `class` provably matches no non-ASCII character, which is what
-/// lets its first-set be exact rather than "ASCII plus everything else".
-///
-/// Deliberately a short whitelist of the items whose non-ASCII behaviour is
-/// obvious from the item itself: an explicit character or range below U+0080,
-/// and `\d` (which the evaluator defines as `is_ascii_digit`). A negated class
-/// matches almost every non-ASCII character by construction; under `:i` a
-/// non-ASCII character can fold onto an ASCII member; and a `Grapheme` entry is
-/// compared in NFC against a normalized subject cluster, so its leading
-/// codepoint as stored is not quite a promise about the subject's. None of the
-/// three qualifies.
-fn class_is_ascii_only(class: &CharClass, ctx: Ctx) -> bool {
-    if class.negated || ctx.ignore_case {
-        return false;
-    }
-    class.items.iter().all(|item| match item {
-        ClassItem::Char(c) => c.is_ascii(),
-        ClassItem::Range(a, b) => a.is_ascii() && b.is_ascii(),
-        ClassItem::Digit => true,
-        _ => false,
-    })
-}
-
-/// `\n` as the engine's `Newline` atom defines it.
-fn newline_first_set() -> FirstSet {
-    let mut set = FirstSet::empty();
-    for c in ['\n', '\r', '\u{85}', '\u{2028}'] {
-        set.insert(c);
-    }
-    set
-}
-
-fn whitespace_first_set() -> FirstSet {
-    let mut set = FirstSet::ascii_none_rest_all();
-    for cp in 0u8..128 {
-        let c = cp as char;
-        if c.is_whitespace() {
-            set.insert(c);
-        }
-    }
-    set
 }
 
 /// Whether matching `pattern` can run user code or dispatch a subrule — the
