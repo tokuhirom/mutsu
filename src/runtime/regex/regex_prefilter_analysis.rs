@@ -63,6 +63,7 @@
 //! both mutsu and rakudo, ADR-0009), backreferences, and `<~~>`.
 
 use super::super::*;
+use super::regex_prefilter_composite::analyze_composite_class;
 use super::regex_prefilter_firstset::{
     FirstSet, class_first_set, literal_first_set, newline_first_set, unicode_prop_first_set,
     whitespace_first_set,
@@ -113,7 +114,7 @@ pub(super) struct Info {
 impl Info {
     /// An atom that consumes at least one character, starting with one of
     /// `first`.
-    fn consuming(first: FirstSet, ctx: Ctx) -> Info {
+    pub(super) fn consuming(first: FirstSet, ctx: Ctx) -> Info {
         Info {
             first,
             nullable: false,
@@ -353,17 +354,19 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
             unicode_prop_first_set(name, *negated, args.as_deref()),
             ctx,
         )),
-        // `.` matches every character. A `<+a -b>` composite class is a
-        // `<subrule>` in disguise and widens with it: a `NamedBuiltin` item the
-        // built-in predicate rejects falls back to resolving a grammar token of
-        // that name and matching it against the REMAINING INPUT, so its members
-        // are neither package-independent nor even a set of single characters.
-        // Answering it would need the package-and-generation-keyed memo (and
-        // `mentions_subrule` would have to report it), which is a slice of its
-        // own.
-        RegexAtom::Any | RegexAtom::NotNewline | RegexAtom::CompositeClass { .. } => {
-            Some(Info::consuming(FirstSet::universal(), ctx))
+        // A `<+a -b>` composite class carries a `NamedBuiltin` item whose
+        // built-in predicate, when it rejects, falls back to resolving a
+        // grammar token of that name — so its positive half is answered
+        // against the rule registry (and reaches the package-keyed memo) while
+        // its negative half narrows on character evidence alone. See
+        // [`super::regex_prefilter_composite`].
+        RegexAtom::CompositeClass { positive, negative } => {
+            Some(analyze_composite_class(an, positive, negative, ctx))
         }
+        // `.` matches every character, and `\N` all but one — deriving that
+        // precisely would reject one position in a hundred for a bitmap test
+        // at every one of them.
+        RegexAtom::Any | RegexAtom::NotNewline => Some(Info::consuming(FirstSet::universal(), ctx)),
         // `<.ws>` is `\s+` between two word characters and `\s*` anywhere
         // else, so it may match empty — but when it does consume, it consumes
         // whitespace.

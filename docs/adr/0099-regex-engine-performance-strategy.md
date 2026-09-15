@@ -419,11 +419,12 @@ ADR moved to `Accepted`, and is **landing in slices** — required literal prefi
 length ([#8446](https://github.com/tokuhirom/mutsu/issues/8446)), required inner literal
 ([#8457](https://github.com/tokuhirom/mutsu/issues/8457)), the first-character set through a
 `<subrule>` keyed by package + `TOKEN_DEFS_GEN`
-([#8464](https://github.com/tokuhirom/mutsu/issues/8464)), and first-sets for a `<:prop>` atom and
-for a *scoped* `:ignoremark` (this slice). The issue stays open for what remains: §5's NFA over the
-declarative prefix, and a `<+a -b>` composite class — whose `NamedBuiltin` items fall back to
-resolving a grammar token against the remaining input, making it a `<subrule>` in disguise. Its
-three constraints — reuse ADR-0022's litlen table rather than defining
+([#8464](https://github.com/tokuhirom/mutsu/issues/8464)), first-sets for a `<:prop>` atom and for a
+*scoped* `:ignoremark` ([#8492](https://github.com/tokuhirom/mutsu/issues/8492)), and the `<+a -b>`
+composite class (this slice) — whose `NamedBuiltin` items fall back to resolving a grammar token
+against the remaining input, making the *positive* half a `<subrule>` in disguise that declines on
+any name a rule answers to, while the negative half narrows with no resolution at all. The issue
+stays open for what remains: §5's NFA over the declarative prefix. Its three constraints — reuse ADR-0022's litlen table rather than defining
 a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
 non-declarative — are the work, not footnotes, and the differential property test against the
 prefilter-disabled engine is its gate. Stage 2 is a question, not work, until Stage 0 lands and

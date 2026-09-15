@@ -211,3 +211,51 @@ fn a_scoped_ignoremark_claims_no_length_bound() {
     );
     assert_eq!(plain.min_len, 3);
 }
+
+#[test]
+fn a_composite_class_narrows_to_its_positive_items() {
+    // `<+alpha>` is a `CompositeClass`, not a `CharClass`, and every slice
+    // before the sixth widened the whole atom to "anything".
+    assert_eq!(positions("<+xdigit>", "g1hZi"), vec![1]);
+}
+
+#[test]
+fn a_composite_class_subtracts_its_negative_items() {
+    // A negative item may narrow with no resolution at all: the engine runs
+    // the character half first and short-circuits, so a character it matches
+    // is one `pos_match && !neg_match` rejects outright.
+    assert_eq!(positions("<+xdigit -[1]>", "1x2y3"), vec![2, 4]);
+    assert_eq!(positions("<[a..z] - [aeiou]>", "aeixou"), vec![3]);
+}
+
+#[test]
+fn a_purely_negated_composite_class_starts_from_every_character() {
+    // An empty `positive` means "any character" to the engine, so the
+    // derivation starts universal and lets the negatives carve it down.
+    assert_eq!(positions("<-[;] - [q]>", ";qaq;b"), vec![2, 5]);
+}
+
+#[test]
+fn a_composite_class_admits_non_ascii_only_where_it_must() {
+    // A built-in name is evaluated over the whole of Unicode by a predicate
+    // this analysis only samples over ASCII, so every non-ASCII character is
+    // admitted; a plain range item keeps the exact answer `<[a..z]>` gets.
+    assert_eq!(positions("<+alpha -[a..z]>", "ab\u{e9}cd"), vec![2]);
+    assert!(positions("<[a..z] - [aeiou]>", "\u{e9}\u{3a9}").is_empty());
+}
+
+#[test]
+fn a_composite_class_reads_the_registry_only_through_a_positive_named_item() {
+    // Two statements of the same condition have to agree: the memo picks the
+    // package-keyed slot from `mentions_subrule`, and the analysis reads the
+    // rule registry from `composite_class_reads_registry`. A registry-dependent
+    // set that reached the pattern-keyed slot would answer for every package —
+    // a wrong answer, not a slow scan.
+    //
+    // (That a defined `token xdigit` then actually makes the atom decline is
+    // pinned end-to-end in `tests/regex_prefilter_engagement.rs`, which can
+    // declare a grammar.)
+    assert!(mentions_subrule(&parse("<+xdigit -[1]>")));
+    // No `NamedBuiltin` anywhere: a pure function of the pattern.
+    assert!(!mentions_subrule(&parse("<[a..z] - [aeiou]>")));
+}

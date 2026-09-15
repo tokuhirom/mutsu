@@ -51,12 +51,19 @@
 //! `FirstSet::admits_at` maps back onto the original subject. (A top-level
 //! `:ignoremark` already arrives here mark-stripped.)
 //!
-//! Still out of scope, and still simply declining: a `<+a -b>` composite class
-//! (a `<subrule>` in disguise — see [`super::regex_prefilter_analysis`]), and
-//! the required literal prefix / required inner literal through a rule name
-//! (both make a claim about *text*, and the inner literal's decline on
-//! anything that can run code is deliberately stronger than the first-set's —
-//! see [`super::regex_prefilter_inner`]).
+//! A `<+a -b>` composite class is derived too, in two halves that are
+//! justified separately because they are used in opposite directions: its
+//! positive items must be over-approximated and so decline on any name a rule
+//! could answer to (the engine falls back from a rejecting built-in predicate
+//! to a *grammar token* of that name), while its negative items narrow on
+//! character evidence alone and need no resolution at all. See
+//! [`super::regex_prefilter_composite`].
+//!
+//! Still out of scope, and still simply declining: the required literal prefix
+//! and required inner literal through a rule name (both make a claim about
+//! *text*, and the inner literal's decline on anything that can run code is
+//! deliberately stronger than the first-set's — see
+//! [`super::regex_prefilter_inner`]).
 
 use super::super::*;
 use super::regex_prefilter_analysis::{Analyzer, Derivation, derive};

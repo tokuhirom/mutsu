@@ -42,6 +42,7 @@ fn prefilter_stats(src: &str) -> Stats {
         literal_prefix: counter("literal_prefix="),
         inner_literal: counter("inner_literal="),
         first_char_set: counter("first_char_set="),
+        declined: counter("declined="),
         positions_offered: counter("positions_offered="),
         position_hits: counter("position_hits="),
         line,
@@ -52,6 +53,7 @@ struct Stats {
     literal_prefix: u64,
     inner_literal: u64,
     first_char_set: u64,
+    declined: u64,
     positions_offered: u64,
     position_hits: u64,
     line: String,
@@ -484,5 +486,92 @@ fn a_scoped_ignoremark_admits_every_position_next_to_a_non_ascii_character() {
         stats.positions_offered,
         "a mark-skewed set must not reject a position it cannot speak for: {}",
         stats.line
+    );
+}
+
+#[test]
+fn a_failing_composite_class_scan_is_sublinear_in_subject_length() {
+    // `<+a -b>` was the last atom that widened the whole derivation to
+    // "anything" (#8272 slice 6), which made a composite-class scan linear in
+    // the subject no matter how narrow the class actually was: on a
+    // 144,000-character subject this pattern cost the same 205 ms with the
+    // prefilter on as with it off.
+    let scan = |repeats: usize| prefilter_stats(&failing_scan("/ <+upper -[A]> ** 3 /", repeats));
+    let small = scan(100);
+    let large = scan(800);
+
+    assert!(
+        small.first_char_set >= 1 && large.first_char_set >= 1,
+        "a composite class got no first-character set:\n{}\n{}",
+        small.line,
+        large.line
+    );
+    assert!(
+        large.positions_offered > small.positions_offered * 4,
+        "positions_offered did not grow with the subject: {} vs {}",
+        small.positions_offered,
+        large.positions_offered
+    );
+    // The subject holds no uppercase letter at all, so the bitmap decides
+    // every position and none of them reaches the engine.
+    assert_eq!(
+        small.position_hits, 0,
+        "a composite class whose members do not occur still reached the engine: {}",
+        small.line
+    );
+    assert_eq!(
+        large.position_hits, 0,
+        "a composite class whose members do not occur still reached the engine: {}",
+        large.line
+    );
+}
+
+#[test]
+fn a_composite_classs_negative_items_narrow_its_positive_ones() {
+    // The two halves are used in opposite directions and are justified
+    // separately: a positive item must be over-approximated, a negative one
+    // may narrow because a character it matches is one the atom rejects
+    // outright. `<+alpha>` is `<[A..Za..z_]>`, so subtracting the lowercase
+    // run and the underscore leaves it with no member this subject holds.
+    let stats = prefilter_stats(&failing_scan("/ <+alpha -[a..z_]> /", 400));
+    assert!(
+        stats.first_char_set >= 1,
+        "a composite class got no first-character set: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, 0,
+        "the negative items did not narrow the positive ones: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_composite_class_naming_a_user_rule_declines_rather_than_narrowing() {
+    // A `NamedBuiltin` item is not a character set: when the built-in
+    // predicate rejects, the engine resolves a *grammar token* of that name
+    // and matches it against the remaining input, so a name a user rule
+    // answers to cannot be bounded by the built-in predicate alone. Pinned on
+    // the counters because declining is exactly what must stay observable —
+    // the failure mode here is narrowing anyway and silently dropping a match.
+    let plain = prefilter_stats(&failing_scan("/ <+upper -[A]> ** 3 /", 100));
+    assert!(
+        plain.first_char_set >= 1 && plain.declined == 0,
+        "the control case did not narrow, so the comparison below says nothing: {}",
+        plain.line
+    );
+    let shadowed = prefilter_stats(&format!(
+        "my token upper {{ 'zzzq' }}\n{}",
+        failing_scan("/ <+upper -[A]> ** 3 /", 100)
+    ));
+    assert_eq!(
+        shadowed.first_char_set, 0,
+        "a composite class naming a user rule was narrowed anyway: {}",
+        shadowed.line
+    );
+    assert!(
+        shadowed.declined >= 1,
+        "a composite class naming a user rule did not decline: {}",
+        shadowed.line
     );
 }

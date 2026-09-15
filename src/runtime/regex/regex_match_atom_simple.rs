@@ -1,9 +1,10 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_casefold::casefold_eq;
+use super::regex_eval_class::{composite_item_matches, composite_probe_chars};
 use super::regex_helpers::{
-    CaseFoldIter, LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars,
-    grapheme_end, is_grapheme_boundary, is_word_char, matches_named_builtin,
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars, grapheme_end,
+    is_grapheme_boundary, is_word_char, matches_named_builtin,
 };
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use crate::runtime::regex_parse::RegexParseMode;
@@ -804,22 +805,19 @@ impl Interpreter {
                 } else {
                     effective_c
                 };
-                let chars_to_check: Vec<char> = if ignore_case {
-                    CaseFoldIter::new(effective_c).collect()
-                } else {
-                    vec![effective_c]
-                };
+                let chars_to_check: Vec<char> = composite_probe_chars(effective_c, ignore_case);
                 // `mut`: resolving a class item can dispatch a grammar token, which
                 // now takes `&mut self`, making this an `FnMut`.
                 let mut match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
+                    // The character half is shared with the ADR-0099 Stage 1
+                    // prefilter, which must not hold a second definition of it
+                    // (constraint 1). Only the grammar-token fallback below
+                    // stays here, because it needs the subject and the package.
+                    if composite_item_matches(item, chars_to_check) {
+                        return true;
+                    }
                     match item {
                         ClassItem::NamedBuiltin(n) => {
-                            let builtin_match = chars_to_check
-                                .iter()
-                                .any(|ch| matches_named_builtin(n, *ch));
-                            if builtin_match {
-                                return true;
-                            }
                             // Fallback: try resolving as a grammar token in the current package.
                             // This runs once per character checked against the class, so use the
                             // cheap STATIC resolver (pattern extracted straight from the token def)
@@ -851,21 +849,7 @@ impl Interpreter {
                             }
                             false
                         }
-                        ClassItem::UnicodePropItem { name, negated } => {
-                            let m = chars_to_check
-                                .iter()
-                                .any(|ch| check_unicode_property(name, *ch));
-                            if *negated { !m } else { m }
-                        }
-                        _ => {
-                            let class = CharClass {
-                                items: vec![item.clone()],
-                                negated: false,
-                            };
-                            chars_to_check
-                                .iter()
-                                .any(|ch| self.regex_match_class(&class, *ch))
-                        }
+                        _ => false,
                     }
                 };
                 // An empty `positive` means "any character" (a purely-negated
