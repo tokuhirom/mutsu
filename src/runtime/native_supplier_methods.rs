@@ -180,11 +180,16 @@ impl Interpreter {
                     for (dsid, batch) in flush_supplier_batch_taps(supplier_id) {
                         let _ = self.forward_and_finish_supply(dsid, Value::array(batch));
                     }
-                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-                        let _ = self.call_supply_tap(tap, vec![emitted], true);
+                    // `lines`/`words` own their derived supplier now (issue
+                    // #8474): the flushed trailing partial line/word forwards
+                    // into it exactly like any other emission, and the
+                    // transform-output propagation loop below then finishes
+                    // it (it is included in `get_transform_output_supplier_ids`).
+                    for (dsid, emitted) in flush_supplier_line_taps(supplier_id) {
+                        let _ = self.handle_supply_forward(dsid, emitted);
                     }
-                    for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-                        let _ = self.call_supply_tap(tap, vec![emitted], true);
+                    for (dsid, emitted) in flush_supplier_words_taps(supplier_id) {
+                        let _ = self.handle_supply_forward(dsid, emitted);
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
                         if self.invoke_done_callback_or_quit(done_cb, supplier_id)? {
@@ -269,11 +274,11 @@ impl Interpreter {
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
                     close_supplier_channel_taps(supplier_id, Some(reason.clone()));
-                    for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_line_taps(supplier_id) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
-                    for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_words_taps(supplier_id) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
                     let (_, _, quit_reason) = supplier_snapshot(supplier_id);
                     if let Some(reason) = quit_reason {
@@ -499,11 +504,11 @@ impl Interpreter {
                             let _ = self.invoke_done_callback(done_cb);
                         }
                     }
-                    for (tap, emitted) in flush_supplier_line_taps(sid) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_line_taps(sid) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
-                    for (tap, emitted) in flush_supplier_words_taps(sid) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_words_taps(sid) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
                         if self.invoke_done_callback_or_quit(done_cb, sid)? {
@@ -605,11 +610,11 @@ impl Interpreter {
                 {
                     let sid = supplier_id as u64;
                     close_supplier_channel_taps(sid, Some(reason.clone()));
-                    for (tap, emitted) in flush_supplier_line_taps(sid) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_line_taps(sid) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
-                    for (tap, emitted) in flush_supplier_words_taps(sid) {
-                        self.call_supply_tap(tap, vec![emitted], true)?;
+                    for (dsid, emitted) in flush_supplier_words_taps(sid) {
+                        self.handle_supply_forward(dsid, emitted)?;
                     }
                     // Run any `whenever` QUIT phasers first. If one handles the
                     // exception (a when/default matched, or it called done), the

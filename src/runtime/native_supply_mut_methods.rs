@@ -108,79 +108,19 @@ impl Interpreter {
                             supplier_id as u64,
                         );
                     }
-                    let has_unique = matches!(
-                        attrs.get("unique_filter").map(Value::view),
-                        Some(ValueView::Bool(true))
-                    );
-                    let is_lines = matches!(
-                        attrs.get("is_lines").map(Value::view),
-                        Some(ValueView::Bool(true))
-                    );
-                    let is_words = matches!(
-                        attrs.get("is_words").map(Value::view),
-                        Some(ValueView::Bool(true))
-                    );
-                    let is_elems = matches!(
-                        attrs.get("elems_filter").map(Value::view),
-                        Some(ValueView::Bool(true))
-                    );
-                    if !Self::supply_has_active_callback(&tap_cb) {
-                        // done/quit-only taps do not register a value callback
-                    } else if is_lines {
-                        let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
-                        register_supplier_lines_tap(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            chomp,
-                            delay_seconds,
-                        );
-                    } else if is_words {
-                        register_supplier_words_tap(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            delay_seconds,
-                        );
-                    } else if has_unique {
-                        let as_fn = attrs.get("unique_as").cloned();
-                        let with_fn = attrs.get("unique_with").cloned();
-                        let expires = attrs.get("unique_expires").map(|v| v.to_f64());
-                        register_supplier_unique_tap(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            delay_seconds,
-                            as_fn,
-                            with_fn,
-                            expires,
-                        );
-                    } else if is_elems {
-                        let interval = attrs
-                            .get("elems_interval")
-                            .map(Value::to_f64)
-                            .unwrap_or(0.0);
-                        let initial_count = attrs
-                            .get("elems_initial_count")
-                            .and_then(|v| match v.view() {
-                                ValueView::Int(i) => Some(i),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
-                        register_supplier_elems_tap(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            delay_seconds,
-                            interval,
-                            initial_count,
-                        );
-                    } else if let Some(ValueView::Int(limit)) =
-                        attrs.get("head_limit").map(Value::view)
-                    {
-                        register_supplier_tap_with_head_limit(
-                            supplier_id as u64,
-                            tap_cb.clone(),
-                            delay_seconds,
-                            limit as usize,
-                        );
-                    } else {
+                    // `head`/`unique`/`lines`/`words`/`elems` each own a real
+                    // derived supplier now, fed by a transform tap registered
+                    // immediately at combinator-call time (issue #8474), so
+                    // a Supply reaching here with a genuine `supplier_id`
+                    // is — whichever of those combinators (if any) produced
+                    // it — just an ordinary live supply by the time it is
+                    // tapped: no marker attribute survives onto it to check
+                    // here anymore. (A `head`/`lines`/`words` derived from a
+                    // *channel*-backed source, which has no `supplier_id` at
+                    // all, is the one case that still carries `head_limit`/
+                    // `is_lines`/`is_words` -- handled entirely below, by the
+                    // channel-tap branch that reads `attrs` directly.)
+                    if Self::supply_has_active_callback(&tap_cb) {
                         register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
                 }

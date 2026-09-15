@@ -10,6 +10,12 @@ struct UniqueFilterState {
     with_fn: Option<Value>,
     expires_seconds: Option<f64>,
     seen: Vec<(Value, crate::runtime::thread_compat::Instant)>,
+    /// `Supply.unique`'s own derived supplier: every value that passes the
+    /// filter is forwarded here, exactly as a `map`/`grep` transform tap
+    /// forwards to its downstream -- making `unique` a real pipeline stage
+    /// rather than a marker riding on the *source* supply's id (issue
+    /// #8474).
+    downstream_supplier_id: u64,
 }
 
 #[derive(Clone)]
@@ -29,6 +35,9 @@ struct ElemsTraceState {
     last_emit_at: Option<crate::runtime::thread_compat::Instant>,
     emitted_count: i64,
     last_reported_count: i64,
+    /// `Supply.elems`'s own derived supplier (issue #8474; see
+    /// `UniqueFilterState::downstream_supplier_id`).
+    downstream_supplier_id: u64,
 }
 
 #[derive(Clone)]
@@ -45,6 +54,12 @@ struct SupplierTapSubscription {
     head_limit: Option<usize>,
     /// Count of values emitted so far (used with head_limit)
     head_count: usize,
+    /// `Supply.head`'s own derived supplier: each value under the limit is
+    /// forwarded here rather than to a bare `callback`, and reaching the
+    /// limit fires *this* supplier's done rather than the source's --
+    /// making `head` a real pipeline stage (issue #8474; see
+    /// `UniqueFilterState::downstream_supplier_id`).
+    head_downstream: Option<u64>,
     /// Produce (scan/fold) state: callable and running accumulator
     produce_state: Option<ProduceState>,
     /// Start transform state: callable and output supplier_id
@@ -55,6 +70,12 @@ struct SupplierTapSubscription {
     words_mode: bool,
     /// Buffer for partial words across chunk boundaries
     words_buffer: String,
+    /// `Supply.lines`'s own derived supplier, when `line_mode` is set (issue
+    /// #8474; see `UniqueFilterState::downstream_supplier_id`).
+    line_downstream: Option<u64>,
+    /// `Supply.words`'s own derived supplier, when `words_mode` is set
+    /// (issue #8474; see `UniqueFilterState::downstream_supplier_id`).
+    words_downstream: Option<u64>,
     /// Flat transform: re-emit flattened sub-elements to this downstream supplier
     flat_downstream: Option<u64>,
     /// Channel sink: when set, emitted values are pushed directly into this
@@ -606,11 +627,14 @@ pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstr
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -650,11 +674,14 @@ pub(in crate::runtime) fn register_supplier_forward_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -754,11 +781,14 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: Some(channel),
                 zip_tap: None,
@@ -808,11 +838,14 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -826,10 +859,16 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
     }
 }
 
-pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
+/// Register a `Supply.head` tap on a live supplier: forward each value under
+/// `limit` to `downstream_sid`, the derived supply `head` handed back, and
+/// once the limit is reached fire `downstream_sid`'s own done (see
+/// `SupplierEmitAction::HeadLimitReached`). This mirrors
+/// [`register_supplier_flat_tap`] deliberately -- `head` is a pipeline stage
+/// like `map`/`grep`, so it owns a supplier of its own and can sit anywhere
+/// in a chain (issue #8474).
+pub(in crate::runtime) fn register_supplier_head_tap(
     supplier_id: u64,
-    tap: Value,
-    delay_seconds: f64,
+    downstream_sid: u64,
     limit: usize,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
@@ -837,21 +876,24 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
                 head_limit: Some(limit),
                 head_count: 0,
+                head_downstream: Some(downstream_sid),
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -865,32 +907,38 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
     }
 }
 
-pub(in crate::runtime) fn register_supplier_lines_tap(
+/// Register a `Supply.lines` tap on a live supplier: split incoming chunks
+/// into lines and forward each complete line to `downstream_sid`, exactly as
+/// [`register_supplier_head_tap`] forwards to its own derived supplier
+/// (issue #8474).
+pub(in crate::runtime) fn register_supplier_lines_transform_tap(
     supplier_id: u64,
-    tap: Value,
+    downstream_sid: u64,
     chomp: bool,
-    delay_seconds: f64,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: true,
                 line_chomp: chomp,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: Some(downstream_sid),
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -904,31 +952,36 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
     }
 }
 
-pub(in crate::runtime) fn register_supplier_words_tap(
+/// Register a `Supply.words` tap on a live supplier: split incoming chunks
+/// into words and forward each complete word to `downstream_sid` (issue
+/// #8474; see [`register_supplier_lines_transform_tap`]).
+pub(in crate::runtime) fn register_supplier_words_transform_tap(
     supplier_id: u64,
-    tap: Value,
-    delay_seconds: f64,
+    downstream_sid: u64,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: true,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: Some(downstream_sid),
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -942,10 +995,12 @@ pub(in crate::runtime) fn register_supplier_words_tap(
     }
 }
 
-pub(in crate::runtime) fn register_supplier_elems_tap(
+/// Register a `Supply.elems` tap on a live supplier: forward the running
+/// count to `downstream_sid` (issue #8474; see
+/// [`register_supplier_lines_transform_tap`]).
+pub(in crate::runtime) fn register_supplier_elems_transform_tap(
     supplier_id: u64,
-    tap: Value,
-    delay_seconds: f64,
+    downstream_sid: u64,
     interval_seconds: f64,
     initial_count: i64,
 ) {
@@ -954,11 +1009,11 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: None,
                 classify_state: None,
                 elems_trace: Some(ElemsTraceState {
@@ -966,14 +1021,18 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                     last_emit_at: None,
                     emitted_count: initial_count.max(0),
                     last_reported_count: initial_count.max(0),
+                    downstream_supplier_id: downstream_sid,
                 }),
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -993,9 +1052,9 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
 pub(in crate::runtime) enum SupplierEmitAction {
     Call(Value, Value, f64),
     UniqueCheck {
-        callback: Value,
+        /// `Supply.unique`'s own derived supplier (issue #8474).
+        downstream_supplier_id: u64,
         value: Value,
-        delay_seconds: f64,
         as_fn: Option<Value>,
         with_fn: Option<Value>,
         tap_index: usize,
@@ -1145,17 +1204,20 @@ fn supplier_emit_callbacks_inner(
                 continue;
             }
             if tap.line_mode {
+                let downstream_sid = tap.line_downstream;
                 tap.line_buffer.push_str(&emitted_value.to_string_value());
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, false)
                 {
-                    actions.push(SupplierEmitAction::Call(
-                        tap.callback.clone(),
-                        Value::str(line),
-                        tap.delay_seconds,
-                    ));
+                    if let Some(dsid) = downstream_sid {
+                        actions.push(SupplierEmitAction::ForwardEmit {
+                            downstream_supplier_id: dsid,
+                            value: Value::str(line),
+                        });
+                    }
                 }
             } else if tap.words_mode {
+                let downstream_sid = tap.words_downstream;
                 tap.words_buffer.push_str(&emitted_value.to_string_value());
                 // Extract complete words (followed by whitespace) from the buffer
                 loop {
@@ -1168,11 +1230,12 @@ fn supplier_emit_callbacks_inner(
                         let word = trimmed[..ws_pos].to_string();
                         let consumed = tap.words_buffer.len() - trimmed.len() + ws_pos;
                         tap.words_buffer = tap.words_buffer[consumed..].to_string();
-                        actions.push(SupplierEmitAction::Call(
-                            tap.callback.clone(),
-                            Value::str(word),
-                            tap.delay_seconds,
-                        ));
+                        if let Some(dsid) = downstream_sid {
+                            actions.push(SupplierEmitAction::ForwardEmit {
+                                downstream_supplier_id: dsid,
+                                value: Value::str(word),
+                            });
+                        }
                     } else {
                         // No whitespace after word -- may be partial, keep in buffer
                         let leading_ws = tap.words_buffer.len() - trimmed.len();
@@ -1191,9 +1254,8 @@ fn supplier_emit_callbacks_inner(
                 if uf.as_fn.is_some() || uf.with_fn.is_some() {
                     // Need interpreter to evaluate :as / :with
                     actions.push(SupplierEmitAction::UniqueCheck {
-                        callback: tap.callback.clone(),
+                        downstream_supplier_id: uf.downstream_supplier_id,
                         value: emitted_value.clone(),
-                        delay_seconds: tap.delay_seconds,
                         as_fn: uf.as_fn.clone(),
                         with_fn: uf.with_fn.clone(),
                         tap_index: idx,
@@ -1209,11 +1271,10 @@ fn supplier_emit_callbacks_inner(
                             emitted_value.clone(),
                             crate::runtime::thread_compat::Instant::now(),
                         ));
-                        actions.push(SupplierEmitAction::Call(
-                            tap.callback.clone(),
-                            emitted_value.clone(),
-                            tap.delay_seconds,
-                        ));
+                        actions.push(SupplierEmitAction::ForwardEmit {
+                            downstream_supplier_id: uf.downstream_supplier_id,
+                            value: emitted_value.clone(),
+                        });
                     }
                 }
             } else if tap.classify_state.is_some() {
@@ -1234,12 +1295,16 @@ fn supplier_emit_callbacks_inner(
                 if should_emit && elems.emitted_count > elems.last_reported_count {
                     elems.last_emit_at = Some(now);
                     elems.last_reported_count = elems.emitted_count;
-                    actions.push(SupplierEmitAction::Call(
-                        tap.callback.clone(),
-                        Value::int(elems.emitted_count),
-                        tap.delay_seconds,
-                    ));
+                    actions.push(SupplierEmitAction::ForwardEmit {
+                        downstream_supplier_id: elems.downstream_supplier_id,
+                        value: Value::int(elems.emitted_count),
+                    });
                 }
+            } else if let Some(dsid) = tap.head_downstream {
+                actions.push(SupplierEmitAction::ForwardEmit {
+                    downstream_supplier_id: dsid,
+                    value: emitted_value.clone(),
+                });
             } else if let Some(ref mut bs) = tap.batch_state {
                 // A value arriving in a new absolute time period flushes the
                 // previous period's pending buffer first (rakudo `time div
@@ -1338,11 +1403,18 @@ fn supplier_emit_callbacks_inner(
                     tap.delay_seconds,
                 ));
             }
-            // Track head_limit emissions
+            // Track head_limit emissions. `head` owns its own derived
+            // supplier now (issue #8474), so reaching the limit finishes
+            // *that* supplier, not the source -- the source may still have
+            // more values coming, and other stages chained off it must keep
+            // seeing them.
             if let Some(limit) = tap.head_limit {
                 tap.head_count += 1;
                 if tap.head_count >= limit {
-                    actions.push(SupplierEmitAction::HeadLimitReached { supplier_id });
+                    let done_sid = tap.head_downstream.unwrap_or(supplier_id);
+                    actions.push(SupplierEmitAction::HeadLimitReached {
+                        supplier_id: done_sid,
+                    });
                 }
             }
         }
@@ -1384,10 +1456,12 @@ pub(in crate::runtime) fn supplier_unique_get_seen(
     }
 }
 
-pub(in crate::runtime) fn register_supplier_unique_tap(
+/// Register a `Supply.unique` tap on a live supplier: forward each value
+/// that passes the filter to `downstream_sid` (issue #8474; see
+/// [`register_supplier_lines_transform_tap`]).
+pub(in crate::runtime) fn register_supplier_unique_transform_tap(
     supplier_id: u64,
-    tap: Value,
-    delay_seconds: f64,
+    downstream_sid: u64,
     as_fn: Option<Value>,
     with_fn: Option<Value>,
     expires_seconds: Option<f64>,
@@ -1397,26 +1471,30 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: tap,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
-                delay_seconds,
+                delay_seconds: 0.0,
                 unique_filter: Some(UniqueFilterState {
                     as_fn,
                     with_fn,
                     expires_seconds,
                     seen: Vec::new(),
+                    downstream_supplier_id: downstream_sid,
                 }),
                 classify_state: None,
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -1456,6 +1534,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: Some(ProduceState {
                     callable,
                     accumulator: None,
@@ -1466,6 +1545,8 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -1502,6 +1583,7 @@ pub(in crate::runtime) fn register_supplier_reduce_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: Some(ProduceState {
                     callable,
                     accumulator: None,
@@ -1512,6 +1594,8 @@ pub(in crate::runtime) fn register_supplier_reduce_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -1568,6 +1652,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: Some(StartState {
                     callable,
@@ -1576,6 +1661,8 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -1657,11 +1744,14 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -1735,40 +1825,49 @@ pub(in crate::runtime) fn get_classify_sub_supplier_ids(supplier_id: u64) -> Vec
     ids
 }
 
-pub(in crate::runtime) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(Value, Value)> {
-    let mut callbacks = Vec::new();
+/// Flush any partial trailing line when the source is done, one
+/// `(downstream_supplier_id, line)` pair per `lines` tap (issue #8474: the
+/// flushed line forwards into `lines`'s own derived supplier now, rather
+/// than calling a bare tap callback directly).
+pub(in crate::runtime) fn flush_supplier_line_taps(supplier_id: u64) -> Vec<(u64, Value)> {
+    let mut out = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
     {
         for tap in &mut subs.taps {
-            if tap.line_mode {
+            if tap.line_mode
+                && let Some(dsid) = tap.line_downstream
+            {
                 for line in
                     take_complete_lines_from_buffer(&mut tap.line_buffer, tap.line_chomp, true)
                 {
-                    callbacks.push((tap.callback.clone(), Value::str(line)));
+                    out.push((dsid, Value::str(line)));
                 }
             }
         }
     }
-    callbacks
+    out
 }
 
-pub(in crate::runtime) fn flush_supplier_words_taps(supplier_id: u64) -> Vec<(Value, Value)> {
-    let mut callbacks = Vec::new();
+/// [`flush_supplier_line_taps`] for `Supply.words`.
+pub(in crate::runtime) fn flush_supplier_words_taps(supplier_id: u64) -> Vec<(u64, Value)> {
+    let mut out = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
     {
         for tap in &mut subs.taps {
-            if tap.words_mode {
+            if tap.words_mode
+                && let Some(dsid) = tap.words_downstream
+            {
                 let remaining = tap.words_buffer.trim();
                 if !remaining.is_empty() {
-                    callbacks.push((tap.callback.clone(), Value::str(remaining.to_string())));
+                    out.push((dsid, Value::str(remaining.to_string())));
                 }
                 tap.words_buffer.clear();
             }
         }
     }
-    callbacks
+    out
 }
 
 pub(in crate::runtime) fn take_supplier_done_callbacks(supplier_id: u64) -> Vec<Value> {
@@ -1972,6 +2071,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: Some(BatchState {
@@ -1983,6 +2083,8 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 }),
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -2018,11 +2120,14 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: Some(downstream_supplier_id),
                 channel_sink: None,
                 zip_tap: None,
@@ -2061,11 +2166,14 @@ pub(in crate::runtime) fn register_supplier_transform_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,
@@ -2112,6 +2220,27 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
                 }
                 if let Some(ds) = tap.flat_downstream {
                     next.push(ds);
+                }
+                // `head`/`unique`/`lines`/`words`/`elems` own a derived
+                // supplier like every other pipeline stage now (issue #8474),
+                // so the source's `done` must propagate to theirs too. A
+                // `head` whose limit was already reached (a separate,
+                // earlier `HeadLimitReached` action) is harmless to mark done
+                // again here.
+                if let Some(ds) = tap.head_downstream {
+                    next.push(ds);
+                }
+                if let Some(ds) = tap.line_downstream {
+                    next.push(ds);
+                }
+                if let Some(ds) = tap.words_downstream {
+                    next.push(ds);
+                }
+                if let Some(ref uf) = tap.unique_filter {
+                    next.push(uf.downstream_supplier_id);
+                }
+                if let Some(ref elems) = tap.elems_trace {
+                    next.push(elems.downstream_supplier_id);
                 }
             }
         }
@@ -2196,11 +2325,14 @@ pub(in crate::runtime) fn register_supplier_zip_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: Some(ZipTapState {
@@ -2237,11 +2369,14 @@ pub(in crate::runtime) fn register_supplier_zip_latest_tap(
                 elems_trace: None,
                 head_limit: None,
                 head_count: 0,
+                head_downstream: None,
                 produce_state: None,
                 start_state: None,
                 batch_state: None,
                 words_mode: false,
                 words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
                 flat_downstream: None,
                 channel_sink: None,
                 zip_tap: None,

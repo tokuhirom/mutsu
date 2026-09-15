@@ -22,38 +22,36 @@ impl Interpreter {
             _ => Vec::new(),
         };
 
-        let has_supplier = attributes.get("supplier_id").is_some();
+        // A live (Supplier-backed) source gets a real pipeline stage: its
+        // own derived supplier, fed by a unique-transform tap on the
+        // source, exactly as `map`/`grep`/`flat` do. It used to keep the
+        // SOURCE's supplier_id and ride `unique_filter`/`unique_as`/
+        // `unique_with`/`unique_expires` marker attributes consumed at tap
+        // time, which made `unique` uncomposable in both directions (issue
+        // #8474).
+        if let Some(source_sid) = crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+        {
+            let downstream_sid = crate::runtime::native_methods::next_supplier_id();
+            let expires_seconds = expires.as_ref().map(Value::to_f64);
+            crate::runtime::native_methods::register_supplier_unique_transform_tap(
+                source_sid,
+                downstream_sid,
+                as_fn,
+                with_fn,
+                expires_seconds,
+            );
 
-        if has_supplier {
-            // For supplier-backed supplies, store unique filter params in attributes
-            // so the tap handler can apply filtering in real-time during emission.
             let mut new_attrs = HashMap::new();
-            // Copy supplier_id and related attributes
-            if let Some(sid) = attributes.get("supplier_id") {
-                new_attrs.insert("supplier_id".to_string(), sid.clone());
-            }
-            // ADR-0028 Slice 2: deferred to tap-time — copy `"scheduler"`
-            // forward so the `"tap"|"act"` chokepoint still classifies it
-            // when the eventual `.tap()` runs.
+            new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+            // rakudo answers False for `.unique.live` even over a live
+            // source (unlike `.map`/`.grep`) -- matches `produce`/`batch`'s
+            // own `live: FALSE`.
+            new_attrs.insert("live".to_string(), Value::FALSE);
             if let Some(scheduler) = attributes.get("scheduler") {
                 new_attrs.insert("scheduler".to_string(), scheduler.clone());
             }
-            if let Some(d) = attributes.get("supplier_done") {
-                new_attrs.insert("supplier_done".to_string(), d.clone());
-            }
-            new_attrs.insert("values".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::FALSE);
-            new_attrs.insert("unique_filter".to_string(), Value::TRUE);
-            if let Some(ref f) = as_fn {
-                new_attrs.insert("unique_as".to_string(), f.clone());
-            }
-            if let Some(ref f) = with_fn {
-                new_attrs.insert("unique_with".to_string(), f.clone());
-            }
-            if let Some(ref e) = expires {
-                new_attrs.insert("unique_expires".to_string(), e.clone());
-            }
-            new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
             return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
         }
 
