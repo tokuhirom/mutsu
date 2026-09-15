@@ -267,10 +267,33 @@ impl Interpreter {
                     stop_at_full,
                 );
                 let orig_len = target.chars().len();
+                // `start` is the position this call was offered, which may be
+                // a character `:ignoremark` strips away entirely (a bare
+                // combining mark, say). `derived_start` already skipped past
+                // it to reach the first surviving character the inner match
+                // actually starts consuming from, so when that differs from
+                // `start`, `start` was never a real consumed position and
+                // `true_start` is this match's real beginning. Record it as
+                // `capture_start` (the top-level caller's `caps.from = caps
+                // .capture_start.unwrap_or(start)` fallback) so it propagates
+                // up through `group_merge_delta` for a *scoped* `[:m ...]`
+                // group too, not only a whole-pattern `:m`.
+                //
+                // Only do this when a skip actually happened: `start` is also
+                // where THIS group was entered when it is not the very first
+                // atom in the pattern (e.g. `'q'? [:m 'x']`, `<:Lu> [:m
+                // 'AFE']`) -- there, nothing at `start` was stripped, so
+                // `true_start == start` and setting `capture_start` here
+                // would wrongly overwrite the outer match's real (earlier)
+                // start once merged up, dropping whatever a preceding atom
+                // already consumed.
+                let true_start = stripped.stripped_to_original(derived_start);
                 for (end, caps) in &mut results {
                     *end = stripped.stripped_to_original(*end + derived_start);
                     if let Some(cs) = caps.capture_start.as_mut() {
                         *cs = stripped.stripped_to_original(*cs + derived_start);
+                    } else if true_start != start {
+                        caps.capture_start = Some(true_start);
                     }
                     if let Some(ce) = caps.capture_end.as_mut() {
                         *ce = stripped.stripped_to_original(*ce + derived_start);
