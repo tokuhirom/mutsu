@@ -307,6 +307,25 @@ impl ParamDef {
         keys
     }
 
+    /// The spelling that carries this parameter's sigil.
+    ///
+    /// For an aliased named parameter (`:c(:&cb)`) the outer parameter is named
+    /// for its external key (`c`, sigil-less) and the sigil lives on the alias,
+    /// so a sigil-based check has to read the alias instead. Every other
+    /// parameter answers with its own name.
+    pub(crate) fn sigil_carrying_name(&self) -> &str {
+        if self.named_alias
+            && !self.name.starts_with(['$', '@', '%', '&'])
+            && let Some(alias) = self
+                .sub_signature
+                .as_ref()
+                .and_then(|aliases| aliases.iter().find(|a| a.named && !a.slurpy))
+        {
+            return &alias.name;
+        }
+        &self.name
+    }
+
     /// Mark this param (and every nested sub-signature param) as belonging to
     /// a block, so an unpassed untyped optional seeds Mu instead of Any.
     pub(crate) fn mark_block_param(&mut self) {

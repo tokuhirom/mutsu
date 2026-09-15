@@ -796,16 +796,27 @@ impl Interpreter {
                     }
                 }
 
-                // A named array/hash param can only bind a Positional/
-                // Associative argument. Without this, `:@specification!
+                // A named array/hash/code param can only bind a Positional/
+                // Associative/Callable argument. Without this, `:@specification!
                 // (Optionality $o, Version $v)` matched a single enum value and
                 // out-dispatched the `Optionality :$specification!` candidate
-                // (META6's trait pair), then died binding the destructure.
+                // (META6's trait pair), then died binding the destructure; and
+                // `:&marshalled-by!` claimed a plain string and out-dispatched
+                // the sibling `Str:D :$marshalled-by!` candidate (JSON::Marshal's
+                // attribute traits, #8121). The `&` sigil constrains a named
+                // parameter to Callable exactly as it does a positional one.
                 if let Some(ref val) = arg_val {
-                    if pd.name.starts_with('@') && !self.type_matches_value("Positional", val) {
+                    // An aliased named parameter (`:c(:&cb)`) carries the sigil
+                    // on the alias; the outer parameter is named for its
+                    // external key `c` and has none.
+                    let sigil_name = pd.sigil_carrying_name();
+                    if sigil_name.starts_with('@') && !self.type_matches_value("Positional", val) {
                         return false;
                     }
-                    if pd.name.starts_with('%') && !self.type_matches_value("Associative", val) {
+                    if sigil_name.starts_with('%') && !self.type_matches_value("Associative", val) {
+                        return false;
+                    }
+                    if sigil_name.starts_with('&') && !self.type_matches_value("Callable", val) {
                         return false;
                     }
                 }
