@@ -68,6 +68,14 @@ impl Value {
         self.0.regex_signature().cloned()
     }
 
+    /// An owned, declaration-identity cache key for a regex value's
+    /// materialized `Signature`.
+    pub(crate) fn regex_signature_cache_key(
+        &self,
+    ) -> Option<crate::value::signature::RegexSignatureKey> {
+        self.0.regex_signature_cache_key()
+    }
+
     /// Attach parser-produced source provenance to a regex value while
     /// preserving its execution spelling and adverb payload. Plain regexes
     /// use the existing transparent closure-shaped representation; unlike a
