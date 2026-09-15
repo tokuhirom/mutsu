@@ -40,6 +40,7 @@ fn prefilter_stats(src: &str) -> Stats {
     };
     Stats {
         literal_prefix: counter("literal_prefix="),
+        inner_literal: counter("inner_literal="),
         first_char_set: counter("first_char_set="),
         positions_offered: counter("positions_offered="),
         position_hits: counter("position_hits="),
@@ -49,6 +50,7 @@ fn prefilter_stats(src: &str) -> Stats {
 
 struct Stats {
     literal_prefix: u64,
+    inner_literal: u64,
     first_char_set: u64,
     positions_offered: u64,
     position_hits: u64,
@@ -160,8 +162,100 @@ fn a_pattern_the_analysis_declines_on_still_walks_every_position() {
 say ("abc" ~~ / <G::thing> /).Bool;"#,
     );
     assert!(
-        stats.first_char_set == 0 && stats.literal_prefix == 0,
+        stats.first_char_set == 0 && stats.literal_prefix == 0 && stats.inner_literal == 0,
         "a subrule-led pattern must not be narrowed (ADR-0099 §4 constraint 3): {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_failing_inner_literal_scan_is_sublinear_in_subject_length() {
+    // `\w+` leads, so there is no literal prefix and the first-character set is
+    // as wide as `\w` -- every position in the subject passes it. Only the
+    // required INNER literal can answer this scan without entering the engine.
+    let small = prefilter_stats(&failing_scan(r"/ \w+ 'zzzq' /", 100));
+    let large = prefilter_stats(&failing_scan(r"/ \w+ 'zzzq' /", 800));
+
+    assert!(
+        small.inner_literal >= 1 && large.inner_literal >= 1,
+        "the inner-literal prefilter did not engage at all:\n{}\n{}",
+        small.line,
+        large.line
+    );
+    assert!(
+        large.positions_offered > small.positions_offered * 4,
+        "positions_offered did not grow with the subject: {} vs {}",
+        small.positions_offered,
+        large.positions_offered
+    );
+    assert_eq!(
+        small.position_hits, 0,
+        "an inner literal that does not occur still reached the engine: {}",
+        small.line
+    );
+    assert_eq!(
+        large.position_hits, 0,
+        "an inner literal that does not occur still reached the engine: {}",
+        large.line
+    );
+}
+
+#[test]
+fn an_inner_literal_carries_a_pattern_with_a_universal_first_set() {
+    // `.+` admits every character, so the first-set derivation declines
+    // outright and this scan was completely unfiltered before the inner
+    // literal existed -- the shape where the win is largest.
+    let stats = prefilter_stats(&failing_scan(r"/ .+ 'zzzq' /", 200));
+    assert!(
+        stats.inner_literal >= 1,
+        "a universal-first-set pattern got no inner literal: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, 0,
+        "the needle does not occur, so no position should have reached the engine: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_bounded_lead_in_narrows_each_occurrence_to_a_short_window() {
+    // A lead-in of bounded width (`'e'?` is a literal atom, so it consumes
+    // exactly zero or one character -- unlike a character class, which matches
+    // a whole grapheme cluster and so has no upper bound) turns each
+    // occurrence of the literal into a two-position window rather than
+    // "everything up to here". The unit contains exactly one `=`, preceded by
+    // `r`, so the first-character set then rejects one of the two and the
+    // engine is entered once per repeat.
+    let repeats = 200;
+    let stats = prefilter_stats(&failing_scan(r"/ 'e'? '=' \d /", repeats));
+    assert!(
+        stats.inner_literal >= 1,
+        "a bounded lead-in got no inner literal: {}",
+        stats.line
+    );
+    assert_eq!(
+        stats.position_hits, repeats as u64,
+        "expected exactly one candidate per occurrence: {}",
+        stats.line
+    );
+    assert!(
+        stats.positions_offered > 40 * repeats as u64,
+        "the unfiltered scan should have had far more to walk: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_code_block_after_the_literal_declines_so_it_keeps_running() {
+    // ADR-0009: skipping a start position on a later literal's account would
+    // skip a `{ ... }` block that WOULD have run there, which is exactly why
+    // the inner-literal analysis declines on any pattern that runs code --
+    // a stronger decline than the first-set analysis needs.
+    let stats = prefilter_stats(r#"say ("xyz" ~~ / \w+ { 1 } 'q' /).defined;"#);
+    assert_eq!(
+        stats.inner_literal, 0,
+        "a pattern that runs user code must not be narrowed by an inner literal: {}",
         stats.line
     );
 }

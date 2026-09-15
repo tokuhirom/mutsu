@@ -224,17 +224,20 @@ pub(crate) fn record_regex_raw_token_candidates(hit: bool) {
 // position skips a full engine entry, ~983 instructions per ADR-0099 §2.4).
 static REGEX_PREFILTER_APPLIED_PREFIX: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_APPLIED_FIRST_CHAR: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_APPLIED_INNER: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_DECLINED: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_POSITIONS_OFFERED: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_POSITION_HITS: AtomicU64 = AtomicU64::new(0);
 
-/// Which of the prefilter's two narrowing mechanisms a scan used. Counted
-/// apart so that "the first-character set stopped engaging" is visible even
-/// while the (much rarer) literal-prefix scans keep the aggregate up.
+/// Which of the prefilter's narrowing mechanisms a scan used. Counted apart so
+/// that "the first-character set stopped engaging" is visible even while the
+/// (much rarer) literal-prefix scans keep the aggregate up.
 #[derive(Clone, Copy)]
 pub(crate) enum RegexPrefilterKind {
     /// A required literal prefix: substring search to the next plausible start.
     LiteralPrefix,
+    /// A required *inner* literal: substring search bounding the start.
+    InnerLiteral,
     /// A first-character set: one bitmap probe per rejected position.
     FirstCharSet,
 }
@@ -247,6 +250,7 @@ pub(crate) fn record_regex_prefilter_applied(kind: RegexPrefilterKind, positions
     if enabled() {
         match kind {
             RegexPrefilterKind::LiteralPrefix => &REGEX_PREFILTER_APPLIED_PREFIX,
+            RegexPrefilterKind::InnerLiteral => &REGEX_PREFILTER_APPLIED_INNER,
             RegexPrefilterKind::FirstCharSet => &REGEX_PREFILTER_APPLIED_FIRST_CHAR,
         }
         .fetch_add(1, Ordering::Relaxed);
@@ -1401,12 +1405,13 @@ pub(crate) fn dump() {
     );
     let prefilter_prefix = REGEX_PREFILTER_APPLIED_PREFIX.load(Ordering::Relaxed);
     let prefilter_first_char = REGEX_PREFILTER_APPLIED_FIRST_CHAR.load(Ordering::Relaxed);
-    let prefilter_applied = prefilter_prefix + prefilter_first_char;
+    let prefilter_inner = REGEX_PREFILTER_APPLIED_INNER.load(Ordering::Relaxed);
+    let prefilter_applied = prefilter_prefix + prefilter_inner + prefilter_first_char;
     let prefilter_declined = REGEX_PREFILTER_DECLINED.load(Ordering::Relaxed);
     let prefilter_positions_offered = REGEX_PREFILTER_POSITIONS_OFFERED.load(Ordering::Relaxed);
     let prefilter_position_hits = REGEX_PREFILTER_POSITION_HITS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits}"
+        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits}"
     );
     let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
     let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);

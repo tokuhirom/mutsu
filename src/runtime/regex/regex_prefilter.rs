@@ -28,14 +28,22 @@
 //! first-set analysis satisfies it by calling the engine's own class
 //! evaluator instead of restating it.
 //!
-//! Still out of scope, and still simply declining: a required *inner* literal
-//! for patterns with no usable prefix, subrule-derived prefixes keyed by
-//! package + `TOKEN_DEFS_GEN`, and `:m` NFD-aware first-sets for a *scoped*
-//! `:ignoremark` (a top-level one already arrives here mark-stripped).
+//! A fourth derivation, the **required inner literal**, catches the patterns
+//! the first two leave behind — `/ \w+ '=>' /` has no leading prefix and a
+//! first-set as wide as `\w`, but `'=>'` must still appear somewhere in any
+//! match, so one substring search answers the whole scan. It lives in
+//! [`super::regex_prefilter_inner`], which states the claim it makes exactly.
+//!
+//! Still out of scope, and still simply declining: subrule-derived prefixes
+//! keyed by package + `TOKEN_DEFS_GEN`, and `:m` NFD-aware first-sets for a
+//! *scoped* `:ignoremark` (a top-level one already arrives here
+//! mark-stripped).
 
 use super::super::*;
 use super::regex_prefilter_analysis::{Derivation, derive};
 use super::regex_prefilter_firstset::FirstSet;
+use super::regex_prefilter_inner::{InnerLiteral, required_inner_literal};
+use super::regex_prefilter_scan::ScanPositions;
 use crate::vm::vm_stats::RegexPrefilterKind;
 use std::sync::Arc;
 
@@ -61,9 +69,12 @@ pub(crate) fn prefilter_enabled() -> bool {
 /// `regex_scan_positions` call (a `:g` loop makes one call per match).
 pub(crate) struct Prefilter {
     /// A literal run every match must begin with.
-    prefix: Option<Box<[char]>>,
+    pub(super) prefix: Option<Box<[char]>>,
     /// A superset of the characters a match may begin with.
-    first: Option<FirstSet>,
+    pub(super) first: Option<FirstSet>,
+    /// A literal run every match must *contain*, for the patterns that have no
+    /// usable prefix. Bounds the match start rather than fixing it.
+    pub(super) inner: Option<InnerLiteral>,
     /// A lower bound on the characters any match consumes.
     min_len: usize,
 }
@@ -71,9 +82,18 @@ pub(crate) struct Prefilter {
 impl Prefilter {
     fn build(pattern: &RegexPattern) -> Prefilter {
         let Derivation { first, min_len } = derive(pattern);
+        let prefix = required_literal_prefix(pattern)
+            .map(|p| p.chars().collect::<Vec<char>>().into_boxed_slice());
         Prefilter {
-            prefix: required_literal_prefix(pattern)
-                .map(|p| p.chars().collect::<Vec<char>>().into_boxed_slice()),
+            // A required prefix is strictly stronger than a required inner
+            // literal (it fixes the start rather than bounding it), so the
+            // inner analysis is not even run when one exists.
+            inner: if prefix.is_some() {
+                None
+            } else {
+                required_inner_literal(pattern)
+            },
+            prefix,
             first,
             min_len,
         }
@@ -191,6 +211,31 @@ pub(crate) fn regex_scan_positions<'c>(
         };
     }
 
+    if let Some(inner) = prefilter.inner.as_ref() {
+        // A match holds `min_before` characters plus the literal itself, which
+        // is a tighter bound than the derived minimum whenever the walk that
+        // found the literal saw further than the first-set walk did.
+        let needed = prefilter
+            .min_len
+            .max(inner.min_before.saturating_add(inner.literal.len()));
+        let Some(last) = chars.len().checked_sub(needed) else {
+            return ScanPositions::empty();
+        };
+        crate::vm::vm_stats::record_regex_prefilter_applied(
+            RegexPrefilterKind::InnerLiteral,
+            offered,
+        );
+        return ScanPositions::Inner {
+            chars,
+            prefilter,
+            pos: from,
+            last,
+            search: from,
+            window_end: None,
+            exhausted: false,
+        };
+    }
+
     if prefilter.first.is_some() {
         // A pattern with a first-character set consumes at least one
         // character by construction, so `chars.len()` is never a viable start
@@ -216,80 +261,6 @@ pub(crate) fn regex_scan_positions<'c>(
     match chars.len().checked_sub(prefilter.min_len) {
         Some(last) => ScanPositions::Range(from..=last),
         None => ScanPositions::empty(),
-    }
-}
-
-/// Iterator returned by [`regex_scan_positions`]. See that function's doc
-/// comment for why this is an iterator rather than a `Vec`.
-pub(crate) enum ScanPositions<'c> {
-    Range(std::ops::RangeInclusive<usize>),
-    /// Positions where the pattern's required literal prefix occurs.
-    Literal {
-        chars: &'c [char],
-        prefilter: Arc<Prefilter>,
-        pos: usize,
-        /// Inclusive last viable start.
-        last: usize,
-    },
-    /// Positions whose character is in the pattern's first-character set.
-    FirstChar {
-        chars: &'c [char],
-        prefilter: Arc<Prefilter>,
-        pos: usize,
-        /// Inclusive last viable start.
-        last: usize,
-    },
-}
-
-impl ScanPositions<'_> {
-    /// No candidate at all — the subject is shorter than any match could be.
-    fn empty() -> Self {
-        #[expect(clippy::reversed_empty_ranges, reason = "an empty RangeInclusive")]
-        ScanPositions::Range(1..=0)
-    }
-}
-
-impl Iterator for ScanPositions<'_> {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<usize> {
-        match self {
-            ScanPositions::Range(r) => r.next(),
-            ScanPositions::Literal {
-                chars,
-                prefilter,
-                pos,
-                last,
-            } => {
-                let needle = prefilter.prefix.as_deref().unwrap_or_default();
-                while *pos <= *last {
-                    let candidate = *pos;
-                    *pos += 1;
-                    if chars[candidate..candidate + needle.len()] == *needle {
-                        crate::vm::vm_stats::record_regex_prefilter_position_hit();
-                        return Some(candidate);
-                    }
-                }
-                None
-            }
-            ScanPositions::FirstChar {
-                chars,
-                prefilter,
-                pos,
-                last,
-            } => {
-                let set = prefilter.first.as_ref()?;
-                while *pos <= *last {
-                    let candidate = *pos;
-                    *pos += 1;
-                    if set.contains(chars[candidate]) {
-                        crate::vm::vm_stats::record_regex_prefilter_position_hit();
-                        return Some(candidate);
-                    }
-                }
-                None
-            }
-        }
     }
 }
 

@@ -428,7 +428,7 @@ fn whitespace_first_set() -> FirstSet {
 /// Whether matching `pattern` can run user code or dispatch a subrule — the
 /// test for whether a zero-width construct may be passed through silently.
 /// Conservative in the safe direction: an unknown shape counts as "runs code".
-fn pattern_runs_code(pattern: &RegexPattern, depth: u32) -> bool {
+pub(super) fn pattern_runs_code(pattern: &RegexPattern, depth: u32) -> bool {
     if depth > MAX_DEPTH {
         return true;
     }
