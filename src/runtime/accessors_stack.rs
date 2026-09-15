@@ -5,15 +5,21 @@ impl Interpreter {
     /// Announce that the registry's **functions** map changed, invalidating
     /// every name-keyed dispatch cache built over it.
     ///
-    /// This is the single entry point for `fn_resolve_gen`; six caches
+    /// This is the single entry point for `fn_resolve_gen`; five caches
     /// self-refresh off it at their own read sites — `fn_resolve_cache` and
     /// `multi_compiled_key_cache` (`find_compiled_function_inner`'s compiled-key
-    /// probes), `multi_candidates_cache`, `declared_fn_cache`, `multi_fn_cache`
-    /// (the three bare-name existence probes) and `fn_keys_by_base` (the
-    /// base-name key index every candidate gather runs on). Each drops
+    /// probes) and `multi_candidates_cache`, `declared_fn_cache`,
+    /// `multi_fn_cache` (the three bare-name existence probes). Each drops
     /// **wholesale**, so a bump is not a cheap marker: it is an
     /// O(registered routines) string re-scan spread across the next few
     /// dispatches.
+    ///
+    /// The sixth cache, `fn_keys_by_base` (the base-name key index every
+    /// candidate gather runs on), is no longer guarded by this counter: it is
+    /// evicted **per base name** instead, which is why this call also clears it
+    /// wholesale. A caller that knows which registry keys it touched should use
+    /// [`Self::invalidate_fn_resolution_for_keys`] and keep the rest of the
+    /// index alive.
     ///
     /// Call it for any insert, remove or `retain` on `Registry::functions`, and
     /// do NOT call it for a registration that left the map byte-identical — a
@@ -25,6 +31,43 @@ impl Interpreter {
     #[inline]
     pub(crate) fn invalidate_fn_resolution(&mut self) {
         self.fn_resolve_gen += 1;
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
+        self.fn_keys_by_base.clear();
+        crate::vm::vm_stats::record_fn_resolve_gen_bump(std::panic::Location::caller());
+    }
+
+    /// [`Self::invalidate_fn_resolution`] for a caller that knows exactly which
+    /// registry keys it inserted or removed.
+    ///
+    /// The five generation-guarded caches still drop wholesale — narrowing them
+    /// is [#8314](https://github.com/tokuhirom/mutsu/issues/8314)'s remaining
+    /// work — but `fn_keys_by_base` keeps every base name the change did not
+    /// touch. That is what makes a per-call `my sub` re-registration affordable:
+    /// entering `unjsonify-string` installs `JSON::Fast::fetch-codepoint` and
+    /// leaving it removes that one key again, so only the base name
+    /// `fetch-codepoint` can have gone stale — yet the index used to be thrown
+    /// away entirely and rebuilt one full registry scan at a time.
+    ///
+    /// Passing a key that did NOT change is harmless (a spurious eviction);
+    /// MISSING one that did is a stale index, which the debug-only audit in
+    /// [`Self::fn_base_name_registered`] turns into a located panic on the next
+    /// resolution rather than a silent mis-dispatch.
+    #[track_caller]
+    pub(crate) fn invalidate_fn_resolution_for_keys(
+        &mut self,
+        keys: impl IntoIterator<Item = Symbol>,
+    ) {
+        self.fn_resolve_gen += 1;
+        let mut evicted = 0usize;
+        for key in keys {
+            let spelled = key.resolve();
+            let base = crate::runtime::dispatch_resolve::function_key_base_name(&spelled);
+            let base_sym = Symbol::intern(base);
+            if self.fn_keys_by_base.remove(&base_sym).is_some() {
+                evicted += 1;
+            }
+        }
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(evicted);
         crate::vm::vm_stats::record_fn_resolve_gen_bump(std::panic::Location::caller());
     }
 
