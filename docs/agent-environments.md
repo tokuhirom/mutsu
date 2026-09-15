@@ -124,13 +124,14 @@ smaller box makes that gate slower, not optional.
 
 `make roast` cannot come back fully green in a remote container, for reasons that have nothing to do
 with any change. Re-deriving this every session is pure waste, so here is the whole set. **These
-three files, and only these three, may be red when you publish**; anything else is a real failure and
+four files, and only these four, may be red when you publish**; anything else is a real failure and
 the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
 
 | File | Shape | Why |
 |---|---|---|
 | `roast/6.c/S32-io/file-tests.t` | `Failed: 4` — tests 6-8, 10 | runs as `uid 0` |
 | `roast/S16-filehandles/filetest.t` | `Failed: 25` — tests 57-64, 69-72, 77-80, and 101/103/105/107/109/111/117/121/125 | runs as `uid 0` |
+| `roast/S16-io/eof.t` | exit 255, "planned 5 tests, but ran 1", `Failed to open '/proc/1/environ': Permission denied` | runs as `uid 0` |
 | `roast/S32-io/IO-Socket-Async.t` | exit 124, "planned 40 ran 17" | sandboxed network |
 
 The first two are the same cause: both `chmod` a file and then assert `.r` / `.w` / `.x` is `False`,
@@ -138,13 +139,19 @@ and **root bypasses the permission bits**, so every such assertion is `True`. Ch
 `0` means these cannot pass, no matter how correct the interpreter is. They pass in CI, which runs as
 an ordinary user.
 
+`eof.t` is the same cause reached from the other side. It gathers the files under `/proc/1` for which
+`.f && .r` holds and opens the first one; as root the permission bits say `environ` is readable
+(`"/proc/1/environ".IO.r` answers `True`), but the container's kernel refuses the `open` anyway, so
+the test dies on a file an ordinary user would have filtered out. Confirmed unrelated to any
+interpreter change by running the file on a `main` build and this one: byte-identical failure.
+
 `IO-Socket-Async.t` times out part-way through in this container and passes in CI; the container's
 network sandbox is the difference. The mechanism has not been pinned down further, so treat a *new*
 failure shape there (a concrete `not ok`, rather than the timeout) as real.
 
 Since [#8221](https://github.com/tokuhirom/mutsu/issues/8221) `make roast` propagates a failing
 suite into its **exit status** (it used to report `tee`'s, always 0). So in a remote container the
-target exits non-zero on these three alone: here, and only here, the status is not by itself the
+target exits non-zero on these four alone: here, and only here, the status is not by itself the
 verdict — read the `Test Summary Report` and check the failing set against the table above. On the
 local box, and for `make test` everywhere, a non-zero exit is a real failure.
 
