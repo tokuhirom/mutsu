@@ -1054,3 +1054,26 @@ dot-suppressed AST shapes, qualified names, empty calls, constructor support,
 parser-created captures, and a grammar lowered from RakuAST. Argumented
 aliases with dynamic argument expressions, code-bearing targets, and other
 runtime-valued forms remain explicit follow-up boundaries.
+
+## 39. Method-call dynamic argument slice (2026-09-15)
+
+Ordinary method-call expressions in argumented subrules, such as
+`<word($value.uc)>`, now retain their existing RakuAST expression tree. The
+parser and read converter already represented the method as
+`ApplyPostfix`/`Call::Method`; the missing boundary was the write direction's
+small source renderer, which previously rejected `Expr::MethodCall` when a
+converted RakuAST tree was lowered back to the existing regex parser.
+
+This slice accepts only ordinary named method calls without a method modifier
+or quoted method name. The renderer recursively accepts the same argument
+expression subset already supported by `expression_source`, and emits a
+parenthesized method call so the established match-time regex argument
+evaluator can execute it. No method is invoked while converting `.AST`, and no
+new matcher or VM path is introduced. Array indexing, ternaries, modified or
+quoted method calls, and other dynamic argument expressions remain explicit
+follow-up boundaries.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`. It pins the method-call AST
+nodes, RakuAST EVAL lowering, direct grammar matching, and lexical
+reassignment between matches.
