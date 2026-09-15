@@ -735,20 +735,33 @@ impl Interpreter {
                 // Both sides are compared in NFC: the entry was normalised when
                 // it was parsed, so the subject has to be too or `<[क्ष]>` would
                 // miss the very text it was written from.
-                let subject: String = {
-                    use unicode_normalization::UnicodeNormalization;
-                    chars[pos..ge].iter().copied().nfc().collect()
-                };
-                let grapheme_hit = class.items.iter().any(|item| match item {
-                    ClassItem::Grapheme(g) => {
-                        if ignore_case {
-                            g.to_lowercase() == subject.to_lowercase()
-                        } else {
-                            **g == *subject
-                        }
-                    }
-                    _ => false,
-                });
+                // Only a `Grapheme` item can consume that string, so a class
+                // without one -- `\w`, `\d`, `<[a..z]>`, every ordinary
+                // enumerated class -- must not pay for building it. It used to
+                // be built unconditionally, which put a `malloc`, an NFC pass
+                // and a `free` on *every* character tested against *any* class:
+                // ~12% of the instructions of a failing `/ \w+ 'QQQ' /` scan
+                // went into a string nothing then looked at (#8450).
+                let grapheme_hit = class
+                    .items
+                    .iter()
+                    .any(|item| matches!(item, ClassItem::Grapheme(_)))
+                    && {
+                        let subject: String = {
+                            use unicode_normalization::UnicodeNormalization;
+                            chars[pos..ge].iter().copied().nfc().collect()
+                        };
+                        class.items.iter().any(|item| match item {
+                            ClassItem::Grapheme(g) => {
+                                if ignore_case {
+                                    g.to_lowercase() == subject.to_lowercase()
+                                } else {
+                                    **g == *subject
+                                }
+                            }
+                            _ => false,
+                        })
+                    };
                 if grapheme_hit {
                     if class.negated {
                         false

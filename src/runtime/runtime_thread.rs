@@ -629,6 +629,7 @@ impl Interpreter {
             cur_source_line: 1,
             thread_spawn_origin,
             args_scratch_pool: Vec::new(),
+            regex_quant_scratch: Vec::new(),
             control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),

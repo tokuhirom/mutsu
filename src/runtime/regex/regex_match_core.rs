@@ -1328,8 +1328,16 @@ impl Interpreter {
             return false;
         }
         // Greedy / ratchet: grow the full chain first, then descend.
-        let mut ends = vec![pos];
-        let mut iter_marks = vec![store.mark()];
+        //
+        // The two chains come from a pool rather than `vec![]`: this runs once
+        // per scan position, and growing a fresh pair of `Vec`s here was 10.7%
+        // of the instructions of a failing `/ \w+ 'QQQ' /` scan over a 40 KB
+        // subject (#8450). Every exit below goes through the single `return`
+        // at the bottom so both buffers are always handed back.
+        let mut ends = self.take_quant_scratch();
+        let mut iter_marks = self.take_quant_scratch();
+        ends.push(pos);
+        iter_marks.push(store.mark());
         let mut current = pos;
         while max.is_none_or(|mx| ends.len() - 1 < mx) {
             let Some(next) = self.grow_one_iter(ctx, idx, store, current, pos_base, hash_per_iter)
@@ -1341,21 +1349,44 @@ impl Interpreter {
             current = next;
         }
         let count = ends.len() - 1;
-        if count < min {
-            store.rewind(m_quant);
-            return false;
-        }
-        // Ratchet commits to the longest chain; greedy backtracks toward min.
-        let lo = if token.ratchet { count } else { min };
-        for i in (lo..=count).rev() {
-            store.rewind(iter_marks[i]);
-            if self.descend_folded(ctx, idx, ends[i], pos_base, stride, store, matches) {
-                store.rewind(m_quant);
-                return true;
+        let mut stop = false;
+        if count >= min {
+            // Ratchet commits to the longest chain; greedy backtracks toward min.
+            let lo = if token.ratchet { count } else { min };
+            for i in (lo..=count).rev() {
+                store.rewind(iter_marks[i]);
+                if self.descend_folded(ctx, idx, ends[i], pos_base, stride, store, matches) {
+                    stop = true;
+                    break;
+                }
             }
         }
         store.rewind(m_quant);
-        false
+        self.recycle_quant_scratch(ends);
+        self.recycle_quant_scratch(iter_marks);
+        stop
+    }
+
+    /// Grab a position/trail-mark chain from the quantifier scratch pool.
+    /// Pair with [`Interpreter::recycle_quant_scratch`].
+    #[inline]
+    fn take_quant_scratch(&mut self) -> Vec<usize> {
+        let mut v = self.regex_quant_scratch.pop().unwrap_or_default();
+        v.clear();
+        v
+    }
+
+    /// Return a chain to the quantifier scratch pool (bounded; excess is
+    /// dropped). The bound is the nesting depth the pool is meant to cover, so
+    /// a pathologically deep pattern falls back to plain allocation rather
+    /// than retaining a buffer per level for the rest of the process.
+    #[inline]
+    fn recycle_quant_scratch(&mut self, mut used: Vec<usize>) {
+        const QUANT_SCRATCH_POOL_MAX: usize = 64;
+        if self.regex_quant_scratch.len() < QUANT_SCRATCH_POOL_MAX {
+            used.clear();
+            self.regex_quant_scratch.push(used);
+        }
     }
 
     /// Explore every candidate of a compound atom while growing a quantifier.
