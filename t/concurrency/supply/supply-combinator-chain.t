@@ -20,7 +20,7 @@ use Test;
 # `.map(...).produce(...).map(...)` pipeline never emitted anything at all and
 # left the test hanging forever on `await`.
 
-plan 12;
+plan 14;
 
 # map -> map
 {
@@ -119,6 +119,15 @@ plan 12;
     await Promise.anyof($fin, Promise.in(10));
     is $fin.status, Kept, 'react over a chained live Supply completes';
     is-deeply @got, [2, 5, 9], 'react over a chained live Supply sees every value';
+}
+
+# `.live` is per-combinator in rakudo and must not follow from the fact that a
+# stage now carries a supplier id of its own: map/grep stay live over a live
+# source, produce does not.
+{
+    my $s = Supplier.new;
+    ok $s.Supply.map(*.self).live, 'map over a live source is still live';
+    nok $s.Supply.produce(-> $a, $b { $a }).live, 'produce over a live source is not live';
 }
 
 # The single-stage cases the chain fix must not disturb.
