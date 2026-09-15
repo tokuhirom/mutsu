@@ -550,6 +550,9 @@ impl Interpreter {
             return match value.view() {
                 ValueView::Int(i) => i >= 0,
                 ValueView::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                // Bool is Int-based in Raku (`False` is 0 and `True` is 1),
+                // so both values satisfy UInt's non-negative subset predicate.
+                ValueView::Bool(_) => true,
                 ValueView::Package(name) => {
                     let name = name.resolve();
                     name == "UInt" || name == "Int"
