@@ -15,12 +15,16 @@ use Test;
 # the slow path (Seq/HyperSeq) and for the ones that must still fail to bind.
 # A user class that explicitly composes `PositionalBindFailover` is also left
 # to the slow path (it is a `ValueView::Instance`, not one of the plain
-# shapes the reject matches on) -- untested here because binding such a
-# class to an `@` parameter is independently broken in mutsu today
-# (`.cache` is never invoked; see #8456), a pre-existing gap this change
-# does not touch either way.
+# shapes the reject matches on). Binding such a class to an `@` parameter
+# used to bind the instance itself, unmodified -- `coerce_positional_bind_
+# failover` unconditionally called `.iterator`, but (like rakudo) mutsu's
+# `PositionalBindFailover` role does not synthesize a default `.iterator` in
+# terms of `.cache`, so the call either errored or dispatched somewhere that
+# didn't touch `.cache` at all. Fixed (#8456) by calling `.cache` directly
+# for anything that isn't a real `Seq`/`HyperSeq`/`RaceSeq` (those keep the
+# `.iterator`-draining path, matching their genuine native iterator).
 
-plan 8;
+plan 9;
 
 sub f(@x) { @x.join(',') }
 
@@ -37,3 +41,9 @@ dies-ok { f($hash) }, 'a Hash argument still fails to bind to an @ sigil paramet
 is f((1, 2, 3).Seq), '1,2,3', 'a Seq argument still binds to an @ sigil parameter';
 is f(hyper map { $_ * 2 }, 1, 2, 3), '2,4,6',
     'a HyperSeq argument still binds to an @ sigil parameter';
+
+class Failover does PositionalBindFailover {
+    method cache { (10, 20, 30) }
+}
+is f(Failover.new), '10,20,30',
+    'a user class composing PositionalBindFailover binds via .cache';
