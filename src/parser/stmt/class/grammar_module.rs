@@ -6,7 +6,7 @@ use crate::value::Value;
 
 use crate::parser::helpers::{ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, parse_char};
-use crate::parser::stmt::{block, keyword, parse_param_list, qualified_ident};
+use crate::parser::stmt::{keyword, package_body_block, parse_param_list, qualified_ident};
 
 /// Parse `does` declaration.
 pub(crate) fn does_decl(input: &str) -> PResult<'_, Stmt> {
@@ -251,7 +251,7 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     }
     let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
-        block(r)?
+        package_body_block(r)?
     };
     // A `grammar G { also is Base; }` body carries its parent the same way a
     // `class` body does; without this extraction the bare `is(also, Base)`
@@ -308,7 +308,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, body) = {
         let _pkg = super::super::simple::push_package_path(&name);
-        block(rest)?
+        package_body_block(rest)?
     };
     // Two `is export` declarations of the same symbol in one module clash.
     if let Some(clash) = find_export_name_clash(&body) {

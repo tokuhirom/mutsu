@@ -9,7 +9,8 @@ use crate::parser::parse_result::{PError, PResult, opt_char, parse_char};
 use crate::parser::primary::var::is_pseudo_package;
 use crate::parser::stmt::sub::parse_sub_name;
 use crate::parser::stmt::{
-    block, keyword, parse_param_list_with_return_pub, parse_sub_traits, qualified_ident,
+    block, keyword, package_body_block, parse_param_list_with_return_pub, parse_sub_traits,
+    qualified_ident,
 };
 
 /// Extract names of exported sub declarations from a statement list.
@@ -637,7 +638,7 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
     let (rest, _) = ws(rest)?;
     let (rest, body) = {
         let _pkg = super::super::simple::push_package_path(&name);
-        block(rest)?
+        package_body_block(rest)?
     };
     Ok((
         rest,

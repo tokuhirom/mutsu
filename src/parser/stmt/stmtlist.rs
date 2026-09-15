@@ -36,6 +36,40 @@ pub(crate) fn routine_block(input: &str) -> PResult<'_, Vec<Stmt>> {
     result
 }
 
+/// Parse a method/submethod body block: like [`routine_block`], additionally
+/// marking the scope as having `self` available. `self` availability is
+/// inherited by every scope nested inside it (see `LexicalScope::self_available`),
+/// so a plain `sub` declared anywhere in a method's body — directly or nested
+/// in further blocks, short of a nested class/role/grammar/package body — may
+/// bind an attributive parameter (`$!x`) just as the method itself can (#8452).
+pub(crate) fn method_block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (input, _) =
+        parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
+    simple::push_scope();
+    simple::mark_current_scope_routine_body();
+    simple::mark_current_scope_self_available();
+    let mut result = block_inner(input);
+    simple::finish_block_anon_states(&mut result);
+    simple::pop_scope();
+    result
+}
+
+/// Parse a class/role/grammar/package body block: like [`block`], additionally
+/// clearing `self` availability, so a plain `sub` declared directly in such a
+/// body does not inherit `self` from an enclosing method scope even though it
+/// is lexically nested within it (#8452) — a fresh package body has no `self`
+/// of its own.
+pub(crate) fn package_body_block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (input, _) =
+        parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
+    simple::push_scope();
+    simple::clear_current_scope_self_available();
+    let mut result = block_inner(input);
+    simple::finish_block_anon_states(&mut result);
+    simple::pop_scope();
+    result
+}
+
 pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false, true)?;
     let (input, _) = ws(input)?;

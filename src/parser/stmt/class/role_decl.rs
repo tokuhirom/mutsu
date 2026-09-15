@@ -9,7 +9,7 @@ use crate::parser::expr::expression;
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::sub::parse_single_param;
-use crate::parser::stmt::{block, ident, keyword, parse_param_list, qualified_ident};
+use crate::parser::stmt::{ident, keyword, package_body_block, parse_param_list, qualified_ident};
 
 pub(crate) fn role_type_param_constraint_is_known(type_name: &str) -> bool {
     let stripped = type_name
@@ -452,7 +452,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     // role and the call site then died with "No such method", with no
     // diagnostic pointing at the signature that had not parsed (#7984). A role
     // body that does not parse is a parse error, exactly as a class body is.
-    let (rest, mut body) = block(rest)?;
+    let (rest, mut body) = package_body_block(rest)?;
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
