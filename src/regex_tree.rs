@@ -1187,6 +1187,24 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             name.resolve(),
             join_args(args)?
         )),
+        // Preserve the ordinary dispatch modifiers of a method call when a
+        // constructed RakuAST regex returns through the established string
+        // parser.  The matcher continues to evaluate the call at match time;
+        // rendering must not turn `.?`, `.+`, or `.*` into an unsupported
+        // argument expression.
+        crate::ast::Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: Some(modifier @ ('?' | '+' | '*')),
+            quoted: false,
+        } => Some(format!(
+            "{}.{}{}({})",
+            expression_source(target)?,
+            modifier,
+            name.resolve(),
+            join_args(args)?
+        )),
         // Argumented subrules retain their expressions structurally.  When a
         // constructed RakuAST tree returns through the existing regex parser,
         // preserve an ordinary subscript rather than rejecting the whole

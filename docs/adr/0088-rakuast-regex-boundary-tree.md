@@ -12,7 +12,7 @@
   callable-interpolation-arguments, angle-scalar-interpolation, and
   angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
   argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
-  argument slices implemented
+  argument, and modified-method-call dynamic-argument slices implemented
   2026-09-12 through
   2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1111,3 +1111,18 @@ and other dynamic argument expressions remain separate boundaries. The focused
 regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the
 ternary node shape, RakuAST EVAL lowering, direct grammar matching, and dynamic
 condition reassignment.
+
+## 42. Modified method-call dynamic argument slice (2026-09-15)
+
+Dispatch-modified ordinary method calls in argumented subrules, such as
+`<word($value.?uc)>`, now lower from their existing
+`ApplyPostfix`/`Call::Method` tree through the shared expression renderer. The
+renderer preserves the `.?`, `.+`, and `.*` spelling before the method name,
+so the established match-time regex argument evaluator retains dispatch and
+lexical lookup semantics.
+
+No method is invoked during `.AST` conversion or RakuAST lowering, and this
+adds no matcher or VM path. Quoted method names and other dynamic argument
+expressions remain separate boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the dispatch field,
+RakuAST EVAL lowering, direct grammar matching, and lexical reassignment.
