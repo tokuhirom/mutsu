@@ -230,6 +230,90 @@ fn find_angle_subscript_end(input: &str) -> Option<usize> {
     None
 }
 
+/// Find the `»` that closes a `::«...»` stash subscript, treating a
+/// backslash as escaping the next character (so a quoted `\»` inside the
+/// content cannot end the subscript early). Unlike [`find_angle_subscript_end`]
+/// this never needs to track nesting: guillemets do not nest inside a
+/// symbol's own quoting the way `<...>` can.
+fn find_guillemet_subscript_end(input: &str) -> Option<usize> {
+    let mut chars = input.char_indices();
+    while let Some((index, ch)) = chars.next() {
+        match ch {
+            '»' => return Some(index),
+            '\\' => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Resolve a `::«...»` stash-subscript body into its literal symbol text.
+/// `«...»` is Raku's interpolating word-quote delimiter, but this qualified-
+/// name parser is purely lexical (no runtime to evaluate a real `$var`
+/// interpolation against), so only the compile-time-constant shapes actually
+/// seen in the wild are supported: a single-quoted literal
+/// (`'&infix:<@~~>'`), a double-quoted literal with no LIVE interpolation
+/// trigger (`"\$y"`, where `\$` escapes the sigil rather than interpolating
+/// it), or a bare unquoted word with no sigil/brace in it at all. Returns
+/// `None` for anything else, so the caller falls through to the ordinary
+/// "identifier after '::'" parse error.
+fn resolve_guillemet_symbol(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+    if let Some(inner) = trimmed
+        .strip_prefix('\'')
+        .and_then(|s| s.strip_suffix('\''))
+    {
+        // Single-quote escaping: only `\\` and `\'` are special.
+        let mut out = String::with_capacity(inner.len());
+        let mut chars = inner.chars();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some(esc @ ('\\' | '\'')) => out.push(esc),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        }
+        return Some(out);
+    }
+    if let Some(inner) = trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        let mut out = String::with_capacity(inner.len());
+        let mut chars = inner.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some(esc @ ('\\' | '"' | '$' | '@' | '%')) => out.push(esc),
+                    Some('n') => out.push('\n'),
+                    Some('t') => out.push('\t'),
+                    Some(other) => {
+                        out.push('\\');
+                        out.push(other);
+                    }
+                    None => out.push('\\'),
+                }
+            } else if matches!(c, '$' | '@' | '%') {
+                // An unescaped interpolation trigger needs a runtime value.
+                return None;
+            } else {
+                out.push(c);
+            }
+        }
+        return Some(out);
+    }
+    if trimmed.contains(['$', '@', '%', '{']) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     let (mut rest, _) = ws1(rest)?;
     let mut dist_selectors = String::new();
@@ -1507,6 +1591,38 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 full_name.push_str("::");
                 full_name.push_str(symbol);
                 r = &after_bracket[end + 1..];
+                continue;
+            }
+            // Handle ::«SYMBOL» subscript syntax: the interpolating
+            // word-quote spelling of `::<SYMBOL>`, needed when the symbol
+            // text itself contains unbalanced `<`/`>` that `<...>` cannot
+            // delimit, e.g. `OUR::«'&infix:<@~~>'»` (Data::Record::Lifter
+            // binds its exported operator this way -- issue #8466). Only a
+            // compile-time-constant spelling is supported (a single- or
+            // double-quoted literal, or a bare word with no live
+            // interpolation trigger): this is a purely lexical qualified-name
+            // parser with no runtime to resolve a real interpolated `$var`
+            // against. Anything else falls through to the existing
+            // "identifier after '::'" error below, exactly as before this
+            // arm existed.
+            if let Some(after_bracket) = after.strip_prefix('«')
+                && let Some(end) = find_guillemet_subscript_end(after_bracket)
+                && let Some(symbol) = resolve_guillemet_symbol(&after_bracket[..end])
+            {
+                if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
+                    let stash_name = format!("{full_name}::");
+                    return Ok((
+                        &after_bracket[end + '»'.len_utf8()..],
+                        Expr::Index {
+                            target: Box::new(Expr::PseudoStash(stash_name)),
+                            index: Box::new(Expr::Literal(Value::str(symbol))),
+                            is_positional: false,
+                        },
+                    ));
+                }
+                full_name.push_str("::");
+                full_name.push_str(&symbol);
+                r = &after_bracket[end + '»'.len_utf8()..];
                 continue;
             }
             if let Ok((rest2, part)) = crate::parser::stmt::parse_sub_name_pub(after) {
