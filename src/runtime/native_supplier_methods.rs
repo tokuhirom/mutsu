@@ -56,12 +56,7 @@ impl Interpreter {
                     let value = Value::int(emitted.len() as i64);
                     supplier_emit(supplier_id, value.clone());
                     let actions = supplier_emit_callbacks(supplier_id, &value);
-                    for action in actions {
-                        if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
-                            Self::sleep_for_supply_delay(delay_seconds);
-                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                        }
-                    }
+                    let _ = self.drive_supplier_emit_actions(supplier_id, actions);
                 }
                 Ok(Value::NIL)
             }
@@ -149,217 +144,13 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            SupplierEmitAction::UniqueCheck {
-                                callback,
-                                value: val,
-                                delay_seconds,
-                                as_fn,
-                                with_fn,
-                                tap_index,
-                            } => {
-                                let key = if let Some(f) = as_fn {
-                                    self.call_sub_value(f, vec![val.clone()], true)
-                                        .unwrap_or(val.clone())
-                                } else {
-                                    val.clone()
-                                };
-                                let is_dup = self
-                                    .supplier_unique_check_seen(
-                                        supplier_id,
-                                        tap_index,
-                                        &key,
-                                        &with_fn,
-                                    )
-                                    .unwrap_or(false);
-                                if !is_dup {
-                                    supplier_unique_mark_seen(supplier_id, tap_index, key);
-                                    Self::sleep_for_supply_delay(delay_seconds);
-                                    let _ = self.call_sub_value(callback, vec![val], true);
-                                }
-                            }
-                            SupplierEmitAction::ClassifyCheck {
-                                value: val,
-                                tap_index,
-                            } => {
-                                let _ = self.handle_classify_emit(supplier_id, tap_index, val);
-                            }
-                            SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                                let deferred_promises = supplier_done_deferred(sid2);
-                                for done_cb in take_supplier_done_callbacks(sid2) {
-                                    let _ = self.invoke_done_callback(done_cb);
-                                }
-                                for (promise, result) in deferred_promises {
-                                    promise.keep(result, String::new(), String::new());
-                                }
-                            }
-                            SupplierEmitAction::ProduceCall {
-                                callback,
-                                callable,
-                                value: val,
-                                accumulator,
-                                delay_seconds,
-                                tap_index,
-                            } => {
-                                let new_acc = if let Some(acc) = accumulator {
-                                    self.call_sub_value(callable, vec![acc, val], false)
-                                        .unwrap_or(Value::NIL)
-                                } else {
-                                    val
-                                };
-                                supplier_produce_update_acc(
-                                    supplier_id,
-                                    tap_index,
-                                    new_acc.clone(),
-                                );
-                                // A `reduce` tap shares this accumulator but has
-                                // no callback: it emits once, at done.
-                                if !callback.is_nil() {
-                                    Self::sleep_for_supply_delay(delay_seconds);
-                                    let _ = self.call_sub_value(callback, vec![new_acc], true);
-                                }
-                            }
-                            SupplierEmitAction::StartCall {
-                                callable,
-                                value: val,
-                                output_supplier_id,
-                            } => {
-                                self.run_start_call_in_thread(callable, val, output_supplier_id);
-                            }
-                            SupplierEmitAction::BatchEmit {
-                                downstream_supplier_id,
-                                batch,
-                            } => {
-                                let batch_value = Value::array(batch);
-                                supplier_emit(downstream_supplier_id, batch_value.clone());
-                                let ds_actions =
-                                    supplier_emit_callbacks(downstream_supplier_id, &batch_value);
-                                for ds_action in ds_actions {
-                                    if let SupplierEmitAction::Call(tap, emitted, delay_seconds) =
-                                        ds_action
-                                    {
-                                        Self::sleep_for_supply_delay(delay_seconds);
-                                        let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::FlatEmit {
-                                downstream_supplier_id,
-                                items,
-                            } => {
-                                for item in items {
-                                    supplier_emit(downstream_supplier_id, item.clone());
-                                    let ds_actions =
-                                        supplier_emit_callbacks(downstream_supplier_id, &item);
-                                    for ds_action in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = ds_action
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::ZipBuffer {
-                                zip_state_id: zid,
-                                source_index: si,
-                                value: val,
-                            } => {
-                                let result = zip_buffer_value(zid, si, val);
-                                if let ZipAction::Emit(tuple_val) = result {
-                                    let (output_sid, wf) = zip_state_info(zid);
-                                    let emit_val = if let Some(wfn) = wf {
-                                        if let ValueView::Array(items, ..) = tuple_val.view() {
-                                            self.call_sub_value(wfn, items.to_vec(), false)
-                                                .unwrap_or(tuple_val)
-                                        } else {
-                                            tuple_val
-                                        }
-                                    } else {
-                                        tuple_val
-                                    };
-                                    supplier_emit(output_sid, emit_val.clone());
-                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
-                                    for da in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = da
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::ZipLatestBuffer {
-                                zip_latest_state_id: zid,
-                                source_index: si,
-                                value: val,
-                            } => {
-                                let result = zip_latest_buffer_value(zid, si, val);
-                                if let ZipAction::Emit(tuple_val) = result {
-                                    let (output_sid, wf) = zip_latest_state_info(zid);
-                                    let emit_val = if let Some(wfn) = wf {
-                                        if let ValueView::Array(items, ..) = tuple_val.view() {
-                                            self.call_sub_value(wfn, items.to_vec(), false)
-                                                .unwrap_or(tuple_val)
-                                        } else {
-                                            tuple_val
-                                        }
-                                    } else {
-                                        tuple_val
-                                    };
-                                    supplier_emit(output_sid, emit_val.clone());
-                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
-                                    for da in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = da
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::Migrate {
-                                value: val,
-                                master_supplier_id,
-                                downstream_supplier_id,
-                                tap_index,
-                            } => {
-                                self.handle_supply_migrate(
-                                    val,
-                                    master_supplier_id,
-                                    downstream_supplier_id,
-                                    tap_index,
-                                )?;
-                            }
-                            SupplierEmitAction::ForwardEmit {
-                                downstream_supplier_id,
-                                value: val,
-                            } => {
-                                self.handle_supply_forward(downstream_supplier_id, val)?;
-                            }
-                            SupplierEmitAction::TransformCall {
-                                downstream_supplier_id,
-                                callable,
-                                mode,
-                                value: val,
-                            } => {
-                                self.handle_supply_transform_emit(
-                                    downstream_supplier_id,
-                                    callable,
-                                    mode,
-                                    val,
-                                )?;
+                            other => {
+                                // Every other action kind either re-emits into a
+                                // derived supplier or needs one of the shared
+                                // handlers; `drive_supplier_emit_actions` runs it
+                                // and, crucially, keeps driving the chain that
+                                // re-emit starts.
+                                self.drive_supplier_emit_actions(supplier_id, vec![other])?;
                             }
                         }
                     }
@@ -387,20 +178,7 @@ impl Interpreter {
                     close_supplier_channel_taps(supplier_id, None);
                     // Flush batch buffers before done
                     for (dsid, batch) in flush_supplier_batch_taps(supplier_id) {
-                        let batch_value = Value::array(batch);
-                        supplier_emit(dsid, batch_value.clone());
-                        let ds_actions = supplier_emit_callbacks(dsid, &batch_value);
-                        for ds_action in ds_actions {
-                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
-                            {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_supply_tap(tap, vec![emitted], true);
-                            }
-                        }
-                        supplier_done(dsid);
-                        for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
+                        let _ = self.forward_and_finish_supply(dsid, Value::array(batch));
                     }
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
                         let _ = self.call_supply_tap(tap, vec![emitted], true);
@@ -450,19 +228,7 @@ impl Interpreter {
                     // `Supply.reduce` over a live source emits its single
                     // folded value now, at done, then finishes downstream.
                     for (dsid, acc) in take_supplier_reduce_results(supplier_id) {
-                        supplier_emit(dsid, acc.clone());
-                        let ds_actions = supplier_emit_callbacks(dsid, &acc);
-                        for ds_action in ds_actions {
-                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
-                            {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_supply_tap(tap, vec![emitted], true);
-                            }
-                        }
-                        supplier_done(dsid);
-                        for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
+                        let _ = self.forward_and_finish_supply(dsid, acc);
                     }
                     // A merged Supply is done only once *every* source is.
                     for mid in get_supplier_merge_state_ids(supplier_id) {
@@ -686,207 +452,12 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            SupplierEmitAction::UniqueCheck {
-                                callback,
-                                value: val,
-                                delay_seconds,
-                                as_fn,
-                                with_fn,
-                                tap_index,
-                            } => {
-                                let key = if let Some(f) = as_fn {
-                                    self.call_sub_value(f, vec![val.clone()], true)?
-                                } else {
-                                    val.clone()
-                                };
-                                // Check against seen keys
-                                let is_dup = self
-                                    .supplier_unique_check_seen(sid, tap_index, &key, &with_fn)?;
-                                if !is_dup {
-                                    supplier_unique_mark_seen(sid, tap_index, key);
-                                    Self::sleep_for_supply_delay(delay_seconds);
-                                    self.call_sub_value(callback, vec![val], true)?;
-                                }
-                            }
-                            SupplierEmitAction::ClassifyCheck {
-                                value: val,
-                                tap_index,
-                            } => {
-                                self.handle_classify_emit(sid, tap_index, val)?;
-                            }
-                            SupplierEmitAction::HeadLimitReached { supplier_id: sid2 } => {
-                                let deferred_promises = supplier_done_deferred(sid2);
-                                for done_cb in take_supplier_done_callbacks(sid2) {
-                                    let _ = self.invoke_done_callback(done_cb);
-                                }
-                                for (promise, result) in deferred_promises {
-                                    promise.keep(result, String::new(), String::new());
-                                }
-                            }
-                            SupplierEmitAction::ProduceCall {
-                                callback,
-                                callable,
-                                value: val,
-                                accumulator,
-                                delay_seconds,
-                                tap_index,
-                            } => {
-                                let new_acc = if let Some(acc) = accumulator {
-                                    self.call_sub_value(callable, vec![acc, val], false)
-                                        .unwrap_or(Value::NIL)
-                                } else {
-                                    val
-                                };
-                                supplier_produce_update_acc(sid, tap_index, new_acc.clone());
-                                // A `reduce` tap shares this accumulator but has
-                                // no callback: it emits once, at done.
-                                if !callback.is_nil() {
-                                    Self::sleep_for_supply_delay(delay_seconds);
-                                    self.call_sub_value(callback, vec![new_acc], true)?;
-                                }
-                            }
-                            SupplierEmitAction::StartCall {
-                                callable,
-                                value: val,
-                                output_supplier_id,
-                            } => {
-                                self.run_start_call_in_thread(callable, val, output_supplier_id);
-                            }
-                            SupplierEmitAction::BatchEmit {
-                                downstream_supplier_id,
-                                batch,
-                            } => {
-                                let batch_value = Value::array(batch);
-                                supplier_emit(downstream_supplier_id, batch_value.clone());
-                                let ds_actions =
-                                    supplier_emit_callbacks(downstream_supplier_id, &batch_value);
-                                for ds_action in ds_actions {
-                                    if let SupplierEmitAction::Call(tap, emitted, delay_seconds) =
-                                        ds_action
-                                    {
-                                        Self::sleep_for_supply_delay(delay_seconds);
-                                        self.call_supply_tap(tap, vec![emitted], true)?;
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::FlatEmit {
-                                downstream_supplier_id,
-                                items,
-                            } => {
-                                for item in items {
-                                    supplier_emit(downstream_supplier_id, item.clone());
-                                    let ds_actions =
-                                        supplier_emit_callbacks(downstream_supplier_id, &item);
-                                    for ds_action in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = ds_action
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            self.call_supply_tap(tap, vec![emitted], true)?;
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::ZipBuffer {
-                                zip_state_id: zid,
-                                source_index: si,
-                                value: val,
-                            } => {
-                                let result = zip_buffer_value(zid, si, val);
-                                if let ZipAction::Emit(tuple_val) = result {
-                                    let (output_sid, wf) = zip_state_info(zid);
-                                    let emit_val = if let Some(wfn) = wf {
-                                        if let ValueView::Array(items, ..) = tuple_val.view() {
-                                            self.call_sub_value(wfn, items.to_vec(), false)
-                                                .unwrap_or(tuple_val)
-                                        } else {
-                                            tuple_val
-                                        }
-                                    } else {
-                                        tuple_val
-                                    };
-                                    supplier_emit(output_sid, emit_val.clone());
-                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
-                                    for da in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = da
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::ZipLatestBuffer {
-                                zip_latest_state_id: zid,
-                                source_index: si,
-                                value: val,
-                            } => {
-                                let result = zip_latest_buffer_value(zid, si, val);
-                                if let ZipAction::Emit(tuple_val) = result {
-                                    let (output_sid, wf) = zip_latest_state_info(zid);
-                                    let emit_val = if let Some(wfn) = wf {
-                                        if let ValueView::Array(items, ..) = tuple_val.view() {
-                                            self.call_sub_value(wfn, items.to_vec(), false)
-                                                .unwrap_or(tuple_val)
-                                        } else {
-                                            tuple_val
-                                        }
-                                    } else {
-                                        tuple_val
-                                    };
-                                    supplier_emit(output_sid, emit_val.clone());
-                                    let ds_actions = supplier_emit_callbacks(output_sid, &emit_val);
-                                    for da in ds_actions {
-                                        if let SupplierEmitAction::Call(
-                                            tap,
-                                            emitted,
-                                            delay_seconds,
-                                        ) = da
-                                        {
-                                            Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
-                                        }
-                                    }
-                                }
-                            }
-                            SupplierEmitAction::Migrate {
-                                value: val,
-                                master_supplier_id,
-                                downstream_supplier_id,
-                                tap_index,
-                            } => {
-                                self.handle_supply_migrate(
-                                    val,
-                                    master_supplier_id,
-                                    downstream_supplier_id,
-                                    tap_index,
-                                )?;
-                            }
-                            SupplierEmitAction::ForwardEmit {
-                                downstream_supplier_id,
-                                value: val,
-                            } => {
-                                self.handle_supply_forward(downstream_supplier_id, val)?;
-                            }
-                            SupplierEmitAction::TransformCall {
-                                downstream_supplier_id,
-                                callable,
-                                mode,
-                                value: val,
-                            } => {
-                                self.handle_supply_transform_emit(
-                                    downstream_supplier_id,
-                                    callable,
-                                    mode,
-                                    val,
-                                )?;
+                            other => {
+                                // See the matching arm in the immutable lane
+                                // above: one shared driver for every re-emitting
+                                // action kind, so a combinator chain is driven to
+                                // its end rather than one hop.
+                                self.drive_supplier_emit_actions(sid, vec![other])?;
                             }
                         }
                     }
@@ -917,21 +488,8 @@ impl Interpreter {
                     close_supplier_channel_taps(sid, None);
                     // Flush batch buffers before done
                     for (dsid, batch) in flush_supplier_batch_taps(sid) {
-                        let batch_value = Value::array(batch);
-                        supplier_emit(dsid, batch_value.clone());
-                        let ds_actions = supplier_emit_callbacks(dsid, &batch_value);
-                        for ds_action in ds_actions {
-                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
-                            {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                self.call_supply_tap(tap, vec![emitted], true)?;
-                            }
-                        }
-                        // Propagate done to downstream batch suppliers
-                        supplier_done(dsid);
-                        for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
+                        // Propagates done to the downstream batch supplier too.
+                        self.forward_and_finish_supply(dsid, Value::array(batch))?;
                     }
                     // Propagate done to classify sub-suppliers
                     let classify_subs = get_classify_sub_supplier_ids(sid);
@@ -989,19 +547,7 @@ impl Interpreter {
                     // `Supply.reduce` over a live source emits its single
                     // folded value now, at done, then finishes downstream.
                     for (dsid, acc) in take_supplier_reduce_results(sid) {
-                        supplier_emit(dsid, acc.clone());
-                        let ds_actions = supplier_emit_callbacks(dsid, &acc);
-                        for ds_action in ds_actions {
-                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
-                            {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_supply_tap(tap, vec![emitted], true);
-                            }
-                        }
-                        supplier_done(dsid);
-                        for done_cb in take_supplier_done_callbacks(dsid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
+                        let _ = self.forward_and_finish_supply(dsid, acc);
                     }
                     // A merged Supply is done only once *every* source is.
                     for mid in get_supplier_merge_state_ids(sid) {

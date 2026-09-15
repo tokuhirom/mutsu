@@ -851,6 +851,7 @@ mod sprintf_hexfloat;
 mod sprintf_validate;
 pub(crate) mod str_numeric;
 mod supply_classify;
+mod supply_emit_drive;
 mod supply_promise;
 mod supply_transform;
 mod system;
