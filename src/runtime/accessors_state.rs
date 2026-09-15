@@ -1402,7 +1402,7 @@ impl Interpreter {
         self.push_multi_dispatch_frame_with_winner_sym(name, name_sym, args, None)
     }
 
-    /// [`Self::push_multi_dispatch_frame`], told which candidate is being
+    /// [`Self::push_multi_dispatch_frame_sym`], told which candidate is being
     /// called instead of resolving the name a second time.
     ///
     /// The frame only needs the winner to (a) exclude it from `remaining` and
