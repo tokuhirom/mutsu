@@ -8,7 +8,7 @@ use nqp;
 # numbering of our own would run such code silently wrong. Found by making
 # String::Utils's test suite run, which is written almost entirely in these ops.
 
-plan 46;
+plan 54;
 
 #- character classes -----------------------------------------------------------
 
@@ -85,6 +85,23 @@ is nqp::substr("h\xE9llo", 1, 2), "\xE9l",
 is nqp::concat("foo", "bar"), "foobar", 'concat';
 is nqp::index("hello", "ll"), 2,  'index finds a substring';
 is nqp::index("hello", "zz"), -1, 'index answers -1 when absent, where Raku index answers Nil';
+
+# indexic/indexim/indexicim: case- and mark-insensitive twins of index, with
+# the same codepoint-indexed, -1-on-absent contract. Found by making
+# has-word's own `find-wordic`/`find-wordim`/`find-wordicim` helpers run.
+is nqp::indexic("FOO bar baz", "bar", 0), 4, 'indexic matches case-insensitively';
+is nqp::indexic("FOO bar baz", "BAR", 0), 4, 'indexic on an already-uppercase needle';
+is nqp::indexic("foo bar", "zz", 0), -1, 'indexic answers -1 when absent';
+is nqp::indexic("caf\xE9 bar", "cafe", 0), -1,
+  'indexic does not fold away a mark (case-insensitive, not mark-insensitive)';
+is nqp::indexim("caf\xE9 bar", "cafe", 0), 0,
+  'indexim matches mark-insensitively (the accent is ignored)';
+is nqp::indexim("caf\xE9 bar", "CAFE", 0), -1,
+  'indexim does not fold case (mark-insensitive, not case-insensitive)';
+is nqp::indexicim("caf\xE9 bar", "CAFE", 0), 0,
+  'indexicim folds both case and mark';
+is nqp::indexic("foo bar foo", "foo", 4), 8,
+  'indexic honors the start position, like index';
 is nqp::eqat("hello", "ell", 1), 1, 'eqat at the right position';
 is nqp::eqat("hello", "ell", 2), 0, 'eqat at the wrong position';
 is nqp::flip("abc"), "cba", 'flip';

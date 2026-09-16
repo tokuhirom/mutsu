@@ -10,7 +10,7 @@ use nqp;
 # these, and `nqp::push` / `nqp::hash` / `nqp::p6bindattrinvres` were also the
 # whole of #8215 (13 zef distributions). See #8226.
 
-plan 43;
+plan 45;
 
 # -- nqp::push / nqp::pop / nqp::shift, untyped --------------------------------
 
@@ -20,6 +20,13 @@ nqp::push($l, "x");
 is nqp::elems($l), 2, 'nqp::push appends';
 is nqp::atpos($l, 0), 42, 'nqp::push stored the value untyped (Int)';
 is nqp::atpos($l, 1), "x", 'nqp::push stored the value untyped (Str)';
+
+# nqp::push (and its typed twins below) hand back the VALUE just pushed, not
+# the list -- has-word's `find-all-words` chains straight off it
+# (`nqp::add_i(nqp::push_i(@positions,$pos),$move)`), which silently summed
+# the wrong operand when this returned the array instead.
+my $l2 := nqp::list();
+is nqp::push($l2, 99), 99, 'nqp::push returns the pushed value, not the list';
 is nqp::pop($l), "x", 'nqp::pop returns the last element';
 is nqp::elems($l), 1, 'nqp::pop removed it';
 is nqp::shift($l), 42, 'nqp::shift returns the first element';
@@ -33,6 +40,9 @@ is nqp::elems($s), 1, 'both ends were consumed';
 my $i := nqp::list_i(7, 8, 9);
 is nqp::shift_i($i), 7, 'nqp::shift_i returns the first element as an int';
 is nqp::pop_i($i), 9, 'nqp::pop_i returns the last element as an int';
+
+my int @positions;
+is nqp::push_i(@positions, 5), 5, 'nqp::push_i also returns the pushed value';
 
 # -- nqp::bindpos: a sparse lookup table --------------------------------------
 

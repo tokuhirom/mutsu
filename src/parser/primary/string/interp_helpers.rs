@@ -123,6 +123,89 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
         if after_dot.is_empty() {
             break;
         }
+        // Call-as-sub postfix: ".&name(args)" invokes `&name` with the chain's
+        // current value as the first (invocant) argument — `"$needle.&mööse()"`
+        // is `has-word`'s own idiom for interpolating a helper sub's result.
+        // Only the parenthesized form commits (matching every other `.method`
+        // case here); a paren-less `.&name` is left as literal text, same as
+        // rakudo's own string interpolation.
+        if let Some(after_amp) = after_dot.strip_prefix('&') {
+            let starts_name = after_amp
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_');
+            if starts_name {
+                let end = after_amp
+                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+                    .unwrap_or(after_amp.len());
+                let name = &after_amp[..end];
+                let after_name = &after_amp[end..];
+                if after_name.starts_with('(') {
+                    let mut depth = 0usize;
+                    let mut paren_end = None;
+                    let mut in_s = false;
+                    let mut in_d = false;
+                    for (idx, ch) in after_name.char_indices() {
+                        match ch {
+                            '\'' if !in_d => in_s = !in_s,
+                            '"' if !in_s => in_d = !in_d,
+                            _ if in_s || in_d => {}
+                            '(' => depth += 1,
+                            ')' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    paren_end = Some(idx);
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some(pe) = paren_end {
+                        let args_str = &after_name[1..pe];
+                        let after_parens = &after_name[pe + 1..];
+                        // Flush any pending paren-less `.method` entries collected
+                        // before this one (e.g. `.uc.&mööse()`) as zero-arg calls.
+                        for (pending_name, quoted, modifier) in chain.drain(..) {
+                            expr = Expr::MethodCall {
+                                target: Box::new(expr),
+                                name: Symbol::intern(&pending_name),
+                                args: vec![],
+                                modifier,
+                                quoted,
+                            };
+                        }
+                        let args = if args_str.trim().is_empty() {
+                            vec![]
+                        } else {
+                            let mut args = vec![];
+                            for arg in
+                                crate::parser::primary::string::interp_var::split_top_level_commas(
+                                    args_str,
+                                )
+                            {
+                                let arg = arg.trim();
+                                if let Ok((_, e)) = crate::parser::expr::expression(arg) {
+                                    args.push(e);
+                                }
+                            }
+                            args
+                        };
+                        expr = Expr::DynamicMethodCall {
+                            target: Box::new(expr),
+                            name_expr: Box::new(Expr::CodeVar(name.to_string())),
+                            args,
+                            modifier: None,
+                            quoted: false,
+                        };
+                        rest = after_parens;
+                        chain_rest = after_parens;
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
         // Check for meta-method prefix: .^name() .?method() .!method()
         let (method_prefix, after_prefix) = if let Some(stripped) = after_dot.strip_prefix('^') {
             (Some('^'), stripped)

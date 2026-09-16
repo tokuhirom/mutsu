@@ -96,10 +96,14 @@ fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
     (chars, offset.min(end), end)
 }
 
-/// Push a value onto an nqp list / native array in place.
+/// Push a value onto an nqp list / native array in place. Returns the
+/// pushed value itself (not the array) -- nqp's own `push`/`push_i`/
+/// `push_s`/`push_n` all hand back the element just appended, which is what
+/// lets idioms like `has-word`'s
+/// `nqp::add_i(nqp::push_i(@positions,$pos),$move)` chain off it directly.
 fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
-    Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val))?;
-    Ok(target.clone())
+    Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
+    Ok(val)
 }
 
 impl Interpreter {

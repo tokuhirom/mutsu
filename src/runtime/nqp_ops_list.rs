@@ -261,14 +261,16 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         Some(match op {
-            // nqp::push($list, $value): append one element, untyped. The
-            // typed twins (`push_s`/`push_i`/`push_n`) live in
-            // `nqp_ops_text.rs`; this one stores the value as it came.
+            // nqp::push($list, $value): append one element, untyped, and
+            // hand back the VALUE just pushed (not the list) -- same
+            // contract as the typed twins (`push_s`/`push_i`/`push_n`, in
+            // `nqp_ops_text.rs`), which nqp code chains off directly (e.g.
+            // `nqp::add_i(nqp::push_i(@positions,$pos),$move)`).
             "push" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
-                match Self::nqp_with_elems_mut(op, &target, |elems| elems.push(val)) {
-                    Ok(()) => Ok(target),
+                match Self::nqp_with_elems_mut(op, &target, |elems| elems.push(val.clone())) {
+                    Ok(()) => Ok(val),
                     Err(e) => Err(e),
                 }
             }
