@@ -895,63 +895,7 @@ impl Interpreter {
             // `Arc<SeqBody>`); the reify above already filled it in place.
         }
         if let ValueView::LazyList(ll) = target.view() {
-            let forced = if ll.scan_spec.is_some() {
-                // Scan-based lazy list: compute only as many elements as needed
-                let needed = match index.view() {
-                    ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
-                    ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
-                    ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
-                    _ => None,
-                };
-                match needed {
-                    Some(n) => self.force_scan_lazy_list(&ll, n)?,
-                    None => self.force_lazy_list_vm(&ll)?,
-                }
-            } else if ll.coroutine.is_some()
-                || ll.lazy_pipe.is_some()
-                || ll.sequence_spec.is_some()
-                || ll.closure_seq.is_some()
-                || ll.cat_pull.is_some()
-            {
-                // Gather-based lazy list / lazy map-grep pipeline / infinite
-                // arithmetic-or-closure sequence: force only as many elements as
-                // needed via bounded incremental pull.
-                match index.view() {
-                    ValueView::Int(i) if i >= 0 => {
-                        self.force_lazy_list_vm_n(&ll, (i as usize).saturating_add(1))?
-                    }
-                    ValueView::Range(_, end) if end >= 0 => {
-                        self.force_lazy_list_vm_n(&ll, (end as usize).saturating_add(1))?
-                    }
-                    ValueView::RangeExcl(_, end) if end > 0 => {
-                        self.force_lazy_list_vm_n(&ll, end as usize)?
-                    }
-                    // A list of non-negative integer indices (`$s[2, 3]`): force
-                    // only up to the largest index + 1, keeping the tail lazy so
-                    // later pulls still see mid-iteration changes (e.g. a cat
-                    // handle whose `.nl-in` is reset between slice reads).
-                    _ if index.as_list_items().is_some_and(|items| {
-                        !items.is_empty()
-                            && items
-                                .iter()
-                                .all(|v| matches!(v.view(), ValueView::Int(i) if i >= 0))
-                    }) =>
-                    {
-                        let max = index
-                            .as_list_items()
-                            .unwrap()
-                            .iter()
-                            .filter_map(Value::as_int)
-                            .map(|i| i as usize)
-                            .max()
-                            .unwrap_or(0);
-                        self.force_lazy_list_vm_n(&ll, max.saturating_add(1))?
-                    }
-                    _ => self.force_lazy_list_vm(&ll)?,
-                }
-            } else {
-                self.force_lazy_list_vm(&ll)?
-            };
+            let forced = self.force_lazy_list_for_index(&ll, &index)?;
             target = Value::array(forced);
         }
         // Normalize ordinary Seq/Slip targets to List for uniform handling.

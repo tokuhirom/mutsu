@@ -3435,6 +3435,36 @@ impl Compiler {
                             name_idx,
                             local_idx,
                         });
+                    } else if let Expr::DoStmt(decl_stmt) = expr
+                        && let Stmt::VarDecl {
+                            name: decl_name, ..
+                        } = decl_stmt.as_ref()
+                    {
+                        // An inline scalar declaration (`take-rw my $ = 1`) has
+                        // no pre-existing container for the `scalar_bind_autovivify`/
+                        // `bind_terminal` promotion above to act on -- those flags
+                        // are consulted only by subscript/index compilation
+                        // (`expr_data.rs`), never by an inline `my` declaration's
+                        // own compilation, so they were a no-op here and the
+                        // gathered element decontainerized to a bare `Scalar`,
+                        // indistinguishable from a plain (non-rw) `take`'s
+                        // explicit itemization. Declare the variable first, then
+                        // retain ITS freshly-created scalar cell exactly like the
+                        // bare-`Expr::Var` arm above (#8521).
+                        let decl_name = decl_name.clone();
+                        self.compile_stmt(decl_stmt);
+                        let name = self.resolve_self_lexical(&decl_name);
+                        let local_idx = self.local_map.get(name).copied();
+                        let resolved_name = if local_idx.is_some() {
+                            name.to_string()
+                        } else {
+                            self.qualify_variable_name(name)
+                        };
+                        let name_idx = self.code.add_constant(Value::str(resolved_name));
+                        self.code.emit(OpCode::GetScalarContainer {
+                            name_idx,
+                            local_idx,
+                        });
                     } else {
                         let saved_av = self.scalar_bind_autovivify;
                         let saved_term = self.bind_terminal;

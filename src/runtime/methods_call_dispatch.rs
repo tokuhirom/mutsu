@@ -4141,6 +4141,23 @@ impl Interpreter {
             return Ok(result);
         }
 
+        // `.AT-POS($i)` / `.EXISTS-POS($i)` as an explicit method call is the
+        // same `postcircumfix:<[ ]>` protocol method that `$l[$i]` compiles
+        // down to (`Language/subscripts.rakudoc`), so it must pull only as
+        // many elements as the index needs — forcing the whole LazyList
+        // here (as the generic `should_force_lazy_list` cascade below does
+        // for other methods) would hang on an infinite sequence's
+        // `.AT-POS($i)` where `$l[$i]` does not (#8521).
+        if let ValueView::LazyList(ll) = target.view()
+            && matches!(method, "AT-POS" | "EXISTS-POS")
+            && args.len() == 1
+        {
+            let index = args[0].clone();
+            let forced = self.force_lazy_list_for_index(&ll, &index)?;
+            let arr = Value::array(forced);
+            return self.call_method_with_values(arr, method, args);
+        }
+
         // Force LazyList and re-dispatch as Seq
         if let ValueView::LazyList(ll) = target.view()
             && Self::should_force_lazy_list(method)
