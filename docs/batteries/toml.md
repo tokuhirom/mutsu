@@ -49,6 +49,41 @@ blocker list, with what is stale and what is still open, is in
 `todo/deep/config-toml-battery-core-blockers.md` — read that, not the
 2026-08-22 work list below.
 
+**Re-measured 2026-09-16** (`ecosystem-sweep.py --only`, release build):
+**`Config::TOML` 14/19 files (60/68 assertions), `Crane` 12/15 files
+(45/50 assertions)** — `Crane` up from 4/15. Two general dispatch bugs, found
+by bisecting `Config::TOML::Dumper`'s own internal `to-toml` renderer, turned
+out to be the dominant blocker for both dists at once:
+
+1. A bare call inside a compunit that declares only `multi sub NAME(...)`
+   candidates (never `is export`ed) could resolve to a totally unrelated,
+   later-loaded compunit's exported *plain* `sub NAME(...)` instead of its own
+   multi candidates — with no type check at all, since the wrong resolution
+   path short-circuited on an exact (arity-less) registry key before ever
+   consulting the typed candidates. Hit through three separate call shapes
+   (an ordinary bareword call, `.&NAME` postfix, and the VM's type-blind
+   "positional light-call" cache latching onto whichever candidate resolved
+   first once the bug's own mis-resolution warmed it). `Config::TOML`'s own
+   `to-toml(Str:D)`/`to-toml(Int:D)` lost to its exporting wrapper's
+   `to-toml(Associative:D $container)`; `Crane`'s internal dispatch helpers
+   hit the identical shape.
+2. `has_multi_candidates_cached_sym`'s memo was keyed by name alone, not by
+   the calling package — so the first package to ask "does this name have
+   multi candidates?" decided the (wrong) answer for every other package for
+   the rest of that generation.
+
+Fixed in `dispatch_resolve.rs`, `resolution.rs` and `vm_call_dispatch.rs`;
+pinned by `t/modules/compunit/cross-compunit-multi-vs-plain-sub-name-collision.t`.
+
+Residue: `Config::TOML`'s `dumper/01-basic` and `exceptions/02-dumper` are now
+blocked on a separate, narrower bug —
+[#8503](https://github.com/tokuhirom/mutsu/issues/8503): a `my TYPE:D @array`
+mutated by `push` inside a `.map({...})` closure passed as a method argument
+does not share the outer container. `grammar-actions/01`, `02`, `04` are the
+pre-existing string-equivalence/Rat-precision/dumper residues already on
+record above. `Crane`'s remaining three (`in`, `patch`, `transform`) are
+unbisected.
+
 ```raku
 use Config::TOML;
 my %config = from-toml('example.toml'.IO.slurp);   # not yet runnable on mutsu

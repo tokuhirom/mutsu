@@ -522,11 +522,34 @@ impl Interpreter {
         // that declares its own `proto` for this name (see
         // `candidate_search_packages`).
         let search_pkgs = self.candidate_search_packages(name);
-        for pkg in &search_pkgs {
-            if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
-                .and_then(|key| self.registry().functions.get(&key).cloned())
-            {
-                return Some(def);
+        // The exact (arity-less) key an ordinary plain `sub` registers under
+        // is only a trustworthy match when no `multi` candidate is ALSO
+        // registered under this base name. Multi candidates are additive
+        // across compilation units by design (see the "ambient `GLOBAL::`
+        // installers" note in `unit_private_routines.rs`): a compunit's own
+        // unexported `multi sub to-toml(Str:D $s) {...}` and a totally
+        // unrelated, later-loaded compunit's exported `sub to-toml(Associative:D
+        // $x) is export {...}` can share a base name and both end up filed
+        // under the same package bucket (typically `GLOBAL`) once mutsu's
+        // per-compunit lexical scoping collapses. Matching the plain sub here
+        // unconditionally — with no type check at all — let that foreign
+        // export win over a same-named local multi candidate that actually
+        // fit the call, so `Config::TOML::Dumper`'s own `to-toml(Str:D $s)`
+        // never ran: every value type check-failed against
+        // `Config::TOML`'s unrelated exported `to-toml(Associative:D
+        // $container, ...)` instead (#7539). Skip straight to the typed
+        // candidate walk below whenever a multi candidate for this name is in
+        // scope; the exact match still runs afterwards as the final fallback
+        // when nothing typed matched (`resolve_function_with_arity` ->
+        // `resolve_function`), so a real "the multis exist but none of them
+        // apply" case is unaffected in the common (no collision) case.
+        if !self.has_multi_candidates(name) {
+            for pkg in &search_pkgs {
+                if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
+                    .and_then(|key| self.registry().functions.get(&key).cloned())
+                {
+                    return Some(def);
+                }
             }
         }
         let typed_prefixes: Vec<String> = search_pkgs
