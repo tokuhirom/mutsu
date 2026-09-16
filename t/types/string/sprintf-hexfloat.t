@@ -3,9 +3,11 @@ use Test;
 # The `%a` / `%A` sprintf directives render a Num as a C99 hexadecimal float:
 # a `0x` prefix, one hex digit before the radix point, the mantissa in hex
 # after it, then `p` and a *decimal* signed binary exponent. Expected values
-# below are glibc's printf output for the same double.
+# below are glibc's printf output for the same double, EXCEPT for subnormals
+# (see the note there): those match BSD libc / js-sion instead, since that is
+# what Raku ecosystem code written against `%a` (e.g. SION) expects.
 
-plan 38;
+plan 39;
 
 # Exact rendering (no precision): the full 52-bit fraction, trailing zeroes
 # stripped.
@@ -40,10 +42,12 @@ is sprintf("%.20a", 27.1), "0x1.b19999999999a0000000p+4",
   "a precision past the 13-digit fraction pads with zeroes";
 is sprintf("%.*a", 3, 27.1), "0x1.b1ap+4", "a star precision is honoured";
 
-# Subnormals are printed at the fixed minimum exponent with a leading 0,
-# rather than being normalized.
-is sprintf("%a", 5e-324), "0x0.0000000000001p-1022", "%a of the smallest subnormal";
+# Subnormals are renormalized to a leading 1, with the exponent dropping
+# below the normal minimum of -1022 as needed -- unlike glibc, which instead
+# pins subnormals at exponent -1022 with leading zero digits (issue #8518).
+is sprintf("%a", 5e-324), "0x1p-1074", "%a of the smallest subnormal";
 is sprintf("%a", 2.2250738585072014e-308), "0x1p-1022", "%a of the smallest normal";
+is sprintf("%a", 5e-324 * 3), "0x1.8p-1073", "%a of a subnormal with a fractional part";
 
 # The `#` flag forces the radix point even when the fraction is empty.
 is sprintf("%#a", 0e0), "0x0.p+0", "%#a of 0 keeps the radix point";
