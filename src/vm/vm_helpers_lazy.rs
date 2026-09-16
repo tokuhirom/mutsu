@@ -1453,6 +1453,79 @@ impl Interpreter {
         r
     }
 
+    /// Force a `LazyList` to produce enough elements to answer a single
+    /// positional-style index read, computing the minimal bound from the
+    /// index shape instead of forcing the whole (possibly infinite)
+    /// sequence. Shared by the `$l[$i]` subscript read
+    /// (`exec_index_op_with_positional`, `vm_var_index_ops.rs`) and the
+    /// explicit `.AT-POS($i)` / `.EXISTS-POS($i)` method-call dispatch
+    /// (`runtime/methods_call_dispatch.rs`) — `[$i]` compiles down to the
+    /// same `postcircumfix:<[ ]>` protocol `AT-POS` implements
+    /// (`Language/subscripts.rakudoc`), so both syntaxes must pull the same
+    /// amount.
+    pub(crate) fn force_lazy_list_for_index(
+        &mut self,
+        list: &LazyList,
+        index: &Value,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if list.scan_spec.is_some() {
+            // Scan-based lazy list: compute only as many elements as needed
+            let needed = match index.view() {
+                ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+                ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
+                ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
+                _ => None,
+            };
+            match needed {
+                Some(n) => self.force_scan_lazy_list(list, n),
+                None => self.force_lazy_list_vm(list),
+            }
+        } else if list.coroutine.is_some()
+            || list.lazy_pipe.is_some()
+            || list.sequence_spec.is_some()
+            || list.closure_seq.is_some()
+            || list.cat_pull.is_some()
+        {
+            // Gather-based lazy list / lazy map-grep pipeline / infinite
+            // arithmetic-or-closure sequence: force only as many elements as
+            // needed via bounded incremental pull.
+            match index.view() {
+                ValueView::Int(i) if i >= 0 => {
+                    self.force_lazy_list_vm_n(list, (i as usize).saturating_add(1))
+                }
+                ValueView::Range(_, end) if end >= 0 => {
+                    self.force_lazy_list_vm_n(list, (end as usize).saturating_add(1))
+                }
+                ValueView::RangeExcl(_, end) if end > 0 => {
+                    self.force_lazy_list_vm_n(list, end as usize)
+                }
+                // A list of non-negative integer indices (`$s[2, 3]`): force
+                // only up to the largest index + 1, keeping the tail lazy so
+                // later pulls still see mid-iteration changes.
+                _ if index.as_list_items().is_some_and(|items| {
+                    !items.is_empty()
+                        && items
+                            .iter()
+                            .all(|v| matches!(v.view(), ValueView::Int(i) if i >= 0))
+                }) =>
+                {
+                    let max = index
+                        .as_list_items()
+                        .unwrap()
+                        .iter()
+                        .filter_map(Value::as_int)
+                        .map(|i| i as usize)
+                        .max()
+                        .unwrap_or(0);
+                    self.force_lazy_list_vm_n(list, max.saturating_add(1))
+                }
+                _ => self.force_lazy_list_vm(list),
+            }
+        } else {
+            self.force_lazy_list_vm(list)
+        }
+    }
+
     /// Reconcile the caller frame's local slots after a lazy force, so a
     /// captured-outer lexical mutated at reify time (e.g. `map({$c++})`,
     /// `gather`) is visible in the caller's slots even when the blanket reverse

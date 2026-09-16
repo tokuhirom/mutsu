@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 13;
 
 # `take-rw <lvalue>` must capture the *source container* (a shared cell), so the
 # gathered value keeps container identity (`=:=`) with the original element and a
@@ -64,4 +64,31 @@ plan 10;
     my @g = gather for @b { take-rw $_ };
     @g[0] = 99;
     is-deeply @b, [99, 2, 3], 'a stored take-rw topic alias writes through after gather';
+}
+
+# https://github.com/Raku/old-issue-tracker/issues/4668 / mutsu #8521: an
+# inline scalar declaration (`my $ = ...`) used as the `take-rw` operand has
+# no pre-existing container an element subscript would promote, so the
+# compiler must mint a fresh one and retain it -- same as a bare `Expr::Var`
+# operand. Pulled through the LAZY (coroutine) `AT-POS` method-call path,
+# NOT `eager`/a subscript-read, which is what previously masked this: an old
+# buggy element-store fallback silently converted the whole `$l` from a
+# `Seq`/`LazyList` into a plain `Array` as a side effect of the assignment,
+# which happened to still answer 42 on a later read while losing the real
+# container identity and the value's type.
+{
+    my $l = gather { take-rw my $ = 1 };
+    $l.AT-POS(0) = 42;
+    is $l.AT-POS(0), 42, 'AT-POS on a gather Seq with take-rw of an inline decl works';
+    isa-ok $l, Seq, 'the gathered Seq keeps its type instead of decaying to Array';
+}
+
+# `.AT-POS($i)` is the same `postcircumfix:<[ ]>` protocol method `$l[$i]`
+# compiles to (Language/subscripts.rakudoc), so it must pull only as many
+# elements as the index needs, not force the whole (here: infinite) LazyList
+# -- a regression here would hang forever rather than fail cleanly.
+{
+    sub gen() { take 1; take 2 }
+    my $s = gather { loop { gen() } };
+    is $s.AT-POS(2), 1, 'AT-POS on an infinite gather stays lazy, like [$i]';
 }
