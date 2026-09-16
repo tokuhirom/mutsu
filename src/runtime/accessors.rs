@@ -430,6 +430,21 @@ impl Interpreter {
                 }
                 Ok(())
             }
+            // ADR-0058: `.map`/`.grep` return a not-yet-run `Seq` whose callback
+            // fires on first consumption. A plain `Deref` read (what
+            // `as_list_items` below does) sees the empty seed and never
+            // triggers it, so a routine whose tail is a bare `.map` and whose
+            // `--> Nil`/etc. return spec forces a sink (as `OpCode::SinkPop`
+            // does for an ordinary sunk statement) must drain it the same way
+            // here, or the callback's side effects are silently dropped.
+            ValueView::Seq(body) if body.needs_touch() => {
+                let body = std::sync::Arc::clone(&body);
+                self.sink_seq_body(&body)?;
+                for item in body.iter() {
+                    self.sink_for_definite_return(&item.clone())?;
+                }
+                Ok(())
+            }
             _ if value.as_list_items().is_some() => {
                 for item in value.as_list_items().unwrap().iter() {
                     self.sink_for_definite_return(item)?;

@@ -2695,6 +2695,58 @@ impl Interpreter {
             ValueView::Num(_) => Ok(Value::num(0.0)),
             ValueView::Bool(_) => Ok(Value::FALSE),
             ValueView::Nil => Ok(Value::NIL),
+            // `.new` is inherited from `Mu`, so calling it on a concrete
+            // QuantHash VALUE (e.g. `$set .= new` where `$set` already holds
+            // a populated `SetHash`, not its type object) must build a fresh
+            // instance of the SAME declared type, exactly like calling it on
+            // the type object does. Falls back to the mutable/immutable base
+            // name when the value carries no `declared_type` (e.g. a plain
+            // `SetHash.new.SetHash` round-trip stripped it).
+            ValueView::Set(data, mutable) => {
+                let type_name = data
+                    .declared_type
+                    .clone()
+                    .unwrap_or_else(|| if mutable { "SetHash" } else { "Set" }.to_string());
+                self.try_native_quanthash_construct_for_package(
+                    Symbol::intern(&type_name),
+                    &args,
+                )
+                .unwrap_or_else(|| {
+                    Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
+                    ))
+                })
+            }
+            ValueView::Bag(data, mutable) => {
+                let type_name = data
+                    .declared_type
+                    .clone()
+                    .unwrap_or_else(|| if mutable { "BagHash" } else { "Bag" }.to_string());
+                self.try_native_quanthash_construct_for_package(
+                    Symbol::intern(&type_name),
+                    &args,
+                )
+                .unwrap_or_else(|| {
+                    Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
+                    ))
+                })
+            }
+            ValueView::Mix(data, mutable) => {
+                let type_name = data
+                    .declared_type
+                    .clone()
+                    .unwrap_or_else(|| if mutable { "MixHash" } else { "Mix" }.to_string());
+                self.try_native_quanthash_construct_for_package(
+                    Symbol::intern(&type_name),
+                    &args,
+                )
+                .unwrap_or_else(|| {
+                    Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
+                    ))
+                })
+            }
             _ => Err(RuntimeError::new(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
             )),
