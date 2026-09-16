@@ -695,6 +695,54 @@ impl Interpreter {
                 .push(if return_new { new_val } else { effective });
             return Ok(());
         }
+        // `$buf[i]++` / `$buf[i]--` on a Buf/Blob-shaped instance (native
+        // element storage, ADR-0015 P2): inc/dec the element in place through
+        // the shared storage node, mirroring the plain-assignment path in
+        // `vm_var_assign_index_named.rs`. The generic Array/Hash paths below
+        // only match plain containers, so a Buf instance would otherwise read
+        // Nil and silently lose the write (Acme::Anguish's `$stack[$ptr]++`).
+        if let Some(cont) = container.clone()
+            && let ValueView::Instance {
+                attributes,
+                class_name,
+                ..
+            } = cont.view()
+        {
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_native_elems_class(&cn)
+                && crate::value::value_buf::has_buf_elems(&attributes)
+            {
+                if crate::runtime::utils::is_blob_like_class(&cn) {
+                    return Err(RuntimeError::assignment_ro(Some("Blob")));
+                }
+                let i = key
+                    .parse::<usize>()
+                    .map_err(|_| RuntimeError::new("Index out of range"))?;
+                let old =
+                    crate::value::value_buf::buf_elem_at(&attributes, i).unwrap_or(Value::int(0));
+                let effective = Self::normalize_incdec_source(old);
+                let new_val = if increment {
+                    self.increment_value_smart(&effective)?
+                } else {
+                    self.decrement_value_smart(&effective)?
+                };
+                let new_val = wrap_element_result(new_val);
+                let mut resize_err = None;
+                crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
+                    if let Err(e) = Self::autoviv_resize(arr, i + 1, Value::int(0)) {
+                        resize_err = Some(e);
+                        return;
+                    }
+                    arr[i] = new_val.clone();
+                });
+                if let Some(e) = resize_err {
+                    return Err(e);
+                }
+                self.stack
+                    .push(if return_new { new_val } else { effective });
+                return Ok(());
+            }
+        }
         // `%h<a>++` where the class declares its own `AT-KEY`: Raku's postfix
         // `++` operates on the CONTAINER that `AT-KEY` hands back, so an
         // override that returns a `Proxy` (the documented QuantHash-subclass

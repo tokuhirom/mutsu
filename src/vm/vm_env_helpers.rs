@@ -1565,6 +1565,19 @@ impl Interpreter {
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
+            // `$PROCESS::OUT` maps to the sigilless `*OUT`, which is a twigil
+            // alias of `$*OUT` (both spellings are seeded together at init —
+            // see `BASE_TIER_DYNAMICS`). Mirror the write to the other
+            // spelling exactly as the direct-twigil-write branch above does,
+            // or the two fall out of sync: `$PROCESS::OUT = $capture` would
+            // update only `*OUT`, leaving `$*OUT` (what `print`/`say`'s
+            // `write_to_named_handle("$*OUT", ...)` reads to find the output
+            // destination) stale at the original handle, so a captured
+            // `print`/`say` would keep writing to the real stdout instead of
+            // the reassigned handle.
+            if let Some(alias) = Self::twigil_dynamic_alias(&bare) {
+                self.env_mut().insert(alias, value.clone());
+            }
             self.env_mut().insert(bare, value);
         } else if let Some(bare) = name.strip_prefix("GLOBAL::")
             && self.env().contains_key(bare)
