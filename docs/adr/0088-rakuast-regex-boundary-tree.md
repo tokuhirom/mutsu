@@ -14,9 +14,10 @@
   argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
   argument, modified-method-call dynamic-argument, and quoted-method-call
   dynamic-argument, dynamic-quoted-method-name argument, and hash-index
-  dynamic-argument, and literal-hash-index argument slices implemented
+  dynamic-argument, literal-hash-index and indirect-callable dynamic-argument
+  slices implemented
   2026-09-12 through
-  2026-09-15;
+  2026-09-16;
   direct hash interpolation is reserved by Rakudo and mutsu;
   other dynamic contents and the complete execution-tree migration remain)
 - Date: 2026-09-12
@@ -1198,3 +1199,22 @@ existing parser, compiler, and VM matcher. No lookup occurs during `.AST`
 conversion or RakuAST lowering. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the AST shape, AST EVAL,
 grammar matching, and hash-value reassignment at match time.
+
+## 47. Indirect callable dynamic argument slice (2026-09-16)
+
+Lexical callable invocations in argumented subrules, such as
+`<word(&decorate($value))>`, now retain the existing RakuAST
+`ApplyPostfix`/`Call::Term` shape and the code-variable target. The parser,
+converter, and direct grammar matcher already carried the callable expression;
+the missing write-direction boundary was rendering `Expr::CallOn` when a
+constructed RakuAST regex returned to the existing regex parser.
+
+The renderer emits the callable target and its argument list without invoking
+the callable during `.AST` conversion or RakuAST lowering. The established
+match-time argument evaluator therefore remains responsible for callable
+lookup and invocation, and no matcher or VM path is added. Named routine calls,
+code-bearing arguments, and other runtime-valued forms remain separate
+boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the code-variable target,
+indirect call node, AST EVAL, direct grammar matching, and callable reassignment
+between matches.

@@ -1180,6 +1180,16 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         | crate::ast::Expr::UserRoutineCall { name, args } => {
             Some(format!("{}({})", name.resolve(), join_args(args)?))
         }
+        // A lexical callable invocation (`&name(args)` / `$callable(args)`)
+        // is represented as `CallOn` because the callee is an expression
+        // rather than a statically resolved routine name. Preserve that
+        // expression boundary so a constructed RakuAST regex returns through
+        // the existing match-time argument evaluator.
+        crate::ast::Expr::CallOn { target, args } => Some(format!(
+            "{}({})",
+            expression_source(target)?,
+            join_args(args)?
+        )),
         crate::ast::Expr::MethodCall {
             target,
             name,

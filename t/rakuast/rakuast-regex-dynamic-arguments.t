@@ -3,10 +3,10 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-# ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
-# its RakuAST expression tree and can be lowered back to the regex parser.
+# ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
+# RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 51;
+plan 59;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -208,3 +208,32 @@ ok GDynamicLiteralHashIndexArgument.parse('b').defined,
     'a literal hash-index argument observes value reassignment at match time';
 ok !GDynamicLiteralHashIndexArgument.parse('a').defined,
     'a literal hash-index argument retains its literal key and current value';
+
+my $callable_value = 'a';
+my &decorate = -> $argument { $argument.uc };
+my $callable_ast = Q[/<word(&decorate($callable_value))>/].AST;
+my $callable_gist = $callable_ast.gist;
+ok $callable_gist.contains('RakuAST::Regex::Assertion::Named::Args'),
+    'a lexical callable remains an argumented subrule';
+ok $callable_gist.contains('RakuAST::ApplyPostfix'),
+    'a lexical callable keeps its postfix application';
+ok $callable_gist.contains('RakuAST::Var::Lexical.new("\\&decorate")'),
+    'a lexical callable keeps its code-variable target';
+ok $callable_gist.contains('RakuAST::Call::Term'),
+    'a lexical callable keeps its indirect call node';
+
+my $callable_regex = EVAL($callable_ast);
+ok $callable_regex ~~ Regex,
+    'a RakuAST regex with a lexical callable argument lowers successfully';
+
+grammar GDynamicCallableArgument {
+    token TOP { <word(&decorate($callable_value))> }
+    token word($expected) { $expected }
+}
+ok GDynamicCallableArgument.parse('A').defined,
+    'a lexical callable argument reaches the subrule matcher';
+&decorate = -> $argument { $argument.lc };
+ok GDynamicCallableArgument.parse('a').defined,
+    'a lexical callable argument observes callable reassignment at match time';
+ok !GDynamicCallableArgument.parse('A').defined,
+    'a lexical callable argument retains its current callable value';
