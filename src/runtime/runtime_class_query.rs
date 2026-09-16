@@ -22,8 +22,13 @@ impl Interpreter {
     /// earlier `EVAL` in the same process — shadow the `Mod::R` the current unit
     /// just declared.
     ///
-    /// Returns `None` when the name is already qualified or when nothing along
-    /// the chain matches; the caller then keeps the bare name.
+    /// Returns `None` when the name already resolves as written (whether bare
+    /// or compound) or when nothing along the chain matches; the caller then
+    /// keeps the bare name. A COMPOUND name (`Formatted::Named`) that does
+    /// NOT already resolve also walks the chain — a `my role Formatted::Named`
+    /// nested inside a package registers only under the package-qualified
+    /// name, so its own written (relative) compound name has to be resolved
+    /// the same way a single-segment short name is.
     pub(crate) fn resolve_bare_type_name(&self, name: &str) -> Option<String> {
         // A lexically-scoped `my class`/`my role` registers under a mangled
         // storage name (ADR-0047 P1: `Name\u{0}<decl-id>`) while `env` still
@@ -49,7 +54,19 @@ impl Interpreter {
                 return Some(resolved);
             }
         }
-        if name.contains("::") {
+        // A COMPOUND name (`Formatted::Named`) still walks the same outward
+        // chain below — it just needs one more thing ruled out first: a name
+        // that is already its own fully-qualified registry key (or an
+        // unrelated qualified reference, e.g. `Some::Other::Pkg::Thing`) must
+        // not be re-prefixed with an enclosing package on top. Only a name
+        // that resolves to NOTHING as written is a candidate for the chain
+        // walk — mirrors a `my role Formatted::Named` declared inside `unit
+        // module Foo`, which registers only as `Foo::Formatted::Named`
+        // (`exec_register_role_op`): a sibling sub's `$obj does
+        // Formatted::Named(:x(1))` names the role by its own written compound
+        // short name, which is otherwise unresolvable from a call site
+        // (issue #8578).
+        if name.contains("::") && (self.has_class(name) || self.has_role(name)) {
             return None;
         }
         self.bare_name_packages().into_iter().find_map(|pkg| {
