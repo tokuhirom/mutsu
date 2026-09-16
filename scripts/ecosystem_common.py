@@ -45,7 +45,7 @@ CORE_PROVIDED = {
     "experimental", "lib", "Pod::To::Text",
 }
 
-_DEP_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z0-9_]+)*)")
+_DEP_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z0-9_-]+)*)")
 _TEST_FILE = re.compile(r"\.(t|rakutest)$")
 _SOURCE_FILE = re.compile(r"\.(rakumod|pm6|pm|raku|rakutest|t)$")
 
@@ -637,6 +637,20 @@ def _self_test() -> int:
         if got != want:
             print(f"first_error_line: want {want!r}, got {got!r}", file=sys.stderr)
             failures += 1
+
+    # A hyphenated dist name (real ones exist, e.g. lizmat's "has-word") must
+    # survive the adverb strip whole -- truncating at the hyphen turned
+    # "has-word:ver<0.0.7+>:auth<zef:lizmat>" into the unresolvable "has" and
+    # wrongly blocked every distribution depending on it (IRC::Log and friends).
+    dep_meta = {"depends": {"runtime": {"requires": [
+        "has-word:ver<0.0.7+>:auth<zef:lizmat>",
+        "Array::Sorted::Util:ver<0.0.11+>:auth<zef:lizmat>",
+    ]}}}
+    got_deps = dep_names(dep_meta)
+    want_deps = ["has-word", "Array::Sorted::Util"]
+    if got_deps != want_deps:
+        print(f"dep_names: want {want_deps!r}, got {got_deps!r}", file=sys.stderr)
+        failures += 1
 
     # A `# TODO` failure is an expected one: TAP says the file still passes.
     tap = "1..3\nok 1 - a\nnot ok 2 - b # TODO flaky\nok 3 - c\n"
