@@ -205,12 +205,14 @@ pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackre
 /// Only such an atom needs to pay for snapshotting the enclosing captures.
 pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
     fn pattern_has(pattern: &RegexPattern) -> bool {
-        pattern.tokens.iter().any(|tok| {
-            atom_contains_backref(&tok.atom)
-                || tok
-                    .separator
-                    .as_ref()
-                    .is_some_and(|sep| pattern_has(&sep.pattern))
+        *pattern.derived.contains_backref.get_or_init(|| {
+            pattern.tokens.iter().any(|tok| {
+                atom_contains_backref(&tok.atom)
+                    || tok
+                        .separator
+                        .as_ref()
+                        .is_some_and(|sep| pattern_has(&sep.pattern))
+            })
         })
     }
     match atom {
@@ -1321,11 +1323,13 @@ fn pattern_contains_alternation(pat: &RegexPattern) -> bool {
 
 /// Count positional capture groups in a pattern (non-recursive into nested groups).
 fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
-    let mut count = 0;
-    for token in &pat.tokens {
-        count += count_capture_groups(&token.atom);
-    }
-    count
+    *pat.derived.capture_group_count.get_or_init(|| {
+        let mut count = 0;
+        for token in &pat.tokens {
+            count += count_capture_groups(&token.atom);
+        }
+        count
+    })
 }
 
 /// Fold quantified captures. After a quantifier loop, positional entries from
