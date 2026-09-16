@@ -419,6 +419,31 @@ impl Interpreter {
         min_pos: usize,
     ) -> Option<MatchWithAllCaptures> {
         let parsed = self.parse_regex(pattern)?;
+        self.regex_find_first_from_with_all_captures_in_parsed(&parsed, target, min_pos)
+    }
+
+    /// Value-aware counterpart to [`Self::regex_find_first_from_with_all_captures_in`].
+    /// A parser-created regex can carry a source tree whose structure is more
+    /// precise than its compatibility spelling, notably for a leading anchor
+    /// separated from the first atom by sigspace whitespace. Preserve that
+    /// provenance for callers such as native `.subst` that receive the regex
+    /// value itself.
+    pub(crate) fn regex_find_first_from_with_all_captures_in_value(
+        &mut self,
+        regex: &Value,
+        target: &MatchTarget,
+        min_pos: usize,
+    ) -> Option<MatchWithAllCaptures> {
+        let parsed = self.parse_regex_value(regex)?;
+        self.regex_find_first_from_with_all_captures_in_parsed(&parsed, target, min_pos)
+    }
+
+    fn regex_find_first_from_with_all_captures_in_parsed(
+        &mut self,
+        parsed: &RegexPattern,
+        target: &MatchTarget,
+        min_pos: usize,
+    ) -> Option<MatchWithAllCaptures> {
         let pkg = self.current_package_sym();
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
@@ -428,7 +453,7 @@ impl Interpreter {
         if parsed.ignore_mark {
             let stripped = target.stripped();
             let stripped_chars = stripped.chars();
-            let stripped_parsed = strip_marks_pattern(&parsed);
+            let stripped_parsed = strip_marks_pattern(parsed);
             let orig_len = orig_chars.len();
             let stripped_min = stripped.original_to_stripped(min_pos);
             let search_start = if stripped_parsed.anchor_start {
@@ -475,9 +500,9 @@ impl Interpreter {
             return None;
         }
         let search_start = if parsed.anchor_start { 0 } else { min_pos };
-        for start in regex_scan_positions(self, &parsed, orig_chars, search_start, pkg) {
+        for start in regex_scan_positions(self, parsed, orig_chars, search_start, pkg) {
             if let Some((end, caps)) =
-                self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
+                self.regex_match_end_from_caps_in_pkg(parsed, orig_chars, start, pkg)
             {
                 // `<( … )>` narrows the reported match to the marked region even
                 // though the pattern consumed more, exactly as the other match

@@ -6,7 +6,7 @@ use Test;
 # falling back to the interpreter. Results must remain identical to the
 # interpreter path.
 
-plan 20;
+plan 21;
 
 # --- regex pattern, single match ---
 is "aXbXc".subst(/X/, "-"), "a-bXc", "regex single replaces first match only";
@@ -42,6 +42,14 @@ is "abc".subst("z", "-"), "abc", "string no match returns original";
 # --- unicode (char vs byte indices) ---
 is "café".subst(/é/, "e"), "cafe", "unicode single subst";
 is "naïve café".subst(/<[éï]>/, "_", :g), "na_ve caf_", "unicode :g subst";
+
+# A leading anchor must survive the whitespace wrapper in a parser-created
+# regex value. Without it, native `.subst` scans from the interior and removes
+# the slash from the PURL-shaped string.
+my sub trim-slashes(Str:D $_) { .subst(/^ '/'+ /).subst(/ '/'+ $/) }
+is trim-slashes("maven/org.apache.commons/io@1.3.4"),
+    "maven/org.apache.commons/io@1.3.4",
+    "native subst preserves a regex literal's start anchor";
 
 # --- chaining returns a fresh string, invocant unchanged ---
 {

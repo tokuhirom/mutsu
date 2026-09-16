@@ -76,12 +76,12 @@ impl Interpreter {
 
         match pattern.view() {
             // Plain (non-adverb, non-Perl5) regex literal: `.subst(/pat/, ...)`.
-            ValueView::Regex(pat) => {
+            ValueView::Regex(_) => {
                 // A regex `.subst` performs a real match, so clear any stale
                 // numeric/named capture vars from a previous match first (this
                 // path bypasses `exec_subst_op`, which does the same).
                 self.reset_capture_env_vars();
-                Some(self.native_subst_regex(&text, &pat.to_string(), &replacement_str, global))
+                Some(self.native_subst_regex(&text, pattern, &replacement_str, global))
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
             ValueView::Str(pat) => {
@@ -107,7 +107,7 @@ impl Interpreter {
     fn native_subst_regex(
         &mut self,
         text: &str,
-        pat: &str,
+        pattern: &Value,
         replacement_str: &str,
         global: bool,
     ) -> Result<Value, RuntimeError> {
@@ -121,7 +121,7 @@ impl Interpreter {
         let target = crate::runtime::MatchTarget::new(text);
         while let Some((start, end, caps, _named)) = loan_env!(
             self,
-            regex_find_first_from_with_all_captures_in(pat, &target, pos)
+            regex_find_first_from_with_all_captures_in_value(pattern, &target, pos)
         ) {
             pos = if end > start { end } else { start + 1 };
             matches.push((start, end, caps));
