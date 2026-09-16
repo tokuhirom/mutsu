@@ -520,7 +520,32 @@ impl Interpreter {
                 } else {
                     None
                 };
-                let type_obj = self.resolve_type_object(trait_name);
+                // A parameterized role may bind a value under the same name
+                // as an attribute trait (XML::Class[xml-element => ...] with
+                // `is xml-element`).  That binding can be a type object due
+                // to its declared constraint, but it is still a role argument
+                // rather than a trait type and must not turn named dispatch
+                // into positional dispatch.
+                let mut role_owner = owner;
+                let mut is_role_argument = false;
+                loop {
+                    if self
+                        .registry()
+                        .class_role_param_bindings
+                        .get(role_owner)
+                        .is_some_and(|bindings| bindings.contains_key(trait_name))
+                    {
+                        is_role_argument = true;
+                        break;
+                    }
+                    let Some((outer, _)) = role_owner.rsplit_once("::") else {
+                        break;
+                    };
+                    role_owner = outer;
+                }
+                let type_obj = (!is_role_argument)
+                    .then(|| self.resolve_type_object(trait_name))
+                    .flatten();
                 let mut args = vec![attr_obj];
                 if let Some(type_val) = type_obj {
                     args.push(type_val);
