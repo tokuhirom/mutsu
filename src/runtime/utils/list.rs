@@ -559,7 +559,11 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
     // decompose it, matching Rakudo (`'ab'.NFC.map({...})` runs the
     // callback once per codepoint, each bound as a real Int).
     if let ValueView::Uni(u) = bare.view() {
-        return u.codepoints().into_iter().map(|cp| Value::int(cp as i64)).collect();
+        return u
+            .codepoints()
+            .into_iter()
+            .map(|cp| Value::int(cp as i64))
+            .collect();
     }
     let bare = match bare.view() {
         ValueView::Array(items, kind) if kind.is_itemized() => {
