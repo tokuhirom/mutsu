@@ -837,6 +837,20 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::seq(words)))
         }
         "join" => {
+            // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its
+            // own and decomposes into its codepoints in their original
+            // (unsorted) order -- matching Rakudo (`'ba'.NFC.join(',')` is
+            // `"98,97"`). Same idiom as `.map`/`.grep`/`.sort` (issue #8532).
+            if let ValueView::Uni(u) = target.view() {
+                let sep = arg.to_string_value();
+                let joined = u
+                    .codepoints()
+                    .iter()
+                    .map(|cp| cp.to_string())
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                return Some(Ok(Value::str(joined)));
+            }
             // Shaped arrays: join over leaves
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);

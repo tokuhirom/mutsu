@@ -733,6 +733,18 @@ pub(crate) fn sort_value_generic(
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
+        // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its own
+        // and decomposes into its codepoints -- matching Rakudo
+        // (`'ba'.NFC.sort` is `(97, 98)`, not a one-element list holding the
+        // whole value). Same idiom as `.map`/`.grep` (issue #8517/#8532).
+        ValueView::Uni(u) => {
+            let items: Vec<Value> = u
+                .codepoints()
+                .into_iter()
+                .map(|cp| Value::int(cp as i64))
+                .collect();
+            sort_value_generic(caller, Value::array(items), args)
+        }
         // Any non-list value sorts as a one-element list of itself: `Any.sort`
         // is `self.list.sort`, so `"cba".sort` is `("cba",).Seq`, `42.sort` is
         // `(42,).Seq`, etc. (Set/Bag/Mix/Hash and the list-ish kinds are handled
