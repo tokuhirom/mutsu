@@ -129,3 +129,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Proposed |
 | [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
 | [0104](0104-compiler-version-is-a-rakudo-release-coordinate.md) | `$*RAKU.compiler.version` is a Rakudo-release coordinate, not mutsu's package version | Accepted (implemented) |
+| [0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md) | Promise resolution dispatches through the promise's scheduler, and a woken awaiter borrows the resuming worker's slot (the answer to ADR-0020 §5.1; fork (b) is not the fix) | Proposed (design complete; two open points in §7) |
