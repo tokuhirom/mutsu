@@ -131,10 +131,10 @@ fn parse_optional_trait_word_arg(input: &str) -> Option<(&str, Expr)> {
                 let words: Vec<&str> = inner.split_whitespace().collect();
                 let arg = match words.as_slice() {
                     [] => Expr::Literal(Value::str(String::new())),
-                    [one] => Expr::Literal(Value::str_from(*one)),
+                    [one] => Expr::Literal(Value::str_from(one)),
                     many => Expr::ArrayLiteral(
                         many.iter()
-                            .map(|w| Expr::Literal(Value::str_from(*w)))
+                            .map(|w| Expr::Literal(Value::str_from(w)))
                             .collect(),
                     ),
                 };
