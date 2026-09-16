@@ -325,7 +325,18 @@ impl Interpreter {
         {
             return (code.clone(), fns.clone());
         }
-        let compiler = crate::compiler::Compiler::new();
+        // The body was written inside the currently executing routine, but is
+        // compiled only when its LazyList is created.  Preserve that routine's
+        // package for bare calls: a module's lexical helper is not a GLOBAL
+        // routine (`my sub helper { ... }; sub exported { gather { helper() }
+        // }`).  Compiling this fragment with the default GLOBAL package made
+        // the deferred call fail even though the same call outside `gather`
+        // resolved correctly.
+        let mut compiler = crate::compiler::Compiler::new();
+        let package = self.current_package();
+        if package != "GLOBAL" {
+            compiler.set_current_package(package);
+        }
         let scoped_body: Vec<crate::ast::Stmt>;
         let compile_target: &[crate::ast::Stmt] =
             if crate::compiler::Compiler::stmts_declare_routines(body) {

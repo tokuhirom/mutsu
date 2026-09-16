@@ -1053,7 +1053,37 @@ impl Interpreter {
         // not whichever routine is forcing it now — re-push the context the
         // gather captured at creation.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
+        // A gather can be forced by a different routine after its creator has
+        // returned. Keep bare routine lookup in the creating package.
+        let _pkg_guard =
+            list.env
+                .get("__mutsu_gather_package")
+                .and_then(|value| match value.view() {
+                    ValueView::Str(package)
+                        if !package.is_empty()
+                            && package.as_str() != "GLOBAL"
+                            && package.as_str() != self.current_package() =>
+                    {
+                        Some(self.enter_package_guarded(package.to_string()))
+                    }
+                    _ => None,
+                });
+        // Private compunit routines are resolved from the executing unit, not
+        // the consuming caller's unit.
+        let saved_unit = list
+            .env
+            .get("__mutsu_gather_unit")
+            .and_then(|value| match value.view() {
+                ValueView::Str(unit) => Some(std::mem::replace(
+                    &mut self.current_unit,
+                    crate::symbol::Symbol::intern(unit.as_str()),
+                )),
+                _ => None,
+            });
         let mut r = self.force_lazy_list_vm_inner(list);
+        if let Some(unit) = saved_unit {
+            self.current_unit = unit;
+        }
         // A `return` inside the gather body (`gather { ...; return }`) is
         // lexically inside whatever routine WROTE the gather, and its target
         // must be resolved from THAT env — not left untargeted — the exact
@@ -1436,7 +1466,35 @@ impl Interpreter {
         let saved_readonly = self.take_readonly_state();
         // See `force_lazy_list_vm`: the body's `samewith` is lexical.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
+        // Bounded lazy pulls have the same declaration-package requirement as
+        // strict forcing above.
+        let _pkg_guard =
+            list.env
+                .get("__mutsu_gather_package")
+                .and_then(|value| match value.view() {
+                    ValueView::Str(package)
+                        if !package.is_empty()
+                            && package.as_str() != "GLOBAL"
+                            && package.as_str() != self.current_package() =>
+                    {
+                        Some(self.enter_package_guarded(package.to_string()))
+                    }
+                    _ => None,
+                });
+        let saved_unit = list
+            .env
+            .get("__mutsu_gather_unit")
+            .and_then(|value| match value.view() {
+                ValueView::Str(unit) => Some(std::mem::replace(
+                    &mut self.current_unit,
+                    crate::symbol::Symbol::intern(unit.as_str()),
+                )),
+                _ => None,
+            });
         let r = self.force_lazy_list_vm_n_inner(list, needed);
+        if let Some(unit) = saved_unit {
+            self.current_unit = unit;
+        }
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
