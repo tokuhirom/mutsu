@@ -9,45 +9,45 @@
   "dist": "FunctionalParsers",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.36,
+        "ok": 8,
+        "plan": null,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/00-sanity.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 15.26,
+        "secs": 33.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 3 -",
-        "nok": 6,
-        "ok": 5,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
         "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-infix-set-style.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.62,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.1,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,30 +69,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.34,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "bracketed on : { one four }",
-        "nok": 2,
-        "ok": 3,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.11,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-pack-combinators.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.51,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +103,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.14,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +113,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.64,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +125,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.15,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,53 +135,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 11,
-        "ok": 15,
-        "plan": 26,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/07-ebnf-parsing-from-tokens.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 26,
-        "plan": 26,
-        "secs": 1.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 14,
-        "ok": 13,
-        "plan": 27,
-        "secs": 0.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/08-ebnf-parsing.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 2.13,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,11 +144,57 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'parser' for invocant of type 'Any'",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 10,
+        "ok": 10,
+        "plan": null,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-ebnf-parsing-from-tokens.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 2.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-ebnf-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.32,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -205,7 +204,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.14,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -217,7 +216,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.1,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -227,30 +226,30 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.42,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Empty non-parsed",
-        "nok": 10,
-        "ok": 11,
-        "plan": 21,
-        "secs": 0.57,
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 3,
+        "ok": 4,
+        "plan": null,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/11-ebnf-parsing-styled.rakutest",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 10.38,
+        "secs": 13.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -259,11 +258,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "<1 2 3> || 1 of first match on : one two three",
-        "nok": 4,
-        "ok": 8,
+        "first_failure": "Infix equivalence «||» for: <1 2> || <1 2 3> || 1 of first match on : one two three",
+        "nok": 3,
+        "ok": 9,
         "plan": 12,
-        "secs": 0.14,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -273,30 +272,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "parsing assigment: _8PereRT = 32",
-        "nok": 2,
-        "ok": 7,
-        "plan": 9,
-        "secs": 0.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/13-extra-parsers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.41,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -306,42 +282,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/14-ebnf-mermaid-js-generation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Comma separated",
-        "nok": 9,
-        "ok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.51,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
-      "path": "t/15-ebnf-parsing-any-sequences.rakutest",
+      "path": "t/13-extra-parsers.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.81,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -350,11 +303,57 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'parser' for invocant of type 'Any'",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-ebnf-mermaid-js-generation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.31,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-ebnf-parsing-any-sequences.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -364,30 +363,30 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.58,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "not ok 3 -",
-        "nok": 5,
-        "ok": 2,
-        "plan": 7,
-        "secs": 0.45,
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&p'; expected Callable but got Nil (Nil)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/17-grammar-graph.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.85,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -399,7 +398,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.1,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -409,7 +408,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.67,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -442,8 +441,8 @@
     "attempts": 3,
     "date": "2026-09-16",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "50c05030",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -458,9 +457,9 @@
   "totals": {
     "baseline_assertions": 187,
     "baseline_files": 18,
-    "mutsu_assertions": 108,
-    "parity_files": 7,
-    "regressed_files": 11
+    "mutsu_assertions": 87,
+    "parity_files": 8,
+    "regressed_files": 10
   },
   "version": "0.1.10"
 }

@@ -1,23 +1,27 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
       "JSON::Fast",
-      "Zef::Configuration"
+      "Zef::Configuration",
+      "as-cli-arguments",
+      "shorten-sub-commands"
     ],
-    "unresolved": [
-      "shorten"
-    ]
+    "unresolved": []
   },
   "dist": "EcosystemMakerFaker",
   "files": [],
+  "load": {
+    "EcosystemMakerFaker": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -28,7 +32,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/CO/ECOSYSTEMMAKERFAKER/6f94fa9851705cd35a75ea6a26a377844f45da0a.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

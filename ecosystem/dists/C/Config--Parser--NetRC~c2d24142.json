@@ -27,23 +27,22 @@
   "dist": "Config::Parser::NetRC",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Project META file is good",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.53,
+        "secs": 41.85,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 16.21,
+        "secs": 31.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,10 +54,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -69,13 +68,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONFIG_PARSER_NETRC/d2383a501c71f1eb9e8ee74e6c5b193964e7719b.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 2,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

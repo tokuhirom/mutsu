@@ -19,11 +19,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "is the type correct",
-        "nok": 3,
-        "ok": 7,
+        "first_failure": "is the subpath not present",
+        "nok": 2,
+        "ok": 8,
         "plan": 33,
-        "secs": 1.88,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 21.16,
+        "secs": 18.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-y1znx3ze/dist/PURL-0.0.15/t/tests/types/deb-test.json",
-        "nok": 1,
+        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fu5et7pm/dist/PURL-0.0.17/t/tests/types/deb-test.json",
+        "nok": 17,
         "ok": 1,
         "plan": 34,
-        "secs": 2.99,
+        "secs": 18.35,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.67,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.36,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.79,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,10 +91,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -103,15 +103,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/P/UR/PURL/08a3dd50e23f03a6ff9b58ec5d60e43ed5468b40.tar.gz"
+    "url": "https://360.zef.pm/P/UR/PURL/19b68b9221e44a98780a056a5b8e116e869e02c6.tar.gz"
   },
   "status": "partial",
   "totals": {
     "baseline_assertions": 100,
     "baseline_files": 3,
-    "mutsu_assertions": 41,
+    "mutsu_assertions": 42,
     "parity_files": 1,
     "regressed_files": 2
   },
-  "version": "0.0.15"
+  "version": "0.0.17"
 }

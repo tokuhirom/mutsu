@@ -13,27 +13,36 @@
   "dist": "Selkie::UI",
   "files": [
     {
-      "cmp": "no_baseline",
-      "path": "t/01-button-textinput.rakutest",
-      "raku": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
-        "ok": 0,
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$widget'; expected Selkie::Widget but got Nil (Nil)",
+        "nok": 2,
+        "ok": 1,
         "plan": null,
-        "secs": 240.11,
+        "secs": 10.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "die"
+      },
+      "path": "t/01-button-textinput.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 150.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     },
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'child'; expected Selkie::Widget, got Nil",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.43,
+        "secs": 9.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,7 +52,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 25.76,
+        "secs": 4.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,7 +65,7 @@
         "nok": 0,
         "ok": 4,
         "plan": null,
-        "secs": 14.65,
+        "secs": 10.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,7 +75,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.5,
+        "secs": 3.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +88,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 15.65,
+        "secs": 10.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,7 +98,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.1,
+        "secs": 3.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,11 +107,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
+        "first_failure": "X::Assignment::RO: cannot assign through .parent on non-instance",
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 14.29,
+        "secs": 10.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +121,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.6,
+        "secs": 3.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +134,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 5,
-        "secs": 14.71,
+        "secs": 9.8,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -135,7 +144,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.35,
+        "secs": 3.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +157,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 13.35,
+        "secs": 9.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +167,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.4,
+        "secs": 3.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,10 +223,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -230,11 +239,11 @@
   },
   "status": "red",
   "totals": {
-    "baseline_assertions": 50,
-    "baseline_files": 6,
-    "mutsu_assertions": 17,
+    "baseline_assertions": 71,
+    "baseline_files": 7,
+    "mutsu_assertions": 18,
     "parity_files": 0,
-    "regressed_files": 6
+    "regressed_files": 7
   },
   "version": "0.0.4"
 }

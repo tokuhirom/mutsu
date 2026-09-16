@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.1,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.23,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "root: 3 Num elements",
-        "nok": 7,
-        "ok": 9,
+        "nok": 0,
+        "ok": 16,
         "plan": 16,
-        "secs": 0.21,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/format.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.68,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -73,13 +72,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/C/CLDR%3A%3AList/CLDR%3A%3AList%3Aver%3C%2A%3E%3Aauth%3Cgithub%3Apatch%3E.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 20,
     "baseline_files": 2,
-    "mutsu_assertions": 13,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 20,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "*"
 }

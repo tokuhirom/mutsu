@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.43,
+        "secs": 10.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.18,
+        "secs": 11.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.0,
+        "secs": 7.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.33,
+        "secs": 8.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.56,
+        "secs": 7.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.17,
+        "secs": 8.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -123,7 +123,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.33,
+        "secs": 8.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -135,10 +135,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -147,7 +147,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/U/PD/UPDOWN/d8b86601c4dfbe2564d93da3fe16bc555426c464.tar.gz"
+    "url": "https://360.zef.pm/U/PD/UPDOWN/f75086e4dc68ee41ed660ccb3d496875b03a8a1d.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -157,5 +157,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.8"
+  "version": "0.0.9"
 }
