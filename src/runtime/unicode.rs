@@ -87,9 +87,18 @@ pub(super) fn check_unicode_property_with_args(prop: &str, args: &str, c: char) 
         .unwrap_or(trimmed);
     let prop_lower = prop.to_lowercase();
     match prop_lower.as_str() {
-        "numericvalue" | "numeric_value" | "nv" => check_numeric_value_property(args, c),
+        // NOT "nv": rakudo does not accept that abbreviation in a
+        // `<:prop(value)>` assertion at all (`<:Nv(1)>` never matches,
+        // `<:Numeric_Value(1)>` does) -- confirmed directly against `raku`,
+        // see issue #8486. Falling through to the generic branch below
+        // reconstructs `Nv<1>`, which the regex crate and `unimatch` both
+        // fail to resolve as a property, so it correctly never matches
+        // either instead of being special-cased false.
+        "numericvalue" | "numeric_value" => check_numeric_value_property(args, c),
         "name" | "na" => check_name_property(args, c),
-        "numerictype" | "numeric_type" | "nt" => {
+        // NOT "nt": same gap as "nv" above -- rakudo accepts
+        // `<:Numeric_Type(...)>` but not the `Nt` abbreviation.
+        "numerictype" | "numeric_type" => {
             let actual = crate::builtins::uniprop::unicode_numeric_type(c);
             actual.eq_ignore_ascii_case(args.trim())
         }
