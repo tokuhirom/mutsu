@@ -71,10 +71,11 @@ impl Interpreter {
         {
             return Some(result);
         }
-        // An Iterable user instance with its own `iterator` method routes the
-        // Any iteration methods through that iterator (the arm in
-        // `call_method_with_values`); a native impl (e.g. `flat`) would treat
-        // the instance as one opaque item instead, so decline it here.
+        // A user instance with its own `iterator` method routes the Any
+        // iteration methods through that iterator (the arm in
+        // `call_method_with_values`), whether or not it also composes
+        // `Iterable` (#8547); a native impl (e.g. `flat`) would treat the
+        // instance as one opaque item instead, so decline it here.
         if matches!(
             method_name.as_str(),
             "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
@@ -92,7 +93,6 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cn) = cn
-                && self.class_does_role(&cn, "Iterable")
                 && self.has_user_method(&cn, "iterator")
                 && !self.has_user_method(&cn, method_name.as_str())
             {

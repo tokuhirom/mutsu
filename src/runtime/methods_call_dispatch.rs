@@ -656,10 +656,20 @@ impl Interpreter {
         ) && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.as_str().to_string();
-            if !self.has_user_method(&cn, method)
-                && let Some(items) = self.try_iterable_instance_items(&target)?
-            {
-                return self.call_method_with_values(Value::array(items), method, args);
+            if !self.has_user_method(&cn, method) {
+                if let Some(items) = self.try_iterable_instance_items(&target)? {
+                    return self.call_method_with_values(Value::array(items), method, args);
+                }
+                // A PLAIN class (no `does Iterable`) with its own `iterator`
+                // still routes grep/map/first/sort/head/tail through it
+                // (#8547) — but NOT `flat`, which stays a single item unless
+                // the class also composes `Iterable` (measured against raku;
+                // see `try_user_iterator_items`'s doc comment).
+                if method != "flat"
+                    && let Some(items) = self.try_user_iterator_items(&target)?
+                {
+                    return self.call_method_with_values(Value::array(items), method, args);
+                }
             }
         }
         // Scalar containers are transparent for method dispatch (except .item,
