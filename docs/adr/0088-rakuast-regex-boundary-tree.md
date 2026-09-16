@@ -13,7 +13,8 @@
   angle-aggregate-interpolation, argumented-subrule, qualified-subrule, and
   argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
   argument, modified-method-call dynamic-argument, and quoted-method-call
-  dynamic-argument, and dynamic-quoted-method-name argument slices implemented
+  dynamic-argument, dynamic-quoted-method-name argument, and hash-index
+  dynamic-argument slices implemented
   2026-09-12 through
   2026-09-15;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1163,3 +1164,20 @@ dynamic argument expressions remain separate boundaries.
 The focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it
 pins the quoted-method and lexical-name tree, RakuAST EVAL lowering, direct
 grammar matching, and method-name reassignment between matches.
+
+## 45. Hash-index dynamic argument slice (2026-09-15)
+
+Associative argument expressions written as `%arguments{$key}` now retain
+Rakudo's `Postcircumfix::HashIndex` postfix beneath `ApplyPostfix`. The parser
+already kept the target, key expression, and associative dispatch bit, and the
+existing match-time subrule-argument evaluator already resolved the expression.
+The read and write directions now preserve that bit when a regex RakuAST tree
+crosses the existing matcher boundary.
+
+This slice is deliberately limited to brace-form hash indexes. The current
+internal expression does not retain whether an associative index used `{...}`
+or angle-bracket source spelling, so `LiteralHashIndex` remains a separate
+source-provenance boundary. No hash lookup occurs during `.AST` conversion or
+RakuAST lowering, and no matcher or VM path is added. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the AST shape, AST EVAL,
+grammar matching, and match-time key reassignment.
