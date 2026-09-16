@@ -1,7 +1,9 @@
 # ADR-0105: Promise resolution dispatches through the promise's scheduler, and a woken awaiter borrows the resuming worker's slot
 
-- Status: **Proposed** (design complete, not implemented; two open points for
-  the user in §7)
+- Status: **Accepted** (design final 2026-09-16 — the user delegated the two
+  open points to the design session under the premise "we are building the
+  fastest Raku interpreter", and §7 records how they were settled;
+  implementation not started, slices in §8)
 - Date: 2026-09-16
 - Context: [#8380](https://github.com/tokuhirom/mutsu/issues/8380) (the
   `Test::Time` / `Test::Scheduler` deadlock), whose 2026-09-16 direction
@@ -142,14 +144,25 @@ dispatcher running the drained waiters in order.
 
 `await` on a Planned promise registers a *wake waiter* and parks until that
 waiter fires, not until the status flips: the condvar broadcast in `keep`
-stops being the wake path, so the wake-up is a scheduler hop for every
-awaiter — main thread included, which is what Rakudo does (Appendix A,
-experiment 1, section 2). An already-resolved promise returns without a hop
-(Rakudo's `$handle.already`).
+stops being the wake path. With a user scheduler the wake-up is therefore a
+`.cue` hop for every awaiter — main thread included, which is what Rakudo
+does (Appendix A, experiment 1, section 2). An already-resolved promise
+returns without a hop (Rakudo's `$handle.already`).
 
-### D3. A woken awaiter borrows the resuming worker's slot
+**On a built-in scheduler the wake-up is not a pool task.** Nobody can
+observe a built-in cue task's completion, so a task exists only to order the
+wake behind the keeper's yield — and that ordering (D4) is cheaper to deliver
+directly: a keep on a pool worker appends the wake to that worker's
+*pending-wake list*, flushed as direct condvar notifies at the worker's next
+park, its task end, or the D4 tick; a keep from a non-worker thread notifies
+immediately, exactly as today. The `await` hot path thus pays no extra hop
+and no extra thread over the current implementation; only `.then`-style
+subscribers, which run user code and need a worker, stay pool tasks.
 
-The wake waiter, running inside the cue task, signals the parked thread and
+### D3. A woken awaiter borrows the resuming worker's slot — on user-scheduler wake-ups only, unbounded
+
+The wake waiter of a promise that has a **user** scheduler, running inside
+the `.cue` task that scheduler dispatched, signals the parked thread and
 then blocks — counted quiescent — until that thread next parks in *any*
 quiescent blocking wait, or finishes its task. "Parks" is detected at the
 chokepoint every blocking wait in mutsu already goes through for
@@ -166,22 +179,46 @@ race (mutsu's interpreted straight-line code is slower than Rakudo's, so the
 race it would otherwise have to win is one it loses under load). On wasm32
 the rendezvous is a no-op: the cooperative pump is already sequential.
 
-### D4. A task submitted from a running pool worker does not overtake its submitter
+Two scoping decisions, both made under the fastest-interpreter premise (§7):
+
+- **Only user-scheduler wake-ups rendezvous.** A cue task's completion is
+  observable only when a user scheduler ran it; that is where the rendezvous
+  buys a guarantee. A built-in wake (D2's pending-wake list) signals and
+  moves on: lending a worker there would park one thread per in-flight
+  resumed awaiter — doubling the thread count of a fan-in burst — for an
+  ordering Rakudo does not promise either (with idle workers, its pool runs
+  queued work in parallel with a resumed continuation).
+- **Unbounded.** The wait ends only at the resumed thread's next park or
+  task end. A resumed thread that busy-waits, with no `sleep`/`await`/lock
+  in the loop, for something that only happens after the cue task returns
+  hangs deterministically rather than flaking; `MUTSU_TRACE=pool` names the
+  lent worker and the borrowing thread after 5s. §5 records why a time bound
+  was rejected.
+
+### D4. A task submitted from a running pool worker does not overtake its submitter — worker-submitted work only
 
 `submit` from a pool worker with no idle worker enqueues without spawning.
 The task starts when the submitter yields: at its next park (the D3
-chokepoint — spawn for the queued backlog, today's eager starvation rule) or
-at its task end (the worker dequeues it itself). A supervisor tick (10ms, on
-a gc-helper thread) spawns for a CPU-bound submitter that does neither.
-Submits from a non-worker thread — main, the timer driver, a `Thread.start`
-thread — keep today's immediate growth.
+chokepoint — spawn for the whole queued backlog, today's eager starvation
+rule, so a worker that fans out and then `await`s gets its children started
+at the `await` with no delay) or at its task end (the worker dequeues it
+itself). A supervisor tick (10ms, the cadence Rakudo uses; hosted on the
+existing timer-driver thread if practical, else a gc-helper thread) spawns
+for a CPU-bound submitter that does neither, and flushes D2's pending-wake
+lists on the same tick. Submits from a non-worker thread — main, the timer
+driver, a `Thread.start` thread — keep today's immediate growth.
 
 This is F3 narrowed to the property that carries the ordering ("nothing
 overtakes its still-running submitter"), not a port of Rakudo's supervisor:
 main-thread fan-outs (`hyper`/`race` batches, `await map { start … }`) and
-nested `start`+`await` chains (a park spawns immediately) keep their current
-parallelism. It is what turns §2.2(a) from a 2-in-30 loss into Rakudo's
-30/30.
+nested `start`+`await` chains keep their current parallelism, and the
+deferral applies to every kind of worker-submitted work — `cue`, `start`,
+`.then` dispatch and D2's wakes alike — because each is a user-visible
+ordering of the same class as experiment 3 (`$p.then({ is $flag, 1 })`
+after `$p.keep; $flag = 1` is the `.then` spelling of it). It is what turns
+§2.2(a) from a 2-in-30 loss into Rakudo's 30/30. The full supervisor was
+rejected (§5): it would tax exactly the fan-outs a fast interpreter is
+measured on.
 
 ### D5. ADR-0020 stands; fork (b) reverts to a perf question
 
@@ -220,7 +257,15 @@ correctness driver.
   load-dependent (a resumed block slower than the bound under CI load loses
   it), which is precisely the flaky class this ADR exists to remove. The spin
   shape is a deterministic hang instead, diagnosable via a `MUTSU_TRACE=pool`
-  line after 5s. Open point §7.1.
+  line after 5s. Settled in §7.
+- **Rendezvous on built-in wake-ups too** (one invariant, "a resumed awaiter
+  always occupies a slot"). Rejected under the fastest-interpreter premise:
+  it parks one worker per in-flight resumed awaiter on the hottest
+  concurrency path, for an ordering nobody can observe on the built-in pool
+  and that Rakudo does not promise there. Settled in §7.
+- **Built-in wake-ups as pool tasks** (D2 uniform for every scheduler).
+  Rejected: an extra queue hop on every `await` wake-up buys nothing a
+  deferred direct notify does not, and costs a worker dequeue per wake.
 - **Port Rakudo's whole supervisor** (start at zero workers, grow only by
   tick). Rejected: it also delays main-thread fan-outs and every level of a
   nested `start` chain by ~10ms — ADR-0020 §2's 200 × `start { sleep 2 }`
@@ -235,13 +280,15 @@ correctness driver.
 
 ## 6. Consequences
 
-- **One extra pool hop on every `await` wake-up** (already true for
-  `.then`). `nested-500` and the S17 suite times are the regression guard;
-  the implementing PR measures before/after (numbers into documents only
-  from the bench CI).
-- **One parked worker per in-flight resumed awaiter** (D3) — the slot
-  Rakudo's continuation would occupy. The queue never starves on it: D4's
-  tick and the park-spawn rule cover queued work.
+- **The `await` hot path is unchanged in hops and threads.** A built-in
+  wake-up is a direct notify, deferred to the keeper's yield only when the
+  keeper is a pool worker (D2); the `.cue` hop and the D3 lent worker exist
+  only on user-scheduler promises. `nested-500` and the S17 suite times are
+  the regression guard; the implementing PR measures before/after (numbers
+  into documents only from the bench CI).
+- **One parked worker per in-flight resumed awaiter of a user-scheduler
+  promise** (D3) — the slot Rakudo's continuation would occupy. The queue
+  never starves on it: D4's tick and the park-spawn rule cover queued work.
 - **Up to 10ms of latency** for a task submitted from a CPU-bound worker
   that neither parks nor finishes — parity with Rakudo (F3).
 - **New failure surface.** The D3 hang on a spin-without-park (§5); lock
@@ -255,14 +302,26 @@ correctness driver.
   stays 78/83 under this ADR: its five failures are two unrelated tickets
   (§8). `Concurrent::Progress` and `SSH::LibSSH` re-measured after S5.
 
-## 7. Open points for the user
+## 7. The two open points, settled (2026-09-16)
 
-1. **D3 bounded or unbounded.** Recommended: unbounded (deterministic; a
-   diagnostic after 5s), per §5. A bound is a one-constant change if a real
-   distribution hits the spin shape.
-2. **D4 scope.** Recommended: worker-submitted tasks only, as written. The
-   full supervisor is the alternative if parity on ADR-0020 §2's
-   serialization row is ever wanted.
+The user delegated both to the design session with one premise: mutsu is
+being built as the fastest Raku interpreter. Under it the rule is "buy
+determinism only where it is observable, and add nothing to the hot path".
+
+1. **D3 is unbounded, and only user-scheduler wake-ups rendezvous.** A time
+   bound would make the guarantee load-dependent (flaky), so a spin-without-
+   park is a deterministic, traceable hang instead; and lending a worker on
+   built-in wake-ups would park a thread per resumed awaiter on the hottest
+   concurrency path for an ordering nobody can observe there. A bound remains
+   a one-constant change if a real distribution ever hits the spin shape.
+2. **D4 covers worker-submitted work only, with a 10ms tick.** The full
+   supervisor would tax main-thread fan-outs and nested `start` chains by
+   ~10ms per level — the cost Rakudo pays on ADR-0020 §2's 200 ×
+   `start { sleep 2 }` row — for no ordering the tests need. Built-in
+   wake-ups ride the same yield points as a deferred notify (D2), so the
+   ordering comes for free where a keeper yields promptly (the common case:
+   a keep is usually the last thing a task does) and costs at most one tick
+   where it does not.
 
 ## 8. Implementation plan
 
@@ -276,11 +335,13 @@ order without stacking.
   today.
 - **S1 — D1.** The field, every binding site, the accessor.
 - **S2 — D2.** Resolution via the scheduler; `await` parks on its own wake
-  waiter; the broadcast wake path removed.
-- **S3 — D3.** The rendezvous, hooked at the quiescent chokepoint and the
-  task boundary; wasm32 no-op; the trace diagnostic.
+  waiter; the broadcast wake path removed; the per-worker pending-wake list
+  for built-in wake-ups (flushed at park / task end; the tick arrives in S4).
+- **S3 — D3.** The rendezvous on user-scheduler wake-ups, hooked at the
+  quiescent chokepoint and the task boundary; wasm32 no-op; the
+  `MUTSU_TRACE=pool` diagnostic.
 - **S4 — D4.** Deferred start for worker-submitted tasks; park-spawn; the
-  supervisor tick.
+  10ms tick (spawn + pending-wake flush).
 - **S5 — verify and record.** The issue's reduction; `t/01-tdd.t` under
   `scripts/flake-repro.sh` load (the CI-load discriminator); experiment 3 at
   30/30; regenerate the `Test::Time` and `Test::Scheduler` ecosystem records;

@@ -253,7 +253,7 @@ from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whit
       thread consumption under heavy concurrency, so start this only on a measured trigger and an
       updated ADR. **The [#8380](https://github.com/tokuhirom/mutsu/issues/8380) `Test::Scheduler`
       deadlock is NOT that trigger**: [ADR-0105](docs/adr/0105-promise-resolution-dispatches-through-the-promise-scheduler.md)
-      (Proposed, 2026-09-16) measured that Rakudo's continuation is not what orders it, and
+      (Accepted 2026-09-16, not yet implemented) measured that Rakudo's continuation is not what orders it, and
       scopes the actual fix — scheduler-routed promise resolution, a woken awaiter borrowing the
       resuming worker's slot, and no task overtaking its running submitter — as four bounded
       slices that leave this axis untouched.
