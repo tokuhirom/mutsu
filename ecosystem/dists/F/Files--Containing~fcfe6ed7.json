@@ -1,24 +1,50 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
       "Lines::Containing",
+      "has-word",
       "hyperize",
       "paths"
     ],
-    "unresolved": [
-      "has"
-    ]
+    "unresolved": []
   },
   "dist": "Files::Containing",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 3.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Files::Containing": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "10a39df9",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -29,12 +55,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/IL/FILES_CONTAINING/5b38675ea45d0a41d90f4ff901eeee0d37be5a68.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 5,
+    "baseline_files": 1,
+    "mutsu_assertions": 5,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.17"
