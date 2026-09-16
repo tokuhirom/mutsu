@@ -75,6 +75,18 @@ pub(crate) struct PatternDerived {
     /// A short vector rather than a map: one pattern is scanned from a handful
     /// of packages at most, and a stale `TOKEN_DEFS_GEN` clears the lot.
     pub(crate) prefilter_in_pkg: std::sync::Mutex<Vec<PkgPrefilter>>,
+    /// Whether this pattern's subtree contains a backreference anywhere
+    /// inside it (`atom_contains_backref`'s per-pattern memo). A pure
+    /// function of the pattern shape, asked on every match/backtrack attempt
+    /// of the atom that owns this pattern (once for every `<?{ }>`-gated
+    /// backtrack retry in #8510's shape), so a full re-walk per call is pure
+    /// waste once this pattern's own answer is known.
+    pub(crate) contains_backref: std::sync::OnceLock<bool>,
+    /// This pattern's own positional-capture-group count (`count_capture_groups`'s
+    /// per-pattern memo). Also a pure function of the pattern shape, re-walked
+    /// on every group match otherwise — same #8510 backtrack-retry cost shape
+    /// as `contains_backref` above.
+    pub(crate) capture_group_count: std::sync::OnceLock<usize>,
 }
 
 /// One package's entry in [`PatternDerived::prefilter_in_pkg`].
