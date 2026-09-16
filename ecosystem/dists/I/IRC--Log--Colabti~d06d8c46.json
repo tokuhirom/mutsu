@@ -1,23 +1,73 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
       "Array::Sorted::Util",
-      "IRC::Log"
+      "IRC::Log",
+      "has-word"
     ],
-    "unresolved": [
-      "has"
-    ]
+    "unresolved": []
   },
   "dist": "IRC::Log::Colabti",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot convert string to native integer type 'int'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 76,
+        "plan": 76,
+        "secs": 4.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot convert string to native integer type 'int'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-search.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "IRC::Log::Colabti": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "10a39df9",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -28,13 +78,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/RC/IRC_LOG_COLABTI/1a69532335e2a7d39768942d7df3cbc810b142c5.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 122,
+    "baseline_files": 2,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.0.53"
 }

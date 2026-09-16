@@ -1,23 +1,23 @@
 {
-  "assertion_parity": 67.3,
-  "baseline_assertions": 166940,
-  "baseline_files": 3765,
-  "dist_parity": 45.6,
+  "assertion_parity": 67.1,
+  "baseline_assertions": 167740,
+  "baseline_files": 3801,
+  "dist_parity": 45.7,
   "distributions": 1630,
-  "file_parity": 57.5,
-  "generated": "2026-09-15",
-  "graded_distributions": 1121,
-  "green_distributions": 511,
-  "mutsu_assertions": 112317,
-  "parity_files": 2163,
+  "file_parity": 57.4,
+  "generated": "2026-09-16",
+  "graded_distributions": 1131,
+  "green_distributions": 517,
+  "mutsu_assertions": 112614,
+  "parity_files": 2181,
   "schema": 1,
   "status": {
-    "blocked_dep": 43,
+    "blocked_dep": 29,
     "blocked_load": 201,
-    "green": 511,
+    "green": 517,
     "no_baseline": 258,
-    "partial": 309,
-    "red": 301,
-    "skipped": 7
+    "partial": 311,
+    "red": 303,
+    "skipped": 11
   }
 }
