@@ -435,6 +435,8 @@ fn run_main() {
     if no_precomp {
         interpreter.set_precomp_enabled(false);
     }
+    let e_source = (program_name == "-e").then_some(input.as_str());
+    interpreter.set_compiling_options(e_source, &lib_paths, &preload_modules);
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }

@@ -42,6 +42,7 @@ pub(crate) const BASE_TIER_DYNAMICS: &[&str] = &[
     "*PROGRAM-NAME",
     "*REPO",
     "*SCHEDULER",
+    "%*COMPILING",
 ];
 
 impl Interpreter {

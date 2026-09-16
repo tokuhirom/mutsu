@@ -616,6 +616,50 @@ impl Interpreter {
             .insert("@*ARGS".to_string(), Value::real_array(args));
     }
 
+    /// Seed `%*COMPILING<%?OPTIONS>` with mutsu's own subset of the CLI
+    /// options this compilation was invoked with (issue #8572). Called once
+    /// from `main.rs`, between `Interpreter::new()` and `run()`, the same way
+    /// `set_program_path`/`set_args` seed `$*PROGRAM`/`@*ARGS` — so
+    /// `hoist_builtin_dynamics` (`BASE_TIER_DYNAMICS` in `io_env.rs`) moves it
+    /// into the shared base tier the same way.
+    ///
+    /// Not a full port of rakudo's `%?OPTIONS`: it only reports flags mutsu
+    /// itself parses (`-e`, `-I`, `-M`) plus the always-present `encoding`
+    /// (mutsu has no alternate source encodings, so this is always `utf8`).
+    /// `-I`/`-M` collapse a single value to a `Str` and multiple values to a
+    /// `List`, matching rakudo's own single-vs-repeated-flag behavior.
+    /// mutsu has no nested-compilation-unit concept, so unlike rakudo, a
+    /// nested `EVAL` sees the same top-level `%*COMPILING` rather than one
+    /// scoped to its own source.
+    pub fn set_compiling_options(
+        &mut self,
+        e_source: Option<&str>,
+        lib_paths: &[String],
+        preload_modules: &[String],
+    ) {
+        fn one_or_list(values: &[String]) -> Value {
+            match values {
+                [single] => Value::str(single.clone()),
+                _ => Value::real_array(values.iter().map(|s| Value::str(s.clone())).collect()),
+            }
+        }
+        let mut options = ValueMap::default();
+        if let Some(source) = e_source {
+            options.insert("e".to_string(), Value::str(source.to_string()));
+        }
+        if !lib_paths.is_empty() {
+            options.insert("I".to_string(), one_or_list(lib_paths));
+        }
+        if !preload_modules.is_empty() {
+            options.insert("M".to_string(), one_or_list(preload_modules));
+        }
+        options.insert("encoding".to_string(), Value::str("utf8".to_string()));
+        let mut compiling = ValueMap::default();
+        compiling.insert("%?OPTIONS".to_string(), Value::hash(options));
+        self.env
+            .insert("%*COMPILING".to_string(), Value::hash(compiling));
+    }
+
     /// Add a search path (`-I`, `MUTSULIB`) to the chain, keeping the default
     /// site repository last. `Interpreter::new` registers that repository before
     /// the caller ever sees the interpreter, so a plain push would leave every
