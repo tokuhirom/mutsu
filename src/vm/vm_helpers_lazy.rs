@@ -1213,6 +1213,23 @@ impl Interpreter {
             return self.extend_closure_sequence(list, usize::MAX);
         }
 
+        // A prior BOUNDED pull (`force_lazy_list_vm_n`, e.g. a single-element
+        // index read) can leave the gather coroutine suspended mid-body, with
+        // the cache holding only a prefix. The bounded/resumable pull path
+        // already knows how to resume from that suspended state; delegate to
+        // it (with an effectively unbounded `needed`) instead of treating the
+        // partial cache as complete, or restarting the body from `ip = 0`
+        // below and losing every element already taken past it (#8512).
+        if let Some(ref coro_mutex) = list.coroutine {
+            let pending = {
+                let coro = coro_mutex.lock().unwrap();
+                !coro.finished && (coro.ip > 0 || coro.started)
+            };
+            if pending {
+                return self.force_lazy_list_vm_n_inner(list, usize::MAX);
+            }
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
