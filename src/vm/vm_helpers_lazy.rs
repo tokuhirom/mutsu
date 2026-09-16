@@ -1053,21 +1053,6 @@ impl Interpreter {
         // not whichever routine is forcing it now — re-push the context the
         // gather captured at creation.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
-        // A gather can be forced by a different routine after its creator has
-        // returned. Keep bare routine lookup in the creating package.
-        let _pkg_guard =
-            list.env
-                .get("__mutsu_gather_package")
-                .and_then(|value| match value.view() {
-                    ValueView::Str(package)
-                        if !package.is_empty()
-                            && package.as_str() != "GLOBAL"
-                            && package.as_str() != self.current_package() =>
-                    {
-                        Some(self.enter_package_guarded(package.to_string()))
-                    }
-                    _ => None,
-                });
         // Private compunit routines are resolved from the executing unit, not
         // the consuming caller's unit.
         let saved_unit = list
@@ -1466,21 +1451,6 @@ impl Interpreter {
         let saved_readonly = self.take_readonly_state();
         // See `force_lazy_list_vm`: the body's `samewith` is lexical.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
-        // Bounded lazy pulls have the same declaration-package requirement as
-        // strict forcing above.
-        let _pkg_guard =
-            list.env
-                .get("__mutsu_gather_package")
-                .and_then(|value| match value.view() {
-                    ValueView::Str(package)
-                        if !package.is_empty()
-                            && package.as_str() != "GLOBAL"
-                            && package.as_str() != self.current_package() =>
-                    {
-                        Some(self.enter_package_guarded(package.to_string()))
-                    }
-                    _ => None,
-                });
         let saved_unit = list
             .env
             .get("__mutsu_gather_unit")

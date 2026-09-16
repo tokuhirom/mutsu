@@ -1,5 +1,3 @@
-unit module GatherModuleLexicalHelper;
-
 my sub helper($value) { $value * 2 }
 
 sub gathered-double($value) is export {
@@ -7,3 +5,5 @@ sub gathered-double($value) is export {
         take helper($value);
     }
 }
+
+unit module GatherModuleLexicalHelper;

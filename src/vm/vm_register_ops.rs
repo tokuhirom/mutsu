@@ -167,13 +167,6 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
-            // A gather's body can be forced after its creating routine has
-            // restored the caller's package. Preserve the declaration package
-            // so bare calls retain their lexical package lookup.
-            env.insert(
-                "__mutsu_gather_package".to_string(),
-                Value::str(self.current_package()),
-            );
             env.insert(
                 "__mutsu_gather_unit".to_string(),
                 Value::str(self.current_unit.as_str().to_string()),
