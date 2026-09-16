@@ -586,9 +586,43 @@ impl Value {
     /// kind here keeps the fix to the value kinds the ADR actually measured.
     pub fn itemize_for_element_store(self) -> Value {
         match self.view() {
+            // A `Seq` records its `$`/element container on the HANDLE (a
+            // second `SeqView` tag over the same reification core), exactly
+            // like `itemize_scalar_store_value`'s plain-scalar `$x = SEQ`
+            // store — NOT as a `Scalar` wrapper like `.item()`'s fallback
+            // arm below applies. Wrapping in `Value::scalar` drops the
+            // NaN-boxed `Kind::Seq` tag, so `is_seq_value()` (a pure tag
+            // probe) reports `false` for a value that is still logically a
+            // Seq, and the reify-before-stringify guard in
+            // `coerce_stringy_operand` never runs: `eq`/interpolation on a
+            // still-deferred Seq stored into an Array/Hash element then
+            // silently reads the empty not-yet-pulled generation (found via
+            // Net::Netmask's `enumerate(:nets)` results compared through the
+            // vendored `Test::is`). `mark_itemized()` matters too: a bare
+            // `%h<k> .= unique;` statement discards the assignment
+            // expression's value in SINK context, and `SeqBody::sink_inner`
+            // only exempts a body the `itemized` flag names — the same flag
+            // the plain-scalar store sets via its own direct call. Without
+            // it, the implicit sink poisons the SAME shared core the
+            // element just stored, so the very next read throws
+            // `X::Seq::Consumed` even though this is its first real read
+            // (`t/lang/operators/dot-eq.t`'s `%a<foo>.=unique`).
+            //
+            // The renderer side of this distinction — a real-array
+            // element's `.raku` must still show the BARE form
+            // (`[(7, 8).Seq,]`, not `[$((7, 8).Seq),]`) — is
+            // `raku_value_as_element`'s own `SeqView::ItemSeq` arm, not this
+            // itemization.
+            ValueView::Seq(body) => match body.view() {
+                SeqView::ItemList | SeqView::ItemSeq => self,
+                SeqView::List => Value::seq_body(body.as_item_list_view()),
+                SeqView::Seq => {
+                    body.mark_itemized();
+                    Value::seq_body(body.as_item_seq_view())
+                }
+            },
             ValueView::Array(..)
             | ValueView::Hash(_)
-            | ValueView::Seq(_)
             | ValueView::Range(..)
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)

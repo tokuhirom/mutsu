@@ -98,7 +98,11 @@ impl Interpreter {
         // aggregate stored into it itemizes (`%h{$k} = [1,2]` -> `$[1, 2]`).
         match loan_env!(
             self,
-            assign_hash_elem_to_shared_var(&var_name, key, Self::itemize_value(val.clone()))
+            assign_hash_elem_to_shared_var(
+                &var_name,
+                key,
+                Self::itemize_value_for_element_store(val.clone())
+            )
         ) {
             Some(_) => {
                 self.stack.push(val);
@@ -192,7 +196,11 @@ impl Interpreter {
         // ADR-0040 slice 1: same itemize-at-store as the hash twin above.
         match loan_env!(
             self,
-            assign_array_elem_to_shared_var(&var_name, idx, Self::itemize_value(val.clone()))
+            assign_array_elem_to_shared_var(
+                &var_name,
+                idx,
+                Self::itemize_value_for_element_store(val.clone())
+            )
         ) {
             Some(_) => {
                 self.stack.push(val);
@@ -402,7 +410,7 @@ impl Interpreter {
                         Value::hash_insert_through(
                             &mut crate::gc::Gc::make_mut(hash).map,
                             key,
-                            Self::itemize_value(val.clone()),
+                            Self::itemize_value_for_element_store(val.clone()),
                         );
                     });
                 }

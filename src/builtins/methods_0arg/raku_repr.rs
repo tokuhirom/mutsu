@@ -545,6 +545,14 @@ fn raku_value_as_element(v: &Value) -> String {
             raku_value(&v.clone().with_hash_itemized(false))
         }
         ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => raku_value(inner),
+        // A real-array element's Seq is itemized on the HANDLE (`SeqView::
+        // ItemSeq`, ADR-0034), not wrapped in `Scalar` like the arm above —
+        // see `itemize_value_for_element_store`. Same bare-render rule:
+        // render through a de-itemized handle over the same reification
+        // core so the element still reads `(7, 8).Seq`, not `$((7, 8).Seq)`.
+        ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemSeq => {
+            raku_value(&Value::seq_body(body.as_bare_seq_view()))
+        }
         // A scalar-held Array/Hash subclass is expanded to a raw `.raku`
         // placeholder before the outer array is rendered. Real `@` elements
         // decontainerize that wrapper, just as they do for an itemized native

@@ -142,13 +142,19 @@ impl Interpreter {
         // brand-new. Each was then "written back" from its stale `env` value —
         // the declaration seed `Any`, because the slot is authoritative — wiping
         // every caller lexical declared before the call (PLAN 8.22).
+        // A `where` block that itself throws (`where { ... or die 'msg' }`) must
+        // propagate that exception verbatim rather than being flattened to a
+        // generic "constraint not met" failure — `unwrap_or(false)` used to
+        // swallow it here, discarding the custom message
+        // (Net::Netmask's `dec2ip` sub, whose `where` clause dies with
+        // "not in IPv4 range 0-4294967295"). The topic must still be restored
+        // on the error path, so the `?` is deferred until after that restore.
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, &bound_val);
                 let r = self
                     .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy())
-                    .unwrap_or(false);
+                    .map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -158,19 +164,17 @@ impl Interpreter {
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
                 self.eval_block_value_recording_writes(&[Stmt::Expr(where_expr.as_ref().clone())])
                     .map(|v| v.truthy())
-                    .unwrap_or(false)
             }
             expr => self
                 .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
-                .map(|v| self.smart_match(&bound_val, &v))
-                .unwrap_or(false),
+                .map(|v| self.smart_match(&bound_val, &v)),
         };
         if let Some(previous) = saved_topic {
             self.env.insert("_".to_string(), previous);
         } else {
             self.env.remove("_");
         }
-        if !ok {
+        if !ok? {
             return Err(Self::parameter_where_binding_error(
                 pd,
                 &bound_val,
@@ -195,13 +199,15 @@ impl Interpreter {
         };
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), value.clone());
+        // See `check_named_param_where_constraint`'s comment on this same
+        // shape: a `where` block that throws must propagate that exception
+        // rather than being flattened to a generic constraint failure.
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
                 let r = self
                     .eval_block_value_recording_writes(body)
-                    .map(|v| v.truthy())
-                    .unwrap_or(false);
+                    .map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -210,15 +216,14 @@ impl Interpreter {
             }
             expr => self
                 .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
-                .map(|v| self.smart_match(value, &v))
-                .unwrap_or(false),
+                .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
             self.env.insert("_".to_string(), previous);
         } else {
             self.env.remove("_");
         }
-        if !ok {
+        if !ok? {
             return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
         }
         Ok(())
@@ -255,13 +260,15 @@ impl Interpreter {
         }
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), value.clone());
+        // See `check_named_param_where_constraint`'s comment on this same
+        // shape: a `where` block that throws must propagate that exception
+        // rather than being flattened to a generic constraint failure. Both
+        // the topic and the shadowed param binding must still be restored on
+        // the error path, so the `?` is deferred until after those restores.
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, value);
-                let r = self
-                    .eval_block_value(body)
-                    .map(|v| v.truthy())
-                    .unwrap_or(false);
+                let r = self.eval_block_value(body).map(|v| v.truthy());
                 for k in ph_keys {
                     self.unmark_readonly(&k);
                     self.env.remove(&k);
@@ -274,12 +281,10 @@ impl Interpreter {
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
                 self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
                     .map(|v| v.truthy())
-                    .unwrap_or(false)
             }
             expr => self
                 .eval_block_value(&[Stmt::Expr(expr.clone())])
-                .map(|v| self.smart_match(value, &v))
-                .unwrap_or(false),
+                .map(|v| self.smart_match(value, &v)),
         };
         if let Some(previous) = saved_topic {
             self.env.insert("_".to_string(), previous);
@@ -293,7 +298,7 @@ impl Interpreter {
                 self.env.remove(binding_name);
             }
         }
-        if !ok {
+        if !ok? {
             return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
         }
         Ok(())
@@ -1652,13 +1657,14 @@ impl Interpreter {
                     if let Some(where_expr) = &pd.where_constraint {
                         let saved_topic = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), capture_value.clone());
+                        // See `check_named_param_where_constraint`'s comment
+                        // on this same shape: a `where` block that throws
+                        // must propagate that exception rather than being
+                        // flattened to a generic constraint failure.
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &capture_value);
-                                let r = self
-                                    .eval_block_value(body)
-                                    .map(|v| v.truthy())
-                                    .unwrap_or(false);
+                                let r = self.eval_block_value(body).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
@@ -1667,15 +1673,14 @@ impl Interpreter {
                             }
                             expr => self
                                 .eval_block_value(&[Stmt::Expr(expr.clone())])
-                                .map(|v| self.smart_match(&capture_value, &v))
-                                .unwrap_or(false),
+                                .map(|v| self.smart_match(&capture_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
                             self.env.insert("_".to_string(), previous);
                         } else {
                             self.env.remove("_");
                         }
-                        if !ok {
+                        if !ok? {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &capture_value,
@@ -1969,13 +1974,14 @@ impl Interpreter {
                     if let Some(where_expr) = &pd.where_constraint {
                         let saved_topic = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), slurpy_value.clone());
+                        // See `check_named_param_where_constraint`'s comment
+                        // on this same shape: a `where` block that throws
+                        // must propagate that exception rather than being
+                        // flattened to a generic constraint failure.
                         let ok = match where_expr.as_ref() {
                             Expr::AnonSub { body, .. } => {
                                 let ph_keys = self.bind_where_placeholders(body, &slurpy_value);
-                                let r = self
-                                    .eval_block_value(body)
-                                    .map(|v| v.truthy())
-                                    .unwrap_or(false);
+                                let r = self.eval_block_value(body).map(|v| v.truthy());
                                 for k in ph_keys {
                                     self.unmark_readonly(&k);
                                     self.env.remove(&k);
@@ -1984,15 +1990,14 @@ impl Interpreter {
                             }
                             expr => self
                                 .eval_block_value(&[Stmt::Expr(expr.clone())])
-                                .map(|v| self.smart_match(&slurpy_value, &v))
-                                .unwrap_or(false),
+                                .map(|v| self.smart_match(&slurpy_value, &v)),
                         };
                         if let Some(previous) = saved_topic {
                             self.env.insert("_".to_string(), previous);
                         } else {
                             self.env.remove("_");
                         }
-                        if !ok {
+                        if !ok? {
                             return Err(Self::parameter_where_binding_error(
                                 pd,
                                 &slurpy_value,

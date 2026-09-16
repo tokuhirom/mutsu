@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 16;
 
 # Block form
 {
@@ -48,4 +48,17 @@ plan 13;
 
     is describe(5),  "positive int", "where-constrained multi chosen over unconstrained";
     is describe(-3), "other int",    "unconstrained multi chosen when where fails";
+}
+
+# A `where` block that itself throws (`or die 'custom message'`) must
+# propagate that exact exception rather than being flattened into a generic
+# "constraint not met" failure (found via Net::Netmask's `dec2ip`, whose
+# `where` clause dies with a specific out-of-range message).
+{
+    sub in-range(\n where { 0 <= $_ <= 10 or die 'out of the 0-10 range' }) { n }
+    is in-range(5), 5, "where block's own truthy path still returns normally";
+    dies-ok { in-range(20) }, "where block's own die still dies";
+    my $msg = try { in-range(20); "" };
+    is $!.message, 'out of the 0-10 range',
+        "where block's custom die message propagates verbatim";
 }

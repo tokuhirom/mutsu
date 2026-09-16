@@ -974,6 +974,49 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::itemize_value`] for a genuine `Array`/`Hash` ELEMENT STORE
+    /// (`%h<k> = val`, `@a[i] = val` — ADR-0040 slice 1), where a `Seq`
+    /// value needs different handling than `itemize_value`'s general one.
+    ///
+    /// `itemize_value`'s `Seq` arm wraps it in a `Value::scalar` — correct
+    /// for most callers (e.g. array-LITERAL construction, `my @a =
+    /// (1..5).Seq,;`, whose pinned `.raku` rendering must NOT show the `$`
+    /// marker for a Seq the way it does for List/Array/Hash — measured
+    /// against raku, `t/collections/array/array-single-listy-raku-comma.t`
+    /// row 16). But a genuine element STORE needs the `Seq` kept as a `Seq`
+    /// (tagged `ItemSeq`, like `itemize_scalar_store_value`'s plain-scalar
+    /// `$x = SEQ` already does), not wrapped in `Scalar`: the wrapper drops
+    /// the NaN-boxed `Kind::Seq` tag, so `is_seq_value()` (a pure tag probe)
+    /// reports `false` for a value that is still logically a Seq, and the
+    /// reify-before-stringify guard in `coerce_stringy_operand` never runs —
+    /// `eq`/interpolation on a still-deferred Seq stored into an element then
+    /// silently reads the empty not-yet-pulled generation instead of
+    /// reifying first (found via Net::Netmask's `enumerate(:nets)` results
+    /// compared through `Test::is`).
+    ///
+    /// `mark_itemized()` must run too: a bare `%h<k> .= unique;` statement
+    /// discards the assignment expression's value in SINK context, and
+    /// `SeqBody::sink_inner` only exempts a body the `itemized` flag names
+    /// (checked separately from the `ItemSeq` view tag this itemizes to) —
+    /// the same flag the plain-scalar `$s = SEQ` store sets via its own
+    /// direct `mark_itemized()` call. Without it, the implicit sink poisons
+    /// the SAME shared core the element just stored, so the very next read
+    /// throws `X::Seq::Consumed` even though this is its first real read
+    /// (`t/lang/operators/dot-eq.t`'s `%a<foo>.=unique`).
+    pub(crate) fn itemize_value_for_element_store(val: Value) -> Value {
+        if let ValueView::Seq(body) = val.view() {
+            return match body.view() {
+                crate::value::SeqView::ItemList | crate::value::SeqView::ItemSeq => val,
+                crate::value::SeqView::List => Value::seq_body(body.as_item_list_view()),
+                crate::value::SeqView::Seq => {
+                    body.mark_itemized();
+                    Value::seq_body(body.as_item_seq_view())
+                }
+            };
+        }
+        Self::itemize_value(val)
+    }
+
     /// Itemize an aggregate VALUE stored into a `$` scalar container by
     /// assignment (`=`), so a later read reflects the Scalar container:
     /// `my $x = [1,2,3]; $x.raku` is `$[1, 2, 3]` (rakudo checks
