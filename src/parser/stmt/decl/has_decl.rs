@@ -246,6 +246,47 @@ fn is_native_scalar_type(type_constraint: &str) -> bool {
     )
 }
 
+/// Parse the parenthesized argument list of a custom attribute trait call,
+/// `is traitname(a, b, c)`. A single argument becomes that argument's own
+/// `Expr` (`is doc('barks')` binds the bare Str). Two or more become an
+/// `Expr::ArrayLiteral`: Raku itemizes a multi-value trait call's arguments
+/// into one List when it binds to a scalar named parameter, e.g.
+/// `is xml-namespace('urn', 'prefix')` against `:$xml-namespace!` sees
+/// `$("urn", "prefix")`, not just the first value. Returns `None` (rather
+/// than a fatal parse error) on anything that does not fully parse as a
+/// comma-separated expression list, matching the pre-existing conservative
+/// fallback for a single unparseable argument.
+fn parse_trait_call_args(inner: &str) -> Option<Expr> {
+    let inner = inner.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    let (leftover, first) = expression(inner).ok()?;
+    let (leftover, _) = ws(leftover).ok()?;
+    if leftover.is_empty() {
+        return Some(first);
+    }
+    let mut items = vec![first];
+    let mut rest = leftover;
+    while let Some(after_comma) = rest.strip_prefix(',') {
+        let (r, _) = ws(after_comma).ok()?;
+        if r.is_empty() {
+            // Trailing comma: `is trait(a, b,)`.
+            rest = r;
+            break;
+        }
+        let (r, expr) = expression(r).ok()?;
+        let (r, _) = ws(r).ok()?;
+        items.push(expr);
+        rest = r;
+    }
+    if rest.is_empty() {
+        Some(Expr::ArrayLiteral(items))
+    } else {
+        None
+    }
+}
+
 /// Parse `has` attribute declaration.
 pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `HAS` is NativeCall's *embedded* attribute declarator: the same
@@ -649,13 +690,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         }
                     }
                     let inner = stripped[..idx].trim();
-                    let mut trait_arg: Option<Expr> = None;
-                    if !inner.is_empty()
-                        && let Ok((leftover, arg_expr)) = expression(inner)
-                        && leftover.trim().is_empty()
-                    {
-                        trait_arg = Some(arg_expr);
-                    }
+                    let trait_arg = parse_trait_call_args(inner);
                     unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
                     rest = &stripped[idx + 1..];
                     let (r2, _) = ws(rest)?;
