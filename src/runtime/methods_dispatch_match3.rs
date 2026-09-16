@@ -826,7 +826,14 @@ impl Interpreter {
     /// Dispatch the "eager" method.
     fn dispatch_eager_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(list) = target.view() {
-            let items = self.force_lazy_list_bridge(&list)?;
+            // Route through the VM force path (falls back to the interpreter
+            // bridge itself when there is no compiled code): a prior BOUNDED
+            // pull (e.g. `$s[0]`) can leave a gather coroutine suspended
+            // mid-body with `list.cache` holding only a prefix, and only the
+            // VM path's coroutine-aware resume knows how to continue it to
+            // completion instead of re-running the whole body from scratch or
+            // returning the partial cache as if it were complete (#8512).
+            let items = self.force_lazy_list_vm(&list)?;
             // A lazy list that was assigned into an `@` variable IS that
             // array's element store, so forcing it yields an Array
             // (`my @a = lazy {...}; say @a.eager` is `[0 1 4]` in raku, not the
