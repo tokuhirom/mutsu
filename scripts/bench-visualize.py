@@ -508,7 +508,13 @@ render();
 # into it by the site's own `assets/i18n.js`, so this page can never drift from
 # the other pages' chrome. Without the flag the file stays self-contained (no
 # external requests) and simply has no chrome.
-CHROME_HEAD = '<link rel="stylesheet" href="assets/site.css">'
+CHROME_HEAD = (
+    '<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">\n'
+    '<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">\n'
+    '<link rel="icon" href="assets/favicon-16.png" sizes="16x16" type="image/png">\n'
+    '<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">\n'
+    '<link rel="stylesheet" href="assets/site.css">'
+)
 CHROME_NAV = '<nav class="site-nav"></nav>'
 CHROME_FOOTER = """<footer class="site-footer"></footer>
 <script type="module">
