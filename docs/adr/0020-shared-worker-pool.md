@@ -222,6 +222,13 @@ that kept the Promise (schedulers, cooperative test harnesses, anything built li
 `Test::Scheduler`) is exposed to this class of race, independent of how large the worker pool
 is allowed to grow.
 
+**Update (2026-09-16):** the design session this paragraph asked for measured Rakudo and found
+that its continuation is *not* what orders `Test::Scheduler` — every promise subscriber is
+dispatched through `$promise.scheduler.cue`, and a worker-submitted task never overtakes its
+still-running submitter. [ADR-0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md)
+proposes those two properties plus a thread-backed rendezvous in place of fork (b), which reverts
+to the perf/thread-count axis it was before this section.
+
 ## 6. Implementation status
 
 - [x] Preliminary slice: reclassify the 5 no-user-code sites to `spawn_gc_helper_thread`.
