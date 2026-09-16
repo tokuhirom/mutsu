@@ -238,14 +238,21 @@ pub(super) fn dispatch(
                 err.exception = Some(Box::new(ex.clone()));
                 return Some(Some(Err(err)));
             }
-            Some(Some(Ok(target.clone())))
+            // `.self` hands out the *value*, not the container (unlike
+            // `$x<>` -- both use `deitemize_element`, which already covers
+            // Array/Hash/Scalar/ContainerRef/Slip): an itemized aggregate
+            // must lose its `$` marker, matching `raku` (`{a=>1}.self.raku`
+            // is `{:a(1)}`, not `${:a(1)}`). See issue #8490.
+            Some(Some(Ok(target.clone().deitemize_element())))
         }
         "serial" => {
             // Any ordinary value is already its own serial (non-parallel) form,
-            // so `.serial` returns the invocant unchanged (like `.self`). Only a
-            // hyper/race pipeline has a distinct serial form, which mutsu's hyper
-            // method dispatch handles before reaching here.
-            Some(Some(Ok(target.clone())))
+            // so `.serial` returns the invocant's *value* (like `.self` --
+            // see the comment there, and issue #8490's own note that
+            // `.serial` shares `.self`'s model). Only a hyper/race pipeline
+            // has a distinct serial form, which mutsu's hyper method
+            // dispatch handles before reaching here.
+            Some(Some(Ok(target.clone().deitemize_element())))
         }
         "clone" => {
             match target.view() {
