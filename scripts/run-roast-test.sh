@@ -105,6 +105,20 @@ per_file_timeout() {
       # infinite sequences with head() truncation. Release builds take ~15s.
       echo 60
       ;;
+    roast/S03-buf/write-int.t)
+      # 2530 subtests exhaustively covering write-{u,}int{8,16,32,64,128} x
+      # 3 endiannesses x several call styles. Not new or recently slower —
+      # the byte-width list (1,2,4,8,16) and every subtest are unchanged;
+      # this file has simply always been slow. Measured on a CI runner-speed
+      # release build (the job's own serial re-run of it): ~23s solo, already
+      # 77% of the default 30s budget with zero contention. Under `prove -j4`
+      # that leaves no margin: CI run 35159960371 (main, commit 7a80c13c)
+      # timed it out mid-file (exit 124, "Failed 377/2530") while the same
+      # binary's immediate serial re-run passed 2530/2530. Give it headroom
+      # rather than chase the lottery, same rationale as the other entries
+      # in this list.
+      echo 90
+      ;;
     roast/integration/advent2012-day21.t)
       # A Collatz benchmark shoot-out: 8 sub-programs each computing 402
       # collatz lengths in a subprocess (Test::Util::run). Pure wall-clock
