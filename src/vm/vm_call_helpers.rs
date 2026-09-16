@@ -48,13 +48,6 @@ impl Interpreter {
             // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
             // inside a Slip (e.g. from a Capture's positional list) should stay as-is.
             ValueView::Hash(_) => args.push(item.clone()),
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => {
-                args.extend(crate::runtime::utils::value_to_list(item));
-            }
             // Every other item's flavour was already finalized by
             // `exec_make_slip_op` when this Slip was built (positional
             // sources containerized, a bare Pair/Hash source promoted to

@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # Basic capture forwarding with parenthesized call
 {
@@ -37,6 +37,15 @@ plan 8;
     sub add($a, $b) { $a + $b }
     sub wrap-add(|c) { add(|c) }
     is wrap-add(3, 4), 7, "multi-arg capture forwarding";
+}
+
+# A Range stored in a Capture is one positional argument when the Capture is
+# forwarded. Only a Range used directly as the `|` source is expanded.
+{
+    sub inner($a, $b, $c) { "$a/$b.^name()/$b.raku()/$c" }
+    sub outer(|c) { inner(|c) }
+    is outer(1, 2..4, 'x'), "1/Range/2..4/x",
+        "capture forwarding preserves a Range element";
 }
 
 # Capture with statement-level call (ExecCallSlip)
