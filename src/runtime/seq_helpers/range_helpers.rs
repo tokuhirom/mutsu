@@ -85,7 +85,26 @@ impl Interpreter {
         }
     }
 
+    /// Convert a `GenericRange` endpoint to an exact `BigInt`, when it is one
+    /// (`Int` or `BigInt`). `None` for anything else — a `Whatever`/`Inf`
+    /// end, a fractional `Num`/`Rat`, a `Str` endpoint, etc. — so callers fall
+    /// back to the approximate `f64` computation for those.
+    fn range_endpoint_as_bigint(v: &Value) -> Option<num_bigint::BigInt> {
+        match v.view() {
+            ValueView::Int(i) => Some(num_bigint::BigInt::from(i)),
+            ValueView::BigInt(n) => Some((**n).clone()),
+            _ => None,
+        }
+    }
+
     /// Compute element count of a range as f64.
+    ///
+    /// A `GenericRange` first tries an exact `BigInt` subtraction of its
+    /// endpoints before falling back to `f64`: converting each endpoint to
+    /// `f64` independently (the old approach) rounds both to the *same*
+    /// float once their magnitude exceeds `f64`'s 52-bit mantissa (e.g. two
+    /// `BigInt`s around `2**70`, 10 apart), collapsing a genuinely non-zero
+    /// difference to zero (see #8591).
     pub(crate) fn range_elems_f64(v: &Value) -> f64 {
         match v.view() {
             ValueView::Range(a, b) => {
@@ -122,10 +141,17 @@ impl Interpreter {
                 excl_start,
                 excl_end,
             } => {
+                let adj = if excl_start { 1.0 } else { 0.0 } + if excl_end { 1.0 } else { 0.0 };
+                if let (Some(s), Some(e)) = (
+                    Self::range_endpoint_as_bigint(start.as_ref()),
+                    Self::range_endpoint_as_bigint(end.as_ref()),
+                ) {
+                    let count = e - s + 1;
+                    return num_traits::ToPrimitive::to_f64(&count).unwrap_or(0.0) - adj;
+                }
                 let s = start.to_f64();
                 let e = end.to_f64();
                 let count = e - s + 1.0;
-                let adj = if excl_start { 1.0 } else { 0.0 } + if excl_end { 1.0 } else { 0.0 };
                 count - adj
             }
             _ => 0.0,
