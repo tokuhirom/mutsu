@@ -103,6 +103,29 @@ impl Interpreter {
         )
     }
 
+    /// Decompose a hyper-op operand into its elements, reifying a not-yet-read
+    /// `Seq`/`LazyList` source (e.g. `.map`'s result) rather than peeking its
+    /// cache.
+    ///
+    /// `Interpreter::value_to_list` is a side-effect-free peek: for a `Seq`
+    /// backed by a deferred source (ADR-0034 -- `.map`/`.grep`'s pull-on-first-
+    /// touch body) or a `LazyList` it reads whatever is ALREADY reified,
+    /// defaulting to an EMPTY vec when nothing has touched it yet. Such a
+    /// value is lazy until something forces it, so a hyper op reading a
+    /// fresh, untouched `.map`/`.grep` result this way saw 0 elements even
+    /// though the same value answers its true length once forced (`.elems`,
+    /// `say`, ...) — issue #8533.
+    fn materialize_hyper_operand(&mut self, v: &Value) -> Result<Vec<Value>, RuntimeError> {
+        match v.view() {
+            ValueView::Seq(body) if body.needs_touch() => {
+                let body = std::sync::Arc::clone(&body);
+                self.reify_seq_body(&body)
+            }
+            ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
+            _ => Ok(Interpreter::value_to_list(v)),
+        }
+    }
+
     /// Build an `X::HyperOp::Infinite` exception carrying the `side` attribute
     /// (`left` / `right` / `both`) identifying which operand(s) are infinite.
     fn hyperop_infinite_error(side: &str) -> RuntimeError {
@@ -383,8 +406,8 @@ impl Interpreter {
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.
         if Self::is_listy(left) || Self::is_listy(right) {
-            let mut left_list = Interpreter::value_to_list(left);
-            let mut right_list = Interpreter::value_to_list(right);
+            let mut left_list = self.materialize_hyper_operand(left)?;
+            let mut right_list = self.materialize_hyper_operand(right)?;
             // A list literal ending in `*` (Whatever) is "infinitely extensible
             // by copying its last real element". Strip the trailing Whatever;
             // such a side adapts to the other side's length (like a dwim side)
