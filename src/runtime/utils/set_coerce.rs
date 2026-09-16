@@ -129,8 +129,29 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
                     }
                 }
             }
-            _ if value.as_list_items().is_some() => {
-                for item in value.as_list_items().unwrap().iter() {
+            // A bare (non-itemized) List value flattens fully -- matches
+            // raku's slurpy-argument flattening (`f(1, (2, (3,4)))` is 3
+            // elements). A real Array or an ITEMIZED List/Array (`$(1,)`,
+            // `$[1]`) does NOT: it is a single opaque element, keyed by its
+            // own `.WHICH`, and falls through to the catch-all below.
+            // Without this guard, an Array element that is itself a
+            // (possibly itemized) List got decontainerized down to its own
+            // content here even though `∈`/`grep`'s membership check (which
+            // never recurses past a container's own top-level items) does
+            // not -- `(5,) ∈ @b` and `(5,) ∈ (∩'s decontainerized member
+            // set)` disagreed (#8570).
+            ValueView::Array(items, kind) if kind == ArrayKind::List => {
+                for item in items.iter() {
+                    insert_set_elem(elems, originals, item);
+                }
+            }
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    insert_set_elem(elems, originals, item);
+                }
+            }
+            ValueView::Slip(items) => {
+                for item in items.iter() {
                     insert_set_elem(elems, originals, item);
                 }
             }
