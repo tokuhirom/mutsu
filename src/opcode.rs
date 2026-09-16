@@ -716,6 +716,15 @@ pub(crate) enum OpCode {
     LoadNil,
     LoadTrue,
     LoadFalse,
+    /// Pop (regex-with-adverbs value, position), clone the value with its
+    /// `:pos(N)` anchor set to the position (coerced to `Int`, `None` if that
+    /// fails), and push the patched value. Emitted for `m:p(EXPR)/.../` /
+    /// `m:pos(EXPR)/.../` when `EXPR` is not a compile-time literal — see
+    /// `Expr::MatchRegexDynamicAdverbs`.
+    PatchRegexAdverbPos,
+    /// Same as `PatchRegexAdverbPos`, but for the `:continue(N)` / `:c(N)`
+    /// search-from position.
+    PatchRegexAdverbContinue,
 
     // -- Variables --
     GetLocal(u32),

@@ -59,9 +59,15 @@ pub(super) struct MatchAdverbs {
     pub(super) pos: bool,
     /// Literal argument of `:pos(N)` (anchor position), if given.
     pub(super) pos_value: Option<usize>,
+    /// Non-literal argument of `:pos(EXPR)` (e.g. `:p($!pos)`), parsed as a
+    /// full expression to be re-evaluated at every match. Mutually exclusive
+    /// with `pos_value` (a literal parses into that field instead).
+    pub(super) pos_expr: Option<Box<crate::ast::Expr>>,
     pub(super) continue_: bool,
     /// Literal argument of `:continue(N)` / `:c(N)` (search-from position), if given.
     pub(super) continue_value: Option<usize>,
+    /// Non-literal argument of `:continue(EXPR)` / `:c(EXPR)`. See `pos_expr`.
+    pub(super) continue_expr: Option<Box<crate::ast::Expr>>,
     pub(super) nth: Option<String>,
     /// The first match-time adverb name as written by the user (`g`, `global`,
     /// `ov`, `ex`, ...). Used to report X::Syntax::Regex::Adverb.adverb when a
@@ -194,6 +200,19 @@ pub(super) fn skip_ws_before_adverb(input: &str) -> Option<&str> {
 /// True when `input` opens with an adverb, with or without leading whitespace.
 pub(super) fn starts_with_adverb(input: &str) -> bool {
     input.starts_with(':') || skip_ws_before_adverb(input).is_some()
+}
+
+/// Parse a `:pos(EXPR)` / `:continue(EXPR)` adverb argument that is not a
+/// compile-time literal as a standalone Raku expression (e.g. `$!pos`,
+/// `$obj.offset`), to be re-evaluated fresh at every match — see
+/// `Expr::MatchRegexDynamicAdverbs`. Returns `None` (the same "no explicit
+/// position" fallback as before dynamic arguments were supported) when `src`
+/// does not parse cleanly as one expression with nothing left over.
+fn parse_dynamic_adverb_arg(src: &str) -> Option<Box<crate::ast::Expr>> {
+    match crate::parser::expr::expression(src) {
+        Ok((rest, expr)) if rest.trim().is_empty() => Some(Box::new(expr)),
+        _ => None,
+    }
 }
 
 pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
@@ -336,11 +355,27 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         } else if name == "p" || name == "pos" {
             adverbs.pos = true;
             // `:pos(N)` anchors the match to character offset N. A non-literal
-            // argument (`:pos($x)`) leaves the value None → falls back to $/.to.
-            adverbs.pos_value = arg.and_then(|s| s.trim().parse::<usize>().ok());
+            // argument (`:pos($x)`) is parsed as a full expression and
+            // re-evaluated at every match; if that also fails to parse, the
+            // position stays None, falling back to $/.to (previous behavior).
+            if let Some(s) = arg {
+                let trimmed = s.trim();
+                if let Ok(n) = trimmed.parse::<usize>() {
+                    adverbs.pos_value = Some(n);
+                } else if !trimmed.is_empty() {
+                    adverbs.pos_expr = parse_dynamic_adverb_arg(trimmed);
+                }
+            }
         } else if name == "c" || name == "continue" {
             adverbs.continue_ = true;
-            adverbs.continue_value = arg.and_then(|s| s.trim().parse::<usize>().ok());
+            if let Some(s) = arg {
+                let trimmed = s.trim();
+                if let Ok(n) = trimmed.parse::<usize>() {
+                    adverbs.continue_value = Some(n);
+                } else if !trimmed.is_empty() {
+                    adverbs.continue_expr = parse_dynamic_adverb_arg(trimmed);
+                }
+            }
         } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("perl5") {
             adverbs.perl5 = true;
         } else if matches!(name.as_str(), "nth" | "st" | "nd" | "rd" | "th") {

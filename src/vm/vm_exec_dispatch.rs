@@ -225,6 +225,20 @@ impl Interpreter {
                 self.stack.push(Value::FALSE);
                 *ip += 1;
             }
+            OpCode::PatchRegexAdverbPos => {
+                let pos_val = self.stack.pop().unwrap_or(Value::NIL);
+                let regex_val = self.stack.pop().unwrap_or(Value::NIL);
+                let pos = pos_val.as_int().and_then(|i| usize::try_from(i).ok());
+                self.stack.push(regex_val.with_regex_pos_value(pos));
+                *ip += 1;
+            }
+            OpCode::PatchRegexAdverbContinue => {
+                let pos_val = self.stack.pop().unwrap_or(Value::NIL);
+                let regex_val = self.stack.pop().unwrap_or(Value::NIL);
+                let pos = pos_val.as_int().and_then(|i| usize::try_from(i).ok());
+                self.stack.push(regex_val.with_regex_continue_value(pos));
+                *ip += 1;
+            }
 
             // -- Variables --
             OpCode::GetUpvalue { index, name_idx } => {

@@ -98,6 +98,35 @@ impl Value {
             _ => self.clone(),
         }
     }
+    /// Clone a `RegexWithAdverbs` value with its `:pos(N)` anchor replaced by
+    /// a freshly-evaluated runtime position (see `Expr::MatchRegexDynamicAdverbs`,
+    /// for `m:p(EXPR)/.../` where `EXPR` is not a compile-time literal).
+    /// A non-`RegexWithAdverbs` value is returned unchanged.
+    pub(crate) fn with_regex_pos_value(&self, pos: Option<usize>) -> Self {
+        match self.view() {
+            ValueView::RegexWithAdverbs(adverbs) => {
+                let mut adverbs = adverbs.clone();
+                adverbs.pos_value = pos;
+                Value::regex_with_adverbs(adverbs)
+            }
+            _ => self.clone(),
+        }
+    }
+
+    /// Clone a `RegexWithAdverbs` value with its `:continue(N)` search-from
+    /// position replaced by a freshly-evaluated runtime position. See
+    /// [`Value::with_regex_pos_value`].
+    pub(crate) fn with_regex_continue_value(&self, pos: Option<usize>) -> Self {
+        match self.view() {
+            ValueView::RegexWithAdverbs(adverbs) => {
+                let mut adverbs = adverbs.clone();
+                adverbs.continue_value = pos;
+                Value::regex_with_adverbs(adverbs)
+            }
+            _ => self.clone(),
+        }
+    }
+
     /// The defining scope this regex closed over, or `None` for a regex that
     /// captured nothing (and for every non-regex value).
     pub(crate) fn regex_closure_scope(&self) -> Option<Arc<ValueMap>> {

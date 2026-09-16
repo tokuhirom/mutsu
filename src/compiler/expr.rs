@@ -161,6 +161,17 @@ impl Compiler {
                 let value = value.with_regex_source_tree(tree.clone());
                 self.compile_match_regex(&value);
             }
+            Expr::MatchRegexDynamicAdverbs {
+                value,
+                pos_expr,
+                continue_expr,
+            } => {
+                self.compile_match_regex_dynamic(
+                    value,
+                    pos_expr.as_deref(),
+                    continue_expr.as_deref(),
+                );
+            }
             Expr::Var(name) => {
                 let name = self.resolve_self_lexical(name);
                 self.compile_expr_var(name);

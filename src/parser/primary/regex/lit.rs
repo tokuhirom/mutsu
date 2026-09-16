@@ -1077,6 +1077,16 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             },
                         ));
                     }
+                    if adverbs.pos_expr.is_some() || adverbs.continue_expr.is_some() {
+                        return Ok((
+                            rest,
+                            Expr::MatchRegexDynamicAdverbs {
+                                value: regex_val,
+                                pos_expr: adverbs.pos_expr,
+                                continue_expr: adverbs.continue_expr,
+                            },
+                        ));
+                    }
                     return Ok((rest, Expr::MatchRegex(regex_val)));
                 }
                 if delim_commits_to_regex(open_ch) {
