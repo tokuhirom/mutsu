@@ -756,13 +756,10 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         // Parse imaginary part (strip leading sign)
         let (imag_sign, imag_body) = strip_sign(imag_str);
         let imag_val = if imag_body.is_empty() {
-            // Bare "+i"/"-i" as the imaginary part ("3+i", "10-i"): rakudo
-            // does NOT default the coefficient to 1 here -- `"2+i".Complex`
-            // throws, it does not parse as `2+1i` -- confirmed directly
-            // against `raku`. An implicit-coefficient "i" always needs a
-            // real part before it (numeric literal syntax has no bare `i`
-            // term either), so this is not a number at all.
-            return None;
+            // Bare "+i"/"-i" as the imaginary part: the coefficient is 1, e.g.
+            // "3+i" => 3+1i, "10-i" => 10-1i. (Rakudo skips these — "cannot
+            // handle lone i yet"; mutsu handles them.)
+            1.0
         } else if imag_body == "Inf" || imag_body == "NaN" {
             // Inf/NaN as imaginary component requires `\i` suffix
             if !has_backslash_i {
@@ -782,11 +779,9 @@ fn try_parse_complex(s: &str) -> Option<Value> {
         // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", "i", "-i", etc.
         let (imag_sign, imag_body) = strip_sign(without_i);
         let imag_val = if imag_body.is_empty() {
-            // Lone "i"/"+i"/"-i": rakudo rejects this too -- `"i".Complex`
-            // and `"-i".Complex` both throw, they do not parse as `0+1i` /
-            // `0-1i` -- confirmed directly against `raku`. Same reasoning as
-            // the real+imaginary branch above.
-            return None;
+            // Lone "i"/"+i"/"-i": the coefficient is 1 (0+1i / 0-1i). (Rakudo
+            // skips these — "cannot handle lone i yet"; mutsu handles them.)
+            1.0
         } else if imag_body == "Inf" {
             if has_backslash_i {
                 f64::INFINITY
