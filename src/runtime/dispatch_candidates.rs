@@ -828,6 +828,27 @@ impl Interpreter {
         } else {
             constraint
         };
+        // `base` may be an env-bound alias for a fully-qualified type name —
+        // an imported short name (`use Mod; ...` importing `Mod::Foo` and
+        // binding it lexically as bare `Foo`) or a `::T` type capture.
+        // Follow it the same way `type_matches_value` already does for
+        // *applicability* — otherwise this distance (used only for ranking
+        // candidates that already matched) compares the unresolved alias
+        // against the value's real class name, never finds it in the MRO,
+        // and falls through to the 500 "unrelated" distance: an `Any`
+        // candidate then wrongly out-ranks the more specific one (issue
+        // #8566, cross-module case).
+        let resolved_base;
+        let base = if !crate::runtime::utils::is_known_type_constraint(base)
+            && let Some(bound_val) = self.env.get(base)
+            && let ValueView::Package(bound) = bound_val.view()
+            && bound.with_str(|b| b != base)
+        {
+            resolved_base = bound.resolve();
+            resolved_base.as_str()
+        } else {
+            base
+        };
         if base == "Inf" {
             return match value.view() {
                 ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,
@@ -873,7 +894,15 @@ impl Interpreter {
             }
             return UNRELATED_DISTANCE;
         }
-        if base == value_type {
+        // `value_type_name` answers the generic "Any" for every `Instance`
+        // (it does not know the concrete class) — so this shortcut must NOT
+        // fire for an Instance constrained by `base == "Any"`, or a class
+        // completely unrelated to `Foo` would tie with `Foo` itself at
+        // distance 0 for a `multi method f(Any $x)` / `multi method f(Foo
+        // $x)` pair (issue #8566). The dedicated Instance/MRO walk below
+        // computes the real distance, `Any` included, via the class's own
+        // `mro` chain.
+        if base == value_type && !matches!(value.view(), ValueView::Instance { .. }) {
             return 0;
         }
         // For instances, use the class MRO
@@ -882,12 +911,15 @@ impl Interpreter {
             if base == cn.as_str() {
                 return 0;
             }
-            // Use a non-mutable copy of the MRO (classes field lookup)
-            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
-                for (i, ancestor) in class_def.mro.iter().enumerate() {
-                    if ancestor == base {
-                        return i;
-                    }
+            // `mro_readonly` falls back to a live parents-only walk when the
+            // registry's cached `ClassDef::mro` is still empty (this method
+            // takes `&self`, so it cannot compute-and-cache like
+            // `Registry::class_mro` does) — see the `base == "Any"` case
+            // above, which now always reaches this walk instead of the
+            // universal-Instance shortcut.
+            for (i, ancestor) in self.mro_readonly(cn.as_str()).iter().enumerate() {
+                if ancestor == base {
+                    return i;
                 }
             }
             // Check composed roles
