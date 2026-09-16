@@ -590,6 +590,94 @@ impl Interpreter {
         Some(Ok(()))
     }
 
+    /// The `LazyList` twin of [`Self::try_seq_element_cell_assign`]: a
+    /// positional element store into a BARE `LazyList` (a `gather`, lazy
+    /// pipe, sequence, ... held by a `$`/list-context variable, not an
+    /// `@`-array-context one) is decided per ELEMENT, the same as a `Seq`.
+    ///
+    /// `reify_lazy_array_slot` already handles the array-context case by
+    /// materializing the touched prefix into a real `Array` before this op
+    /// runs at all (`ll.in_array_context()` gates it); this covers the
+    /// complementary case that reaches this function still holding the
+    /// `LazyList` itself. Without it, the generic named-element-assign tail
+    /// (`exec_index_assign_expr_named_op_inner`) has no arm for
+    /// `ValueView::LazyList` at all, and its final autovivify fallback
+    /// silently REPLACES the whole `LazyList` with a fresh one-element Array
+    /// — `my $s = gather { take 1; take 2 }; $s[0] = 5; say $s` printed
+    /// `[5]`, truncating element 2, where rakudo refuses the store naming the
+    /// touched element ("Cannot modify an immutable Int (1)").
+    ///
+    /// A bare `LazyList`'s elements are plain values by construction — the
+    /// non-array-context force path never itemizes them (see
+    /// `itemize_lazy_array_elements`'s `array_context` gate) — so ordinarily
+    /// every element is refused. The `ContainerRef` check below is what lets
+    /// a `take-rw`-produced element (which can stash a real cell) write
+    /// through instead, mirroring the Seq producer-cell rule exactly.
+    ///
+    /// Returns `None` when the target is not a bare `LazyList`, or the index
+    /// is not a single positional element (the caller falls through to its
+    /// ordinary paths); otherwise the outcome of the store.
+    pub(crate) fn try_lazylist_element_cell_assign(
+        &mut self,
+        target: &Value,
+        idx: &Value,
+        val: &Value,
+        is_positional: bool,
+    ) -> Result<Option<Result<(), RuntimeError>>, RuntimeError> {
+        if !is_positional {
+            return Ok(None);
+        }
+        let ValueView::LazyList(ll) = target.view() else {
+            return Ok(None);
+        };
+        if ll.in_array_context() {
+            return Ok(None);
+        }
+        let Some(index) = Self::index_to_usize(idx) else {
+            return Ok(None);
+        };
+        // Bounded to the touched index, matching raku (and mirroring
+        // `reify_lazy_array_slot`): reifies only as far as this element, so
+        // an infinite source stays live rather than hanging or being forced
+        // in full.
+        let items = self.force_lazy_list_vm_n(&ll, index + 1)?;
+        let Some(slot) = items.get(index).cloned() else {
+            // Past the end: rakudo's `AT-POS` hands back `Nil` and refuses
+            // the store on it, same as the Seq twin above.
+            return Ok(Some(Err(RuntimeError::assignment_ro_value(Value::NIL))));
+        };
+        match slot.view() {
+            ValueView::ContainerRef(cell) => {
+                if let Err(e) = self.check_container_cell_constraint(&cell, val) {
+                    return Ok(Some(Err(e)));
+                }
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = val.clone();
+                Ok(Some(Ok(())))
+            }
+            // A `Scalar`-wrapped element is genuinely ambiguous here: raku
+            // refuses a plain `take` of an explicitly-itemized value
+            // (`take $(1,2,3)`) but writes through a `take-rw` of an
+            // lvalue the compiler could not promote to a real
+            // `ContainerRef` cell through this lazy (coroutine) pull path
+            // (`take-rw my $ = 1` — the array-element-subscript case,
+            // `take-rw @spot[1]`, DOES arrive as a genuine `ContainerRef`
+            // and is handled by the arm above). Both shapes currently
+            // arrive here as the identical `Scalar(value)` view, with no
+            // way to tell them apart at this point — see
+            // https://github.com/tokuhirom/mutsu/issues/8521. Decline
+            // rather than guess wrong in either direction; the caller
+            // falls through to the pre-existing (also imperfect, but no
+            // worse than before this fix) autoviv-replace behavior for
+            // this narrower case. A bare, non-`Scalar` element — the
+            // overwhelmingly common shape for a plain `take`/an infinite
+            // sequence — still refuses correctly below.
+            ValueView::Scalar(_) => Ok(None),
+            _ => Ok(Some(Err(RuntimeError::assignment_ro_value(
+                slot.deref_container(),
+            )))),
+        }
+    }
+
     pub(super) fn exec_index_assign_expr_named_op(
         &mut self,
         code: &CompiledCode,
@@ -904,6 +992,26 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if let Some(res) =
                     self.try_seq_element_cell_assign(&target, &idx, &val, is_positional)
+                {
+                    res?;
+                    self.stack.push(Self::itemize_value(val));
+                    return Ok(());
+                }
+                // Not handled after all -- put the operands back untouched.
+                self.stack.push(val);
+                self.stack.push(idx);
+            }
+            // The `LazyList` twin of the `Seq` check just above: a bare
+            // (non-`@`-array-context) `LazyList` -- `my $s = gather {...}` --
+            // is decided per element the same way. See
+            // `try_lazylist_element_cell_assign` for why nothing below this
+            // point knows how to store into one without silently replacing
+            // it.
+            if matches!(target.view(), ValueView::LazyList(ll) if !ll.in_array_context()) {
+                let idx = self.stack.pop().unwrap_or(Value::NIL);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                if let Some(res) =
+                    self.try_lazylist_element_cell_assign(&target, &idx, &val, is_positional)?
                 {
                     res?;
                     self.stack.push(Self::itemize_value(val));
