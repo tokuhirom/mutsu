@@ -627,6 +627,7 @@ impl Value {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
+            ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
             ValueView::Scalar(inner) => (*inner).clone(),
             ValueView::ContainerRef(cell) => cell.lock().unwrap().clone().deitemize_element(),
             _ => self,
