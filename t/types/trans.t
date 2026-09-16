@@ -1,5 +1,5 @@
 use Test;
-plan 10;
+plan 11;
 
 # Basic string-to-string transliteration
 is("ABC".trans( ('A'=>'a'), ('B'=>'b'), ('C'=>'c') ), "abc", "individual char pairs");
@@ -30,3 +30,15 @@ is("ab\ncd\tef gh".trans(/<[aeiou]>/ => 'y', /\s/ => '_'), 'yb_cd_yf_gh', 'multi
 
 # No-op trans
 is("hello".trans(), "hello", "empty trans is identity");
+
+# Combining-mark grapheme alignment (from Acme::Text::UpsideDown's $up/$down
+# alphabets, ecosystem/dists/A/Acme--Text--UpsideDown~ec84324a.json): a
+# from/to pair built by concatenating two alphabets in opposite order, where
+# only one alphabet contains a multi-codepoint grapheme (a combining mark),
+# must keep from[i] and to[i] pointing at the same logical position even
+# though the mark sits at a different string offset on each side.
+my constant $up   = 'ABC';
+my constant $down = "x" ~ "s\x[323]" ~ "z";
+my constant $from = $up ~ $down;
+my constant $to   = $down ~ $up;
+is("A".trans($from => $to), "x", "combining-mark grapheme keeps from/to positions aligned");
