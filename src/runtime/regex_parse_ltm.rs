@@ -1746,6 +1746,15 @@ mod static_execution_tests {
     }
 
     #[test]
+    fn preserves_start_anchor_through_whitespace_wrapper() {
+        let tree = RegexTree::parse_static("^ '/'+ ", false).expect("source tree");
+        let pattern = tree
+            .lower_execution(false, false, false)
+            .expect("execution plan");
+        assert!(pattern.anchor_start);
+    }
+
+    #[test]
     fn lowers_from_parser_tree_without_using_value_spelling() {
         let tree = RegexTree::parse_static("tree", false).expect("source tree");
         let value = Value::regex("stale".to_string()).with_regex_source_tree(tree);

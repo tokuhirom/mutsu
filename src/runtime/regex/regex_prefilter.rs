@@ -224,6 +224,13 @@ pub(crate) fn regex_scan_positions<'c>(
     from: usize,
     pkg: Symbol,
 ) -> ScanPositions<'c> {
+    if pattern.anchor_start {
+        return if from == 0 {
+            ScanPositions::Range(0..=0)
+        } else {
+            ScanPositions::empty()
+        };
+    }
     if !prefilter_enabled() {
         crate::vm::vm_stats::record_regex_prefilter_declined();
         return ScanPositions::Range(from..=chars.len());

@@ -769,7 +769,7 @@ impl RegexTree {
                     ignore_case,
                     ignore_mark,
                     rule_sigspace,
-                    false,
+                    root,
                     anchor_start,
                 ),
             }
