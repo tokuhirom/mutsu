@@ -2866,6 +2866,34 @@ impl Interpreter {
     }
 }
 
+/// The exact `i64` an endpoint represents, or `None` when no such value
+/// exists — either because the endpoint isn't a whole number (a fractional
+/// `Num`/`Rat` range steps by `.succ`, not `start + i`) or because it is a
+/// whole number too large/small to fit `i64` (an IPv6-scale `BigInt`, or a
+/// non-finite `Num`). Both cases must fall back to the `value_to_list` path
+/// in `range_params`'s caller rather than silently truncating.
+fn endpoint_as_exact_i64(v: &Value) -> Option<i64> {
+    use num_traits::ToPrimitive;
+    match v.view() {
+        ValueView::Int(i) => Some(i),
+        ValueView::BigInt(n) => n.to_i64(),
+        ValueView::Num(f) => {
+            if f.is_finite() && f.fract() == 0.0 {
+                if f >= i64::MIN as f64 && f <= i64::MAX as f64 {
+                    Some(f as i64)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        ValueView::Rat(n, 1) => Some(n),
+        ValueView::FatRat(n, 1) => Some(n),
+        _ => None,
+    }
+}
+
 /// Extract (start, end, excl_start, excl_end) from a Range value.
 fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
     match v.view() {
@@ -2879,19 +2907,9 @@ fn range_params(v: &Value) -> Option<(i64, i64, bool, bool)> {
             excl_start,
             excl_end,
         } => {
-            if !start.is_numeric() || !end.is_numeric() {
-                return None;
-            }
-            let s = start.to_f64() as i64;
-            let e = end.to_f64() as i64;
-            // A non-finite endpoint has no i64 representation (Inf saturates to
-            // i64::MAX). Bail to the value_to_list path, which yields the
-            // correct degenerate-range elements (e.g. `(Inf..Inf)[^5]` is all
-            // Nil), instead of materializing a bogus i64::MAX element.
-            if !start.to_f64().is_finite() || !end.to_f64().is_finite() {
-                return None;
-            }
-            let s = if excl_start { s + 1 } else { s };
+            let s = endpoint_as_exact_i64(start)?;
+            let e = endpoint_as_exact_i64(end)?;
+            let s = if excl_start { s.checked_add(1)? } else { s };
             Some((s, e, excl_start, excl_end))
         }
         _ => None,
