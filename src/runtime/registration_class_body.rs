@@ -113,6 +113,10 @@ impl Interpreter {
         // `registration_class_compose_body.rs`/`registration_class_augment.rs`.
         let saved_topic = self.env.get("_").cloned();
         self.set_current_package(name.to_string());
+        // An enum key declared in a class body is lexical to that class.  In
+        // particular, two classes may each declare an `Error` member without
+        // poisoning either class's bare `Error` term.
+        self.push_enum_scope();
         self.env
             .insert("?CLASS".to_string(), Value::package(Symbol::intern(name)));
         // The set of attributes valid for $!attr access: names declared
@@ -292,6 +296,7 @@ impl Interpreter {
         })();
         // Unconditional cleanup (see the comment above `walk_result`): restore
         // the interpreter's runtime package no matter how the walk ended.
+        self.pop_enum_scope();
         self.set_current_package(cx.saved_package.clone());
         if let Err(e) = walk_result {
             // Mirror the class_own_attrs/BUILD-TWEAK early-return precedent
