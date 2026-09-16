@@ -1625,6 +1625,7 @@ fn lower_regex_subrule_args(
             literal_hash_indices: Vec::new(),
             colonpair_values: Vec::new(),
             colonpair_variables: Vec::new(),
+            colonpair_trues: Vec::new(),
         });
     };
     let args = child_node(&field.value)?;
@@ -1636,6 +1637,7 @@ fn lower_regex_subrule_args(
     let mut literal_hash_indices = Vec::with_capacity(args.fields.len());
     let mut colonpair_values = Vec::with_capacity(args.fields.len());
     let mut colonpair_variables = Vec::with_capacity(args.fields.len());
+    let mut colonpair_trues = Vec::with_capacity(args.fields.len());
     for field in &args.fields {
         if field.name.is_some() {
             return Err(unsupported(node));
@@ -1644,6 +1646,7 @@ fn lower_regex_subrule_args(
         literal_hash_indices.push(is_literal_hash_index(argument));
         colonpair_values.push(is_colonpair_value(argument));
         colonpair_variables.push(is_colonpair_variable(argument));
+        colonpair_trues.push(is_colonpair_true(argument));
         sources.push(regex_subrule_argument_source(argument)?);
         lowered.push(lower_expr(argument)?);
     }
@@ -1653,6 +1656,7 @@ fn lower_regex_subrule_args(
         literal_hash_indices,
         colonpair_values,
         colonpair_variables,
+        colonpair_trues,
     })
 }
 
@@ -1668,6 +1672,10 @@ fn is_colonpair_value(node: &RakuAstNode) -> bool {
 
 fn is_colonpair_variable(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::ColonPairVariable
+}
+
+fn is_colonpair_true(node: &RakuAstNode) -> bool {
+    node.class == RakuAstClass::ColonPairTrue
 }
 
 fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
@@ -1690,6 +1698,13 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
         };
         let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
         return Ok(format!(":{key}({value})"));
+    }
+    if is_colonpair_true(node) {
+        let value = positional_leaf(node)?;
+        let ValueView::Str(key) = value.view() else {
+            return Err(unsupported(node));
+        };
+        return Ok(format!(":{}", *key));
     }
     if is_colonpair_variable(node) {
         let value = lower_expr(named_child(node, "value")?)?;
@@ -2343,6 +2358,17 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // The quoted/computed spelling arrives as an `ApplyInfix` over `=>`
         // instead and lowers, below, to the `PositionalPair` that marks it
         // positional.
+        RakuAstClass::ColonPairTrue => {
+            let value = positional_leaf(node)?;
+            let ValueView::Str(key) = value.view() else {
+                return Err(unsupported(node));
+            };
+            Ok(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(key.to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::TRUE)),
+            })
+        }
         RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
             let key = leaf_str(node, "key")?;
             let value = lower_expr(named_child(node, "value")?)?;

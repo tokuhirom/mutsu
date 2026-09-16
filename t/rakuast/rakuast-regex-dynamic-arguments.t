@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 80;
+plan 85;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -338,3 +338,30 @@ ok $code_variable_gist.contains('RakuAST::ColonPair::Variable'),
     'a code variable colonpair keeps its colonpair node';
 ok $code_variable_gist.contains('RakuAST::Var::Lexical.new("\\&expected")'),
     'a code variable colonpair keeps its code value';
+
+my $boolean_ast = Q[my $value = 'a'; /<word(:enabled)>/].AST;
+my $boolean_gist = $boolean_ast.gist;
+ok $boolean_gist.contains('RakuAST::ColonPair::True.new("enabled")'),
+    'a bare boolean colonpair keeps its source-level node';
+ok !$boolean_gist.contains('RakuAST::FatArrow.new'),
+    'a bare boolean colonpair is not flattened to a fat-arrow node';
+
+my $boolean_pair = RakuAST::ColonPair::True.new('enabled');
+my $boolean_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($boolean_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($boolean_constructed_ast) ~~ Regex,
+    'a constructed bare boolean colonpair regex lowers successfully';
+
+grammar GDynamicBooleanColonPairArgument {
+    token TOP { <word(:enabled)> }
+    token word(:$enabled) { $enabled }
+}
+ok GDynamicBooleanColonPairArgument.parse('True').defined,
+    'a bare boolean colonpair reaches the named subrule parameter';
+ok !GDynamicBooleanColonPairArgument.parse('False').defined,
+    'a bare boolean colonpair carries True to the named subrule parameter';

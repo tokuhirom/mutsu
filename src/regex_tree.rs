@@ -65,6 +65,11 @@ pub(crate) struct SubruleArgs {
     /// for RakuAST's ColonPair::Variable model node.
     #[serde(default)]
     pub(crate) colonpair_variables: Vec<bool>,
+    /// Bare true colonpairs and ordinary named pairs share the same internal
+    /// expression shape. Regex subrule arguments need this source distinction
+    /// for RakuAST's ColonPair::True model node.
+    #[serde(default)]
+    pub(crate) colonpair_trues: Vec<bool>,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -2267,6 +2272,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
                 literal_hash_indices: literal_hash_index_arguments(args_source, &args),
                 colonpair_values: colonpair_value_arguments(args_source, &args),
                 colonpair_variables: colonpair_variable_arguments(args_source, &args),
+                colonpair_trues: colonpair_true_arguments(args_source, &args),
                 args,
                 source: Some(args_source.to_string()),
             })),
@@ -2296,6 +2302,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
             literal_hash_indices: literal_hash_index_arguments(args_source, &args),
             colonpair_values: colonpair_value_arguments(args_source, &args),
             colonpair_variables: colonpair_variable_arguments(args_source, &args),
+            colonpair_trues: colonpair_true_arguments(args_source, &args),
             args,
             source: Some(args_source.to_string()),
         })),
@@ -2402,6 +2409,43 @@ fn colonpair_variable_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<
                         return false;
                     }
                     let name = &variable[sigil.len_utf8()..];
+                    !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+                })
+        })
+        .collect()
+}
+
+/// Identify the bounded bare `:name` form after the ordinary expression
+/// parser has produced its execution-level named pair. The source spelling is
+/// retained beside regex arguments so RakuAST can expose the source-level
+/// `ColonPair::True` model node without changing ordinary calls.
+fn colonpair_true_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<bool> {
+    let parts = split_top_level_arguments(source);
+    args.iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            let is_true_pair = matches!(
+                argument,
+                crate::ast::Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right,
+                } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
+                    if matches!(value.view(), crate::value::ValueView::Str(_)))
+                    && matches!(
+                        right.as_ref(),
+                        crate::ast::Expr::Literal(value)
+                            if matches!(value.view(), crate::value::ValueView::Bool(true))
+                    )
+            );
+            is_true_pair
+                && parts.get(index).is_some_and(|part| {
+                    let Some(name) = part.trim().strip_prefix(':') else {
+                        return false;
+                    };
                     !name.is_empty()
                         && name
                             .chars()
