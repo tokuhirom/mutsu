@@ -578,9 +578,26 @@ impl Interpreter {
         // sweeping every role the class composes — only the role the running
         // method came from may lend its lexical types.
         if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
-            let qualified = format!("{}::{}", role.resolve(), name);
+            let role_name = role.resolve().to_string();
+            let qualified = format!("{}::{}", role_name, name);
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
+            }
+            // The role itself may be nested inside an enclosing class/package
+            // (`class Outer { role R { ... } }` registers `R` as
+            // `Outer::R`). Rakudo keeps a role method's lexical visibility
+            // anchored at the role's own declaration site through
+            // composition, so a bare type declared as a sibling of the role
+            // (`Outer::Inner`) must still resolve after `R` is composed into
+            // an unrelated class — walk the role's own package chain
+            // upward, not the composing class's (github.com/tokuhirom/mutsu/issues/8565).
+            let mut scope = role_name.as_str();
+            while let Some((outer, _)) = scope.rsplit_once("::") {
+                let qualified = format!("{}::{}", outer, name);
+                if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                    return Some(key);
+                }
+                scope = outer;
             }
         }
         // The class currently being constructed. A typed attribute's default
