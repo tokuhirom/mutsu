@@ -24,33 +24,31 @@ impl Interpreter {
 /// prefilter's first-set through the engine's own predicate makes the two
 /// unable to disagree.
 pub(super) fn class_matches_ignorecase(class: &CharClass, c: char, ignore_case: bool) -> bool {
-    {
-        if ignore_case {
-            if class.negated {
-                // For negated classes with :i, char matches only if ALL case
-                // variants are NOT in the positive set. If any variant IS in the
-                // positive set the char should be excluded by the negation.
-                let pos_class = CharClass {
-                    negated: false,
-                    items: class.items.clone(),
-                };
-                for variant in CaseFoldIter::new(c) {
-                    if class_matches(&pos_class, variant) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-            // For positive classes, any case variant matching is sufficient
-            for variant in CaseFoldIter::new(c) {
-                if class_matches(class, variant) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        class_matches(class, c)
+    if !ignore_case {
+        return class_matches(class, c);
     }
+    // `:i` folds a literal character or an explicit range, but not membership
+    // of a named built-in class or a Unicode property: `<upper>` still means
+    // "an uppercase character" under `:i`, not "any case variant of one" —
+    // rakudo's `:i` governs literal comparison, not class membership (#8498).
+    // Handled per item (rather than folding the whole class at once, as
+    // before) so a class mixing a literal with a named builtin still folds
+    // the literal half.
+    let matched = class.items.iter().any(|item| match item {
+        ClassItem::NamedBuiltin(name) => matches_named_builtin(name, c),
+        ClassItem::UnicodePropItem { name, negated } => {
+            let m = check_unicode_property(name, c);
+            if *negated { !m } else { m }
+        }
+        _ => {
+            let single_item_class = CharClass {
+                items: vec![item.clone()],
+                negated: false,
+            };
+            CaseFoldIter::new(c).any(|variant| class_matches(&single_item_class, variant))
+        }
+    });
+    if class.negated { !matched } else { matched }
 }
 
 /// Whether `c` is in `class` (case-sensitively). See
@@ -323,14 +321,21 @@ pub(super) fn composite_probe_chars(effective_c: char, ignore_case: bool) -> Vec
 /// is what lets the prefilter both *admit* a character on this evidence and
 /// *reject* one a negative item matches on it.
 pub(super) fn composite_item_matches(item: &ClassItem, chars_to_check: &[char]) -> bool {
+    // `chars_to_check[0]` is always the subject's own (unfolded) character:
+    // `composite_probe_chars` -- via `CaseFoldIter::new` -- pushes it first
+    // before any case-fold variant, and returns a single-element slice
+    // holding just it when `:i` is off.
+    let Some(&orig_c) = chars_to_check.first() else {
+        return false;
+    };
     match item {
-        ClassItem::NamedBuiltin(n) => chars_to_check
-            .iter()
-            .any(|ch| matches_named_builtin(n, *ch)),
+        // `:i` folds a literal character/range comparison, but not membership
+        // of a named built-in class or a Unicode property: `<+upper>` still
+        // means "an uppercase character" under `:i`, not "any case variant of
+        // one" -- test the subject's own character only (#8498).
+        ClassItem::NamedBuiltin(n) => matches_named_builtin(n, orig_c),
         ClassItem::UnicodePropItem { name, negated } => {
-            let m = chars_to_check
-                .iter()
-                .any(|ch| check_unicode_property(name, *ch));
+            let m = check_unicode_property(name, orig_c);
             if *negated { !m } else { m }
         }
         _ => {
