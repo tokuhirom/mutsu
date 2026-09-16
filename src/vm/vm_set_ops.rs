@@ -301,8 +301,24 @@ impl Interpreter {
                     }
                 }
             }
-            _ if value.as_list_items().is_some() => {
-                for item in value.as_list_items().unwrap().iter() {
+            // A bare (non-itemized) List value flattens fully -- matches
+            // raku's slurpy-argument flattening. A real Array or an
+            // ITEMIZED List/Array (`$(1,)`, `$[1]`) does NOT: it is a single
+            // opaque element, keyed by its own `.WHICH`, and falls through
+            // to the catch-all below. See the matching guard (and #8570) in
+            // `runtime::utils::set_coerce::coerce_to_set`.
+            ValueView::Array(items, crate::value::ArrayKind::List) => {
+                for item in items.iter() {
+                    Self::union_insert_set_elem(elems, originals, item);
+                }
+            }
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    Self::union_insert_set_elem(elems, originals, item);
+                }
+            }
+            ValueView::Slip(items) => {
+                for item in items.iter() {
                     Self::union_insert_set_elem(elems, originals, item);
                 }
             }
