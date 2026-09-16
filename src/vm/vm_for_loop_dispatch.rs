@@ -503,6 +503,46 @@ impl Interpreter {
         self.drive_user_iterator_items(iterable).map(Some)
     }
 
+    /// Like [`Self::try_iterable_instance_items`], but does not require the
+    /// class to compose `Iterable`. Used only by the "Any iteration methods"
+    /// dispatch arm, restricted to `.map`/`.grep`/`.first`/`.sort`/`.head`/
+    /// `.tail`: Rakudo routes those through `self.iterator` for ANY class
+    /// defining its own override, `does Iterable` or not (#8547 — measured
+    /// against `raku`: a plain class with only `method iterator {...}`, no
+    /// `does Iterable`, decomposes for exactly these methods the same way a
+    /// `does Iterable` class does). `.flat` does NOT extend the same way
+    /// (measured: `$obj.flat` on such a plain class stays one item, unlike
+    /// the `does Iterable` case) — the caller excludes it from the method set
+    /// it drives through this helper. `for`/`.list`/`@`-assignment do not
+    /// extend either (measured: `for $obj` / `$obj.list` on such a plain
+    /// class still yields the instance as one item) — those stay on
+    /// [`Self::try_iterable_instance_items`]'s stricter Iterable-role gate,
+    /// which is why this is a separate, narrower-scoped helper rather than a
+    /// relaxation of the shared one.
+    pub(crate) fn try_user_iterator_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterable.view()
+        else {
+            return Ok(None);
+        };
+        // An `is Array`/`is List` subclass's own iterator override is driven
+        // by `positional_subclass_iteration_source` instead.
+        if attributes.contains_key("__mutsu_array_storage") {
+            return Ok(None);
+        }
+        let cn = class_name.as_str().to_string();
+        if !self.has_user_method(&cn, "iterator") {
+            return Ok(None);
+        }
+        self.drive_user_iterator_items(iterable).map(Some)
+    }
+
     /// Drain a value's user-defined `iterator` method into its elements.
     pub(crate) fn drive_user_iterator_items(
         &mut self,
