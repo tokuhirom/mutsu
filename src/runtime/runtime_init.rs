@@ -2636,6 +2636,7 @@ impl Interpreter {
                 "Encoding".to_string(),
                 RoleDef {
                     attributes: Vec::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     is_stub_role: false,
                     is_hidden: false,
@@ -2661,6 +2662,7 @@ impl Interpreter {
                     role_name.to_string(),
                     RoleDef {
                         attributes: Vec::new(),
+                        attribute_built: HashMap::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
@@ -2681,6 +2683,7 @@ impl Interpreter {
                 "Iterator".to_string(),
                 RoleDef {
                     attributes: Vec::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     is_stub_role: false,
                     is_hidden: false,
@@ -2700,6 +2703,7 @@ impl Interpreter {
                 "PredictiveIterator".to_string(),
                 RoleDef {
                     attributes: Vec::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     is_stub_role: false,
                     is_hidden: false,
@@ -2719,6 +2723,7 @@ impl Interpreter {
                 "Iterable".to_string(),
                 RoleDef {
                     attributes: Vec::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     is_stub_role: false,
                     is_hidden: false,
@@ -2738,6 +2743,7 @@ impl Interpreter {
                 "X::Control".to_string(),
                 RoleDef {
                     attributes: Vec::new(),
+                    attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     is_stub_role: false,
                     is_hidden: false,
@@ -2772,6 +2778,15 @@ impl Interpreter {
             // roast/t sample; Slice 3's broader capture (roast/t plus
             // every `X::...` string literal in mutsu's own source)
             // surfaced these two additional roles the same way.
+            // `X::Wrapper` used to be listed here too, but it is NOT
+            // actually empty in rakudo (unlike the rest of this list) --
+            // it is a real, stateful role (`has $!exception`,
+            // `!wrappee-message`, ...) that wraps a lower-level exception,
+            // and a composing class calling its private methods died with
+            // `X::Method::NotFound` against the empty stand-in (#8573).
+            // It now gets the full-behaviour prelude treatment instead,
+            // the same way `Enumeration`/`Rational`/`IO::Socket` do -- see
+            // `X_WRAPPER_ROLE_PRELUDE` in `run.rs`.
             for role_name in [
                 "X::Comp",
                 "X::Syntax",
@@ -2784,7 +2799,6 @@ impl Interpreter {
                 "X::MOP",
                 "X::Encoding",
                 "X::Pod",
-                "X::Wrapper",
                 "X::RoleApplier",
                 "X::RoleApplier::Method",
                 "X::Nominalizable",
@@ -2809,6 +2823,7 @@ impl Interpreter {
                     role_name.to_string(),
                     RoleDef {
                         attributes: Vec::new(),
+                        attribute_built: HashMap::new(),
                         methods: HashMap::new(),
                         is_stub_role: false,
                         is_hidden: false,
@@ -2865,6 +2880,7 @@ impl Interpreter {
                     "CompUnit::Repository".to_string(),
                     RoleDef {
                         attributes: Vec::new(),
+                        attribute_built: HashMap::new(),
                         methods,
                         is_stub_role: false,
                         is_hidden: false,
@@ -2923,6 +2939,7 @@ impl Interpreter {
                     "Distribution".to_string(),
                     RoleDef {
                         attributes: Vec::new(),
+                        attribute_built: HashMap::new(),
                         methods,
                         is_stub_role: false,
                         is_hidden: false,

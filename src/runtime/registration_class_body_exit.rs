@@ -231,6 +231,7 @@ impl Interpreter {
         parents: &[String],
         class_def: ClassDef,
         snapshot: &ClassRegSnapshot,
+        is_hoisted_shell: bool,
     ) -> Result<(), RuntimeError> {
         if let Err(err) = self.resolve_class_stub_requirements(name) {
             snapshot.restore(self, name);
@@ -248,8 +249,19 @@ impl Interpreter {
             snapshot.restore(self, name);
             return Err(err);
         }
-        // Validate that all self!method() calls reference existing private methods
-        if let Err(err) = self.validate_private_method_existence(name) {
+        // Validate that all self!method() calls reference existing private
+        // methods. Skip this for a `__hoisted` forward-reference shell
+        // (`hoist_type_decl_shells`): its registration runs before the
+        // class's own body statements (including a `BEGIN { ... }` that
+        // dynamically composes a role via `.^add_role`) have executed, so a
+        // private method the role would supply is not visible yet even
+        // though the real, source-position declaration below will compose
+        // it correctly. The shell's registration is discarded and
+        // re-validated by that real declaration anyway (see
+        // `ClassDeclModifiers::is_hoisted_shell`'s doc comment), so a
+        // validation failure here is a false positive, not a genuine error
+        // (#8573).
+        if !is_hoisted_shell && let Err(err) = self.validate_private_method_existence(name) {
             snapshot.restore(self, name);
             return Err(err);
         }

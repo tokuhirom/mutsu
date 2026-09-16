@@ -146,6 +146,11 @@ impl Interpreter {
             where_constraint: decl.where_constraint.clone(),
             declared_shape,
         });
+        if let Some(built) = decl.is_built {
+            cx.role_def
+                .attribute_built
+                .insert(attr_name_str.clone(), built);
+        }
         let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)
         } else {

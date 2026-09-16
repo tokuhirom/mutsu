@@ -44,6 +44,16 @@ pub(crate) struct ClassDef {
 #[derive(Debug, Clone)]
 pub(crate) struct RoleDef {
     pub(crate) attributes: Vec<ClassAttributeDef>,
+    /// Attribute names in [`Self::attributes`] declared with an `is built`
+    /// trait, mapping to the trait's `:bind` flag -- the same information
+    /// [`super::decl_types::ClassDef::attribute_built`] carries for a class's
+    /// own attributes, mirrored here so a role attribute's `is built(:bind)`
+    /// (e.g. the core `X::Wrapper` role's `has Mu $!exception is required is
+    /// built(:bind)`) is not silently dropped on composition (#8573):
+    /// without it, a composing class never learns to bind that attribute
+    /// from a same-named constructor argument, so `Type.new(exception =>
+    /// $x)` left `$!exception` undefined.
+    pub(crate) attribute_built: HashMap<String, bool>,
     pub(crate) methods: HashMap<String, Vec<MethodDef>>,
     pub(crate) is_stub_role: bool,
     pub(crate) is_hidden: bool,
