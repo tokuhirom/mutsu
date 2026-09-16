@@ -84,9 +84,12 @@ fn is_cclass(cclass: i64, ch: char) -> bool {
 }
 
 /// `(chars, offset)` for a cclass scan: nqp indexes strings by codepoint, so
-/// every one of these ops works on a `Vec<char>` rather than on bytes.
-fn scan_bounds(args: &[Value]) -> (Vec<char>, usize, usize) {
-    let chars: Vec<char> = sarg(args, 1).chars().collect();
+/// every one of these ops works on a `Vec<char>` rather than on bytes. The
+/// `args[1]` string is memoized across consecutive calls (see
+/// `nqp_char_cache`) -- a hand-rolled NQP scanner calls `findcclass`/
+/// `findnotcclass`/`iscclass` once per character over the SAME string.
+fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
+    let chars = super::nqp_char_cache::cached_chars(args, 1);
     let offset = iarg(args, 2).max(0) as usize;
     let count = iarg(args, 3).max(0) as usize;
     let end = offset.saturating_add(count).min(chars.len());
@@ -111,7 +114,7 @@ impl Interpreter {
             // -- character classes --
             // nqp::iscclass($cclass, $str, $offset) -> 0/1 for ONE character.
             "iscclass" => {
-                let chars: Vec<char> = sarg(args, 1).chars().collect();
+                let chars = super::nqp_char_cache::cached_chars(args, 1);
                 let idx = iarg(args, 2).max(0) as usize;
                 let yes = chars
                     .get(idx)

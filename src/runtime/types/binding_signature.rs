@@ -180,6 +180,50 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Evaluate a `where` constraint against an already-computed value,
+    /// rather than looking the bound value up by name in `self.env` (the
+    /// path `check_named_param_where_constraint` takes for an ordinary named
+    /// parameter). A slurpy parameter's value is the collected hash/capture
+    /// itself, not a single caller argument to look up.
+    fn check_where_constraint_against_value(
+        &mut self,
+        pd: &ParamDef,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        let Some(where_expr) = &pd.where_constraint else {
+            return Ok(());
+        };
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), value.clone());
+        let ok = match where_expr.as_ref() {
+            Expr::AnonSub { body, .. } => {
+                let ph_keys = self.bind_where_placeholders(body, value);
+                let r = self
+                    .eval_block_value_recording_writes(body)
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                for k in ph_keys {
+                    self.unmark_readonly(&k);
+                    self.env.remove(&k);
+                }
+                r
+            }
+            expr => self
+                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
+                .map(|v| self.smart_match(value, &v))
+                .unwrap_or(false),
+        };
+        if let Some(previous) = saved_topic {
+            self.env.insert("_".to_string(), previous);
+        } else {
+            self.env.remove("_");
+        }
+        if !ok {
+            return Err(Self::parameter_where_binding_error(pd, value, Some(&*self)));
+        }
+        Ok(())
+    }
+
     /// Evaluate a positional parameter's `where` post-constraint against the
     /// value the parameter is about to bind.
     ///
@@ -1651,11 +1695,12 @@ impl Interpreter {
                             hash_items.insert(k.clone(), v.clone());
                         }
                     }
+                    let slurpy_value = Value::hash_bare_values(hash_items);
                     if !pd.name.is_empty() {
                         self.bind_param_value_sym(
                             binding_name,
                             pd_name_sym(),
-                            Value::hash_bare_values(hash_items),
+                            slurpy_value.clone(),
                         );
                         self.bind_param_type_constraint_sym(
                             binding_name,
@@ -1663,6 +1708,20 @@ impl Interpreter {
                             pd.assignment_type_constraint(),
                         );
                     }
+                    // Enforce a `where` constraint on the slurpy hash itself
+                    // (`sub f(*%v where { not $_.keys })`), the same way the
+                    // sigilless capture (`|c where {...}`) branch above does.
+                    // This was previously skipped entirely: `*%hash` binding
+                    // has no counterpart to the named-param loop's `!pd.slurpy`
+                    // filter that routes an explicit `:$x where ...` through
+                    // `check_named_param_where_constraint`, so a `*%`
+                    // where-clause never ran and every argument shape matched
+                    // (found via App::ShowPath's `License::SPDX`, whose
+                    // `multi method new(*%v where { not $_.keys })`
+                    // zero-args-only candidate was wrongly selected for
+                    // every call, recursively re-parsing its own bundled
+                    // resource file).
+                    self.check_where_constraint_against_value(pd, &slurpy_value)?;
                 } else if pd.double_slurpy {
                     // **@ (non-flattening slurpy): keep each argument as-is, skip Pairs
                     let mut items = Vec::new();
