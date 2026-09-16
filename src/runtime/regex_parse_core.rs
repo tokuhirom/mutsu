@@ -994,9 +994,14 @@ impl Interpreter {
                 };
                 body.push(ch);
                 if opens_string {
+                    let mut escaped = false;
                     for q in chars.by_ref() {
                         body.push(q);
-                        if q == ch {
+                        if escaped {
+                            escaped = false;
+                        } else if q == '\\' {
+                            escaped = true;
+                        } else if q == ch {
                             break;
                         }
                     }

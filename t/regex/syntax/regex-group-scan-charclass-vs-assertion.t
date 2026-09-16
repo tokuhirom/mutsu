@@ -14,7 +14,7 @@ use Test;
 # `( \d+ <[.)]> )` ended at the class's `)` and died on the leftover `]`
 # (Markdown::Lex, Blogin), while `( [ <!before '>}}'> . ]* )` ended at the `>`
 # inside the assertion's string (Blogin). Refs #7954.
-plan 11;
+plan 12;
 
 # --- a paren inside a character class is a member ---------------------------
 
@@ -40,5 +40,11 @@ is $0, 'x', '... so the assertion stops the repetition at the `>`';
 
 ok Q{a'b} ~~ / ( <-['"]>+ ) /, 'quotes are literal members of a char class';
 is $0, 'a', '... and the class still excludes them';
+
+# FunctionalParsers uses escaped apostrophes in a bracketed alternation before
+# a character class. The escaped quote must not close the string while scanning
+# the outer group.
+ok q['value'] ~~ / ^ ['\'' | '"'] <-['"]>+ '\'' | '"' $ /,
+    'escaped quote in a regex group leaves the following class intact';
 
 done-testing;
