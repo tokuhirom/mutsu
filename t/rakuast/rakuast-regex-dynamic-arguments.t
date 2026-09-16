@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 59;
+plan 67;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -237,3 +237,47 @@ ok GDynamicCallableArgument.parse('a').defined,
     'a lexical callable argument observes callable reassignment at match time';
 ok !GDynamicCallableArgument.parse('A').defined,
     'a lexical callable argument retains its current callable value';
+
+my $named_ast = Q[/<word(:expected($value))>/].AST;
+my $named_gist = $named_ast.gist;
+ok $named_gist.contains('RakuAST::ColonPair::Value'),
+    'a named colonpair argument keeps its colonpair node';
+ok $named_gist.contains('key   => "expected"'),
+    'a named colonpair argument keeps its key';
+ok $named_gist.contains('value => RakuAST::Circumfix::Parentheses'),
+    'a named colonpair argument keeps its parenthesized value';
+
+my $named_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Var::Lexical.new('$value'),
+);
+my $named_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($named_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($named_constructed_ast) ~~ Regex,
+    'a constructed named colonpair regex lowers successfully';
+
+grammar GDynamicNamedColonPairArgument {
+    token TOP { <word(:expected($value))> }
+    token word(:$expected) { $expected }
+}
+$value = 'a';
+ok GDynamicNamedColonPairArgument.parse('a').defined,
+    'a named colonpair argument reaches the named subrule parameter';
+$value = 'b';
+ok GDynamicNamedColonPairArgument.parse('b').defined,
+    'a named colonpair argument observes value reassignment at match time';
+ok !GDynamicNamedColonPairArgument.parse('a').defined,
+    'a named colonpair argument retains its current value';
+
+grammar GDynamicNamedColonPairAdverb {
+    token TOP { <word(:expected($value))> }
+    token word(:$expected) { :i $expected }
+}
+$value = 'a';
+ok GDynamicNamedColonPairAdverb.parse('A').defined,
+    'a named colonpair argument remains compatible with regex adverbs';

@@ -1622,6 +1622,7 @@ fn lower_regex_subrule_args(
             args: Vec::new(),
             source: None,
             literal_hash_indices: Vec::new(),
+            colonpair_values: Vec::new(),
         });
     };
     let args = child_node(&field.value)?;
@@ -1631,12 +1632,14 @@ fn lower_regex_subrule_args(
     let mut lowered = Vec::with_capacity(args.fields.len());
     let mut sources = Vec::with_capacity(args.fields.len());
     let mut literal_hash_indices = Vec::with_capacity(args.fields.len());
+    let mut colonpair_values = Vec::with_capacity(args.fields.len());
     for field in &args.fields {
         if field.name.is_some() {
             return Err(unsupported(node));
         }
         let argument = child_node(&field.value)?;
         literal_hash_indices.push(is_literal_hash_index(argument));
+        colonpair_values.push(is_colonpair_value(argument));
         sources.push(regex_subrule_argument_source(argument)?);
         lowered.push(lower_expr(argument)?);
     }
@@ -1644,6 +1647,7 @@ fn lower_regex_subrule_args(
         args: lowered,
         source: Some(sources.join(", ")),
         literal_hash_indices,
+        colonpair_values,
     })
 }
 
@@ -1651,6 +1655,10 @@ fn is_literal_hash_index(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::ApplyPostfix
         && named_child(node, "postfix")
             .is_ok_and(|postfix| postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex)
+}
+
+fn is_colonpair_value(node: &RakuAstNode) -> bool {
+    node.class == RakuAstClass::ColonPairValue
 }
 
 fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
@@ -1664,8 +1672,31 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             crate::regex_tree::expression_source(&index).ok_or_else(|| unsupported(node))?,
         ));
     }
+    if is_colonpair_value(node) {
+        let key = leaf_str(node, "key")?;
+        let value = lower_expr(named_child(node, "value")?)?;
+        let value = match value {
+            Expr::Grouped(inner) => *inner,
+            value => value,
+        };
+        let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
+        return Ok(format!(":{key}({value})"));
+    }
     let expr = lower_expr(node)?;
     crate::regex_tree::expression_source(&expr).ok_or_else(|| unsupported(node))
+}
+
+fn colonpair_value_source(expr: &Expr) -> Option<String> {
+    match expr {
+        // `:name(a, b)` lowers to an ArrayLiteral internally, but its source
+        // value is a parenthesized comma list rather than an Array composer.
+        Expr::ArrayLiteral(items) => items
+            .iter()
+            .map(crate::regex_tree::expression_source)
+            .collect::<Option<Vec<_>>>()
+            .map(|parts| parts.join(", ")),
+        expr => crate::regex_tree::expression_source(expr),
+    }
 }
 
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
@@ -2297,6 +2328,15 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // The quoted/computed spelling arrives as an `ApplyInfix` over `=>`
         // instead and lowers, below, to the `PositionalPair` that marks it
         // positional.
+        RakuAstClass::ColonPairValue => {
+            let key = leaf_str(node, "key")?;
+            let value = lower_expr(named_child(node, "value")?)?;
+            Ok(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(key))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value),
+            })
+        }
         RakuAstClass::FatArrow => {
             let key = leaf_str(node, "key")?;
             let value = lower_expr(named_child(node, "value")?)?;

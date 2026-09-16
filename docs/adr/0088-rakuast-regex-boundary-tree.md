@@ -14,8 +14,8 @@
   argumented-subrule-alias, indexed-dynamic-argument, and ternary-dynamic-
   argument, modified-method-call dynamic-argument, and quoted-method-call
   dynamic-argument, dynamic-quoted-method-name argument, and hash-index
-  dynamic-argument, literal-hash-index and indirect-callable dynamic-argument
-  slices implemented
+  dynamic-argument, literal-hash-index, indirect-callable, and named-colonpair
+  dynamic-argument slices implemented
   2026-09-12 through
   2026-09-16;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1218,3 +1218,22 @@ boundaries. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the code-variable target,
 indirect call node, AST EVAL, direct grammar matching, and callable reassignment
 between matches.
+
+## 48. Named colonpair dynamic argument slice (2026-09-16)
+
+Named colonpair arguments in argumented subrules, such as
+`<word(:expected($value))>`, now retain Rakudo's
+`RakuAST::ColonPair::Value` node. The ordinary expression AST intentionally
+folds a colonpair value and a bareword `=>` pair into the same `FatArrow`
+shape, so the regex argument source records the colonpair delimiter beside
+the execution expression for the RakuAST read direction.
+
+The write direction lowers `ColonPair::Value` to the existing named-pair
+execution expression and renders its value with the colonpair spelling before
+the established match-time subrule argument evaluator sees it. This preserves
+named binding and lexical reassignment without evaluating the value during AST
+conversion or adding a matcher or VM path. Block-valued and other
+runtime-valued colonpair forms remain separate boundaries. The focused
+regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the AST
+node and fields, constructor/EVAL lowering, named binding, reassignment, and a
+regex-adverb variant.

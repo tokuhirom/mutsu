@@ -55,6 +55,11 @@ pub(crate) struct SubruleArgs {
     /// that source distinction for RakuAST's LiteralHashIndex model node.
     #[serde(default)]
     pub(crate) literal_hash_indices: Vec<bool>,
+    /// Colonpair values and bareword fat-arrow pairs share the same internal
+    /// expression shape. Regex subrule arguments need this source distinction
+    /// for RakuAST's ColonPair::Value model node.
+    #[serde(default)]
+    pub(crate) colonpair_values: Vec<bool>,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -2255,6 +2260,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
             name.to_string(),
             Some(Box::new(SubruleArgs {
                 literal_hash_indices: literal_hash_index_arguments(args_source, &args),
+                colonpair_values: colonpair_value_arguments(args_source, &args),
                 args,
                 source: Some(args_source.to_string()),
             })),
@@ -2282,6 +2288,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
         name.to_string(),
         Some(Box::new(SubruleArgs {
             literal_hash_indices: literal_hash_index_arguments(args_source, &args),
+            colonpair_values: colonpair_value_arguments(args_source, &args),
             args,
             source: Some(args_source.to_string()),
         })),
@@ -2309,6 +2316,43 @@ fn literal_hash_index_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<
                 let part = part.trim();
                 part.contains('<') && part.ends_with('>')
             })
+        })
+        .collect()
+}
+
+/// Identify the bounded `:name(EXPR)` form after the ordinary expression
+/// parser has produced its execution expression. Colonpairs and bareword
+/// `name => EXPR` pairs intentionally share `Expr::Binary`; retain this
+/// delimiter provenance beside regex arguments so RakuAST can expose the
+/// source-level `ColonPair::Value` node without changing ordinary calls.
+fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<bool> {
+    let parts = split_top_level_arguments(source);
+    args.iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            let is_pair = matches!(
+                argument,
+                crate::ast::Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: _,
+                } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
+                    if matches!(value.view(), crate::value::ValueView::Str(_)))
+            );
+            is_pair
+                && parts.get(index).is_some_and(|part| {
+                    let part = part.trim();
+                    let Some(name) = part.strip_prefix(':') else {
+                        return false;
+                    };
+                    let Some(open) = name.find('(') else {
+                        return false;
+                    };
+                    name[..open]
+                        .chars()
+                        .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+                        && name.ends_with(')')
+                })
         })
         .collect()
 }
