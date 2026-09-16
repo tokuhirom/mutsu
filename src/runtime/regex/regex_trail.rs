@@ -346,13 +346,15 @@ impl CapStore {
         }
     }
 
-    /// Trailed `reserve_nil_capture_slots` (unmatched `(x)?` Nil reservation).
-    pub(super) fn reserve_nil(&mut self, stride: usize) {
-        if stride == 0 {
+    /// Trailed `reserve_nil_capture_slots` (unmatched `(x)?` Nil/empty-list
+    /// reservation — see [`super::regex_helpers::capture_group_list_flags`]
+    /// for what each `flags` entry means).
+    pub(super) fn reserve_nil(&mut self, flags: &[bool]) {
+        if flags.is_empty() {
             return;
         }
         self.record_pos_lens();
-        super::regex_helpers::reserve_nil_capture_slots(&mut self.caps, stride);
+        super::regex_helpers::reserve_nil_capture_slots(&mut self.caps, flags);
     }
 
     /// Trailed `fold_quantified_captures`: save the unfolded tail, then fold.
