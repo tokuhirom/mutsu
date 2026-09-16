@@ -88,6 +88,7 @@ pub enum RakuAstClass {
     RegexAnchorEndOfLine,
     RegexCharClassDigit,
     ColonPairTrue,
+    ColonPairVariable,
     ColonPairValue,
     RegexDeclaration,
     TokenDeclaration,
@@ -317,6 +318,7 @@ impl RakuAstClass {
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
             RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
             ColonPairTrue => "RakuAST::ColonPair::True",
+            ColonPairVariable => "RakuAST::ColonPair::Variable",
             ColonPairValue => "RakuAST::ColonPair::Value",
             RegexDeclaration => "RakuAST::RegexDeclaration",
             TokenDeclaration => "RakuAST::TokenDeclaration",
@@ -726,7 +728,9 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
         ],
-        "RakuAST::ColonPair::True" | "RakuAST::ColonPair::Value" => {
+        "RakuAST::ColonPair::True"
+        | "RakuAST::ColonPair::Variable"
+        | "RakuAST::ColonPair::Value" => {
             &["RakuAST::Term", "RakuAST::Expression"]
         }
         "RakuAST::Pragma" => &["RakuAST::Statement"],
@@ -822,6 +826,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorEndOfLine,
     RakuAstClass::RegexCharClassDigit,
     RakuAstClass::ColonPairTrue,
+    RakuAstClass::ColonPairVariable,
     RakuAstClass::ColonPairValue,
     RakuAstClass::RegexDeclaration,
     RakuAstClass::TokenDeclaration,
@@ -1633,6 +1638,36 @@ pub fn construct(
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::RegexAssertionNamedArgs,
             fields,
+        }))));
+    }
+    if class_name == "RakuAST::ColonPair::Variable" && method == "new" {
+        let key = named_arg(args, "key")
+            .ok_or_else(|| RuntimeError::new("RakuAST::ColonPair::Variable.new requires `key`"))?;
+        let ValueView::Str(key) = key.view() else {
+            return Err(RuntimeError::new(
+                "RakuAST::ColonPair::Variable.new expects `key` to be a Str",
+            ));
+        };
+        let value = named_arg(args, "value").ok_or_else(|| {
+            RuntimeError::new("RakuAST::ColonPair::Variable.new requires `value`")
+        })?;
+        require_rakuast_class(
+            &value,
+            RakuAstClass::VarLexical,
+            "RakuAST::ColonPair::Variable.new",
+        )?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::ColonPairVariable,
+            fields: vec![
+                RakuAstField {
+                    name: Some("key"),
+                    value: RakuAstFieldValue::Node(Value::str(key.to_string())),
+                },
+                RakuAstField {
+                    name: Some("value"),
+                    value: RakuAstFieldValue::Node(value),
+                },
+            ],
         }))));
     }
     if class_name == "RakuAST::ColonPair::Value" && method == "new" {
@@ -2492,6 +2527,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorEndOfLine
             | RakuAstClass::RegexCharClassDigit
             | RakuAstClass::ColonPairTrue
+            | RakuAstClass::ColonPairVariable
             | RakuAstClass::ColonPairValue
             | RakuAstClass::RegexDeclaration
             | RakuAstClass::TokenDeclaration

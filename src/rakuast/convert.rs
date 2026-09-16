@@ -3784,7 +3784,14 @@ fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, 
             .iter()
             .enumerate()
             .map(|(index, argument)| {
-                let node = if args.colonpair_values.get(index).copied().unwrap_or(false) {
+                let node = if args
+                    .colonpair_variables
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    colonpair_variable_expr(argument)?
+                } else if args.colonpair_values.get(index).copied().unwrap_or(false) {
                     colonpair_value_expr(argument)?
                 } else if args
                     .literal_hash_indices
@@ -3799,6 +3806,38 @@ fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, 
                 Ok(node_field(None, node))
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?,
+    })
+}
+
+/// Convert the execution-level `key => variable` shape back to Rakudo's
+/// source-level `RakuAST::ColonPair::Variable` node. The variable sigil and
+/// leading colon are retained by `SubruleArgs` because the internal pair does
+/// not distinguish this spelling from an ordinary named argument.
+fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        right,
+    } = expr
+    else {
+        return Err(unsupported("colonpair variable provenance"));
+    };
+    let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = left.as_ref() else {
+        return Err(unsupported("colonpair variable key"));
+    };
+    let ValueView::Str(key) = value.view() else {
+        return Err(unsupported("colonpair variable key"));
+    };
+    let value = convert_expr(right)?;
+    if value.class != RakuAstClass::VarLexical {
+        return Err(unsupported("colonpair variable value"));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ColonPairVariable,
+        fields: vec![
+            leaf_field(Some("key"), Value::str(key.to_string())),
+            node_field(Some("value"), value),
+        ],
     })
 }
 

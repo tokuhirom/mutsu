@@ -186,7 +186,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("block", Absent::Required), ("sequential", Absent::False)]
         }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
-        ColonPairValue => &[("key", Absent::Required), ("value", Absent::Required)],
+        ColonPairVariable | ColonPairValue => {
+            &[("key", Absent::Required), ("value", Absent::Required)]
+        }
         RegexQuantifiedAtom => &[
             ("atom", Absent::Required),
             ("quantifier", Absent::Required),

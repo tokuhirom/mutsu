@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 67;
+plan 80;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -281,3 +281,60 @@ grammar GDynamicNamedColonPairAdverb {
 $value = 'a';
 ok GDynamicNamedColonPairAdverb.parse('A').defined,
     'a named colonpair argument remains compatible with regex adverbs';
+
+my $variable_ast = Q[my $expected = 'a'; /<word(:$expected)>/].AST;
+my $variable_gist = $variable_ast.gist;
+ok $variable_gist.contains('RakuAST::ColonPair::Variable'),
+    'a scalar variable colonpair keeps its colonpair node';
+ok $variable_gist.contains('key   => "expected"'),
+    'a scalar variable colonpair keeps its key';
+ok $variable_gist.contains('RakuAST::Var::Lexical.new("\\$expected")'),
+    'a scalar variable colonpair keeps its variable value';
+
+my $variable_pair = RakuAST::ColonPair::Variable.new(
+    key => 'expected',
+    value => RakuAST::Var::Lexical.new('$value'),
+);
+my $variable_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($variable_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($variable_constructed_ast) ~~ Regex,
+    'a constructed variable colonpair regex lowers successfully';
+
+grammar GDynamicVariableColonPairArgument {
+    token TOP { <word(:$value)> }
+    token word(:$value) { $value }
+}
+$value = 'a';
+ok GDynamicVariableColonPairArgument.parse('a').defined,
+    'a scalar variable colonpair reaches the named subrule parameter';
+$value = 'b';
+ok GDynamicVariableColonPairArgument.parse('b').defined,
+    'a scalar variable colonpair observes value reassignment at match time';
+ok !GDynamicVariableColonPairArgument.parse('a').defined,
+    'a scalar variable colonpair retains its current value';
+
+my $array_variable_ast = Q[my @expected = <a>; /<word(:@expected)>/].AST;
+my $array_variable_gist = $array_variable_ast.gist;
+ok $array_variable_gist.contains('RakuAST::ColonPair::Variable'),
+    'an array variable colonpair keeps its colonpair node';
+ok $array_variable_gist.contains('RakuAST::Var::Lexical.new("\\@expected")'),
+    'an array variable colonpair keeps its array value';
+
+my $hash_variable_ast = Q[my %expected = a => 1; /<word(:%expected)>/].AST;
+my $hash_variable_gist = $hash_variable_ast.gist;
+ok $hash_variable_gist.contains('RakuAST::ColonPair::Variable'),
+    'a hash variable colonpair keeps its colonpair node';
+ok $hash_variable_gist.contains('RakuAST::Var::Lexical.new("\\%expected")'),
+    'a hash variable colonpair keeps its hash value';
+
+my $code_variable_ast = Q[my &expected = -> { True }; /<word(:&expected)>/].AST;
+my $code_variable_gist = $code_variable_ast.gist;
+ok $code_variable_gist.contains('RakuAST::ColonPair::Variable'),
+    'a code variable colonpair keeps its colonpair node';
+ok $code_variable_gist.contains('RakuAST::Var::Lexical.new("\\&expected")'),
+    'a code variable colonpair keeps its code value';
