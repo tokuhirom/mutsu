@@ -836,6 +836,7 @@ impl Interpreter {
             ))),
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),
+            grammar_dynvar_decls_cache: HashMap::new(),
             supply_emit_buffer: Vec::new(),
             pending_react_subscriptions: Vec::new(),
             nested_react_callbacks: std::collections::HashSet::new(),

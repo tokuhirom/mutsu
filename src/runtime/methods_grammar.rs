@@ -22,6 +22,28 @@ impl Interpreter {
     /// Returns the previous declaration table so nested/re-entrant parses can
     /// restore the enclosing grammar's table when they finish.
     fn establish_grammar_dynamic_vars(&mut self, package: &str) -> HashMap<String, Vec<String>> {
+        let token_defs_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let cached = self
+            .grammar_dynvar_decls_cache
+            .get(package)
+            .filter(|(cached_gen, _)| *cached_gen == token_defs_gen)
+            .map(|(_, decls)| decls.clone());
+        let per_rule = match cached {
+            Some(decls) => decls,
+            None => {
+                let computed = self.compute_grammar_rule_dynvar_decls(package);
+                self.grammar_dynvar_decls_cache
+                    .insert(package.to_string(), (token_defs_gen, computed.clone()));
+                computed
+            }
+        };
+        std::mem::replace(&mut self.grammar_rule_dynvar_decls, per_rule)
+    }
+
+    /// The actual per-package MRO+registry scan `establish_grammar_dynamic_vars`
+    /// memoizes. Pulled out so the cache-hit path above never touches it.
+    fn compute_grammar_rule_dynvar_decls(&self, package: &str) -> HashMap<String, Vec<String>> {
         // Collect the grammar's rule patterns (this package + ancestors).
         let mut patterns: Vec<(String, String)> = Vec::new();
         {
@@ -67,7 +89,7 @@ impl Interpreter {
                 per_rule.entry(rule.clone()).or_default().extend(rule_decls);
             }
         }
-        std::mem::replace(&mut self.grammar_rule_dynvar_decls, per_rule)
+        per_rule
     }
 
     /// The environment keys occupied by one grammar dynamic variable. Scalar

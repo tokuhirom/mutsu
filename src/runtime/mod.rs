@@ -3272,6 +3272,15 @@ pub struct Interpreter {
     /// *match* of a declaring rule its own binding on top of that, so a
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
+    /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
+    /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
+    /// `.parse`/subparse is re-entered many times against a stable token registry
+    /// (e.g. once per backtrack attempt of an enclosing `<?{ }>` code assertion —
+    /// see #8510), so recomputing the full MRO+registry scan on every call is pure
+    /// waste once no new token has been registered since. Invalidated wholesale
+    /// (by generation mismatch) rather than per-package, since a new token
+    /// registration is rare and global.
+    grammar_dynvar_decls_cache: HashMap<String, (u64, HashMap<String, Vec<String>>)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// `whenever` subscription markers registered while a react drive loop is
     /// already running (a `whenever` nested inside another `whenever`'s body).
