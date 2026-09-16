@@ -1,20 +1,39 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
-    "resolved": [],
-    "unresolved": [
-      "as"
-    ]
+    "resolved": [
+      "as-cli-arguments"
+    ],
+    "unresolved": []
   },
   "dist": "shorten-sub-commands",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "does foo give foozle?",
+        "nok": 12,
+        "ok": 0,
+        "plan": 12,
+        "secs": 5.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "shorten-sub-commands": "raku_also_fails"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -25,7 +44,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/HO/SHORTENSUBCOMMANDS/6843bac79e22a803b25b78d4d1a4c7d6b0930987.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

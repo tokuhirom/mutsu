@@ -20,16 +20,40 @@
     "unresolved": []
   },
   "dist": "Graph::RandomMaze",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'key' for invocant of type 'Whatever'",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 10.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic-usage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 93.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Graph::RandomMaze": "No such method 'instance' for invocant of type 'Int'"
+    "Graph::RandomMaze": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -40,13 +64,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAPH_RANDOMMAZE/c61aa671801605e4e09406d95d14715ffe370c0b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }

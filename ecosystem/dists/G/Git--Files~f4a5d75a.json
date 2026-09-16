@@ -1,20 +1,47 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
-    "resolved": [],
-    "unresolved": [
-      "path"
-    ]
+    "resolved": [
+      "path-utils"
+    ],
+    "unresolved": []
   },
   "dist": "Git::Files",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Git::Files": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -25,12 +52,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/IT/GIT_FILES/dbe4f2a55592e7f3b90c1335cb1ea0bffa62b478.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.9"

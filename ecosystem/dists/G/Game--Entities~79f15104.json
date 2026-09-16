@@ -12,10 +12,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "No such method 'key' for invocant of type 'Game::Entities::View'",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 3,
         "plan": null,
-        "secs": 0.34,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.21,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,30 +39,30 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.43,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
+        "first_failure": "Comparator with arity 1",
+        "nok": 2,
         "ok": 0,
-        "plan": null,
-        "secs": 240.12,
+        "plan": 2,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "fail"
       },
       "path": "t/sorting.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.55,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,8 +76,8 @@
     "attempts": 3,
     "date": "2026-09-16",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "0419f165",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -92,7 +92,7 @@
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 2,
-    "mutsu_assertions": 2,
+    "mutsu_assertions": 3,
     "parity_files": 0,
     "regressed_files": 2
   },

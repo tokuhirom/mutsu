@@ -1,4 +1,5 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
@@ -6,20 +7,29 @@
       "Log::Async",
       "OO::Monitors",
       "Terminal::ANSI",
-      "Terminal::ANSIParser"
+      "Terminal::ANSIParser",
+      "Unicode::UTF8-Parser"
     ],
-    "unresolved": [
-      "Unicode::UTF8"
-    ]
+    "unresolved": []
   },
   "dist": "Terminal::UI",
   "files": [],
+  "load": {
+    "Terminal::UI": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or '.' or digits or generic radix literal or unicode numeric literal or ... [at lib/Terminal/UI.rakumod:128]",
+    "Terminal::UI::Alerts": "ok",
+    "Terminal::UI::Frame": "ok",
+    "Terminal::UI::Input": "ok",
+    "Terminal::UI::Pane": "ok",
+    "Terminal::UI::Screen": "ok",
+    "Terminal::UI::Style": "ok",
+    "Terminal::UI::Utils": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -30,7 +40,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_UI/97be0392703c0ef562b9092d0a52c2623157131c.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "blocked_load",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

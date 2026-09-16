@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.14,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.52,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "number expected while parsing .Date, at character offset 6 (before \"0x0p+0)\")",
-        "nok": 0,
-        "ok": 33,
-        "plan": null,
-        "secs": 0.12,
+        "first_failure": "dies on malformed input: \"\\\"\\\\q\\\"\"",
+        "nok": 1,
+        "ok": 70,
+        "plan": 71,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-decode.rakutest",
       "raku": {
         "nok": 0,
         "ok": 71,
         "plan": 71,
-        "secs": 0.86,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,11 +56,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Ambiguous call to 'value(SION::Encoder\u00005: )'; these signatures all match:",
-        "nok": 4,
-        "ok": 31,
+        "first_failure": "Cannot unbox 65 bit wide bigint into native integer",
+        "nok": 1,
+        "ok": 35,
         "plan": null,
-        "secs": 0.21,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.84,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,11 +79,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "SION text exceeds maximum nesting level (max-depth set too low?), at character offset 51 (before \"[",
+        "first_failure": "Cannot unbox 65 bit wide bigint into native integer",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.5,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.58,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,8 +107,8 @@
     "attempts": 3,
     "date": "2026-09-16",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "96fce3163",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -123,7 +123,7 @@
   "totals": {
     "baseline_assertions": 150,
     "baseline_files": 4,
-    "mutsu_assertions": 67,
+    "mutsu_assertions": 108,
     "parity_files": 1,
     "regressed_files": 3
   },

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7B2D8B"/>
+      <stop offset="100%" stop-color="#E91E8C"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#1a0a20"/>
+  <!-- hexagon: "mutsu" (六つ) means "six" in Japanese -->
+  <polygon points="32,8 53,20 53,44 32,56 11,44 11,20" fill="url(#g)"/>
+  <text x="32" y="41" font-family="'Fira Code','Cascadia Code',ui-monospace,monospace"
+        font-size="26" font-weight="700" fill="#f0e6f6" text-anchor="middle">m</text>
+</svg>

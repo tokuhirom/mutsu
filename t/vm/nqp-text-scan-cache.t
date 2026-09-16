@@ -1,16 +1,20 @@
 use Test;
 use nqp;
 
-# `iscclass`/`findcclass`/`findnotcclass`/`eqat`/`index`/`rindex`/`substr`
-# (runtime/nqp_ops_text.rs, runtime/nqp_ops_str.rs) used to re-collect their
-# whole string argument into a fresh `Vec<char>` on every single call. A
-# hand-rolled NQP scanner calls these once per character (or per token) over
-# the SAME string with an advancing position -- JSON::Fast's own JSON parser
-# is the case that surfaced this (App::ShowPath's `License::SPDX` dependency,
-# a 332KB bundled license list) -- so that made parsing quadratic: what
-# should be O(n) work became O(n) work repeated O(n) times, turning a
-# sub-second parse into an effective hang. The ops are now memoized by the
-# string argument's own identity across consecutive calls.
+# `iscclass`/`findcclass`/`findnotcclass`/`eqat`/`index`/`rindex`/`substr`/
+# `ordat` (runtime/nqp_ops_text.rs, runtime/nqp_ops_str.rs,
+# runtime/nqp_ops_builtin.rs) used to re-collect their whole string argument
+# into a fresh `String`/`Vec<char>` on every single call. A hand-rolled NQP
+# scanner calls these once per character (or per token) over the SAME string
+# with an advancing position -- JSON::Fast's own JSON parser is the case that
+# surfaced this (Test::META's `License::SPDX` dependency, a 332KB bundled
+# license list, via `nom-ws`'s `nqp::ordat($text, $pos)` whitespace-skipping
+# loop and the string-token `nqp::eqat` check) -- so that made parsing
+# quadratic: what should be O(n) work became O(n) work repeated O(n) times,
+# turning a sub-second parse into an effective hang (Test::META's
+# `t/020-internals.t` timed out at 240s in the ecosystem sweep; `ordat` alone
+# turned a 30KB resource file into 14+ seconds). The ops are now memoized by
+# the string argument's own identity across consecutive calls.
 #
 # This file pins two things: the ops still answer correctly when the SAME
 # string is scanned at many different positions in a row (the cache must not
@@ -18,7 +22,7 @@ use nqp;
 # stays fast (the timing bound guards against the quadratic behavior
 # regressing, not just wrong answers).
 
-plan 8;
+plan 10;
 
 my constant $N = 20_000;
 my $big = ('a' x ($N - 1)) ~ '"';  # N chars, closing quote at the very end
@@ -65,6 +69,19 @@ my $big = ('a' x ($N - 1)) ~ '"';  # N chars, closing quote at the very end
         $pos++;
     }
     is $found, $N - 1, 'index finds the closing quote after repeated calls with an advancing start';
+}
+
+# ordat: JSON::Fast's `nom-ws` calls this once per character while skipping
+# whitespace, scanning forward from position 0 over the whole document.
+{
+    my int $count = 0;
+    my int $i = 0;
+    while nqp::ordat($big, $i) == 97 {  # 'a'
+        $count++;
+        $i++;
+    }
+    is $count, $N - 1, 'ordat scanned every "a" up to the closing quote';
+    is nqp::ordat($big, $N - 1), 34, 'ordat sees the closing quote at the final position';  # '"'
 }
 
 # substr: repeated calls against the same large string must each see its

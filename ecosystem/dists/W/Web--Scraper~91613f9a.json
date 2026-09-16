@@ -17,16 +17,77 @@
     "unresolved": []
   },
   "dist": "Web::Scraper",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "tarray hash equality",
+        "nok": 17,
+        "ok": 0,
+        "plan": 20,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01_basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 30.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02_http.t",
+      "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "timeout"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "check item id: 0",
+        "nok": 1,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03_chain.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Web::Scraper": "Failed to parse module 'HTML::Parser::XML': Unrecognized regex metacharacter ] (must be quoted to match literally) [at HTML/Parser/XML.pm6:89]"
+    "Web::Scraper": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -37,13 +98,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/EB/WEB_SCRAPER/2648649f988e6e79171bf18759795a4539caaa23.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 26,
+    "baseline_files": 2,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 2
   },
   "version": "0.1.4"
 }
