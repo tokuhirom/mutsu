@@ -597,17 +597,24 @@ impl Compiler {
                                             .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
                                     }
                                 }
-                                if decl_slot.is_none() {
-                                    self.code.emit(OpCode::Dup);
-                                }
                                 if mark_explicit_local_init {
                                     self.code.emit(OpCode::MarkExplicitInitializerContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
-                                if decl_slot.is_some() {
-                                    self.emit_get_named_var(name);
-                                }
+                                // Read the value back rather than `Dup`-ing the
+                                // pre-store value: `emit_set_named_var` itemizes
+                                // an Array/Hash/Slip/Seq/Range initializer (the
+                                // same `itemize_scalar_store` the statement-form
+                                // `SetLocal`/`SetGlobal` paths run), so a `Dup`
+                                // taken before the store left this expression's
+                                // value un-itemized -- `(my $x = [1, 2]).raku`
+                                // rendered `[1, 2]` instead of rakudo's
+                                // `$[1, 2]` (#8491). The re-read costs one more
+                                // op than the old `decl_slot`-gated `Dup`, but is
+                                // correct in both the local-slot and env-only
+                                // (`decl_slot.is_none()`) cases alike.
+                                self.emit_get_named_var(name);
                             }
                         }
                     }
