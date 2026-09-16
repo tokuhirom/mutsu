@@ -1587,9 +1587,36 @@ pub fn bigrat_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
     let scaled = &na << shift;
     let quotient = &scaled / &da;
     let qf = quotient.to_f64().unwrap_or(f64::INFINITY);
-    // Scale back: divide by 2^shift
-    let result = qf * 2.0f64.powi(-(shift as i32));
+    // Scale back: divide by 2^shift. `2.0f64.powi(-shift)` computed as a
+    // single value underflows to exactly 0.0 once `shift` exceeds ~1074 (the
+    // smallest subnormal double's exponent) -- even though the correctly
+    // rounded PRODUCT `qf * 2^-shift` can still be a nonzero (possibly
+    // subnormal) double, since `qf` itself carries roughly `target_bits`
+    // bits of magnitude back the other way (e.g. `1 / 2**1023`: qf ~ 2^55,
+    // shift = 1078, and the true result 2^-1023 is a representable
+    // subnormal, but `2.0f64.powi(-1078)` alone is already 0.0). Split into
+    // chunks no single one of which can underflow on its own; each
+    // intermediate `f64` multiply is correctly rounded by IEEE 754, so
+    // gradual underflow into (or below) the subnormal range happens on the
+    // final chunk exactly as it would for one un-split multiply that didn't
+    // itself underflow.
+    let result = scale_by_neg_pow2(qf, shift);
     if sign { -result } else { result }
+}
+
+/// `x * 2^-shift`, safe against the standalone factor `2.0f64.powi(-shift)`
+/// underflowing to zero for a `shift` beyond the smallest subnormal
+/// double's exponent magnitude (~1074). See the call site in
+/// [`bigrat_to_f64`] for why that matters.
+fn scale_by_neg_pow2(mut x: f64, mut shift: u32) -> f64 {
+    // Comfortably within the normal double exponent range (max magnitude
+    // ~1022), so each chunk multiply never underflows/overflows on its own.
+    const SAFE_SHIFT: u32 = 1000;
+    while shift > SAFE_SHIFT {
+        x *= 2.0f64.powi(-(SAFE_SHIFT as i32));
+        shift -= SAFE_SHIFT;
+    }
+    x * 2.0f64.powi(-(shift as i32))
 }
 
 /// Distinguishes the five array/list container kinds.
