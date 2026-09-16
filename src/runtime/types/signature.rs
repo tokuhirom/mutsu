@@ -15,6 +15,14 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         let inner = cell.lock().unwrap().clone();
         return positional_values_from_unpack_target(&inner);
     }
+    // An array/hash ELEMENT read wraps a non-itemized-by-kind value (a `Seq`
+    // has no `ArrayKind`-style itemized flag of its own) in `Value::Scalar` to
+    // mark it as itemized for ordinary consumers. Sub-signature destructuring
+    // must still see through it: `@a[0] = "x y z".split(/\s+/); -> [$a,$b,$c]
+    // {...}(@a[0])` binds `$a`/`$b`/`$c` in real Raku exactly as it would for
+    // the un-itemized Seq (mirrors the itemized-`Array`/"`$(3, 4)`" case
+    // already handled by the arms below via `ArrayKind::is_itemized()`).
+    let value = value.descalarize();
     match value.view() {
         ValueView::Capture { positional, .. } => (*positional).clone(),
         // For sub-signature destructuring, a list is always taken apart
@@ -864,7 +872,7 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
 /// itself a pair keeps its single positional slot: it destructures by its own
 /// key/value parts (`-> (:$key, :$value)`), which is a different rule.
 fn drop_pairs_captured_as_named(value: &Value, positional: Vec<Value>) -> Vec<Value> {
-    let unwrapped = value.unwrap_varref();
+    let unwrapped = value.unwrap_varref().descalarize();
     if !matches!(
         unwrapped.view(),
         ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
