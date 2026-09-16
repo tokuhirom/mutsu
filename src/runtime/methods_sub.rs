@@ -87,6 +87,23 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        if matches!(method, "wrap" | "unwrap") {
+            // Routine is a name-only handle, but wraps are stored against a
+            // concrete Sub identity.  Use a forwarding Sub which re-enters
+            // named dispatch, so a wrapper installed through `&dir` also
+            // affects a later `dir(...)` call.
+            let dispatch_name = if package.is_empty() || package == "GLOBAL" {
+                name.to_string()
+            } else {
+                format!("{package}::{name}")
+            };
+            let forwarding = self.routine_dispatch_sub(package, name, &dispatch_name);
+            let data = match forwarding.view() {
+                ValueView::Sub(data) => data.clone(),
+                _ => unreachable!("routine forwarding value must be a Sub"),
+            };
+            return self.dispatch_sub_method(&forwarding, &data, method, args);
+        }
         if method == "assuming" {
             // Create a wrapper Sub that delegates to the multi-dispatch routine
             let mut sub_data = crate::value::SubData {
@@ -374,6 +391,8 @@ impl Interpreter {
                     | "package"
                     | "line"
                     | "file"
+                    | "wrap"
+                    | "unwrap"
             );
             return Some(Ok(Value::truth(can)));
         }
