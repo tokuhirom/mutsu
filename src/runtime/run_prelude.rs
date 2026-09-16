@@ -1,7 +1,7 @@
 use super::run::{
     ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
     NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE,
-    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE,
+    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE, X_WRAPPER_ROLE_PRELUDE,
 };
 use super::source_code_text::CodeText;
 use super::*;
@@ -304,6 +304,35 @@ impl Interpreter {
         static ENUMERATION_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = ENUMERATION_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(ENUMERATION_ROLE_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the builtin `X::Wrapper` role ([`X_WRAPPER_ROLE_PRELUDE`]) to a
+    /// program (or module) that mentions it.
+    ///
+    /// Gated on the name like the other role preludes, and skipped when the
+    /// compunit declares its own `role X::Wrapper` (which the prelude would
+    /// collide with). Injected for MODULES too, not only the main program:
+    /// `AttrX::Mooish`'s `AttrX::Mooish::X.rakumod` -- the distribution that
+    /// motivated this -- references `X::Wrapper` from inside a `BEGIN {
+    /// ::?CLASS.^add_role(::('X::Wrapper')) }`, while the program that loads
+    /// it (`use AttrX::Mooish;`) never names `X::Wrapper` at all.
+    pub(super) fn inject_x_wrapper_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if !source.contains("X::Wrapper") || source.contains("role X::Wrapper") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static X_WRAPPER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = X_WRAPPER_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(X_WRAPPER_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

@@ -389,6 +389,7 @@ impl Interpreter {
         let prev_parents = self.reset_role_registration_state(name, type_params);
         let role_def = RoleDef {
             attributes: Vec::new(),
+            attribute_built: HashMap::new(),
             methods: HashMap::new(),
             // A yada-body forward declaration (`role Foo { ... }`) is a stub role:
             // mark it so the real definition that follows replaces it instead of

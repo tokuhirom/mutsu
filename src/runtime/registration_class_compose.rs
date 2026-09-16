@@ -269,6 +269,19 @@ impl Interpreter {
                 }
                 cx.class_def.attributes.push(attr.clone());
             }
+            // Carry the role attribute's `is built(:bind)`/`is built` trait
+            // onto the composing class too (#8573) -- without this, a
+            // private role attribute so marked (e.g. core `X::Wrapper`'s
+            // `has Mu $!exception is required is built(:bind)`) never binds
+            // from a same-named constructor argument once composed, since
+            // `attribute_built` is what the constructor's BUILD-argument
+            // binding actually consults, not `ClassAttributeDef` itself.
+            if let Some(&built) = role.attribute_built.get(&attr.name) {
+                cx.class_def
+                    .attribute_built
+                    .entry(attr.name.clone())
+                    .or_insert(built);
+            }
         }
         // Carry each composed-role class-level attribute (`my $.x`/`our $.x`)
         // onto the consuming class as a class-level attribute, so the accessor

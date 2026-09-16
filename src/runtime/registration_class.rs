@@ -44,6 +44,7 @@ pub(super) fn type_value_name(value: &Value) -> String {
 pub(super) fn builtin_role_def() -> RoleDef {
     RoleDef {
         attributes: Vec::new(),
+        attribute_built: HashMap::new(),
         methods: HashMap::new(),
         is_stub_role: false,
         is_hidden: false,

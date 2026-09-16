@@ -412,6 +412,55 @@ role GLOBAL::Metamodel::Stashing {
 }
 "#;
 
+/// Builtin `X::Wrapper` role (Rakudo core since ~2023.10; see
+/// `AttrX::Mooish`'s own `AttrX::Mooish::X::Wrapper` bundled polyfill for
+/// compilers older than that, whose attribute/method set this was measured
+/// against with a live `raku` -- `X::Wrapper.^attributes` reports exactly
+/// `$!exception $!ex-payload $!is-raku-exception`). It lets an exception
+/// class wrap a lower-level (possibly non-Raku) exception it was constructed
+/// from and expose a formatted "caused by" message for it.
+///
+/// mutsu composed the *name* `X::Wrapper` correctly already (it is a
+/// registered core role, needed so `X::` colliding with a user-declared
+/// sibling of the same short name resolves to this and not an empty stub —
+/// see the roast-vs-ecosystem distinction in `is_builtin_role_name`), but
+/// carried none of its actual state or methods, so any class composing it
+/// via `.^add_role(::('X::Wrapper'))` and calling `self!wrappee-message`
+/// died with `X::Method::NotFound` (#8573).
+pub(super) const X_WRAPPER_ROLE_PRELUDE: &str = r#"
+role GLOBAL::X::Wrapper {
+    has Mu $!exception is required is built(:bind);
+    has Mu $!ex-payload;
+    has $!is-raku-exception;
+
+    method exception is raw {
+        my $ex := nqp::decont($!exception);
+        nqp::isconcrete(nqp::decont($!ex-payload))
+            ?? $!ex-payload
+            !! ($!ex-payload := nqp::istype($ex, Exception) ?? $ex !! (nqp::ifnull(nqp::getpayload($ex), $ex)))
+    }
+
+    method !is-raku-exception {
+        $!is-raku-exception //= nqp::istype(self.exception, Exception)
+    }
+
+    method !wrappee-message(:$concise, :$details) {
+        my $ex-msg := self!is-raku-exception ?? $!ex-payload.message !! nqp::getmessage($!ex-payload);
+        my $message :=
+            $concise
+                ?? $ex-msg
+                !! ($!is-raku-exception
+                    ?? $!ex-payload.gist
+                    !! $ex-msg ~ "\n" ~ Backtrace.new(nqp::backtrace($!exception)));
+        $details ?? "; exception details:\n\n" ~ $message.indent(4) !! $message
+    }
+
+    method !exception-name-message {
+        self!is-raku-exception ?? " with " ~ $!ex-payload.^name !! ""
+    }
+}
+"#;
+
 impl Interpreter {
     /// Populate `$=pod` and the declarator doc-comment table (what `.WHY`
     /// reads) from the program source.
@@ -665,6 +714,7 @@ impl Interpreter {
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
+        Self::inject_x_wrapper_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
         // statement, in source order. That is what rakudo does (it installs at

@@ -416,7 +416,13 @@ impl Interpreter {
             }
             parents.iter().cloned().chain(outcome.parents).collect()
         };
-        self.finalize_class_registration(name, &final_parents, class_def, &snapshot)?;
+        self.finalize_class_registration(
+            name,
+            &final_parents,
+            class_def,
+            &snapshot,
+            is_hoisted_shell,
+        )?;
         // Construction-time attribute defaults and BUILD parameter defaults
         // execute after this declaration, often from another compunit. Keep
         // the declaring unit so those evaluations can still see this file's
