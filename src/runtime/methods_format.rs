@@ -235,6 +235,98 @@ impl Interpreter {
         Some(self.fmt_with_format_inner(target, &fmt, count, args))
     }
 
+    /// `<value>.fmt($format)` where `$format` is a plain `Str` (the common
+    /// case, as opposed to `dispatch_fmt_with_format`'s `Format` object arg)
+    /// and the target's keys/values/items include an `Instance`/`Package`/
+    /// role-mixin that the pure formatter can't coerce on its own
+    /// (`crate::builtins::fmt_value_needs_coercion`). The native fast path
+    /// (`native_method_1arg`'s "fmt" arm) already detected this and bailed
+    /// here; this mirrors its branch structure exactly, but routes each
+    /// value through `coerce_sprintf_args` (the same `.Str`/`.Int`/`.Numeric`
+    /// dispatch `sprintf`/`printf` use) before formatting.
+    pub(super) fn dispatch_fmt_with_user_coercion(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let format_arg = args.first()?;
+        if args.len() != 1 || Self::is_format_instance(format_arg) {
+            return None;
+        }
+        let fmt = format_arg.to_string_value();
+
+        let format_pair = |me: &mut Self, k: Value, v: Value| -> Result<String, RuntimeError> {
+            let mut vals = [k, v];
+            me.coerce_sprintf_args(&fmt, &mut vals)?;
+            let [k, v] = vals;
+            Ok(super::sprintf::format_sprintf_args(&fmt, &[k, v]))
+        };
+        let format_one = |me: &mut Self, v: Value| -> Result<String, RuntimeError> {
+            let mut vals = [v];
+            me.coerce_sprintf_args(&fmt, &mut vals)?;
+            let [v] = vals;
+            Ok(super::sprintf::format_sprintf_args(&fmt, &[v]))
+        };
+
+        Some((|| match target.view() {
+            ValueView::Hash(items) => {
+                let mut lines = Vec::with_capacity(items.len());
+                for (k, v) in items.iter() {
+                    lines.push(format_pair(self, Value::str(k.to_string()), v.clone())?);
+                }
+                Ok(Value::str(lines.join("\n")))
+            }
+            ValueView::Bag(items, _) => {
+                let mut lines = Vec::with_capacity(items.len());
+                for (k, v) in items.iter() {
+                    lines.push(format_pair(
+                        self,
+                        items.typed_key(k),
+                        Value::from_bigint(v.clone()),
+                    )?);
+                }
+                Ok(Value::str(lines.join("\n")))
+            }
+            ValueView::Set(items, _) => {
+                let mut lines = Vec::with_capacity(items.len());
+                for k in items.iter() {
+                    lines.push(format_pair(self, items.typed_key(k), Value::TRUE)?);
+                }
+                Ok(Value::str(lines.join("\n")))
+            }
+            ValueView::Mix(items, _) => {
+                let mut lines = Vec::with_capacity(items.len());
+                for (k, v) in items.iter() {
+                    lines.push(format_pair(self, items.typed_key(k), Value::num(*v))?);
+                }
+                Ok(Value::str(lines.join("\n")))
+            }
+            _ => {
+                if let Some((k, v)) = crate::builtins::pair_key_value(target) {
+                    return Ok(Value::str(format_pair(self, k, v)?));
+                }
+                if crate::builtins::fmt_joinable_target(target) {
+                    let items: Vec<Value> = match target.as_list_items() {
+                        Some(inner) => inner.to_vec(),
+                        None => crate::runtime::utils::value_to_list_for_receiver(target),
+                    };
+                    let mut parts = Vec::with_capacity(items.len());
+                    for item in items {
+                        let rendered = if let Some((k, v)) = crate::builtins::pair_key_value(&item)
+                        {
+                            format_pair(self, k, v)?
+                        } else {
+                            format_one(self, item)?
+                        };
+                        parts.push(rendered);
+                    }
+                    return Ok(Value::str(parts.join(" ")));
+                }
+                Ok(Value::str(format_one(self, target.clone())?))
+            }
+        })())
+    }
+
     fn fmt_with_format_inner(
         &mut self,
         target: &Value,
