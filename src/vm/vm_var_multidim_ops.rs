@@ -551,7 +551,20 @@ impl Interpreter {
         dims: &[Value],
     ) -> Result<Value, RuntimeError> {
         if dims.is_empty() {
-            return Ok(target.clone());
+            // A plain (non-bind) read must decontainerize a leaf that
+            // happens to be a `ContainerRef` cell -- e.g. an element some
+            // unrelated earlier operation promoted for `:=`/raw-argument
+            // aliasing (`MultiDimIndexBindRef`, a call argument's raw
+            // `\target` binding, ...). Returning the cell itself here leaked
+            // the reference into rvalue position: a subsequent
+            // swap-via-slice-assignment on the SAME two leaves
+            // (`@a[i;x,y] = @a[i;y,x]`) would read back a cell reference for
+            // each side and, since that assignment writes *through* an
+            // existing cell, cross-wire the two cells into a reference cycle
+            // instead of swapping their contents (issue #8552). `into_deref`
+            // is the same single-level unwrap chokepoint plain variable/array
+            // reads already use (`GetLocal`/`GetGlobal`).
+            return Ok(target.clone().into_deref());
         }
         // An intermediate level may be a `ContainerRef` element cell (Track B:
         // the celled atomic store boxes top-level elements; `:=` bindings can

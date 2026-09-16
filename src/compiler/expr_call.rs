@@ -1837,6 +1837,13 @@ impl Compiler {
                 // the literal, and not the whole argument list, is marked (this
                 // replaces the old `start`-only allowlist).
                 let is_start = name.resolve() == "start";
+                // See `suppress_multidim_bind_ref_arg`: this synthetic helper
+                // (the parser's wrapper for a plain `my (...) = EXPR`
+                // list-assignment RHS) must receive a plain decontainerized
+                // read, never an `is rw`-style aliasing bind, so a
+                // `MultiDimIndex` argument does not promote the source
+                // container's leaves to shared cells as a read side effect.
+                let is_list_assign_rhs_helper = name.resolve() == "__mutsu_list_assign_rhs";
                 // Literal named args (`:key(val)` / `key => val` with a
                 // compile-time-known key) travel out-of-band: only the VALUE
                 // is compiled, and (position, key) goes into a NamedArgsSpec,
@@ -1893,6 +1900,7 @@ impl Compiler {
                         // list literal at argument 1.
                         self.pending_rw_arg_list_callee =
                             Self::relayed_rw_arg_callee(*name, args, i);
+                        self.suppress_multidim_bind_ref_arg = is_list_assign_rhs_helper;
                         self.compile_call_arg_with_escape(arg, escaping_args);
                         self.pending_rw_arg_list_callee = None;
                         self.pending_immutable_topic_block = false;

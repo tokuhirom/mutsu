@@ -1421,6 +1421,23 @@ pub(crate) struct Compiler {
     /// semantics corrupt the *previous* iteration's bound cell instead of
     /// storing a fresh one (see the `lock.t` array-corruption investigation).
     bind_target_direct: bool,
+    /// When true, `compile_call_arg`'s `MultiDimIndex` special case (which
+    /// emits `MultiDimIndexBindRef` to promote the subscripted leaf/leaves to
+    /// shared `ContainerRef` cells for a raw `\target` / `is rw` argument) is
+    /// suppressed for the *immediate* upcoming argument; it compiles as a
+    /// plain decontainerized read instead. Set only around the sole argument
+    /// of the synthetic `__mutsu_list_assign_rhs` call the parser wraps a
+    /// plain (non-`:=`) `my ($a, $b) = EXPR` list-assignment RHS in
+    /// (`parser/stmt/decl/destructure.rs`): that call is a native value-only
+    /// helper, not a user routine with a raw/`is rw` parameter, so its
+    /// argument must never alias the source container. Without this, `my
+    /// ($a, $b) = @set[DIM; $i, $j]` silently promoted `@set`'s leaves at
+    /// positions `$i`/`$j` to cells as a side effect of a plain read; a later
+    /// swap-via-slice-assignment on those same positions (`@set[DIM; $i, $j]
+    /// = @set[DIM; $j, $i]`) then wrote each cell's *reference* into the
+    /// other, producing a two-cell reference cycle instead of swapping their
+    /// contents (issue #8552).
+    suppress_multidim_bind_ref_arg: bool,
     /// ADR-0021 I2/I3: when true, the *immediate* upcoming `Expr::Binary{
     /// FatArrow}` compile (`compile_expr_binary`) mints the named-argument
     /// flavour (`OpCode::MakeNamedArg`) instead of the data-default
@@ -1718,6 +1735,7 @@ impl Compiler {
             rw_tail: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
+            suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
             pending_immutable_topic_block: false,
             constant_vars: std::collections::HashSet::new(),
