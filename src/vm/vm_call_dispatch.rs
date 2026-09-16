@@ -55,16 +55,23 @@ impl Interpreter {
 
     /// `has_multi_candidates_cached` for a callsite that already holds the
     /// name's pre-interned `Symbol` (every `CallFunc` does, via
-    /// `CompiledCode::const_sym`). The cache is `Symbol`-keyed, so taking the
-    /// `&str` form only to re-`intern` it hashed the name string on every call —
-    /// it profiled as the `hash_one` + `memcmp` pair on the OTF dispatch path.
+    /// `CompiledCode::const_sym`).
+    ///
+    /// Keyed by [`Self::bare_name_ctx_key`] — `(current_package, innermost
+    /// lexical_package, name)` — the same shape `has_declared_function_cached`
+    /// and `has_multi_function_cached` already use, not by the bare name
+    /// alone: the underlying [`Self::has_multi_candidates`] answer depends on
+    /// `bare_name_packages_syms()`, which is scope-sensitive, so a name-only
+    /// key let one package's answer leak into every other package's (#7539) —
+    /// see the doc comment on [`crate::runtime::Interpreter::multi_candidates_cache`].
     pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
         let generation = self.fn_resolve_gen;
-        if let Some(&cached) = self.multi_candidates_cache.get(generation, &sym) {
+        let key = self.bare_name_ctx_key(sym);
+        if let Some(&cached) = self.multi_candidates_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_multi_candidates(&sym.resolve());
-        self.multi_candidates_cache.insert(generation, sym, result);
+        self.multi_candidates_cache.insert(generation, key, result);
         result
     }
 

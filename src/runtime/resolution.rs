@@ -129,6 +129,20 @@ impl Interpreter {
         }
         let cur_pkg = self.current_package();
         // Innermost package first, then each enclosing one, ending at GLOBAL.
+        // Skip this exact (arity-less) match entirely when a multi candidate
+        // is also registered under this base name: it is only a trustworthy
+        // match for an ordinary plain `sub`, and a multi candidate is always
+        // registered under an arity/type-suffixed key, never this bare one —
+        // the same reasoning, and the same bug this guards against, as
+        // `resolve_function_with_types` in `dispatch_resolve.rs` (#7539).
+        // Without it, `&to-toml` resolved from inside `Config::TOML::Dumper`
+        // (which declares only `multi sub to-toml`) picked up an unrelated,
+        // later-loaded compunit's plain exported `sub to-toml`, because both
+        // ended up sharing a base name once mutsu's per-compunit lexical
+        // scoping collapsed them into the same package bucket.
+        if self.has_multi_candidates_unindexed(name) {
+            return None;
+        }
         for pkg in self.bare_name_packages_syms().iter() {
             let Some(key) = dispatch_key::qualified_lookup(pkg.as_str(), name) else {
                 continue;

@@ -3869,7 +3869,19 @@ pub struct Interpreter {
     /// the whole point (#7573). Retired with `fn_resolve_cache` by
     /// `fn_resolve_gen`, per entry.
     pub(crate) multi_compiled_key_cache: GenCache<MultiCompiledKey, Option<Symbol>>,
-    pub(crate) multi_candidates_cache: GenCache<Symbol, bool>,
+    /// Memo for [`Interpreter::has_multi_candidates`], same key shape as
+    /// `has_proto_cache` — `(current_package, innermost lexical_package,
+    /// name)` — guarded by `fn_resolve_gen`. Keying on the bare name alone
+    /// let a query from one package's context answer for every other
+    /// package's: `Config::TOML::Dumper`'s own `multi sub to-toml(Str:D $s)`
+    /// registers under `Foo::Dumper::to-toml/…`, invisible from `GLOBAL`, so
+    /// the first (correctly negative) `GLOBAL`-context probe cached "false"
+    /// for the bare name `to-toml` — then every later probe from *inside*
+    /// `Foo::Dumper` reused that stale "false" and let the VM's type-blind
+    /// positional light-call cache treat a genuine multi as a monomorphic
+    /// function, caching whichever candidate resolved first and reusing it
+    /// for every argument type thereafter (#7539).
+    pub(crate) multi_candidates_cache: GenCache<(Symbol, Option<Symbol>, Symbol), bool>,
     /// Memo for [`Self::has_proto`], keyed by the full bare-name lookup
     /// context `(current_package, innermost lexical_package, name)` — the
     /// exact inputs `bare_name_packages()` derives the search list from — so
