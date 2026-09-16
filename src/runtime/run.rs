@@ -522,6 +522,7 @@ impl Interpreter {
                         is_invocant: true,
                         shape_constraints: None,
                         block_param: false,
+                        trait_args: Vec::new(),
                     }];
                     method_param_defs.extend(
                         param_defs
@@ -553,6 +554,7 @@ impl Interpreter {
                             is_invocant: false,
                             shape_constraints: None,
                             block_param: false,
+                            trait_args: Vec::new(),
                         });
                     }
                     out.insert(

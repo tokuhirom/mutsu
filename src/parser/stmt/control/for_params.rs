@@ -98,6 +98,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             };
             return Ok((
                 r,
@@ -164,6 +165,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             };
             return Ok((
                 r,
@@ -392,6 +394,7 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
             is_invocant: false,
             shape_constraints: None,
             block_param: true,
+            trait_args: Vec::new(),
         },
     ))
 }
@@ -482,6 +485,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             },
         ));
     }
@@ -513,6 +517,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     };
 
     let mut traits = Vec::new();
+    let mut trait_args = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -521,7 +526,10 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         };
         let (after_is, _) = ws1(after_is)?;
         let (after_is, trait_name) = ident(after_is)?;
-        sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+        let (_, trait_arg) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+        if let Some(trait_arg) = trait_arg {
+            trait_args.push((trait_name.clone(), trait_arg));
+        }
         traits.push(trait_name);
         rest = after_is;
     }
@@ -565,6 +573,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             sub_signature: None,
             where_constraint: None,
             traits,
+            trait_args,
             optional_marker,
             outer_sub_signature: None,
             code_signature: None,

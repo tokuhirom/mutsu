@@ -999,6 +999,7 @@ impl Interpreter {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    trait_args: Vec::new(),
                 });
             }
             if use_named {
@@ -1025,6 +1026,7 @@ impl Interpreter {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    trait_args: Vec::new(),
                 });
             }
             // If neither @_ nor %_ is used, this is a true empty signature

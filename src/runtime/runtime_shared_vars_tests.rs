@@ -30,6 +30,7 @@ fn scalar_param(name: &str) -> crate::ast::ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        trait_args: Vec::new(),
     }
 }
 

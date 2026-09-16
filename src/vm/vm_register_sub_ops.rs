@@ -31,16 +31,46 @@ impl Interpreter {
                     return Err(unknown());
                 }
                 // Hand the candidate a real Parameter, the way raku does. A
-                // dispatch failure means no candidate accepts this trait name,
-                // which is raku's compile-time "unknown trait" error.
+                // dispatch failure with no matching candidate means no
+                // candidate accepts this trait name, which is raku's
+                // compile-time "unknown trait" error (see the discrimination
+                // below).
                 let param_val =
                     crate::value::signature::make_parameter_value_from_param_def(p, Some(&*self));
-                let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                loan_env!(
+                // A trait written with its own argument (`is option<!>`,
+                // `is encoded('utf8')`) must hand that value to the candidate
+                // instead of a bare `True` -- Getopt::Long's own
+                // `multi trait_mod:<is>(Parameter $p, Argument :option($arg)!)`
+                // and its `Str:D :getopt(:$option)!` sibling both reject `True`
+                // outright, so `is option<!>` never matched anything and always
+                // reported "unknown trait" (#8560) even though a real candidate
+                // was right there. `p.trait_args` is sparse -- most traits carry
+                // no argument and still dispatch with `True`, exactly as before.
+                let arg_value = match p.trait_args.iter().find(|(name, _)| name == trait_name) {
+                    Some((_, expr)) => {
+                        let body = [Stmt::Expr(expr.clone())];
+                        self.vm_eval_block_value(&body)?
+                    }
+                    None => Value::TRUE,
+                };
+                let named_arg = Value::pair(trait_name.clone(), arg_value);
+                let call_result = loan_env!(
                     self,
                     call_function("trait_mod:<is>", vec![param_val.clone(), named_arg])
-                )
-                .map_err(|_| unknown())?;
+                );
+                // Discriminate "no candidate accepted this trait" (raku's
+                // unknown-trait error) from a real error a matched candidate's
+                // own body raised, the same way the sub-level custom-trait
+                // dispatch already does (`Self::is_trait_mod_no_candidate` in
+                // `registration_sub.rs`). Collapsing both into `unknown()`
+                // hid genuine bugs in a trait handler's body behind a
+                // misleading "Can't use unknown trait" message.
+                if let Err(e) = call_result {
+                    if Self::is_trait_mod_no_candidate(&e) {
+                        return Err(unknown());
+                    }
+                    return Err(e);
+                }
                 // A trait body is almost always `$param does SomeRole`, which
                 // reblesses the object in place — so the type it left on this
                 // very handle IS the trait's effect on a parameter. Record it,

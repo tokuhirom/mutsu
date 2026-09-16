@@ -161,6 +161,7 @@ impl Interpreter {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: false,
+                trait_args: Vec::new(),
             }]),
             body: std::sync::Arc::new(body),
             is_rw: false,

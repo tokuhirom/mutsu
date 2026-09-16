@@ -310,6 +310,7 @@ impl Interpreter {
                                 is_invocant: false,
                                 shape_constraints: None,
                                 block_param: false,
+                                trait_args: Vec::new(),
                             })
                             .collect()
                     } else {
@@ -351,6 +352,7 @@ impl Interpreter {
                                 is_invocant: false,
                                 shape_constraints: None,
                                 block_param: true,
+                                trait_args: Vec::new(),
                             });
                         }
                         if use_positional {
@@ -377,6 +379,7 @@ impl Interpreter {
                                 is_invocant: false,
                                 shape_constraints: None,
                                 block_param: false,
+                                trait_args: Vec::new(),
                             });
                         }
                         if use_named {
@@ -403,6 +406,7 @@ impl Interpreter {
                                 is_invocant: false,
                                 shape_constraints: None,
                                 block_param: false,
+                                trait_args: Vec::new(),
                             });
                         }
                         defs
