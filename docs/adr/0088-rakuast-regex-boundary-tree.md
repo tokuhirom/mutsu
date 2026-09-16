@@ -1254,3 +1254,20 @@ match-time subrule argument evaluator sees it. No variable is read during
 focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins
 scalar execution and reassignment plus the array, hash, and callable variable
 AST shapes. Boolean and block-valued colonpairs remain separate boundaries.
+
+## 50. Bare boolean colonpair dynamic argument slice (2026-09-16)
+
+Bare boolean colonpair arguments such as `:enabled` in argumented subrules now
+retain Rakudo's `RakuAST::ColonPair::True` node. The ordinary expression AST
+intentionally folds the colonpair into the same `FatArrow` shape as other
+named pairs, so the regex argument source records the bare-colonpair
+provenance beside the execution expression.
+
+The read direction preserves the boolean key as a positional
+`ColonPair::True` value, and the write direction renders it back as `:enabled`
+before the established match-time subrule argument evaluator sees it. No pair
+is evaluated during `.AST` conversion or RakuAST lowering, and no matcher or
+VM path is added. Negated boolean colonpairs and block-valued colonpairs
+remain separate boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the source-level node,
+constructed AST lowering, and named binding semantics.
