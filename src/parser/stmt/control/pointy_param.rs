@@ -124,6 +124,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    trait_args: Vec::new(),
                 },
             ));
         } else {
@@ -143,11 +144,16 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         // trait was left unconsumed and the whole pointy block failed at its
         // opening brace.
         let mut traits = Vec::new();
+        let mut trait_args = Vec::new();
         let (mut r, _) = ws(r)?;
         while let Some(after_is) = keyword("is", r) {
             let (after_is, _) = ws1(after_is)?;
             let (after_is, trait_name) = ident(after_is)?;
-            let (after_is, _) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            let (after_is, trait_arg) =
+                sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            if let Some(trait_arg) = trait_arg {
+                trait_args.push((trait_name.clone(), trait_arg));
+            }
             traits.push(trait_name);
             let (after_is, _) = ws(after_is)?;
             r = after_is;
@@ -183,6 +189,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 code_signature: None,
                 where_constraint: None,
                 traits,
+                trait_args,
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,
@@ -223,11 +230,16 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         // Sigilless single-argument-rule slurpy: `-> +a { ... }`.
         let (r, name) = ident(&rest[1..])?;
         let mut traits = Vec::new();
+        let mut trait_args = Vec::new();
         let (mut r, _) = ws(r)?;
         while let Some(after_is) = keyword("is", r) {
             let (after_is, _) = ws1(after_is)?;
             let (after_is, trait_name) = ident(after_is)?;
-            let (after_is, _) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            let (after_is, trait_arg) =
+                sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            if let Some(trait_arg) = trait_arg {
+                trait_args.push((trait_name.clone(), trait_arg));
+            }
             traits.push(trait_name);
             let (after_is, _) = ws(after_is)?;
             r = after_is;
@@ -262,6 +274,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 code_signature: None,
                 where_constraint: None,
                 traits,
+                trait_args,
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,
@@ -301,6 +314,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    trait_args: Vec::new(),
                 },
             ));
         }
@@ -334,6 +348,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    trait_args: Vec::new(),
                 },
             ));
         }
@@ -366,6 +381,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             },
         ));
     }
@@ -393,6 +409,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         };
 
         let mut traits = Vec::new();
+        let mut trait_args = Vec::new();
         loop {
             let (r, _) = ws(rest)?;
             let Some(after_is) = keyword("is", r) else {
@@ -401,7 +418,10 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             };
             let (after_is, _) = ws1(after_is)?;
             let (after_is, trait_name) = ident(after_is)?;
-            sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            let (_, trait_arg) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            if let Some(trait_arg) = trait_arg {
+                trait_args.push((trait_name.clone(), trait_arg));
+            }
             traits.push(trait_name);
             rest = after_is;
         }
@@ -426,6 +446,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 code_signature: Some((sig_params, sig_ret)),
                 where_constraint: None,
                 traits,
+                trait_args,
                 optional_marker,
                 is_invocant: false,
                 shape_constraints: None,
@@ -472,6 +493,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             },
         ));
     }
@@ -515,6 +537,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    trait_args: Vec::new(),
                 },
             ));
         }
@@ -558,6 +581,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 
     // Optional parameter traits: `is rw`, `is copy`, ...
     let mut traits = Vec::new();
+    let mut trait_args = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some(after_is) = keyword("is", r) else {
@@ -566,7 +590,10 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         };
         let (after_is, _) = ws1(after_is)?;
         let (after_is, trait_name) = ident(after_is)?;
-        sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+        let (after_is, trait_arg) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+        if let Some(trait_arg) = trait_arg {
+            trait_args.push((trait_name.clone(), trait_arg));
+        }
         traits.push(trait_name);
         rest = after_is;
     }
@@ -662,6 +689,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             code_signature: None,
             where_constraint,
             traits,
+            trait_args,
             optional_marker,
             is_invocant: false,
             shape_constraints,

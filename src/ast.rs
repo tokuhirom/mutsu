@@ -93,6 +93,15 @@ pub(crate) struct ParamDef {
     pub(crate) where_constraint: Option<Box<Expr>>,
     #[allow(dead_code)]
     pub(crate) traits: Vec<String>,
+    /// The captured argument for a *custom* (non-builtin) parameter trait that
+    /// carries one, e.g. the `<!>` in `is option<!>` (Getopt::Long, #8560) or
+    /// the `('utf8')` in a hypothetical `is myencoding('utf8')`. Sparse: only
+    /// traits with an argument appear here, keyed by name so a trait without
+    /// one still dispatches with the plain `True` `check_param_custom_traits`
+    /// already passed. A builtin trait's own argument (`is encoded('utf8')`)
+    /// is handled natively and never reaches this field.
+    #[serde(default)]
+    pub(crate) trait_args: Vec<(String, Expr)>,
     pub(crate) optional_marker: bool,
     pub(crate) outer_sub_signature: Option<Vec<ParamDef>>,
     pub(crate) code_signature: Option<(Vec<ParamDef>, Option<String>)>,
@@ -3759,6 +3768,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: true,
+                    trait_args: Vec::new(),
                 })
                 .collect();
             return Expr::AnonSubParams {
@@ -3809,6 +3819,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        trait_args: Vec::new(),
                     }
                 })
                 .collect(),

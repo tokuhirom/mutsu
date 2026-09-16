@@ -6,18 +6,29 @@ use crate::value::ValueView;
 /// that carries a parenthesized argument; see `skip_optional_trait_arg`.
 const VALID_PARAM_TRAITS: &[&str] = &["rw", "readonly", "copy", "required", "raw", "encoded"];
 
-/// After a parameter trait name, skip an optional argument such as the
+/// After a parameter trait name, parse an optional argument such as the
 /// `('utf8')` in `is encoded('utf8')` or the `<!>` in `is option<!>`. Balances
 /// nested parens and ignores parens inside single/double-quoted string
 /// literals. Leading whitespace before the `(` is permitted. Returns the input
-/// unchanged when no argument follows.
-pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
-    if let Some(rest) = skip_optional_trait_word_arg(input) {
-        return rest;
+/// unchanged (and `None`) when no argument follows.
+///
+/// The captured `Expr` is what lets a *custom* parameter trait (one only a
+/// user/imported `trait_mod:<is>` accepts, see [`is_builtin_param_trait`])
+/// carry its argument all the way to dispatch: `check_param_custom_traits`
+/// evaluates it and passes the real value instead of a hardcoded `True`
+/// (#8560 — Getopt::Long's `multi trait_mod:<is>(Parameter $p, Argument
+/// :option($arg)!)` never matches a bare `True`, only the `Argument`/`Str`
+/// candidates it declares for a real spec string like `"!"`). A *builtin*
+/// trait's own argument (`is encoded('utf8')`) is still just consumed here —
+/// native handling reads it from the source text elsewhere, not from this
+/// `Expr`.
+pub(crate) fn skip_optional_trait_arg(input: &str) -> (&str, Option<Expr>) {
+    if let Some((rest, arg)) = parse_optional_trait_word_arg(input) {
+        return (rest, Some(arg));
     }
     let trimmed = input.trim_start();
     if !trimmed.starts_with('(') {
-        return input;
+        return (input, None);
     }
     let bytes = trimmed.as_bytes();
     let mut depth = 0u32;
@@ -39,7 +50,9 @@ pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
                 b')' => {
                     depth -= 1;
                     if depth == 0 {
-                        return &trimmed[i + 1..];
+                        let inner = trimmed[1..i].trim();
+                        let arg = parse_trait_paren_arg(inner);
+                        return (&trimmed[i + 1..], arg);
                     }
                 }
                 _ => {}
@@ -48,19 +61,58 @@ pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
         i += 1;
     }
     // Unbalanced: leave the input as-is so the normal parser reports the error.
-    input
+    (input, None)
+}
+
+/// Parse the inside of a parenthesized trait argument (`is trait(a, b)`) as an
+/// expression. A single argument is that argument's own `Expr`; two or more
+/// become an `Expr::ArrayLiteral`, mirroring how the analogous attribute-trait
+/// helper (`parse_trait_call_args` in `has_decl.rs`) itemizes a multi-value
+/// call. Returns `None` — rather than a fatal parse error — on anything that
+/// does not fully parse as a comma-separated expression list, so a trait
+/// argument the expression grammar cannot represent (e.g. raw NativeCall
+/// syntax) still just has its argument dropped, as it always has, instead of
+/// failing the whole signature.
+fn parse_trait_paren_arg(inner: &str) -> Option<Expr> {
+    if inner.is_empty() {
+        return None;
+    }
+    let (leftover, first) = crate::parser::expr::expression(inner).ok()?;
+    let (leftover, _) = ws(leftover).ok()?;
+    if leftover.is_empty() {
+        return Some(first);
+    }
+    let mut items = vec![first];
+    let mut rest = leftover;
+    while let Some(after_comma) = rest.strip_prefix(',') {
+        let (r, _) = ws(after_comma).ok()?;
+        if r.is_empty() {
+            rest = r;
+            break;
+        }
+        let (r, expr) = crate::parser::expr::expression(r).ok()?;
+        let (r, _) = ws(r).ok()?;
+        items.push(expr);
+        rest = r;
+    }
+    if rest.is_empty() {
+        Some(Expr::ArrayLiteral(items))
+    } else {
+        None
+    }
 }
 
 /// A trait argument written as a word quote directly after the trait name —
-/// `Bool :$timer is option<!>` (App::Prove6, via `Trait::Option`), `is foo«a b»`.
-/// Rakudo lowers it to a named argument on `trait_mod:<is>`; mutsu keeps only
-/// the trait *name* on a parameter, so the argument is skipped like the
-/// parenthesized form. The opener must follow the name with no intervening
-/// whitespace, which keeps `$x is copy where * < 3` out of this path.
-/// `<...>` nests, matching the word-quote grammar. Returns `None` when no word
-/// quote follows, and also when it is unbalanced so the normal parser reports
-/// the error.
-fn skip_optional_trait_word_arg(input: &str) -> Option<&str> {
+/// `Bool :$timer is option<!>` (App::Prove6, via Getopt::Long), `is foo«a b»`.
+/// Rakudo lowers it to a named argument on `trait_mod:<is>`, so it is parsed
+/// into a real `Expr` here rather than merely skipped: a single word becomes
+/// a Str literal (`<!>` -> `"!"`, matching how Raku evaluates a lone
+/// word-quote), multiple words become an array of Str literals. The opener
+/// must follow the name with no intervening whitespace, which keeps `$x is
+/// copy where * < 3` out of this path. `<...>` nests, matching the
+/// word-quote grammar. Returns `None` when no word quote follows, and also
+/// when it is unbalanced so the normal parser reports the error.
+fn parse_optional_trait_word_arg(input: &str) -> Option<(&str, Expr)> {
     let (open, close) = if input.starts_with('<') {
         ('<', '>')
     } else if input.starts_with('\u{ab}') {
@@ -75,7 +127,18 @@ fn skip_optional_trait_word_arg(input: &str) -> Option<&str> {
         } else if c == close {
             depth -= 1;
             if depth == 0 {
-                return Some(&input[i + c.len_utf8()..]);
+                let inner = input[open.len_utf8()..i].trim();
+                let words: Vec<&str> = inner.split_whitespace().collect();
+                let arg = match words.as_slice() {
+                    [] => Expr::Literal(Value::str(String::new())),
+                    [one] => Expr::Literal(Value::str_from(*one)),
+                    many => Expr::ArrayLiteral(
+                        many.iter()
+                            .map(|w| Expr::Literal(Value::str_from(*w)))
+                            .collect(),
+                    ),
+                };
+                return Some((&input[i + c.len_utf8()..], arg));
             }
         }
     }
@@ -96,7 +159,7 @@ pub(crate) fn validate_param_trait_pub<'a>(
     trait_name: &str,
     existing_traits: &[String],
     input: &'a str,
-) -> PResult<'a, ()> {
+) -> PResult<'a, Option<Expr>> {
     if !is_builtin_param_trait(trait_name)
         && !super::super::simple::is_user_declared_sub("trait_mod:<is>")
     {
@@ -126,7 +189,7 @@ pub(crate) fn validate_param_trait<'a>(
     trait_name: &str,
     existing_traits: &[String],
     input: &'a str,
-) -> PResult<'a, ()> {
+) -> PResult<'a, Option<Expr>> {
     if existing_traits.iter().any(|t| t == trait_name) {
         add_parse_warning(
             format!(
@@ -136,8 +199,9 @@ pub(crate) fn validate_param_trait<'a>(
             crate::parser::primary::current_line_number(input),
         );
     }
-    // Consume an optional parenthesized trait argument, e.g. `is encoded('utf8')`.
-    Ok((skip_optional_trait_arg(input), ()))
+    // Consume an optional parenthesized or word-quoted trait argument, e.g.
+    // `is encoded('utf8')` or `is option<!>`.
+    Ok(skip_optional_trait_arg(input))
 }
 
 pub(crate) fn static_default_type(expr: &Expr) -> Option<String> {

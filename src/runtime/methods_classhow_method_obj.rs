@@ -750,6 +750,7 @@ impl Interpreter {
                         code_signature: None,
                         shape_constraints: None,
                         block_param: false,
+                        trait_args: Vec::new(),
                     }];
                     param_defs.extend(
                         def.param_defs

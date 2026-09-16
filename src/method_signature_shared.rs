@@ -110,6 +110,7 @@ pub(crate) fn implicit_method_named_slurpy_param() -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        trait_args: Vec::new(),
     }
 }
 
@@ -157,6 +158,7 @@ fn implicit_method_positional_slurpy_param() -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        trait_args: Vec::new(),
     }
 }
 

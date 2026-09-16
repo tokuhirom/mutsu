@@ -461,6 +461,7 @@ impl Compiler {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: false,
+                trait_args: Vec::new(),
             }]
         } else {
             Vec::new()

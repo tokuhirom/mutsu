@@ -332,6 +332,7 @@ impl Interpreter {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: true,
+                trait_args: Vec::new(),
             }],
             _ => Vec::new(),
         };

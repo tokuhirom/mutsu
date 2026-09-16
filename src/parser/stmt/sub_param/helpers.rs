@@ -53,6 +53,7 @@ pub(crate) fn make_param(name: String) -> ParamDef {
         is_invocant: false,
         shape_constraints: None,
         block_param: false,
+        trait_args: Vec::new(),
     }
 }
 
@@ -101,6 +102,7 @@ pub(crate) fn starts_with_sigil_param(input: &str) -> bool {
 /// `is` traits, a `where` post-constraint, and a default value.
 pub(crate) struct SubsigTail {
     pub(crate) traits: Vec<String>,
+    pub(crate) trait_args: Vec<(String, Expr)>,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) default: Option<Expr>,
 }
@@ -119,10 +121,14 @@ pub(crate) fn parse_subsig_tail(input: &str) -> PResult<'_, SubsigTail> {
 
     let (mut rest, _) = ws(input)?;
     let mut traits = Vec::new();
+    let mut trait_args = Vec::new();
     while let Some(r) = super::super::keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = super::super::ident(r)?;
-        let (r, _) = super::super::sub::validate_param_trait(&trait_name, &traits, r)?;
+        let (r, trait_arg) = super::super::sub::validate_param_trait(&trait_name, &traits, r)?;
+        if let Some(trait_arg) = trait_arg {
+            trait_args.push((trait_name.clone(), trait_arg));
+        }
         traits.push(trait_name);
         let (r, _) = ws(r)?;
         rest = r;
@@ -146,6 +152,7 @@ pub(crate) fn parse_subsig_tail(input: &str) -> PResult<'_, SubsigTail> {
         rest,
         SubsigTail {
             traits,
+            trait_args,
             where_constraint,
             default,
         },
@@ -167,17 +174,22 @@ pub(crate) fn type_only_param(
     p.named = named;
     p.slurpy = slurpy;
     let mut param_traits = Vec::new();
+    let mut param_trait_args = Vec::new();
     let (mut r, _) = ws(input)?;
     while let Some(r2) = crate::parser::stmt::keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, trait_name) = crate::parser::stmt::ident(r2)?;
-        let (r2, _) =
+        let (r2, trait_arg) =
             crate::parser::stmt::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+        if let Some(trait_arg) = trait_arg {
+            param_trait_args.push((trait_name.clone(), trait_arg));
+        }
         param_traits.push(trait_name);
         let (r2, _) = ws(r2)?;
         r = r2;
     }
     p.traits = param_traits;
+    p.trait_args = param_trait_args;
     if let Some(r2) = crate::parser::stmt::keyword("where", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, constraint) = super::where_constraint::parse_where_constraint_expr(r2)?;

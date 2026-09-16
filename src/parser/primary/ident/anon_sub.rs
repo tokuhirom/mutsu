@@ -27,6 +27,7 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
         is_invocant: true,
         shape_constraints: None,
         block_param: false,
+        trait_args: Vec::new(),
     }
 }
 

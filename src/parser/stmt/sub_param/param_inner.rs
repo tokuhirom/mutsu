@@ -148,11 +148,16 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.sigilless = true;
         let (r, _) = ws(r)?;
         let mut param_traits = Vec::new();
+        let mut param_trait_args = Vec::new();
         let (mut r, _) = ws(r)?;
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, trait_arg) =
+                super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            if let Some(trait_arg) = trait_arg {
+                param_trait_args.push((trait_name.clone(), trait_arg));
+            }
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -165,6 +170,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             (r, None)
         };
         p.traits = param_traits;
+        p.trait_args = param_trait_args;
         p.where_constraint = where_constraint;
         return Ok((r, p));
     }
@@ -209,12 +215,16 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (r, _) = ws(r)?;
             // Handle traits (is copy, is rw, etc.)
             let mut param_traits = Vec::new();
+            let mut param_trait_args = Vec::new();
             let (mut r, _) = ws(r)?;
             while let Some(rt) = super::super::keyword("is", r) {
                 let (rt, _) = ws1(rt)?;
                 let (rt, trait_name) = super::super::ident(rt)?;
-                let (rt, _) =
+                let (rt, trait_arg) =
                     super::super::sub::validate_param_trait(&trait_name, &param_traits, rt)?;
+                if let Some(trait_arg) = trait_arg {
+                    param_trait_args.push((trait_name.clone(), trait_arg));
+                }
                 param_traits.push(trait_name);
                 let (rt, _) = ws(rt)?;
                 r = rt;
@@ -236,6 +246,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.default = default;
             p.type_constraint = type_constraint;
             p.traits = param_traits;
+            p.trait_args = param_trait_args;
             return Ok((r, p));
         }
     }
@@ -527,17 +538,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 let (rest, _) = ws(rest)?;
                 // Handle is copy, is rw, is readonly, is raw traits
                 let mut param_traits = Vec::new();
+                let mut param_trait_args = Vec::new();
                 let (mut rest, _) = ws(rest)?;
                 while let Some(r) = super::super::keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = super::super::ident(r)?;
-                    let (r, _) =
+                    let (r, trait_arg) =
                         super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                    if let Some(trait_arg) = trait_arg {
+                        param_trait_args.push((trait_name.clone(), trait_arg));
+                    }
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
                 }
                 p.traits = param_traits;
+                p.trait_args = param_trait_args;
                 p.required = required;
                 p.optional_marker = opt_marker;
                 // Handle where constraint
@@ -750,11 +766,15 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         // `is copy`, `is rw`, `is readonly`, `is raw` traits
         let (mut r, _) = ws(r)?;
         let mut sigilless_traits = Vec::new();
+        let mut sigilless_trait_args = Vec::new();
         while let Some(rt) = super::super::keyword("is", r) {
             let (rt, _) = ws1(rt)?;
             let (rt, trait_name) = super::super::ident(rt)?;
-            let (rt, _) =
+            let (rt, trait_arg) =
                 super::super::sub::validate_param_trait(&trait_name, &sigilless_traits, rt)?;
+            if let Some(trait_arg) = trait_arg {
+                sigilless_trait_args.push((trait_name.clone(), trait_arg));
+            }
             sigilless_traits.push(trait_name);
             let (rt, _) = ws(rt)?;
             r = rt;
@@ -787,6 +807,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.default = default;
         p.type_constraint = type_constraint;
         p.traits = sigilless_traits;
+        p.trait_args = sigilless_trait_args;
         p.where_constraint = sigilless_where;
         p.sub_signature = sigilless_sub_signature;
         return Ok((r, p));
@@ -812,6 +833,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.required = required;
         p.optional_marker = opt_marker;
         p.traits = tail.traits;
+        p.trait_args = tail.trait_args;
         p.where_constraint = tail.where_constraint;
         p.default = tail.default;
         return Ok((r, p));
@@ -867,17 +889,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     p.optional_marker = pre_opt || post_opt;
                     let (rest, _) = ws(rest)?;
                     let mut param_traits = Vec::new();
+                    let mut param_trait_args = Vec::new();
                     let (mut rest, _) = ws(rest)?;
                     while let Some(r) = super::super::keyword("is", rest) {
                         let (r, _) = ws1(r)?;
                         let (r, trait_name) = super::super::ident(r)?;
-                        let (r, _) =
+                        let (r, trait_arg) =
                             super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                        if let Some(trait_arg) = trait_arg {
+                            param_trait_args.push((trait_name.clone(), trait_arg));
+                        }
                         param_traits.push(trait_name);
                         let (r, _) = ws(r)?;
                         rest = r;
                     }
                     p.traits = param_traits;
+                    p.trait_args = param_trait_args;
                     let (rest, where_constraint) =
                         if let Some(r) = super::super::keyword("where", rest) {
                             let (r, _) = ws1(r)?;
@@ -908,17 +935,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 let (rest, _) = ws(r3m)?;
                 // Handle is copy, is rw, is readonly, is raw traits
                 let mut param_traits = Vec::new();
+                let mut param_trait_args = Vec::new();
                 let (mut rest, _) = ws(rest)?;
                 while let Some(r) = super::super::keyword("is", rest) {
                     let (r, _) = ws1(r)?;
                     let (r, trait_name) = super::super::ident(r)?;
-                    let (r, _) =
+                    let (r, trait_arg) =
                         super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                    if let Some(trait_arg) = trait_arg {
+                        param_trait_args.push((trait_name.clone(), trait_arg));
+                    }
                     param_traits.push(trait_name);
                     let (r, _) = ws(r)?;
                     rest = r;
                 }
                 p.traits = param_traits;
+                p.trait_args = param_trait_args;
                 // Handle where constraint
                 let (rest, where_constraint) = if let Some(r) = super::super::keyword("where", rest)
                 {
@@ -956,17 +988,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (rest, _) = ws(rest)?;
             // Handle is copy, is rw, is readonly, is raw traits
             let mut param_traits = Vec::new();
+            let mut param_trait_args = Vec::new();
             let (mut rest, _) = ws(rest)?;
             while let Some(r) = super::super::keyword("is", rest) {
                 let (r, _) = ws1(r)?;
                 let (r, trait_name) = super::super::ident(r)?;
-                let (r, _) =
+                let (r, trait_arg) =
                     super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+                if let Some(trait_arg) = trait_arg {
+                    param_trait_args.push((trait_name.clone(), trait_arg));
+                }
                 param_traits.push(trait_name);
                 let (r, _) = ws(r)?;
                 rest = r;
             }
             p.traits = param_traits;
+            p.trait_args = param_trait_args;
             p.required = required;
             p.optional_marker = opt_marker;
             // Handle where constraint
@@ -1027,6 +1064,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             // has none of those, so it still falls through untouched.
             let (after_q, tail) = super::helpers::parse_subsig_tail(after_q)?;
             p.traits = tail.traits;
+            p.trait_args = tail.trait_args;
             p.where_constraint = tail.where_constraint;
             p.default = tail.default;
             return Ok((after_q, p));
@@ -1056,16 +1094,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.optional_marker = opt_marker;
 
         let mut param_traits = Vec::new();
+        let mut param_trait_args = Vec::new();
         let (mut r, _) = ws(r)?;
         while let Some(r2) = super::super::keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, trait_name) = super::super::ident(r2)?;
-            let (r2, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            let (r2, trait_arg) =
+                super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+            if let Some(trait_arg) = trait_arg {
+                param_trait_args.push((trait_name.clone(), trait_arg));
+            }
             param_traits.push(trait_name);
             let (r2, _) = ws(r2)?;
             r = r2;
         }
         p.traits = param_traits;
+        p.trait_args = param_trait_args;
 
         let (r, where_constraint) = if let Some(r2) = super::super::keyword("where", r) {
             let (r2, _) = ws1(r2)?;
@@ -1233,6 +1277,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.sub_signature = Some(sig_params.clone());
             p.code_signature = Some((sig_params, sig_ret));
             p.traits = tail.traits;
+            p.trait_args = tail.trait_args;
             p.where_constraint = tail.where_constraint;
             p.default = tail.default;
             return Ok((r, p));
@@ -1268,6 +1313,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
         p.traits = tail.traits;
+        p.trait_args = tail.trait_args;
         p.where_constraint = tail.where_constraint;
         p.default = tail.default;
         return Ok((r, p));
@@ -1308,6 +1354,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.type_constraint = type_constraint;
         p.sub_signature = Some(sub_params);
         p.traits = tail.traits;
+        p.trait_args = tail.trait_args;
         p.where_constraint = tail.where_constraint;
         p.default = tail.default;
         return Ok((r, p));
@@ -1358,10 +1405,15 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // `is copy`, `is rw`, `is readonly`, `is raw` traits (may have multiple)
     let (mut rest, _) = ws(rest)?;
     let mut param_traits = Vec::new();
+    let mut param_trait_args = Vec::new();
     while let Some(r) = super::super::keyword("is", rest) {
         let (r, _) = ws1(r)?;
         let (r, trait_name) = super::super::ident(r)?;
-        let (r, _) = super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+        let (r, trait_arg) =
+            super::super::sub::validate_param_trait(&trait_name, &param_traits, r)?;
+        if let Some(trait_arg) = trait_arg {
+            param_trait_args.push((trait_name.clone(), trait_arg));
+        }
         param_traits.push(trait_name);
         let (r, _) = ws(r)?;
         rest = r;
@@ -1420,6 +1472,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     p.type_constraint = type_constraint;
     p.where_constraint = where_constraint;
     p.traits = param_traits;
+    p.trait_args = param_trait_args;
     p.code_signature = code_sig;
     p.shape_constraints = shape_constraints;
     Ok((rest, p))

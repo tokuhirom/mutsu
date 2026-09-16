@@ -1347,6 +1347,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
             };
@@ -1383,6 +1384,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         is_invocant: false,
                         shape_constraints: None,
                         block_param: false,
+                        trait_args: Vec::new(),
                     })
                     .collect::<Vec<_>>()
             };

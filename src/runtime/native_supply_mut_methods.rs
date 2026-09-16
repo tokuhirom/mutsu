@@ -1640,6 +1640,7 @@ impl Interpreter {
                     is_invocant: false,
                     shape_constraints: None,
                     block_param: false,
+                    trait_args: Vec::new(),
                 }],
                 vec![crate::ast::Expr::Var("v".to_string())],
             )
