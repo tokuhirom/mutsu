@@ -44,11 +44,125 @@
     "unresolved": []
   },
   "dist": "Grammar::TokenProcessing",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-token-definitions-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 89.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 10.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-comprehensive-token-definitions-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 6.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 3,
+        "ok": 0,
+        "plan": 3,
+        "secs": 10.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-comprehensive-token-definitions-random-sentence-generation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "DSL::English::DataQueryWorkflows::Grammar test: sufficient number of elements",
+        "nok": 3,
+        "ok": 2,
+        "plan": 5,
+        "secs": 9.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/05-random-sentence-generation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 6.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'set_name' for invocant of type 'Regex'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-rule-to-regex-conversion.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Grammar::TokenProcessing": "Failed to parse module 'Grammar::TokenProcessing': Unmatched ( in regex [at lib/Grammar/TokenProcessing.rakumod:89]",
+    "Grammar::TokenProcessing": "ok",
     "Grammar::TokenProcessing::Actions::EBNF": "ok",
-    "Grammar::TokenProcessing::Actions::EnhancedTokens": "expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at TokenProcessing/Actions/EnhancedTokens.rakumod:58]",
+    "Grammar::TokenProcessing::Actions::EnhancedTokens": "ok",
     "Grammar::TokenProcessing::Actions::RandomSentence": "ok",
     "Grammar::TokenProcessing::Actions::TokenNames": "ok",
     "Grammar::TokenProcessing::Actions::Tokens": "ok",
@@ -58,10 +172,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -72,13 +186,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAMMAR_TOKENPROCESSING/c49d1343847b218fc3d094fb69162bf20dcbbceb.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 24,
+    "baseline_files": 5,
+    "mutsu_assertions": 12,
+    "parity_files": 2,
+    "regressed_files": 3
   },
   "version": "0.1.10"
 }

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.2,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 3.2,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 87,
-        "secs": 0.2,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 87,
         "plan": 87,
-        "secs": 1.82,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,30 +70,29 @@
         "nok": 0,
         "ok": 87,
         "plan": 87,
-        "secs": 1.98,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Sigma-sum of 6",
-        "nok": 60,
-        "ok": 40,
+        "nok": 0,
+        "ok": 100,
         "plan": 100,
-        "secs": 0.82,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/04-sums.rakutest",
       "raku": {
         "nok": 0,
         "ok": 100,
         "plan": 100,
-        "secs": 0.87,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,10 +104,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -123,9 +122,9 @@
   "totals": {
     "baseline_assertions": 295,
     "baseline_files": 4,
-    "mutsu_assertions": 63,
-    "parity_files": 1,
-    "regressed_files": 3
+    "mutsu_assertions": 123,
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "0.4.3"
 }

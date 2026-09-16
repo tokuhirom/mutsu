@@ -11,23 +11,22 @@
   "dist": "CLI::Graphing::BarChart",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "bad bare graph",
-        "nok": 4,
-        "ok": 1,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.21,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.49,
+        "secs": 3.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/LI/CLI_GRAPHING_BARCHART/a91b3979d171d37d6b062bb3046c774c27c64818.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 5,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 5,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "1.0.0"
 }

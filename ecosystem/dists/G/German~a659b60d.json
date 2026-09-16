@@ -9,23 +9,22 @@
   "dist": "German",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: und",
         "nok": 0,
-        "ok": 12,
+        "ok": 30,
         "plan": 30,
-        "secs": 0.48,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-operators.t",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 26.43,
+        "secs": 24.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/ER/GERMAN/7c8e9f07f1ccab88d2566ceca8a9b1b2dcd0cea1.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 30,
     "baseline_files": 1,
-    "mutsu_assertions": 12,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 30,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

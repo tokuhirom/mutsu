@@ -30,11 +30,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "java development",
-        "nok": 4,
-        "ok": 4,
+        "first_failure": "customer service",
+        "nok": 3,
+        "ok": 5,
         "plan": 8,
-        "secs": 5.07,
+        "secs": 4.56,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 81.08,
+        "secs": 80.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 2.71,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 8,
         "ok": 0,
         "plan": 8,
-        "secs": 5.58,
+        "secs": 5.07,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.79,
+        "secs": 2.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 2.56,
+        "secs": 2.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,10 +113,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -131,7 +131,7 @@
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 2,
-    "mutsu_assertions": 4,
+    "mutsu_assertions": 5,
     "parity_files": 0,
     "regressed_files": 2
   },
