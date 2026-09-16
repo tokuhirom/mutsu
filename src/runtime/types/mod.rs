@@ -118,7 +118,46 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         // transparent to definedness: `$x // …` / `take-rw …[i] // next` must
         // test the *inner* value, not the wrapper, so an undefined element still
         // triggers the `//` fallback even when it has been promoted to a cell.
-        ValueView::ContainerRef(arc) => value_is_defined(&arc.lock().unwrap()),
+        //
+        // No Raku container can legitimately contain itself, but if mutsu's
+        // container machinery ever manages to create such a cycle anyway (see
+        // #8507), recursing on `&arc.lock().unwrap()` directly would try to
+        // lock the SAME `std::sync::Mutex` again from this thread while the
+        // outer guard is still alive and hang forever (`Mutex` is not
+        // reentrant) instead of erroring. `gist_value` (`runtime/utils/gist.rs`)
+        // hits the identical hazard for its `ContainerRef` arm and fixes it the
+        // same way: clone the contents out and drop the lock BEFORE recursing,
+        // and track which cells are currently being unwound on this thread so
+        // a cycle is *detected*, not deadlocked on.
+        ValueView::ContainerRef(arc) => {
+            thread_local! {
+                static IN_PROGRESS: std::cell::RefCell<Vec<usize>> =
+                    const { std::cell::RefCell::new(Vec::new()) };
+            }
+            let ptr = crate::gc::Gc::as_ptr(&arc) as usize;
+            let is_cycle = IN_PROGRESS.with(|seen| {
+                let mut seen = seen.borrow_mut();
+                if seen.contains(&ptr) {
+                    true
+                } else {
+                    seen.push(ptr);
+                    false
+                }
+            });
+            if is_cycle {
+                // A cyclic cell is a real, allocated container (not a type
+                // object) — treat it as defined rather than hang or crash on
+                // it. The cycle itself is a bug elsewhere; this is only the
+                // crash-safety backstop.
+                return true;
+            }
+            let inner = arc.lock().unwrap().clone();
+            let result = value_is_defined(&inner);
+            IN_PROGRESS.with(|seen| {
+                seen.borrow_mut().pop();
+            });
+            result
+        }
         // A role-mixed value (`but`/`does`) is only as defined as what it
         // wraps: `Any but role {...}` is a type object (`:U`), while
         // `Any.new but role {...}` is a concrete instance (`:D`) -- the
@@ -1135,5 +1174,26 @@ impl Interpreter {
             return None;
         }
         Some((base, inner))
+    }
+}
+
+#[cfg(test)]
+mod value_is_defined_tests {
+    use super::*;
+
+    /// #8507: a `ContainerRef` cell whose own content is a `ContainerRef`
+    /// back to itself must not deadlock `value_is_defined`'s recursive
+    /// `.lock()`. No Raku container can legitimately contain itself, but the
+    /// crash-safety fix must hold even if mutsu's container machinery
+    /// manages to create one anyway. This test hangs forever pre-fix.
+    #[test]
+    fn value_is_defined_does_not_deadlock_on_a_self_referential_cell() {
+        let cell_val = Value::NIL.into_container_ref();
+        let arc = match cell_val.view() {
+            ValueView::ContainerRef(arc) => arc.clone(),
+            _ => unreachable!("into_container_ref always returns a ContainerRef"),
+        };
+        *arc.lock().unwrap() = cell_val.clone();
+        assert!(value_is_defined(&cell_val));
     }
 }
