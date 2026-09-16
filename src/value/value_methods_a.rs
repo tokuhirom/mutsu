@@ -487,6 +487,27 @@ impl Value {
         }
     }
 
+    /// True when this value is a `$`-scalar-itemized `Slip` (`my $x =
+    /// slip(5, 6)`, `$(slip(5, 6))`, `.item`). Like the hash flag above, the
+    /// itemization is per-holder representation state that `ValueView` hides,
+    /// so a `Slip` stays a `Slip` to every consumer and keeps flattening —
+    /// only `.raku` observes this, rendering `$(slip(5, 6))`. `Slip` has no
+    /// itemized *representation* of its own (unlike `Array`'s `ItemList`),
+    /// and it must NOT take the `Scalar`-wrapper route `Range` takes, because
+    /// a `Scalar` wrapper is exactly the "stop flattening" marker.
+    pub fn slip_is_itemized(&self) -> bool {
+        self.0.is_slip_itemized()
+    }
+
+    /// Return this value with its slip itemization flag set to `itemized`,
+    /// preserving the SAME element `Arc`. A non-slip value is unchanged.
+    pub fn with_slip_itemized(self, itemized: bool) -> Self {
+        match self.into_repr() {
+            ValueRepr::Slip(items, _) => Value::Slip(items, itemized),
+            other => Value::from_repr(other),
+        }
+    }
+
     /// Build a `Gc<HashData>` from a map or `HashData`. Lets call sites that
     /// constructed `Value::Hash(crate::gc::Gc::new(x))` keep their shape as
     /// `Value::Hash(Value::hash_arc(x))` while the variant moved to `HashData`.
@@ -505,6 +526,12 @@ impl Value {
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).
             ValueRepr::Hash(h, _) => Value::Hash(h, true),
+            // A Slip records the container as a second kind tag over the same
+            // element `Arc` for the same reason, and specifically NOT as the
+            // `Scalar` wrapper the fallback arm below applies: a `$`-held Slip
+            // still flattens (`my $x = slip(5, 6); (1, $x, 2).elems` is 4),
+            // while a `Scalar` wrapper means exactly "stop flattening".
+            ValueRepr::Slip(items, _) => Value::Slip(items, true),
             // Any other aggregate (Range, LazyList, Set/Bag/Mix, ...) is wrapped
             // in a `Scalar` container so it becomes a single non-flattening
             // element in list context (mirrors the `.item` method form in
@@ -600,6 +627,7 @@ impl Value {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
+            ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
             ValueView::Scalar(inner) => (*inner).clone(),
             ValueView::ContainerRef(cell) => cell.lock().unwrap().clone().deitemize_element(),
             _ => self,

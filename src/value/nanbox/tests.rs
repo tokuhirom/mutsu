@@ -504,7 +504,8 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::Seq(crate::value::SeqBody::reified(vec![Value::int(1)])),
         ValueRepr::HyperSeq(crate::value::SeqBody::reified(vec![Value::int(2)])),
         ValueRepr::RaceSeq(crate::value::SeqBody::reified(vec![Value::int(3)])),
-        ValueRepr::Slip(Arc::new(vec![Value::int(4)])),
+        ValueRepr::Slip(Arc::new(vec![Value::int(4)]), false),
+        ValueRepr::Slip(Arc::new(vec![Value::int(4)]), true),
         ValueRepr::Version {
             parts: vec![
                 VersionPart::Num(1),

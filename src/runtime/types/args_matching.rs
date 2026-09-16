@@ -886,6 +886,61 @@ impl Interpreter {
                     }
                 }
             }
+            // A hash-slurpy (`*%v where {...}`) is invisible to the named-param
+            // loop above (`pd.named` is false for it, mirroring the binder's
+            // own `is_hash_slurpy` branch), so its own `where` clause was never
+            // consulted during candidate matching -- such a candidate matched
+            // unconditionally and either won over a candidate that should have
+            // been tried instead, or (once the binder enforces the same
+            // constraint) died binding the very call it was wrongly selected
+            // for. Found via App::ShowPath's `License::SPDX`, whose
+            // `multi method new(*%v where { not $_.keys })` zero-args-only
+            // candidate matched every call.
+            for pd in param_defs
+                .iter()
+                .filter(|pd| pd.slurpy && pd.name.starts_with('%'))
+            {
+                let Some(where_expr) = &pd.where_constraint else {
+                    continue;
+                };
+                let mut hash_items = ValueMap::default();
+                for arg in args {
+                    let arg = unwrap_varref_value(arg.clone());
+                    if let ValueView::Pair(key, v) = arg.view() {
+                        let consumed = param_defs
+                            .iter()
+                            .any(|other| other.named_external_keys().iter().any(|k| k == key));
+                        if !consumed {
+                            hash_items.insert(key.clone(), v.clone());
+                        }
+                    }
+                }
+                let slurpy_value = Value::hash_bare_values(hash_items);
+                let saved = self.env.clone();
+                self.env.insert("_".to_string(), slurpy_value.clone());
+                if !pd.name.is_empty() {
+                    self.env.insert(pd.name.clone(), slurpy_value.clone());
+                }
+                let ok = match where_expr.as_ref() {
+                    Expr::AnonSub { body, .. } => {
+                        let ev = self.eval_block_value(body);
+                        self.where_truthy(ev)
+                    }
+                    Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
+                    {
+                        let ev = self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                        self.where_truthy(ev)
+                    }
+                    expr => {
+                        let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                        self.where_smartmatch(&slurpy_value, ev)
+                    }
+                };
+                self.restore_env_preserving_dynamics(saved);
+                if !ok {
+                    return false;
+                }
+            }
             true
         })();
         if param_defs.iter().any(|pd| pd.where_constraint.is_some()) {

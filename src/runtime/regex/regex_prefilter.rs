@@ -51,12 +51,19 @@
 //! `FirstSet::admits_at` maps back onto the original subject. (A top-level
 //! `:ignoremark` already arrives here mark-stripped.)
 //!
-//! Still out of scope, and still simply declining: a `<+a -b>` composite class
-//! (a `<subrule>` in disguise — see [`super::regex_prefilter_analysis`]), and
-//! the required literal prefix / required inner literal through a rule name
-//! (both make a claim about *text*, and the inner literal's decline on
-//! anything that can run code is deliberately stronger than the first-set's —
-//! see [`super::regex_prefilter_inner`]).
+//! A `<+a -b>` composite class is derived too, in two halves that are
+//! justified separately because they are used in opposite directions: its
+//! positive items must be over-approximated and so decline on any name a rule
+//! could answer to (the engine falls back from a rejecting built-in predicate
+//! to a *grammar token* of that name), while its negative items narrow on
+//! character evidence alone and need no resolution at all. See
+//! [`super::regex_prefilter_composite`].
+//!
+//! Still out of scope, and still simply declining: the required literal prefix
+//! and required inner literal through a rule name (both make a claim about
+//! *text*, and the inner literal's decline on anything that can run code is
+//! deliberately stronger than the first-set's — see
+//! [`super::regex_prefilter_inner`]).
 
 use super::super::*;
 use super::regex_prefilter_analysis::{Analyzer, Derivation, derive};
@@ -144,6 +151,20 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
     if pattern.ignore_case || pattern.ignore_mark {
         return None;
     }
+    let (prefix, _) = required_literal_prefix_walk(pattern);
+    (!prefix.is_empty()).then_some(prefix)
+}
+
+/// Walk the literal-only part of one pattern level, returning both the text
+/// accumulated so far and whether every token at this level was consumed.
+///
+/// A transparent group can contribute a required prefix, but the enclosing
+/// level may continue after it only when its entire body was a literal run.
+/// This is the same distinction `ltm_litlen_walk` makes for a `Group`.
+fn required_literal_prefix_walk(pattern: &RegexPattern) -> (String, bool) {
+    if pattern.ignore_case || pattern.ignore_mark {
+        return (String::new(), false);
+    }
     let mut prefix = String::new();
     for token in &pattern.tokens {
         // Mirrors `ltm_litlen_walk`'s own chain-ending conditions exactly
@@ -152,30 +173,37 @@ pub(crate) fn required_literal_prefix(pattern: &RegexPattern) -> Option<String> 
         // separator), or a capture alias all end the declarative chain there,
         // whatever accumulated before it stays valid as a required prefix.
         if token.from_runtime_interpolation {
-            break;
+            return (prefix, false);
         }
         if !matches!(token.quant, RegexQuant::One) || token.separator.is_some() {
-            break;
+            return (prefix, false);
         }
         if token.named_capture.is_some()
             || token.secondary_named_capture.is_some()
             || token.hash_capture.is_some()
         {
-            break;
+            return (prefix, false);
         }
         match &token.atom {
             RegexAtom::Literal(ch) => prefix.push(*ch),
             // A grapheme literal is still a fixed run of codepoints, so it
             // extends the required prefix like any other literal.
             RegexAtom::LiteralGrapheme(g) => prefix.extend(g.chars()),
-            _ => break,
+            // Quoted regex literals parse as transparent groups. A
+            // capture-isolated group is likewise invisible to the enclosing
+            // match's capture result, unlike `CaptureGroup`, so both may
+            // extend a required prefix when their entire body is literal.
+            RegexAtom::Group(inner) | RegexAtom::CaptureIsolatedGroup(inner) => {
+                let (inner_prefix, inner_complete) = required_literal_prefix_walk(inner);
+                prefix.push_str(&inner_prefix);
+                if !inner_complete {
+                    return (prefix, false);
+                }
+            }
+            _ => return (prefix, false),
         }
     }
-    if prefix.is_empty() {
-        None
-    } else {
-        Some(prefix)
-    }
+    (prefix, true)
 }
 
 /// Candidate start positions for an unanchored scan of `pattern` over

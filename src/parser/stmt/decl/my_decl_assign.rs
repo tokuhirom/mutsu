@@ -161,6 +161,50 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             }
             return Ok((r3, block));
         }
+        // Bare dotted method call directly on the just-declared variable:
+        // `my Data::Generators::ResourceAccess $resources.instance;` calls
+        // `.instance` on `$resources` (an undefined instance of the declared
+        // type, since there is no initializer) and discards the result —
+        // confirmed against `raku` directly, including for an untyped `my $x
+        // .say;` (still `$x`, not the ambient `$_`). Without this arm, `rest`
+        // is left untouched after the bare declaration and the leftover
+        // `.instance` is independently parsed as a leading-dot call on the
+        // *topic* by the general statement parser, which only coincidentally
+        // "worked" when something else nearby happened to leave the topic
+        // holding a compatible value.
+        else if let Some(after_dot) = after_unspace.strip_prefix('.')
+            && after_dot
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+        {
+            let base = Expr::Var(s.name.clone());
+            let (r2, call_expr) =
+                super::super::super::expr::postfix_expr_continue(after_unspace, base)?;
+            let decl_expr = default_decl_expr(
+                s.is_array,
+                s.is_hash,
+                s.shape_dims.as_deref(),
+                s.type_constraint.as_deref(),
+            );
+            let decl = Stmt::VarDecl {
+                name: s.name.clone(),
+                expr: decl_expr,
+                type_constraint: s.type_constraint.clone(),
+                is_state: s.is_state,
+                is_our: s.is_our,
+                is_dynamic: s.has_dynamic_trait,
+                is_export: s.has_export_trait,
+                export_tags: s.export_tags.clone(),
+                custom_traits: s.custom_traits.clone(),
+                where_constraint: s.where_constraint.clone(),
+            };
+            let block = Stmt::SyntheticBlock(vec![decl, Stmt::Expr(call_expr)]);
+            if s.apply_modifier {
+                return parse_statement_modifier(r2, block);
+            }
+            return Ok((r2, block));
+        }
     }
 
     // Binding := or ::=

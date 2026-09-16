@@ -19,11 +19,6 @@ fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
 }
 
-/// The byte offset of codepoint `n` in `s`, or the string's length.
-fn char_offset(s: &str, n: usize) -> usize {
-    s.char_indices().nth(n).map(|(i, _)| i).unwrap_or(s.len())
-}
-
 impl Interpreter {
     /// Try a string / hash `nqp::` op. `None` means "not an op this table
     /// knows"; the caller then raises the unsupported-op error.
@@ -39,8 +34,15 @@ impl Interpreter {
             // `String::Utils`'s scanners rely on (they walk with an index that
             // may reach `chars($s)`).
             "substr" => {
-                let s = sarg(args, 0);
-                let total = s.chars().count();
+                // Memoized (see `nqp_char_cache`): a hand-rolled NQP scanner
+                // calls `nqp::substr($text, $pos, ...)` once per token over
+                // the SAME full `$text` (JSON::Fast's own parser is the case
+                // that surfaced this), so re-scanning it to a byte offset
+                // via `char_indices` on every call was O(n) work repeated
+                // O(n) times. Slicing the cached `Vec<char>` directly is
+                // O(want) instead.
+                let chars = super::nqp_char_cache::cached_chars(args, 0);
+                let total = chars.len();
                 let from = iarg(args, 1).max(0) as usize;
                 let from = from.min(total);
                 let want = if args.len() > 2 {
@@ -49,18 +51,22 @@ impl Interpreter {
                 } else {
                     total - from
                 };
-                let start = char_offset(&s, from);
-                let end = char_offset(&s, from.saturating_add(want));
-                Ok(Value::str(s[start..end].to_string()))
+                let end = from.saturating_add(want).min(total);
+                Ok(Value::str(chars[from..end].iter().collect::<String>()))
             }
             "concat" => Ok(Value::str(format!("{}{}", sarg(args, 0), sarg(args, 1)))),
             // nqp::index / rindex return **-1** when the needle is absent,
             // where Raku's `index` returns Nil. nqp code branches on exactly
             // that, so the -1 is the contract, not a placeholder.
             "index" | "rindex" => {
-                let haystack = sarg(args, 0);
                 let needle = sarg(args, 1);
-                let chars: Vec<char> = haystack.chars().collect();
+                // The haystack is memoized (see `nqp_char_cache`): a
+                // hand-rolled NQP scanner calls `nqp::index($text, needle,
+                // $pos)` with the SAME full `$text` and an advancing `$pos`
+                // (JSON::Fast's own string-token scan is the case that
+                // surfaced this), so collecting it fresh on every call was
+                // O(n) work repeated O(n) times.
+                let chars = super::nqp_char_cache::cached_chars(args, 0);
                 let needle_chars: Vec<char> = needle.chars().collect();
                 let from = if args.len() > 2 {
                     iarg(args, 2).max(0) as usize

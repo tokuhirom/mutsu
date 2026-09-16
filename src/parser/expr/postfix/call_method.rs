@@ -61,16 +61,6 @@ pub(crate) enum ParsedBracketIndex {
     MultiDim(Vec<Expr>),
 }
 
-pub(crate) fn parse_bracket_indices(input: &str) -> PResult<'_, Expr> {
-    let (rest, parsed) = parse_bracket_indices_inner(input)?;
-    match parsed {
-        ParsedBracketIndex::Single(expr) => Ok((rest, expr)),
-        // For callers that don't handle MultiDim, flatten to ArrayLiteral.
-        // The postfix parser will use parse_bracket_indices_inner directly.
-        ParsedBracketIndex::MultiDim(dims) => Ok((rest, Expr::ArrayLiteral(dims))),
-    }
-}
-
 pub(crate) fn parse_bracket_indices_inner(input: &str) -> PResult<'_, ParsedBracketIndex> {
     // Allow phaser-only blocks (e.g. `%h{ CATCH { } }`) inside subscripts.
     // In Raku this evaluates the block which returns Nil and then indexes

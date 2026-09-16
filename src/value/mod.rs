@@ -1906,7 +1906,13 @@ pub(in crate::value) enum ValueRepr {
     HyperSeq(Arc<SeqBody>),
     /// RaceSeq: result of `.race` — unordered parallel map/grep (worker threads).
     RaceSeq(Arc<SeqBody>),
-    Slip(Arc<Vec<Value>>),
+    /// The `bool` is the per-holder `$`-itemization flag, exactly as
+    /// `Hash`'s second field is: `my $x = slip(5, 6)` records the scalar
+    /// container on the VALUE (`$x.raku` is `$(slip(5, 6))`) while a bare
+    /// `slip(5, 6)` renders without it. It shares the SAME element `Arc`, and
+    /// `ValueView::Slip` hides it, so every consumer that pattern-matches a
+    /// `Slip` keeps flattening it — the flag is observed only by `.raku`.
+    Slip(Arc<Vec<Value>>, bool),
     LazyList(crate::gc::Gc<LazyList>),
     Version {
         parts: Vec<VersionPart>,
@@ -2234,8 +2240,8 @@ impl Value {
         Value::from_repr(ValueRepr::RaceSeq(body))
     }
     #[inline]
-    pub(in crate::value) fn Slip(items: Arc<Vec<Value>>) -> Value {
-        Value::from_repr(ValueRepr::Slip(items))
+    pub(in crate::value) fn Slip(items: Arc<Vec<Value>>, itemized: bool) -> Value {
+        Value::from_repr(ValueRepr::Slip(items, itemized))
     }
     #[inline]
     pub(in crate::value) fn LazyList(data: crate::gc::Gc<LazyList>) -> Value {

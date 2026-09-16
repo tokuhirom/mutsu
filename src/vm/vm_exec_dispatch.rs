@@ -679,11 +679,26 @@ impl Interpreter {
                     // Class-body outer-lexical fallback — see the GetHashVar twin.
                     .or_else(|| self.auto_qualified_bare_env_read(name))
                     .unwrap_or_else(|| {
-                        // An undeclared `@`-sigil variable defaults to an empty
-                        // Array (raku auto-declares it as Array under `no strict`):
-                        // `@x[2]` is `(Any)`, `@x.end` is `-1`, `@x.raku` is `[]`.
-                        // Anonymous `@`-sigil variables share this default.
-                        Value::real_array(vec![])
+                        // A never-declared `@*`-twigil (dynamic) variable is
+                        // `X::Dynamic::NotFound` territory in Raku -- the
+                        // caller-chain lookup genuinely found nothing, so the
+                        // read is undefined (Nil), matching the scalar
+                        // `GetGlobal` fallback below and letting `//` fall
+                        // through to its RHS. Mirrors Test::META's own
+                        // `@*META-CANDIDATES // <META6.json META.info>`
+                        // (App::ShowPath, #8483 sibling finding): auto-vivifying
+                        // a defined empty Array here made `//` never see the
+                        // fallback.
+                        if name.strip_prefix('@').is_some_and(|n| n.starts_with('*')) {
+                            Value::NIL
+                        } else {
+                            // An undeclared plain `@`-sigil variable defaults to
+                            // an empty Array (raku auto-declares it as Array
+                            // under `no strict`): `@x[2]` is `(Any)`, `@x.end`
+                            // is `-1`, `@x.raku` is `[]`. Anonymous `@`-sigil
+                            // variables share this default.
+                            Value::real_array(vec![])
+                        }
                     });
                 // A whole-container `:=` bind (`my @b := @a`) stores a shared
                 // `ContainerRef` cell in the slot so both aliases observe
@@ -803,11 +818,21 @@ impl Interpreter {
                         if name == "%ENV" {
                             return Err(RuntimeError::undeclared("name", "%ENV"));
                         }
-                        // An undeclared `%`-sigil variable defaults to an empty
-                        // Hash (raku auto-declares it as Hash under `no strict`):
-                        // `%h<k>` is `(Any)`, `%h.raku` is `{}`. Anonymous
-                        // `%`-sigil variables share this default.
-                        self.stack.push(Value::hash(ValueMap::default()));
+                        // A never-declared `%*`-twigil (dynamic) variable
+                        // mirrors the `@*` case in `GetArrayVar`: Raku raises
+                        // `X::Dynamic::NotFound` there, so the read is
+                        // undefined (Nil) rather than a defined empty Hash,
+                        // letting `//` fall through to its RHS.
+                        if name.strip_prefix('%').is_some_and(|n| n.starts_with('*')) {
+                            self.stack.push(Value::NIL);
+                        } else {
+                            // An undeclared plain `%`-sigil variable defaults to
+                            // an empty Hash (raku auto-declares it as Hash under
+                            // `no strict`): `%h<k>` is `(Any)`, `%h.raku` is
+                            // `{}`. Anonymous `%`-sigil variables share this
+                            // default.
+                            self.stack.push(Value::hash(ValueMap::default()));
+                        }
                     }
                 }
                 *ip += 1;

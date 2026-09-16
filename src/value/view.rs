@@ -470,7 +470,7 @@ impl Value {
     /// Construct a `Slip` from an existing shared element vector.
     #[inline]
     pub fn slip_arc(items: Arc<Vec<Value>>) -> Self {
-        Value::Slip(items)
+        Value::Slip(items, false)
     }
 
     /// Construct a `Hash` from an existing backing store (non-itemized).

@@ -11,10 +11,6 @@ impl Interpreter {
     ) -> bool {
         class_matches_ignorecase(class, c, ignore_case)
     }
-
-    pub(super) fn regex_match_class(&self, class: &CharClass, c: char) -> bool {
-        class_matches(class, c)
-    }
 }
 
 /// Whether `c` is in `class`, with `:i` applied when `ignore_case`.
@@ -292,5 +288,57 @@ impl Interpreter {
             }
         }
         results
+    }
+}
+
+/// The characters the `<+a -b>` composite-class arm tests one class item
+/// against, at a subject character it has already resolved to `effective_c`
+/// (`\r` of a `\r\n` cluster arrives here as `\n`).
+///
+/// A free function for the same reason [`class_matches_ignorecase`] is one:
+/// the ADR-0099 Stage 1 scan prefilter has to ask the same question at
+/// *analysis* time, over the ASCII range, and a second reading of what `:i`
+/// expands a character to would be exactly the silent-drift hazard the ADR's
+/// constraint 1 warns about.
+pub(super) fn composite_probe_chars(effective_c: char, ignore_case: bool) -> Vec<char> {
+    if ignore_case {
+        CaseFoldIter::new(effective_c).collect()
+    } else {
+        vec![effective_c]
+    }
+}
+
+/// Whether a composite-class item matches on **character evidence alone** —
+/// the built-in predicate, the Unicode property, or the plain class item.
+///
+/// This is the whole of the arm's test except for one thing: a
+/// [`ClassItem::NamedBuiltin`] the built-in predicate rejects falls back, in
+/// the engine, to resolving a *grammar token* of that name and matching it
+/// against the remaining input. That half needs the subject and the invocant
+/// package, so it stays at the call site (`regex_match_atom_simple.rs`) and
+/// the prefilter handles it by declining (`regex_prefilter_composite.rs`).
+///
+/// Answering `true` here therefore means the engine's arm answers `true` too,
+/// in either direction: the character half runs first and short-circuits. That
+/// is what lets the prefilter both *admit* a character on this evidence and
+/// *reject* one a negative item matches on it.
+pub(super) fn composite_item_matches(item: &ClassItem, chars_to_check: &[char]) -> bool {
+    match item {
+        ClassItem::NamedBuiltin(n) => chars_to_check
+            .iter()
+            .any(|ch| matches_named_builtin(n, *ch)),
+        ClassItem::UnicodePropItem { name, negated } => {
+            let m = chars_to_check
+                .iter()
+                .any(|ch| check_unicode_property(name, *ch));
+            if *negated { !m } else { m }
+        }
+        _ => {
+            let class = CharClass {
+                items: vec![item.clone()],
+                negated: false,
+            };
+            chars_to_check.iter().any(|ch| class_matches(&class, *ch))
+        }
     }
 }
