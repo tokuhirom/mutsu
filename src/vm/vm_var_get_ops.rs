@@ -226,6 +226,18 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::package(Symbol::intern(name))
+        } else if self.current_package() != "GLOBAL"
+            && let Some(enum_val) = self
+                .env()
+                .get(&format!("{}::{name}", self.current_package()))
+                .filter(|value| matches!(value.view(), ValueView::Enum { .. }))
+                .cloned()
+        {
+            // A class/package's own enum member is a package symbol.  Consult
+            // it before the lexical bare-key namespace: another class can use
+            // the same member spelling without changing what this class's
+            // methods mean by that bare term.
+            enum_val
         } else if let Some(enum_val) = self.enum_bare_value(name).cloned() {
             // An enum key read by its bare spelling. It lives in its own key
             // namespace (`runtime::enum_bare_names`) because `$s` and the enum key
