@@ -329,11 +329,21 @@ impl Interpreter {
             .map(|i| i as u64)
     }
 
-    /// Build a first-class Sub for a native routine that has no registry
-    /// FunctionDef. Native functions normally enter through name dispatch, but
-    /// Raku exposes the same routines as code values (`&sleep`,
-    /// `&term:<now>`, ...), including for `.wrap`/`.unwrap`.
-    fn native_callable_sub(&self, value_name: &str, dispatch_name: &str) -> Value {
+    /// Build a first-class Sub which dispatches back to a named routine.
+    ///
+    /// A [`ValueView::Routine`] is a lightweight name handle, whereas the
+    /// wrapper registry is keyed by a `Sub` identity.  Materialize this small
+    /// forwarding Sub when a routine value needs `wrap`/`unwrap`: its direct
+    /// execution re-enters normal named dispatch, and the existing wrapper
+    /// machinery can therefore intercept both `&routine(...)` and ordinary
+    /// named calls.  Native routines are the most common users, but this also
+    /// covers a proto/token handle which has no concrete candidate body.
+    pub(super) fn routine_dispatch_sub(
+        &self,
+        package: &str,
+        value_name: &str,
+        dispatch_name: &str,
+    ) -> Value {
         let mut env = self.env.clone();
         env.insert(
             "__mutsu_routine_name".to_string(),
@@ -348,7 +358,7 @@ impl Interpreter {
             );
         }
         Value::make_sub(
-            Symbol::intern("GLOBAL"),
+            Symbol::intern(package),
             Symbol::intern(value_name),
             Vec::new(),
             Vec::new(),
@@ -356,6 +366,14 @@ impl Interpreter {
             false,
             env,
         )
+    }
+
+    /// Build a first-class Sub for a native routine that has no registry
+    /// FunctionDef. Native functions normally enter through name dispatch, but
+    /// Raku exposes the same routines as code values (`&sleep`,
+    /// `&term:<now>`, ...), including for `.wrap`/`.unwrap`.
+    fn native_callable_sub(&self, value_name: &str, dispatch_name: &str) -> Value {
+        self.routine_dispatch_sub("GLOBAL", value_name, dispatch_name)
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {

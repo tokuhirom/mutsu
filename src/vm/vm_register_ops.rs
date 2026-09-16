@@ -167,6 +167,10 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
+            env.insert(
+                "__mutsu_gather_unit".to_string(),
+                Value::str(self.current_unit.as_str().to_string()),
+            );
             // A `samewith` in the body redispatches the routine the gather was
             // WRITTEN in, but the body runs after that routine has returned and
             // its dynamic dispatch frame has been popped. Capture the context
