@@ -134,6 +134,11 @@ OVERRIDES: dict[str, str] = {
     # -array-hash", the same accidental substring nativecall's own `c-?array`
     # pattern is written to catch.
     "dynamic-array-hash-var-not-found": "vm",
+    # An inline `my $x = expr` used in expression position is VM store/
+    # expression-value mechanics (the compiled `DoStmt(VarDecl)` shape), not a
+    # collections itemization test -- matches no rule at all (`vardecl` is one
+    # word, not `var-`/`decl` as separate prefixes).
+    "vardecl-expr-value-itemized": "vm",
     # A `where` clause on a slurpy hash (`*%v where {...}`) is a multi-dispatch
     # candidate-selection bug -- it belongs beside the other `multi-where-*`
     # dispatch pins, not routines/signature. Two rule mis-fires stack here:
