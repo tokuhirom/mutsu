@@ -62,49 +62,76 @@ fn normalize_trans_operand(v: &Value) -> Value {
     }
 }
 
+/// A grapheme unit's single codepoint, or `None` when it is empty or a
+/// multi-codepoint cluster (e.g. a combining-mark sequence) — such a unit is
+/// not eligible for a `..` range endpoint.
+fn single_char(unit: &str) -> Option<char> {
+    let mut it = unit.chars();
+    let c = it.next()?;
+    if it.next().is_some() { None } else { Some(c) }
+}
+
 /// Expand a tr-style spec string: `a..z` becomes all chars from 'a' to 'z'.
 /// Handles ambiguous ranges like `A..H..Z` (= `A..Z`) and leading/trailing `..`.
-fn expand_trans_spec(spec: &str) -> Vec<char> {
-    let chars: Vec<char> = spec.chars().collect();
-    let mut result = Vec::new();
+///
+/// Splits `spec` into Raku characters (extended grapheme clusters), not raw
+/// Unicode codepoints, so a from/to pair whose alphabets each contain
+/// combining-mark graphemes (e.g. `ſ̣`) stays index-aligned between the two
+/// sides even when the marks fall at different string offsets in each
+/// (`Acme::Text::UpsideDown`'s `$up`/`$down` alphabets do exactly this —
+/// splitting by codepoint desynced every position after the first mark).
+fn expand_trans_spec(spec: &str) -> Vec<String> {
+    let units = crate::builtins::string_pos::grapheme_units(spec);
+    let mut result: Vec<String> = Vec::new();
     let mut i = 0;
-    while i < chars.len() {
-        // Check for `X..Y` range pattern
-        if i + 3 < chars.len() && chars[i + 1] == '.' && chars[i + 2] == '.' {
-            let start = chars[i] as u32;
-            let end = chars[i + 3] as u32;
+    while i < units.len() {
+        // Check for `X..Y` range pattern (only meaningful when both endpoints
+        // are a single codepoint).
+        if i + 3 < units.len()
+            && units[i + 1] == "."
+            && units[i + 2] == "."
+            && let (Some(start), Some(end)) = (single_char(units[i]), single_char(units[i + 3]))
+        {
+            let start = start as u32;
+            let end = end as u32;
             if start <= end {
                 for c in start..=end {
                     if let Some(ch) = char::from_u32(c) {
-                        result.push(ch);
+                        result.push(ch.to_string());
                     }
                 }
             }
             i += 4;
             // Handle continuation ranges: `A..H..Z` means A..H then H..Z
-            while i + 1 < chars.len() && chars[i] == '.' && chars[i + 1] == '.' {
-                if i + 2 < chars.len() {
-                    let prev_end = result.last().copied().unwrap_or('\0') as u32;
-                    let new_end = chars[i + 2] as u32;
+            while i + 1 < units.len() && units[i] == "." && units[i + 1] == "." {
+                if i + 2 < units.len()
+                    && let Some(new_end) = single_char(units[i + 2])
+                {
+                    let prev_end = result
+                        .last()
+                        .and_then(|s| single_char(s))
+                        .map(|c| c as u32)
+                        .unwrap_or(0);
+                    let new_end = new_end as u32;
                     // Skip the range start since it was already added
                     if prev_end < new_end {
                         for c in (prev_end + 1)..=new_end {
                             if let Some(ch) = char::from_u32(c) {
-                                result.push(ch);
+                                result.push(ch.to_string());
                             }
                         }
                     }
                     i += 3;
                 } else {
                     // Trailing `..` — add as literal dots
-                    result.push('.');
-                    result.push('.');
+                    result.push(".".to_string());
+                    result.push(".".to_string());
                     i += 2;
                 }
             }
             continue;
         }
-        result.push(chars[i]);
+        result.push(units[i].to_string());
         i += 1;
     }
     result
@@ -128,10 +155,7 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
             .iter()
             .flat_map(trans_collection_item_to_strings)
             .collect(),
-        ValueView::Str(s) => {
-            let expanded = expand_trans_spec(&s);
-            expanded.into_iter().map(|c| c.to_string()).collect()
-        }
+        ValueView::Str(s) => expand_trans_spec(&s),
         // Handle Range types by iterating their elements
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
@@ -143,8 +167,7 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
         }
         _ => {
             let s = v.to_string_value();
-            let expanded = expand_trans_spec(&s);
-            expanded.into_iter().map(|c| c.to_string()).collect()
+            expand_trans_spec(&s)
         }
     }
 }
@@ -258,7 +281,10 @@ impl Interpreter {
                             closure: value.clone(),
                         });
                     } else {
-                        let from_chars = expand_trans_spec(key);
+                        let from_chars: Vec<char> = expand_trans_spec(key)
+                            .iter()
+                            .filter_map(|s| s.chars().next())
+                            .collect();
                         rules.push(TransRule::CharClosure {
                             from_chars,
                             closure: value.clone(),
@@ -360,8 +386,14 @@ impl Interpreter {
                                             to_tokens: vec![replacement],
                                         });
                                     } else {
-                                        let from_chars = expand_trans_spec(&s);
-                                        let to_chars: Vec<char> = expand_trans_spec(&replacement);
+                                        let from_chars: Vec<char> = expand_trans_spec(&s)
+                                            .iter()
+                                            .filter_map(|u| u.chars().next())
+                                            .collect();
+                                        let to_chars: Vec<char> = expand_trans_spec(&replacement)
+                                            .iter()
+                                            .filter_map(|u| u.chars().next())
+                                            .collect();
                                         rules.push(TransRule::CharMap {
                                             from_chars,
                                             to_chars,
@@ -403,7 +435,10 @@ impl Interpreter {
                             closure: value.clone(),
                         });
                     } else {
-                        let from_chars = expand_trans_spec(&key_str);
+                        let from_chars: Vec<char> = expand_trans_spec(&key_str)
+                            .iter()
+                            .filter_map(|s| s.chars().next())
+                            .collect();
                         rules.push(TransRule::CharClosure {
                             from_chars,
                             closure: value.clone(),
