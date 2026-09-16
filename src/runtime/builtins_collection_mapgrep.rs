@@ -501,10 +501,38 @@ impl Interpreter {
             return Err(err);
         }
         let func = positional.first().cloned();
+        // A gather-sourced / infinite-pipe target (same test `map`/`grep` use
+        // above) must be pulled incrementally, not forced whole: `first`
+        // routes to the method form, which has its own lazy-pull dispatch
+        // (`try_lazy_gather_first`) that stops at the first match instead of
+        // running the whole (possibly infinite) source. Without this, `first
+        // {...}, gather {...}` fell through to the eager list-building loop
+        // below, whose `_ => list_items.push(arg.clone())` catch-all pushed
+        // the un-pulled `LazyList` as a single opaque item and matched the
+        // predicate against the pipe itself instead of its elements.
+        if args.len() == 2 && Self::is_lazy_pipe_source(&args[1]) {
+            let method_args: Vec<Value> = func.into_iter().collect();
+            return self.call_method_with_values(args[1].clone(), "first", method_args);
+        }
         let mut list_items = Vec::new();
         for arg in positional.iter().skip(1) {
             match arg.view() {
                 ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                // A `Seq` always flattens into the list `first` searches, the
+                // same as `map`/`grep` (see the identical arm there): a sole
+                // Seq argument is the list itself, not one element of it.
+                // Without this, `first { .can-install() }, map { ... }, @list`
+                // pushed the whole `Seq` as one item and crashed with "No such
+                // method 'can-install' for invocant of type 'Seq'" the moment
+                // the predicate ran on it -- exactly the shape zef's CLI uses
+                // to pick an install target (`Zef/CLI.rakumod`'s `str2cur`).
+                ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
+                ValueView::Slip(items) => list_items.extend(items.iter().cloned()),
+                ValueView::Hash(map) => {
+                    for (k, v) in map.iter() {
+                        list_items.push(Value::value_pair(Value::str(k.clone()), v.clone()));
+                    }
+                }
                 _ if arg.is_range() => {
                     // Route ranges through the unified pull iterator so an
                     // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is

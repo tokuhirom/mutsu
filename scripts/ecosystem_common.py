@@ -46,6 +46,19 @@ CORE_PROVIDED = {
 }
 
 _DEP_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z0-9_-]+)*)")
+# A dependency string is a name followed by zero or more `:key<value>`
+# adverbs, mirroring zef's own `Zef::Identity` grammar
+# (`^^ <name> [':' <key> <value>]* $$`, vendor/zef/lib/Zef/Identity.rakumod).
+# Anything left over after the name -- most commonly a raw git/http(s) URL a
+# distribution author pasted into `depends` instead of a module name, e.g.
+# App::RakuCron's `"https://github.com/FCO/Configuration.git"` -- fails that
+# grammar in real zef too (`Zef::Identity.new($url).name` is `Any`), and
+# `Zef::Distribution.depends-specs` drops it silently (`.grep(*.name)`). This
+# tail-validation matches that: an entry whose adverb tail does not fully
+# parse is dropped rather than truncated to whatever `_DEP_NAME` matched
+# before the first invalid character -- which used to turn that URL into a
+# bogus "https" dependency that no distribution actually has.
+_DEP_ADVERB_TAIL = re.compile(r"^(?::[A-Za-z_][A-Za-z0-9_-]*<[^<>]*>)*$")
 _TEST_FILE = re.compile(r"\.(t|rakutest)$")
 _SOURCE_FILE = re.compile(r"\.(rakumod|pm6|pm|raku|rakutest|t)$")
 
@@ -109,9 +122,13 @@ def dep_names(meta: dict, *, include_test: bool = True) -> list[str]:
     for raw in out:
         if ":from<native>" in raw or ":from<bin>" in raw:
             continue
-        m = _DEP_NAME.match(raw.strip())
-        if m:
-            names.append(m.group(1))
+        stripped = raw.strip()
+        m = _DEP_NAME.match(stripped)
+        if not m:
+            continue
+        if not _DEP_ADVERB_TAIL.match(stripped[m.end():]):
+            continue
+        names.append(m.group(1))
     return names
 
 
@@ -650,6 +667,24 @@ def _self_test() -> int:
     want_deps = ["has-word", "Array::Sorted::Util"]
     if got_deps != want_deps:
         print(f"dep_names: want {want_deps!r}, got {got_deps!r}", file=sys.stderr)
+        failures += 1
+
+    # A raw git/http(s) URL in `depends` (App::RakuCron's own META6.json has
+    # exactly this: `"https://github.com/FCO/Configuration.git"`) must be
+    # dropped whole, not truncated to its scheme -- `_DEP_NAME` alone used to
+    # match the leading "https" and report it as an unresolved dependency
+    # named "https", which no distribution in the ecosystem actually has.
+    # Real zef's `Zef::Identity` grammar fails to parse this string too
+    # (`.name` comes back `Any`), and `depends-specs` drops it via
+    # `.grep(*.name)` -- it never becomes a dependency zef tries to resolve.
+    dep_meta = {"depends": [
+        "https://github.com/FCO/Configuration.git",
+        "Lumberjack",
+    ]}
+    got_deps = dep_names(dep_meta)
+    want_deps = ["Lumberjack"]
+    if got_deps != want_deps:
+        print(f"dep_names (url): want {want_deps!r}, got {got_deps!r}", file=sys.stderr)
         failures += 1
 
     # A `# TODO` failure is an expected one: TAP says the file still passes.
