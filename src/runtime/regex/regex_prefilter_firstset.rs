@@ -105,6 +105,21 @@ impl FirstSet {
         self.non_ascii = None;
     }
 
+    /// Drop an ASCII character from the set, for a character a *negative*
+    /// composite-class item provably rejects
+    /// ([`super::regex_prefilter_composite`]).
+    ///
+    /// Only ASCII: the non-ASCII half is a wholesale admit-or-list policy, and
+    /// narrowing it would need the enumeration this module deliberately does
+    /// not do. Removing on anything less than proof is the one unsound
+    /// direction, so every caller owes that proof.
+    pub(super) fn remove_ascii(&mut self, c: char) {
+        let cp = c as u32;
+        if cp < 128 {
+            self.ascii[(cp >> 6) as usize] &= !(1u64 << (cp & 63));
+        }
+    }
+
     pub(super) fn union(&mut self, other: &FirstSet) {
         // One skewed contributor skews the union: the scan cannot tell which
         // branch's characters a given position was rejected by.
@@ -260,7 +275,7 @@ pub(super) fn class_first_set(class: &CharClass, ignore_case: bool) -> FirstSet 
 /// compared in NFC against a normalized subject cluster, so its leading
 /// codepoint as stored is not quite a promise about the subject's. None of the
 /// three qualifies.
-fn class_is_ascii_only(class: &CharClass, ignore_case: bool) -> bool {
+pub(super) fn class_is_ascii_only(class: &CharClass, ignore_case: bool) -> bool {
     if class.negated || ignore_case {
         return false;
     }

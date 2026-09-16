@@ -21,6 +21,14 @@
 //! for any `<…>` anywhere in the pattern, including places the analysis never
 //! looks — because over-reporting costs a lock and under-reporting costs
 //! correctness.
+//!
+//! "Names a rule" is not the same as "is spelled `<x>`": a `<+a -b>` composite
+//! class reads the registry too, because a positive `NamedBuiltin` item whose
+//! built-in predicate rejects falls back to a grammar token of that name. That
+//! condition has exactly one statement of it,
+//! [`super::regex_prefilter_composite::composite_class_reads_registry`], which
+//! both this test and the derivation consult — two readings of it would be
+//! free to disagree, and the disagreement is the wrong answer above.
 
 use super::super::*;
 use super::regex_prefilter::Prefilter;
@@ -116,6 +124,15 @@ fn pattern_mentions_subrule(pattern: &RegexPattern, depth: u32) -> bool {
 fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
     match atom {
         RegexAtom::Named(_) => true,
+        // A composite class is a rule reference in disguise whenever one of
+        // its POSITIVE items is a `NamedBuiltin`: the built-in predicate
+        // rejecting falls back to a grammar token of that name, so deriving
+        // the atom's first-set reads the rule registry. The condition is
+        // stated once, in the module that does the reading, so the two cannot
+        // disagree — and disagreeing here is a wrong answer, not a slow scan.
+        RegexAtom::CompositeClass { positive, .. } => {
+            super::regex_prefilter_composite::composite_class_reads_registry(positive)
+        }
         RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
             pattern_mentions_subrule(p, depth + 1)
         }
@@ -138,7 +155,6 @@ fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
         | RegexAtom::Any
         | RegexAtom::NotNewline
         | RegexAtom::UnicodeProp { .. }
-        | RegexAtom::CompositeClass { .. }
         | RegexAtom::WsRule
         | RegexAtom::ZeroWidth
         | RegexAtom::CaptureStartMarker

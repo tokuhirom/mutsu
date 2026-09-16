@@ -26,6 +26,7 @@ mod regex_match_sep;
 mod regex_match_sep_lazy;
 pub(crate) mod regex_prefilter;
 pub(crate) mod regex_prefilter_analysis;
+mod regex_prefilter_composite;
 pub(crate) mod regex_prefilter_firstset;
 pub(crate) mod regex_prefilter_inner;
 mod regex_prefilter_memo;

@@ -502,3 +502,72 @@ differential_case!(
     scoped_ignoremark_on_an_all_marks_subject,
     r#"say ("\x[0300]\x[0301]\x[0302]" ~~ / [:m 'a'] /).defined;"#
 );
+
+// --- `<+a -b>` composite classes (#8272 slice 6) -------------------------
+//
+// A composite class is the one atom whose membership is not decided by the
+// class evaluator alone: a `NamedBuiltin` item the built-in predicate rejects
+// falls back to resolving a *grammar token* of that name against the remaining
+// input. The derivation therefore admits on a built-in predicate, narrows on a
+// negative item, and declines outright on a name any rule could answer to —
+// three different claims, each of which can silently drop a match if wrong.
+
+differential_case!(
+    composite_class_positive_builtin,
+    r#"say ("zzz 9 zzz" ~~ / <+digit> /).Str;"#
+);
+differential_case!(
+    composite_class_positive_builtin_no_match,
+    r#"say ("zzz zzz" ~~ / <+digit> /).defined;"#
+);
+differential_case!(
+    composite_class_subtraction,
+    r#"say ("aeixou" ~~ / <[a..z] - [aeiou]> /).Str;"#
+);
+differential_case!(
+    composite_class_builtin_minus_chars,
+    r#"say ("ABCDEF" ~~ m:g/ <+upper -[A B]> /).elems;"#
+);
+differential_case!(
+    composite_class_purely_negated_multi_part,
+    r#"say (";qaq;b" ~~ m:g/ <-[;] - [q]> /).elems;"#
+);
+differential_case!(
+    composite_class_non_ascii_subject,
+    r#"say ("ab\x[e9]cd" ~~ / <+alpha -[a..z]> /).Str;"#
+);
+differential_case!(
+    composite_class_under_ignorecase,
+    r#"say ("Ab" ~~ m:g/ :i <+upper -[A]> /).elems;"#
+);
+differential_case!(
+    composite_class_across_a_crlf_cluster,
+    r#"say ("x\r\ny" ~~ / <+space -[ ]> /).defined;"#
+);
+differential_case!(
+    composite_class_quantified,
+    r#"say ("zz 1234 zz" ~~ / <+xdigit -[0]> ** 4 /).defined;"#
+);
+// The engine's grammar-token fallback: `token digit` overriding the built-in
+// name makes the atom match `'zz'`, which no built-in predicate would admit —
+// so the derivation must decline rather than narrow to `[0..9]`.
+differential_case!(
+    composite_class_named_item_overridden_by_a_grammar_token,
+    r#"
+grammar G {
+    token digit { 'zz' }
+    token TOP { .*? <+digit -[7]> }
+}
+say (G.parse('--zz') // 'nope').Str;
+"#
+);
+differential_case!(
+    composite_class_grammar_token_not_shadowing_the_builtin,
+    r#"
+grammar G {
+    token TOP { .*? <+digit -[7]> }
+}
+say (G.parse('--5') // 'nope').Str;
+say (G.parse('--7') // 'nope').Str;
+"#
+);
