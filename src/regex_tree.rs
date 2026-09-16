@@ -50,6 +50,11 @@ pub(crate) struct SubruleArgs {
     pub(crate) args: Vec<crate::ast::Expr>,
     #[serde(default)]
     pub(crate) source: Option<String>,
+    /// `Expr::Index` deliberately does not retain whether an associative
+    /// subscript used braces or angle brackets. Regex subrule arguments need
+    /// that source distinction for RakuAST's LiteralHashIndex model node.
+    #[serde(default)]
+    pub(crate) literal_hash_indices: Vec<bool>,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -2040,7 +2045,34 @@ impl Parser {
     fn parse_subrule(&mut self) -> Option<RegexNode> {
         self.pos += 1; // '<'
         let start = self.pos;
-        while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
+        let mut angle_depth = 0usize;
+        let mut quote = None;
+        let mut escaped = false;
+        while let Some(ch) = self.chars.get(self.pos) {
+            if escaped {
+                escaped = false;
+                self.pos += 1;
+                continue;
+            }
+            if *ch == '\\' {
+                escaped = true;
+                self.pos += 1;
+                continue;
+            }
+            if let Some(end) = quote {
+                if *ch == end {
+                    quote = None;
+                }
+                self.pos += 1;
+                continue;
+            }
+            match *ch {
+                '\'' | '"' => quote = Some(*ch),
+                '<' => angle_depth += 1,
+                '>' if angle_depth > 0 => angle_depth -= 1,
+                '>' => break,
+                _ => {}
+            }
             self.pos += 1;
         }
         if self.pos == start || !self.consume_if('>') {
@@ -2212,6 +2244,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
         return Some((
             name.to_string(),
             Some(Box::new(SubruleArgs {
+                literal_hash_indices: literal_hash_index_arguments(args_source, &args),
                 args,
                 source: Some(args_source.to_string()),
             })),
@@ -2238,10 +2271,72 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
     Some((
         name.to_string(),
         Some(Box::new(SubruleArgs {
+            literal_hash_indices: literal_hash_index_arguments(args_source, &args),
             args,
             source: Some(args_source.to_string()),
         })),
     ))
+}
+
+/// Identify the bounded `%hash<literal>` form after the ordinary expression
+/// parser has produced its execution expression. The general AST does not
+/// carry this delimiter provenance, so keep it beside regex arguments only.
+fn literal_hash_index_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<bool> {
+    let parts = split_top_level_arguments(source);
+    args.iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            matches!(
+                argument,
+                crate::ast::Expr::Index {
+                    target,
+                    index,
+                    is_positional: false,
+                } if matches!(target.as_ref(), crate::ast::Expr::HashVar(_))
+                    && matches!(index.as_ref(), crate::ast::Expr::Literal(value)
+                        if matches!(value.view(), crate::value::ValueView::Str(_)))
+            ) && parts.get(index).is_some_and(|part| {
+                let part = part.trim();
+                part.contains('<') && part.ends_with('>')
+            })
+        })
+        .collect()
+}
+
+fn split_top_level_arguments(source: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(end) = quote {
+            if ch == end {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' | '[' | '{' | '<' => depth += 1,
+            ')' | ']' | '}' | '>' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(&source[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&source[start..]);
+    parts
 }
 
 fn contains_subrule(node: &RegexNode) -> bool {

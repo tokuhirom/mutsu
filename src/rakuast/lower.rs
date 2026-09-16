@@ -1614,38 +1614,58 @@ fn lower_regex_subrule_name(node: &RakuAstNode) -> Result<String, RuntimeError> 
     Ok(name.to_string())
 }
 
-fn lower_regex_subrule_args(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+fn lower_regex_subrule_args(
+    node: &RakuAstNode,
+) -> Result<crate::regex_tree::SubruleArgs, RuntimeError> {
     let Some(field) = node.fields.iter().find(|field| field.name == Some("args")) else {
-        return Ok(Vec::new());
+        return Ok(crate::regex_tree::SubruleArgs {
+            args: Vec::new(),
+            source: None,
+            literal_hash_indices: Vec::new(),
+        });
     };
     let args = child_node(&field.value)?;
     if args.class != RakuAstClass::ArgList {
         return Err(unsupported(node));
     }
     let mut lowered = Vec::with_capacity(args.fields.len());
+    let mut sources = Vec::with_capacity(args.fields.len());
+    let mut literal_hash_indices = Vec::with_capacity(args.fields.len());
     for field in &args.fields {
         if field.name.is_some() {
             return Err(unsupported(node));
         }
-        lowered.push(lower_expr(child_node(&field.value)?)?);
+        let argument = child_node(&field.value)?;
+        literal_hash_indices.push(is_literal_hash_index(argument));
+        sources.push(regex_subrule_argument_source(argument)?);
+        lowered.push(lower_expr(argument)?);
     }
-    Ok(lowered)
+    Ok(crate::regex_tree::SubruleArgs {
+        args: lowered,
+        source: Some(sources.join(", ")),
+        literal_hash_indices,
+    })
 }
 
-fn regex_subrule_arg_source(
-    args: &[Expr],
-    node: &RakuAstNode,
-) -> Result<Option<String>, RuntimeError> {
-    if args.is_empty() {
-        return Ok(None);
+fn is_literal_hash_index(node: &RakuAstNode) -> bool {
+    node.class == RakuAstClass::ApplyPostfix
+        && named_child(node, "postfix")
+            .is_ok_and(|postfix| postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex)
+}
+
+fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    if is_literal_hash_index(node) {
+        let operand = lower_expr(named_child(node, "operand")?)?;
+        let postfix = named_child(node, "postfix")?;
+        let index = lower_expr(named_child(postfix, "index")?)?;
+        return Ok(format!(
+            "{}<{}>",
+            crate::regex_tree::expression_source(&operand).ok_or_else(|| unsupported(node))?,
+            crate::regex_tree::expression_source(&index).ok_or_else(|| unsupported(node))?,
+        ));
     }
-    Ok(Some(
-        args.iter()
-            .map(crate::regex_tree::expression_source)
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| unsupported(node))?
-            .join(", "),
-    ))
+    let expr = lower_expr(node)?;
+    crate::regex_tree::expression_source(&expr).ok_or_else(|| unsupported(node))
 }
 
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
@@ -1714,10 +1734,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             Ok(RegexNode::Subrule {
                 name: lower_regex_subrule_name(named_child(node, "name")?)?,
                 capturing: bool_field(node, "capturing")?,
-                args: Some(Box::new(crate::regex_tree::SubruleArgs {
-                    source: regex_subrule_arg_source(&args, node)?,
-                    args,
-                })),
+                args: Some(Box::new(args)),
             })
         }
         RakuAstClass::RegexAssertionAlias => {
@@ -1733,10 +1750,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                     (
                         lower_regex_subrule_name(named_child(assertion, "name")?)?,
                         bool_field(assertion, "capturing")?,
-                        Some(Box::new(crate::regex_tree::SubruleArgs {
-                            source: regex_subrule_arg_source(&args, assertion)?,
-                            args,
-                        })),
+                        Some(Box::new(args)),
                     )
                 }
                 _ => return Err(unsupported(node)),
@@ -2542,10 +2556,15 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 }),
                 // `@a[EXPR]` / `%h{EXPR}` -> Postcircumfix::*Index(index =>
                 // SemiList(Statement::Expression(EXPR))).
-                RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex => {
-                    let semilist = named_child(postfix, "index")?;
-                    let stmt_expr = named_child_or_positional(semilist)?;
-                    let index = lower_expr(stmt_expr)?;
+                RakuAstClass::PostcircumfixArrayIndex
+                | RakuAstClass::PostcircumfixHashIndex
+                | RakuAstClass::PostcircumfixLiteralHashIndex => {
+                    let index_node = named_child(postfix, "index")?;
+                    let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
+                        lower_expr(index_node)?
+                    } else {
+                        lower_expr(named_child_or_positional(index_node)?)?
+                    };
                     Ok(Expr::Index {
                         target: Box::new(operand),
                         index: Box::new(index),

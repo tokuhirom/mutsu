@@ -189,6 +189,7 @@ pub enum RakuAstClass {
     SemiList,
     PostcircumfixArrayIndex,
     PostcircumfixHashIndex,
+    PostcircumfixLiteralHashIndex,
     // Phase 2 slice 25: reduction metaoperator.
     TermReduce,
     // Phase 2 slice 30: `True`/`False` (and other enum) literals.
@@ -386,6 +387,7 @@ impl RakuAstClass {
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
             PostcircumfixHashIndex => "RakuAST::Postcircumfix::HashIndex",
+            PostcircumfixLiteralHashIndex => "RakuAST::Postcircumfix::LiteralHashIndex",
             TermReduce => "RakuAST::Term::Reduce",
             TermEnum => "RakuAST::Term::Enum",
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
@@ -887,6 +889,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::SemiList,
     RakuAstClass::PostcircumfixArrayIndex,
     RakuAstClass::PostcircumfixHashIndex,
+    RakuAstClass::PostcircumfixLiteralHashIndex,
     RakuAstClass::TermReduce,
     RakuAstClass::TermEnum,
     RakuAstClass::CircumfixParentheses,
@@ -2410,6 +2413,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ApplyInfix
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
+            | RakuAstClass::PostcircumfixLiteralHashIndex
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
