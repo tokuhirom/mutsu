@@ -598,10 +598,13 @@ impl Interpreter {
         } else {
             match target.view() {
                 ValueView::Array(items, kind) if kind.is_itemized() => items.to_vec(),
-                // A Blob/Buf maps over its bytes (matches raku iteration).
-                _ => {
-                    Self::buf_as_byte_items(&target).unwrap_or_else(|| Self::value_to_list(&target))
-                }
+                // A Blob/Buf maps over its bytes, and a Uni/NFC/NFD/NFKC/NFKD
+                // over its codepoints (both match raku iteration; see
+                // `value_to_list_for_receiver`'s doc comment for why `.map`
+                // needs the receiver-decomposing variant here, not the plain
+                // list-context `value_to_list`).
+                _ => Self::buf_as_byte_items(&target)
+                    .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(&target)),
             }
         };
         // A `return` callback keeps the older `LazyList` deferral for now

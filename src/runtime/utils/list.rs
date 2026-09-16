@@ -550,6 +550,21 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
 /// itemized `%h<a>` returned the Hash itself instead of a random Pair).
 pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
     let bare = val.descalarize();
+    // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its own
+    // (unlike Array/Hash) -- it is always its own receiver, and its OWN
+    // elements are its codepoints, each a plain Int. `value_to_list` (used
+    // for list-CONTEXT flattening, e.g. a `for $n -> $c` single-argument
+    // scalar) intentionally keeps treating a bare Uni as one item; this
+    // receiver-specific function is where `.map`/`.grep`/`.sort`/`.pick`/...
+    // decompose it, matching Rakudo (`'ab'.NFC.map({...})` runs the
+    // callback once per codepoint, each bound as a real Int).
+    if let ValueView::Uni(u) = bare.view() {
+        return u
+            .codepoints()
+            .into_iter()
+            .map(|cp| Value::int(cp as i64))
+            .collect();
+    }
     let bare = match bare.view() {
         ValueView::Array(items, kind) if kind.is_itemized() => {
             Value::array_with_kind(items.clone(), kind.decontainerize())
