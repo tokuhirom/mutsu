@@ -63,8 +63,14 @@ plan 11;
 
 # 8. `try`-wrapped assignment through `\target`
 {
-    my @a = [[9]];
+    # A second placeholder element keeps `@a[0]` itemized as the inner
+    # array: a single-element outer array composer flattens its lone
+    # nested-array argument (`[ [9] ]` is `[9]`, the raku "one-arg rule"),
+    # which would make `@a[0;0]` index the scalar `9` as a 1-element list
+    # rather than descend into a genuine nested array -- confirmed against
+    # `raku` to throw "Cannot modify an immutable Int (9)" in that case.
+    my @a = [[9], Any];
     sub tasg(\target, \v) { (try target = v) }
     is tasg(@a[0;0], 5), 5, 'try-wrapped assign returns value';
-    is-deeply @a, [[5]], 'try-wrapped assign writes through';
+    is-deeply @a, [[5], Any], 'try-wrapped assign writes through';
 }
