@@ -82,11 +82,11 @@ fn starts_bool_prefix_arg(s: &str) -> bool {
     })
 }
 
-/// A slip prefix (`|`) directly followed by a term-starting sigil/paren is an
-/// unambiguous argument start, so `unique |$x` / `min |@a` parse as a call with
-/// a flattened argument rather than reading `|` as the infix any-junction. The
-/// no-space requirement between `|` and the term disambiguates it from a spaced
-/// junction infix (`$a | $b`).
+/// A slip prefix (`|`) directly followed by a term-starting sigil/paren/angle
+/// is an unambiguous argument start, so `unique |$x` / `min |@a` /
+/// `test |<all is>` parse as a call with a flattened argument rather than
+/// reading `|` as the infix any-junction. The no-space requirement between
+/// `|` and the term disambiguates it from a spaced junction infix (`$a | $b`).
 fn starts_slip_prefix_arg(s: &str) -> bool {
     let Some(rest) = s.strip_prefix('|') else {
         return false;
@@ -94,7 +94,7 @@ fn starts_slip_prefix_arg(s: &str) -> bool {
     // `||` is the short-circuit-or infix, never a slip.
     matches!(
         rest.as_bytes().first(),
-        Some(b'$') | Some(b'@') | Some(b'%') | Some(b'&') | Some(b'(')
+        Some(b'$') | Some(b'@') | Some(b'%') | Some(b'&') | Some(b'(') | Some(b'<')
     ) || rest.starts_with("\\(")
         || rest.strip_prefix("«").is_some_and(|s| {
             s.chars()
