@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 37;
+plan 44;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -155,3 +155,30 @@ ok GDynamicTernaryArgument.parse('a').defined,
 $which = False;
 ok GDynamicTernaryArgument.parse('b').defined,
     'the ternary argument observes condition reassignment at match time';
+
+my %arguments = primary => 'a', secondary => 'b';
+my $argument_key = 'primary';
+my $hash_index_ast = Q[/<word(%arguments{$argument_key})>/].AST;
+my $hash_index_gist = $hash_index_ast.gist;
+ok $hash_index_gist.contains('RakuAST::Postcircumfix::HashIndex'),
+    'an associative argument keeps its hash-index postfix';
+ok $hash_index_gist.contains('RakuAST::Var::Lexical.new("\\%arguments")'),
+    'the hash-index argument keeps its hash target';
+ok $hash_index_gist.contains('RakuAST::Var::Lexical.new("\\$argument_key")'),
+    'the hash-index argument keeps its dynamic key expression';
+
+my $hash_index_regex = EVAL($hash_index_ast);
+ok $hash_index_regex ~~ Regex,
+    'a RakuAST regex with a hash-index argument lowers successfully';
+
+grammar GDynamicHashIndexArgument {
+    token TOP { <word(%arguments{$argument_key})> }
+    token word($expected) { $expected }
+}
+ok GDynamicHashIndexArgument.parse('a').defined,
+    'a hash-index argument reaches the subrule matcher';
+$argument_key = 'secondary';
+ok GDynamicHashIndexArgument.parse('b').defined,
+    'the hash-index argument observes key reassignment at match time';
+ok !GDynamicHashIndexArgument.parse('a').defined,
+    'the hash-index argument retains its current lexical key';

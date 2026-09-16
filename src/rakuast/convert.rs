@@ -1908,8 +1908,9 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // Positional subscript `@x[EXPR]` -> ApplyPostfix(operand,
         // postfix => Postcircumfix::ArrayIndex(index => SemiList(...))).
-        // Associative subscripts (`%h{...}` / `%h<...>`) are deferred: mutsu
-        // cannot distinguish `<k>` (LiteralHashIndex) from `{"k"}` (HashIndex).
+        // The parser retains the associative expression but not whether its
+        // source delimiter was `{...}` or `<...>`.  The former is the bounded
+        // HashIndex slice; LiteralHashIndex remains a provenance boundary.
         // Reduction metaop `[+] @a` / triangle `[\+] @a` -> Term::Reduce.
         Expr::Reduction { op, expr } => {
             let (triangle, infix_op) = match op.strip_prefix('\\') {
@@ -1937,22 +1938,23 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             is_positional,
         } => {
-            if !is_positional {
-                return Err(unsupported("associative subscript"));
-            }
             let semilist = RakuAstNode {
                 class: RakuAstClass::SemiList,
                 fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
             };
-            let array_index = RakuAstNode {
-                class: RakuAstClass::PostcircumfixArrayIndex,
+            let index_node = RakuAstNode {
+                class: if *is_positional {
+                    RakuAstClass::PostcircumfixArrayIndex
+                } else {
+                    RakuAstClass::PostcircumfixHashIndex
+                },
                 fields: vec![node_field(Some("index"), semilist)],
             };
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
                     node_field(Some("operand"), convert_expr(target)?),
-                    node_field(Some("postfix"), array_index),
+                    node_field(Some("postfix"), index_node),
                 ],
             })
         }

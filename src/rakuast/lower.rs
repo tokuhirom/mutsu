@@ -2540,16 +2540,19 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     target: Box::new(operand),
                     args: arg_exprs(postfix)?,
                 }),
-                // `@a[EXPR]` -> Postcircumfix::ArrayIndex(index => SemiList(
-                // Statement::Expression(EXPR))).
-                RakuAstClass::PostcircumfixArrayIndex => {
+                // `@a[EXPR]` / `%h{EXPR}` -> Postcircumfix::*Index(index =>
+                // SemiList(Statement::Expression(EXPR))).
+                RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex => {
                     let semilist = named_child(postfix, "index")?;
                     let stmt_expr = named_child_or_positional(semilist)?;
                     let index = lower_expr(stmt_expr)?;
                     Ok(Expr::Index {
                         target: Box::new(operand),
                         index: Box::new(index),
-                        is_positional: true,
+                        is_positional: matches!(
+                            postfix.class,
+                            RakuAstClass::PostcircumfixArrayIndex
+                        ),
                     })
                 }
                 _ => Err(unsupported(node)),

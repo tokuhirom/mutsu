@@ -188,6 +188,7 @@ pub enum RakuAstClass {
     // Phase 2 slice 22: positional subscripts.
     SemiList,
     PostcircumfixArrayIndex,
+    PostcircumfixHashIndex,
     // Phase 2 slice 25: reduction metaoperator.
     TermReduce,
     // Phase 2 slice 30: `True`/`False` (and other enum) literals.
@@ -384,6 +385,7 @@ impl RakuAstClass {
             Ternary => "RakuAST::Ternary",
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
+            PostcircumfixHashIndex => "RakuAST::Postcircumfix::HashIndex",
             TermReduce => "RakuAST::Term::Reduce",
             TermEnum => "RakuAST::Term::Enum",
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
@@ -884,6 +886,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Ternary,
     RakuAstClass::SemiList,
     RakuAstClass::PostcircumfixArrayIndex,
+    RakuAstClass::PostcircumfixHashIndex,
     RakuAstClass::TermReduce,
     RakuAstClass::TermEnum,
     RakuAstClass::CircumfixParentheses,
