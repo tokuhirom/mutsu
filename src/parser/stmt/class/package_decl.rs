@@ -712,6 +712,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 return_type: return_type.clone(),
                 body,
                 is_export: traits.is_export,
+                export_tags: traits.export_tags.clone(),
                 custom_traits: traits
                     .custom_traits
                     .iter()
@@ -732,6 +733,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             return_type,
             body,
             is_export: traits.is_export,
+            export_tags: traits.export_tags.clone(),
             custom_traits: traits
                 .custom_traits
                 .iter()

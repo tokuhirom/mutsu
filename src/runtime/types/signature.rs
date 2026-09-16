@@ -696,7 +696,36 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
     value: &Value,
+    wrapper_traits: &[String],
 ) -> Result<(), RuntimeError> {
+    // `is copy`/`is rw`/`is raw` on a renamed named param (`:target(:$actions)
+    // is copy`) parses onto the *wrapper* `ParamDef` (name `target`) the
+    // caller-facing key belongs to, never onto the leaf (`sub_pd`, name
+    // `actions`) bound below — the leaf's own `.traits` is always empty. The
+    // main per-candidate binder's readonly-marking loop walks only the
+    // top-level `param_defs`, so for a renamed param it marks/unmarks
+    // `target`, a symbol nothing ever reads or assigns; `actions` is left
+    // exactly as the shared readonly table already had it — still marked
+    // from an unrelated caller frame's own same-named readonly binding (or
+    // any other frame on the stack), so an explicit `is copy` could still
+    // fail "Cannot assign to a readonly variable" (tokuhirom/mutsu#8526,
+    // FunctionalParsers). Mark/unmark the actual leaf here instead, from the
+    // wrapper's traits threaded down through the recursion (a chained alias
+    // like `:mil(:milli(:$millis)) is copy` only carries traits on the
+    // outermost wrapper too).
+    let leaf_has_mutable_trait = wrapper_traits
+        .iter()
+        .any(|t| t == "rw" || t == "copy" || t == "raw");
+    let mark_leaf_readonly = |interpreter: &mut Interpreter, bind_name: &str| {
+        if bind_name.starts_with(['@', '%', '!', '.']) {
+            return;
+        }
+        if leaf_has_mutable_trait {
+            interpreter.unmark_readonly(bind_name);
+        } else {
+            interpreter.mark_readonly(bind_name);
+        }
+    };
     for sub_pd in sub_params {
         if sub_pd.slurpy {
             continue;
@@ -725,8 +754,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
             if bind_name.starts_with('%') {
                 let empty = Value::hash(ValueMap::default());
                 if let Some(nested) = &sub_pd.sub_signature {
-                    bind_named_rename_sub_signature(interpreter, nested, &empty)?;
+                    bind_named_rename_sub_signature(interpreter, nested, &empty, wrapper_traits)?;
                 } else {
+                    mark_leaf_readonly(interpreter, bind_name);
                     interpreter.bind_param_value(bind_name, empty);
                     interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
                 }
@@ -735,8 +765,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
             if bind_name.starts_with('@') {
                 let empty = Value::real_array(Vec::new());
                 if let Some(nested) = &sub_pd.sub_signature {
-                    bind_named_rename_sub_signature(interpreter, nested, &empty)?;
+                    bind_named_rename_sub_signature(interpreter, nested, &empty, wrapper_traits)?;
                 } else {
+                    mark_leaf_readonly(interpreter, bind_name);
                     interpreter.bind_param_value(bind_name, empty);
                     interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
                 }
@@ -780,8 +811,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         // constant/lexical (e.g. `:mil(:milli(:$millis))` with an outer
         // `constant milli`). Recurse to reach the leaf.
         if let Some(nested) = &sub_pd.sub_signature {
-            bind_named_rename_sub_signature(interpreter, nested, value)?;
+            bind_named_rename_sub_signature(interpreter, nested, value, wrapper_traits)?;
         } else {
+            mark_leaf_readonly(interpreter, bind_name);
             interpreter.bind_param_value(bind_name, value.clone());
             interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
         }
@@ -1133,7 +1165,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // whole candidate to each inner name; destructure recurses into it.
             let is_rename = is_named_rename_sub_signature(sub_pd);
             if is_rename {
-                bind_named_rename_sub_signature(interpreter, nested, &candidate)?;
+                bind_named_rename_sub_signature(interpreter, nested, &candidate, &sub_pd.traits)?;
             } else {
                 bind_sub_signature_from_value(interpreter, nested, &candidate)?;
             }

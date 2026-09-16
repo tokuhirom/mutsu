@@ -4308,6 +4308,8 @@ pub(crate) struct CompiledProtoDeclPlan {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,
     pub(crate) is_export: bool,
+    /// Tags on `is export(:TAG1, :TAG2)`; empty means untagged (DEFAULT).
+    pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<String>,
     /// True for `proto method`/`proto submethod`: such a proto never
     /// registers at the package level (its `{*}` dispatches over the type's
@@ -8672,6 +8674,7 @@ impl CompiledCode {
             return_type,
             body,
             is_export,
+            export_tags,
             custom_traits,
             is_method,
             is_our,
@@ -8686,6 +8689,7 @@ impl CompiledCode {
             param_defs: param_defs.clone(),
             return_type: return_type.clone(),
             is_export: *is_export,
+            export_tags: export_tags.clone(),
             custom_traits: custom_traits.clone(),
             is_method: *is_method,
             is_our: *is_our,

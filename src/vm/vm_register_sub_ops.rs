@@ -1307,6 +1307,7 @@ impl Interpreter {
             param_defs,
             return_type,
             is_export,
+            export_tags,
             custom_traits,
             is_method,
             is_our,
@@ -1358,7 +1359,7 @@ impl Interpreter {
             // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
             if !self.suppress_exports {
                 let pkg = self.current_package().to_string();
-                self.register_exported_sub(pkg, name_str.clone(), Vec::new());
+                self.register_exported_sub(pkg, name_str.clone(), export_tags.clone());
             }
         }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
