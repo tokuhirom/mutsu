@@ -2280,9 +2280,11 @@ impl Interpreter {
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.
                 // ADR-0040 slice 1: itemize after native-wrapping (a no-op for a
-                // native scalar; itemize_value only touches Array/Hash/Seq/Mixin).
-                let native_store_val =
-                    Self::itemize_value(self.wrap_native_int_for_var(&var_name, val.clone()));
+                // native scalar; itemize_value_for_element_store only touches
+                // Array/Hash/Seq/Mixin).
+                let native_store_val = Self::itemize_value_for_element_store(
+                    self.wrap_native_int_for_var(&var_name, val.clone()),
+                );
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
                 let idx_for_slice = if let ValueView::GenericRange { .. } = idx.view() {
@@ -2655,13 +2657,16 @@ impl Interpreter {
                                 // Slice 2b: replace the `=`-shared cell rather than
                                 // write through it, so the source stays unaffected.
                                 // ADR-0040 slice 1: itemize the stored value.
-                                hd.map.insert(key.clone(), Self::itemize_value(val.clone()));
+                                hd.map.insert(
+                                    key.clone(),
+                                    Self::itemize_value_for_element_store(val.clone()),
+                                );
                             } else {
                                 // ADR-0040 slice 1: itemize the stored value.
                                 Value::hash_insert_through(
                                     &mut hd.map,
                                     key.clone(),
-                                    Self::itemize_value(val.clone()),
+                                    Self::itemize_value_for_element_store(val.clone()),
                                 );
                             }
                             // For object hashes, store the original key object in
@@ -2928,11 +2933,14 @@ impl Interpreter {
                         {
                             let mut arr = vec![Value::package(crate::symbol::wk::any()); i + 1];
                             // ADR-0040 slice 1: itemize the stored value.
-                            arr[i] = Self::itemize_value(val.clone());
+                            arr[i] = Self::itemize_value_for_element_store(val.clone());
                             *container = Value::real_array_initialized_at(arr, i);
                         } else {
                             let mut hash = ValueMap::default();
-                            hash.insert(key.clone(), Self::itemize_value(val.clone()));
+                            hash.insert(
+                                key.clone(),
+                                Self::itemize_value_for_element_store(val.clone()),
+                            );
                             let mut hash_val = Value::hash(hash);
                             if use_which {
                                 let mut orig = ValueMap::default();
@@ -2949,12 +2957,15 @@ impl Interpreter {
                     {
                         let mut arr = vec![Value::package(crate::symbol::wk::any()); i + 1];
                         // ADR-0040 slice 1: itemize the stored value.
-                        arr[i] = Self::itemize_value(val.clone());
+                        arr[i] = Self::itemize_value_for_element_store(val.clone());
                         self.env_mut()
                             .insert(var_name.clone(), Value::real_array_initialized_at(arr, i));
                     } else {
                         let mut hash = ValueMap::default();
-                        hash.insert(key.clone(), Self::itemize_value(val.clone()));
+                        hash.insert(
+                            key.clone(),
+                            Self::itemize_value_for_element_store(val.clone()),
+                        );
                         let mut hash_val = Value::hash(hash);
                         if use_which {
                             let mut orig = ValueMap::default();

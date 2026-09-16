@@ -399,7 +399,7 @@ impl Interpreter {
         // stored into it itemizes. (`exec_index_assign_expr_named_op_seeded_inner`
         // has already applied `itemize_for_element_store` to the stack value for
         // this exact index shape; `itemize_value` is idempotent over that.)
-        let stored = Self::itemize_value(val.clone());
+        let stored = Self::itemize_value_for_element_store(val.clone());
         // Container identity (§3): an element write on a SHARED array mutates
         // through the backing node so every by-value holder of the same
         // container observes it. COW would detach it; copies detach at copy time

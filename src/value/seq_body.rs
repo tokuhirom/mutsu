@@ -331,6 +331,20 @@ impl SeqBody {
         })
     }
 
+    /// The inverse of [`Self::as_item_seq_view`]: a plain `SeqView::Seq`
+    /// handle over the same reification core, with no `$`-container tag.
+    /// Used to render a real-array element's itemized Seq the way rakudo
+    /// does — `@a.raku` shows a stored `Seq` bare (`[(7, 8).Seq,]`), never
+    /// with the `$(...)` marker a `$`-scalar's own `.raku` would add — by
+    /// rendering through the same de-itemized handle rather than duplicating
+    /// `raku_value`'s Seq-formatting logic.
+    pub(crate) fn as_bare_seq_view(self: &Arc<Self>) -> Arc<Self> {
+        Arc::new(SeqBody {
+            core: Arc::clone(&self.core),
+            view: SeqView::Seq,
+        })
+    }
+
     /// A process-unique identity for the SEQUENCE this handle refers to — the
     /// address of the shared reification core, so every handle over one
     /// sequence answers the same id. Keyed on the core rather than on the

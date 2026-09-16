@@ -2280,11 +2280,19 @@ impl Interpreter {
                     for idx in indices.iter() {
                         match idx.view() {
                             ValueView::Int(i) if i >= 0 => {
-                                let val = start + i;
-                                if start > actual_end || val > actual_end {
-                                    result.push(Value::NIL);
-                                } else {
-                                    result.push(Value::int(val));
+                                // `start + i` overflows `i64` for a Range whose
+                                // bound is near `i64::MAX` (reachable from a
+                                // 128-bit-address computation such as
+                                // Net::Netmask's IPv6 `nth`, `($!start..$!end)
+                                // [@n]` with a huge `$!start`) — an
+                                // out-of-range index either way, so it is
+                                // Nil rather than a panic, matching the
+                                // existing bounds check just below.
+                                match start.checked_add(i) {
+                                    Some(val) if start <= actual_end && val <= actual_end => {
+                                        result.push(Value::int(val));
+                                    }
+                                    _ => result.push(Value::NIL),
                                 }
                             }
                             ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {

@@ -9,92 +9,91 @@
   "dist": "Net::Netmask",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '@netmask'; expected anonymous constraint to be met but got Array ([])",
-        "nok": 1,
-        "ok": 25,
-        "plan": null,
-        "secs": 0.39,
+        "nok": 0,
+        "ok": 184,
+        "plan": 184,
+        "secs": 6.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 184,
         "plan": 184,
-        "secs": 6.97,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '@netmask'; expected anonymous constraint to be met but got Array ([])",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.17,
+        "first_failure": "Nth",
+        "nok": 1,
+        "ok": 10,
+        "plan": 11,
+        "secs": 4.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/02-doctest.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 3.84,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '@netmask'; expected anonymous constraint to be met but got Array ([])",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "first_failure": "Int Sort in proper order (1)",
+        "nok": 1,
+        "ok": 32,
+        "plan": 33,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/03-compare.t",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.97,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '@netmask'; expected anonymous constraint to be met but got Array ([])",
-        "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 0.3,
+        "first_failure": "dies two params 255.0.0.255 0.255.0.0",
+        "nok": 6,
+        "ok": 17,
+        "plan": 23,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/04-construction.t",
       "raku": {
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.07,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,10 +103,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Default constructor for 'Net::Netmask' only takes named arguments",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 0.19,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,30 +116,30 @@
         "nok": 0,
         "ok": 197,
         "plan": 197,
-        "secs": 1.45,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '@netmask'; expected anonymous constraint to be met but got Array ([])",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "first_failure": "nth",
+        "nok": 1,
+        "ok": 12,
+        "plan": 13,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/06-basic6.t",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.78,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +151,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "c7b4d86a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -166,13 +165,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/ET/NET_NETMASK/c7c1c3bcfc1f137f7efff71294e44fcb52dadbc6.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 461,
     "baseline_files": 6,
-    "mutsu_assertions": 29,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 256,
+    "parity_files": 1,
+    "regressed_files": 5
   },
   "version": "0.2.1"
 }
