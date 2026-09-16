@@ -169,6 +169,12 @@ pub(crate) fn parse_anon_sub_rest(
     let (r, _) = parse_char(r, ')')?;
     let (r, _) = ws(r)?;
     let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
+    // An anonymous routine can declare its return constraint as a trait after
+    // the signature (`sub (..) returns Str { ... }`), just like a named sub.
+    // The signature parser only sees the `-->` form inside the parentheses,
+    // so preserve the trait form on the closure node as well. Otherwise the
+    // runtime signature reports the default `Mu` and drops return-type checks.
+    let return_type = return_type.or(traits.return_type);
     // The literal's own parameters have to be in scope for its body parse — see
     // `parse_block_body_routine_with_params`.
     let (r, body) = parse_block_body_routine_with_params(r, &param_defs)?;
