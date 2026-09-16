@@ -548,6 +548,11 @@ impl Compiler {
         // doc on `bind_target_direct`.
         let is_bind_target = self.bind_target_direct;
         self.bind_target_direct = false;
+        // One-shot: read and clear before any nested compilation, mirroring
+        // `bind_target_direct` above, so a call nested inside this argument
+        // does not inherit the suppression.
+        let suppress_multidim_bind_ref = self.suppress_multidim_bind_ref_arg;
+        self.suppress_multidim_bind_ref_arg = false;
         // A multi-dimensional subscript (`@a[0;1;2]`, `%h{"a";"b"}`) passed as a
         // raw `\target` / `is rw` argument must alias the underlying nested
         // slot, so a later `target = v` inside the callee mutates the real
@@ -556,9 +561,15 @@ impl Compiler {
         // cell (a missing hash leaf gets a deferred `HashEntryRef`); the callee
         // binds through it. Slice dimensions that can't collapse to one cell
         // yield a list of leaf cells, or fall back to the plain read value.
-        if let Expr::MultiDimIndex {
-            target, dimensions, ..
-        } = arg
+        //
+        // Suppressed for the synthetic `__mutsu_list_assign_rhs` helper's
+        // argument (see `suppress_multidim_bind_ref_arg`): that call is a
+        // native value-only deitemizer, not a routine with a raw/`is rw`
+        // parameter, so its argument must be a plain read.
+        if !suppress_multidim_bind_ref
+            && let Expr::MultiDimIndex {
+                target, dimensions, ..
+            } = arg
         {
             self.compile_expr(target);
             for dim in dimensions {
