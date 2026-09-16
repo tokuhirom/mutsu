@@ -184,7 +184,13 @@ impl Interpreter {
                 // `"1" ∈ (1,)` is False (Str vs Int) — matching Rakudo.
                 .any(|item| crate::runtime::utils::values_identical(item, needle)),
             _ if container.is_range() => Self::range_contains(&container, needle),
-            _ => false,
+            // A non-Iterable, non-QuantHash RHS (a bare Str/Int/Num/...) still
+            // coerces to a Set via `.Set` -- but as a Set of exactly that one
+            // value, not of its characters/digits. `Any` (an undefined type
+            // object) coerces to the empty Set instead, matching the
+            // `union_insert_set_elem` seed rule above.
+            _ if container.is_any_type_object() => false,
+            _ => crate::runtime::utils::values_identical(&container, needle),
         }
     }
 
