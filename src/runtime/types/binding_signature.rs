@@ -2256,7 +2256,7 @@ impl Interpreter {
                                 );
                                 bind_sub_signature_from_value(self, sub_params, &bound_value)?;
                             } else {
-                                bind_named_rename_sub_signature(self, sub_params, val)?;
+                                bind_named_rename_sub_signature(self, sub_params, val, &pd.traits)?;
                             }
                         } else {
                             // Named `$` params are item bindings too (raku:
@@ -2291,7 +2291,9 @@ impl Interpreter {
                                 // Rename param: bind only the leaf variable, not
                                 // the param's own name (see the primary-match
                                 // branch above).
-                                bind_named_rename_sub_signature(self, sub_params, inner_val)?;
+                                bind_named_rename_sub_signature(
+                                    self, sub_params, inner_val, &pd.traits,
+                                )?;
                                 found = true;
                                 break 'alias;
                             }
@@ -2344,7 +2346,12 @@ impl Interpreter {
                     // For renamed named params like :foo($y) = $x, also bind the
                     // sub-signature variable ($y) to the default value.
                     if let Some(sub_params) = &pd.sub_signature {
-                        bind_named_rename_sub_signature(self, sub_params, &Box::new(value))?;
+                        bind_named_rename_sub_signature(
+                            self,
+                            sub_params,
+                            &Box::new(value),
+                            &pd.traits,
+                        )?;
                     }
                 } else if !found && pd.required {
                     // A missing required named parameter is a runtime X::AdHoc in
@@ -2384,7 +2391,7 @@ impl Interpreter {
                     // the body's `$colour` read finds an (undefined) value
                     // instead of throwing "not declared".
                     if let Some(sub_params) = &pd.sub_signature {
-                        bind_named_rename_sub_signature(self, sub_params, &value)?;
+                        bind_named_rename_sub_signature(self, sub_params, &value, &pd.traits)?;
                     }
                 }
                 // Check the where constraint against the *bound* value, whether it

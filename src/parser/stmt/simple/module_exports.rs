@@ -1314,8 +1314,10 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
             Stmt::ProtoDecl {
                 name, is_export, ..
             } if *is_export => {
-                // ProtoDecl doesn't carry export_tags; proto declarations with
-                // `is export` default to DEFAULT so always include them.
+                // Same superset rationale as the `SubDecl` arm above: every
+                // `is export` proto is collected whatever tag it carries,
+                // because this set only answers "is `name` a routine" for
+                // the parser, not "does the importer's tag list admit it".
                 let resolved = name.resolve();
                 exports
                     .entry(resolved.clone())

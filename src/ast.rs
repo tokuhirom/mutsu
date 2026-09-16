@@ -1935,6 +1935,12 @@ pub(crate) enum Stmt {
         return_type: Option<String>,
         body: Vec<Stmt>,
         is_export: bool,
+        /// Tags on `is export(:TAG1, :TAG2)`; empty means the untagged
+        /// `is export` (DEFAULT). Without this, `import_module` could never
+        /// see a proto's real tags and treated every exported proto as
+        /// DEFAULT-only, so `use Mod :some-tag` silently dropped a whole
+        /// multi family whose proto was `is export(:some-tag, :ALL)`.
+        export_tags: Vec<String>,
         custom_traits: Vec<String>,
         /// True when declared as `proto method`/`proto submethod` (inside a
         /// class/role body). Such a proto registers a method-level proto body
