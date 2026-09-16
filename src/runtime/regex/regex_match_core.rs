@@ -10,8 +10,8 @@
 
 use super::super::*;
 use super::regex_helpers::{
-    alternation_capture_slots, atom_contains_alternation, count_capture_groups,
-    is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
+    alternation_capture_slots, atom_contains_alternation, capture_group_list_flags,
+    count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
 };
 use super::regex_trail::CapStore;
 use std::collections::HashSet;
@@ -774,9 +774,12 @@ impl Interpreter {
                 )
             }
             RegexQuant::ZeroOrOne => {
-                // An unmatched `(x)?` reserves `zo_stride` Nil positional slots
-                // so following captures keep their index (`(a)?(b)` → $0=Nil,$1=b).
-                let zo_stride = count_capture_groups(&token.atom);
+                // An unmatched `(x)?` reserves one positional slot per entry
+                // of `zo_flags` so following captures keep their index
+                // (`(a)?(b)` → $0=Nil,$1=b) — a `true` entry (the slot sits
+                // under a nested list quantifier) reserves an empty list
+                // instead of Nil, same as `zo_list_names` does for names.
+                let zo_flags = capture_group_list_flags(&token.atom, false);
                 // Names under a nested list quantifier render as empty lists
                 // even when this `?` group matches zero times (see
                 // `collect_nested_list_quantified_names`).
@@ -798,7 +801,7 @@ impl Interpreter {
                         ctx,
                         idx,
                         pos,
-                        zo_stride,
+                        &zo_flags,
                         &zo_list_names,
                         pos_base,
                         named_zero_capture,
@@ -848,7 +851,7 @@ impl Interpreter {
                         ctx,
                         idx,
                         pos,
-                        zo_stride,
+                        &zo_flags,
                         &zo_list_names,
                         pos_base,
                         named_zero_capture,
@@ -928,16 +931,17 @@ impl Interpreter {
     }
 
     /// The zero-width arm of a `?`-quantified token: reserve the atom's
-    /// positional slots as Nil, render the nested list-quantified names as
-    /// empty lists, and descend to the next token. Shared by the greedy,
-    /// frugal and "ratcheted `?` whose atom did not match" cases.
+    /// positional slots (Nil, or an empty list where `zo_flags` says the slot
+    /// sits under a nested list quantifier), render the nested list-quantified
+    /// names as empty lists, and descend to the next token. Shared by the
+    /// greedy, frugal and "ratcheted `?` whose atom did not match" cases.
     #[allow(clippy::too_many_arguments)]
     fn walk_zero_or_one_zero_arm(
         &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
-        zo_stride: usize,
+        zo_flags: &[bool],
         zo_list_names: &HashSet<String>,
         pos_base: usize,
         named_zero_capture: bool,
@@ -946,7 +950,7 @@ impl Interpreter {
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let m = store.mark();
-        store.reserve_nil(zo_stride);
+        store.reserve_nil(zo_flags);
         if named_zero_capture {
             Self::store_apply_named_capture(store, token, pos, pos, pos_base);
         }
@@ -959,15 +963,16 @@ impl Interpreter {
     }
 
     /// Try the zero-width arm of a `[ A || B ]?` token: reserve the group's
-    /// positional slots as Nil, render the nested list-quantified names as
-    /// empty lists, and descend to the next token.
+    /// positional slots (Nil, or an empty list where `zo_flags` says the slot
+    /// sits under a nested list quantifier), render the nested list-quantified
+    /// names as empty lists, and descend to the next token.
     #[allow(clippy::too_many_arguments)]
     fn walk_seqalt_zero(
         &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
-        zo_stride: usize,
+        zo_flags: &[bool],
         zo_list_names: &HashSet<String>,
         pos_base: usize,
         store: &mut CapStore,
@@ -975,7 +980,7 @@ impl Interpreter {
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let m = store.mark();
-        store.reserve_nil(zo_stride);
+        store.reserve_nil(zo_flags);
         // The atom is an alternation, never a CaptureGroup, so a name attached
         // to this token renders as a zero-width Match (see the `ZeroOrOne` arm).
         Self::store_apply_named_capture(store, token, pos, pos, pos_base);
@@ -1014,10 +1019,10 @@ impl Interpreter {
         let pos_base = store.caps().positional.len();
         let capture_slots = alternation_capture_slots(alternatives);
         let zero_or_one = matches!(token.quant, RegexQuant::ZeroOrOne);
-        let zo_stride = if zero_or_one {
-            count_capture_groups(&token.atom)
+        let zo_flags = if zero_or_one {
+            capture_group_list_flags(&token.atom, false)
         } else {
-            0
+            Vec::new()
         };
         let mut zo_list_names = HashSet::new();
         if zero_or_one {
@@ -1030,7 +1035,7 @@ impl Interpreter {
                 ctx,
                 idx,
                 pos,
-                zo_stride,
+                &zo_flags,
                 &zo_list_names,
                 pos_base,
                 store,
@@ -1085,7 +1090,7 @@ impl Interpreter {
                 ctx,
                 idx,
                 pos,
-                zo_stride,
+                &zo_flags,
                 &zo_list_names,
                 pos_base,
                 store,

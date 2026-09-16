@@ -315,7 +315,10 @@ impl Value {
                     None => span_leaf_match(*qfrom, *qto, target),
                 })
                 .collect();
-            return Value::array(arr);
+            // A quantified positional capture group (`(x)*`) is a true Array
+            // in raku (`(a)+` on "a" gives `$0.raku` = `[...]`, not `(...)`),
+            // same as the named-capture case just below (`real_array`).
+            return Value::real_array(arr);
         }
         if let Some(subcap) = &slot.subcap {
             return shared_node_value(shared, subcap, target);

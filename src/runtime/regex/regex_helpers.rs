@@ -1299,6 +1299,47 @@ pub(super) fn alternation_capture_slots(alts: &[RegexPattern]) -> usize {
         .unwrap_or(0)
 }
 
+/// For each positional slot `atom` will produce (same order and count as
+/// [`count_capture_groups`]), whether raku renders it as an empty LIST
+/// (`[]`) rather than `Nil` when the enclosing `?` token takes its zero
+/// branch and this slot is never actually matched.
+///
+/// A slot is list-shaped when the token that owns it sits under a list
+/// quantifier (`*`/`+`/`**`/a `%` separator) at or above itself — mirrors
+/// `collect_nested_list_quantified_names`'s identical walk for NAMED
+/// captures (`(a)?(b)` on "b" yields `$0 = Nil`, but `[ (a)+ ]?` on ""
+/// yields `$0 = []`, same as a zero-iteration `(a)*`). `ambient_list` carries
+/// whether an enclosing token in the walk was already list-quantified.
+pub(super) fn capture_group_list_flags(atom: &RegexAtom, ambient_list: bool) -> Vec<bool> {
+    match atom {
+        RegexAtom::CaptureGroup(_) => vec![ambient_list],
+        RegexAtom::Group(pat) => pattern_capture_group_list_flags(pat, ambient_list),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => alts
+            .iter()
+            .map(|p| pattern_capture_group_list_flags(p, ambient_list))
+            .max_by_key(|flags| flags.len())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> Vec<bool> {
+    let mut out = Vec::new();
+    for token in &pat.tokens {
+        let token_is_list = ambient_list
+            || matches!(
+                token.quant,
+                RegexQuant::ZeroOrMore
+                    | RegexQuant::OneOrMore
+                    | RegexQuant::Repeat(..)
+                    | RegexQuant::RepeatCode(_)
+            )
+            || token.separator.is_some();
+        out.extend(capture_group_list_flags(&token.atom, token_is_list));
+    }
+    out
+}
+
 /// Whether matching `atom` involves an alternation whose branches can have
 /// different lengths — the case where a greedy quantifier (`*`/`+`/`**`) must be
 /// able to backtrack into a *shorter* per-iteration choice to satisfy a later
@@ -1440,20 +1481,33 @@ fn span_chars_text(from: usize, to: usize, chars: &[char]) -> String {
     chars[from..to].iter().collect()
 }
 
-/// Reserve `stride` index-stable Nil slots for an unmatched optional capture
-/// group (`(x)?` that matched zero times). The slots render as `Nil` in the
-/// resulting Match (Raku: `(a)?(b)` on "b" yields `$0 = Nil`, `$1 = b`).
-pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, stride: usize) {
-    if stride == 0 {
+/// Reserve one index-stable positional slot per entry of `flags` for an
+/// unmatched optional capture group (`(x)?` that matched zero times, or a
+/// whole `[ ... ]?` that took its zero branch). A `false` entry renders as
+/// `Nil` in the resulting Match (Raku: `(a)?(b)` on "b" yields `$0 = Nil`,
+/// `$1 = b`); a `true` entry (the group sits under a list quantifier — see
+/// [`capture_group_list_flags`]) renders as an empty list, same as a
+/// zero-iteration `(a)*`.
+pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, flags: &[bool]) {
+    if flags.is_empty() {
         return;
     }
     let at = caps.to;
-    for _ in 0..stride {
-        caps.positional.push(PosSlot {
-            from: at,
-            to: at,
-            nil: true,
-            ..Default::default()
+    for &is_list in flags {
+        caps.positional.push(if is_list {
+            PosSlot {
+                from: at,
+                to: at,
+                quantified: Some(Vec::new()),
+                ..Default::default()
+            }
+        } else {
+            PosSlot {
+                from: at,
+                to: at,
+                nil: true,
+                ..Default::default()
+            }
         });
     }
 }
