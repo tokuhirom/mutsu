@@ -81,12 +81,16 @@ impl Interpreter {
             // nqp::ordat($str, $pos): the Unicode codepoint of the character at
             // position `$pos` in `$str` (equivalent to `$str.substr($pos, 1).ord`).
             // Returns -1 when the position is past the end, matching nqp. Used by
-            // Text::Diff::Sift4's inner char-comparison loop.
+            // Text::Diff::Sift4's inner char-comparison loop, and by JSON::Fast's
+            // `nom-ws`, which calls it once per character while skipping
+            // whitespace over the WHOLE document. Collecting `args[0]` into a
+            // fresh `String`/`Vec<char>` on every call turned that into O(n) work
+            // repeated O(n) times (a 30KB `License::SPDX` resource file already
+            // took ~14s); memoizing via `nqp_char_cache` — the same fix already
+            // applied to `substr`/`index`/`iscclass` for this exact scanner —
+            // makes each call O(1) amortized.
             "ordat" => {
-                let s = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
+                let chars = super::nqp_char_cache::cached_chars(args, 0);
                 let pos = args
                     .get(1)
                     .and_then(|v| match v.view() {
@@ -96,8 +100,8 @@ impl Interpreter {
                     .unwrap_or(0);
                 let cp = usize::try_from(pos)
                     .ok()
-                    .and_then(|p| s.chars().nth(p))
-                    .map(|c| c as i64)
+                    .and_then(|p| chars.get(p))
+                    .map(|&c| c as i64)
                     .unwrap_or(-1);
                 Ok(Value::int(cp))
             }

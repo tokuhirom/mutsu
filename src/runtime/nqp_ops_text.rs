@@ -253,9 +253,11 @@ impl Interpreter {
 
             // -- string primitives --
             // nqp::eqat($haystack, $needle, $pos) -> 1 when $needle occurs at
-            // exactly codepoint offset $pos.
+            // exactly codepoint offset $pos. The haystack is memoized (see
+            // `nqp_char_cache`): JSON::Fast's string-token scan calls this
+            // repeatedly against the SAME full document text.
             "eqat" => {
-                let haystack: Vec<char> = sarg(args, 0).chars().collect();
+                let haystack = super::nqp_char_cache::cached_chars(args, 0);
                 let needle: Vec<char> = sarg(args, 1).chars().collect();
                 let pos = iarg(args, 2);
                 let yes = usize::try_from(pos)
