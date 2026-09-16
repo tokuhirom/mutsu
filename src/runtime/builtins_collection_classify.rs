@@ -229,7 +229,6 @@ impl Interpreter {
                 _ => items.push(arg.clone()),
             }
         }
-
         // Object-hash key preservation (§3.3): when the classifier returns a
         // non-`Str` key (e.g. a Junction from `*.contains: any 'a','f'`), the
         // bucket key is stored under its stringification but the result must be
@@ -296,7 +295,7 @@ impl Interpreter {
         for item in &items {
             let mapped = match mapper.view() {
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
-                    self.call_sub_value(mapper.clone(), vec![callable_item(item)], true)?
+                    self.call_classify_callable(mapper.clone(), callable_item(item))?
                 }
                 // `classify(*)` / `categorize(*)` classify on the *identity* of
                 // each element (documented under `multi method classify(Whatever)`;
@@ -343,7 +342,7 @@ impl Interpreter {
             self.reify_map_grep_seq(&mapped)?;
 
             let mapped_item = if let Some(as_fn) = &as_mapper {
-                self.call_sub_value(as_fn.clone(), vec![callable_item(item)], true)?
+                self.call_classify_callable(as_fn.clone(), callable_item(item))?
             } else {
                 item.clone()
             };
@@ -483,6 +482,37 @@ impl Interpreter {
             into_key_type.or_else(|| (!object_keys.is_empty()).then(|| "Any".to_string()))
         };
         Ok(Self::classify_finish_hash(buckets, object_keys, key_type))
+    }
+
+    /// Call a classify/categorize mapper (the classifier or the `:as` mapper)
+    /// with `arg` both as the sole positional argument and as the
+    /// dynamically-scoped topic `$_`.
+    ///
+    /// A bare WhateverCode mapper (`*.key`) compiles to a one-param closure
+    /// whose param is literally named `"_"` — and `legacy_has_plain_positional_param`
+    /// (`runtime/types/binding_signature.rs`) deliberately excludes `"_"` from
+    /// ordinary positional binding: that shape's implicit argument is meant to
+    /// arrive through the topic, set by whoever calls it (`.map`/`.grep`
+    /// already do this per-element via `vm_call_map_block`'s `explicit_topic`),
+    /// not through a real positional bind. Calling it with `call_sub_value`
+    /// alone left `$_` unset, so `*.key` over a Pair/ValuePair element saw an
+    /// `Any` invocant and `.key` failed (Acme::Insult::Lala's
+    /// `.flat.classify(*.key, as => *.value)`).
+    fn call_classify_callable(&mut self, func: Value, arg: Value) -> Result<Value, RuntimeError> {
+        let saved_topic = self.env.get("_").cloned();
+        let saved_dollar_topic = self.env.get("$_").cloned();
+        self.env.insert("_".to_string(), arg.clone());
+        self.env.insert("$_".to_string(), arg.clone());
+        let result = self.call_sub_value(func, vec![arg], true);
+        match saved_topic {
+            Some(v) => self.env.insert("_".to_string(), v),
+            None => self.env.remove("_"),
+        };
+        match saved_dollar_topic {
+            Some(v) => self.env.insert("$_".to_string(), v),
+            None => self.env.remove("$_"),
+        };
+        result
     }
 
     /// Wrap classify's bucket map in a `Hash`, marking it an *object hash*
