@@ -28,6 +28,33 @@ fn bool_int(b: bool) -> Value {
     Value::int(i64::from(b))
 }
 
+/// `strtol`-style leading-integer parse for `nqp::coerce_si`: skip leading
+/// whitespace, an optional sign, then digits; no digits at all is 0, and a
+/// magnitude too large for `i64` saturates rather than erroring (matches
+/// MoarVM's behavior, verified against `raku -e 'nqp::coerce_si(...)'`).
+fn parse_leading_int(s: &str) -> i64 {
+    let trimmed = s.trim_start();
+    let mut chars = trimmed.chars().peekable();
+    let negative = match chars.peek() {
+        Some('-') => {
+            chars.next();
+            true
+        }
+        Some('+') => {
+            chars.next();
+            false
+        }
+        _ => false,
+    };
+    let digits: String = chars.take_while(char::is_ascii_digit).collect();
+    if digits.is_empty() {
+        return 0;
+    }
+    let magnitude: i128 = digits.parse().unwrap_or(i128::MAX);
+    let signed = if negative { -magnitude } else { magnitude };
+    signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
+
 fn cmp_result(ordering: std::cmp::Ordering) -> i64 {
     match ordering {
         std::cmp::Ordering::Less => -1,
@@ -278,6 +305,58 @@ impl Interpreter {
             )),
             "p6box_i" => Ok(Value::int(iarg(args, 0))),
             "p6box_n" => Ok(Value::num(narg(args, 0))),
+            // nqp::unbox_s($x): the native str inside a boxed `Str`. mutsu
+            // has no separate native-str representation, so this is the
+            // value's string form -- the boxing/unboxing pair `p6box_s` /
+            // `unbox_s` round-trips through the same string either way.
+            // `Net::Netmask::Fast`'s constructors unbox their `Str:D`
+            // parameters before parsing them.
+            "unbox_s" => Ok(Value::str(
+                args.first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+            )),
+            // nqp::coerce_is($i): a native int coerced to its decimal string,
+            // as `nqp::coerce_in`/`nqp::coerce_ni`/... are for num<->int.
+            // `Net::Netmask::Fast` stringifies netmask bit counts this way.
+            "coerce_is" => Ok(Value::str(iarg(args, 0).to_string())),
+            // nqp::coerce_si($s): the inverse -- a native str parsed as a
+            // leading-integer prefix (`strtol` style: skip leading
+            // whitespace, an optional sign, then digits; no digits at all
+            // parses as 0; an out-of-i64-range magnitude saturates rather
+            // than erroring). `Net::Netmask::Fast` parses CIDR bit counts and
+            // octet strings this way.
+            "coerce_si" => Ok(Value::int(parse_leading_int(
+                &args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+            ))),
+
+            // nqp::objprimspec($type): the REPR primitive storage a type
+            // object was declared with -- 0 for an ordinary (boxed) type,
+            // 1 for a native (u)int family member, 2 for `num`, 3 for `str`.
+            // Rakudo additionally answers 10 for the *unsigned* int family
+            // (`uint`/`uint8`/.../`byte`) rather than folding it into 1 --
+            // verified against `nqp::objprimspec(uint32)` under rakudo.
+            // `AttrX::Mooish`'s `is mooish` trait handler uses this to reject
+            // attributes declared with a native type (`nqp::objprimspec($attr.type)`).
+            "objprimspec" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                let type_name = match v.view() {
+                    ValueView::Package(name) => name.resolve().to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    _ => String::new(),
+                };
+                let spec = match crate::runtime::native_types::native_family(&type_name) {
+                    Some("int") => 1,
+                    Some("uint") => 10,
+                    Some("num") => 2,
+                    Some("str") => 3,
+                    _ => 0,
+                };
+                Ok(Value::int(spec))
+            }
 
             // -- string / aggregate queries --
             "chars" => Ok(Value::int(
