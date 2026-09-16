@@ -1160,9 +1160,18 @@ pub(crate) fn native_method_1arg(
                 return None;
             }
             let fmt = arg.to_string_value();
+            // A format with no value-consuming directive (a literal string,
+            // or only `%%`) never reads any item at all, so no coercion can
+            // ever be needed regardless of what the items are — skip the
+            // (potentially expensive, over-eager) coercion-need scan
+            // entirely in that case. This also matters for the native-row
+            // introspection invariant tests (`native_method_row.rs`), which
+            // probe this arm with a directive-less dummy format string and
+            // expect the fast path to still answer `Some`.
+            let has_directives = runtime::sprintf_directive_count(&fmt) > 0;
             if let ValueView::Hash(items) = target.view() {
                 // Hash.fmt(format): format each key-value pair, join with "\n"
-                if items.iter().any(|(_, v)| fmt_value_needs_coercion(v)) {
+                if has_directives && items.iter().any(|(_, v)| fmt_value_needs_coercion(v)) {
                     // A value needs `.Str`/`.Int`/`.Numeric` coercion the pure
                     // formatter can't dispatch; let the interpreter-aware slow
                     // path (`dispatch_fmt_with_user_coercion`) handle it.
@@ -1177,9 +1186,10 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Bag(items, _) = target.view() {
-                if items
-                    .iter()
-                    .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
                 {
                     return None;
                 }
@@ -1195,9 +1205,10 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Set(items, _) = target.view() {
-                if items
-                    .iter()
-                    .any(|k| fmt_value_needs_coercion(&items.typed_key(k)))
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|k| fmt_value_needs_coercion(&items.typed_key(k)))
                 {
                     return None;
                 }
@@ -1208,9 +1219,10 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Mix(items, _) = target.view() {
-                if items
-                    .iter()
-                    .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
                 {
                     return None;
                 }
@@ -1223,7 +1235,8 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let Some((k, v)) = pair_key_value(target) {
-                if fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v) {
+                if has_directives && (fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v))
+                {
                     return None;
                 }
                 // Pair.fmt(format): format key and value
@@ -1237,13 +1250,15 @@ pub(crate) fn native_method_1arg(
                 } else {
                     runtime::value_to_list_for_receiver(target)
                 };
-                if items.iter().any(|item| {
-                    if let Some((k, v)) = pair_key_value(item) {
-                        fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)
-                    } else {
-                        fmt_value_needs_coercion(item)
-                    }
-                }) {
+                if has_directives
+                    && items.iter().any(|item| {
+                        if let Some((k, v)) = pair_key_value(item) {
+                            fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)
+                        } else {
+                            fmt_value_needs_coercion(item)
+                        }
+                    })
+                {
                     return None;
                 }
                 let rendered = items
@@ -1253,7 +1268,7 @@ pub(crate) fn native_method_1arg(
                     .join(" ");
                 Some(Ok(Value::str(rendered)))
             } else {
-                if fmt_value_needs_coercion(target) {
+                if has_directives && fmt_value_needs_coercion(target) {
                     return None;
                 }
                 let rendered = runtime::format_sprintf(&fmt, Some(target));
