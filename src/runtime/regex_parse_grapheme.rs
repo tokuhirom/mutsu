@@ -140,11 +140,11 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
         // that check instead of loosening it for every other cluster it
         // protects.
         if text.ends_with('\r')
-            && let Some(next) = rest.peek()
-            && plain_newline_token(next)
-            && same_flags(&last, next)
+            && rest
+                .peek()
+                .is_some_and(|next| plain_newline_token(next) && same_flags(&last, next))
+            && let Some(next) = rest.next()
         {
-            let next = rest.next().expect("peeked");
             text.push('\n');
             last = next;
         }
