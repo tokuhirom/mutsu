@@ -1624,6 +1624,7 @@ fn lower_regex_subrule_args(
             source: None,
             literal_hash_indices: Vec::new(),
             colonpair_values: Vec::new(),
+            colonpair_variables: Vec::new(),
         });
     };
     let args = child_node(&field.value)?;
@@ -1634,6 +1635,7 @@ fn lower_regex_subrule_args(
     let mut sources = Vec::with_capacity(args.fields.len());
     let mut literal_hash_indices = Vec::with_capacity(args.fields.len());
     let mut colonpair_values = Vec::with_capacity(args.fields.len());
+    let mut colonpair_variables = Vec::with_capacity(args.fields.len());
     for field in &args.fields {
         if field.name.is_some() {
             return Err(unsupported(node));
@@ -1641,6 +1643,7 @@ fn lower_regex_subrule_args(
         let argument = child_node(&field.value)?;
         literal_hash_indices.push(is_literal_hash_index(argument));
         colonpair_values.push(is_colonpair_value(argument));
+        colonpair_variables.push(is_colonpair_variable(argument));
         sources.push(regex_subrule_argument_source(argument)?);
         lowered.push(lower_expr(argument)?);
     }
@@ -1649,6 +1652,7 @@ fn lower_regex_subrule_args(
         source: Some(sources.join(", ")),
         literal_hash_indices,
         colonpair_values,
+        colonpair_variables,
     })
 }
 
@@ -1660,6 +1664,10 @@ fn is_literal_hash_index(node: &RakuAstNode) -> bool {
 
 fn is_colonpair_value(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::ColonPairValue
+}
+
+fn is_colonpair_variable(node: &RakuAstNode) -> bool {
+    node.class == RakuAstClass::ColonPairVariable
 }
 
 fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
@@ -1682,6 +1690,12 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
         };
         let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
         return Ok(format!(":{key}({value})"));
+    }
+    if is_colonpair_variable(node) {
+        let value = lower_expr(named_child(node, "value")?)?;
+        let value =
+            crate::regex_tree::expression_source(&value).ok_or_else(|| unsupported(node))?;
+        return Ok(format!(":{value}"));
     }
     let expr = lower_expr(node)?;
     crate::regex_tree::expression_source(&expr).ok_or_else(|| unsupported(node))
@@ -2329,7 +2343,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // The quoted/computed spelling arrives as an `ApplyInfix` over `=>`
         // instead and lowers, below, to the `PositionalPair` that marks it
         // positional.
-        RakuAstClass::ColonPairValue => {
+        RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
             let key = leaf_str(node, "key")?;
             let value = lower_expr(named_child(node, "value")?)?;
             Ok(Expr::Binary {

@@ -60,6 +60,11 @@ pub(crate) struct SubruleArgs {
     /// for RakuAST's ColonPair::Value model node.
     #[serde(default)]
     pub(crate) colonpair_values: Vec<bool>,
+    /// Variable colonpairs and ordinary named pairs share the same internal
+    /// expression shape. Regex subrule arguments need this source distinction
+    /// for RakuAST's ColonPair::Variable model node.
+    #[serde(default)]
+    pub(crate) colonpair_variables: Vec<bool>,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -2261,6 +2266,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
             Some(Box::new(SubruleArgs {
                 literal_hash_indices: literal_hash_index_arguments(args_source, &args),
                 colonpair_values: colonpair_value_arguments(args_source, &args),
+                colonpair_variables: colonpair_variable_arguments(args_source, &args),
                 args,
                 source: Some(args_source.to_string()),
             })),
@@ -2289,6 +2295,7 @@ fn parse_subrule_target(source: &str) -> Option<(String, Option<Box<SubruleArgs>
         Some(Box::new(SubruleArgs {
             literal_hash_indices: literal_hash_index_arguments(args_source, &args),
             colonpair_values: colonpair_value_arguments(args_source, &args),
+            colonpair_variables: colonpair_variable_arguments(args_source, &args),
             args,
             source: Some(args_source.to_string()),
         })),
@@ -2352,6 +2359,53 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                         .chars()
                         .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
                         && name.ends_with(')')
+                })
+        })
+        .collect()
+}
+
+/// Identify the bounded `:$var`/`:@var`/`:%var`/`:&var` forms after the
+/// ordinary expression parser has produced their execution-level named pair.
+/// The sigil and the leading colon are source provenance that the internal
+/// `Binary { FatArrow }` expression intentionally does not retain.
+fn colonpair_variable_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<bool> {
+    let parts = split_top_level_arguments(source);
+    args.iter()
+        .enumerate()
+        .map(|(index, argument)| {
+            let is_variable_pair = matches!(
+                argument,
+                crate::ast::Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right,
+                } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
+                    if matches!(value.view(), crate::value::ValueView::Str(_)))
+                    && matches!(
+                        right.as_ref(),
+                        crate::ast::Expr::Var(_)
+                            | crate::ast::Expr::ArrayVar(_)
+                            | crate::ast::Expr::HashVar(_)
+                            | crate::ast::Expr::CodeVar(_)
+                    )
+            );
+            is_variable_pair
+                && parts.get(index).is_some_and(|part| {
+                    let part = part.trim();
+                    let Some(variable) = part.strip_prefix(':') else {
+                        return false;
+                    };
+                    let Some(sigil) = variable.chars().next() else {
+                        return false;
+                    };
+                    if !matches!(sigil, '$' | '@' | '%' | '&') {
+                        return false;
+                    }
+                    let name = &variable[sigil.len_utf8()..];
+                    !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
                 })
         })
         .collect()
