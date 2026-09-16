@@ -117,6 +117,27 @@ impl Interpreter {
             // nqp::gethostname(): the system hostname as a native str. Used by
             // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
             "gethostname" => Ok(Value::str(Self::hostname())),
+            // nqp::getlexdyn($name): resolve a dynamic variable by a
+            // runtime-computed name, the same way a compiled `%*NAME`/`$*NAME`
+            // read would (`get_env_with_main_alias` is the chokepoint every
+            // ordinary dynamic read — base-tier, user-declared, or lazily
+            // materialized via `lazy_magic_dynamic_var` — already goes
+            // through). This is genuinely generic, not a special case for one
+            // name: NQP code reaches for it to read a dynamic whose name it
+            // only has as a string, `%*COMPILING` (Rakudo::Options, issue
+            // #8572) chief among them in the wild.
+            "getlexdyn" => {
+                let name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                match self.get_env_with_main_alias(&name) {
+                    Some(v) => Ok(v),
+                    None => Err(RuntimeError::new(format!(
+                        "No such dynamic variable: {name}"
+                    ))),
+                }
+            }
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
             // to install a precomp repository into a CUR::FileSystem instance).
