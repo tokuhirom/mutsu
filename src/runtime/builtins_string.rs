@@ -41,16 +41,33 @@ impl Interpreter {
         crate::runtime::types::flatten_into_slurpy(rest, &mut actual_args);
         super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
         super::sprintf::validate_sprintf_arg_types(&fmt, &actual_args)?;
-        // The pure formatter only knows `to_string_value`/`.gist`/numeric unbox,
-        // so a directive whose arg is a user object must first dispatch the user's
-        // coercion method matching the directive: `%s` → `.Str` (Raku uses `.Str`
-        // only, not `.Stringy`); integer directives (`%d %i %u %b %o %x %X %c`) →
-        // `.Int`; float directives (`%e %f %g`) → `.Numeric`. The coerced value
-        // replaces the arg (a string for `%s`, the numeric value otherwise). Any
-        // captured-outer write the method makes is recorded for the surrounding
-        // `sprintf` call op's `apply_pending_rw_writeback` to drain into the
-        // caller's slot (same as every other user-method call).
-        for (idx, spec) in super::sprintf::sprintf_arg_specs(&fmt) {
+        self.coerce_sprintf_args(&fmt, &mut actual_args)?;
+        let rendered = if z_mode {
+            super::sprintf::format_zprintf_args(&fmt, &actual_args)
+        } else {
+            super::sprintf::format_sprintf_args(&fmt, &actual_args)
+        };
+        Ok(Value::str(rendered))
+    }
+
+    /// The pure formatter (`format_sprintf`/`format_sprintf_args`) only knows
+    /// `to_string_value`/`.gist`/numeric unbox, so a directive whose arg is a
+    /// user object must first dispatch the user's coercion method matching the
+    /// directive: `%s` → `.Str` (Raku uses `.Str` only, not `.Stringy`);
+    /// integer directives (`%d %i %u %b %o %x %X %c`) → `.Int`; float
+    /// directives (`%e %f %g`) → `.Numeric`. The coerced value replaces the arg
+    /// in place (a string for `%s`, the numeric value otherwise). Any
+    /// captured-outer write the method makes is recorded for the surrounding
+    /// call op's `apply_pending_rw_writeback` to drain into the caller's slot
+    /// (same as every other user-method call). Shared by `sprintf`/`printf`
+    /// (`builtin_sprintf`) and `.fmt()` (`dispatch_fmt_with_user_coercion`),
+    /// which both bottom out in the same pure formatter.
+    pub(crate) fn coerce_sprintf_args(
+        &mut self,
+        fmt: &str,
+        actual_args: &mut [Value],
+    ) -> Result<(), RuntimeError> {
+        for (idx, spec) in super::sprintf::sprintf_arg_specs(fmt) {
             let Some(arg) = actual_args.get(idx) else {
                 continue;
             };
@@ -103,39 +120,49 @@ impl Interpreter {
                 actual_args[idx] = Value::str(self.stringify_value(arg_clone)?);
                 continue;
             }
-            if !self.has_user_method(&cn, method) {
-                // A bare type object stringifies (`%s`) to "" with rakudo's
-                // "uninitialized value of type X in string context" warning
-                // (matching `~Int` / `Int.Str`), rather than the `(Int)` gist; a
-                // numeric directive coerces it to 0 with the "... in numeric
-                // context" warning (matching `+Int`). The pure formatter already
-                // renders the numeric 0, so the numeric arm only emits the
-                // warning.
-                if is_type_object {
+            if is_type_object {
+                if !self.has_user_method(&cn, method) {
+                    // A bare type object stringifies (`%s`) to "" with rakudo's
+                    // "uninitialized value of type X in string context" warning
+                    // (matching `~Int` / `Int.Str`), rather than the `(Int)` gist; a
+                    // numeric directive coerces it to 0 with the "... in numeric
+                    // context" warning (matching `+Int`). The pure formatter already
+                    // renders the numeric 0, so the numeric arm only emits the
+                    // warning.
                     if method == "Str" {
                         let coerced = self.warn_type_object_string_context(&cn, false)?;
                         actual_args[idx] = Value::str(coerced.to_string_value());
                     } else {
                         self.warn_type_object_numeric_context(&cn)?;
                     }
+                    continue;
+                }
+                let arg_clone = actual_args[idx].clone();
+                if let Ok(v) = self.call_method_with_values(arg_clone, method, vec![]) {
+                    actual_args[idx] = if method == "Str" {
+                        Value::str(v.to_string_value())
+                    } else {
+                        v
+                    };
                 }
                 continue;
             }
+            // A real instance's numeric coercion (`.Int`/`.Numeric`) is
+            // dispatched unconditionally, whether it resolves to a
+            // user-defined method or one of mutsu's own native-Rust methods
+            // (e.g. `Match.Int`/`Match.Numeric`): a `has_user_method` gate
+            // here would (and used to) skip exactly the native case, since a
+            // builtin method is not a "user method" in the class registry's
+            // sense — the root cause of a `Match` arg silently formatting as
+            // 0 under a numeric directive (issue #8584). A method genuinely
+            // missing on both fronts just errors, and that error is
+            // swallowed here the same way it always was.
             let arg_clone = actual_args[idx].clone();
             if let Ok(v) = self.call_method_with_values(arg_clone, method, vec![]) {
-                actual_args[idx] = if method == "Str" {
-                    Value::str(v.to_string_value())
-                } else {
-                    v
-                };
+                actual_args[idx] = v;
             }
         }
-        let rendered = if z_mode {
-            super::sprintf::format_zprintf_args(&fmt, &actual_args)
-        } else {
-            super::sprintf::format_sprintf_args(&fmt, &actual_args)
-        };
-        Ok(Value::str(rendered))
+        Ok(())
     }
 
     pub(super) fn builtin_make_format(&self, args: &[Value]) -> Result<Value, RuntimeError> {

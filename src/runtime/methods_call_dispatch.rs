@@ -2753,6 +2753,15 @@ impl Interpreter {
         {
             return result;
         }
+        // <value>.fmt($format) where $format is a plain Str and some
+        // key/value/item of target needs `.Str`/`.Int`/`.Numeric` coercion
+        // that the native fast path can't dispatch (it bailed here for
+        // exactly this reason — see `fmt_value_needs_coercion`).
+        if method == "fmt"
+            && let Some(result) = self.dispatch_fmt_with_user_coercion(&target, &args)
+        {
+            return result;
+        }
         // Match.make
         if method == "make"
             && let Some(updated) =

@@ -2,6 +2,19 @@ use super::str_match::is_str_or_match_receiver;
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
+/// Whether formatting `v` through a `.fmt()`/`sprintf` numeric or `%s`
+/// directive might need to dispatch a user-defined `.Str`/`.Int`/`.Numeric`
+/// coercion method — i.e. `v` is something the pure `format_sprintf`/
+/// `format_sprintf_args` formatter cannot itself resolve. That formatter's
+/// numeric extractors match only the built-in `ValueView` numeric/string
+/// variants and silently fall back to 0/"" for anything else (see
+/// `runtime::sprintf`), so an `Instance`/`Package`/role-mixin argument must
+/// be routed to the interpreter-aware slow path
+/// (`Interpreter::dispatch_fmt_with_user_coercion`) first.
+pub(crate) fn fmt_value_needs_coercion(v: &Value) -> bool {
+    matches!(v.view(), ValueView::Instance { .. } | ValueView::Package(_)) || v.is_mixin_value()
+}
+
 pub(crate) fn fmt_joinable_target(target: &Value) -> bool {
     matches!(
         target.view(),

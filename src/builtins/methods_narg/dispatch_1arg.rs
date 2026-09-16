@@ -9,7 +9,8 @@ use super::buf::{
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{
-    contains_value_recursive, fmt_joinable_target, fmt_single_or_pair, pair_key_value,
+    contains_value_recursive, fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion,
+    pair_key_value,
 };
 use super::indent::str_indent;
 use super::numeric::{
@@ -1159,8 +1160,23 @@ pub(crate) fn native_method_1arg(
                 return None;
             }
             let fmt = arg.to_string_value();
+            // A format with no value-consuming directive (a literal string,
+            // or only `%%`) never reads any item at all, so no coercion can
+            // ever be needed regardless of what the items are — skip the
+            // (potentially expensive, over-eager) coercion-need scan
+            // entirely in that case. This also matters for the native-row
+            // introspection invariant tests (`native_method_row.rs`), which
+            // probe this arm with a directive-less dummy format string and
+            // expect the fast path to still answer `Some`.
+            let has_directives = runtime::sprintf_directive_count(&fmt) > 0;
             if let ValueView::Hash(items) = target.view() {
                 // Hash.fmt(format): format each key-value pair, join with "\n"
+                if has_directives && items.iter().any(|(_, v)| fmt_value_needs_coercion(v)) {
+                    // A value needs `.Str`/`.Int`/`.Numeric` coercion the pure
+                    // formatter can't dispatch; let the interpreter-aware slow
+                    // path (`dispatch_fmt_with_user_coercion`) handle it.
+                    return None;
+                }
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -1170,6 +1186,13 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Bag(items, _) = target.view() {
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+                {
+                    return None;
+                }
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -1182,6 +1205,13 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Set(items, _) = target.view() {
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|k| fmt_value_needs_coercion(&items.typed_key(k)))
+                {
+                    return None;
+                }
                 let rendered = items
                     .iter()
                     .map(|k| runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::TRUE]))
@@ -1189,6 +1219,13 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let ValueView::Mix(items, _) = target.view() {
+                if has_directives
+                    && items
+                        .iter()
+                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+                {
+                    return None;
+                }
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
@@ -1198,6 +1235,10 @@ pub(crate) fn native_method_1arg(
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
             } else if let Some((k, v)) = pair_key_value(target) {
+                if has_directives && (fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v))
+                {
+                    return None;
+                }
                 // Pair.fmt(format): format key and value
                 let rendered = runtime::format_sprintf_args(&fmt, &[k, v]);
                 Some(Ok(Value::str(rendered)))
@@ -1209,6 +1250,17 @@ pub(crate) fn native_method_1arg(
                 } else {
                     runtime::value_to_list_for_receiver(target)
                 };
+                if has_directives
+                    && items.iter().any(|item| {
+                        if let Some((k, v)) = pair_key_value(item) {
+                            fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)
+                        } else {
+                            fmt_value_needs_coercion(item)
+                        }
+                    })
+                {
+                    return None;
+                }
                 let rendered = items
                     .into_iter()
                     .map(|item| fmt_single_or_pair(&fmt, &item))
@@ -1216,6 +1268,9 @@ pub(crate) fn native_method_1arg(
                     .join(" ");
                 Some(Ok(Value::str(rendered)))
             } else {
+                if has_directives && fmt_value_needs_coercion(target) {
+                    return None;
+                }
                 let rendered = runtime::format_sprintf(&fmt, Some(target));
                 Some(Ok(Value::str(rendered)))
             }
@@ -1229,8 +1284,12 @@ pub(crate) fn native_method_1arg(
             // `builtin_sprintf` (the same slurpy flattening the sub form gets). A
             // bare type object likewise needs the interpreter-aware warning path
             // (`%s` warns and stringifies to "").
+            // An Instance/Package/mixin arg needs `.Str`/`.Int`/`.Numeric`
+            // coercion the pure formatter can't dispatch (`fmt_value_needs_coercion`);
+            // defer to the slow-path `sprintf` arm below.
             if matches!(arg.view(), ValueView::Package(_))
                 || arg.as_list_items().is_some()
+                || fmt_value_needs_coercion(arg)
                 || matches!(
                     arg.view(),
                     ValueView::Range(..)
@@ -1258,7 +1317,13 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::str(rendered)))
         }
         "zprintf" => {
-            // Method form: '%f'.zprintf(value) — like sprintf but with zprintf semantics
+            // Method form: '%f'.zprintf(value) — like sprintf but with zprintf
+            // semantics. Mirrors the "sprintf" arm above: an Instance/Package/
+            // mixin arg needs interpreter-aware coercion, so defer to the
+            // slow-path `zprintf` arm (routes through `builtin_sprintf(.., true)`).
+            if fmt_value_needs_coercion(arg) {
+                return None;
+            }
             let fmt = target.to_string_value();
             let rendered = runtime::format_zprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
