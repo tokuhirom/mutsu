@@ -19,6 +19,21 @@ fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
 }
 
+/// The "mark" (combining diacritic) stripped from a single codepoint: its
+/// NFD decomposition's first non-combining part. `café`'s precomposed `é`
+/// folds to `e`; a codepoint with no decomposition folds to itself. This is
+/// a per-codepoint approximation, not a full grapheme fold, matching the
+/// codepoint-indexed contract `nqp::indexim`/`nqp::indexicim` need: a
+/// precomposed accented letter (the common case) stays 1:1 with the
+/// original string, so comparing codepoint-for-codepoint keeps the returned
+/// position aligned with `nqp::substr` on the same string.
+fn strip_mark_char(c: char) -> char {
+    use unicode_normalization::UnicodeNormalization;
+    c.nfd()
+        .find(|ch| !unicode_normalization::char::is_combining_mark(*ch))
+        .unwrap_or(c)
+}
+
 impl Interpreter {
     /// Try a string / hash `nqp::` op. `None` means "not an op this table
     /// knows"; the caller then raises the unsupported-op error.
@@ -85,6 +100,40 @@ impl Interpreter {
                     (0..=last)
                         .rev()
                         .find(|&i| chars[i..i + needle_chars.len()] == needle_chars[..])
+                };
+                Ok(Value::int(found.map(|i| i as i64).unwrap_or(-1)))
+            }
+            // nqp::indexic (case-insensitive), nqp::indexim (mark/diacritic-
+            // insensitive), nqp::indexicim (both) — same -1-on-absent
+            // contract as `index` above. `has-word`'s own case/mark folding
+            // (`find-wordic`/`find-wordim`/`find-wordicim`) is what these
+            // exist for.
+            "indexic" | "indexim" | "indexicim" => {
+                let needle = sarg(args, 1);
+                let chars = super::nqp_char_cache::cached_chars(args, 0);
+                let needle_chars: Vec<char> = needle.chars().collect();
+                let from = if args.len() > 2 {
+                    iarg(args, 2).max(0) as usize
+                } else {
+                    0
+                };
+                let char_eq = |a: char, b: char| -> bool {
+                    match op {
+                        "indexic" => a.to_lowercase().eq(b.to_lowercase()),
+                        "indexicim" => strip_mark_char(a)
+                            .to_lowercase()
+                            .eq(strip_mark_char(b).to_lowercase()),
+                        _ => strip_mark_char(a) == strip_mark_char(b), // "indexim"
+                    }
+                };
+                let found = if needle_chars.is_empty() {
+                    Some(from.min(chars.len()))
+                } else if needle_chars.len() > chars.len() {
+                    None
+                } else {
+                    (from..=chars.len() - needle_chars.len()).find(|&i| {
+                        (0..needle_chars.len()).all(|k| char_eq(chars[i + k], needle_chars[k]))
+                    })
                 };
                 Ok(Value::int(found.map(|i| i as i64).unwrap_or(-1)))
             }
