@@ -10,6 +10,12 @@
 //! With a precision the mantissa is rounded to that many fractional hex digits,
 //! ties-to-even, and a carry out of the leading digit is *not* renormalized
 //! (C prints `0x2p+4`, not `0x1p+5`), matching glibc.
+//!
+//! A subnormal value IS renormalized to a leading 1, with the exponent
+//! dropping below the normal minimum of -1022 as needed (`0x1p-1074` for the
+//! smallest subnormal double) — unlike glibc, which pins subnormals at
+//! exponent -1022 with leading zero digits instead. This matches BSD libc and
+//! how Raku ecosystem code written against `%a` (e.g. SION) expects it.
 
 use super::sprintf_helpers::{format_inf_nan, sign_prefix};
 
@@ -38,15 +44,26 @@ pub(super) fn format_hexfloat(
     let bits = f.to_bits();
     let is_neg = (bits >> 63) != 0;
     let biased_exp = ((bits >> 52) & 0x7ff) as i32;
-    let fraction = bits & ((1u64 << 52) - 1);
+    let raw_fraction = bits & ((1u64 << 52) - 1);
     // A normal number has an implicit leading 1 and an exponent of
-    // `biased - 1023`. A subnormal has a leading 0 and, like C, is printed at
-    // the fixed minimum exponent -1022 rather than being normalized. Zero is
-    // printed as `0x0p+0`.
-    let (leading_digit, exponent) = if biased_exp == 0 {
-        (0u64, if fraction == 0 { 0 } else { -1022 })
+    // `biased - 1023`. A subnormal has no implicit leading bit; renormalize it
+    // to a leading 1 (like BSD libc and js-sion) by shifting the fraction left
+    // until its most significant set bit becomes that implicit 1, dropping the
+    // exponent below the normal minimum of -1022 as needed — glibc instead
+    // keeps subnormals pinned at -1022 with leading zero digits, but Raku
+    // ecosystem code written against `%a` (e.g. SION) expects the
+    // renormalized form (issue #8518). Zero is printed as `0x0p+0`.
+    let (leading_digit, exponent, fraction) = if biased_exp == 0 {
+        if raw_fraction == 0 {
+            (0u64, 0, raw_fraction)
+        } else {
+            let msb = 63 - raw_fraction.leading_zeros() as i32;
+            let exp = msb - 1074;
+            let normalized = (raw_fraction << (52 - msb)) & ((1u64 << 52) - 1);
+            (1u64, exp, normalized)
+        }
     } else {
-        (1u64, biased_exp - 1023)
+        (1u64, biased_exp - 1023, raw_fraction)
     };
 
     let digits = mantissa_digits(leading_digit, fraction, prec);
@@ -132,9 +149,16 @@ mod tests {
     }
 
     #[test]
-    fn subnormals_use_the_minimum_exponent() {
-        assert_eq!(a(5e-324, None), "0x0.0000000000001p-1022");
+    fn subnormals_are_renormalized_to_a_leading_one() {
+        assert_eq!(a(5e-324, None), "0x1p-1074");
         assert_eq!(a(2.2250738585072014e-308, None), "0x1p-1022");
+        // A subnormal whose most significant bit is not the last one: the
+        // fraction shifts left so bit 51 becomes the (now-implicit) leading 1,
+        // and the remaining low bits stay as the fractional part.
+        assert_eq!(
+            a(f64::from_bits(0x0008_0000_0000_0001), None),
+            "0x1.0000000000002p-1023"
+        );
     }
 
     #[test]
