@@ -15,7 +15,7 @@ use Test;
 # `.split(/\r\n/)`: the split silently produced a single unsplit line, so the
 # header hash stayed empty and the response body was never decoded.
 
-plan 8;
+plan 10;
 
 ok "A\r\nB" ~~ /\r\n/, 'two escapes matches a literal CRLF';
 ok "A\r\nB" ~~ /A\r\nB/, 'a CRLF pair mid-pattern, with literals on both sides';
@@ -34,5 +34,14 @@ ok "A\n\rB" ~~ /\n\r/, '\n\r (not a cluster) still matches in that order';
 # logic that only fires when they are adjacent in that order.
 nok "A\rB" ~~ /\r\n/, 'a lone \r with no following \n does not match /\r\n/';
 ok "A\nB" ~~ /\n/, 'a lone \n still matches on its own';
+
+# A QUANTIFIED \r immediately before \n must not be folded into it: doing so
+# would silently discard the quantifier, turning an optional/repeated \r into
+# a mandatory one. Regression: the fix above initially did exactly that,
+# breaking `roast/integration/error-reporting.t` and Test::Util's own
+# line-ending matcher, both of which use `/Hello\r?\n/`-shaped patterns to
+# accept either bare LF or CRLF line endings.
+ok "Hello\n" ~~ /Hello\r?\n/, 'an optional \r before \n still matches without one';
+ok "Hello\r\n" ~~ /Hello\r?\n/, 'and still matches a real CRLF';
 
 done-testing;
