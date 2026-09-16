@@ -557,15 +557,54 @@ impl Interpreter {
         // the celled atomic store boxes top-level elements; `:=` bindings can
         // nest cells anywhere). Read through it ONLY when the cell holds a
         // container — the remaining dimensions then land on the inner
-        // array/hash. A cell holding a scalar must instead fall through to the
-        // single-element-list wrap below, which returns the CELL itself for
-        // index 0 — the raw `\target` / `is rw` aliasing of a promoted leaf
-        // (`@a[0;0]` over `@a = [cell(9)]`) rides on that identity.
+        // array/hash/Seq/Pair. A cell holding a scalar must instead fall
+        // through to the single-element-list wrap below, which returns the
+        // CELL itself for index 0 — the raw `\target` / `is rw` aliasing of a
+        // promoted leaf (`@a[0;0]` over `@a = [cell(9)]`) rides on that
+        // identity. A `$`-itemized Seq/Range/... in a cell (`$set[DENSE] .=
+        // sort: ...` stores one) is ALSO something a further dimension must
+        // index into, not a leaf — recursing lets the checks below (Seq,
+        // Scalar-unwrap) run on the unwrapped value (issue #8497).
         if target.is_container_ref() {
             let inner = target.deref_container();
-            if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+            if matches!(
+                inner.view(),
+                ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Scalar(_)
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
+            ) {
                 return self.multi_dim_index_read(&inner, dims);
             }
+        }
+        // A `$`-itemized aggregate that isn't an Array/Hash/Slip (a Seq, a
+        // Range, ...) is wrapped in a genuine `Scalar` container by
+        // `Value::item()` (Array/Hash/Slip instead carry their itemization as
+        // a same-repr flag, so they never reach this arm). Unwrap it and
+        // recurse when the inner value is itself something a further
+        // dimension can index into -- otherwise leave it for the
+        // single-element-list wrap below, which is right for a Scalar around
+        // a genuine leaf. Without this, `$sparse[DENSE; $i]` where
+        // `$sparse[DENSE]` is `$(a-Seq)` returned the whole wrapper unchanged
+        // for `$i == 0` and Nil for every other `$i` (issue #8497).
+        if let ValueView::Scalar(inner) = target.view()
+            && matches!(
+                inner.view(),
+                ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
+            )
+        {
+            let inner = (*inner).clone();
+            return self.multi_dim_index_read(&inner, dims);
         }
         // A Pair is associative under a further dimension: `%h{"k";"sub"}`
         // where `%h{"k"}` is a Pair indexes it by key. Reuse the hash-read
