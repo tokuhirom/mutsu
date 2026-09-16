@@ -977,8 +977,9 @@ impl Env {
 
     /// The by-name writes this env's frame tier has taken since the frame that
     /// owns it opened, or `None` when they are not recorded (see
-    /// [`Self::flattened_for_frame`]). May hold a key more than once, and may
-    /// name a key that is no longer present.
+    /// [`Self::flattened_for_frame`]). Each key appears at most once (see
+    /// [`Self::note_frame_write`]), and may name a key that is no longer
+    /// present.
     #[inline(always)]
     pub(crate) fn frame_writes(&self) -> Option<&[Symbol]> {
         self.frame_writes.as_ref().map(|w| w.as_slice())
@@ -1031,8 +1032,31 @@ impl Env {
     /// Log a by-name write against [`Self::frame_writes`], for an env that is
     /// recording them. A no-op (one predictable branch) for every other env,
     /// which is nearly all of them.
+    ///
+    /// Deduplicated: a key already in the log is left alone rather than
+    /// appended again. The log is read as a *set* of names to consider (see
+    /// [`Self::retain_frame_writes`]'s own "order does not matter" note), so a
+    /// repeat entry buys nothing but size -- and a frame that writes the same
+    /// handful of names in a tight loop (a `for`/`map`/`classify` body, one
+    /// light-call return-merge per iteration re-touching the loop's own few
+    /// lexicals) would otherwise grow this log by one entry per write, O(total
+    /// writes) rather than O(distinct names written). That matters because
+    /// `Arc::make_mut` below is not free once `self.env().clone()` has shared
+    /// this Arc with a saved caller frame (`push_call_frame`, once per nested
+    /// call): the *first* write after that share deep-copies the whole log, so
+    /// an unbounded log turned every nested call inside a long-lived light-call
+    /// frame into an O(log length) copy -- O(n^2) over the frame's lifetime
+    /// (issue #8489). The `contains` scan below is read-only (no `make_mut`,
+    /// so no copy) and stays cheap because the deduplicated log itself stays
+    /// small -- bounded by the frame's distinct write targets, not its write
+    /// count.
     #[inline(always)]
     fn note_frame_write(&mut self, key: Symbol) {
+        if let Some(log) = &self.frame_writes
+            && log.contains(&key)
+        {
+            return;
+        }
         if let Some(log) = &mut self.frame_writes {
             Arc::make_mut(log).push(key);
         }
