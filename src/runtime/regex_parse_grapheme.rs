@@ -139,7 +139,14 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
         // into the same run, exactly as another `Literal` would be, sidesteps
         // that check instead of loosening it for every other cluster it
         // protects.
+        // A quantified `\r` (`/Hello\r?\n/`, `Test::Util`'s own line-ending
+        // matcher) must NOT be pulled into this merge: the run loop above
+        // already stopped right after it *because* it carries a quantifier
+        // ("only the last token of a run may"), and folding it into the
+        // following `\n` would silently discard that quantifier, turning an
+        // optional `\r` into a mandatory one.
         if text.ends_with('\r')
+            && matches!(last.quant, RegexQuant::One)
             && rest
                 .peek()
                 .is_some_and(|next| plain_newline_token(next) && same_flags(&last, next))
