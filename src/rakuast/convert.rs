@@ -2407,7 +2407,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             if let Some(args) = args
                 && !args.args.is_empty()
             {
-                fields.push(node_field(Some("args"), arg_list(&args.args)?));
+                fields.push(node_field(Some("args"), regex_arg_list(args)?));
             }
             if *capturing {
                 fields.push(leaf_field(Some("capturing"), Value::truth(true)));
@@ -2436,7 +2436,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             if let Some(args) = args
                 && !args.args.is_empty()
             {
-                assertion_fields.push(node_field(Some("args"), arg_list(&args.args)?));
+                assertion_fields.push(node_field(Some("args"), regex_arg_list(args)?));
             }
             if *capturing {
                 assertion_fields.push(leaf_field(Some("capturing"), Value::truth(true)));
@@ -3773,6 +3773,54 @@ fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::ArgList,
         fields,
+    })
+}
+
+fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::ArgList,
+        fields: args
+            .args
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                let node = if args
+                    .literal_hash_indices
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    literal_hash_index_expr(argument)?
+                } else {
+                    convert_expr(argument)?
+                };
+                Ok(node_field(None, node))
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?,
+    })
+}
+
+fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Index {
+        target,
+        index,
+        is_positional: false,
+    } = expr
+    else {
+        return Err(unsupported("literal hash index provenance"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyPostfix,
+        fields: vec![
+            node_field(Some("operand"), convert_expr(target)?),
+            node_field(
+                Some("postfix"),
+                RakuAstNode {
+                    class: RakuAstClass::PostcircumfixLiteralHashIndex,
+                    fields: vec![node_field(Some("index"), convert_expr(index)?)],
+                },
+            ),
+        ],
     })
 }
 

@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: an ordinary method call in a subrule argument keeps
 # its RakuAST expression tree and can be lowered back to the regex parser.
 
-plan 44;
+plan 51;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -182,3 +182,29 @@ ok GDynamicHashIndexArgument.parse('b').defined,
     'the hash-index argument observes key reassignment at match time';
 ok !GDynamicHashIndexArgument.parse('a').defined,
     'the hash-index argument retains its current lexical key';
+
+my %literal_arguments = primary => 'a', secondary => 'b';
+my $literal_hash_index_ast = Q[/<word(%literal_arguments<primary>)>/].AST;
+my $literal_hash_index_gist = $literal_hash_index_ast.gist;
+ok $literal_hash_index_gist.contains('RakuAST::Postcircumfix::LiteralHashIndex'),
+    'an angle associative argument keeps its literal-hash-index postfix';
+ok $literal_hash_index_gist.contains('RakuAST::Var::Lexical.new("\\%literal_arguments")'),
+    'the literal hash-index argument keeps its hash target';
+ok $literal_hash_index_gist.contains('RakuAST::StrLiteral.new("primary")'),
+    'the literal hash-index argument keeps its word-quoted key';
+
+my $literal_hash_index_regex = EVAL($literal_hash_index_ast);
+ok $literal_hash_index_regex ~~ Regex,
+    'a RakuAST regex with a literal hash-index argument lowers successfully';
+
+grammar GDynamicLiteralHashIndexArgument {
+    token TOP { <word(%literal_arguments<primary>)> }
+    token word($expected) { $expected }
+}
+ok GDynamicLiteralHashIndexArgument.parse('a').defined,
+    'a literal hash-index argument reaches the subrule matcher';
+%literal_arguments<primary> = 'b';
+ok GDynamicLiteralHashIndexArgument.parse('b').defined,
+    'a literal hash-index argument observes value reassignment at match time';
+ok !GDynamicLiteralHashIndexArgument.parse('a').defined,
+    'a literal hash-index argument retains its literal key and current value';
