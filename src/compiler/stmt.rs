@@ -644,39 +644,47 @@ impl Compiler {
     /// Rewrite `for <ELEM> { ... }`, where `<ELEM>` is a var-rooted `Index`
     /// lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`) used *directly* as the loop
     /// source (no `.values`/similar wrapper — that shape is
-    /// [`Self::desugar_for_element_source`]), into:
+    /// [`Self::desugar_for_element_source`]), into the runtime-guarded form
     ///
     /// ```text
-    /// my $tmp = <ELEM>;      # copy the element into a scalar temp
-    /// for $tmp { ... };      # reuse the scalar-topic per-iteration write-back
-    /// <ELEM> = $tmp;         # write the temp back into the element
-    /// ```
-    ///
-    /// Raku topicalizes such an element as a single rw-aliased item (`for
-    /// @a[i] { .=Int }` mutates `@a[i]`) — the same aliasing `given @a[i] {
-    /// ... }` already gets via `TagElementSource`. `for` over a bare scalar
-    /// variable already writes `$_`'s final value back to that variable, so
-    /// routing through a temp variable needs no new VM machinery.
-    ///
-    /// Whether the subscript selects ONE element or a slice is a property of
-    /// the subscript's *runtime value* (Rakudo dispatches its
-    /// `postcircumfix:<[ ]>` candidates on `Iterable`), not of the syntax that
-    /// produced it: `@a[0..2]`, `@a[$range]` and `@a[@indices]` are all
-    /// slices. Only a literal index is statically known to be a single
-    /// element; every other shape therefore gets the runtime-guarded form
-    ///
-    /// ```text
-    /// my $idx   = <INDEX>;            # evaluated exactly once
-    /// my $slice = $idx ~~ Iterable;   # Rakudo's own slice/element rule
+    /// my $idx   = <INDEX>;                       # evaluated exactly once
+    /// my $slice = ($idx ~~ Iterable)              # Rakudo's own slice rule
+    ///          || !(<ELEM>.VAR ~~ Scalar);        # OR a non-itemized element
     /// my $tmp   = $slice ?? <ELEM>.Slip !! <ELEM>;
     /// for $tmp { ... };               # a Slip flattens, a plain value does not
     /// unless $slice { <ELEM> = $tmp } # aliasing writeback: element case only
     /// ```
     ///
-    /// which iterates a slice element-wise while keeping the single-element
-    /// rw aliasing. The slice branch deliberately skips the writeback: a
-    /// slice topicalizes several elements, so the one-value writeback would
-    /// splatter the last topic across the selected range.
+    /// Raku topicalizes an ordinary Positional/Associative element as a
+    /// single rw-aliased item (`for @a[i] { .=Int }` mutates `@a[i]`) — the
+    /// same aliasing `given @a[i] { ... }` already gets via
+    /// `TagElementSource`. `for` over a bare scalar variable already writes
+    /// `$_`'s final value back to that variable, so routing through a temp
+    /// variable needs no new VM machinery.
+    ///
+    /// Whether the subscript selects ONE element or a slice is a property of
+    /// the subscript's *runtime value* (Rakudo dispatches its
+    /// `postcircumfix:<[ ]>` candidates on `Iterable`), not of the syntax that
+    /// produced it: `@a[0..2]`, `@a[$range]` and `@a[@indices]` are all
+    /// slices — `for_index_is_slice` bails out of this whole rewrite for
+    /// those shapes below.
+    ///
+    /// But a literal single index is not enough to guarantee a single
+    /// ITEMIZED element either: `$m<name>` for a grammar/regex Match's
+    /// *quantified* named capture (`<name>*`) is a var-rooted `Index` too,
+    /// and its value is a genuine non-itemized `List`/`Array` — Rakudo's
+    /// `Match`/`Capture` hand out "bare" values (`$/.hash<x>.VAR.^name` is
+    /// `Array`, not `Scalar`), unlike an ordinary Hash/Array element, whose
+    /// value always lives in a `Scalar` container. Snapshotting such an
+    /// element through a plain `my $tmp = <ELEM>` assignment would itemize
+    /// it (assignment always does), turning `for $m<name> { ... }` — which
+    /// must flatten the capture list, exactly like `for $m<name>.list { ... }`
+    /// — into a single iteration over the whole list
+    /// (`t/regex-quantified-named-capture-for-loop.t`). So the slice/element
+    /// decision also checks the read element's OWN itemization
+    /// (`<ELEM>.VAR ~~ Scalar`) at runtime, alongside the index shape;
+    /// a slice topicalizes several elements (or, here, a flattening list),
+    /// so the writeback is skipped the same way for both.
     fn desugar_for_scalar_element_source(&mut self, stmt: &Stmt) -> Option<Vec<Stmt>> {
         let Stmt::For { iterable, .. } = stmt else {
             return None;
@@ -718,20 +726,8 @@ impl Compiler {
             *new_iterable = Expr::Var(tmp.clone());
         }
 
-        // A literal subscript can never turn into a slice selector at
-        // runtime, so it keeps the cheap guard-free rewrite.
-        if Self::for_index_is_definite_single(index) {
-            let decl = Self::init_decl(&tmp, iterable.clone());
-            let writeback = Stmt::Expr(Expr::IndexAssign {
-                target: container.clone(),
-                index: index.clone(),
-                value: Box::new(Expr::Var(tmp)),
-                is_positional: *is_positional,
-            });
-            return Some(vec![decl, for_stmt, writeback]);
-        }
-
-        // Runtime-guarded form: the subscript's value decides slice vs element.
+        // Runtime-guarded form: the subscript's value AND the element's own
+        // itemization decide slice vs element (see the doc comment above).
         let idx_tmp = format!("__for_elem_idx_{}", seq);
         let slice_tmp = format!("__for_elem_is_slice_{}", seq);
         let idx_var = Expr::Var(idx_tmp.clone());
@@ -751,12 +747,35 @@ impl Compiler {
             Stmt::MarkBind,
             Self::init_decl(&idx_tmp, (**index).clone()),
         ]);
-        let slice_decl = Self::init_decl(
-            &slice_tmp,
+        // A literal subscript can never turn into a slice selector at
+        // runtime, so the `$idx ~~ Iterable` half folds to `False` and only
+        // the element-itemization check remains live.
+        let index_is_iterable = if Self::for_index_is_definite_single(index) {
+            Expr::Literal(Value::truth(false))
+        } else {
             Expr::Binary {
                 op: crate::token_kind::TokenKind::SmartMatch,
                 left: Box::new(idx_var.clone()),
                 right: Box::new(Expr::BareWord("Iterable".to_string())),
+            }
+        };
+        let element_is_not_scalar = Expr::Binary {
+            op: crate::token_kind::TokenKind::BangTilde,
+            left: Box::new(Expr::MethodCall {
+                target: Box::new(element.clone()),
+                name: crate::symbol::Symbol::intern("VAR"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            }),
+            right: Box::new(Expr::BareWord("Scalar".to_string())),
+        };
+        let slice_decl = Self::init_decl(
+            &slice_tmp,
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::OrOr,
+                left: Box::new(index_is_iterable),
+                right: Box::new(element_is_not_scalar),
             },
         );
         // A `Slip` in a scalar flattens when iterated, a plain value does not

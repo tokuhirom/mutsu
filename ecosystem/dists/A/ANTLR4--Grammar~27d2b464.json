@@ -27,7 +27,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.67,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 13.85,
+        "secs": 7.65,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.08,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 48,
         "plan": 48,
-        "secs": 73.8,
+        "secs": 36.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,11 +92,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.28,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.23,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,7 +119,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 166.24,
+        "secs": 159.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.7,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,11 +138,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.31,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.23,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,11 +161,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.28,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,7 +175,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.04,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,11 +184,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.41,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -198,7 +198,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.41,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -207,11 +207,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Ambiguous call to 'to-lines(ANTLR4::Grammar: )'; these signatures all match:",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -221,7 +221,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.96,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,11 +230,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.33,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -244,7 +244,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.1,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -253,11 +253,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.35,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -267,7 +267,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.79,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -276,11 +276,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.33,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -290,30 +290,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.87,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Project META file is good",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 23.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/meta.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 24.51,
+        "secs": 11.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -327,10 +326,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "8fc35bbd",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -341,13 +340,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/NT/ANTLR4_GRAMMAR/8f4e3953f8d3b314ca92fec7395c3a72c8301c76.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 146,
     "baseline_files": 13,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 13
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 12
   },
   "version": "0.6.3"
 }
