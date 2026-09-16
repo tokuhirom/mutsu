@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,53 +34,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 24.66,
+        "secs": 10.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 24,
+        "plan": 24,
+        "secs": 31.83,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/020-internals.t",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.37,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Project META file is good",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.65,
+        "secs": 10.84,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/030-my-meta.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.09,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,10 +90,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "5e657355",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -106,13 +104,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_META/10b9dd6eb55bc5102e158b4113d399be141e5295.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 3,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 26,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.20"
 }
