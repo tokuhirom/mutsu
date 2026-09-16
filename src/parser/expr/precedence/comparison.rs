@@ -6,7 +6,13 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         let Ok((rest, _)) = ws(rest) else {
             return false;
         };
-        parse_junctive_op(rest).is_some() || parse_junction_infix_op(rest).is_some()
+        // A postcircumfix belongs to the regex result, not the enclosing
+        // smartmatch.  Re-enter the ordinary RHS parser so it can attach the
+        // postfix (`$value ~~ /capture/[0]`), rather than leaving `[0]` for
+        // the list-infix parser to mistake for a reduce metaoperator.
+        rest.starts_with('[')
+            || parse_junctive_op(rest).is_some()
+            || parse_junction_infix_op(rest).is_some()
     }
 
     let (rest, mut left) = structural_comparison_expr_mode(input, mode)?;

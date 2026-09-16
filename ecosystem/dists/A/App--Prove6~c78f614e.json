@@ -17,14 +17,14 @@
   "dist": "App::Prove6",
   "files": [],
   "load": {
-    "App::Prove6": "Failed to parse module 'Getopt::Long': Unexpected block in infix position (missing statement control word before the expression?) [at lib/Getopt/Long.rakumod:661]"
+    "App::Prove6": "Can't use unknown trait 'is' -> 'option' in a parameter declaration."
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "host": "linux-x86_64",
+    "mutsu_commit": "a7498e52b",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
