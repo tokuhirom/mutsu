@@ -1168,14 +1168,25 @@ impl Interpreter {
         }
         // Fallback for non-shared arrays: write through the shared node so
         // same-thread by-value holders observe the push (container identity §3).
-        if matches!(
-            self.env.get(key).map(Value::view),
-            Some(ValueView::Array(..))
-        ) {
-            return self
-                .env
-                .get_mut(key)
-                .unwrap()
+        //
+        // `env_root_descended_mut` (not a raw `self.env.get`/`get_mut`) is
+        // required here for the same reason the `append`/`unshift`/`prepend`
+        // arms in `call_method_mut_with_values` already use it: a captured,
+        // escape-boxed `@`/`%` local (ADR-0039's `needs_cell_unvouched_containers`
+        // — e.g. `my Str:D @a` captured by a block passed as a `.map`/`.grep`
+        // argument) lives in a `ContainerRef` cell, not a plain `Array`, so a
+        // raw `self.env.get(key)` never matched `ValueView::Array` and fell
+        // through to the detached-array fallback below, which rebuilds a
+        // fresh array and overwrites `env[key]` with it — severing the cell.
+        // Every OTHER holder of that cell (in particular the closure's own
+        // captured-env snapshot that an eager `.map` loop restores its
+        // temporary bindings from) still saw the stale, pre-push cell
+        // contents, so the pushed elements vanished the moment the loop's
+        // env restore ran (#8503).
+        if let Some(slot) = self.env_root_descended_mut(key)
+            && matches!(slot.view(), ValueView::Array(..))
+        {
+            return slot
                 .with_array_mut(|arc_items, kind| {
                     let items = crate::value::gc_data_mut(arc_items);
                     items.extend(values);
