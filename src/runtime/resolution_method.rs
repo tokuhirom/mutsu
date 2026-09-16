@@ -564,7 +564,23 @@ impl Interpreter {
                     base.to_string()
                 };
                 if arg_idx < args.len() {
-                    total += Self::builtin_type_distance(&resolved, &args[arg_idx]);
+                    let value = &args[arg_idx];
+                    total += if matches!(value.view(), ValueView::Nil) {
+                        Self::nil_type_distance(&resolved)
+                    } else {
+                        // `type_hierarchy_distance` is the SAME class/role-aware
+                        // MRO walk (including the Buf/Blob family table) that
+                        // multi-SUB dispatch uses (`candidate_type_distance`).
+                        // The former method-only `builtin_type_distance` here
+                        // reimplemented a much narrower version that never
+                        // learned a value's actual class (`value_type_name`
+                        // answers the generic "Any" for every `Instance`, so
+                        // `Blob:D`/`Positional:D`/`Mu:D` all fell through to the
+                        // same 500 "unrelated" distance for a `buf8` argument
+                        // and tied — reported as `X::Multi::Ambiguous` for a
+                        // `proto method` `{*}` redispatch, issue #8516).
+                        self.type_hierarchy_distance(&resolved, value)
+                    };
                 }
             } else {
                 total += 1000;
@@ -583,62 +599,15 @@ impl Interpreter {
         s.split('(').next().unwrap_or(s)
     }
 
-    /// Compute the type hierarchy distance between a constraint and a value.
-    /// 0 = exact match, larger = less specific.
-    fn builtin_type_distance(constraint: &str, value: &Value) -> usize {
-        // `value_type_name(Nil)` reports "Any", so a Nil argument needs its own
-        // MRO here: a `(Nil)` candidate must out-narrow e.g. `(Str() $s)` for a
-        // literal Nil argument (URI's `authority(Nil)`).
-        if matches!(value.view(), ValueView::Nil) {
-            let nil_mro: &[&str] = &["Nil", "Cool", "Any", "Mu"];
-            for (i, &ancestor) in nil_mro.iter().enumerate() {
-                if ancestor == constraint {
-                    return i;
-                }
-            }
-            return 500;
-        }
-        let value_type = super::value_type_name(value);
-        if constraint == value_type {
-            return 0;
-        }
-        if let ValueView::Instance { class_name, .. } = value.view()
-            && constraint == class_name.resolve().as_str()
-        {
-            return 0;
-        }
-        let builtin_mro: &[&str] = match value_type {
-            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Rat" | "FatRat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
-            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-            "Array" => &["Array", "List", "Positional", "Cool", "Any", "Mu"],
-            "List" => &["List", "Positional", "Cool", "Any", "Mu"],
-            "Hash" => &["Hash", "Map", "Associative", "Cool", "Any", "Mu"],
-            "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
-            "Range" => &["Range", "Positional", "Cool", "Any", "Mu"],
-            "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-            "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-            "Mix" => &[
-                "Mix",
-                "Mixy",
-                "Baggy",
-                "QuantHash",
-                "Associative",
-                "Any",
-                "Mu",
-            ],
-            "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
-            "Seq" => &["Seq", "Positional", "Cool", "Any", "Mu"],
-            "Regex" => &[
-                "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
-            ],
-            "Junction" => &["Junction", "Mu"],
-            _ => &[],
-        };
-        for (i, &ancestor) in builtin_mro.iter().enumerate() {
+    /// `value_type_name(Nil)` reports "Any", so a `Nil` argument needs its own
+    /// MRO here: a `(Nil)` candidate must out-narrow e.g. `(Str() $s)` for a
+    /// literal Nil argument (URI's `authority(Nil)`). Kept as its own small
+    /// table rather than folded into `type_hierarchy_distance` (which
+    /// multi-sub dispatch also uses and has no such special case) since this
+    /// is a method-dispatch-specific fix.
+    fn nil_type_distance(constraint: &str) -> usize {
+        let nil_mro: &[&str] = &["Nil", "Cool", "Any", "Mu"];
+        for (i, &ancestor) in nil_mro.iter().enumerate() {
             if ancestor == constraint {
                 return i;
             }
