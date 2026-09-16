@@ -1780,12 +1780,32 @@ impl Interpreter {
             }
             match cc.local_sym(idx) {
                 Some(sym) => {
-                    if !data.env.contains_key_sym(sym) && !param_names.contains(&sym) {
+                    // A name already visible through `restored_env`'s own chain
+                    // at this point is never this closure's own local leaking
+                    // out — the writeback loop above already excludes exactly
+                    // that case (`local_names.contains(k) &&
+                    // !captured_names.contains_key(k)`), so anything visible
+                    // here got there from the caller's OWN pre-call state (or a
+                    // genuine captured/propagated write). That is common when
+                    // this call runs under an unscoped/flat env (e.g. the
+                    // native `.map`/`.grep` "rw" loop's `run_reuse`, which
+                    // executes a block's body directly against the ambient
+                    // env with no scoped overlay of its own): a reentrant call
+                    // into the very same closure template (recursion) then
+                    // shares the exact same env tier as its caller, and a
+                    // by-name removal here would delete the CALLER's distinct,
+                    // same-named binding instead of merely this frame's own
+                    // (issue #8540).
+                    if !data.env.contains_key_sym(sym)
+                        && !param_names.contains(&sym)
+                        && !restored_env.contains_key_sym(sym)
+                    {
                         restored_env.remove_sym(sym);
                     }
                 }
                 None => {
-                    if !data.env.contains_key(local_name) {
+                    if !data.env.contains_key(local_name) && !restored_env.contains_key(local_name)
+                    {
                         restored_env.remove(local_name);
                     }
                 }
