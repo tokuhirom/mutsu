@@ -128,6 +128,20 @@ OVERRIDES: dict[str, str] = {
     # so `element` must not pull this into `collections`. Sibling of
     # var-metadata-key-namespaces.t, which lands in vm/binding by the rules.
     "var-element-metadata-keys": "vm",
+    # A never-declared `@*`/`%*` dynamic variable is env-lookup/scoping
+    # mechanics (SUBRULES then correctly places it in vm/scope, matching
+    # `^dynamic`) -- the rules mis-fire on "c-array" inside "dynami**c**
+    # -array-hash", the same accidental substring nativecall's own `c-?array`
+    # pattern is written to catch.
+    "dynamic-array-hash-var-not-found": "vm",
+    # A `where` clause on a slurpy hash (`*%v where {...}`) is a multi-dispatch
+    # candidate-selection bug -- it belongs beside the other `multi-where-*`
+    # dispatch pins, not routines/signature. Two rule mis-fires stack here:
+    # io's `slurp` substring inside "**slurp**y" claims the top-level category
+    # first, and routines' own "signature" subcategory pattern lists `slurpy`
+    # ahead of "dispatch"'s `multi`, so even a bare "routines" override would
+    # still land one level short.
+    "multi-where-slurpy-hash": "routines/dispatch",
 }
 
 

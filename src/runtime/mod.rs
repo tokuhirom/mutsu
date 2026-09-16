@@ -594,6 +594,7 @@ pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod compunit_scope;
 mod container_element_proxy;
 mod ctor_phase_plan;
+mod nqp_char_cache;
 mod nqp_ops;
 mod nqp_ops_builtin;
 mod nqp_ops_list;
