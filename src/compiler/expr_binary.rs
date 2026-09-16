@@ -484,8 +484,12 @@ impl Compiler {
                 return;
             }
             TokenKind::SmartMatch | TokenKind::BangTilde => {
-                let rhs_is_match_regex =
-                    matches!(right, Expr::MatchRegex(_) | Expr::MatchRegexTree { .. });
+                let rhs_is_match_regex = matches!(
+                    right,
+                    Expr::MatchRegex(_)
+                        | Expr::MatchRegexTree { .. }
+                        | Expr::MatchRegexDynamicAdverbs { .. }
+                );
                 // Only a *destructive* `s///` / `tr///` against a literal LHS is an
                 // X::Assignment::RO. Non-destructive `S///` / `TR///` return a copy
                 // and never write back, so `1 ~~ TR/\#//` must not throw.
@@ -588,6 +592,17 @@ impl Compiler {
                     Expr::MatchRegexTree { value, .. } => {
                         let idx = self.code.add_constant(value.clone());
                         self.code.emit(OpCode::LoadConst(idx));
+                    }
+                    Expr::MatchRegexDynamicAdverbs {
+                        value,
+                        pos_expr,
+                        continue_expr,
+                    } => {
+                        self.compile_regex_value_with_dynamic_adverbs(
+                            value,
+                            pos_expr.as_deref(),
+                            continue_expr.as_deref(),
+                        );
                     }
                     _ => self.compile_expr(right),
                 }

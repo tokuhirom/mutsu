@@ -765,6 +765,16 @@ pub(crate) enum Expr {
         value: Value,
         tree: crate::regex_tree::RegexTree,
     },
+    /// `m:pos(EXPR)/pattern/` / `m:continue(EXPR)/pattern/` (and the `:p`/`:c`
+    /// spellings) whose adverb argument is not a compile-time-literal offset
+    /// (e.g. `m:p($!pos)/.../`). Unlike `MatchRegex`, the base `value` is
+    /// patched with a freshly-evaluated `pos`/`continue` position at every
+    /// match, since a plain `Value` constant cannot carry a live expression.
+    MatchRegexDynamicAdverbs {
+        value: Value,
+        pos_expr: Option<Box<Expr>>,
+        continue_expr: Option<Box<Expr>>,
+    },
     Subst {
         pattern: String,
         replacement: String,

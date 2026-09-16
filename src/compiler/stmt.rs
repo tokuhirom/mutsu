@@ -171,6 +171,7 @@ impl Compiler {
             Expr::MatchRegex(v) | Expr::Literal(v) => v,
             Expr::RegexLiteral { value, .. } => value,
             Expr::MatchRegexTree { value, .. } => value,
+            Expr::MatchRegexDynamicAdverbs { value, .. } => value,
             _ => return false,
         };
         matches!(

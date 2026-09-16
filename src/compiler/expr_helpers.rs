@@ -805,6 +805,60 @@ impl Compiler {
         self.code.emit(OpCode::LoadConst(idx));
         self.code.patch_smart_match_rhs_end(sm_idx);
     }
+
+    /// Like [`Compiler::compile_match_regex`], but for `m:p(EXPR)/.../` /
+    /// `m:c(EXPR)/.../` whose `:pos`/`:continue` argument is not a compile-time
+    /// literal (`Expr::MatchRegexDynamicAdverbs`): matches against `$_`, with
+    /// the position(s) re-evaluated fresh at every match.
+    pub(super) fn compile_match_regex_dynamic(
+        &mut self,
+        v: &Value,
+        pos_expr: Option<&Expr>,
+        continue_expr: Option<&Expr>,
+    ) {
+        let name_idx = self
+            .code
+            .add_constant(Value::str(self.qualify_variable_name("_")));
+        self.code.emit(OpCode::GetGlobal(name_idx));
+        let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
+            rhs_end: 0,
+            negate: false,
+            lhs: Some(Box::new(crate::opcode::SmartMatchLhs::Var {
+                name: "_".to_string(),
+                slot: self.local_map.get("_").copied(),
+                implicit_topic: true,
+            })),
+            rhs_is_match_regex: false,
+            lhs_is_literal: false,
+            // Carries a `:pos`/`:continue` adverb, so never a "plain" regex.
+            rhs_pure_regex: false,
+            rhs_is_bare_topic: false,
+        });
+        self.compile_regex_value_with_dynamic_adverbs(v, pos_expr, continue_expr);
+        self.code.patch_smart_match_rhs_end(sm_idx);
+    }
+
+    /// Push a regex-with-adverbs constant, then patch in any dynamically
+    /// evaluated `:pos(EXPR)` / `:continue(EXPR)` position — the shared RHS
+    /// half of both [`Compiler::compile_match_regex_dynamic`] (bare `m//`
+    /// against `$_`) and the explicit `LHS ~~ m:p(EXPR)/.../` smartmatch path.
+    pub(super) fn compile_regex_value_with_dynamic_adverbs(
+        &mut self,
+        v: &Value,
+        pos_expr: Option<&Expr>,
+        continue_expr: Option<&Expr>,
+    ) {
+        let idx = self.code.add_constant(v.clone());
+        self.code.emit(OpCode::LoadConst(idx));
+        if let Some(e) = pos_expr {
+            self.compile_expr(e);
+            self.code.emit(OpCode::PatchRegexAdverbPos);
+        }
+        if let Some(e) = continue_expr {
+            self.compile_expr(e);
+            self.code.emit(OpCode::PatchRegexAdverbContinue);
+        }
+    }
 }
 
 /// ADR-0039 slice 2 reduction harness. `MUTSU_SLOT_READ_FILTER` restricts the
