@@ -155,6 +155,13 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
             .iter()
             .flat_map(trans_collection_item_to_strings)
             .collect(),
+        // `expand_trans_spec` already splits by grapheme (`grapheme_units`),
+        // which treats `\r\n` as one unit the same way the regex engine's
+        // `can_start_a_longer_grapheme` does — so a literal `"\r\n"`
+        // replacement value survives here whole, rather than being split into
+        // `['\r', '\n']` and truncated to just `"\r"` when zipped against a
+        // single-character key (LWP::Simple's `q:to/END/.trans: ["\n" =>
+        // "\r\n"]` built its whole HTTP response with exactly that idiom).
         ValueView::Str(s) => expand_trans_spec(&s),
         // Handle Range types by iterating their elements
         ValueView::Range(..)
@@ -517,7 +524,13 @@ impl Interpreter {
         let to_list = value_to_string_list(value);
         let from_list = value_to_string_list(&Value::str(key.to_string()));
 
-        let has_multichar = from_list.iter().any(|s| s.chars().count() > 1);
+        // A multi-char TO entry (e.g. a `\r\n` grapheme unit from
+        // `expand_trans_spec`) can never be represented by `CharMap`'s
+        // one-`char`-per-position `to_chars`, which would silently truncate
+        // it to just its first character. Route it through `TokenMap`
+        // instead, the same as a multi-char FROM entry already is.
+        let has_multichar = from_list.iter().any(|s| s.chars().count() > 1)
+            || to_list.iter().any(|s| s.chars().count() > 1);
 
         if has_multichar {
             TransRule::TokenMap {

@@ -69,6 +69,19 @@ fn same_flags(a: &RegexToken, b: &RegexToken) -> bool {
         && a.from_runtime_interpolation == b.from_runtime_interpolation
 }
 
+/// True for a bare, uncaptured `\n` escape (compiled to [`RegexAtom::Newline`]
+/// rather than `RegexAtom::Literal('\n')` — see `regex_parse_core.rs`, where
+/// `\n` matches any Unicode logical newline, not just a literal LF).
+fn plain_newline_token(token: &RegexToken) -> bool {
+    matches!(token.atom, RegexAtom::Newline)
+        && token.named_capture.is_none()
+        && token.secondary_named_capture.is_none()
+        && token.hash_capture.is_none()
+        && !token.force_list_capture
+        && token.separator.is_none()
+        && matches!(token.quant, RegexQuant::One)
+}
+
 /// Re-join runs of adjacent plain literal tokens whose text spans fewer
 /// graphemes than codepoints. A run that is already one grapheme per codepoint
 /// — every ASCII pattern — is passed through untouched, so this costs one
@@ -111,6 +124,29 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
             if quantified {
                 break;
             }
+        }
+        // A run ending in `\r` may still be followed by a bare `\n` escape:
+        // `\n` compiles to `RegexAtom::Newline` (it matches any logical-newline
+        // sequence), not `RegexAtom::Literal('\n')`, so the loop above — which
+        // only extends through `Literal` tokens — cannot see it and stops
+        // right after the `\r`. Left unpaired, that `\r`'s own atomicity check
+        // then rejects it outright: a `Literal` atom may never match only half
+        // of the grapheme cluster `grapheme_end` reports ("\r" immediately
+        // before "\n" is one CRLF cluster) — so `/\r\n/` failed to match even
+        // a literal CRLF (LWP::Simple's ecosystem-parity hang: `\r\n` in
+        // `parse_response`'s header-end split silently matched nothing, so the
+        // header/body split never found the terminator). Absorbing the `\n`
+        // into the same run, exactly as another `Literal` would be, sidesteps
+        // that check instead of loosening it for every other cluster it
+        // protects.
+        if text.ends_with('\r')
+            && let Some(next) = rest.peek()
+            && plain_newline_token(next)
+            && same_flags(&last, next)
+        {
+            let next = rest.next().expect("peeked");
+            text.push('\n');
+            last = next;
         }
 
         let atoms = literal_grapheme_atoms(&text);

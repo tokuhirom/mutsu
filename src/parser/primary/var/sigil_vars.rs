@@ -501,12 +501,33 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        // An explicit arg list immediately after the accessor name
+        // (`&.cb(...)`) belongs to THIS method call, not to a follow-on
+        // invocation of whatever it returns. Without consuming it here, the
+        // generic postfix `expr(args)` rule (which treats any callable
+        // expression followed by `(` as "invoke the result") wrapped an
+        // extra invocation around the already-zero-arg accessor call, so
+        // `&.cb()(|%args)` called the stored callable TWICE: once with no
+        // args (via the phantom wrap) and once with `%args` (via the
+        // trailing call on that empty-arg result) — see
+        // Jupyter::Kernel::Comm.run, which relies on exactly this idiom to
+        // fetch a callable attribute and invoke it with computed named args.
+        let (rest, args) = if rest.starts_with('(') {
+            let (r, _) = parse_char(rest, '(')?;
+            let (r, _) = ws(r)?;
+            let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            (r, args)
+        } else {
+            (rest, Vec::new())
+        };
         return Ok((
             rest,
             Expr::MethodCall {
                 target: Box::new(Expr::BareWord("self".to_string())),
                 name: crate::symbol::Symbol::intern(&name),
-                args: Vec::new(),
+                args,
                 modifier: None,
                 quoted: false,
             },
