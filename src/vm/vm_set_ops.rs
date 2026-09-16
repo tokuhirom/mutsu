@@ -307,7 +307,7 @@ impl Interpreter {
             // opaque element, keyed by its own `.WHICH`, and falls through
             // to the catch-all below. See the matching guard (and #8570) in
             // `runtime::utils::set_coerce::coerce_to_set`.
-            ValueView::Array(items, kind) if kind == crate::value::ArrayKind::List => {
+            ValueView::Array(items, crate::value::ArrayKind::List) => {
                 for item in items.iter() {
                     Self::union_insert_set_elem(elems, originals, item);
                 }

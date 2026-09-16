@@ -140,7 +140,7 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
             // never recurses past a container's own top-level items) does
             // not -- `(5,) ∈ @b` and `(5,) ∈ (∩'s decontainerized member
             // set)` disagreed (#8570).
-            ValueView::Array(items, kind) if kind == ArrayKind::List => {
+            ValueView::Array(items, ArrayKind::List) => {
                 for item in items.iter() {
                     insert_set_elem(elems, originals, item);
                 }
