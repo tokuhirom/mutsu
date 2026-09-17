@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 111;
+plan 121;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -506,3 +506,60 @@ ok GDynamicPlaceholderBlockColonPairArgument.parse('').defined,
 $value = 'b';
 ok !GDynamicPlaceholderBlockColonPairArgument.parse('').defined,
     'a placeholder block observes its captured lexical at match time';
+
+my $slurpy_ast = Q[/<word(:expected{ @_ })>/].AST;
+my $slurpy_gist = $slurpy_ast.gist;
+ok $slurpy_gist.contains('RakuAST::ColonPair::Value'),
+    'an array-slurpy placeholder colonpair keeps its value node';
+ok $slurpy_gist.contains('value => RakuAST::Block.new('),
+    'an array-slurpy placeholder colonpair keeps its direct block value';
+ok $slurpy_gist.contains('RakuAST::VarDeclaration::Placeholder::SlurpyArray.new'),
+    'an array-slurpy placeholder keeps its source-level declaration';
+ok !$slurpy_gist.contains('RakuAST::PointyBlock'),
+    'an array-slurpy placeholder block is not reclassified as a PointyBlock';
+ok !$slurpy_gist.contains('RakuAST::FatArrow.new'),
+    'an array-slurpy placeholder colonpair is not flattened to a fat arrow';
+ok EVAL($slurpy_ast) ~~ Regex,
+    'a source array-slurpy placeholder colonpair regex lowers successfully';
+ok RakuAST::VarDeclaration::Placeholder::SlurpyArray.new.gist
+        eq 'RakuAST::VarDeclaration::Placeholder::SlurpyArray.new',
+    'the array-slurpy placeholder constructor renders without fields';
+
+my $slurpy_placeholder = RakuAST::VarDeclaration::Placeholder::SlurpyArray.new;
+my $slurpy_statements = RakuAST::StatementList.new;
+$slurpy_statements.add-statement(
+    RakuAST::Statement::Expression.new(expression => $slurpy_placeholder)
+);
+my $slurpy_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Block.new(
+        body => RakuAST::Blockoid.new($slurpy_statements),
+    ),
+);
+my $slurpy_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($slurpy_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($slurpy_constructed_ast) ~~ Regex,
+    'a hand-built array-slurpy placeholder regex lowers through the matcher';
+
+grammar GDynamicArraySlurpyPlaceholderColonPairArgument {
+    token TOP { <word(:expected{ @_ })> };
+    token word(:$expected) {
+        <?{
+            my @arguments = $expected('a', $value);
+            @arguments.elems == 2
+                && @arguments[0] eq 'a'
+                && @arguments[1] eq 'b'
+        }>
+    }
+}
+$value = 'b';
+ok GDynamicArraySlurpyPlaceholderColonPairArgument.parse('').defined,
+    'an array-slurpy placeholder reaches the named subrule as a list';
+$value = 'c';
+ok !GDynamicArraySlurpyPlaceholderColonPairArgument.parse('').defined,
+    'an array-slurpy placeholder keeps its outer lexical dynamic';

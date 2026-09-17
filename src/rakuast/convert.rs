@@ -1633,6 +1633,12 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) {
                 return Err(desugared(name));
             }
+            if name == "_" {
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
+                    fields: Vec::new(),
+                });
+            }
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
@@ -2029,7 +2035,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // placeholder subset handled by this regex boundary.
             if *declarator == crate::ast::RoutineDeclarator::Block
                 && !params.is_empty()
-                && params.iter().all(|param| {
+                && (params.iter().all(|param| {
                     let Some(name) = param.strip_prefix("$^").or_else(|| param.strip_prefix('^'))
                     else {
                         return false;
@@ -2038,7 +2044,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                         && name
                             .chars()
                             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-                })
+                }) || crate::regex_tree::is_array_slurpy_placeholder_block(expr))
             {
                 return block_node(body);
             }
@@ -3963,7 +3969,8 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let is_direct_block = matches!(
         right.as_ref(),
         Expr::AnonSub { is_block: true, .. } | Expr::Block(_) | Expr::Hash(_)
-    ) || crate::regex_tree::is_scalar_placeholder_block(right);
+    ) || crate::regex_tree::is_scalar_placeholder_block(right)
+        || crate::regex_tree::is_array_slurpy_placeholder_block(right);
     if is_direct_block {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,
