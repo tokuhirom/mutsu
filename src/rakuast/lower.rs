@@ -1704,19 +1704,25 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             Expr::Grouped(inner) => *inner,
             value => value,
         };
-        let value = match &value {
+        let block_body = match &value {
             Expr::AnonSub {
                 is_block: true,
                 body,
                 ..
-            } => {
-                let body = block_value_source(body).ok_or_else(|| unsupported(node))?;
-                format!(":{key}{body}")
+            } => Some(body),
+            Expr::AnonSubParams { body, .. }
+                if crate::regex_tree::is_scalar_placeholder_block(&value) =>
+            {
+                Some(body)
             }
-            _ => {
-                let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
-                format!(":{key}({value})")
-            }
+            _ => None,
+        };
+        let value = if let Some(body) = block_body {
+            let body = block_value_source(body).ok_or_else(|| unsupported(node))?;
+            format!(":{key}{body}")
+        } else {
+            let value = colonpair_value_source(&value).ok_or_else(|| unsupported(node))?;
+            format!(":{key}({value})")
         };
         return Ok(value);
     }
@@ -2241,12 +2247,22 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // A `Block` in expression position (e.g. the `{ … }` argument to `.map`) is
         // a bare-block closure value. (raku itself EVALs a `Block` node to a
         // Callable, so a hash-shaped `{a => 1}` also lands here as a block.)
-        RakuAstClass::Block => Ok(Expr::AnonSub {
-            body: lower_block(node)?,
-            is_rw: false,
-            is_raw: false,
-            is_block: true,
-        }),
+        // Placeholder declarations are represented in the execution AST as
+        // caret-prefixed variables, so let the existing closure builder
+        // recover the implicit signature when this is a constructed tree.
+        RakuAstClass::Block => {
+            let body = lower_block(node)?;
+            if crate::ast::collect_placeholders_shallow(&body).is_empty() {
+                Ok(Expr::AnonSub {
+                    body,
+                    is_rw: false,
+                    is_raw: false,
+                    is_block: true,
+                })
+            } else {
+                Ok(crate::ast::make_anon_sub(body))
+            }
+        }
         // A nameless `RakuAST::Sub` in expression position is an anonymous
         // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it
         // keeps its `sub` spelling on the way back, so a re-read of the lowered
@@ -2489,6 +2505,26 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 "&" => Expr::CodeVar(bare.to_string()),
                 _ => Expr::Var(bare.to_string()),
             })
+        }
+        // RakuAST's implicit scalar placeholder declaration (`$^x`) lowers
+        // back to the caret-prefixed lexical name used by the parser's
+        // `make_anon_sub` path.
+        RakuAstClass::VarDeclarationPlaceholderPositional => {
+            let name = positional_leaf(node)?;
+            let ValueView::Str(name) = name.view() else {
+                return Err(unsupported(node));
+            };
+            let Some(name) = name.strip_prefix('$') else {
+                return Err(unsupported(node));
+            };
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+            {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::Var(format!("^{name}")))
         }
         // `($x OP= EXPR)` in expression position -> a compound assignment.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {

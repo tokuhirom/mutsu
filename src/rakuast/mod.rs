@@ -129,6 +129,7 @@ pub enum RakuAstClass {
     Block,
     Blockoid,
     PointyBlock,
+    VarDeclarationPlaceholderPositional,
     Signature,
     Parameter,
     ParameterTargetVar,
@@ -351,6 +352,9 @@ impl RakuAstClass {
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
             PointyBlock => "RakuAST::PointyBlock",
+            VarDeclarationPlaceholderPositional => {
+                "RakuAST::VarDeclaration::Placeholder::Positional"
+            }
             Signature => "RakuAST::Signature",
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
@@ -515,6 +519,7 @@ impl RakuAstClass {
             | Sub
             | Block
             | PointyBlock
+            | VarDeclarationPlaceholderPositional
             | CallName
             | CallNameWithoutParentheses
             | RegexDeclaration
@@ -681,6 +686,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Sub"
         | "RakuAST::Block"
         | "RakuAST::PointyBlock"
+        | "RakuAST::VarDeclaration::Placeholder::Positional"
         | "RakuAST::Call::Name"
         | "RakuAST::Call::Name::WithoutParentheses"
         | "RakuAST::QuotedRegex"
@@ -863,6 +869,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Block,
     RakuAstClass::Blockoid,
     RakuAstClass::PointyBlock,
+    RakuAstClass::VarDeclarationPlaceholderPositional,
     RakuAstClass::Signature,
     RakuAstClass::Parameter,
     RakuAstClass::ParameterTargetVar,
@@ -2273,6 +2280,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
+        ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
+            RakuAstClass::VarDeclarationPlaceholderPositional
+        }
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
@@ -2491,6 +2501,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::MetaInfixAssign
             | RakuAstClass::Block
             | RakuAstClass::Blockoid
+            | RakuAstClass::VarDeclarationPlaceholderPositional
             | RakuAstClass::Sub
             | RakuAstClass::Signature
             | RakuAstClass::TraitReturns

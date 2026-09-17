@@ -107,6 +107,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         Postfix => &[("operator", Absent::Required)],
         Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
         Blockoid => &[("statement-list", Absent::Required)],
+        VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
         Sub => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("signature", Absent::EmptyNode(Signature)),
@@ -244,6 +245,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         NamePartSimple => "name",
         NamePartExpression => "expr",
         Blockoid => "statement-list",
+        VarDeclarationPlaceholderPositional => "lexical-name",
         InitializerAssign => "expression",
         MetaInfixAssign => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",

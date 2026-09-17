@@ -2426,7 +2426,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                 } if matches!(
                     right.as_ref(),
                     crate::ast::Expr::AnonSub { is_block: true, .. }
-                )
+                ) || is_scalar_placeholder_block(right)
             );
             let is_hash_composer = matches!(
                 argument,
@@ -2462,6 +2462,33 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                 })
         })
         .collect()
+}
+
+/// Whether an execution-level closure came from a bare scalar placeholder
+/// block such as `{ $^x }`. RakuAST models this as a `Block` whose body keeps
+/// the placeholder declaration, while the execution AST stores its implicit
+/// parameters on `AnonSubParams`.
+pub(crate) fn is_scalar_placeholder_block(expr: &crate::ast::Expr) -> bool {
+    matches!(
+        expr,
+        crate::ast::Expr::AnonSubParams {
+            params,
+            declarator: crate::ast::RoutineDeclarator::Block,
+            ..
+        } if !params.is_empty()
+            && params.iter().all(|param| {
+                let Some(name) = param
+                    .strip_prefix("$^")
+                    .or_else(|| param.strip_prefix('^'))
+                else {
+                    return false;
+                };
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+            })
+    )
 }
 
 /// Identify the bounded `:$var`/`:@var`/`:%var`/`:&var` forms after the

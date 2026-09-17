@@ -21,7 +21,8 @@
   2026-09-12 through
   2026-09-17;
   direct hash interpolation is reserved by Rakudo and mutsu;
-  hash-composer blocks, other dynamic contents, and the complete execution-tree
+  array/hash slurpy placeholders, explicit block signatures, other complex
+  block values, other dynamic contents, and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
@@ -1339,3 +1340,24 @@ The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block node,
 multiple `FatArrow` entries, constructed-tree EVAL, named Hash binding, and
 lexical reassignment between matches.
+
+## 54. Scalar-placeholder block-valued colonpair dynamic argument slice (2026-09-17)
+
+Scalar placeholder block arguments such as
+`<word(:expected{ $^candidate eq $value })>` now retain a direct
+`RakuAST::Block` value. Each `$^name` in the body is represented as
+`RakuAST::VarDeclaration::Placeholder::Positional`, matching Rakudo's
+source-level tree instead of exposing the execution AST's synthetic
+`PointyBlock` signature.
+
+The lowering direction maps the placeholder declaration back to the
+caret-prefixed lexical name consumed by the existing implicit-block closure
+builder. Constructed regex trees therefore still lower through the Parser ->
+Compiler -> VM path, and the block remains callable with its captured lexical
+values at match time. Array/hash slurpy placeholders, explicit pointy/signature
+forms, and other complex block values remain deferred boundaries.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block and
+placeholder nodes, source and hand-built regex lowering, named Block binding,
+and lexical reassignment between matches.

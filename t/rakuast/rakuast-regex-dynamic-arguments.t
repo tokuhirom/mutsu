@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 103;
+plan 111;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -461,3 +461,48 @@ ok GDynamicHashComposerColonPairArgument.parse('').defined,
     'a hash-composer colonpair observes reassignment at match time';
 ok !GDynamicHashComposerColonPairArgument.parse('a').defined,
     'a hash-composer colonpair does not retain its prior lexical value';
+
+my $placeholder_ast = Q[/<word(:expected{ $^candidate eq $value })>/].AST;
+my $placeholder_gist = $placeholder_ast.gist;
+ok $placeholder_gist.contains('RakuAST::ColonPair::Value'),
+    'a placeholder block colonpair keeps its value node';
+ok $placeholder_gist.contains('value => RakuAST::Block.new('),
+    'a placeholder block colonpair keeps its direct block value';
+ok $placeholder_gist.contains('RakuAST::VarDeclaration::Placeholder::Positional.new'),
+    'a scalar placeholder remains a positional placeholder declaration';
+ok !$placeholder_gist.contains('RakuAST::PointyBlock'),
+    'a placeholder block is not reclassified as a PointyBlock';
+ok EVAL($placeholder_ast) ~~ Regex,
+    'a constructed placeholder block colonpair regex lowers successfully';
+
+my $placeholder = RakuAST::VarDeclaration::Placeholder::Positional.new(q[$candidate]);
+my $placeholder_statements = RakuAST::StatementList.new;
+$placeholder_statements.add-statement(
+    RakuAST::Statement::Expression.new(expression => $placeholder)
+);
+my $placeholder_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Block.new(
+        body => RakuAST::Blockoid.new($placeholder_statements),
+    ),
+);
+my $placeholder_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($placeholder_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($placeholder_constructed_ast) ~~ Regex,
+    'a hand-built positional placeholder block lowers through regex parsing';
+
+grammar GDynamicPlaceholderBlockColonPairArgument {
+    token TOP { <word(:expected{ $^candidate eq $value })> };
+    token word(:$expected) { <?{ $expected('a') }> }
+}
+$value = 'a';
+ok GDynamicPlaceholderBlockColonPairArgument.parse('').defined,
+    'a placeholder block reaches the named subrule parameter as a Block';
+$value = 'b';
+ok !GDynamicPlaceholderBlockColonPairArgument.parse('').defined,
+    'a placeholder block observes its captured lexical at match time';

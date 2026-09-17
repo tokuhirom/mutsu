@@ -1427,6 +1427,14 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) {
                 return Err(desugared(name));
             }
+            if let Some(name) = name.strip_prefix('^')
+                && !name.is_empty()
+                && name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+            {
+                return Ok(placeholder_positional_node(name));
+            }
             Ok(var_lexical("$", name))
         }
         // `::("x")` / `::($name)` -> `Term::Name(Name(Part::Expression(EXPR)))`.
@@ -1999,6 +2007,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             pointy_block_from_lambda(param, body)
         }
         Expr::AnonSubParams {
+            params,
             param_defs,
             body,
             is_rw,
@@ -2012,6 +2021,26 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if *is_rw {
                 return Err(unsupported("`is rw` pointy block"));
+            }
+            // A bare placeholder block is a Block whose body contains
+            // placeholder declarations, not a PointyBlock with a signature.
+            // The parser records the implicit parameters on AnonSubParams, so
+            // recover the source-level node only for the ordinary scalar
+            // placeholder subset handled by this regex boundary.
+            if *declarator == crate::ast::RoutineDeclarator::Block
+                && !params.is_empty()
+                && params.iter().all(|param| {
+                    let Some(name) = param.strip_prefix("$^").or_else(|| param.strip_prefix('^'))
+                    else {
+                        return false;
+                    };
+                    !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+                })
+            {
+                return block_node(body);
             }
             if declarator.is_routine() {
                 // `sub ($x) { }` / `method ($x) { }` — an anonymous *routine*,
@@ -3410,6 +3439,15 @@ fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     }
 }
 
+/// `$^name` in a placeholder block is a declaration node in RakuAST even
+/// though the execution AST keeps it as a caret-prefixed lexical name.
+fn placeholder_positional_node(name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::VarDeclarationPlaceholderPositional,
+        fields: vec![leaf_field(None, Value::str(format!("${name}")))],
+    }
+}
+
 /// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
 fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
@@ -3922,10 +3960,11 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair value key"));
     };
     let value = convert_expr(right)?;
-    if matches!(
+    let is_direct_block = matches!(
         right.as_ref(),
         Expr::AnonSub { is_block: true, .. } | Expr::Block(_) | Expr::Hash(_)
-    ) {
+    ) || crate::regex_tree::is_scalar_placeholder_block(right);
+    if is_direct_block {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,
             fields: vec![
