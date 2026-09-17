@@ -325,17 +325,17 @@ impl ParamDef {
 
     /// The spelling that carries this parameter's sigil.
     ///
-    /// For an aliased named parameter (`:c(:&cb)`) the outer parameter is named
-    /// for its external key (`c`, sigil-less) and the sigil lives on the alias,
-    /// so a sigil-based check has to read the alias instead. Every other
-    /// parameter answers with its own name.
+    /// For an aliased named parameter (`:c(:&cb)` or `:c(&cb)`) the outer
+    /// parameter is named for its external key (`c`, sigil-less) and the
+    /// sigil lives on the alias, so a sigil-based check has to read the alias
+    /// instead. Every other parameter answers with its own name.
     pub(crate) fn sigil_carrying_name(&self) -> &str {
         if self.named_alias
             && !self.name.starts_with(['$', '@', '%', '&'])
             && let Some(alias) = self
                 .sub_signature
                 .as_ref()
-                .and_then(|aliases| aliases.iter().find(|a| a.named && !a.slurpy))
+                .and_then(|aliases| aliases.iter().find(|a| !a.slurpy))
         {
             return &alias.name;
         }

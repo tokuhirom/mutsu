@@ -17,7 +17,7 @@ use Test::Util;
 # `group-of` provider even with the real module loaded, and the two kept
 # separate test counters.
 
-plan 8;
+plan 10;
 
 multi one(Pair (:key($k), :value($v))) { "pair:$k/$v" }
 multi one($other)                      { "other" }
@@ -44,6 +44,17 @@ is narrow(2 => 'x'), 'other', 'a Pair has no positional part to destructure';
 multi partial(Pair (:key($k))) { 'partial' }
 multi partial($other)          { 'other' }
 is partial(2 => 'x'), 'other', 'leaving .value unconsumed does not match';
+
+# Testo's `group` dispatch has a callable leaf nested inside a Pair
+# sub-signature. A non-callable value must not match that candidate.
+multi sub testo-callable-pair(
+    Pair (Str:D :key($desc), :value(&code))
+) { 'callable' }
+multi sub testo-callable-pair($other) { 'fallback' }
+is testo-callable-pair('x' => 2), 'fallback',
+    'a Pair with a non-callable value rejects the & sub-signature';
+is testo-callable-pair('x' => { 42 }), 'callable',
+    'a Pair with a callable value matches the & sub-signature';
 
 # The end-to-end shape: Test::Util's own group-of must run, not the native one.
 group-of 2 => 'the real group-of runs' => {

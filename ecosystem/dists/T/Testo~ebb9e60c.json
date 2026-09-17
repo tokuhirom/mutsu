@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.78,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.05,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,53 +46,51 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.36,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Pair'",
         "nok": 0,
-        "ok": 1,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.06,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-group.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.35,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $!args; where constraint failed",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.05,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-is-run.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.48,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +102,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.07,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +112,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.28,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +134,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.27,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,10 +158,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "host": "linux-x86_64",
+    "mutsu_commit": "d4fda7802",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -174,13 +172,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TESTO/b66ff967264804228323fec60809f6afe1669f19.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 31,
     "baseline_files": 6,
-    "mutsu_assertions": 26,
-    "parity_files": 4,
-    "regressed_files": 2
+    "mutsu_assertions": 31,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "1.003009"
 }

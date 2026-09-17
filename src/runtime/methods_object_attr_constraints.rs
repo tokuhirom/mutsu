@@ -8,10 +8,56 @@ impl Interpreter {
         pred: &crate::opcode::DeclTraitArg,
         value: &Value,
     ) -> bool {
+        // A declaration-time `where` expression can use the implicit topic:
+        // `where .so` and `where .all ~~ Cool` compile as reads of `_`, rather
+        // than as WhateverCode predicates. Seed that topic before evaluation
+        // and use the expression's truth value. Predicate-shaped expressions
+        // such as `where * > 0` do not read `_`; their result is still
+        // smart-matched against the attribute value below.
+        let uses_topic = match pred {
+            crate::opcode::DeclTraitArg::Compiled(chunk) => {
+                chunk.code.free_var_syms.contains(&Symbol::intern("_"))
+            }
+            crate::opcode::DeclTraitArg::Ast(_) => false,
+            crate::opcode::DeclTraitArg::Literal(_) => false,
+        };
+        let saved_topic = if uses_topic {
+            self.env().get("_").cloned()
+        } else {
+            None
+        };
+        if uses_topic {
+            self.env_mut().insert("_".to_string(), value.clone());
+        }
         let pred_val = match self.eval_decl_trait_arg(pred) {
             Ok(v) => v,
-            Err(_) => return false,
+            Err(_) => {
+                if uses_topic {
+                    match saved_topic.as_ref() {
+                        Some(v) => {
+                            self.env_mut().insert("_".to_string(), v.clone());
+                        }
+                        None => {
+                            self.env_mut().remove("_");
+                        }
+                    }
+                }
+                return false;
+            }
         };
+        if uses_topic {
+            match saved_topic.as_ref() {
+                Some(v) => {
+                    self.env_mut().insert("_".to_string(), v.clone());
+                }
+                None => {
+                    self.env_mut().remove("_");
+                }
+            }
+        }
+        if uses_topic {
+            return pred_val.truthy();
+        }
         // `has $.x is default(V) where PRED` passes iff `value ~~ PRED`.
         // Smartmatch handles every predicate shape uniformly: a
         // Callable/WhateverCode (`* == 42`) is invoked with the value, a Junction
