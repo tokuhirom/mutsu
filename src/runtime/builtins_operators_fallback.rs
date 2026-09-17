@@ -288,8 +288,19 @@ impl Interpreter {
             ));
         }
         // Calling a type with a type object argument constructs a coercion type
-        // object (e.g. Str(Any), Int(Str), Child(Parent)).
+        // object (e.g. Str(Any), Int(Str), Child(Parent)) -- UNLESS the type
+        // itself declares `CALL-ME`, which wins over coercion (same rule the
+        // `has_class` branch below applies). Without this guard, a class like
+        // `Trap` whose `CALL-ME(Trap:U: $one is raw) { $one = self.new }` is
+        // called with a not-yet-defined argument (`Trap(my $*OUT)`, `$*OUT`
+        // starting out `Any`) had its `CALL-ME` invocation preempted here and
+        // silently answered the symbolic type object `Trap(Any)` instead.
         if args.len() == 1
+            && !self
+                .resolve_bare_type_name(name)
+                .is_some_and(|resolved| self.class_has_method(&resolved, "CALL-ME"))
+            && !self.class_has_method(name, "CALL-ME")
+            && !self.role_has_method(name, "CALL-ME")
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
                 || self.registry().subsets.contains_key(name)
