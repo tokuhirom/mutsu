@@ -9,7 +9,7 @@ use Test;
 # both a literal `.IO` receiver and a variable receiver (the mut dispatch path)
 # must agree with Rakudo.
 
-plan 40;
+plan 45;
 
 # --- literal `.IO` receiver (non-mut dispatch path) ---
 is "/foo/bar/baz".IO.parent.Str,        "/foo/bar",     "parent (literal)";
@@ -21,6 +21,17 @@ is "/foo/bar/baz".IO.basename,          "baz",          "basename";
 is "/foo/bar/baz".IO.dirname,           "/foo/bar",     "dirname";
 is "/foo/bar/baz".IO.sibling("s").Str,  "/foo/bar/s",   "sibling";
 is "rel/path".IO.parent.Str,            "rel",          "parent of relative";
+
+# --- parent climbing above the current directory stacks `..` instead of
+# cycling back (XDG::GuaranteedResources ecosystem regression: repeatedly
+# climbing a relative path used to alternate ".."/"../.." forever, hanging
+# the caller's own recursive walk-to-root with "Too deep recursion") ---
+is "a".IO.parent.Str,                   ".",            "parent of single relative segment";
+is ".".IO.parent.Str,                   "..",           "parent of current dir is one up";
+is "..".IO.parent.Str,                  "../..",        "parent of .. stacks another ..";
+is "../..".IO.parent.Str,               "../../..",     "parent of ../.. stacks a third ..";
+is "rel/path".IO.parent.parent.parent.parent.Str, "../..",
+   "repeated parent walks past root into a growing .. chain, never cycling";
 
 # --- variable receiver (mut dispatch path) ---
 my $p = "/a/b/c.tar.gz".IO;

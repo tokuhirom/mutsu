@@ -146,11 +146,16 @@ impl Interpreter {
                         path = "..".to_string();
                         continue;
                     }
-                    if path == ".." {
-                        path = format!("..{}{}", sep, "..");
+                    // A path whose final component is already `..` (`..`,
+                    // `../..`, ...) has no real basename to strip: raku's
+                    // `.parent` stacks one more `..` instead of collapsing
+                    // back to the previous level (`'..'.IO.parent` is
+                    // `"../.."`, not `.` or `""`).
+                    let (volume, dirname, basename) = Self::io_path_parts(&path);
+                    if basename == ".." {
+                        path = format!("{}{}{}", path, sep, "..");
                         continue;
                     }
-                    let (volume, dirname, _basename) = Self::io_path_parts(&path);
                     let full_vol_dir = format!("{}{}", volume, dirname);
                     if dirname == "/" || dirname == "\\" {
                         let new_path = format!("{}{}", volume, dirname);
