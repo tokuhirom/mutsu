@@ -85,9 +85,27 @@ pub(super) fn analyze_composite_class(
     negative: &[ClassItem],
     ctx: Ctx,
 ) -> Info {
-    let Some(mut set) = positive_first_set(an, positive, ctx) else {
-        return Info::consuming(FirstSet::universal(), ctx);
-    };
+    match composite_class_chain_set(an, positive, negative, ctx) {
+        Some(set) => Info::consuming(set, ctx),
+        None => Info::consuming(FirstSet::universal(), ctx),
+    }
+}
+
+/// The first-character set of a `<+a -b>` composite class, or `None` when a
+/// positive item may dispatch a grammar token this analysis cannot bound.
+///
+/// Factored out so [`super::regex_prefilter_chain`] shares this exact
+/// derivation rather than restating it — the two callers differ only in what
+/// they do with `None` (the single-position analysis widens to universal and
+/// keeps going; the chain stops extending there), never in what the
+/// composite class itself matches.
+pub(super) fn composite_class_chain_set(
+    an: &mut Analyzer,
+    positive: &[ClassItem],
+    negative: &[ClassItem],
+    ctx: Ctx,
+) -> Option<FirstSet> {
+    let mut set = positive_first_set(an, positive, ctx)?;
     narrow_by_negatives(&mut set, negative, ctx.ignore_case);
     // `\r\n` is one grapheme cluster, and the arm resolves the `\r` that starts
     // one to `\n` before testing — so a set holding `\n` must offer that `\r`
@@ -97,7 +115,7 @@ pub(super) fn analyze_composite_class(
     if set.contains('\n') {
         set.insert('\r');
     }
-    Info::consuming(set, ctx)
+    Some(set)
 }
 
 /// The union over the positive items, or `None` when one of them cannot be

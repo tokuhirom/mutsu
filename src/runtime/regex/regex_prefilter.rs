@@ -67,6 +67,7 @@
 
 use super::super::*;
 use super::regex_prefilter_analysis::{Analyzer, Derivation, derive};
+use super::regex_prefilter_chain::{Chain, build_chain};
 use super::regex_prefilter_firstset::FirstSet;
 use super::regex_prefilter_inner::{InnerLiteral, required_inner_literal};
 use super::regex_prefilter_memo::{mentions_subrule, pattern_prefilter, pattern_prefilter_in_pkg};
@@ -103,6 +104,16 @@ pub(crate) struct Prefilter {
     /// A literal run every match must *contain*, for the patterns that have no
     /// usable prefix. Bounds the match start rather than fixing it.
     pub(super) inner: Option<InnerLiteral>,
+    /// ADR-0099 §5's NFA over the declarative leading run (see
+    /// [`super::regex_prefilter_chain`]): a bounded sequence of
+    /// character-acceptance sets, one per offset from a candidate start,
+    /// checked as an ADDITIONAL narrowing layer on top of whichever of the
+    /// mechanisms above applies (or the unfiltered range when none do). Never
+    /// a replacement for `prefix` — a literal's substring search is both
+    /// cheaper and exact where the chain would only re-derive the same
+    /// characters one at a time — so it is not even consulted when `prefix`
+    /// is `Some`.
+    pub(super) chain: Option<Chain>,
     /// A lower bound on the characters any match consumes.
     min_len: usize,
 }
@@ -112,6 +123,7 @@ impl Prefilter {
         let Derivation { first, min_len } = derive(an, pattern, pkg);
         let prefix = required_literal_prefix(pattern)
             .map(|p| p.chars().collect::<Vec<char>>().into_boxed_slice());
+        let chain = build_chain(an, pattern, pkg);
         Prefilter {
             // A required prefix is strictly stronger than a required inner
             // literal (it fixes the start rather than bounding it), so the
@@ -123,6 +135,7 @@ impl Prefilter {
             },
             prefix,
             first,
+            chain,
             min_len,
         }
     }
@@ -282,15 +295,19 @@ pub(crate) fn regex_scan_positions<'c>(
             RegexPrefilterKind::InnerLiteral,
             offered,
         );
-        return ScanPositions::Inner {
+        return with_chain(
+            ScanPositions::Inner {
+                chars,
+                prefilter: Arc::clone(&prefilter),
+                pos: from,
+                last,
+                search: from,
+                window_end: None,
+                exhausted: false,
+            },
             chars,
             prefilter,
-            pos: from,
-            last,
-            search: from,
-            window_end: None,
-            exhausted: false,
-        };
+        );
     }
 
     if prefilter.first.is_some() {
@@ -304,20 +321,45 @@ pub(crate) fn regex_scan_positions<'c>(
             RegexPrefilterKind::FirstCharSet,
             offered,
         );
-        return ScanPositions::FirstChar {
+        return with_chain(
+            ScanPositions::FirstChar {
+                chars,
+                prefilter: Arc::clone(&prefilter),
+                pos: from,
+                last,
+            },
             chars,
             prefilter,
-            pos: from,
-            last,
-        };
+        );
     }
 
     crate::vm::vm_stats::record_regex_prefilter_declined();
     // Even a pattern with no usable first-set can carry a length bound (`/. . ./`
     // derives one), and trimming the tail of the range costs nothing.
-    match chars.len().checked_sub(prefilter.min_len) {
+    let range = match chars.len().checked_sub(prefilter.min_len) {
         Some(last) => ScanPositions::Range(from..=last),
-        None => ScanPositions::empty(),
+        None => return ScanPositions::empty(),
+    };
+    with_chain(range, chars, prefilter)
+}
+
+/// Wrap `positions` with the ADR-0099 §5 NFA chain when the pattern has one —
+/// a purely additive layer (see [`Prefilter::chain`]'s doc comment): every
+/// position the chain rejects was never viable, and a pattern with no usable
+/// chain pays nothing extra at all, since `with_chain` is then the identity.
+fn with_chain<'c>(
+    positions: ScanPositions<'c>,
+    chars: &'c [char],
+    prefilter: Arc<Prefilter>,
+) -> ScanPositions<'c> {
+    if prefilter.chain.is_none() {
+        return positions;
+    }
+    crate::vm::vm_stats::record_regex_prefilter_chain_engaged();
+    ScanPositions::Chained {
+        inner: Box::new(positions),
+        chars,
+        prefilter,
     }
 }
 

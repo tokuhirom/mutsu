@@ -414,21 +414,47 @@ Stage 0 is fully filed and not yet implemented, ordered as in §4:
 | 5. parse-cache key, scan, and interpolated bypass | [#8270](https://github.com/tokuhirom/mutsu/issues/8270) | 4.5% of `bench-regex-match` |
 
 Stage 1 is [#8272](https://github.com/tokuhirom/mutsu/issues/8272) (`todo:deep`), filed when this
-ADR moved to `Accepted`, and is **landing in slices** — required literal prefix
+ADR moved to `Accepted`, and **landed in seven slices** — required literal prefix
 ([#8285](https://github.com/tokuhirom/mutsu/issues/8285)), first-character set and minimum match
 length ([#8446](https://github.com/tokuhirom/mutsu/issues/8446)), required inner literal
 ([#8457](https://github.com/tokuhirom/mutsu/issues/8457)), the first-character set through a
 `<subrule>` keyed by package + `TOKEN_DEFS_GEN`
 ([#8464](https://github.com/tokuhirom/mutsu/issues/8464)), first-sets for a `<:prop>` atom and for a
-*scoped* `:ignoremark` ([#8492](https://github.com/tokuhirom/mutsu/issues/8492)), and the `<+a -b>`
-composite class (this slice) — whose `NamedBuiltin` items fall back to resolving a grammar token
-against the remaining input, making the *positive* half a `<subrule>` in disguise that declines on
-any name a rule answers to, while the negative half narrows with no resolution at all. The issue
-stays open for what remains: §5's NFA over the declarative prefix. Its three constraints — reuse ADR-0022's litlen table rather than defining
-a second one, `:i` fold-closure first-sets rather than a folded needle, decline on anything
-non-declarative — are the work, not footnotes, and the differential property test against the
-prefilter-disabled engine is its gate. Stage 2 is a question, not work, until Stage 0 lands and
-grammars are re-profiled.
+*scoped* `:ignoremark` ([#8492](https://github.com/tokuhirom/mutsu/issues/8492)), the `<+a -b>`
+composite class ([#8501](https://github.com/tokuhirom/mutsu/issues/8501)) — whose `NamedBuiltin`
+items fall back to resolving a grammar token against the remaining input, making the *positive*
+half a `<subrule>` in disguise that declines on any name a rule answers to, while the negative half
+narrows with no resolution at all — and finally §5's NFA over the declarative prefix, closing
+[#8272](https://github.com/tokuhirom/mutsu/issues/8272) itself.
+
+The NFA (`src/runtime/regex/regex_prefilter_chain.rs` / `regex_prefilter_chain_atom.rs`) is a
+bounded sequence of per-offset character-acceptance sets ("steps") — every mechanism before it
+answers "may a match begin with THIS character", so a pattern like `/ \d\d\d /` or
+`/ <:Lu> ** 4 /` still entered the full engine at every position whose FIRST character alone
+looked plausible. The chain generalizes that to as many leading offsets as the pattern makes a
+fixed, exactly-one-character-per-atom promise about (`Literal`, a `CharClass` with no `Grapheme`
+item and no `\n` member, `UnicodeProp`, and a `CompositeClass` whose grammar-token fallback cannot
+engage — reusing [`composite_class_chain_set`], factored out of the existing derivation rather than
+restated), stopping at the first atom that cannot make that promise (`.`, `<.ws>`, a nullable
+quantifier, `:i`/`:m`, or a construct running user code). It is layered as an ADDITIONAL narrowing
+check on top of whichever of the six single-position mechanisms applies (never a replacement — a
+literal prefix's substring search stays the fast path it always was), so a pattern with no usable
+chain pays nothing extra at all. Deliberately NOT built: per-character-correlated subset
+simulation — each step's set is the union of every live thread's requirement at that offset,
+checked independently of the previous offset's actual character, which is a strictly weaker (but
+still sound) claim than true NFA simulation and far simpler to get right. Two `MUTSU_VM_STATS`
+counters, `chain=(engaged=… rejections=…)`, make the new layer's own engagement observable
+alongside the six it sits on top of.
+
+Its three constraints were satisfied the same way as every earlier slice: no second definition of
+what an atom matches (every leaf set comes from the same functions the single-position mechanisms
+already call); `:i`/`:m` never extend the chain past their own first offset (a fold or a
+mark-strip breaks the one-character-per-offset correspondence); and anything that can run user
+code, a backreference, or left recursion declines exactly as the existing analysis already does —
+a construct strictly AFTER the chain's own pinned offsets only ever stops the chain, since the
+engine would already have failed on an earlier, rejected atom before reaching it.
+
+Stage 2 is a question, not work, until Stage 0 lands and grammars are re-profiled.
 
 Revision history: first draft 2026-09-13, reviewed the same day. The review inverted §2.2 (the
 grammar claim had been measured on a simplified grammar over five iterations including rakudo's

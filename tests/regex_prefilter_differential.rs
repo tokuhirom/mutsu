@@ -571,3 +571,80 @@ say (G.parse('--5') // 'nope').Str;
 say (G.parse('--7') // 'nope').Str;
 "#
 );
+
+// --- ADR-0099 §5's NFA over the declarative prefix (#8272, final slice) --
+//
+// Every mechanism before this one narrows a scan using only its FIRST
+// character. These shapes need more than one to narrow at all -- a single
+// isolated digit, or a single uppercase letter, still passes a
+// one-character-deep filter, so a chain that got the offset arithmetic wrong
+// would silently reject a real match rather than merely fail to narrow.
+
+differential_case!(
+    chain_three_consecutive_digits,
+    r#"say ("a1b22c333d" ~~ / \d\d\d /).Str;"#
+);
+differential_case!(
+    chain_three_consecutive_digits_global,
+    r#"say ("a1b22c333d444e" ~~ m:g/ \d\d\d /).join(",");"#
+);
+differential_case!(
+    chain_fixed_count_unicode_property_repeat,
+    r#"say ("AbCDEFg HIJK" ~~ / <:Lu> ** 4 /).Str;"#
+);
+differential_case!(
+    chain_two_composite_classes_in_a_row,
+    r#"say ("a1 b22 c3" ~~ / <+digit> <+digit> /).Str;"#
+);
+differential_case!(
+    chain_stops_at_an_optional_atom,
+    r#"say ("xxaycxxabxx" ~~ / 'ab' c? /).Str;"#
+);
+differential_case!(
+    chain_alternation_of_equal_length_branches,
+    r#"say ("zaazabzbbz" ~~ m:g/ 'aa' | 'bb' /).join(",");"#
+);
+differential_case!(
+    chain_alternation_of_equal_length_branches_no_match,
+    r#"say ("zabzabz" ~~ / 'aa' | 'bb' /).defined;"#
+);
+differential_case!(
+    chain_alternation_of_unequal_length_branches,
+    r#"say ("zzzbcdzzz" ~~ / 'a' | 'bcd' /).Str;"#
+);
+differential_case!(
+    chain_ignorecase_does_not_extend_past_the_first_character,
+    r#"say ("xxABCxx" ~~ / :i 'abc' /).Str;"#
+);
+differential_case!(
+    chain_code_block_after_a_pinned_run_still_runs_every_position,
+    r#"my $n = 0; my $m = "zzabzzabqq" ~~ / 'ab' { $n++ } 'q' /; say $m.defined; say $n;"#
+);
+differential_case!(
+    chain_subrule_led_by_a_two_character_literal_then_more,
+    r#"
+grammar G { token kw { 'aa' | 'bb' } }
+say ("xaazbby" ~~ / <G::kw> 'z' /).Str;
+"#
+);
+differential_case!(
+    chain_subrule_with_a_separated_bounded_repeat,
+    r#"
+grammar G { token kw { 'ab' } }
+say ("xxabxx" ~~ / <G::kw> ** 2..3 % ',' /).defined;
+say ("xxab,abxx" ~~ / <G::kw> ** 2..3 % ',' /).Str;
+say ("xxab,ab,abxx" ~~ / <G::kw> ** 2..3 % ',' /).Str;
+"#
+);
+differential_case!(
+    chain_grapheme_class_item_does_not_extend,
+    "say (\"x\\x[915]\\x[94d]\\x[937]yz\" ~~ / <[\\x[915]\\x[94d]\\x[937]]> 'y' /).Str;"
+);
+differential_case!(
+    chain_class_matching_newline_does_not_extend,
+    r#"say ("a\r\nbc" ~~ / <[\n a]> 'x' /).defined;"#
+);
+differential_case!(
+    chain_bounded_length_is_capped,
+    r#"say ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaz" ~~ / a ** 100 /).defined;"#
+);

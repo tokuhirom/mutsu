@@ -219,10 +219,11 @@ cost. Compare warm before asserting a win.
           [#8269](https://github.com/tokuhirom/mutsu/issues/8269) (Match truthiness and `$_`
           interning: 31% of a boolean `~~`, which mutsu loses to warm rakudo 2.8x),
           [#8270](https://github.com/tokuhirom/mutsu/issues/8270) (parse-cache defects).
-    - [ ] Stage 1, the declarative prefilter:
-          [#8272](https://github.com/tokuhirom/mutsu/issues/8272). The one *asymptotic* gap —
-          `~~ /literal/` is 212x mutsu's own `.index` on the same 640 KB subject — and the one item
-          that can be wrong without being incorrect, so its differential property test is the gate.
+    - Stage 1, the declarative prefilter, is DONE
+          ([#8272](https://github.com/tokuhirom/mutsu/issues/8272), closed): the required literal
+          prefix, first-character set, required inner literal, subrule-derived first-sets,
+          `<:prop>`/scoped-`:ignoremark` first-sets, the `<+a -b>` composite class, and finally
+          ADR-0099 §5's NFA over the declarative prefix all landed. See `news/` for each slice.
     - [ ] Stage 2 (a fast-lane compiled matcher) and Stage 3 (ADR-0007's CPS→bytecode regex VM) are
           deferred questions, not work. Do not start either without a superseding ADR.
 - [ ] Opcode leftovers: [docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6.
