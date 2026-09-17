@@ -19,7 +19,7 @@
   "dist": "CSS::Properties",
   "files": [],
   "load": {
-    "CSS::Box": "raku_also_fails",
+    "CSS::Box": "Failed to parse module 'CSS::Box': Unrecognized regex metacharacter - (must be quoted to match literally) [at lib/CSS/Box.rakumod:128]",
     "CSS::Font": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex [at lib/CSS/Properties.rakumod:167]",
     "CSS::Font::Descriptor": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex [at lib/CSS/Properties.rakumod:167]",
     "CSS::Font::Pattern": "ok",
@@ -34,10 +34,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

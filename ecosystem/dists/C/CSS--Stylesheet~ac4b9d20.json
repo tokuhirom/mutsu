@@ -41,17 +41,17 @@
   "load": {
     "CSS::AtPageRule": "raku_also_fails",
     "CSS::Media": "Runtime error: Failed to parse module 'CSS::Media': Cannot interpolate attribute in a regex",
-    "CSS::MediaQuery": "Method 'dimension' must be implemented by CSS::Module::CSS3::Values_and_Units::Actions because it is required by roles: CSS::Module::CSS3::Values_and_Units::Gen::External.",
+    "CSS::MediaQuery": "Method 'percentage' must be implemented by CSS::Module::CSS3::Values_and_Units::Actions because it is required by roles: CSS::Module::CSS3::Values_and_Units::Gen::External.",
     "CSS::Ruleset": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex [at lib/CSS/Properties.rakumod:167]",
-    "CSS::Selectors": "Method 'number' must be implemented by CSS::Module::CSS3::Values_and_Units because it is required by roles: CSS::Module::CSS3::Values_and_Units::Gen::External.",
+    "CSS::Selectors": "Method 'percentage' must be implemented by CSS::Module::CSS3::Values_and_Units because it is required by roles: CSS::Module::CSS3::Values_and_Units::Gen::External.",
     "CSS::Stylesheet": "Failed to parse module 'CSS::Properties': Cannot interpolate attribute in a regex [at lib/CSS/Properties.rakumod:167]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
