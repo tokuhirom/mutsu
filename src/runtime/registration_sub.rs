@@ -960,7 +960,16 @@ impl Interpreter {
             Self::validate_callable_param_return_redeclaration(param_defs)?;
         }
         if let Some(spec) = return_type
-            && self.is_definite_return_spec(spec)
+            // Prefer the plan-lowered classification when available: it was
+            // decided once at compile time against the parser's (already
+            // whole-file-complete) type registry, so it is immune to sub
+            // hoisting running before an earlier-or-later `subset` statement
+            // has actually executed (#8657). `self.is_definite_return_spec`
+            // is only a fallback for the theoretical metadata-less path.
+            && metadata.map_or_else(
+                || self.is_definite_return_spec(spec),
+                |metadata| metadata.is_definite_return_value,
+            )
             && metadata.map_or_else(
                 || Self::body_contains_non_nil_return(body),
                 |metadata| metadata.has_non_nil_return,

@@ -18,7 +18,17 @@ impl Compiler {
     /// sank the body and answered Nil for every one of `int`/`num`/`str` and the
     /// `NativeCall::Types` C-width aliases. Native type names are therefore
     /// excluded, which is what `is_known_type_constraint` decides.
-    pub(super) fn is_definite_return_spec(spec: &str) -> bool {
+    ///
+    /// A lowercase-named user `subset` (e.g. `subset ipv6_int of UInt where *
+    /// < 2**128;`) is likewise excluded via the parser's own
+    /// `is_user_declared_type` registry (populated for every `subset`/
+    /// `class`/`role`/`grammar`/`enum` declaration during parsing) -- checked
+    /// here rather than relying on the interpreter's runtime type registry
+    /// because a hoisted sub's signature is validated before an earlier-or-
+    /// later `subset` statement has actually *executed* (#8657); parsing,
+    /// unlike execution, always completes for the whole file before this
+    /// runs, so the registry is already complete regardless of textual order.
+    pub(crate) fn is_definite_return_spec(spec: &str) -> bool {
         let s = spec.trim();
         if s.is_empty() {
             return false;
@@ -44,6 +54,9 @@ impl Compiler {
             || crate::parser::is_user_declared_enum_value(s)
         {
             return true;
+        }
+        if crate::parser::is_user_declared_type(s) {
+            return false;
         }
         matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "e" | "tau")
             || (s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
