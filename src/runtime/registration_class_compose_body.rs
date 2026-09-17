@@ -235,7 +235,14 @@ impl Interpreter {
             // `<item>`, so two roles declaring the same token name
             // silently alias (`grammar GA does A` seeing B's `item`).
             let is_regex_decl = op.kind == crate::opcode::DeferredBodyOpKind::TokenRule;
-            if is_type_decl {
+            // A `use`/`need` statement imports into "the current package"
+            // (`import_module`'s `target_pkg`), which must be the ROLE's
+            // own package -- not whoever is composing it -- or the import
+            // silently lands under the composer's package instead and the
+            // role's own methods can never find it via `bare_name_packages`.
+            let is_use_decl = op.kind == crate::opcode::DeferredBodyOpKind::Plain
+                && matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
+            if is_type_decl || is_use_decl {
                 self.set_current_package(base_role_name.to_string());
             } else if is_regex_decl {
                 self.set_current_package(cx.name.to_string());
@@ -253,7 +260,7 @@ impl Interpreter {
                 }
                 None => self.run_block_raw(std::slice::from_ref(&op.raw)),
             };
-            if is_type_decl || is_regex_decl {
+            if is_type_decl || is_regex_decl || is_use_decl {
                 self.set_current_package(saved_body_pkg.clone());
             }
             // A role body statement that dies rejects this

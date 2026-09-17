@@ -851,6 +851,20 @@ impl Interpreter {
         // carries its real package as the part before `::&`. Walk outwards from
         // that, not from the mangled key.
         let head = cur.split("::&").next().unwrap_or("");
+        // A parameterised role's current-package spelling carries its type
+        // argument in brackets (`Bar::Holder[Bar::Comparable]`), and that
+        // argument can itself be a namespaced type name with its own `::`
+        // (`Algorithm::MinMaxHeap[Algorithm::MinMaxHeap::Comparable]`).
+        // Walking outward with a plain `rsplit_once("::")` would then split
+        // *inside* the bracket instead of at the real enclosing-package
+        // boundary, producing garbage segments and never yielding the
+        // role's own bare name (`Bar::Holder`) as a search package -- so a
+        // bare routine imported into the role's file (a custom `infix:<...>`
+        // operator, say) became unreachable from the role's own methods the
+        // moment it was instantiated with a `::`-qualified type argument.
+        // The bracket is a type argument, never a nested package, so the
+        // walk must start from the part before the first `[`.
+        let head = head.split('[').next().unwrap_or(head);
         let mut out = vec![cur_sym];
         if let (Some(sym), Some(pkg)) = (lexical_sym, lexical)
             && pkg != "GLOBAL"
