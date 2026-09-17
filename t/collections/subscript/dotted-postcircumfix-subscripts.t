@@ -6,8 +6,15 @@ use Test;
 # dimensions, the zen slice `.<>`, nested-angle keys and the interpolating
 # angle spellings were all silently missing after a dot.
 # From Game::Entities 0.1.6 (`.[COMPONENTS; $i].<>`), which could not load.
+#
+# The *topical* forms `.[]` and `.{}` (no explicit invocant — `$_[]`/`$_{}`)
+# had the same gap for a different reason: they are parsed by a separate
+# "leading dot on the implicit topic" primary term, whose `.[index]`/
+# `.{index}` branches always expected at least one index expression, so an
+# immediately-closed bracket/brace fell through to "Confused."
+# From CSS::Nested 0.0.1 (`:declarations(.[])`), which could not load.
 
-plan 15;
+plan 18;
 
 my %h = a => 1, b => 2;
 my @a = [1, 2];
@@ -48,3 +55,12 @@ dies-ok { EVAL q[Mu.{'a'}] }, 'Type.{...} is a subscript, not Type.new(...)';
 # Zen `.[]` / `.{}` still select the whole container
 is-deeply @a.[], [1, 2], '.[] is the whole array';
 is-deeply %h.{}, %h, '.{} is the whole hash';
+
+# The topical spellings ($_[] / $_{}, no explicit invocant)
+given @a {
+    is-deeply .[], [1, 2], 'topical .[] is the whole array';
+}
+given %h {
+    is-deeply .{}, %h, 'topical .{} is the whole hash';
+    is-deeply .{}:exists, (True, True), 'topical .{}:exists';
+}
