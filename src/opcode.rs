@@ -3982,7 +3982,10 @@ fn classify_class_body_stmt(stmt: &Stmt, decl_line: Option<i64>) -> ClassBodyOp 
             is_compile_time_phaser: is_compile_time_phaser_stmt(stmt),
         },
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => ClassBodyOp::TokenRule {
-            plan: build_token_decl_plan(stmt, decl_line),
+            // A class-body token/rule has no enclosing routine `local_map` to
+            // resolve captured slots against (see `regex_captures`'s doc
+            // comment) — `None` here.
+            plan: build_token_decl_plan(stmt, decl_line, None),
         },
         _ => ClassBodyOp::Other {
             chunk: None,
@@ -4368,16 +4371,33 @@ pub(crate) struct CompiledTokenDeclPlan {
     pub(crate) is_export: bool,
     /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
     pub(crate) export_tags: Vec<String>,
+    /// The lexicals the declaration's embedded regex value must close over
+    /// (name, defining-frame local slot or [`NOT_A_LOCAL`]), mirroring
+    /// `OpCode::LoadRegexClosure`'s own `captures` field — see
+    /// `Compiler::regex_literal_closure_captures`. A `token`/`rule` body is
+    /// never compiled through `compile_expr` (ADR-0009: it stays a raw
+    /// `Stmt::Expr(Expr::Literal(regex value))`), so it never reaches the
+    /// ordinary `LoadRegexClosure` emission that a `/regex/` literal gets —
+    /// without this, an interpolated name like `<{$x}>` is silently dropped
+    /// once the token/rule outlives the frame that declared it (issue #8662).
+    /// `None` for a class-body token/rule (`classify_class_body_stmt` has no
+    /// enclosing routine's `local_map` to resolve slots against) and for a
+    /// declaration with no resolvable interpolated name.
+    pub(crate) regex_captures: Option<std::sync::Arc<Vec<(Symbol, u32)>>>,
 }
 
 /// Build a [`CompiledTokenDeclPlan`] from a `Stmt::TokenDecl`/`RuleDecl`.
 /// Shared by `CompiledCode::add_token_decl_plan` (the top-level
 /// `RegisterDecl(Token)` path, ADR-0019 F7 slice 1) and
 /// `classify_class_body_stmt` (`ClassBodyOp::TokenRule`, slice 2) — a pure
-/// function of the raw statement plus a precomputed source line, needing no
-/// further compiler state, since a token/rule declaration has no computed
-/// name/trait to compile.
-fn build_token_decl_plan(stmt: &Stmt, source_line: Option<i64>) -> CompiledTokenDeclPlan {
+/// function of the raw statement plus a precomputed source line and its
+/// caller-resolved closure captures, needing no further compiler state,
+/// since a token/rule declaration has no computed name/trait to compile.
+fn build_token_decl_plan(
+    stmt: &Stmt,
+    source_line: Option<i64>,
+    regex_captures: Option<std::sync::Arc<Vec<(Symbol, u32)>>>,
+) -> CompiledTokenDeclPlan {
     let (name, params, param_defs, body, multi) = match stmt {
         Stmt::TokenDecl {
             name,
@@ -4419,6 +4439,7 @@ fn build_token_decl_plan(stmt: &Stmt, source_line: Option<i64>) -> CompiledToken
         source_line,
         is_export,
         export_tags,
+        regex_captures,
     }
 }
 
@@ -8717,11 +8738,19 @@ impl CompiledCode {
     /// `add_proto_decl_plan`'s `legacy_body` precedent for the same reason.
     /// `source_line` is the caller's `last_source_line` at the point this
     /// top-level declaration compiles (the `SetLine` marker the parser always
-    /// emits right before it), feeding `Code.line`/`Code.file`.
-    pub(crate) fn add_token_decl_plan(&mut self, stmt: &Stmt, source_line: Option<i64>) -> u32 {
+    /// emits right before it), feeding `Code.line`/`Code.file`. `regex_captures`
+    /// is the caller's (`Compiler::compile_stmt`) resolution of the
+    /// declaration's own closure captures — see
+    /// [`CompiledTokenDeclPlan::regex_captures`].
+    pub(crate) fn add_token_decl_plan(
+        &mut self,
+        stmt: &Stmt,
+        source_line: Option<i64>,
+        regex_captures: Option<std::sync::Arc<Vec<(Symbol, u32)>>>,
+    ) -> u32 {
         let plan_idx = self.token_decl_plans.len() as u32;
         self.token_decl_plans
-            .push(build_token_decl_plan(stmt, source_line));
+            .push(build_token_decl_plan(stmt, source_line, regex_captures));
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Token(plan_idx));
         idx

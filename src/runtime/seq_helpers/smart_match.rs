@@ -517,6 +517,12 @@ impl Interpreter {
                         def_file: None,
                         invocation_id,
                     });
+                    // A `my token`/`rule` whose pattern interpolates a lexical
+                    // from its defining frame (`<{$x}>`) closed over it at
+                    // declaration time (issue #8662); install that scope for
+                    // the duration of the match so the embedded code sees it
+                    // instead of whatever is live at the match site.
+                    let closure_scope = self.install_regex_closure_scope(&regex);
                     if let Some(mut captures) = self.regex_match_with_captures_value(&regex, &text)
                     {
                         self.reset_capture_env_vars();
@@ -552,9 +558,11 @@ impl Interpreter {
                             };
                             self.env.insert(format!("<{}>", k), value);
                         }
+                        self.uninstall_regex_closure_scope(closure_scope);
                         self.routine_stack.pop();
                         return true;
                     }
+                    self.uninstall_regex_closure_scope(closure_scope);
                     self.routine_stack.pop();
                     self.clear_match_state();
                     return false;

@@ -771,6 +771,32 @@ impl Compiler {
         (!captures.is_empty()).then_some(captures)
     }
 
+    /// [`Compiler::regex_literal_closure_captures`], applied to a `token`/
+    /// `rule` declaration's body instead of an `Expr::Literal` reached through
+    /// ordinary expression compilation.
+    ///
+    /// A `token`/`rule` body is never compiled through `compile_expr`
+    /// (ADR-0009: it stays a raw `Stmt::Expr(Expr::Literal(regex value))`
+    /// payload on the declaration plan), so it never reaches the
+    /// `LoadRegexClosure` emission a `/regex/` literal gets — without this, a
+    /// name interpolated by `<{$x}>`/`<$x>` is silently dropped once the
+    /// token/rule value outlives the frame that declared it (issue #8662).
+    /// Scans every statement in `body` (skipping `SetLine` markers) for the
+    /// declaration's own embedded regex literal.
+    pub(super) fn token_decl_regex_captures(
+        &self,
+        body: &[Stmt],
+    ) -> Option<std::sync::Arc<Vec<(Symbol, u32)>>> {
+        for stmt in body {
+            if let Stmt::Expr(Expr::Literal(v)) = stmt
+                && let Some(captures) = self.regex_literal_closure_captures(v)
+            {
+                return Some(std::sync::Arc::new(captures));
+            }
+        }
+        None
+    }
+
     pub(super) fn compile_match_regex(&mut self, v: &Value) {
         // Load $_ as the LHS
         let name_idx = self
