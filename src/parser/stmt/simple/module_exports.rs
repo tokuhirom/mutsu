@@ -1260,12 +1260,52 @@ fn compose_type_name(prefix: &str, name: &str) -> String {
     }
 }
 
+/// Whether `package` names a module's own export stash directly —
+/// `EXPORT::DEFAULT`, `Foo::EXPORT::ALL` — but not a deeper `EXPORT::A::B`.
+/// Parse-time twin of `Interpreter::export_stash_tag` (`runtime_module_exports.rs`):
+/// the two cannot share code (parser and runtime are different crate
+/// modules), but must agree on the naming rule, since a sub this recognises
+/// as exported must be one the runtime's `import_module` can actually find.
+fn is_export_stash_package(package: &str) -> bool {
+    let tag = match package.strip_prefix("EXPORT::") {
+        Some(tag) => tag,
+        None => match package.split_once("::EXPORT::") {
+            Some((_, tag)) => tag,
+            None => return false,
+        },
+    };
+    !tag.is_empty() && !tag.contains("::")
+}
+
+/// Whether a declaration's custom traits mark it `our`-scoped (the
+/// `__our_scoped` marker `my_decl_dispatch.rs` attaches to `our sub`/
+/// `our multi sub`).
+fn is_our_scoped(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+}
+
 /// Collect `is export` sub/proto declarations from a statement list,
 /// recursing into `module`/`package` (and class/role) bodies: exported subs
 /// routinely live inside a `module Foo { ... }` block (e.g. Cro::HTTP::Router's
 /// `multi route(&route-definition) is export`). The regex fallback misses the
 /// bare-`multi` form (no `sub` keyword), so the AST walk must see them.
 fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
+    collect_exported_subs_in(stmts, exports, false);
+}
+
+/// `in_export_stash` is true while walking directly inside a module's own
+/// `my package EXPORT::<tag> { ... }` block. Every `our`-scoped sub/multi
+/// declared there is part of that tag's export list by construction — the
+/// well-known "manual EXPORT stash" idiom — whether or not it also carries
+/// an explicit `is export` trait (`Net::IP::Parse`'s
+/// `our sub infix:<< ip== >> (...) { ... }` inside `EXPORT::DEFAULT` is
+/// never `is export`-tagged, yet `use Net::IP::Parse` must still learn the
+/// operator so the importer's file parses at all).
+fn collect_exported_subs_in(
+    stmts: &[Stmt],
+    exports: &mut HashMap<String, InlineModuleExport>,
+    in_export_stash: bool,
+) {
     for stmt in stmts {
         match stmt {
             Stmt::SubDecl {
@@ -1274,8 +1314,9 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
                 associativity,
                 precedence_trait,
                 is_test_assertion,
+                custom_traits,
                 ..
-            } if *is_export => {
+            } if *is_export || (in_export_stash && is_our_scoped(custom_traits)) => {
                 // Every `is export` sub is collected, whatever tag it carries.
                 // The tag decides which `use` *imports* the name; it does not
                 // decide whether the name is a routine, and this set answers
@@ -1358,10 +1399,15 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
                         });
                 }
             }
-            Stmt::Package { body, .. }
-            | Stmt::ClassDecl { body, .. }
-            | Stmt::RoleDecl { body, .. } => {
-                collect_exported_subs(body, exports);
+            Stmt::Package { name, body, .. } => {
+                let is_stash = is_export_stash_package(&name.resolve());
+                collect_exported_subs_in(body, exports, is_stash);
+            }
+            Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
+                // A class/role body is never itself an export stash — its
+                // `our`-scoped subs are package-qualified methods/routines
+                // of the type, not implicit exports of the enclosing module.
+                collect_exported_subs_in(body, exports, false);
             }
             _ => {}
         }

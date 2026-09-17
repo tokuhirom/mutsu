@@ -46,7 +46,12 @@ impl Interpreter {
     /// The export tag a package name denotes when it names a module's export
     /// stash: `EXPORT::DEFAULT` -> `DEFAULT`, `Foo::EXPORT::ALL` -> `ALL`.
     /// Any other package (including a deeper `EXPORT::A::B`) is not one.
-    fn export_stash_tag(package: &str) -> Option<&str> {
+    ///
+    /// `pub(crate)`: also consulted by `vm_register_sub_ops.rs`, which is a
+    /// different module tree, to implicitly export an `our sub`/`our multi
+    /// sub` declared directly inside such a package (see
+    /// `exec_register_sub_op`'s `__our_scoped` branch).
+    pub(crate) fn export_stash_tag(package: &str) -> Option<&str> {
         let tag = match package.strip_prefix("EXPORT::") {
             Some(tag) => tag,
             None => package.split_once("::EXPORT::")?.1,
@@ -171,6 +176,81 @@ impl Interpreter {
                 self.register_exported_sub(module, name.to_string(), vec![tag]);
             }
         }
+    }
+
+    /// Companion to [`Self::register_our_code_alias`] for the plainer half of
+    /// the same "manual EXPORT stash" idiom: an ordinary `our sub`/
+    /// `our multi sub` declared directly inside `my package EXPORT::<tag>
+    /// { ... }`, rather than an `OUR::{'&name'} := &name` re-export binding.
+    /// `exec_register_sub_op` calls this right after installing such a sub,
+    /// passing the bare name it registered under `current_package()` (e.g.
+    /// `EXPORT::DEFAULT::infix:<< ip== >>` for `Net::IP::Parse`).
+    ///
+    /// A no-op unless `current_package()` actually names an export stash and
+    /// a module is currently loading — the common case of an `our sub`
+    /// declared in some other nested package.
+    ///
+    /// `import_module` resolves an export by looking up `{module}::{name}`
+    /// (see its `source_single`), where `module` is the name on
+    /// `module_load_stack` — never the literal `EXPORT::<tag>` package the
+    /// sub was actually registered under. So, like `register_our_code_alias`,
+    /// this aliases the installed definition(s) to that key before recording
+    /// the export; skipping the alias would leave `register_exported_sub`'s
+    /// own registry lookup (keyed the same way) empty-handed too.
+    pub(crate) fn export_implicit_stash_sub(&mut self, resolved_name: &str, multi: bool) {
+        let current_pkg = self.current_package();
+        let Some(tag) = Self::export_stash_tag(&current_pkg) else {
+            return;
+        };
+        let tag = tag.to_string();
+        let Some(module) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        let entries: Vec<(String, Arc<FunctionDef>)> = if multi {
+            let source_prefix = format!("{current_pkg}::{resolved_name}/");
+            self.registry()
+                .functions
+                .iter()
+                .filter_map(|(key, def)| {
+                    let suffix = key.resolve().strip_prefix(&source_prefix)?.to_string();
+                    Some((format!("{module}::{resolved_name}/{suffix}"), def.clone()))
+                })
+                .collect()
+        } else {
+            let source_single = format!("{current_pkg}::{resolved_name}");
+            self.registry()
+                .functions
+                .get(&Symbol::intern(&source_single))
+                .cloned()
+                .map(|def| vec![(format!("{module}::{resolved_name}"), def)])
+                .unwrap_or_default()
+        };
+        if entries.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        for (target_key, def) in entries {
+            let installed_key = if target_key.contains('/') {
+                self.import_multi_candidate_merged(&target_key, def.clone())
+            } else {
+                let key = Symbol::intern(&target_key);
+                self.registry_mut()
+                    .functions_mut()
+                    .entry(key)
+                    .or_insert_with(|| def.clone());
+                key
+            };
+            self.registry_mut()
+                .our_scoped_functions
+                .insert(installed_key, def);
+            crate::runtime::cow_table_mut(&mut self.module_registered_functions)
+                .insert(installed_key);
+            changed = true;
+        }
+        if changed {
+            self.invalidate_fn_resolution();
+        }
+        self.register_exported_sub(module, resolved_name.to_string(), vec![tag]);
     }
 
     /// Hide the candidate family already visible at target_single before an
