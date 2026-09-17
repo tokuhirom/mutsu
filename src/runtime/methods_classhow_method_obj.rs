@@ -290,9 +290,11 @@ impl Interpreter {
             "__mutsu_lookup_method".to_string(),
             Value::str(name.to_string()),
         );
-        // ADR-0019 Phase F box F1: the Sub-vs-Instance unification. Carrying
-        // the original Routine marker lets `CALL-ME` invoke this Instance
-        // exactly as `.^lookup`/`.^find_method` used to return it directly.
+        // Attribute accessors are represented as native Method objects, but
+        // they still have candidate slot zero for the method-wrap registry.
+        // This lets a declaration-time trait such as `will lazy { ... }` use
+        // the same `.wrap` protocol as an explicitly declared method.
+        attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
         attrs.insert(
             "__mutsu_method_callable".to_string(),
             Value::routine_parts(Symbol::intern(owner), Symbol::intern(name), is_regex),

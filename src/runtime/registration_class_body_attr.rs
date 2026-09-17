@@ -192,32 +192,6 @@ impl Interpreter {
             return Err(err);
         }
 
-        // Handle unknown traits. If a user-defined `trait_mod:<is>`
-        // (or `trait_mod:<will>`, etc.) can handle the trait, dispatch
-        // to it with an Attribute introspection object; otherwise raise
-        // X::Comp::Trait::Unknown. Kept in a separate method so its
-        // locals don't inflate this already-large function's frame.
-        // ADR-0019 F4c-9b: a user-defined `trait_mod:<is>` calling
-        // `.^add_method` mid-body (e.g. Attribute::Predicate's `is
-        // predicate`) writes straight to the canonical `method_entries`
-        // table now — there is no local `class_def.methods` copy left for
-        // it to be clobbered by, so (unlike pre-9b) nothing needs merging
-        // back afterward.
-        if !decl.unknown_traits.is_empty()
-            && let Err(err) = self.apply_attribute_traits(
-                &decl.unknown_traits,
-                &attr_name_str,
-                decl.sigil,
-                decl.is_public,
-                cx.name,
-                decl.type_constraint.as_deref(),
-            )
-        {
-            self.set_current_package(cx.saved_package.clone());
-            self.env = cx.saved_env.clone();
-            return Err(err);
-        }
-
         // Handle class-level attributes (our $.x / my $.x)
         if decl.is_our || decl.is_my {
             // Evaluate the default value if present
@@ -254,6 +228,7 @@ impl Interpreter {
             cx.class_def
                 .class_level_attrs
                 .insert(attr_name_str.clone(), initial_value);
+            self.apply_class_body_attribute_traits(cx, &decl, &attr_name_str)?;
             // Skip per-instance attribute registration
             return Ok(ClassBodyFlow::SkipTail);
         }
@@ -416,6 +391,39 @@ impl Interpreter {
             format!("!{}", attr_name_str)
         };
         self.apply_handle_specs(cx.name, &decl.handles, &attr_var_name, &mut cx.class_def);
+        self.apply_class_body_attribute_traits(cx, &decl, &attr_name_str)?;
         Ok(ClassBodyFlow::RunTail)
+    }
+
+    /// Publish the in-progress class definition before dispatching an
+    /// attribute trait. Rakudo exposes the generated accessor to a trait
+    /// handler, and handlers such as Attribute::Lazy use that Method object
+    /// to install a wrapper during class composition. The body driver normally
+    /// publishes after each statement; this earlier publication is needed for
+    /// the handler's declaration-time MOP view.
+    fn apply_class_body_attribute_traits(
+        &mut self,
+        cx: &mut ClassBodyCx<'_>,
+        decl: &crate::opcode::CompiledAttrDecl,
+        attr_name: &str,
+    ) -> Result<(), RuntimeError> {
+        self.registry_mut()
+            .classes
+            .insert(cx.name.to_string(), cx.class_def.clone());
+        self.registry_mut()
+            .sync_accessor_entries(Symbol::intern(cx.name));
+        if let Err(err) = self.apply_attribute_traits(
+            &decl.unknown_traits,
+            attr_name,
+            decl.sigil,
+            decl.is_public,
+            cx.name,
+            decl.type_constraint.as_deref(),
+        ) {
+            self.set_current_package(cx.saved_package.clone());
+            self.env = cx.saved_env.clone();
+            return Err(err);
+        }
+        Ok(())
     }
 }

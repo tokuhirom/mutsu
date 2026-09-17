@@ -967,6 +967,54 @@ impl Interpreter {
                     }
                     return Ok(result);
                 }
+                Some(DeferralEntry::Accessor { owner, name }) => {
+                    // An auto-generated accessor has no MethodDef to send
+                    // through the ordinary candidate runner. It is the
+                    // terminal candidate of a wrapped accessor chain, so read
+                    // it directly with the current frame invocant.
+                    let (invocant, args) = {
+                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        frame.remaining.remove(0);
+                        let caller_in_wrapper = frame.in_wrapper;
+                        let args = match override_args {
+                            Some(new_args) if caller_in_wrapper => {
+                                let mut it = new_args.into_iter();
+                                if let Some(invocant) = it.next() {
+                                    frame.invocant = invocant;
+                                }
+                                frame.args = it.collect();
+                                frame.args.clone()
+                            }
+                            Some(new_args) => {
+                                frame.args = new_args;
+                                frame.args.clone()
+                            }
+                            None => frame.args.clone(),
+                        };
+                        frame.in_wrapper = false;
+                        (frame.invocant.clone(), args)
+                    };
+                    let result = self
+                        .read_public_attribute_accessor(&invocant, &name, &args)
+                        .unwrap_or_else(|| {
+                            let owner_name = owner.resolve();
+                            Err(
+                                super::methods_signature_errors::make_method_not_found_error(
+                                    &name,
+                                    if owner_name.is_empty() {
+                                        crate::runtime::utils::value_type_name(&invocant)
+                                    } else {
+                                        owner_name.as_str()
+                                    },
+                                    false,
+                                ),
+                            )
+                        })?;
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
                 Some(DeferralEntry::Candidate { .. }) => {}
             }
             let (

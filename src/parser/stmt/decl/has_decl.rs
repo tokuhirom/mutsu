@@ -749,30 +749,22 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("will", rest) {
             let Ok((r, _)) = ws1(r) else { break };
             let Ok((r, trait_name)) = ident(r) else { break };
-            // `will` traits are not supported on attributes, record for X::Comp::Trait::Unknown
-            unknown_traits.push(("will".to_string(), trait_name.to_string(), None));
-            // Skip optional block: `will bar { ... }` -> skip the block
+            // A `will` trait's block is a positional Callable argument to
+            // `trait_mod:<will>`, followed by the named trait marker. For
+            // example, `will lazy { ... }` dispatches as
+            // `trait_mod:<will>($attr, { ... }, :lazy)`. Keep the block
+            // expression so class registration can evaluate it as a closure;
+            // without this it was silently discarded and the handler saw only
+            // `:lazy`.
             let (r_ws, _) = ws(r)?;
-            if let Some(stripped_block) = r_ws.strip_prefix('{') {
-                let mut depth = 1u32;
-                let mut idx = 0;
-                for (i, ch) in stripped_block.char_indices() {
-                    match ch {
-                        '{' => depth += 1,
-                        '}' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                idx = i + 1;
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                rest = &stripped_block[idx..];
-                let (r2, _) = ws(rest)?;
+            if r_ws.starts_with('{') {
+                let (after_block, trait_arg) =
+                    crate::parser::primary::misc::block_or_hash_expr(r_ws)?;
+                unknown_traits.push(("will".to_string(), trait_name.to_string(), Some(trait_arg)));
+                let (r2, _) = ws(after_block)?;
                 rest = r2;
             } else {
+                unknown_traits.push(("will".to_string(), trait_name.to_string(), None));
                 let (r2, _) = ws(r)?;
                 rest = r2;
             }

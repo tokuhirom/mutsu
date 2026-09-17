@@ -1136,6 +1136,42 @@ impl Interpreter {
         });
     }
 
+    /// Push the callsame frame for a wrapped auto-generated attribute
+    /// accessor. Accessors are represented by registry metadata rather than a
+    /// `MethodDef`, so they need a dedicated terminal entry after the ordinary
+    /// wrapper entries. The frame shape otherwise matches
+    /// [`Self::push_wrapped_method_dispatch_frame`].
+    pub(crate) fn push_wrapped_accessor_dispatch_frame(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        invocant: Value,
+        owner_class: Symbol,
+        chain: &[(u64, Value)],
+    ) {
+        let arg_sources = self.pending_call_arg_sources().cloned();
+        let mut remaining: Vec<super::DeferralEntry> = Vec::with_capacity(chain.len());
+        for i in (0..chain.len() - 1).rev() {
+            remaining.push(super::DeferralEntry::Wrapper(chain[i].1.clone()));
+        }
+        remaining.push(super::DeferralEntry::Accessor {
+            owner: owner_class,
+            name: method_name.to_string(),
+        });
+        let dispatch_token = self.next_dispatch_token();
+        self.method_dispatch_stack.push(super::MethodDispatchFrame {
+            receiver_class: receiver_class.to_string(),
+            invocant,
+            args: args.to_vec(),
+            remaining,
+            rw_params: Vec::new(),
+            dispatch_token,
+            arg_sources,
+            in_wrapper: true,
+        });
+    }
+
     /// The subscript/`STORE` protocol whose native implementation on a
     /// container subclass's backing storage is a deferral base candidate. See
     /// `container_protocol_override` in [`Self::push_method_dispatch_frame`].

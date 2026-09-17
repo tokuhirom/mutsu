@@ -408,6 +408,32 @@ impl Interpreter {
         None
     }
 
+    /// Return the declaring class of the public accessor that wins method
+    /// resolution for `method_name`, or `None` when an explicit method wins or
+    /// no public accessor exists. The owner is needed to find a wrap chain
+    /// installed through the accessor's Method meta-object.
+    pub(crate) fn attribute_accessor_owner(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<crate::symbol::Symbol> {
+        if !matches!(
+            self.resolve_user_method_or_accessor(class_name, method_name),
+            Some(UserMethodOrAccessor::Accessor)
+        ) {
+            return None;
+        }
+        let name = crate::symbol::Symbol::intern(method_name);
+        self.class_mro(class_name)
+            .iter()
+            .find(|owner| {
+                self.registry()
+                    .accessor_is_public_sym(**owner, name)
+                    .is_some_and(|is_public| is_public)
+            })
+            .copied()
+    }
+
     /// Whether `class_name`'s public attribute `attr_name` was contributed by a
     /// composed role rather than declared in the class body. Used to break the
     /// accessor-vs-role-method tie in

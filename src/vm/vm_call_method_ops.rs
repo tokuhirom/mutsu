@@ -263,6 +263,17 @@ impl Interpreter {
             return None;
         };
         let cn = class_name.resolve();
+        // A wrapped accessor must use the full dispatch path so its wrapper's
+        // `callsame` can reach the accessor terminal. The pure read below has
+        // no dispatch frame and would otherwise bypass the wrapper entirely.
+        if let Some(owner) = self.attribute_accessor_owner(&cn, method)
+            && self
+                .registry()
+                .method_wrap_chain(owner.resolve().as_str(), method, 0)
+                .is_some()
+        {
+            return None;
+        }
         // CStruct fields live in native memory rather than the instance's
         // attribute map. Resolve their generated accessors before the builtin
         // method-name exclusions below, so fields such as `first` and `gist`

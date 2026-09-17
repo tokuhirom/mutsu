@@ -390,6 +390,101 @@ impl Interpreter {
         Some(Ok(Value::str(body)))
     }
 
+    /// Read a public auto-generated attribute accessor without entering method
+    /// dispatch again. This terminal is used by a wrapped accessor's
+    /// `callsame` frame; the normal instance fallback below has additional
+    /// built-in cases, but ordinary declared accessors share this core.
+    pub(crate) fn read_public_attribute_accessor(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty() {
+            return None;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let class_name = class_name.resolve();
+        let attr = self
+            .collect_class_attributes(&class_name)
+            .into_iter()
+            .find(|attr| attr.is_public && attr.name == method)?;
+        let value = attributes
+            .as_map()
+            .get(method)
+            .cloned()
+            .unwrap_or(Value::NIL);
+        if let Some(msg) = self.class_attribute_deprecated(&class_name, method) {
+            self.check_deprecation_for_method(method, &class_name, &msg);
+        }
+        if matches!(attr.sigil, '@' | '%')
+            && !value.is_nil()
+            && self.container_type_metadata(&value).is_none()
+            && let Some(type_constraint) = self.get_attr_type_constraint(&class_name, method)
+        {
+            let (value_type, key_type) =
+                crate::runtime::types::split_object_hash_constraint(&type_constraint);
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type: value_type.to_string(),
+                key_type: key_type.map(str::to_string),
+                declared_type: None,
+            };
+            return Some(Ok(self.tag_container_metadata(value, info)));
+        }
+        Some(Ok(value))
+    }
+
+    /// Dispatch an auto-generated accessor through its method-wrap chain.
+    /// `callsame` in the wrapper advances to the terminal accessor entry that
+    /// `dispatch_next_candidate` consumes without re-entering this chain.
+    fn dispatch_wrapped_attribute_accessor(
+        &mut self,
+        target: Value,
+        receiver_class: &str,
+        method: &str,
+        args: Vec<Value>,
+        owner: crate::symbol::Symbol,
+        chain: Vec<(u64, Value)>,
+    ) -> Result<Value, RuntimeError> {
+        self.push_method_samewith_context(receiver_class, method, &args, Some(target.clone()));
+        self.push_wrapped_accessor_dispatch_frame(
+            receiver_class,
+            method,
+            &args,
+            target.clone(),
+            owner,
+            &chain,
+        );
+        let outermost = chain.last().expect("accessor wrap chain is non-empty");
+        let wrapper_id = match outermost.1.view() {
+            ValueView::Sub(data) => Some(data.id),
+            _ => None,
+        };
+        let mut call_args = vec![target];
+        call_args.extend(args);
+        self.shift_arg_sources_for_wrap_invocant();
+        let result = self.call_sub_value(outermost.1.clone(), call_args, false);
+        if let Some(wrapper_id) = wrapper_id
+            && let Some(persisted) = self.closure_env_overrides.get(&wrapper_id).cloned()
+        {
+            for (key, value) in persisted.iter() {
+                if self.env.contains_key_sym(*key) {
+                    self.env.insert_sym(*key, value.clone());
+                }
+            }
+        }
+        self.pop_method_samewith_context();
+        self.method_dispatch_stack.pop();
+        result
+    }
+
     /// Dispatch method calls for Instance values and handle all fallback paths.
     ///
     /// This is called from `call_method_with_values` after the main method name
@@ -1641,6 +1736,19 @@ impl Interpreter {
             }
             // Fallback: auto-generated accessor for public attributes.
             if args.is_empty() {
+                if let Some(owner) = self.attribute_accessor_owner(&cn_resolved, method)
+                    && let Some(chain) =
+                        self.get_method_wrap_chain(owner.resolve().as_str(), method, 0)
+                {
+                    return self.dispatch_wrapped_attribute_accessor(
+                        target,
+                        &cn_resolved,
+                        method,
+                        args,
+                        owner,
+                        chain,
+                    );
+                }
                 // An `is repr('CStruct')` handle stores no Raku attributes: its
                 // fields live in the C struct the instance's `address` points
                 // at, so the accessor reads them out of native memory
