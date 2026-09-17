@@ -288,31 +288,68 @@ impl Interpreter {
             ));
         }
         // Calling a type with a type object argument constructs a coercion type
-        // object (e.g. Str(Any), Int(Str), Child(Parent)).
+        // object (e.g. Str(Any), Int(Str), Child(Parent)) -- when the argument
+        // is written as a LITERAL type reference at the call site (`A(Any)`,
+        // `Int(Str)`), this is that syntax unconditionally, even when the
+        // type declares `CALL-ME`
+        // (`roast/S13-overloading/typecasting-long.t`'s `A() is a type
+        // coercion literal` / `A(Any) is a type coercion literal`).
+        //
+        // But `A(Any)` and `Trap(my $*OUT)` (`$*OUT`'s `is raw`-bound
+        // container, not yet assigned) evaluate to the IDENTICAL runtime
+        // value -- mutsu seeds every not-yet-defined scalar with
+        // `Value::package(Any)`, the same value a literal `Any` bareword
+        // constant-folds to -- so the value's `ValueView` alone cannot tell
+        // "the literal `Any`" apart from "a variable that merely happens to
+        // hold `Any` right now". The compiler-tracked source of the
+        // argument CAN: `pending_call_arg_sources` names the caller-visible
+        // variable a positional argument traces back to (the same signal
+        // `substr-rw`'s Proxy support below reads), and is `None` for a
+        // literal/computed expression with no such variable. When the sole
+        // argument traces to a variable, `CALL-ME` wins over coercion (same
+        // rule the `has_class` branch below applies) -- without this, a
+        // class like `Trap` whose `CALL-ME(Trap:U: $one is raw) { $one =
+        // self.new }` had its `CALL-ME` invocation preempted here and
+        // silently answered the symbolic type object `Trap(Any)` instead.
         if args.len() == 1
             && (self.has_type(name)
                 || crate::runtime::utils::is_known_type_constraint(name)
                 || self.registry().subsets.contains_key(name)
                 || self.registry().roles.contains_key(name))
         {
-            let source = match args[0].view() {
-                ValueView::Package(sym) => Some(sym.resolve()),
-                ValueView::ParametricRole {
-                    base_name,
-                    type_args,
-                } => {
-                    let args_str = type_args
-                        .iter()
-                        .map(|arg| match arg.view() {
-                            ValueView::Package(n) => n.resolve(),
-                            _ => arg.to_string_value(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    Some(format!("{}[{}]", base_name.resolve(), args_str))
+            let arg_traces_to_a_variable = self
+                .pending_call_arg_sources
+                .as_ref()
+                .and_then(|sources| sources.first())
+                .is_some_and(|source| source.is_some());
+            let call_me_wins = arg_traces_to_a_variable
+                && (self
+                    .resolve_bare_type_name(name)
+                    .is_some_and(|resolved| self.class_has_method(&resolved, "CALL-ME"))
+                    || self.class_has_method(name, "CALL-ME")
+                    || self.role_has_method(name, "CALL-ME"));
+            let source = if call_me_wins {
+                None
+            } else {
+                match args[0].view() {
+                    ValueView::Package(sym) => Some(sym.resolve()),
+                    ValueView::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str = type_args
+                            .iter()
+                            .map(|arg| match arg.view() {
+                                ValueView::Package(n) => n.resolve(),
+                                _ => arg.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        Some(format!("{}[{}]", base_name.resolve(), args_str))
+                    }
+                    ValueView::Nil => Some("Any".to_string()),
+                    _ => None,
                 }
-                ValueView::Nil => Some("Any".to_string()),
-                _ => None,
             };
             if let Some(source) = source {
                 return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
