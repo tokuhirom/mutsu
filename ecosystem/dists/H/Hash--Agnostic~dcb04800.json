@@ -9,23 +9,22 @@
   "dist": "Hash::Agnostic",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "test basic stuff after initialization",
-        "nok": 2,
-        "ok": 20,
+        "nok": 0,
+        "ok": 22,
         "plan": 22,
-        "secs": 0.33,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.75,
+        "secs": 3.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +36,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.31,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,7 +46,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.03,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "1ac071e54",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -73,13 +72,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/AS/HASH_AGNOSTIC/b120c2ceaa97322588e0c04900c1463a95f33eb0.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 2,
-    "mutsu_assertions": 31,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 33,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.20"
 }

@@ -362,7 +362,16 @@ impl Interpreter {
                 if self.has_user_method(&class_name.resolve(), "AT-KEY"));
             if assoc_instance {
                 let pairs = self.call_method_with_values(arg.clone(), "pairs", vec![])?;
-                flat.extend(Self::value_to_list(&pairs));
+                let pair_items = match pairs.view() {
+                    // An Associative implementation is allowed to return a
+                    // lazy Seq from `.pairs` (Hash::Agnostic does so through
+                    // `keys.map`). Hash.new is an eager materialization point,
+                    // so pull the Seq before reading its value view; otherwise
+                    // `value_to_list` sees only the empty deferred seed.
+                    ValueView::Seq(body) => self.reify_seq_body(&body)?.clone(),
+                    _ => Self::value_to_list(&pairs),
+                };
+                flat.extend(pair_items);
             } else {
                 flat.extend(Self::value_to_list(arg));
             }
