@@ -775,6 +775,19 @@ impl Interpreter {
                 // the block's own type constraint out (breaking the outer
                 // `Str` enforcement after the block exits). Strip a known
                 // metadata prefix and check the base name instead.
+                // A `$*`-twigil dynamic var is recorded in `block_declared`
+                // under its SIGILLESS spelling only (`exec_set_var_dynamic_op`
+                // interns whatever name the compiler emits, which for a `my
+                // $*x` redeclaration with no local slot is `*x`), while env
+                // holds both `*x` and its sigilled mirror `$*x` in sync (see
+                // `set_env_with_main_alias`). Checking `k` alone therefore
+                // reverts `*x` but propagates `$*x` unchanged, leaking the
+                // block-scoped redeclaration's value out under the sigilled
+                // key (issue #8645, Case B: `$out = my $*OUT = Foo.new` left
+                // `$*OUT` pointing at the block's `Foo` instance after exit,
+                // even though `*OUT` was correctly restored). Check the
+                // twigil alias of `k` too, so both spellings of one
+                // redeclaration are treated identically.
                 let owned_by_block_declared_name = block_declared.contains(&k)
                     || k.with_str(|s| {
                         s.strip_prefix("__mutsu_type::")
@@ -782,6 +795,11 @@ impl Interpreter {
                             .is_some_and(|base| {
                                 block_declared.contains(&crate::symbol::Symbol::intern(base))
                             })
+                    })
+                    || k.with_str(|s| {
+                        crate::runtime::utils::twigil_dynamic_alias(s).is_some_and(|alias| {
+                            block_declared.contains(&crate::symbol::Symbol::intern(&alias))
+                        })
                     });
                 if owned_by_block_declared_name {
                     continue;

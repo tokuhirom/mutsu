@@ -693,9 +693,22 @@ impl Interpreter {
                 self,
                 apply_rw_bindings_to_env(&rw_bindings, &mut restored_env)
             );
+            // Include each source's `$*`-twigil dynamic-var alias (`*OUT` <->
+            // `$*OUT`) alongside the source itself: `apply_rw_bindings_to_env`
+            // (via `mirror_twigil_alias_writeback`) just wrote the returned
+            // value into BOTH spellings when the source is a dynamic var, but
+            // this set gates the merge loop below that copies the callee's own
+            // (unmirrored, still-stale) view of any caller-visible key back
+            // over `restored_env`. Without the alias here, that loop finds the
+            // callee's stale `$*OUT` unchanged and copies it straight back
+            // over the freshly mirrored value, undoing the writeback the
+            // caller is about to see (issue #8645, Case A).
             let rw_sources: std::collections::HashSet<String> = rw_bindings
                 .iter()
-                .map(|(_, source)| source.clone())
+                .flat_map(|(_, source)| {
+                    std::iter::once(source.clone())
+                        .chain(crate::runtime::utils::twigil_dynamic_alias(source))
+                })
                 .collect();
             // Slice F: record the caller-source names just written back so the
             // call-site op (which holds the caller's `code`) can write each value

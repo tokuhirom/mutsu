@@ -1545,9 +1545,21 @@ impl Interpreter {
         // (and the `__mutsu_*` prefix checks below) are skipped entirely.
         let meta_possible = crate::env::closure_meta_keys_possible();
         if needs_caller_writeback {
+            // Each source's `$*`-twigil dynamic-var alias (`*OUT` <-> `$*OUT`)
+            // is included alongside the source itself: `apply_rw_bindings_to_env`
+            // mirrors a dynamic-var writeback into both spellings, and this set
+            // gates the broad writeback loop below from re-copying the
+            // closure's own (unmirrored, still-stale) view of the other
+            // spelling back over the caller's freshly written value (issue
+            // #8645).
             let rw_sources: rustc_hash::FxHashSet<Symbol> = rw_bindings
                 .iter()
-                .map(|(_, source)| Symbol::intern(source))
+                .flat_map(|(_, source)| {
+                    std::iter::once(Symbol::intern(source)).chain(
+                        crate::runtime::utils::twigil_dynamic_alias(source)
+                            .map(|alias| Symbol::intern(&alias)),
+                    )
+                })
                 .collect();
             // The captured env's OWN tier, probed directly. `Env::keys()` is
             // exactly this map's key set, so collecting it into a fresh
