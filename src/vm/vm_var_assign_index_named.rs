@@ -1785,7 +1785,16 @@ impl Interpreter {
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                     // Container identity (§3): resize in place.
                                     let arr = crate::value::gc_data_mut(items);
+                                    let old_len = arr.len();
                                     Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                    if arr.len() > old_len
+                                        && arr.initialized.is_none()
+                                        && !crate::runtime::native_types::is_native_array_element_type(
+                                            arr.value_type.as_deref().unwrap_or_default(),
+                                        )
+                                    {
+                                        arr.initialized = Some((0..old_len).collect());
+                                    }
                                     Ok(())
                                 })
                                 .transpose()?;
@@ -1812,7 +1821,16 @@ impl Interpreter {
                             .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                 // Container identity (§3): resize in place.
                                 let arr = crate::value::gc_data_mut(items);
+                                let old_len = arr.len();
                                 Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                if arr.len() > old_len
+                                    && arr.initialized.is_none()
+                                    && !crate::runtime::native_types::is_native_array_element_type(
+                                        arr.value_type.as_deref().unwrap_or_default(),
+                                    )
+                                {
+                                    arr.initialized = Some((0..old_len).collect());
+                                }
                                 Ok(())
                             })
                             .transpose()?;
@@ -2696,6 +2714,7 @@ impl Interpreter {
                             container
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                     let arr = crate::value::gc_data_mut(items);
+                                    let old_len = arr.len();
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
                                     {
@@ -2704,6 +2723,21 @@ impl Interpreter {
                                             max_idx + 1,
                                             Value::package(crate::symbol::wk::any()),
                                         )?;
+                                    }
+                                    // Preserve the existing prefix when a
+                                    // bulk-constructed array grows for a
+                                    // sparse slice assignment. The subsequent
+                                    // per-index writes record only the selected
+                                    // positions; without this prefix, the first
+                                    // mark would make skipped tail slots look
+                                    // explicitly present as well.
+                                    if arr.len() > old_len
+                                        && arr.initialized.is_none()
+                                        && !crate::runtime::native_types::is_native_array_element_type(
+                                            arr.value_type.as_deref().unwrap_or_default(),
+                                        )
+                                    {
+                                        arr.initialized = Some((0..old_len).collect());
                                     }
                                     Ok(())
                                 })
@@ -2747,7 +2781,23 @@ impl Interpreter {
                                     } else {
                                         crate::gc::Gc::make_mut(items)
                                     };
+                                    let old_len = arr.len();
                                     Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
+                                    // `initialized == None` means every slot in
+                                    // a bulk-constructed boxed array exists.
+                                    // Once this write grows it, preserve that
+                                    // existing prefix before the later
+                                    // `mark_initialized_index` records the new
+                                    // element; otherwise the skipped tail and
+                                    // the explicit prefix become indistinguishable.
+                                    if arr.len() > old_len
+                                        && arr.initialized.is_none()
+                                        && !crate::runtime::native_types::is_native_array_element_type(
+                                            arr.value_type.as_deref().unwrap_or_default(),
+                                        )
+                                    {
+                                        arr.initialized = Some((0..old_len).collect());
+                                    }
                                     if bind_mode && let Some((source_install, cell)) = &bind_cell {
                                         // Phase 2 Stage 2: a `:=`-bound element
                                         // holds a shared `ContainerRef` cell (no

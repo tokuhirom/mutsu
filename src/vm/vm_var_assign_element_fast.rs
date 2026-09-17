@@ -418,9 +418,7 @@ impl Interpreter {
         // The hole set, maintained exactly as `mark_initialized_index` does:
         // materializing it from `None` is what makes the OTHER gap-marker slots
         // read as holes, so this lane must not skip that transition.
-        data.initialized
-            .get_or_insert_with(std::collections::HashSet::new)
-            .insert(i);
+        data.mark_initialized(i);
         // A single positional index names one scalar slot, so the assignment's
         // rvalue is itemized (`@z = (@a[0] = 1, 2)` has two elements, the first
         // itemized) -- the same rule the slow path's final push applies.

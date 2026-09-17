@@ -206,9 +206,7 @@ impl Interpreter {
                 } else {
                     crate::gc::Gc::make_mut(items)
                 };
-                data.initialized
-                    .get_or_insert_with(std::collections::HashSet::new)
-                    .insert(idx);
+                data.mark_initialized(idx);
             });
         }
     }
