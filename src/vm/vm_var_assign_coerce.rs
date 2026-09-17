@@ -779,13 +779,40 @@ impl Interpreter {
         &mut self,
         val: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
+        self.assignment_rhs_values_bounded(
+            val,
+            crate::runtime::utils::MAX_LAZY_RANGE_PREFIX as usize,
+        )
+    }
+
+    /// [`Self::assignment_rhs_values`], but a live/unreified lazy RHS (an
+    /// infinite `i64` `Range`, or a `gather`/`loop`-as-expression `LazyList`
+    /// coroutine) is pulled only up to `needed` elements instead of the
+    /// blanket [`crate::runtime::utils::MAX_LAZY_RANGE_PREFIX`] cap.
+    ///
+    /// Exists for a slice-assignment LHS whose key list bounds exactly how
+    /// many RHS values can ever be consumed (`slice_rhs_value` never reads
+    /// past `keys.len()`): pulling the full 100_000-element cap there wastes
+    /// work on every finite-but-long RHS, and for a shaped/typed target's
+    /// per-element type check (which re-walks the whole pulled `Vec`, driving
+    /// the subset's `where` block once per element) it is not just wasteful
+    /// but can take long enough to look like a hang
+    /// (`@bytes[^4] = (loop { 0 })` against a `UInt8` element type — #8633).
+    /// A finite RHS is entirely unaffected: every other arm below already
+    /// returns its natural (unbounded) length regardless of `needed`.
+    pub(crate) fn assignment_rhs_values_bounded(
+        &mut self,
+        val: &Value,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let needed_i64 = needed as i64;
         Ok(match val.view() {
             ValueView::Array(v, ..) => v.as_ref().clone().into_items(),
             ValueView::Seq(v) => v.iter().cloned().collect(),
             ValueView::Slip(v) => v.iter().cloned().collect(),
             ValueView::Range(a, b) => {
                 let end = if b == i64::MAX {
-                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                    b.min(a.saturating_add(needed_i64))
                 } else {
                     b
                 };
@@ -797,7 +824,7 @@ impl Interpreter {
             }
             ValueView::RangeExcl(a, b) => {
                 let end = if b == i64::MAX {
-                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                    b.min(a.saturating_add(needed_i64))
                 } else {
                     b
                 };
@@ -810,7 +837,7 @@ impl Interpreter {
             ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
                 let end = if b == i64::MAX {
-                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                    b.min(start.saturating_add(needed_i64))
                 } else {
                     b
                 };
@@ -823,7 +850,7 @@ impl Interpreter {
             ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
                 let end = if b == i64::MAX {
-                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                    b.min(start.saturating_add(needed_i64))
                 } else {
                     b
                 };
@@ -845,10 +872,7 @@ impl Interpreter {
             // machinery handles it).
             ValueView::LazyList(list) => {
                 if list.coroutine.is_some() && list.cache.lock().unwrap().is_none() {
-                    self.force_lazy_list_vm_n(
-                        &list,
-                        crate::runtime::utils::MAX_LAZY_RANGE_PREFIX as usize,
-                    )?
+                    self.force_lazy_list_vm_n(&list, needed)?
                 } else {
                     self.force_lazy_list_vm(&list)?
                 }
