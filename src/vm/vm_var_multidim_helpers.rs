@@ -193,9 +193,7 @@ impl Interpreter {
                 // genuine gap -- mirrors `mark_initialized_index`'s
                 // single-dimension bookkeeping, which this multidim leaf
                 // write path bypasses entirely.
-                arr.initialized
-                    .get_or_insert_with(Default::default)
-                    .insert(i);
+                arr.mark_initialized(i);
             } else {
                 Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
             }

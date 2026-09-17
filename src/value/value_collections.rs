@@ -323,6 +323,19 @@ impl ArrayData {
             Some(_) => false,
         }
     }
+
+    /// Record an explicit assignment to index `i` while preserving the
+    /// all-present meaning of `initialized == None` for bulk-constructed
+    /// arrays. Once a bulk array receives an element-wise write, materialize
+    /// its existing range before recording the write; starting with an empty
+    /// set would incorrectly turn untouched explicit `Any` elements into
+    /// holes.
+    pub(crate) fn mark_initialized(&mut self, i: usize) {
+        let len = self.len();
+        self.initialized
+            .get_or_insert_with(|| (0..len).collect())
+            .insert(i);
+    }
 }
 
 impl std::ops::Deref for ArrayData {

@@ -1249,10 +1249,7 @@ impl Interpreter {
                     // Mark the slot written, so `ArrayData::hole_at` tells it
                     // apart from a genuine gap (ADR-0049 §1.6/§4 slice 5).
                     if r.is_ok() {
-                        items
-                            .initialized
-                            .get_or_insert_with(Default::default)
-                            .insert(i);
+                        items.mark_initialized(i);
                     }
                     r
                 })
@@ -1655,10 +1652,7 @@ impl Interpreter {
                         // See the matching comment in `multi_dim_assign_scalar`
                         // (ADR-0049 §1.6/§4 slice 5).
                         if rest_is_leaf {
-                            items
-                                .initialized
-                                .get_or_insert_with(Default::default)
-                                .insert(i);
+                            items.mark_initialized(i);
                         }
                         r
                     })
@@ -1735,10 +1729,7 @@ impl Interpreter {
                     // `Any`/type-object value apart from a genuine gap --
                     // this multidim autoviv path otherwise never marks it.
                     if rest_is_leaf {
-                        items
-                            .initialized
-                            .get_or_insert_with(Default::default)
-                            .insert(i);
+                        items.mark_initialized(i);
                     }
                     r
                 })
