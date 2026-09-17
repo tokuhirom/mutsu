@@ -2,6 +2,21 @@ use super::vm_meta_ops_zip::{MAX_ZIP_EXPAND, ZipIter};
 use super::*;
 
 impl Interpreter {
+    /// True for a Z operand that is unbounded — a `LazyList` (map/grep/seq
+    /// pipe) or a Range whose upper endpoint is infinite (`1..*`). Both need
+    /// their pull bounded by the other operand's real length rather than
+    /// materialized outright.
+    fn is_zip_unbounded(v: &Value) -> bool {
+        match v.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::Range(_, b)
+            | ValueView::RangeExcl(_, b)
+            | ValueView::RangeExclStart(_, b)
+            | ValueView::RangeExclBoth(_, b) => b == i64::MAX,
+            _ => false,
+        }
+    }
+
     fn zip_iter_from_value(&mut self, val: &Value, needed: usize) -> Result<ZipIter, RuntimeError> {
         // ADR-0058: `ZipIter::from_value` reads the elements through pure
         // code, so a still-deferred `.map` operand has to run first.
@@ -50,6 +65,14 @@ impl Interpreter {
             return Ok(ZipIter::Lazy(
                 items.into_iter().take(MAX_ZIP_EXPAND).collect(),
             ));
+        }
+        // A genuinely infinite Range (`1..*`) should only pull as many
+        // elements as the other operand actually needs, not the coarse
+        // `MAX_ZIP_EXPAND` probe cap `ZipIter::from_value` falls back to
+        // when it has no such hint (e.g. two infinite ranges zipped
+        // together, where `needed` itself is already that same cap).
+        if let Some(bounded) = ZipIter::from_infinite_range(val, needed) {
+            return Ok(bounded);
         }
         Ok(ZipIter::from_value(val))
     }
@@ -181,9 +204,12 @@ impl Interpreter {
             }
             "Z" => {
                 // Use lazy index-based iteration for ranges to avoid
-                // materializing huge/infinite lists like 1..*.
-                let left_lazy = matches!(left.view(), ValueView::LazyList(_));
-                let right_lazy = matches!(right.view(), ValueView::LazyList(_));
+                // materializing huge/infinite lists like 1..*. An infinite
+                // Range is just as unbounded as a LazyList here, so both
+                // count as "lazy" for the purpose of bounding how much of
+                // each side actually gets pulled.
+                let left_lazy = Self::is_zip_unbounded(&left);
+                let right_lazy = Self::is_zip_unbounded(&right);
                 let left_probe = ZipIter::from_value(&left);
                 let right_probe = ZipIter::from_value(&right);
                 let left_needed = if left_lazy && !right_lazy {
@@ -199,7 +225,21 @@ impl Interpreter {
                 let left_iter = self.zip_iter_from_value(&left, left_needed)?;
                 let right_iter = self.zip_iter_from_value(&right, right_needed)?;
                 let all_lazy = left_iter.is_lazy() && right_iter.is_lazy();
-                let len = left_iter.len().min(right_iter.len()).min(MAX_ZIP_EXPAND);
+                // When at least one side is finite, its `.len()` already
+                // bounds the zip correctly (an infinite Range on the other
+                // side was built above with `needed`), so no extra clamp
+                // belongs here — unconditionally clamping used to truncate
+                // an ordinary `@big-array Z=> @other-big-array` (both
+                // finite, >1000 elements) down to 1000 pairs. Only when
+                // BOTH sides are unbounded (two infinite ranges, or a
+                // trailing-`*`-extended `ExtendedList` whose `.len()` is
+                // `usize::MAX`) is the `MAX_ZIP_EXPAND` safety cap still
+                // needed to avoid materializing forever.
+                let len = if all_lazy {
+                    left_iter.len().min(right_iter.len()).min(MAX_ZIP_EXPAND)
+                } else {
+                    left_iter.len().min(right_iter.len())
+                };
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for i in 0..len {
@@ -434,14 +474,12 @@ impl Interpreter {
             }
             "Z" => {
                 let probes: Vec<ZipIter> = operands.iter().map(ZipIter::from_value).collect();
-                let has_eager_operand = operands
-                    .iter()
-                    .any(|v| !matches!(v.view(), ValueView::LazyList(_)));
+                let has_eager_operand = operands.iter().any(|v| !Self::is_zip_unbounded(v));
                 let pull_limit = if has_eager_operand {
                     probes
                         .iter()
                         .zip(&operands)
-                        .filter(|(_, v)| !matches!(v.view(), ValueView::LazyList(_)))
+                        .filter(|(_, v)| !Self::is_zip_unbounded(v))
                         .map(|(iter, _)| iter.len())
                         .min()
                         .unwrap_or(0)
@@ -453,12 +491,20 @@ impl Interpreter {
                     .map(|v| self.zip_iter_from_value(v, pull_limit))
                     .collect::<Result<_, _>>()?;
                 let all_lazy = iters.iter().all(|it| it.is_lazy());
-                let len = iters
-                    .iter()
-                    .map(|it| it.len())
-                    .min()
-                    .unwrap_or(0)
-                    .min(MAX_ZIP_EXPAND);
+                // See the binary `Z` arm: when at least one operand is
+                // finite, its `.len()` already bounds the result; the
+                // `MAX_ZIP_EXPAND` safety cap is only needed when every
+                // operand is unbounded.
+                let len = if all_lazy {
+                    iters
+                        .iter()
+                        .map(|it| it.len())
+                        .min()
+                        .unwrap_or(0)
+                        .min(MAX_ZIP_EXPAND)
+                } else {
+                    iters.iter().map(|it| it.len()).min().unwrap_or(0)
+                };
                 let mut results: Vec<Value> = Vec::with_capacity(len);
                 for i in 0..len {
                     let combo: Vec<Value> = iters.iter().map(|it| it.nth(i)).collect();
