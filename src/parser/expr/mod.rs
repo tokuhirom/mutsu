@@ -2,7 +2,7 @@ mod operators;
 pub(in crate::parser) use operators::parse_word_logical_op;
 mod postfix;
 pub(crate) mod precedence;
-mod precedence_meta_ops;
+pub(crate) mod precedence_meta_ops;
 mod whatever;
 mod whatever_wrap;
 

@@ -1312,11 +1312,10 @@ fn postfix_expr_loop_from(
                     // call (`@a.Set (|) @b.Set`, `$x.Bag (+) $y.Bag`) is an
                     // *operator*, not a space-separated call-arg list. Leave it
                     // for the infix parser instead of erroring on the space.
-                    const SET_INFIX_OPS: &[&str] = &[
-                        "(elem)", "(cont)", "(<=)", "(>=)", "(==)", "(&)", "(+)", "(-)", "(.)",
-                        "(<)", "(>)", "(^)", "(|)",
-                    ];
-                    let is_set_infix_op = SET_INFIX_OPS.iter().any(|op| after_ws.starts_with(op));
+                    let is_set_infix_op =
+                        crate::parser::expr::precedence_meta_ops::starts_with_set_infix_op(
+                            after_ws,
+                        );
                     if after_ws.starts_with('(') && !is_set_infix_op {
                         // Slang spaced-methodop mode (ADR-0026 §2.3,
                         // Slang::Tuxic's `methodop` override): `.method (args)`

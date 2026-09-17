@@ -13,14 +13,14 @@
   "dist": "File::Name::Editor",
   "files": [],
   "load": {
-    "File::Name::Editor": "Failed to parse module 'File::Name::Editor': Unexpected block in infix position (missing statement control word before the expression?) [at File/Name/Editor.rakumod:70]"
+    "File::Name::Editor": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "12dee034",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -31,7 +31,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/IL/FILE_NAME_EDITOR/553ab3efd41a7404684ca8c824efa8227791a8f7.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

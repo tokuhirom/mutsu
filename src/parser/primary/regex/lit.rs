@@ -1588,7 +1588,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     let mut rest = rest;
     if (rest.starts_with(' ') || rest.starts_with('\t')) && !rest.starts_with('\\') {
         let after_ws = rest.trim_start_matches([' ', '\t']);
-        if after_ws.starts_with('(') {
+        // A `(...)`-delimited set/baggy infix operator on the topic
+        // (`for @pairs { .value (elem) $set }`) is an *operator*, not a
+        // space-separated call-arg list — see the matching check in
+        // postfix/loop_.rs for the explicit-invocant form.
+        let is_set_infix_op =
+            crate::parser::expr::precedence_meta_ops::starts_with_set_infix_op(after_ws);
+        if after_ws.starts_with('(') && !is_set_infix_op {
             // Slang spaced-methodop mode (ADR-0026 §2.3): `.method (args)`
             // is a method call with the parenthesized arguments.
             if crate::parser::stmt::simple::slang_spaced_methodop() {
