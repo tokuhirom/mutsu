@@ -1065,7 +1065,15 @@ impl Interpreter {
                 )),
                 _ => None,
             });
+        // A bare (unqualified) call in the body resolves against
+        // `current_package` at run time — restore it to the package the
+        // gather was WRITTEN in, not the consuming caller's (see
+        // `exec_make_gather_op`'s capture).
+        let saved_package = self.enter_gather_package(&list.env);
         let mut r = self.force_lazy_list_vm_inner(list);
+        if let Some(pkg) = saved_package {
+            self.set_current_package(pkg);
+        }
         if let Some(unit) = saved_unit {
             self.current_unit = unit;
         }
@@ -1461,7 +1469,13 @@ impl Interpreter {
                 )),
                 _ => None,
             });
+        // See `force_lazy_list_vm`: restore the package the gather was
+        // WRITTEN in for the duration of this (possibly resumed) pull.
+        let saved_package = self.enter_gather_package(&list.env);
         let r = self.force_lazy_list_vm_n_inner(list, needed);
+        if let Some(pkg) = saved_package {
+            self.set_current_package(pkg);
+        }
         if let Some(unit) = saved_unit {
             self.current_unit = unit;
         }
