@@ -1023,12 +1023,14 @@ impl Interpreter {
         !debug.contains("BareWord(") && !debug.contains("Call") && !debug.contains("Use {")
     }
 
-    /// Remove the no-init reset of plain `my`/`our`-free declarations whose
-    /// variable a hoisted top-level BEGIN already populated in `env`. Descends
-    /// one level into `SyntheticBlock` (which carries `my (@a, @b)` group
-    /// declarations). Only plain, unadorned, empty-default declarations are
-    /// touched — anything with a type constraint, trait, `state`/`our`/`is
-    /// dynamic`/`is export`, or a real initializer is left intact.
+    /// Remove the no-init reset of declarations whose variable a hoisted
+    /// top-level BEGIN already populated in `env`. Descends one level into
+    /// `SyntheticBlock` (which carries `my (@a, @b)` group declarations).
+    /// Typed containers are included: their constraint has already been
+    /// hoisted separately, while retaining the declaration here would replace
+    /// the BEGIN-created container with the parser's synthesized empty one.
+    /// Anything with a trait, `state`/`our`/`is dynamic`/`is export`, or a real
+    /// initializer is left intact.
     fn drop_seeded_noinit_decls(body: &mut Vec<Stmt>, env: &crate::env::Env) {
         body.retain_mut(|stmt| match stmt {
             Stmt::SyntheticBlock(inner) => {
@@ -1044,7 +1046,10 @@ impl Interpreter {
 
     /// If `stmt` is a plain `my $x;` / `my @a;` / `my %h;` with the synthesized
     /// empty-container default and no adornments, return the variable name (in
-    /// env-key form). Otherwise `None`.
+    /// env-key form). A typed `@`/`%` declaration is also eligible because its
+    /// type constraint is registered by `hoist_typed_var_decls`; a typed scalar
+    /// still needs its declaration-time type-object initialization. Otherwise
+    /// return `None`.
     fn plain_noinit_vardecl_name(stmt: &Stmt) -> Option<&str> {
         if let Stmt::VarDecl {
             name,
@@ -1063,7 +1068,7 @@ impl Interpreter {
                 || *is_our
                 || *is_dynamic
                 || *is_export
-                || type_constraint.is_some()
+                || (type_constraint.is_some() && !name.starts_with('@') && !name.starts_with('%'))
                 || !custom_traits.is_empty()
                 || where_constraint.is_some()
             {
