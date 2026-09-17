@@ -4659,16 +4659,8 @@ impl Compiler {
     fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
-                // Tail expression escapes the frame (implicit result). See
-                // `Compiler::compile_routine_tail_expr`'s doc comment for why
-                // this narrows to just `RegexLiteral`/`MatchRegexTree`
-                // rather than reusing `compile_condition_expr` wholesale.
-                self.with_escape(true, |c| match expr {
-                    Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => {
-                        c.compile_condition_expr(expr)
-                    }
-                    _ => c.compile_expr(expr),
-                });
+                // Tail expression escapes the frame (implicit result).
+                self.with_escape(true, |c| c.compile_expr(expr));
             }
             Stmt::Call { name, args } => {
                 self.compile_tail_stmt_call_value(*name, args);

@@ -107,7 +107,23 @@ impl Interpreter {
         let matched = match test.view() {
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => self
                 .call_sub_value(test.clone(), vec![Value::str(entry_name.to_string())], true)
-                .map(|v| v.truthy())
+                .map(|v| {
+                    // A predicate block whose sole/final statement is a bare
+                    // regex (`{ /\.html$/ }`, the common `dir(:test)` shape)
+                    // returns the `Regex` object itself, not a `Match` --
+                    // Raku defers the match to `Regex.Bool`, evaluated
+                    // against the topic in effect when the value is
+                    // boolified. `Value::truthy()` has no such context and
+                    // treats a `Regex` as unconditionally true, so it never
+                    // rejected any entry here; smart-match it against the
+                    // entry name explicitly instead of boolifying blindly.
+                    match v.view() {
+                        ValueView::Regex(_) | ValueView::RegexWithAdverbs { .. } => {
+                            self.smart_match(&Value::str(entry_name.to_string()), &v)
+                        }
+                        _ => v.truthy(),
+                    }
+                })
                 .unwrap_or(false),
             _ => self.smart_match(&Value::str(entry_name.to_string()), test),
         };
