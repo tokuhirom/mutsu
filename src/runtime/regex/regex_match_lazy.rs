@@ -212,9 +212,20 @@ impl Interpreter {
                     *unwind = true;
                     return true;
                 }
-                // Ratchet (`:`) commits to the atom's highest-priority match and
-                // forbids backtracking into it, so there is no second candidate.
-                ratchet
+                // Ratchet (`:`) commits to a *capturing* group's highest-priority
+                // match and forbids reconsidering it — once `(...)` has produced a
+                // captured value, growing/backtracking to a different one is
+                // exactly the reconsideration ratchet exists to forbid (verified
+                // against `raku`: `token t { (\S+) $<mid>=(.*?) $0 }` on
+                // "foo XXX foo" is NO MATCH). A non-capturing `[...]` group is
+                // transparent grouping, not a capture boundary, so its own
+                // frugal quantifiers must still be free to grow past a rejected
+                // end to satisfy the rest of the token — same as an unwrapped
+                // `.*?` would (raku: `[.*?]` in the same position IS a match).
+                // Letting `Merge` always ask for more relies on the inner
+                // pattern's own per-token ratchet/frugal rules (already correct)
+                // to stop it once it has genuinely run out of admissible ends.
+                shape != GroupShape::Merge && ratchet
             };
             self.regex_walk_ends_in_pkg(
                 pattern,
