@@ -498,13 +498,9 @@ impl Interpreter {
             })
             .count();
         let subsig_count = params.iter().filter(|p| p.sub_signature.is_some()).count();
-        let trait_count = params
+        let writable_trait_count = params
             .iter()
-            .filter(|p| {
-                p.traits
-                    .iter()
-                    .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
-            })
+            .filter(|p| p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
             .count();
         (
             literal_value_count,
@@ -512,7 +508,11 @@ impl Interpreter {
             subset_type_count,
             typed_param_count,
             subsig_count,
-            trait_count,
+            // `rw`/`raw` are dispatch-visible because they require a writable
+            // argument; `copy` changes only binding and must not outrank an
+            // otherwise equal candidate. Keep the slot for the callers that
+            // compare the nominal/refinement components separately.
+            writable_trait_count,
         )
     }
 

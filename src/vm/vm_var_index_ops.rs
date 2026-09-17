@@ -2845,6 +2845,18 @@ impl Interpreter {
     fn seq_subscript_needed_count(index: &Value) -> Option<usize> {
         match index.view() {
             ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+            // Positional subscripts numify Rat/FatRat values by truncating
+            // toward zero. Recognizing those here is important for a deferred
+            // Seq: otherwise an integral Rat index makes the caller reify an
+            // unbounded source instead of pulling its finite prefix.
+            ValueView::Rat(n, d) if d != 0 => n
+                .checked_div(d)
+                .filter(|i| *i >= 0)
+                .map(|i| (i as usize).saturating_add(1)),
+            ValueView::FatRat(n, d) if d != 0 => n
+                .checked_div(d)
+                .filter(|i| *i >= 0)
+                .map(|i| (i as usize).saturating_add(1)),
             ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
             ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
             ValueView::Array(items, _) => {

@@ -6,6 +6,29 @@ impl Interpreter {
         // ADR-0058: `ZipIter::from_value` reads the elements through pure
         // code, so a still-deferred `.map` operand has to run first.
         self.reify_map_grep_seq(val)?;
+        // A slip inside a list literal (`(1, |map {...}, 0..*)`) preserves a
+        // genuinely lazy child as a direct Array element. In list context that
+        // child is part of the surrounding sequence, not one nested value. Pull
+        // only the prefix this zip can consume before handing the flattened
+        // values to the ordinary iterator; this avoids treating the lazy child
+        // as a numeric zero or realizing it forever.
+        if let ValueView::Array(items, kind) = val.view()
+            && !kind.is_itemized()
+            && items
+                .iter()
+                .any(|item| matches!(item.view(), ValueView::LazyList(_)))
+        {
+            let mut flattened = Vec::with_capacity(items.len());
+            for item in items.iter() {
+                if let ValueView::LazyList(list) = item.view() {
+                    let remaining = needed.saturating_sub(flattened.len()).max(1);
+                    flattened.extend(self.force_lazy_list_vm_n(&list, remaining)?);
+                } else {
+                    flattened.push(item.clone());
+                }
+            }
+            return Ok(ZipIter::from_value(&Value::array(flattened)));
+        }
         if let ValueView::LazyList(list) = val.view() {
             // A cache-only lazy value is already finite.  Pull-backed values
             // (map/grep pipes and sequences) need VM execution to populate the
