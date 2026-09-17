@@ -746,16 +746,36 @@ impl Compiler {
         if self.rw_tail {
             self.compile_return_rw_arg(expr);
         } else {
-            // A bare regex literal is a statement in its own right in Raku
-            // (it implicitly matches against `$_`), not merely a value
-            // expression — `compile_condition_expr` is the shared desugar
-            // for that (already used for an `if`/`while` condition and for
-            // an ordinary sunk `Stmt::Expr`). Without it here, a block/sub
-            // whose final statement is `/regex/` (the common `dir(:test)`
-            // predicate shape, e.g. `{ /\.html$/ }`) returned the bare
-            // `Regex` object instead of the match, and a `Regex` is always
-            // truthy — so `dir(:test)` never rejected any entry.
-            self.compile_condition_expr(expr);
+            // A bare regex literal (`Expr::RegexLiteral`/`MatchRegexTree` --
+            // the shape the parser produces for a user-written `/regex/`
+            // term) is a statement in its own right in Raku: it implicitly
+            // matches against `$_`, not merely a value expression. This is
+            // already desugared for an `if`/`while` condition and for an
+            // ordinary sunk `Stmt::Expr` (see `compile_condition_expr`), but
+            // was missing here, so a block/sub whose final statement is
+            // `/regex/` (the common `dir(:test)` predicate shape, e.g.
+            // `{ /\.html$/ }`) returned the bare `Regex` object instead of
+            // the match -- and a `Regex` is always truthy, so `dir(:test)`
+            // never rejected any entry.
+            //
+            // Deliberately narrower than `compile_condition_expr` itself:
+            // that function's first arm also matches a plain
+            // `Expr::Literal` that merely *happens* to wrap a `Regex`
+            // value, which is exactly the shape a `token`/`rule`/`regex`
+            // declaration's own body carries (its Regex value is the
+            // routine's real return value, not a bare statement to
+            // implicitly match) -- routing that arm through here as well
+            // made a named-subrule lookup at match time see a match result
+            // instead of the callee's own pattern, corrupting LTM ranking
+            // ("Null regex not allowed" from an empty re-derived pattern
+            // string). So only the two regex-slang node shapes desugar
+            // here; a bare `Expr::Literal(Regex)` keeps loading as a value.
+            match expr {
+                Expr::RegexLiteral { .. } | Expr::MatchRegexTree { .. } => {
+                    self.compile_condition_expr(expr);
+                }
+                _ => self.compile_expr(expr),
+            }
         }
     }
 
