@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 37.82,
+        "secs": 9.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,53 +38,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 23.24,
+        "secs": 10.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Sequence but got Seq (APV Anti-aircraft warfare systems MLRS UAV operational-tactical level aircraft artillery systems cruise missiles helicopters personne",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-day-parse.t",
       "raku": {
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 1.66,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to slurp 'raw-pages/.': Is a directory (os error 21)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-whole-dir.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.66,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -97,10 +95,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "c84bef1a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -111,13 +109,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_UKRAINEWAR_MOD/f254be85fd76af1df3f1273b3760d83079a09a73.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 60,
     "baseline_files": 3,
-    "mutsu_assertions": 2,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 60,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.5"
 }
