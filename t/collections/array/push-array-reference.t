@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 20;
 
 # `@outer.push(@inner)` stores @inner by reference (Raku's non-flattening `**@`
 # slurpy), so later mutations of @inner propagate to the stored element.
@@ -83,4 +83,29 @@ plan 16;
     @c.push($s);
     $s = [0];
     is-deeply @c[0], [9, 9], 'scalar push is not reference-promoted';
+}
+
+# GH #8609: iterating a reference-pushed element (the shape zef's
+# `Zef::Repository.candidates` uses -- `push @plugins, @group; for @plugins ->
+# @repo-group { @repo-group.hyper(:batch(1)).map: -> $repo {...} }`) must
+# iterate the group's own elements, not treat the whole group as one item.
+# The reference-push element is a `ContainerRef` cell shared with its source
+# (so later mutation of the source still propagates), and a `for`-loop's
+# `@`-sigil parameter binds through that cell -- but a plain `for @group ->
+# $x` and `.map` over the BOUND parameter must still see the group's real
+# elements, not the cell itself.
+{
+    my @group;
+    @group.push($_) for 1, 2, 3;
+    my @outer;
+    @outer.push(@group);
+    for @outer -> @row {
+        is @row.elems, 3, 'nested reference-pushed group reports its own elems';
+        my @seen;
+        for @row -> $x { @seen.push($x) }
+        is-deeply @seen, [1, 2, 3], 'plain for-loop iterates the group elements';
+        is-deeply @row.map({ $_ }).List, (1, 2, 3), '.map iterates the group elements';
+        is-deeply @row.hyper(:batch(1)).map({ $_ }).List, (1, 2, 3),
+            '.hyper(:batch(1)).map iterates the group elements one at a time';
+    }
 }
