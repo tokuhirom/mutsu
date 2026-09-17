@@ -139,6 +139,12 @@ OVERRIDES: dict[str, str] = {
     # collections itemization test -- matches no rule at all (`vardecl` is one
     # word, not `var-`/`decl` as separate prefixes).
     "vardecl-expr-value-itemized": "vm",
+    # An inline `constant $ = expr`/`constant FOO = expr` used in expression
+    # position is the sibling VM store/expression-value mechanics bug to
+    # vardecl-expr-value-itemized above (same `DoStmt(VarDecl)` compile path,
+    # opposite direction: a constant must NOT itemize) -- matches no rule
+    # (`constant` alone isn't one of the rule prefixes).
+    "expr-position-constant-no-itemize": "vm",
     # A `where` clause on a slurpy hash (`*%v where {...}`) is a multi-dispatch
     # candidate-selection bug -- it belongs beside the other `multi-where-*`
     # dispatch pins, not routines/signature. Two rule mis-fires stack here:
