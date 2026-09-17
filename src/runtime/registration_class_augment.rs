@@ -1438,21 +1438,32 @@ impl Interpreter {
                 }
                 crate::opcode::DeferredBodyOpKind::Plain => None,
             };
+            let is_use_or_need = matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
             if let Some(pkg) = body_pkg {
                 self.set_current_package(pkg.to_string());
             }
-            let r = match &op.chunk {
-                Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
-                // See the identical branch in
-                // `run_composed_role_deferred_body`: recompiling a `TokenRule`
-                // op's raw statement through `run_block_raw` would silently
-                // lose `Code.line`/`Code.file` (a fresh `Compiler::new()` has
-                // no line history), so register directly instead.
-                None if op.kind == crate::opcode::DeferredBodyOpKind::TokenRule => {
-                    self.register_token_decl_from_stmt(&op.raw, op.source_line);
-                    Ok(())
+            let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
+                match &op.chunk {
+                    Some(chunk) => this.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                    // See the identical branch in
+                    // `run_composed_role_deferred_body`: recompiling a `TokenRule`
+                    // op's raw statement through `run_block_raw` would silently
+                    // lose `Code.line`/`Code.file` (a fresh `Compiler::new()` has
+                    // no line history), so register directly instead.
+                    None if op.kind == crate::opcode::DeferredBodyOpKind::TokenRule => {
+                        this.register_token_decl_from_stmt(&op.raw, op.source_line);
+                        Ok(())
+                    }
+                    None => this.run_block_raw(std::slice::from_ref(&op.raw)),
                 }
-                None => self.run_block_raw(std::slice::from_ref(&op.raw)),
+            };
+            // A `use`/`need`'s installed functions must survive an enclosing
+            // bare block's routine-registry restore (#8646) — see
+            // `run_role_deferred_use_stmt`.
+            let r = if is_use_or_need {
+                self.run_role_deferred_use_stmt(run_one)
+            } else {
+                run_one(self)
             };
             if body_pkg.is_some() {
                 self.set_current_package(saved_pkg.clone());

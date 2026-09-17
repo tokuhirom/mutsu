@@ -247,18 +247,28 @@ impl Interpreter {
             } else if is_regex_decl {
                 self.set_current_package(cx.name.to_string());
             }
-            let r = match &op.chunk {
-                Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
-                // `TokenRule`: register directly from the raw statement plus
-                // its precomputed `source_line` instead of recompiling it
-                // through `run_block_raw` (a fresh `Compiler::new()` there has
-                // no line history, so the recompile would silently lose
-                // `Code.line`/`Code.file` -- see `register_token_decl_from_stmt`).
-                None if is_regex_decl => {
-                    self.register_token_decl_from_stmt(&op.raw, op.source_line);
-                    Ok(())
+            let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
+                match &op.chunk {
+                    Some(chunk) => this.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                    // `TokenRule`: register directly from the raw statement plus
+                    // its precomputed `source_line` instead of recompiling it
+                    // through `run_block_raw` (a fresh `Compiler::new()` there has
+                    // no line history, so the recompile would silently lose
+                    // `Code.line`/`Code.file` -- see `register_token_decl_from_stmt`).
+                    None if is_regex_decl => {
+                        this.register_token_decl_from_stmt(&op.raw, op.source_line);
+                        Ok(())
+                    }
+                    None => this.run_block_raw(std::slice::from_ref(&op.raw)),
                 }
-                None => self.run_block_raw(std::slice::from_ref(&op.raw)),
+            };
+            // A `use`/`need`'s installed functions must survive an enclosing
+            // bare block's routine-registry restore (#8646) — see
+            // `run_role_deferred_use_stmt`.
+            let r = if is_use_decl {
+                self.run_role_deferred_use_stmt(run_one)
+            } else {
+                run_one(self)
             };
             if is_type_decl || is_regex_decl || is_use_decl {
                 self.set_current_package(saved_body_pkg.clone());

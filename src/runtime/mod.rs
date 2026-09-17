@@ -2464,6 +2464,16 @@ pub struct Interpreter {
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
     module_registered_functions: std::sync::Arc<HashSet<Symbol>>,
+    /// Packages that received a routine import from a role's own deferred
+    /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
+    /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set
+    /// `current_package` to the receiver's class even when none of the
+    /// existing fast-path conditions (class-scoped subs, package lexicals, a
+    /// `::`-qualified owner name) apply — a FLAT (non-namespaced) role/class
+    /// name can still own package-qualified imported routines that
+    /// `bare_name_packages()` can only find by walking outward from itself
+    /// (#8646 shape 1).
+    packages_with_deferred_use_imports: std::sync::Arc<HashSet<Symbol>>,
     /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
     /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
     ///
