@@ -2045,8 +2045,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
+                    // Same flattening as the positional branch above: a
+                    // quantified/multi-match named capture (`<a>*`) renders
+                    // as an Array, but `.values` flattens its entries rather
+                    // than yielding the Array itself.
                     for (_, v) in sorted {
-                        vals.push(v.clone());
+                        if let ValueView::Array(inner, _) = v.view() {
+                            vals.extend(inner.iter().cloned());
+                        } else {
+                            vals.push(v.clone());
+                        }
                     }
                 }
                 return Some(Ok(Value::array(vals)));
@@ -2087,7 +2095,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
                         kv.push(Value::str(k.clone()));
-                        kv.push(v.clone());
+                        // A quantified/multi-match named capture's Array
+                        // flattens after its key, same as the positional
+                        // branch above (raku: `$m.kv` over `<a>*` is
+                        // `("a", m1, m2)`, not `("a", [m1, m2])`; zero
+                        // matches leave the key with nothing after it).
+                        if let ValueView::Array(inner, _) = v.view() {
+                            kv.extend(inner.iter().cloned());
+                        } else {
+                            kv.push(v.clone());
+                        }
                     }
                 }
                 return Some(Ok(Value::array(kv)));
