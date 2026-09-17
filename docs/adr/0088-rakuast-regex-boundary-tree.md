@@ -15,7 +15,8 @@
   argument, modified-method-call dynamic-argument, and quoted-method-call
   dynamic-argument, dynamic-quoted-method-name argument, and hash-index
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
-  variable-colonpair, and expression-only block-valued-colonpair
+  variable-colonpair, expression-only block-valued-colonpair, and hash-composer
+  block-valued-colonpair
   dynamic-argument slices implemented
   2026-09-12 through
   2026-09-17;
@@ -1310,8 +1311,31 @@ keeps closure captures live across repeated matches without evaluating user code
 during `.AST` conversion or RakuAST lowering.
 
 This slice is deliberately bounded to non-empty, expression-only bare blocks;
-hash-composer bodies, placeholder/slurpy block signatures, and other complex
-runtime-valued forms remain separate boundaries. The focused regression is
+placeholder/slurpy block signatures, and other complex runtime-valued forms
+remain separate boundaries. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block node,
 constructed AST lowering, named Block binding, and outer-lexical closure across
 reassignment.
+
+## 53. Hash-composer block-valued colonpair dynamic argument slice (2026-09-17)
+
+Hash-composer colonpair arguments such as
+`<word(:expected{ a => $value, b => 2 })>` now retain the same direct
+`RakuAST::Block` value that Rakudo exposes, while preserving the block body's
+comma-separated `FatArrow` entries. The parser's execution expression stores
+this body as a hash, so the regex argument provenance recognizes the brace form
+when the right-hand value is an `Expr::Hash`, in addition to the closure form
+handled by the preceding slice.
+
+The write direction flattens the internal `ArrayLiteral` that represents a
+RakuAST comma list back into hash-composer entries before sending the source
+through the existing regex parser. This keeps the named argument a Hash and
+leaves its scalar values dynamic at match time. Empty and simple hash-composer
+bodies are covered by the same source boundary; nested or otherwise
+unrenderable values, placeholder/slurpy block signatures, and other complex
+runtime-valued forms remain deferred.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block node,
+multiple `FatArrow` entries, constructed-tree EVAL, named Hash binding, and
+lexical reassignment between matches.

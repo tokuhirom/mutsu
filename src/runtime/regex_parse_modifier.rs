@@ -337,28 +337,11 @@ impl Interpreter {
             // Skip <...> angle brackets — don't interpolate variables inside them.
             // The tokenizer handles <$var>, <@var>, <{code}>, etc. directly.
             if ch == '<' {
-                let mut depth = 1usize;
                 out.push(ch);
-                i += 1;
-                while i < chars.len() && depth > 0 {
-                    let c = chars[i];
-                    if c == '\\' {
-                        out.push(c);
-                        i += 1;
-                        if i < chars.len() {
-                            out.push(chars[i]);
-                            i += 1;
-                        }
-                        continue;
-                    }
-                    if c == '<' {
-                        depth += 1;
-                    } else if c == '>' {
-                        depth -= 1;
-                    }
-                    out.push(c);
-                    i += 1;
-                }
+                let rest = &chars[i + 1..];
+                let consumed = super::regex_parse_core::scan_angle_assertion_consumed(rest);
+                out.extend(rest.iter().take(consumed));
+                i += 1 + consumed;
                 continue;
             }
             if ch == '$' {

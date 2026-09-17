@@ -149,6 +149,21 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
     }
 }
 
+/// Return the number of characters consumed after an opening `<` while
+/// scanning an assertion. Runtime interpolation uses this before the parser
+/// sees the assertion, so it must agree with the parser about `>` characters
+/// inside argument lists and hash-composer bodies.
+pub(super) fn scan_angle_assertion_consumed(rest: &[char]) -> usize {
+    match scan_angle_assertion_body(rest, true) {
+        AngleBodyScan {
+            closed: true,
+            consumed,
+            ..
+        } => consumed,
+        _ => scan_angle_assertion_body(rest, false).consumed,
+    }
+}
+
 /// Read the body of a `{ ... }` regex code block from `chars`, the opening
 /// brace already consumed, stopping at the `}` that closes it.
 ///

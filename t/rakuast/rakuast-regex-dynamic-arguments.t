@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 96;
+plan 103;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -434,3 +434,30 @@ ok GDynamicBlockColonPairArgument.parse('').defined,
 $value = 'b';
 ok GDynamicBlockColonPairArgument.parse('').defined,
     'a block-valued colonpair preserves its outer lexical closure';
+
+my $hash_ast = Q[/<word(:expected{ a => $value, b => 2 })>/].AST;
+my $hash_gist = $hash_ast.gist;
+ok $hash_gist.contains('RakuAST::ColonPair::Value'),
+    'a hash-composer colonpair argument keeps its value node';
+ok $hash_gist.contains('value => RakuAST::Block.new('),
+    'a hash-composer colonpair keeps its direct block value';
+ok $hash_gist.contains('RakuAST::ApplyListInfix.new(')
+    && $hash_gist.comb('RakuAST::FatArrow.new(').elems >= 2,
+    'a hash-composer block keeps its comma-separated pairs';
+ok EVAL($hash_ast) ~~ Regex,
+    'a constructed hash-composer colonpair regex lowers successfully';
+
+grammar GDynamicHashComposerColonPairArgument {
+    token TOP { <word(:expected{ a => $value, b => 2 })> }
+    token word(:$expected) {
+        <?{ $expected<a> eq $value && $expected<b> == 2 }>
+    }
+}
+$value = 'a';
+ok GDynamicHashComposerColonPairArgument.parse('').defined,
+    'a hash-composer colonpair reaches the named subrule parameter as a Hash';
+$value = 'b';
+ok GDynamicHashComposerColonPairArgument.parse('').defined,
+    'a hash-composer colonpair observes reassignment at match time';
+ok !GDynamicHashComposerColonPairArgument.parse('a').defined,
+    'a hash-composer colonpair does not retain its prior lexical value';
