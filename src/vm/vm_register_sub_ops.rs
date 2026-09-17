@@ -481,6 +481,22 @@ impl Interpreter {
                         let val = val.clone();
                         self.record_exported_sub_value(pkg, resolved_name.clone(), val);
                     }
+                } else if !*is_export
+                    && !self.suppress_exports
+                    && custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                {
+                    // An `our`-scoped sub/multi declared directly inside a
+                    // module's own `my package EXPORT::<tag> { ... }` block
+                    // is part of that tag's export list by construction,
+                    // whether or not it also carries an explicit `is export`
+                    // trait — the well-known "manual EXPORT stash" idiom
+                    // (e.g. `Net::IP::Parse`'s
+                    // `our sub infix:<< ip== >> (...) { ... }` declared
+                    // inside `EXPORT::DEFAULT`, never itself
+                    // `is export`-tagged). `export_implicit_stash_sub` is a
+                    // no-op unless `current_package()` actually names such a
+                    // stash.
+                    self.export_implicit_stash_sub(&resolved_name, *multi);
                 }
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
