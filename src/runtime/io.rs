@@ -24,14 +24,4 @@ impl Interpreter {
             })
             .unwrap_or_else(|_| std::path::PathBuf::from("target/debug/mutsu"))
     }
-
-    pub(super) fn dynamic_name_alias(name: &str) -> Option<String> {
-        if let Some(rest) = name.strip_prefix("$*") {
-            return Some(format!("*{}", rest));
-        }
-        if let Some(rest) = name.strip_prefix('*') {
-            return Some(format!("$*{}", rest));
-        }
-        None
-    }
 }

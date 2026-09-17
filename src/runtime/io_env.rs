@@ -426,7 +426,8 @@ impl Interpreter {
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
         self.env.get(name).cloned().or_else(|| {
-            Self::dynamic_name_alias(name).and_then(|alias| self.env.get(&alias).cloned())
+            crate::runtime::utils::twigil_dynamic_alias(name)
+                .and_then(|alias| self.env.get(&alias).cloned())
         })
     }
 

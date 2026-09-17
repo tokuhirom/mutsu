@@ -1160,6 +1160,7 @@ impl Interpreter {
                     continue;
                 }
                 merged_env.insert(source_name.clone(), val.clone());
+                Self::mirror_twigil_alias_writeback(&mut merged_env, source_name, val);
             }
             // Slice F: record the caller-source names this `is rw` method writeback
             // touched (the value now lives in `merged_env`, which becomes

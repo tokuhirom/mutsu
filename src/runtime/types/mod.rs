@@ -591,6 +591,37 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Mirror an `is rw`/`is raw` writeback's final value into `source_name`'s
+    /// `$*`-twigil dynamic-var alias, when one exists.
+    ///
+    /// `apply_rw_bindings_to_env` (and the analogous inline `rw_writeback`
+    /// merge in `vm_method_dispatch.rs`'s compiled-method-call path) writes
+    /// the returned value straight into the caller's env under `source_name`
+    /// (or through an existing shared cell there), bypassing the canonical
+    /// by-name writer (`Interpreter::set_env_with_main_alias`) that every
+    /// OTHER writer of a dynamic var goes through to keep its sigilled
+    /// (`$*OUT`) and sigilless (`*OUT`) env keys in sync. Without this, a
+    /// raw/rw parameter aliasing a dynamic var (`Foo(my $*OUT)` with `method
+    /// CALL-ME(Foo:U: $one is raw)`) updates only one spelling, leaving
+    /// `write_to_named_handle`'s sigilled-key read of `$*OUT` stale (issue
+    /// #8645).
+    ///
+    /// Only mirrors when the alias key already exists in `target_env` — a
+    /// name that merely happens to start with `*`/`$*` but was never seeded
+    /// as a dynamic var's twin (e.g. a sigilless positional alias) must not
+    /// get a fresh, disconnected alias entry planted here.
+    pub(crate) fn mirror_twigil_alias_writeback(
+        target_env: &mut crate::env::Env,
+        source_name: &str,
+        value: &Value,
+    ) {
+        if let Some(alias) = crate::runtime::utils::twigil_dynamic_alias(source_name)
+            && target_env.contains_key(&alias)
+        {
+            target_env.insert(alias, value.clone());
+        }
+    }
+
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
@@ -634,10 +665,11 @@ impl Interpreter {
                             target_env.get(source_name).map(Value::view)
                             && !elem.is_container_ref()
                         {
-                            *arc.lock().unwrap() = elem;
+                            *arc.lock().unwrap() = elem.clone();
                         } else {
-                            target_env.insert(source_name.clone(), elem);
+                            target_env.insert(source_name.clone(), elem.clone());
                         }
+                        Self::mirror_twigil_alias_writeback(target_env, source_name, &elem);
                     }
                 }
                 continue;
@@ -685,10 +717,12 @@ impl Interpreter {
                             continue;
                         }
                         let inner = incoming.lock().unwrap().clone();
-                        *arc.lock().unwrap() = inner;
+                        *arc.lock().unwrap() = inner.clone();
+                        Self::mirror_twigil_alias_writeback(target_env, source_name, &inner);
                         continue;
                     }
-                    *arc.lock().unwrap() = updated;
+                    *arc.lock().unwrap() = updated.clone();
+                    Self::mirror_twigil_alias_writeback(target_env, source_name, &updated);
                     continue;
                 }
                 // A scalar parameter's itemized holder is a distinct word over
@@ -698,7 +732,9 @@ impl Interpreter {
                 if updated.container_ref_is_itemized()
                     && let ValueView::ContainerRef(incoming) = updated.view()
                 {
-                    target_env.insert(source_name.clone(), incoming.lock().unwrap().clone());
+                    let inner = incoming.lock().unwrap().clone();
+                    target_env.insert(source_name.clone(), inner.clone());
+                    Self::mirror_twigil_alias_writeback(target_env, source_name, &inner);
                     continue;
                 }
                 // A SIGILLESS param aliasing an `@`/`%` variable stores through
@@ -713,7 +749,8 @@ impl Interpreter {
                 } else {
                     updated
                 };
-                target_env.insert(source_name.clone(), updated);
+                target_env.insert(source_name.clone(), updated.clone());
+                Self::mirror_twigil_alias_writeback(target_env, source_name, &updated);
             }
         }
     }

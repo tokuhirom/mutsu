@@ -63,6 +63,22 @@ pub(crate) fn deleted_index_key(name: &str) -> String {
     MetaNs::DeletedIndex.owned_key_for_str(name)
 }
 
+/// The other spelling of a `$*`-twigil dynamic variable's env key: `$*OUT` <->
+/// `*OUT`. A dynamic var is stored under both the sigilled and the sigilless
+/// form (seeded together — see `BASE_TIER_DYNAMICS`), and every writer or
+/// restorer that touches one spelling by name must mirror the other or the two
+/// desync (issue #8645). This is the single canonical implementation; do not
+/// re-derive this transform at a new call site.
+pub(crate) fn twigil_dynamic_alias(name: &str) -> Option<String> {
+    if let Some(rest) = name.strip_prefix("$*") {
+        return Some(format!("*{}", rest));
+    }
+    if let Some(rest) = name.strip_prefix('*') {
+        return Some(format!("$*{}", rest));
+    }
+    None
+}
+
 /// The env key marking `name` as a genuine bound array SLICE (`@slice :=
 /// @array[1,2]`), i.e. "this variable's elements are write-through cells". Set
 /// only at the bind moment that produces them, and cleared on every

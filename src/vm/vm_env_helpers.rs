@@ -207,13 +207,7 @@ impl Interpreter {
     }
 
     fn twigil_dynamic_alias(name: &str) -> Option<String> {
-        if let Some(rest) = name.strip_prefix("$*") {
-            return Some(format!("*{}", rest));
-        }
-        if let Some(rest) = name.strip_prefix('*') {
-            return Some(format!("$*{}", rest));
-        }
-        None
+        crate::runtime::utils::twigil_dynamic_alias(name)
     }
 
     fn main_unqualified_name(name: &str) -> Option<String> {
