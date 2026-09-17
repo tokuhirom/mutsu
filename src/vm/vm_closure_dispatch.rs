@@ -408,10 +408,8 @@ impl Interpreter {
         // built-in dynamics into a per-interpreter base tier; ADR-0092 §7.5
         // records what that nets out to once the tier's own cost is paid.
         //
-        // The loop below is now only the OVERWRITE exceptions, which still have
-        // to land in the overlay (above the chain, not below it). It stays a
-        // scan of the captured tier because `ContainerRef`-ness is a property of
-        // each value, not of its key.
+        // The block below is now only the OVERWRITE exceptions, which still
+        // have to land in the overlay (above the chain, not below it).
         let capture_tier = data.env.capture_tier();
         self.env_mut()
             .set_capture_fallback(std::sync::Arc::clone(&capture_tier));
@@ -420,71 +418,94 @@ impl Interpreter {
         // that lexical, so it must OVERWRITE any stale plain value the caller env
         // currently holds (e.g. a later loop iteration's slot re-injection) — the
         // don't-overwrite default would otherwise hide this closure's own cell.
-        for (k, v) in capture_tier.iter() {
-            if matches!(v.view(), ValueView::ContainerRef(_)) {
-                // A captured `ContainerRef` cell normally OVERWRITES the caller's
-                // stale value (it is the single source of truth for that lexical).
-                // But a *dynamic* variable (`$*x`) is dynamic-scope: its live value
-                // is whatever the current dynamic frame set (e.g. `indir` binds
-                // `$*CWD` for its block), NOT the cell the escaping closure captured
-                // from its creator. Overwriting here clobbers that dynamic binding
-                // (indir.t: `start indir :!d, $p, { ...; $*CWD = 42 }` read the
-                // creator's `my $*CWD` instead of the indir-set path). Dynamics are
-                // already excluded from `authoritative_free_vars` below for the same
-                // reason; do the same for the box-on-capture cell — don't overwrite,
-                // so the live dynamic binding stands.
-                // A dynamic keeps the don't-overwrite default, which the
-                // fallback tier installed above already implements: it provides
-                // the captured cell only when no live dynamic frame has one.
-                if !k.is_dynamic_var_env_key() {
-                    self.env_mut().insert_sym(*k, v.clone());
-                }
-            } else if *k == crate::symbol::wk::self_() {
-                // `self` is LEXICAL in Raku: a block has no invocant of its own, so
-                // a `self` inside it resolves outwards to the enclosing method's
-                // invocant — the one this closure captured. The don't-overwrite
-                // default made it *dynamic* instead, so a block that escapes into
-                // another object's method saw that object:
-                //
-                //     method execute() { $!parent.protect: { $!stmt } }
-                //
-                // ran the block inside `Conn.protect`, where the live env `self`
-                // is the Conn, and the `$!stmt` read blew up with "no such
-                // attribute on type Conn" (DBDish::mysql::StatementHandle).
-                // A method's own invocant is bound from its args further below,
-                // after this merge, so it still wins over the captured value.
-                self.env_mut().insert_sym(*k, v.clone());
-            } else if !cc.is_routine
-                && (*k == crate::symbol::wk::topic() || *k == crate::symbol::wk::error_var())
-            {
-                // `$_` (the topic) and `$!` (the last error) are LEXICAL in a
-                // block: a block lexically captures them from its creation
-                // scope and must see those values when called from another
-                // routine. The don't-overwrite default (`entry_or_insert_sym`,
-                // which checks the chain-walking `contains_key_sym`) hides
-                // them because the caller (a `sub`) already reset its OWN
-                // `$_`/`$!` before calling this block, so the closure's
-                // freshly-empty overlay sees the CALLER's fresh reset via the
-                // parent chain and treats that as "already present" — losing
-                // the closure's own captured value entirely:
-                //
-                //     given 42 { my &b = { say $_ }; call-block(&b) }
-                //     sub f(&code) { my $d=1; try { code(); $d=0 } }
-                //     try { 1+1 }; f { $!.message }   # dies-ok's own shape
-                //
-                // Without this, `$_`/`$!` inside the block are the callee
-                // routine's fresh `Any`/`Nil` instead of the creation scope's
-                // real values — `f { $!.message }` above silently returned
-                // `Nil` instead of dying, since `Nil.message` doesn't raise
-                // the way `Any.message` does (`t/exception-methods.t`).
-                // Routines reset both explicitly (`$_` at the `is_routine &&
-                // !param` guard in `call_compiled_function_named_inner`; `$!`
-                // just below in this function), so this overwrite is safe for
-                // non-routine blocks only.
-                self.env_mut().insert_sym(*k, v.clone());
+        //
+        // This walks `Tier::container_ref_keys`'s memoized subset rather than
+        // every entry: `ContainerRef`-ness is a property of each value, not of
+        // its key, so it cannot ride the key-set `capture_candidates` memo, but
+        // it needs no invalidation of its own either — see that memo's own doc
+        // comment for why. Ablated, this scan alone was ~1.5-2% of a closure
+        // call over a `use Test` capture (#7565).
+        for &k in capture_tier.container_ref_keys() {
+            // Superset index: look the key up rather than assume it is still
+            // present or still bound to a `ContainerRef` (defensive only —
+            // `container_ref_keys`'s doc comment is why this tier can never
+            // actually go stale in practice).
+            let Some(v) = capture_tier.get(&k) else {
+                continue;
+            };
+            if !matches!(v.view(), ValueView::ContainerRef(_)) {
+                continue;
             }
-            // Every other captured name is the don't-overwrite default, which
-            // the fallback tier installed above already implements.
+            // But a *dynamic* variable (`$*x`) is dynamic-scope: its live value
+            // is whatever the current dynamic frame set (e.g. `indir` binds
+            // `$*CWD` for its block), NOT the cell the escaping closure captured
+            // from its creator. Overwriting here clobbers that dynamic binding
+            // (indir.t: `start indir :!d, $p, { ...; $*CWD = 42 }` read the
+            // creator's `my $*CWD` instead of the indir-set path). Dynamics are
+            // already excluded from `authoritative_free_vars` below for the same
+            // reason; do the same for the box-on-capture cell — don't overwrite,
+            // so the live dynamic binding stands.
+            // A dynamic keeps the don't-overwrite default, which the
+            // fallback tier installed above already implements: it provides
+            // the captured cell only when no live dynamic frame has one.
+            if !k.is_dynamic_var_env_key() {
+                self.env_mut().insert_sym(k, v.clone());
+            }
+        }
+        // `self` is LEXICAL in Raku: a block has no invocant of its own, so
+        // a `self` inside it resolves outwards to the enclosing method's
+        // invocant — the one this closure captured. The don't-overwrite
+        // default made it *dynamic* instead, so a block that escapes into
+        // another object's method saw that object:
+        //
+        //     method execute() { $!parent.protect: { $!stmt } }
+        //
+        // ran the block inside `Conn.protect`, where the live env `self`
+        // is the Conn, and the `$!stmt` read blew up with "no such
+        // attribute on type Conn" (DBDish::mysql::StatementHandle).
+        // A method's own invocant is bound from its args further below,
+        // after this merge, so it still wins over the captured value.
+        //
+        // A single well-known key, so this is a direct lookup rather than a
+        // per-entry check folded into the scan above (#7565): `self` is never
+        // dynamic-scoped, so it always overwrites unconditionally. (If `self`
+        // also happens to be `ContainerRef`-boxed, the loop above already
+        // installed the same value — a harmless repeat, not a second answer.)
+        if let Some(v) = capture_tier.get(&crate::symbol::wk::self_()) {
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::self_(), v.clone());
+        }
+        // `$_` (the topic) and `$!` (the last error) are LEXICAL in a
+        // block: a block lexically captures them from its creation
+        // scope and must see those values when called from another
+        // routine. The don't-overwrite default (`entry_or_insert_sym`,
+        // which checks the chain-walking `contains_key_sym`) hides
+        // them because the caller (a `sub`) already reset its OWN
+        // `$_`/`$!` before calling this block, so the closure's
+        // freshly-empty overlay sees the CALLER's fresh reset via the
+        // parent chain and treats that as "already present" — losing
+        // the closure's own captured value entirely:
+        //
+        //     given 42 { my &b = { say $_ }; call-block(&b) }
+        //     sub f(&code) { my $d=1; try { code(); $d=0 } }
+        //     try { 1+1 }; f { $!.message }   # dies-ok's own shape
+        //
+        // Without this, `$_`/`$!` inside the block are the callee
+        // routine's fresh `Any`/`Nil` instead of the creation scope's
+        // real values — `f { $!.message }` above silently returned
+        // `Nil` instead of dying, since `Nil.message` doesn't raise
+        // the way `Any.message` does (`t/exception-methods.t`).
+        // Routines reset both explicitly (`$_` at the `is_routine &&
+        // !param` guard in `call_compiled_function_named_inner`; `$!`
+        // just below in this function), so this overwrite is safe for
+        // non-routine blocks only. Two well-known keys, so this is a
+        // direct lookup each rather than a fold into the scan above (#7565).
+        if !cc.is_routine {
+            for k in [crate::symbol::wk::topic(), crate::symbol::wk::error_var()] {
+                if let Some(v) = capture_tier.get(&k) {
+                    self.env_mut().insert_sym(k, v.clone());
+                }
+            }
         }
         // `self` may live in a PARENT tier of the captured env: the loop above
         // iterates the own tier only (`Env::iter` does not walk the chain,
