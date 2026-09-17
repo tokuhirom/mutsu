@@ -246,10 +246,26 @@ impl Interpreter {
             // by the shared `try_io_path_fs_mutate`, which the VM also dispatches
             // natively.
             "dir" => {
+                let test_opt = args.iter().find_map(|arg| match arg.view() {
+                    ValueView::Pair(key, value) if key == "test" => Some(value.clone()),
+                    _ => None,
+                });
                 let mut entries = Vec::new();
                 let requested = PathBuf::from(&p);
                 let requested_is_absolute = requested.is_absolute();
-                let make_entry = |out_path: PathBuf| {
+                let mut push_entry = |basename: &str| {
+                    if let Some(test) = &test_opt
+                        && !self.dir_test_matches(test, basename, &path_buf)
+                    {
+                        return;
+                    }
+                    let out_path = if requested_is_absolute {
+                        path_buf.join(basename)
+                    } else if p == "." {
+                        PathBuf::from(basename)
+                    } else {
+                        requested.join(basename)
+                    };
                     let mut attrs = HashMap::new();
                     attrs.insert(
                         "path".to_string(),
@@ -260,8 +276,12 @@ impl Interpreter {
                     {
                         attrs.insert("cwd".to_string(), Value::str(cwd.clone()));
                     }
-                    Value::make_instance(io_path_class, attrs)
+                    entries.push(Value::make_instance(io_path_class, attrs));
                 };
+                if test_opt.is_some() {
+                    push_entry(".");
+                    push_entry("..");
+                }
                 for entry in fs::read_dir(&path_buf).map_err(|err| {
                     RuntimeError::new(format!("Failed to read dir '{}': {}", p, err))
                 })? {
@@ -269,14 +289,7 @@ impl Interpreter {
                         RuntimeError::new(format!("Failed to read dir entry '{}': {}", p, err))
                     })?;
                     let file_name = entry.file_name();
-                    let out_path = if requested_is_absolute {
-                        path_buf.join(&file_name)
-                    } else if p == "." {
-                        PathBuf::from(&file_name)
-                    } else {
-                        requested.join(&file_name)
-                    };
-                    entries.push(make_entry(out_path));
+                    push_entry(&file_name.to_string_lossy());
                 }
                 Ok(Value::array(entries))
             }
