@@ -4037,8 +4037,11 @@ impl Compiler {
                         .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
                 }
             }
-            Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
-                let idx = self.code.add_token_decl_plan(stmt, self.last_source_line);
+            Stmt::TokenDecl { body, .. } | Stmt::RuleDecl { body, .. } => {
+                let captures = self.token_decl_regex_captures(body);
+                let idx = self
+                    .code
+                    .add_token_decl_plan(stmt, self.last_source_line, captures);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::ProtoDecl {

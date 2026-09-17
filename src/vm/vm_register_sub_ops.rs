@@ -1317,11 +1317,32 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let plan = &code.token_decl_plans[plan_idx as usize];
         let name = plan.name.resolve();
+        // A declaration whose pattern interpolates a defining-frame lexical
+        // (`<{$x}>`, `<$x>`) must snapshot it now, while that frame is still
+        // live — `plan.raw_body`'s embedded regex literal always carries
+        // `scope: None` (baked in at parse time), so the closure has to be
+        // filled in here the same way `OpCode::LoadRegexClosure` fills one in
+        // for an ordinary `/regex/` literal (see `regex_captures`'s doc
+        // comment on `CompiledTokenDeclPlan`, and issue #8662).
+        let captured_body: Vec<Stmt>;
+        let body: &[Stmt] = match &plan.regex_captures {
+            Some(captures) => {
+                let mut new_body = plan.raw_body.clone();
+                for stmt in new_body.iter_mut() {
+                    if let Stmt::Expr(crate::ast::Expr::Literal(v)) = stmt {
+                        *v = self.capture_regex_closure(code, v, captures);
+                    }
+                }
+                captured_body = new_body;
+                &captured_body
+            }
+            None => &plan.raw_body,
+        };
         self.register_token_decl(
             &name,
             &plan.params,
             &plan.param_defs,
-            &plan.raw_body,
+            body,
             plan.multi,
             plan.source_line,
         );
