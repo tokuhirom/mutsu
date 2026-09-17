@@ -414,6 +414,85 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
     }
 }
 
+/// The expression-position counterpart of
+/// `stmt::simple_expr_stmt::lvalue::single_target_list_lvalue_stmt` (private to
+/// that module, so not linked here): a `*`-slurpy parenthesized list-lvalue
+/// with exactly one real (non-`*`)
+/// target extracts just that target's element from the RHS by position,
+/// rather than assigning the RHS whole (which is what a plain named target
+/// with NO `*` — the `list_lvalue_assign_expr` case above — legitimately
+/// does). Kept as a separate function, rather than sharing one with the
+/// statement-level `Stmt`-returning version, because a `Stmt::Assign` and an
+/// `Expr::AssignExpr` are compiled differently and the statement-level path
+/// must not change shape here.
+pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Option<Expr> {
+    let mut saw_whatever = false;
+    let mut lvalues: Vec<(usize, Expr)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        if matches!(item, Expr::Whatever) {
+            saw_whatever = true;
+            continue;
+        }
+        lvalues.push((i, item.clone()));
+    }
+    if !saw_whatever || lvalues.len() != 1 {
+        return None;
+    }
+    let (pos, target) = lvalues.into_iter().next()?;
+    // Extract the element at position `pos` from the RHS list for scalar/hash
+    // targets; an array target instead gets the (possibly skipped) tail —
+    // see the matching comment in `single_target_list_lvalue_stmt`.
+    let extracted_rhs = Expr::Index {
+        target: Box::new(rhs.clone()),
+        index: Box::new(Expr::Literal(Value::int(pos as i64))),
+        is_positional: true,
+    };
+    Some(match target {
+        Expr::Var(name) => Expr::AssignExpr {
+            name,
+            expr: Box::new(extracted_rhs),
+            is_bind: false,
+        },
+        Expr::ArrayVar(name) => {
+            let array_rhs = if pos > 0 {
+                Expr::MethodCall {
+                    target: Box::new(rhs),
+                    name: Symbol::intern("skip"),
+                    args: vec![Expr::Literal(Value::int(pos as i64))],
+                    modifier: None,
+                    quoted: false,
+                }
+            } else {
+                rhs
+            };
+            Expr::AssignExpr {
+                name: format!("@{}", name),
+                expr: Box::new(Expr::Call {
+                    name: Symbol::intern("__mutsu_star_lvalue_rhs"),
+                    args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                }),
+                is_bind: false,
+            }
+        }
+        Expr::HashVar(name) => Expr::AssignExpr {
+            name: format!("%{}", name),
+            expr: Box::new(extracted_rhs),
+            is_bind: false,
+        },
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => Expr::IndexAssign {
+            target,
+            index,
+            value: Box::new(extracted_rhs),
+            is_positional,
+        },
+        _ => return None,
+    })
+}
+
 pub(crate) fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     // Parse each comma element at the *list-infix* level (`list_infix_top`):
     // everything tighter than the comma plus the list-infix operators (`Z`/`X`/
