@@ -70,6 +70,9 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "head"
             | "tail"
             | "elems"
+            // `.hash` is `Any`'s Associative coercion: `Nil.hash` is the empty
+            // Hash `{}`, not an absorbed Nil (raku: `Nil.hash.WHAT` is `(Hash)`).
+            | "hash"
             // Numeric/string coercions that warn rather than absorb.
             | "Rat"
             | "FatRat"
@@ -2102,6 +2105,12 @@ impl Interpreter {
                         // Nil instead of zero times over an empty Seq.
                         "grep" | "map" | "first" | "sort" | "reverse" | "list" | "List"
                         | "Slip" | "flat" | "Seq" | "cache" | "head" | "tail" | "elems" => {
+                            // Fall through to normal dispatch
+                        }
+                        // `.hash` is `Any`'s Associative coercion: `Nil.hash` is
+                        // the empty Hash `{}` (raku: `Nil.hash.WHAT` is `(Hash)`),
+                        // not an absorbed Nil. Mirrors `nil_absorbs_method` above.
+                        "hash" => {
                             // Fall through to normal dispatch
                         }
                         // I/O routines print rather than absorb: `Nil.say` /
