@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 10,
-        "secs": 6.55,
+        "secs": 11.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 50.81,
+        "secs": 73.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,7 +47,7 @@
         "nok": 5,
         "ok": 0,
         "plan": 18,
-        "secs": 3.16,
+        "secs": 5.68,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.94,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 4.98,
+        "secs": 8.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.38,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 3.23,
+        "secs": 4.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,7 +101,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.57,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +114,7 @@
         "nok": 0,
         "ok": 47,
         "plan": 59,
-        "secs": 3.3,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 1.02,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 3.07,
+        "secs": 5.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +146,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 0.83,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -159,7 +159,7 @@
         "nok": 2,
         "ok": 53,
         "plan": 55,
-        "secs": 3.07,
+        "secs": 5.0,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -169,7 +169,7 @@
         "nok": 0,
         "ok": 55,
         "plan": 55,
-        "secs": 0.82,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -181,7 +181,7 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 2.93,
+        "secs": 4.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,7 +191,7 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 0.77,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -204,7 +204,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 140,
-        "secs": 3.08,
+        "secs": 4.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -214,7 +214,7 @@
         "nok": 0,
         "ok": 140,
         "plan": 140,
-        "secs": 1.47,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -228,7 +228,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 61,
-        "secs": 0.85,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -240,7 +240,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 3.26,
+        "secs": 5.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -250,7 +250,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 0.95,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -262,7 +262,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 3.16,
+        "secs": 5.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -272,7 +272,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.87,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -284,7 +284,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.91,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -294,7 +294,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.71,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -306,7 +306,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.4,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -316,7 +316,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.39,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -328,7 +328,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.22,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -338,7 +338,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.4,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -350,7 +350,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.32,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -360,7 +360,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.53,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -372,7 +372,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.29,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -382,7 +382,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.46,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -394,7 +394,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.02,
+        "secs": 4.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -404,7 +404,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.79,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -417,7 +417,7 @@
         "nok": 2,
         "ok": 28,
         "plan": 30,
-        "secs": 3.21,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -427,7 +427,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.92,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -441,7 +441,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 43,
-        "secs": 0.64,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -454,7 +454,7 @@
         "nok": 1,
         "ok": 15,
         "plan": 16,
-        "secs": 0.77,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -464,7 +464,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.46,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -477,7 +477,7 @@
         "nok": 27,
         "ok": 12,
         "plan": 39,
-        "secs": 1.15,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -487,7 +487,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 0.64,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -499,7 +499,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.69,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -521,7 +521,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.83,
+        "secs": 2.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -531,7 +531,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.83,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -544,7 +544,7 @@
         "nok": 10,
         "ok": 33,
         "plan": 43,
-        "secs": 0.88,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -554,7 +554,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 0.51,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -567,7 +567,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 47,
-        "secs": 3.51,
+        "secs": 5.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -577,7 +577,7 @@
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 1.02,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -591,7 +591,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 41,
-        "secs": 0.78,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -605,7 +605,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 41,
-        "secs": 0.55,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -618,7 +618,7 @@
         "nok": 8,
         "ok": 14,
         "plan": 60,
-        "secs": 3.08,
+        "secs": 5.13,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -628,7 +628,7 @@
         "nok": 0,
         "ok": 60,
         "plan": 60,
-        "secs": 0.9,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -640,7 +640,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 3.14,
+        "secs": 5.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -650,7 +650,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.91,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -662,7 +662,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.15,
+        "secs": 4.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -672,7 +672,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.87,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -685,7 +685,7 @@
         "nok": 1,
         "ok": 21,
         "plan": 38,
-        "secs": 3.33,
+        "secs": 5.17,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -695,7 +695,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.21,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -708,7 +708,7 @@
         "nok": 1,
         "ok": 14,
         "plan": 28,
-        "secs": 3.37,
+        "secs": 5.5,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -718,7 +718,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 0.59,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -731,7 +731,7 @@
         "nok": 4,
         "ok": 62,
         "plan": 66,
-        "secs": 3.69,
+        "secs": 6.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -741,7 +741,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.04,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -753,7 +753,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 3.19,
+        "secs": 5.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -763,7 +763,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.6,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -776,7 +776,7 @@
         "nok": 1,
         "ok": 77,
         "plan": 195,
-        "secs": 3.16,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -786,7 +786,7 @@
         "nok": 0,
         "ok": 195,
         "plan": 195,
-        "secs": 1.51,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -824,10 +824,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

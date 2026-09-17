@@ -382,8 +382,12 @@ impl Compiler {
         };
         let source_var_names = Self::for_iterable_var_names(iterable);
         let source_var_locals = self.for_source_var_locals(&source_var_names);
-        let source_container_local = Self::for_iterable_source_name(iterable)
-            .and_then(|name| self.local_map.get(&name).copied());
+        let source_container_local = Self::for_iterable_source_name(iterable).and_then(|name| {
+            self.local_map.get(&name).copied().or_else(|| {
+                name.strip_prefix('$')
+                    .and_then(|bare| self.local_map.get(bare).copied())
+            })
+        });
         // The local slot each multi-param bind will land in, captured BEFORE
         // `bind_prefix` is compiled (see the field doc on
         // `ForLoopSpec::multi_param_locals`): `build_for_bind_stmts` binds via
@@ -448,6 +452,7 @@ impl Compiler {
                     .collect(),
                 loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                 values_mode: Self::for_iterable_is_values_alias(iterable),
+                scalar_list_source: Self::for_iterable_is_scalar_list_source(iterable),
                 direct_smartmatch: Self::for_direct_smartmatch(iterable),
                 single_array_source: Self::for_single_array_source(iterable),
                 single_array_source_local: self

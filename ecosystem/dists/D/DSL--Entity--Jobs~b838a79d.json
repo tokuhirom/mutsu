@@ -28,23 +28,22 @@
   "dist": "DSL::Entity::Jobs",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "customer service",
-        "nok": 3,
-        "ok": 5,
+        "nok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 4.56,
+        "secs": 15.85,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-Job-skills-parsing.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 80.19,
+        "secs": 82.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,30 +57,29 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 2.85,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "software architect",
-        "nok": 8,
-        "ok": 0,
+        "nok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 5.07,
+        "secs": 15.53,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-Job-titles-parsing.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.65,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +93,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 2.66,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -127,13 +125,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_JOBS/e078e2e60e30dcc4fd3ee4ded929903e2d553eaa.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 2,
-    "mutsu_assertions": 5,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 16,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

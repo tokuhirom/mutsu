@@ -167,6 +167,25 @@ impl Interpreter {
         // the array is captured here rather than re-resolved per iteration (see
         // `ForElementAlias::ArrayValue`).
         if source.starts_with('@') || source.starts_with('$') {
+            // An explicit `$x.list` over a plain scalar yields one item that
+            // is still backed by `$x`'s own Scalar container. `@$x` uses the
+            // same `$` source tag but is a dereference of an inner
+            // positional, so it must continue down the array-only path.
+            if source.starts_with('$') && spec.scalar_list_source && items.len() == 1 {
+                let bare = source.strip_prefix('$').unwrap_or(source);
+                let current = spec
+                    .source_container_local
+                    .and_then(|slot| self.locals.get(slot as usize).cloned())
+                    .filter(|v| !v.is_nil())
+                    .or_else(|| self.get_env_with_main_alias(bare));
+                if current.is_some_and(|v| Self::loop_var_unchanged(&items[0], &v)) {
+                    return ForElementAlias::ScalarVar(
+                        source.to_string(),
+                        spec.source_container_local,
+                    );
+                }
+                return ForElementAlias::None;
+            }
             // `@a.values` is an identity-ordered derived producer, and its
             // routing lives with `.reverse`/`.sort` at the producer (slice 4),
             // so it is declined here for the same reason they are.

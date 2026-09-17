@@ -4,22 +4,74 @@
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
-      "DateTime::Timezones",
-      "Intl::CLDR",
       "Intl::LanguageTag",
-      "Intl::LanguageTaggish",
-      "Intl::UserLanguage",
-      "Timezones::ZoneInfo",
-      "User::Language"
+      "Intl::LanguageTaggish"
     ],
     "unresolved": []
   },
   "dist": "Intl::Format::DateTime",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "first_failure": "Could not find DateTime::Timezones:ver<0.4.3> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-skeleton.rakutest",
+      "raku": {
+        "first_failure": "Could not find DateTime::Timezones:ver<0.4.3> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatters/00-a.rakutest",
+      "raku": {
+        "first_failure": "Could not find DateTime::Timezones:ver<0.4.3> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/formatters/01-A.rakutest",
+      "raku": {
+        "first_failure": "Could not find DateTime::Timezones:ver<0.4.3> in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "Intl::Format::DateTime": "raku_also_fails",
     "Intl::Format::DateTime::Constants": "ok",
-    "Intl::Format::DateTime::ExemplarCities": "The following packages were stubbed but not defined:",
+    "Intl::Format::DateTime::ExemplarCities": "ok",
     "Intl::Format::DateTime::FieldMeta": "ok",
     "Intl::Format::DateTime::Formatters::A-uc": "raku_also_fails",
     "Intl::Format::DateTime::Formatters::B-uc": "raku_also_fails",
@@ -59,7 +111,7 @@
     "Intl::Format::DateTime::Formatters::x-lc": "raku_also_fails",
     "Intl::Format::DateTime::Formatters::y-lc": "raku_also_fails",
     "Intl::Format::DateTime::Formatters::z-lc": "raku_also_fails",
-    "Intl::Format::DateTime::MetazoneNames": "Invalid typename 'CLDR::Item:U' in parameter declaration.",
+    "Intl::Format::DateTime::MetazoneNames": "raku_also_fails",
     "Intl::Format::DateTime::Metazones": "ok",
     "Intl::Format::DateTime::Parsing::Actions": "raku_also_fails",
     "Intl::Format::DateTime::Parsing::Classes": "ok",
@@ -71,10 +123,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -85,7 +137,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/NT/INTL_FORMAT_DATETIME/33e486e8a1e7fc35c797d068aeee31d4a240d272.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
