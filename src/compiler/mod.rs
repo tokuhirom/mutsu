@@ -3596,6 +3596,24 @@ impl Compiler {
         }
     }
 
+    /// Whether the iterable is an explicit `.list` call on a scalar variable.
+    ///
+    /// `@$x` is desugared to a grouped `$x.list` call too, but it is a
+    /// positional dereference: a scalar holding a plain value has no
+    /// writable element for that spelling. The ungrouped `$x.list` form is
+    /// different for a single plain value — Raku's List contains the scalar's
+    /// own container, which an `is rw` loop parameter must alias.
+    fn for_iterable_is_scalar_list_source(iterable: &Expr) -> bool {
+        matches!(
+            iterable,
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty()
+                && *name == "list"
+                && matches!(target.as_ref(), Expr::Var(_))
+        )
+    }
+
     /// Check if the for-loop iterable involves a `.reverse` call on a container.
     fn for_iterable_is_reversed(iterable: &Expr) -> bool {
         matches!(
