@@ -904,6 +904,12 @@ impl Interpreter {
         args: &[Value],
         options: FunctionBindingOptions<'_>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        // Recorded before `args` is shadowed by the single-argument-rule
+        // expansion below (`let args = filtered_args.as_slice();`), so this is
+        // THIS call's own raw positional arity — the shape `pending_call_arg_sources`
+        // must match to legitimately describe THIS call. See its validation
+        // where the pending sources are consumed, a few lines down.
+        let raw_args_len = args.len();
         let FunctionBindingOptions {
             reads_args_array,
             param_name_syms,
@@ -1039,7 +1045,26 @@ impl Interpreter {
             }
         };
         let args = filtered_args.as_slice();
-        let arg_sources = self.take_pending_call_arg_sources();
+        // A native/interpreter-carrier builtin (e.g. `reduce`, `EVAL`) that
+        // peeks `pending_call_arg_sources` for ITS OWN args (`tail`'s rw-alias
+        // check, `classify`'s writeback) keeps it installed for the whole
+        // duration of its call — including any NESTED closure/sub invocation
+        // it makes internally (`reduce`'s callback block, called once per
+        // item). Such a nested call's own args have nothing to do with the
+        // outer call's recorded source names, so a length mismatch against
+        // THIS call's own raw arity proves the vector is stale (left over
+        // from that outer call) rather than genuinely describing this one —
+        // discard it instead of binding a same-named outer variable's type
+        // constraint (or rw-alias) onto an unrelated parameter here (#8614:
+        // `reduce -> blob32 $b, $i {...}, $M, |^3` bound the untyped `$i`
+        // to `blob32`, `reduce`'s own second argument `$M`'s type, because
+        // `dispatch_func_call_inner`'s interpreter-carrier fallback sets
+        // `pending_call_arg_sources` to `reduce`'s own 5-element arg list
+        // before calling `reduce`, and only clears it once `reduce` --
+        // including every one of its nested block calls -- has returned).
+        let arg_sources = self
+            .take_pending_call_arg_sources()
+            .filter(|sources| sources.len() == raw_args_len);
         // §1.4/§1.5: snapshot the compiler-baked arg-source slots NOW (before any
         // default-expression evaluation makes a nested call that would clobber the
         // shared field). Folded into `pending_rw_writeback_slots` at return time for
