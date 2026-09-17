@@ -7,6 +7,15 @@ use crate::token_kind::TokenKind;
 use super::hyper_concat::concat_expr;
 use super::meta_bracket::block_newline_terminates;
 
+/// True if `input` begins with one of the `(...)`-delimited (or Unicode-glyph)
+/// set/baggy infix operators, e.g. `(elem)`, `(cont)`, `(<=)`, `∈`. Used by the
+/// method-call parsers to tell a spaced infix operator (`.value (elem) $set`)
+/// apart from a spaced argument list (`.value (1,2,3)`, which Raku itself
+/// rejects as "Two terms in a row").
+pub(crate) fn starts_with_set_infix_op(input: &str) -> bool {
+    parse_set_op(input).is_some()
+}
+
 fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
         match canonical.as_str() {

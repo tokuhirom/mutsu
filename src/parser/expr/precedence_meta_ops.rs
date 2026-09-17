@@ -20,4 +20,5 @@ pub(super) use meta_bracket::{
     op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_meta_op,
     strip_sequence_op,
 };
+pub(crate) use set_ops::starts_with_set_infix_op;
 pub(super) use set_ops::structural_expr;
