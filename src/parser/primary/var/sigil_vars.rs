@@ -316,6 +316,13 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `@@array` applies list context to an array variable.  It is equivalent
+    // to `@array` for an ordinary array, but the second sigil still belongs to
+    // the variable name: without this, the first `@` falls through as an
+    // anonymous array and leaves `@array` as a discarded following term.
+    if twigil.is_empty() && rest.starts_with('@') {
+        return array_var(rest);
+    }
     // Bare @ (anonymous array variable) — each occurrence gets a unique name
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
