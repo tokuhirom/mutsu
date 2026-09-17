@@ -1369,6 +1369,19 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             }
         }
     }
+    // `.[]` — the zen slice on the topic ($_[]), same trick as `.<>` above:
+    // hand the bare topic back with the bracket unconsumed so the general
+    // postfix layer's zen-slice handling (identity, `:exists`/adverb forms,
+    // `:=` binding) applies uniformly instead of being duplicated here.
+    // CSS::Nested's `:declarations(.[])` is the shape that found this — the
+    // `.[index]` branch below always expects at least one index expression,
+    // so an immediately-closed `.[]` fell through to "Confused."
+    if let Some(bracket_rest) = r.strip_prefix('[')
+        && let Ok((after_ws, _)) = ws(bracket_rest)
+        && after_ws.starts_with(']')
+    {
+        return Ok((r, Expr::Var("_".to_string())));
+    }
     // .[index] — topicalized index access on $_
     if let Some(r) = r.strip_prefix('[') {
         let (r, _) = ws(r)?;
@@ -1394,6 +1407,18 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             },
         };
         return Ok((r, expr));
+    }
+    // `.{}` — the zen slice on the topic ($_{}), same trick as `.[]` above:
+    // hand the bare topic back with the brace unconsumed so the general
+    // postfix layer's zen-slice handling (identity, `:exists`/adverb forms)
+    // applies uniformly instead of being duplicated here. The `.{index}`
+    // branch below always expects at least one index expression, so an
+    // immediately-closed `.{}` fell through to "Confused."
+    if let Some(brace_rest) = r.strip_prefix('{')
+        && let Ok((after_ws, _)) = ws(brace_rest)
+        && after_ws.starts_with('}')
+    {
+        return Ok((r, Expr::Var("_".to_string())));
     }
     // .{index} — topicalized hash/associative lookup on $_
     if let Some(r) = r.strip_prefix('{') {
