@@ -74,6 +74,33 @@ impl Interpreter {
             let reified = match value.view() {
                 ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Some(items.to_vec()),
                 ValueView::Slip(items) => Some(items.to_vec()),
+                // A finite Range (`my Int @a = 1..7`) is reified here too, so
+                // the per-element check further below inspects the actual
+                // values. Without this, a finite Range fell through to the
+                // sentinel spot-check near the end of this function, which
+                // tests the constraint against a fixed endpoint/zero value —
+                // wrong for a subset whose `where` clause excludes exactly
+                // that sentinel (e.g. `subset DoW of Int where { 0 < $_ < 8
+                // }`, from the Date::Utils ecosystem distribution: every
+                // element of `1..7` is a valid DoW, but the sentinel `0` is
+                // not, so the whole assignment was rejected).
+                ValueView::Range(a, b)
+                | ValueView::RangeExcl(a, b)
+                | ValueView::RangeExclStart(a, b)
+                | ValueView::RangeExclBoth(a, b)
+                    if b != i64::MAX && a != i64::MIN =>
+                {
+                    Some(runtime::value_to_list(&value))
+                }
+                ValueView::GenericRange { end, .. }
+                    if !matches!(end.as_ref().view(), ValueView::Num(n) if n.is_infinite())
+                        && !matches!(
+                            end.as_ref().view(),
+                            ValueView::Whatever | ValueView::HyperWhatever
+                        ) =>
+                {
+                    Some(runtime::value_to_list(&value))
+                }
                 _ => None,
             };
             if let Some(items) = reified {

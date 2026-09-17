@@ -52,6 +52,11 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
+    // A `#` comment inside the annotation (e.g. `--> UInt # range 0..6`) must
+    // not become part of the parsed type name, so its span is excluded when
+    // `annotation` is assembled below rather than left in the raw byte scan.
+    let mut annotation_buf = String::new();
+    let mut segment_start = 0usize;
 
     while idx < bytes.len() {
         let b = bytes[idx];
@@ -72,6 +77,13 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
                 in_double = false;
             }
             idx += 1;
+            continue;
+        }
+        if b == b'#' {
+            annotation_buf.push_str(&rest[segment_start..idx]);
+            let (after, _) = ws(&rest[idx..])?;
+            idx = rest.len() - after.len();
+            segment_start = idx;
             continue;
         }
 
@@ -127,7 +139,8 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
         }
     }
 
-    let mut annotation = rest[..idx].trim().to_string();
+    annotation_buf.push_str(&rest[segment_start..idx]);
+    let mut annotation = annotation_buf.trim().to_string();
     if annotation.is_empty() {
         return Err(PError::expected("return type annotation"));
     }
