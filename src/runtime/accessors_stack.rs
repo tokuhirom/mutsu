@@ -675,6 +675,22 @@ impl Interpreter {
         self.current_package.read().unwrap().clone()
     }
 
+    /// Switch `current_package` to the package a gather body was WRITTEN in
+    /// (`__mutsu_gather_package`, captured by `exec_make_gather_op`), and hand
+    /// back the caller's own package to restore once the pull is done.
+    /// `None` when the env carries no such marker (an `EVAL`-built gather, or
+    /// one predating this capture) — the caller then leaves `current_package`
+    /// untouched, exactly as it did before this existed.
+    pub(crate) fn enter_gather_package(&mut self, list_env: &crate::env::Env) -> Option<String> {
+        let pkg = match list_env.get("__mutsu_gather_package")?.view() {
+            ValueView::Str(pkg) => pkg.as_str().to_string(),
+            _ => return None,
+        };
+        let saved = self.current_package();
+        self.set_current_package(pkg);
+        Some(saved)
+    }
+
     /// The current package as an interned `Symbol`, read from the atomic mirror
     /// of `current_package`. Cheap enough (one relaxed load) for per-call use on
     /// the hot dispatch path, where `current_package()`'s `String` clone is not.

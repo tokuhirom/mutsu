@@ -171,6 +171,21 @@ impl Interpreter {
                 "__mutsu_gather_unit".to_string(),
                 Value::str(self.current_unit.as_str().to_string()),
             );
+            // A bare (unqualified) call inside the body resolves against
+            // `current_package` at RUN time, but the body is pulled lazily —
+            // possibly long after this frame (and its package) has returned
+            // control to a caller in a different package. Capture it here and
+            // restore it for the duration of every pull (`force_lazy_list_vm`/
+            // `force_lazy_list_vm_n`), the same way `__mutsu_gather_unit`
+            // already does for compunit-private routine lookup. Without this,
+            // a `gather { helper() }` written inside a class method whose
+            // `sub helper` is lexical to that class body died with "Unknown
+            // function: helper" as soon as it was pulled from outside the
+            // class (Concurrent::Trie's `entries` gather, ecosystem sweep).
+            env.insert(
+                "__mutsu_gather_package".to_string(),
+                Value::str(self.current_package()),
+            );
             // A `samewith` in the body redispatches the routine the gather was
             // WRITTEN in, but the body runs after that routine has returned and
             // its dynamic dispatch frame has been popped. Capture the context

@@ -128,7 +128,13 @@ impl Interpreter {
         self.gather_suspend_pending = false;
         // See `push_captured_samewith_context`.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
+        // See `force_lazy_list_bridge`: restore the package the gather was
+        // WRITTEN in for a bare call in the body.
+        let saved_package = self.enter_gather_package(&list.env);
         let run_res = self.run_block(&list.body);
+        if let Some(pkg) = saved_package {
+            self.set_current_package(pkg);
+        }
         self.pop_captured_samewith_context(pushed_samewith);
         // Clear the deferred-suspension flag on exit — see the matching clear
         // in force_lazy_list_vm_n_inner.
@@ -162,7 +168,17 @@ impl Interpreter {
         &mut self,
         list: &crate::value::LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // A bare (unqualified) call in the body resolves against
+        // `current_package` at run time — restore it to the package the
+        // gather was WRITTEN in, exactly as `force_lazy_list_vm`/`_vm_n` do
+        // for the compiled-bytecode force path. `.gist`/`.Str`/other
+        // method-dispatch forcing routes through this tree-walk bridge
+        // instead, so it needs its own copy of the restore.
+        let saved_package = self.enter_gather_package(&list.env);
         let mut r = self.force_lazy_list(list);
+        if let Some(pkg) = saved_package {
+            self.set_current_package(pkg);
+        }
         // Same fix as `force_lazy_list_vm`: a `return` inside the gather
         // body targets whatever routine WROTE the gather (captured in
         // `list.env`'s `__mutsu_callable_id`, the same key an ordinary
