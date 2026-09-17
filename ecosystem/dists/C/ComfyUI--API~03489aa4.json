@@ -37,23 +37,22 @@
   "dist": "ComfyUI::API",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "render dies on missing variable",
-        "nok": 1,
-        "ok": 10,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 0.62,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-workflow.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.82,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -67,7 +66,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.05,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +78,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.15,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +88,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.26,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +102,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.41,
+        "secs": 4.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +116,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.59,
+        "secs": 14.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -131,7 +130,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 26.08,
+        "secs": 22.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -145,7 +144,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 16.24,
+        "secs": 11.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -159,7 +158,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.9,
+        "secs": 4.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -173,7 +172,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.53,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -189,10 +188,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "ebb7e97c0",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -203,13 +202,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OM/COMFYUI_API/38cd054241b2b71b8620671d719459f47930d3eb.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 2,
-    "mutsu_assertions": 15,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 16,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.2.2"
 }

@@ -125,7 +125,7 @@ impl Interpreter {
                 self.env.insert(pname.to_string(), topic);
             }
         }
-        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::NIL);
+        let result = self.eval_block_value(&sub_data.body)?;
         // Propagate the block's writes to its closed-over lexicals back to the
         // caller before restoring the outer env, skipping the injected
         // match-context names (`$/`, `$_`, positional `$0`.., `<name>`).
