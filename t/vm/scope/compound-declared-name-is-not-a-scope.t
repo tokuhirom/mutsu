@@ -3,7 +3,7 @@ use lib 't/lib';
 use Test;
 use CompoundNameScope;
 
-plan 7;
+plan 8;
 
 # The `::` segments of a COMPOUND DECLARED NAME are not lexical scopes.
 # `class Foo::List { ... }` at file scope puts only a `Foo` package stub in the
@@ -62,3 +62,21 @@ module Deep {
 }
 is Deep::Inner.call, 'deep helper',
     'and so does a class inside an in-file module block';
+
+# The same footgun, hit through an ATTRIBUTE type constraint instead of a
+# bareword in a method body (Lumberjack::Application's
+# `Lumberjack::Dispatcher::Supply` class, `has Supply $.Supply`):
+# `resolve_type_name_for_owner` walked the owner-name chain the same
+# unguarded way and resolved the attribute's `Supply` type to the ENCLOSING
+# class itself (whose last name segment also happens to be `Supply`)
+# instead of the core `Supply` type, so assigning a real `Supply` object to
+# it died with a bogus type-check error.
+class Grault::Supply {
+    has Supply $.Supply;
+
+    method Supply(--> Supply) {
+        $!Supply //= Supplier.new.Supply;
+    }
+}
+lives-ok { Grault::Supply.new.Supply },
+    'an attribute type constraint whose name matches the class\'s own last segment resolves to the CORE type';
