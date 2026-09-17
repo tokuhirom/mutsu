@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 90;
+plan 96;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -392,3 +392,45 @@ ok GDynamicNegatedBooleanColonPairArgument.parse('False').defined,
     'a negated boolean colonpair reaches the named subrule parameter';
 ok !GDynamicNegatedBooleanColonPairArgument.parse('True').defined,
     'a negated boolean colonpair carries False to the named subrule parameter';
+
+my $block_ast = Q[/<word(:expected{ $value })>/].AST;
+my $block_gist = $block_ast.gist;
+ok $block_gist.contains('RakuAST::ColonPair::Value'),
+    'a block-valued colonpair argument keeps its value node';
+ok $block_gist.contains('value => RakuAST::Block.new('),
+    'a block-valued colonpair keeps its direct block value';
+ok !$block_gist.contains('value => RakuAST::Circumfix::Parentheses'),
+    'a block-valued colonpair does not gain a parenthesized value';
+
+my $block_statements = RakuAST::StatementList.new;
+$block_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::StrLiteral.new('a'),
+    )
+);
+my $block_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Block.new(
+        body => RakuAST::Blockoid.new($block_statements),
+    ),
+);
+my $block_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($block_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($block_constructed_ast) ~~ Regex,
+    'a constructed block-valued colonpair regex lowers successfully';
+
+grammar GDynamicBlockColonPairArgument {
+    token TOP { <word(:expected{ $value })> }
+    token word(:$expected) { <?{ $expected() eq $value }> }
+}
+$value = 'a';
+ok GDynamicBlockColonPairArgument.parse('').defined,
+    'a block-valued colonpair reaches the named subrule parameter as a Block';
+$value = 'b';
+ok GDynamicBlockColonPairArgument.parse('').defined,
+    'a block-valued colonpair preserves its outer lexical closure';

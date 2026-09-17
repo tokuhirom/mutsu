@@ -3902,9 +3902,10 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 }
 
 /// Convert the execution-level `key => value` shape back to Rakudo's
-/// source-level `RakuAST::ColonPair::Value` node. The parenthesized value is
-/// part of the measured read-direction shape, even though the internal AST
-/// stores only the value expression.
+/// source-level `RakuAST::ColonPair::Value` node. Parenthesized values are part
+/// of the measured read-direction shape, even though the internal AST stores
+/// only the value expression. A bare block is the exception: Rakudo keeps it as
+/// a direct `RakuAST::Block` value rather than wrapping it in parentheses.
 fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
@@ -3921,6 +3922,18 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair value key"));
     };
     let value = convert_expr(right)?;
+    if matches!(
+        right.as_ref(),
+        Expr::AnonSub { is_block: true, .. } | Expr::Block(_)
+    ) {
+        return Ok(RakuAstNode {
+            class: RakuAstClass::ColonPairValue,
+            fields: vec![
+                leaf_field(Some("key"), Value::str(key.to_string())),
+                node_field(Some("value"), value),
+            ],
+        });
+    }
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(value))],

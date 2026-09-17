@@ -15,11 +15,13 @@
   argument, modified-method-call dynamic-argument, and quoted-method-call
   dynamic-argument, dynamic-quoted-method-name argument, and hash-index
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
-  and variable-colonpair dynamic-argument slices implemented
+  variable-colonpair, and expression-only block-valued-colonpair
+  dynamic-argument slices implemented
   2026-09-12 through
-  2026-09-16;
+  2026-09-17;
   direct hash interpolation is reserved by Rakudo and mutsu;
-  other dynamic contents and the complete execution-tree migration remain)
+  hash-composer blocks, other dynamic contents, and the complete execution-tree
+  migration remain)
 - Date: 2026-09-12
 - Related: [ADR-0011](0011-rakuast-model-layer-and-phasing.md) (the RakuAST
   model layer and its bidirectional conversion),
@@ -1288,3 +1290,28 @@ matcher or VM path is added. Block-valued colonpairs and other runtime-valued
 regex argument forms remain separate boundaries. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the source-level node,
 constructed AST lowering, and named binding semantics.
+
+## 52. Expression-only block-valued colonpair dynamic argument slice (2026-09-17)
+
+Block-valued colonpair arguments such as
+`<word(:expected{ $value })>` now retain Rakudo's
+`RakuAST::ColonPair::Value` node with a direct `RakuAST::Block` value. The
+ordinary expression AST already preserves the closure as an `AnonSub`; the
+regex argument provenance now recognizes the brace delimiter only when that
+value is an actual bare block, so hash-composer values are not reclassified.
+
+The write direction renders the supported expression-only block body back as
+`:expected{ ... }`, preserving the direct block shape through the shared regex
+tree and the existing parser/compiler/VM pipeline. At match time, a block-valued
+named argument remains a callable in the callee's code assertion: the matcher
+temporarily binds the closure under the callee's named parameter and leaves the
+lexical reference in the code block instead of stringifying the Block. This
+keeps closure captures live across repeated matches without evaluating user code
+during `.AST` conversion or RakuAST lowering.
+
+This slice is deliberately bounded to non-empty, expression-only bare blocks;
+hash-composer bodies, placeholder/slurpy block signatures, and other complex
+runtime-valued forms remain separate boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block node,
+constructed AST lowering, named Block binding, and outer-lexical closure across
+reassignment.
