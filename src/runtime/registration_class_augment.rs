@@ -1423,6 +1423,19 @@ impl Interpreter {
             let body_pkg = match op.kind {
                 crate::opcode::DeferredBodyOpKind::TypeDecl => Some(type_owner),
                 crate::opcode::DeferredBodyOpKind::TokenRule => Some(regex_owner),
+                // A `use`/`need` statement imports into "the current
+                // package" (`import_module`'s `target_pkg`), which must be
+                // the ROLE's own package -- not whoever is composing it --
+                // or the import silently lands under the composer's package
+                // instead and the role's own methods can never find it via
+                // `bare_name_packages`. Without this, a role that imports a
+                // custom operator (or any bare-name routine) from another
+                // file could not call it from its own methods.
+                crate::opcode::DeferredBodyOpKind::Plain
+                    if matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. }) =>
+                {
+                    Some(type_owner)
+                }
                 crate::opcode::DeferredBodyOpKind::Plain => None,
             };
             if let Some(pkg) = body_pkg {
