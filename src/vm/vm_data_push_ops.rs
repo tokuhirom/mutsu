@@ -244,13 +244,22 @@ impl Interpreter {
             // ADR-0040 slice 1: the pushed ELEMENT (read back via `@a[i]`)
             // is itemized -- `@a.push(@b); @a[0].raku` is `$[1, 2]` in
             // raku, not `[1, 2]` -- even though `@b` read directly stays
-            // bare (`@b.raku` is `[1, 2]`). Wrapping the shared `ContainerRef`
-            // itself in an outer `Scalar` (rather than flipping the cell's
-            // own inner `ArrayKind`) keeps the two readers independent: the
-            // cell's content is untouched, so `@b`'s own binding (which
-            // reads the bare `ContainerRef` directly) is unaffected, while
-            // `@a[i]`'s element holds the Scalar-wrapped alias.
-            val = Value::container_ref(cell).item();
+            // bare (`@b.raku` is `[1, 2]`). The itemization must land on the
+            // `ContainerRef` VALUE itself (the `ContainerRefItemized` tag),
+            // not as an outer `Scalar` wrapper around it: the cell's content
+            // is untouched either way, so `@b`'s own binding (a plain,
+            // non-itemized `ContainerRef` to the SAME cell) is unaffected,
+            // but a `Scalar`-wrapped `ContainerRef` is invisible to
+            // `Value::with_deref`/`deref_container` (which only unwraps a
+            // bare `ContainerRef`/`ContainerView`, per their match arms) --
+            // a `for @a -> @row { for @row -> $x {...} }` or
+            // `@row.hyper(:batch(1)).map: -> $x {...}` over such an element
+            // then binds `$x`/`@row`'s iteration to the whole wrapped Array
+            // as ONE item instead of flattening it, since every reader that
+            // derefs through a container (the `for`-loop `@`-param bind
+            // above, `.hyper`, `.map`) never sees past the `Scalar` layer to
+            // find the itemized `ContainerRef` underneath.
+            val = Value::container_ref_itemized(cell);
         }
 
         // Empty (empty Slip) means nothing to push -- return the array as-is.
