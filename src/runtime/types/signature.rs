@@ -566,6 +566,11 @@ pub(in crate::runtime) fn sub_signature_matches_value(
             {
                 return false;
             }
+            if pd.sigil_carrying_name().starts_with('&')
+                && !interpreter.type_matches_value("Callable", &candidate)
+            {
+                return false;
+            }
         }
         // Implicit Any constraint: untyped $ parameters reject Junction type objects
         if pd.type_constraint.is_none()

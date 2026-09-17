@@ -1042,8 +1042,19 @@ impl Interpreter {
             } else {
                 let candidate = dispatch_key::with_amp_name(name_str, |ampname| {
                     // First check local slots (parameter bindings live here).
-                    self.locals_get_by_name(code, ampname)
-                        .or_else(|| self.env().get(ampname).cloned())
+                    self.locals_get_by_name(code, ampname).or_else(|| {
+                        // An inherited `&name` in the live caller environment is
+                        // not automatically a lexical binding of this closure.
+                        // Only use it when this code explicitly captured that
+                        // code variable; otherwise a callback invoked by a
+                        // method with a same-named `&` parameter can recursively
+                        // replace the callback's own bare `name(...)` call.
+                        let sym = Symbol::intern(ampname);
+                        code.free_var_syms
+                            .contains(&sym)
+                            .then(|| self.env().get(ampname).cloned())
+                            .flatten()
+                    })
                 });
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
             }
