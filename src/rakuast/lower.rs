@@ -1715,6 +1715,11 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             {
                 Some(body)
             }
+            Expr::AnonSubParams { body, .. }
+                if crate::regex_tree::is_array_slurpy_placeholder_block(&value) =>
+            {
+                Some(body)
+            }
             _ => None,
         };
         let value = if let Some(body) = block_body {
@@ -2253,12 +2258,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::Block => {
             let body = lower_block(node)?;
             if crate::ast::collect_placeholders_shallow(&body).is_empty() {
-                Ok(Expr::AnonSub {
-                    body,
-                    is_rw: false,
-                    is_raw: false,
-                    is_block: true,
-                })
+                if crate::ast::body_reads_args_array(&body) {
+                    Ok(crate::ast::make_anon_sub(body))
+                } else {
+                    Ok(Expr::AnonSub {
+                        body,
+                        is_rw: false,
+                        is_raw: false,
+                        is_block: true,
+                    })
+                }
             } else {
                 Ok(crate::ast::make_anon_sub(body))
             }
@@ -2526,6 +2535,9 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(Expr::Var(format!("^{name}")))
         }
+        // RakuAST's implicit flattened array placeholder (`@_`) lowers back
+        // to the legacy array variable used by `make_anon_sub`.
+        RakuAstClass::VarDeclarationPlaceholderSlurpyArray => Ok(Expr::ArrayVar("_".to_string())),
         // `($x OP= EXPR)` in expression position -> a compound assignment.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
             lower_compound_assign_expr(node)

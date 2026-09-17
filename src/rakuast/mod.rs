@@ -130,6 +130,7 @@ pub enum RakuAstClass {
     Blockoid,
     PointyBlock,
     VarDeclarationPlaceholderPositional,
+    VarDeclarationPlaceholderSlurpyArray,
     Signature,
     Parameter,
     ParameterTargetVar,
@@ -355,6 +356,9 @@ impl RakuAstClass {
             VarDeclarationPlaceholderPositional => {
                 "RakuAST::VarDeclaration::Placeholder::Positional"
             }
+            VarDeclarationPlaceholderSlurpyArray => {
+                "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
+            }
             Signature => "RakuAST::Signature",
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
@@ -455,6 +459,7 @@ impl RakuAstClass {
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
+                | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
                 | RakuAstClass::RegexQuantifierZeroOrMore
                 | RakuAstClass::RegexQuantifierOneOrMore
                 | RakuAstClass::RegexQuantifierZeroOrOne
@@ -520,6 +525,7 @@ impl RakuAstClass {
             | Block
             | PointyBlock
             | VarDeclarationPlaceholderPositional
+            | VarDeclarationPlaceholderSlurpyArray
             | CallName
             | CallNameWithoutParentheses
             | RegexDeclaration
@@ -687,6 +693,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Block"
         | "RakuAST::PointyBlock"
         | "RakuAST::VarDeclaration::Placeholder::Positional"
+        | "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
         | "RakuAST::Call::Name"
         | "RakuAST::Call::Name::WithoutParentheses"
         | "RakuAST::QuotedRegex"
@@ -870,6 +877,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Blockoid,
     RakuAstClass::PointyBlock,
     RakuAstClass::VarDeclarationPlaceholderPositional,
+    RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
     RakuAstClass::Signature,
     RakuAstClass::Parameter,
     RakuAstClass::ParameterTargetVar,
@@ -2303,6 +2311,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
 
 fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
+        ("RakuAST::VarDeclaration::Placeholder::SlurpyArray", "new") => {
+            RakuAstClass::VarDeclarationPlaceholderSlurpyArray
+        }
         ("RakuAST::Regex::Quantifier::ZeroOrMore", "new") => {
             RakuAstClass::RegexQuantifierZeroOrMore
         }
@@ -2502,6 +2513,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Block
             | RakuAstClass::Blockoid
             | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::Sub
             | RakuAstClass::Signature
             | RakuAstClass::TraitReturns
