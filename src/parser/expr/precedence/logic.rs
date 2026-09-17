@@ -613,6 +613,32 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         // position: route through the shared lowering (which has a
         // `DynamicMethodCall` arm) instead of leaving `=` unconsumed.
         dmc @ Expr::DynamicMethodCall { .. } => Ok((r, assign_to_target_expr(dmc, rhs))),
+        // A parenthesized multi-element list-lvalue (`($a, $b) = @rhs`) used in
+        // expression position rather than as the whole statement — a listop
+        // argument (`say ($a, $b) = foo()`), or a later item of a comma list
+        // (`1, ($a, $b) = foo()`). The statement-level assignment parser
+        // (`stmt/simple_expr_stmt/core.rs`) already lowers a bare `ArrayLiteral`
+        // target this way (trying the `*`-slurpy single-target shape first,
+        // then falling back to `__mutsu_assign_callable_lvalue`); without this
+        // arm the `=` was left unconsumed here and the caller saw a bare
+        // `Confused` parse error. `single_target_list_lvalue_expr` (not the
+        // `CallOn` arm's `list_lvalue_assign_expr` above) is used for the
+        // `*`-slurpy case because it extracts the target's element by
+        // position, matching `single_target_list_lvalue_stmt`.
+        Expr::ArrayLiteral(items) => Ok((
+            r,
+            match single_target_list_lvalue_expr(items.clone(), rhs.clone()) {
+                Some(expr) => expr,
+                None => Expr::Call {
+                    name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                    args: vec![
+                        Expr::ArrayLiteral(items),
+                        Expr::ArrayLiteral(Vec::new()),
+                        rhs,
+                    ],
+                },
+            },
+        )),
         _ => Ok((rest, expr)),
     }
 }
