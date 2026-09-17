@@ -295,6 +295,12 @@ pub(crate) struct ForLoopSpec {
     /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
     /// `.keys` (read-only).
     pub(crate) values_mode: bool,
+    /// When true, the iterable is an explicit `.list` call on a scalar
+    /// variable (`for $x.list`). Unlike the `@$x` spelling, a scalar `.list`
+    /// call preserves the scalar's own container when it produces one item,
+    /// so an aliasing loop parameter must be allowed to bind that container
+    /// even when the scalar holds a plain value rather than an Array.
+    pub(crate) scalar_list_source: bool,
     /// The source expression is a direct smartmatch. A successful Match has
     /// an empty list value in this context; an itemized scalar variable still
     /// yields the Match as one item.
