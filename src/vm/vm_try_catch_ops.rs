@@ -254,7 +254,6 @@ impl Interpreter {
             }
             Err(e) if e.is_return() => {
                 if control_begin < end {
-                    self.discard_let_saves(let_mark);
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
@@ -262,66 +261,78 @@ impl Interpreter {
                     }
                     let saved_when = self.when_matched();
                     loan_env!(self, set_when_matched(false));
-                    match self.run_range(code, control_begin, end, compiled_fns) {
-                        Ok(()) => {
-                            self.stack.truncate(saved_depth);
-                            self.stack.push(Value::NIL);
-                        }
-                        Err(control_err) if control_err.is_succeed() => {
-                            self.stack.truncate(saved_depth);
-                            self.stack.push(Value::NIL);
-                        }
-                        Err(control_err) => return Err(control_err),
-                    }
+                    let control_result = self.run_range(code, control_begin, end, compiled_fns);
+                    // A CONTROL block always *runs*, but — exactly like the
+                    // last/next/warn/etc. arm below — it only **handles** the
+                    // return when a `when`/`default` inside it matched.
+                    // Unconditionally absorbing every `return` that merely
+                    // passed through a CONTROL block's scope (regardless of
+                    // whether anything in it matched) silently turned every
+                    // such `return`'s value into Nil.
+                    let handled = match &control_result {
+                        Ok(()) => self.when_matched(),
+                        Err(control_err) => control_err.is_succeed(),
+                    };
                     loan_env!(self, set_when_matched(saved_when));
                     if let Some(v) = saved_topic {
                         self.env_mut().insert("_".to_string(), v);
                     } else {
                         self.env_mut().remove("_");
                     }
-                    *ip = end;
-                    Ok(())
-                } else {
-                    // A live `return` — one whose captured target routine
-                    // frame (or, for an untargeted one, ANY enclosing
-                    // routine) is still on the dynamic call stack — must
-                    // keep propagating past this `try`/CATCH untouched:
-                    // `try` is not a return boundary. But when the target
-                    // has already exited (its call frame is gone and never
-                    // coming back), it can NEVER be caught by unwinding
-                    // further — it is dead right now, not merely still in
-                    // flight — so convert it into a real, catchable
-                    // `X::ControlFlow::Return` here and route it through
-                    // this try's own CATCH exactly like any other
-                    // exception (matching raku: the nearest enclosing
-                    // `CATCH` sees `X::ControlFlow::Return`). Without this,
-                    // a dead return silently blew straight past every
-                    // `try`/CATCH boundary on its way out — see
-                    // `Interpreter::return_target_is_live`'s doc comment.
-                    let is_dead = match e.return_target_callable_id() {
-                        Some(target_id) => !self.return_target_is_live(target_id),
-                        None => self.routine_stack().is_empty(),
-                    };
-                    if is_dead {
-                        loan_env!(self, restore_let_saves(let_mark));
-                        self.apply_pending_rw_writeback(code);
-                        self.dispatch_to_catch_handler(
-                            code,
-                            RuntimeError::controlflow_return(true),
-                            catch_begin,
-                            control_begin,
-                            end,
-                            explicit_catch,
-                            traps,
-                            catch_token,
-                            saved_depth,
-                            ip,
-                            compiled_fns,
-                        )
-                    } else {
-                        self.discard_let_saves(let_mark);
-                        Err(e)
+                    if let Err(control_err) = control_result
+                        && !control_err.is_succeed()
+                    {
+                        return Err(control_err);
                     }
+                    if handled {
+                        self.discard_let_saves(let_mark);
+                        self.stack.truncate(saved_depth);
+                        self.stack.push(Value::NIL);
+                        *ip = end;
+                        return Ok(());
+                    }
+                    // Not handled: fall through to the same treatment as "no
+                    // CONTROL block at all" below.
+                }
+                // A live `return` — one whose captured target routine
+                // frame (or, for an untargeted one, ANY enclosing
+                // routine) is still on the dynamic call stack — must
+                // keep propagating past this `try`/CATCH untouched:
+                // `try` is not a return boundary. But when the target
+                // has already exited (its call frame is gone and never
+                // coming back), it can NEVER be caught by unwinding
+                // further — it is dead right now, not merely still in
+                // flight — so convert it into a real, catchable
+                // `X::ControlFlow::Return` here and route it through
+                // this try's own CATCH exactly like any other
+                // exception (matching raku: the nearest enclosing
+                // `CATCH` sees `X::ControlFlow::Return`). Without this,
+                // a dead return silently blew straight past every
+                // `try`/CATCH boundary on its way out — see
+                // `Interpreter::return_target_is_live`'s doc comment.
+                let is_dead = match e.return_target_callable_id() {
+                    Some(target_id) => !self.return_target_is_live(target_id),
+                    None => self.routine_stack().is_empty(),
+                };
+                if is_dead {
+                    loan_env!(self, restore_let_saves(let_mark));
+                    self.apply_pending_rw_writeback(code);
+                    self.dispatch_to_catch_handler(
+                        code,
+                        RuntimeError::controlflow_return(true),
+                        catch_begin,
+                        control_begin,
+                        end,
+                        explicit_catch,
+                        traps,
+                        catch_token,
+                        saved_depth,
+                        ip,
+                        compiled_fns,
+                    )
+                } else {
+                    self.discard_let_saves(let_mark);
+                    Err(e)
                 }
             }
             // A `when`/`default` succeed with nothing closer inside this

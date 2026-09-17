@@ -5,11 +5,28 @@ type TokenCallCandidate = (String, Option<String>);
 
 impl Interpreter {
     pub(crate) fn constraint_base_name(constraint: &str) -> &str {
+        // A `::` here is a package separator (`Foo::Base`), not the start of
+        // a smiley/adverb (`:D`, `:U`) — only a *lone* `:` ends the name.
+        // Treating every `:` as a stop byte truncated every namespaced
+        // constraint down to its first package segment (`Foo::Base` and
+        // `Foo::Derived` both became `"Foo"`), which made two candidates
+        // constrained by a namespaced base/derived pair compare as equally
+        // (un)specific and let the base class win multi dispatch.
+        let bytes = constraint.as_bytes();
         let mut end = constraint.len();
-        for (idx, ch) in constraint.char_indices() {
-            if ch == '[' || ch == '(' || ch == ':' {
-                end = idx;
-                break;
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'[' | b'(' => {
+                    end = i;
+                    break;
+                }
+                b':' if bytes.get(i + 1) == Some(&b':') => i += 2,
+                b':' => {
+                    end = i;
+                    break;
+                }
+                _ => i += 1,
             }
         }
         &constraint[..end]
