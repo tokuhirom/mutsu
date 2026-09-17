@@ -1271,3 +1271,20 @@ VM path is added. Negated boolean colonpairs and block-valued colonpairs
 remain separate boundaries. The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the source-level node,
 constructed AST lowering, and named binding semantics.
+
+## 51. Negated boolean colonpair dynamic argument slice (2026-09-17)
+
+Negated boolean colonpair arguments such as `:!enabled` in argumented subrules
+now retain Rakudo's `RakuAST::ColonPair::False` node. The ordinary expression
+AST intentionally folds the colonpair into the same `FatArrow` shape as other
+named pairs, so the regex argument source records the negated-colonpair
+provenance beside the execution expression.
+
+The read direction preserves the boolean key as a positional
+`ColonPair::False` value, and the write direction renders it back as
+`:!enabled` before the established match-time subrule argument evaluator sees
+it. No pair is evaluated during `.AST` conversion or RakuAST lowering, and no
+matcher or VM path is added. Block-valued colonpairs and other runtime-valued
+regex argument forms remain separate boundaries. The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the source-level node,
+constructed AST lowering, and named binding semantics.

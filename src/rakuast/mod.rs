@@ -88,6 +88,7 @@ pub enum RakuAstClass {
     RegexAnchorEndOfLine,
     RegexCharClassDigit,
     ColonPairTrue,
+    ColonPairFalse,
     ColonPairVariable,
     ColonPairValue,
     RegexDeclaration,
@@ -318,6 +319,7 @@ impl RakuAstClass {
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
             RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
             ColonPairTrue => "RakuAST::ColonPair::True",
+            ColonPairFalse => "RakuAST::ColonPair::False",
             ColonPairVariable => "RakuAST::ColonPair::Variable",
             ColonPairValue => "RakuAST::ColonPair::Value",
             RegexDeclaration => "RakuAST::RegexDeclaration",
@@ -576,7 +578,9 @@ impl RakuAstClass {
                 "RakuAST::Term",
                 "RakuAST::Expression",
             ],
-            ColonPairTrue | ColonPairValue => &["RakuAST::Term", "RakuAST::Expression"],
+            ColonPairTrue | ColonPairFalse | ColonPairValue => {
+                &["RakuAST::Term", "RakuAST::Expression"]
+            }
             Pragma => &["RakuAST::Statement"],
             _ => &[],
         }
@@ -729,6 +733,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Regex",
         ],
         "RakuAST::ColonPair::True"
+        | "RakuAST::ColonPair::False"
         | "RakuAST::ColonPair::Variable"
         | "RakuAST::ColonPair::Value" => {
             &["RakuAST::Term", "RakuAST::Expression"]
@@ -826,6 +831,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorEndOfLine,
     RakuAstClass::RegexCharClassDigit,
     RakuAstClass::ColonPairTrue,
+    RakuAstClass::ColonPairFalse,
     RakuAstClass::ColonPairVariable,
     RakuAstClass::ColonPairValue,
     RakuAstClass::RegexDeclaration,
@@ -2280,6 +2286,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Regex::WithWhitespace", "new") => RakuAstClass::RegexWithWhitespace,
         ("RakuAST::Regex::Block", "new") => RakuAstClass::RegexBlock,
         ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
+        ("RakuAST::ColonPair::False", "new") => RakuAstClass::ColonPairFalse,
         _ => return None,
     })
 }
@@ -2527,6 +2534,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorEndOfLine
             | RakuAstClass::RegexCharClassDigit
             | RakuAstClass::ColonPairTrue
+            | RakuAstClass::ColonPairFalse
             | RakuAstClass::ColonPairVariable
             | RakuAstClass::ColonPairValue
             | RakuAstClass::RegexDeclaration
