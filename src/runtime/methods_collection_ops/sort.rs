@@ -55,6 +55,18 @@ pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
     }
 }
 
+/// User instances need the real `<=>` dispatch: their numeric value may come
+/// from a user-defined `Numeric`/`Real` method. The inline comparator only has
+/// the value representation, so it cannot perform that method dispatch.
+fn can_inline_numeric_cmp(items: &[Value]) -> bool {
+    items.iter().all(|value| {
+        !matches!(
+            value.view(),
+            ValueView::Instance { .. } | ValueView::ContainerRef(_)
+        )
+    })
+}
+
 /// Detect simple comparison patterns in sort blocks and return an inline comparator.
 /// Handles `{ $^a <=> $^b }`, `{ $^b <=> $^a }`, `{ $^a cmp $^b }`, `{ $^b cmp $^a }`,
 /// and also negated (reversed) variants.
@@ -343,7 +355,9 @@ pub(crate) fn sort_items_generic(
         Some(c) if arity >= 2 => {
             if let ValueView::Sub(data) = c.view() {
                 // `{ $^a <=> $^b }` and friends: compare inline, no call at all.
-                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data) {
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data)
+                    && (is_string_cmp || can_inline_numeric_cmp(items))
+                {
                     merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
                         if is_string_cmp {
@@ -422,7 +436,9 @@ pub(crate) fn sort_indices_generic(
     match callable {
         Some(c) if arity >= 2 => {
             if let ValueView::Sub(data) = c.view() {
-                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data) {
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data)
+                    && (is_string_cmp || can_inline_numeric_cmp(items))
+                {
                     merge_sort_indices(&mut perm, items, &mut |a, b| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
                         if is_string_cmp {
