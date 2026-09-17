@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 67.59,
+        "secs": 27.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,30 +61,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 25.05,
+        "secs": 99.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Project META file is good",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 23.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/99-meta.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 23.72,
+        "secs": 18.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,10 +95,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -110,13 +109,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/HA/SHAI/c1e4d4f526a62099f8f6bd84626242626d7c8a5c.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 2,
     "baseline_files": 2,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "5"
 }

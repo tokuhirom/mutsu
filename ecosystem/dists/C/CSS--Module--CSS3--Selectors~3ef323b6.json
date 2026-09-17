@@ -12,23 +12,23 @@
   "dist": "CSS::Module::CSS3::Selectors",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "css3x-selectors simple-selector no warnings",
-        "nok": 8,
-        "ok": 84,
-        "plan": 92,
-        "secs": 1.41,
+        "first_failure": "Cannot resolve caller json-eqv(Hash:D); none of these signatures matches",
+        "nok": 0,
+        "ok": 3,
+        "plan": null,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/00basic.t",
       "raku": {
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 12.63,
+        "secs": 19.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,10 +41,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -59,7 +59,7 @@
   "totals": {
     "baseline_assertions": 92,
     "baseline_files": 1,
-    "mutsu_assertions": 84,
+    "mutsu_assertions": 3,
     "parity_files": 0,
     "regressed_files": 1
   },

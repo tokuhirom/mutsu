@@ -1,4 +1,5 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
@@ -13,20 +14,23 @@
       "Map::Match",
       "Rakudo::CORE::META",
       "String::Utils",
-      "hyperize"
+      "as-cli-arguments",
+      "hyperize",
+      "shorten-sub-commands"
     ],
-    "unresolved": [
-      "shorten"
-    ]
+    "unresolved": []
   },
   "dist": "CLI::Ecosystem",
   "files": [],
+  "load": {
+    "CLI::Ecosystem": "Redeclaration of routine 'MAIN'. Did you mean to declare a multi-sub?"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -37,7 +41,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/LI/CLI_ECOSYSTEM/1675bee64b92a69afb549f1fc30e3b1d804d2840.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "blocked_load",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

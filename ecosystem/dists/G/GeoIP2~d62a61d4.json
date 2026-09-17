@@ -9,23 +9,23 @@
   "dist": "GeoIP2",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 0",
-        "nok": 0,
+        "first_failure": "data types",
+        "nok": 1,
         "ok": 6,
         "plan": 9,
-        "secs": 0.43,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/00-reader.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.32,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot convert fec0 0 0 0 0 0 0 0 to a radix-16 number: please supply a Str value, not a Array",
+        "first_failure": "Cannot convert fec0 to a radix-16 number: please supply a Str value, not a value",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.25,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.81,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

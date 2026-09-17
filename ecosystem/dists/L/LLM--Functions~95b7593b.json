@@ -37,10 +37,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Odd number of elements found where hash initializer expected: found 2 element(s); last element seen:",
-        "nok": 3,
-        "ok": 7,
+        "nok": 2,
+        "ok": 8,
         "plan": null,
-        "secs": 1.36,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 71.26,
+        "secs": 67.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 9,
         "ok": 4,
         "plan": null,
-        "secs": 1.47,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 3.35,
+        "secs": 2.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 5,
-        "secs": 1.41,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.78,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.45,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +119,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.91,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +132,7 @@
         "nok": 1,
         "ok": 0,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -142,7 +142,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.91,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -155,7 +155,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.34,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -165,7 +165,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.17,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +178,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.25,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -188,7 +188,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.8,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -211,10 +211,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -229,7 +229,7 @@
   "totals": {
     "baseline_assertions": 60,
     "baseline_files": 7,
-    "mutsu_assertions": 19,
+    "mutsu_assertions": 20,
     "parity_files": 0,
     "regressed_files": 7
   },

@@ -9,23 +9,22 @@
   "dist": "Portuguese",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected expression statement or listop argument expression or expression after infix operator or '.' or digits or ... [at dist/t/01-operators.t:26]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.25,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-operators.t",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 23.83,
+        "secs": 22.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -52,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/OR/PORTUGUESE/9d2c01348f256b1b53ece0e6251d147addd50cf9.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 30,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 30,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

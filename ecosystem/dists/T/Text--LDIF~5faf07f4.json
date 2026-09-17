@@ -9,23 +9,22 @@
   "dist": "Text::LDIF",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "subtests for case 1",
-        "nok": 5,
-        "ok": 0,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.38,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.65,
+        "secs": 2.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-15",
+    "date": "2026-09-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0afe15",
+    "mutsu_commit": "a6103b2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/EX/TEXT_LDIF/dbc4882d9c50b800530bc2b4d152621adb2314e2.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 7,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "1.0.6"
 }
