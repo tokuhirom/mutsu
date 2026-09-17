@@ -98,6 +98,29 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     parse_statement_modifier(rest, stmt)
 }
 
+/// `next()` / `last()` / `redo()` are call syntax for the same no-argument
+/// loop-control statement as the bare keyword. Consume a literal empty
+/// argument list here (optionally with inner whitespace/comments) so it is
+/// not left behind as a separate, phantom `()` statement: without this, the
+/// parser saw `next` as one statement and a stray empty-list literal as the
+/// next, which the sink-context warning pass then flagged with a spurious
+/// "Useless use of () in sink context" even though `next()`'s control
+/// transfer means that phantom statement never actually runs (#8610). A
+/// non-empty parenthesized form (e.g. `last(LABEL)`, a real call with a
+/// `Label` argument) is left untouched.
+fn consume_empty_call_parens(input: &str) -> &str {
+    let Some(after_paren) = input.strip_prefix('(') else {
+        return input;
+    };
+    let Ok((after_ws, _)) = ws(after_paren) else {
+        return input;
+    };
+    match after_ws.strip_prefix(')') {
+        Some(rest) => rest,
+        None => input,
+    }
+}
+
 /// Parse `last` / `next` / `redo`.
 pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
@@ -109,6 +132,7 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return parse_statement_modifier(r, Stmt::Last(Some(label)));
     }
+    let rest = consume_empty_call_parens(rest);
     parse_statement_modifier(rest, Stmt::Last(None))
 }
 
@@ -122,6 +146,7 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return parse_statement_modifier(r, Stmt::Next(Some(label)));
     }
+    let rest = consume_empty_call_parens(rest);
     parse_statement_modifier(rest, Stmt::Next(None))
 }
 
@@ -135,6 +160,7 @@ pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return parse_statement_modifier(r, Stmt::Redo(Some(label)));
     }
+    let rest = consume_empty_call_parens(rest);
     parse_statement_modifier(rest, Stmt::Redo(None))
 }
 
