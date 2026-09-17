@@ -5,7 +5,7 @@
 # aggregates orders by `.elems`.
 use Test;
 
-plan 10;
+plan 13;
 
 # Standalone `<=>` over arrays coerces to .elems (regression baseline).
 is ([1, 2, 9] <=> [3, 4]), More, 'Array <=> Array coerces to .elems (3 <=> 2)';
@@ -42,3 +42,20 @@ is-deeply
     (3, 1, 2).sort({ $^a <=> $^b }).List,
     (1, 2, 3),
     'plain Int sort by <=> unaffected';
+
+# A user instance's numeric value comes from its coercion methods. The
+# comparator must run the block's real `<=>` dispatch instead of comparing the
+# object representation in the inline fast path.
+class SortableNumeric {
+    has $.n;
+    method Numeric { $!n }
+    method Real { $!n }
+}
+my @objects = SortableNumeric.new(n => 3), SortableNumeric.new(n => 1),
+    SortableNumeric.new(n => 2);
+is @objects[0] <=> @objects[1], More,
+    'user numeric objects compare through their coercion methods';
+is-deeply @objects.sort({ $^a <=> $^b })».n.List, (1, 2, 3),
+    'sort({ $^a <=> $^b }) dispatches user numeric coercion methods';
+is-deeply @objects.sort({ $^a <=> $^b }, :k).List, (1, 2, 0),
+    'sort :k also dispatches user numeric coercion methods';
