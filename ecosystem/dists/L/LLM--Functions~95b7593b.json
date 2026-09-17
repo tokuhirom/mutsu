@@ -40,7 +40,7 @@
         "nok": 2,
         "ok": 8,
         "plan": null,
-        "secs": 1.5,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 67.15,
+        "secs": 108.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 9,
         "ok": 4,
         "plan": null,
-        "secs": 1.48,
+        "secs": 2.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.74,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 5,
-        "secs": 1.22,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.47,
+        "secs": 3.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.27,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,30 +119,30 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.64,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Runtime error: No return arguments allowed when return value Numeric              #= Returns the area in square units is already specified in the signature",
+        "first_failure": "Magician duel sub",
         "nok": 1,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.24,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/05-sub-info-extraction.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.56,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -155,7 +155,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -165,7 +165,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.97,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +178,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.16,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -188,7 +188,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.41,
+        "secs": 3.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -211,10 +211,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -229,7 +229,7 @@
   "totals": {
     "baseline_assertions": 60,
     "baseline_files": 7,
-    "mutsu_assertions": 20,
+    "mutsu_assertions": 21,
     "parity_files": 0,
     "regressed_files": 7
   },

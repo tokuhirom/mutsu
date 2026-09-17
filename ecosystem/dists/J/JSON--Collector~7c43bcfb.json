@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/1789594828190429819' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/1789681308255701027' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 11,
-        "secs": 3.8,
+        "secs": 4.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,11 +28,11 @@
       "cmp": "no_baseline",
       "path": "t/02-callable.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/1789594830584592200' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/1789681310772122100' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.83,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,10 +44,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -56,7 +56,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/J/SO/JSON_COLLECTOR/b9bf8df9da63c75a44fed63a2069a247a9671bb8.tar.gz"
+    "url": "https://360.zef.pm/J/SO/JSON_COLLECTOR/805e88bff01b525982e88d3809d5051680459e36.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -66,5 +66,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.4"
+  "version": "0.0.5"
 }

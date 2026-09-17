@@ -17,7 +17,7 @@
         "nok": 8,
         "ok": 16,
         "plan": 24,
-        "secs": 0.59,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 5.85,
+        "secs": 5.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.5,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.59,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.37,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.61,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.43,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.76,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,10 +105,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -117,7 +117,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/J/SO/JSON_PATH/468133b7c450de7a9e4cce7af67cca77733f31f6.tar.gz"
+    "url": "https://360.zef.pm/J/SO/JSON_PATH/923673dac51cad8c2000b692dd030b3e328d75d8.tar.gz"
   },
   "status": "partial",
   "totals": {
@@ -127,5 +127,5 @@
     "parity_files": 3,
     "regressed_files": 1
   },
-  "version": "1.10"
+  "version": "1.11"
 }

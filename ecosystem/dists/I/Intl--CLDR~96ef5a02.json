@@ -13,7 +13,7 @@
   "dist": "Intl::CLDR",
   "files": [],
   "load": {
-    "Intl::CLDR": "raku_also_fails",
+    "Intl::CLDR": "Invalid typename 'CLDR::Item:U' in parameter declaration.",
     "Intl::CLDR::Core": "Invalid typename 'CLDR::Item:U' in parameter declaration.",
     "Intl::CLDR::Enums": "ok",
     "Intl::CLDR::Genders": "raku_also_fails",
@@ -138,10 +138,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

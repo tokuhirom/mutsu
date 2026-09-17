@@ -13,10 +13,8 @@
       "HTTP::Status",
       "HTTP::UserAgent",
       "IO::Capture::Simple",
-      "IO::Socket::SSL",
       "JSON::Fast",
       "MIME::Base64",
-      "OpenSSL",
       "Test::Util::ServerPort",
       "URI",
       "YAMLish"
@@ -31,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.58,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +39,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 20.76,
+        "secs": 14.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +51,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.14,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +61,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.91,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,7 +75,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 37.65,
+        "secs": 23.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -91,7 +89,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.83,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -105,7 +103,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.83,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +117,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.77,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -132,10 +130,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

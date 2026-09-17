@@ -9,46 +9,44 @@
   "dist": "Email::Simple",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'subst' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.14,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.44,
+        "secs": 3.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Could parse badly-folded",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 62,
         "plan": 62,
-        "secs": 0.11,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-mass.rakutest",
       "raku": {
         "nok": 0,
         "ok": 62,
         "plan": 62,
-        "secs": 2.04,
+        "secs": 4.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,10 +59,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -75,13 +73,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/MA/EMAIL_SIMPLE/ac3c6617014940d3a34519d4a74ed166a66b0427.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 78,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 78,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "2.1.4"
 }

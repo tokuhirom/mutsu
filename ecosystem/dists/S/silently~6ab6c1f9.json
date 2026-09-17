@@ -15,9 +15,9 @@
       "mutsu": {
         "first_failure": "ERR captured ok (1)",
         "nok": 2,
-        "ok": 1,
+        "ok": 2,
         "plan": 5,
-        "secs": 0.07,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.94,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +39,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -57,7 +57,7 @@
   "totals": {
     "baseline_assertions": 5,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
+    "mutsu_assertions": 2,
     "parity_files": 0,
     "regressed_files": 1
   },

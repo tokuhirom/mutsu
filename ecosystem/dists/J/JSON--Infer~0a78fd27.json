@@ -11,7 +11,6 @@
       "HTTP::Status",
       "HTTP::UserAgent",
       "IO::Capture::Simple",
-      "IO::Socket::SSL",
       "JSON::Class",
       "JSON::Fast",
       "JSON::Marshal",
@@ -19,7 +18,6 @@
       "JSON::OptIn",
       "JSON::Unmarshal",
       "MIME::Base64",
-      "OpenSSL",
       "Test::Util::ServerPort",
       "URI"
     ],
@@ -43,7 +41,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.95,
+        "secs": 0.88,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -55,7 +53,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +63,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 38.56,
+        "secs": 36.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +76,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.0,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,7 +86,7 @@
         "nok": 0,
         "ok": 82,
         "plan": 82,
-        "secs": 2.09,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,7 +99,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -111,7 +109,7 @@
         "nok": 0,
         "ok": 45,
         "plan": 45,
-        "secs": 1.83,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +123,7 @@
         "nok": 8,
         "ok": 14,
         "plan": 22,
-        "secs": 9.24,
+        "secs": 8.33,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -137,10 +135,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

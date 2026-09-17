@@ -11,10 +11,8 @@
       "HTTP::Status",
       "HTTP::UserAgent",
       "IO::Capture::Simple",
-      "IO::Socket::SSL",
       "JSON::Fast",
       "MIME::Base64",
-      "OpenSSL",
       "Test::Util::ServerPort",
       "URI"
     ],
@@ -28,7 +26,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.21,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +36,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 44.02,
+        "secs": 45.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +48,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.06,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +58,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.28,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,10 +73,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

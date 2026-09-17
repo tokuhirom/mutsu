@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.04,
+        "secs": 0.11,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.24,
+        "secs": 0.47,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.08,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.04,
+        "secs": 3.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 1,
         "ok": 12,
         "plan": 13,
-        "secs": 0.09,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.3,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.07,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 113,
         "plan": 113,
-        "secs": 0.36,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +108,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.08,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.39,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +132,7 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 0.32,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -143,9 +143,9 @@
       "mutsu": {
         "first_failure": "**** NEW INSTANCE OF LUMBERJACK ****",
         "nok": 1,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 0.08,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -155,30 +155,30 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.74,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Failed to open '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-rknh2buo/dist/Lumberjack-0.1.5/test-log': No such file or directory (os error 2)",
+        "first_failure": "got expected text for trace",
         "nok": 6,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.1,
+        "ok": 6,
+        "plan": 12,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/070-dispatcher-file.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.39,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -190,10 +190,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -208,7 +208,7 @@
   "totals": {
     "baseline_assertions": 167,
     "baseline_files": 7,
-    "mutsu_assertions": 15,
+    "mutsu_assertions": 22,
     "parity_files": 2,
     "regressed_files": 5
   },

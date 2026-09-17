@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.76,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.39,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,30 +59,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Unknown function: find-modules",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-proc.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.87,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -100,12 +77,35 @@
         "todo": 0,
         "verdict": "die"
       },
+      "path": "t/03-proc.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: find-modules",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
       "path": "t/04-syntax-error.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.21,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,10 +117,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-16",
+    "date": "2026-09-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a6103b2",
+    "mutsu_commit": "bfbdeae",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
