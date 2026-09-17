@@ -1986,12 +1986,53 @@ impl Interpreter {
             if self.locals[i].is_nil() && !self.env().contains_key(name) {
                 continue;
             }
+            if !self.dynamic_local_slot_is_live(code, i, name) {
+                continue;
+            }
             let publish = code.needs_env_sync.get(i).copied().unwrap_or(true);
             let saved_suppress = self.suppress_shared_publish;
             self.suppress_shared_publish = saved_suppress || !publish;
             self.set_env_with_main_alias(name, self.locals[i].clone());
             self.suppress_shared_publish = saved_suppress;
         }
+    }
+
+    /// Whether local slot `i` (named `name`) is safe to publish into `env` by
+    /// bare name right now. Only a *dynamic* (`*`-twigil) local needs the
+    /// check: such a name can be shared, within one `CompiledCode`, by an
+    /// OUTER occurrence that never gets a local slot at all (a top-level `my
+    /// $*OUT = ...` compiles straight to `SetGlobal`) and an UNRELATED,
+    /// textually-later, block-scoped occurrence that does (`{ my $*OUT = ...
+    /// }` gets its own `SetLocalDecl` slot). Both share one flat name in
+    /// `code.locals`, so a bare-name presence check alone (`env().contains_key
+    /// (name)`) cannot tell them apart: it is satisfied as soon as the OUTER
+    /// occurrence runs, even though the block-scoped slot's OWN declaration
+    /// has not executed yet and still holds whatever `env` held for that name
+    /// at this frame's entry (`run_inner`/`run_reuse` seed local slots from
+    /// the ambient env). Publishing that stale seed clobbers the outer
+    /// occurrence's fresh write (#8652).
+    ///
+    /// `self.block_declared_vars` (the currently OPEN block scopes of this
+    /// call, see `exec_set_var_dynamic_op`'s "declared within this block
+    /// scope" bookkeeping) is the precise signal: a dynamic local's own
+    /// declaration inserts its symbol there when it runs, and the block exit
+    /// that owns it pops the frame again. So this slot is live exactly when
+    /// its symbol is still findable in one of those open frames.
+    pub(super) fn dynamic_local_slot_is_live(
+        &self,
+        code: &CompiledCode,
+        i: usize,
+        name: &str,
+    ) -> bool {
+        if !name.starts_with('*') {
+            return true;
+        }
+        let Some(sym) = code.locals_sym.get(i).copied() else {
+            return true;
+        };
+        self.block_declared_vars
+            .iter()
+            .any(|set| set.contains(&sym))
     }
 
     /// Like [`Self::sync_env_from_locals`], but skips slots whose name was
@@ -2017,6 +2058,9 @@ impl Interpreter {
                 continue;
             }
             if !self.env().contains_key(name) {
+                continue;
+            }
+            if !self.dynamic_local_slot_is_live(code, i, name) {
                 continue;
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());
@@ -2057,6 +2101,9 @@ impl Interpreter {
             // in `env` (params are env-authoritative), so pushing the stale
             // slot would overwrite the param with Nil. Skip it.
             if self.is_readonly(name) {
+                continue;
+            }
+            if !self.dynamic_local_slot_is_live(code, i, name) {
                 continue;
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());
