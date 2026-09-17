@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 33;
+plan 36;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -93,6 +93,19 @@ is_run 'say EVAL "43"', { :0status, :out("43\n"), :err('') },
     'single-statement EVAL does not warn';
 is_run 'say EVAL q[42; 5 + 5]', { :0status, :out("10\n"), :err(/"Useless use" .* 42/) },
     'EVAL non-final statement still warns';
+
+# `next()`/`last()`/`redo()` with an explicit empty argument list are call
+# syntax for the same no-arg loop-control statement as the bare keyword, and
+# must not leave behind a phantom `()` sink statement (#8610).
+is_run 'for 1,2,3 -> $x { if $x == 2 { next(); } say $x }',
+    { :0status, :out("1\n3\n"), :err('') },
+    'next() in sink does not warn';
+is_run 'for 1,2,3 -> $x { if $x == 2 { last(); } say $x }',
+    { :0status, :out("1\n"), :err('') },
+    'last() in sink does not warn';
+is_run 'my $n = 0; for 1,2 -> $x { $n++; if $x == 1 && $n < 3 { redo(); } say $x }',
+    { :0status, :out("1\n2\n"), :err('') },
+    'redo() in sink does not warn';
 
 # Double statement modifier ejects with X::Syntax::Confused carrying pre/post.
 throws-like 'say 1 if 2 if 3 { say 3 }', X::Syntax::Confused,
