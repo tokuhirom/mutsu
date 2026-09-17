@@ -107,6 +107,79 @@ impl Interpreter {
             .remove(&Symbol::intern(&format!("{package}::{name}")));
     }
 
+    /// Run `body` (a role's deferred-body `use`/`need` statement) and persist
+    /// any package-qualified function keys it installed into
+    /// `module_registered_functions`, exactly as a genuine module's own
+    /// top-level declarations are tracked.
+    ///
+    /// A role's own `use` statement runs exactly once, memoized by role
+    /// composition (`Registry::composed_role_bodies`) — semantically it is
+    /// the role's compunit doing its own one-time import, indistinguishable
+    /// from an ordinary module body's `use`. But nothing calls it from a
+    /// module-load context: it runs from `run_role_body_for_composition` /
+    /// `run_composed_role_deferred_body`, invoked lazily wherever the role
+    /// happens to be composed for the first time — often deep inside an
+    /// ordinary bare `{ ... }` block several calls down the stack. That block
+    /// compiles to `OpCode::BlockScope`, which unconditionally snapshots and
+    /// restores the routine registry around its body
+    /// (`Interpreter::restore_routine_registry`) — a mechanism completely
+    /// separate from the `use`-triggered `PushImportScope`/`PopImportScope`
+    /// bracket, and blind to the fact that the import it is rolling back was
+    /// never lexically scoped to begin with. Without this, the imported
+    /// operator/routine was reachable only for the remainder of whichever
+    /// block first triggered composition and silently vanished (`Unknown
+    /// function`/`Two terms in a row`) the next time the role's own methods
+    /// tried to call it from a different call stack (#8646).
+    pub(crate) fn run_role_deferred_use_stmt(
+        &mut self,
+        body: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        // The caller has already set `current_package` to the role/class this
+        // `use`/`need` statement belongs to (`type_owner`/`base_role_name`).
+        let owner_sym = self.current_package_sym();
+        let before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
+        let result = body(self);
+        let new_keys: Vec<Symbol> = self
+            .registry()
+            .functions
+            .keys()
+            .filter(|k| !before.contains(*k))
+            .filter(|k| {
+                let s = k.resolve();
+                s.contains("::") && !s.starts_with("GLOBAL::")
+            })
+            .copied()
+            .collect();
+        if !new_keys.is_empty() {
+            let table = crate::runtime::cow_table_mut(&mut self.module_registered_functions);
+            for key in new_keys {
+                table.insert(key);
+            }
+            crate::runtime::cow_table_mut(&mut self.packages_with_deferred_use_imports)
+                .insert(owner_sym);
+        }
+        result
+    }
+
+    /// Whether `class_name`'s own package received a routine import from a
+    /// role's deferred `use`/`need` body statement — see
+    /// `run_role_deferred_use_stmt`. Consulted by method dispatch as an extra
+    /// reason to anchor `current_package` to a FLAT (non-namespaced)
+    /// receiver class, which owns no `::` for the existing checks to key off
+    /// (#8646 shape 1).
+    ///
+    /// `class_name` here is the *receiver's* class, which for a parameterised
+    /// role-pun carries its type argument in brackets (`FlatHolder[FlatComparable]`)
+    /// — the deferred body ran, and was recorded, against the role's own bare
+    /// name (`FlatHolder`; see `run_role_body_for_composition`'s `type_owner`).
+    /// Strip the bracket suffix before looking up, exactly like
+    /// `compute_bare_name_packages` does for the same reason.
+    pub(crate) fn package_has_deferred_use_imports(&self, class_name: &str) -> bool {
+        let base = class_name.split('[').next().unwrap_or(class_name);
+        Symbol::lookup(base)
+            .is_some_and(|sym| self.packages_with_deferred_use_imports.contains(&sym))
+    }
+
     /// Restore function/class/proto registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {

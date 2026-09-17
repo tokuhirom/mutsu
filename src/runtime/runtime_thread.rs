@@ -672,6 +672,7 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
+            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
             prelude_registered_functions: self.prelude_registered_functions.clone(),
             prelude_declaring_units: self.prelude_declaring_units.clone(),
             module_package_globals: self.module_package_globals.clone(),
