@@ -3784,7 +3784,9 @@ fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, 
             .iter()
             .enumerate()
             .map(|(index, argument)| {
-                let node = if args.colonpair_trues.get(index).copied().unwrap_or(false) {
+                let node = if args.colonpair_falses.get(index).copied().unwrap_or(false) {
+                    colonpair_false_expr(argument)?
+                } else if args.colonpair_trues.get(index).copied().unwrap_or(false) {
                     colonpair_true_expr(argument)?
                 } else if args
                     .colonpair_variables
@@ -3835,6 +3837,34 @@ fn colonpair_true_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
     Ok(RakuAstNode {
         class: RakuAstClass::ColonPairTrue,
+        fields: vec![leaf_field(None, Value::str(key.to_string()))],
+    })
+}
+
+/// Convert the execution-level `key => False` shape back to Rakudo's
+/// source-level `RakuAST::ColonPair::False` node. The ordinary expression AST
+/// intentionally does not retain the leading `:!`.
+fn colonpair_false_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        right,
+    } = expr
+    else {
+        return Err(unsupported("colonpair false provenance"));
+    };
+    let (Expr::Literal(value) | Expr::LiteralSrc(value, _)) = left.as_ref() else {
+        return Err(unsupported("colonpair false key"));
+    };
+    let ValueView::Str(key) = value.view() else {
+        return Err(unsupported("colonpair false key"));
+    };
+    if !matches!(right.as_ref(), Expr::Literal(value) if matches!(value.view(), ValueView::Bool(false)))
+    {
+        return Err(unsupported("colonpair false value"));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ColonPairFalse,
         fields: vec![leaf_field(None, Value::str(key.to_string()))],
     })
 }

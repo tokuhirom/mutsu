@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 85;
+plan 90;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -365,3 +365,30 @@ ok GDynamicBooleanColonPairArgument.parse('True').defined,
     'a bare boolean colonpair reaches the named subrule parameter';
 ok !GDynamicBooleanColonPairArgument.parse('False').defined,
     'a bare boolean colonpair carries True to the named subrule parameter';
+
+my $negated_boolean_ast = Q[my $value = 'a'; /<word(:!enabled)>/].AST;
+my $negated_boolean_gist = $negated_boolean_ast.gist;
+ok $negated_boolean_gist.contains('RakuAST::ColonPair::False.new("enabled")'),
+    'a negated boolean colonpair keeps its source-level node';
+ok !$negated_boolean_gist.contains('RakuAST::FatArrow.new'),
+    'a negated boolean colonpair is not flattened to a fat-arrow node';
+
+my $negated_boolean_pair = RakuAST::ColonPair::False.new('enabled');
+my $negated_boolean_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($negated_boolean_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($negated_boolean_constructed_ast) ~~ Regex,
+    'a constructed negated boolean colonpair regex lowers successfully';
+
+grammar GDynamicNegatedBooleanColonPairArgument {
+    token TOP { <word(:!enabled)> }
+    token word(:$enabled) { $enabled }
+}
+ok GDynamicNegatedBooleanColonPairArgument.parse('False').defined,
+    'a negated boolean colonpair reaches the named subrule parameter';
+ok !GDynamicNegatedBooleanColonPairArgument.parse('True').defined,
+    'a negated boolean colonpair carries False to the named subrule parameter';
