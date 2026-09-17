@@ -69,6 +69,20 @@ pub(crate) struct Tier {
     /// Whether a capture has already walked this tier — see
     /// [`Tier::capture_walk`], which builds the memo only on the SECOND ask.
     capture_asked: AtomicBool,
+    /// Memo of [`Self::container_ref_keys`] — the keys whose CURRENT VALUE is
+    /// a `ContainerRef` cell, not a function of the key set at all. This is
+    /// safe with no invalidation whatsoever, for a narrower reason than
+    /// `capture_candidates`' "key-set only" contract: it is built and read
+    /// exclusively through [`Env::capture_tier`], which only ever looks at a
+    /// closure's OWN already-captured env (`SubData::env`) — set once when
+    /// the closure literal is created and never written to again (the same
+    /// discipline `SubData::body` documents). A tier reached the ordinary way
+    /// (a live per-call frame overlay its own frame keeps writing to) never
+    /// calls this method, so the "value changed after the memo was built"
+    /// case this would need to guard against cannot arise. See #7565.
+    ///
+    /// [`Env::capture_tier`]: crate::env::Env::capture_tier
+    container_ref_keys: OnceLock<Box<[Symbol]>>,
 }
 
 impl Clone for Tier {
@@ -77,6 +91,7 @@ impl Clone for Tier {
             map: self.map.clone(),
             capture_candidates: self.capture_candidates.clone(),
             capture_asked: AtomicBool::new(self.capture_asked.load(Ordering::Relaxed)),
+            container_ref_keys: self.container_ref_keys.clone(),
         }
     }
 }
@@ -164,7 +179,22 @@ impl Tier {
             map,
             capture_candidates: OnceLock::new(),
             capture_asked: AtomicBool::new(false),
+            container_ref_keys: OnceLock::new(),
         }
+    }
+
+    /// This tier's keys whose current value is a `ContainerRef` cell. See the
+    /// field's own doc comment for why no invalidation is needed. Computed on
+    /// first ask, one linear scan of the map; every later ask (a closure
+    /// called more than once) is a slice read.
+    pub(crate) fn container_ref_keys(&self) -> &[Symbol] {
+        self.container_ref_keys.get_or_init(|| {
+            self.map
+                .iter()
+                .filter(|(_, v)| matches!(v.view(), crate::value::ValueView::ContainerRef(_)))
+                .map(|(k, _)| *k)
+                .collect()
+        })
     }
 
     /// This tier's keys that a closure capture could keep — everything
@@ -407,5 +437,42 @@ mod tests {
         tier.map_mut().insert(s("$z"), Value::int(9));
         assert!(candidates_are_exact(&tier));
         assert_eq!(tier.capture_candidates().len(), 2);
+    }
+
+    fn container_ref(inner: i64) -> Value {
+        Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+            Value::int(inner),
+        )))
+    }
+
+    fn is_container_ref_key(tier: &Tier, key: &str) -> bool {
+        tier.container_ref_keys().contains(&s(key))
+    }
+
+    #[test]
+    fn container_ref_keys_finds_only_the_boxed_entries() {
+        let mut tier = Tier::default();
+        tier.insert(s("$plain"), Value::int(1));
+        tier.insert(s("$boxed"), container_ref(2));
+        assert!(is_container_ref_key(&tier, "$boxed"));
+        assert!(!is_container_ref_key(&tier, "$plain"));
+        assert_eq!(tier.container_ref_keys().len(), 1);
+    }
+
+    #[test]
+    fn container_ref_keys_memo_is_built_once_and_reused() {
+        let mut tier = Tier::default();
+        tier.insert(s("$boxed"), container_ref(1));
+        let before = tier.container_ref_keys().as_ptr();
+        assert_eq!(tier.container_ref_keys().as_ptr(), before);
+    }
+
+    #[test]
+    fn a_clone_of_a_capture_tier_carries_the_container_ref_memo() {
+        let mut tier = Tier::default();
+        tier.insert(s("$boxed"), container_ref(1));
+        let _ = tier.container_ref_keys();
+        let copy = tier.clone();
+        assert_eq!(copy.container_ref_keys(), &[s("$boxed")]);
     }
 }
