@@ -156,6 +156,34 @@ pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
     Err(PError::expected("regex closing delimiter"))
 }
 
+/// Insert `<.ws>` at a byte offset in `out`, adding a separating space on
+/// either side only where one is not already present. Returns the number of
+/// bytes inserted, so a caller applying this at several offsets left-to-right
+/// can keep the later ones in sync (see [`propagate_ws_to_alt_branches`]).
+fn insert_ws_marker(out: &mut String, pos: usize) -> usize {
+    let mut marker = String::new();
+    if !out[..pos].ends_with(' ') {
+        marker.push(' ');
+    }
+    marker.push_str("<.ws>");
+    if !out[pos..].starts_with(' ') {
+        marker.push(' ');
+    }
+    out.insert_str(pos, &marker);
+    marker.len()
+}
+
+/// Apply [`insert_ws_marker`] at each recorded top-level `|`/`||` branch
+/// boundary inside a bracketed alternation, so a trailing `<.ws>` discovered
+/// right before the group's closing `]`/`)` applies to every branch, not only
+/// the one that happens to sit textually next to the close.
+fn propagate_ws_to_alt_branches(out: &mut String, positions: &[usize]) {
+    let mut shift = 0usize;
+    for &pos in positions {
+        shift += insert_ws_marker(out, pos + shift);
+    }
+}
+
 pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     fn should_insert(prev: char, next: char) -> bool {
         // Whitespace AFTER a term but BEFORE a closing `]`/`)` IS significant in
@@ -189,6 +217,26 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut in_double = false;
     let mut escaped = false;
     let mut brace_depth = 0usize;
+    // One entry per currently-open `[`/`(` group, tracking where each of its
+    // top-level `|`/`||` branches ends. A closing bracket with significant
+    // trailing whitespace (see `should_insert`) uses the innermost of these
+    // to give every alternative the same trailing `<.ws>` that the
+    // textually-last one gets for free — see the call site below.
+    struct BracketCtx {
+        /// Byte offsets (into `out`) right before each `|`/`||` operator that
+        /// closed a NON-EMPTY branch — see `branch_start`.
+        pipe_positions: Vec<usize>,
+        /// Byte offset (into `out`) where the branch currently being scanned
+        /// started: right after this group's opening bracket, or right after
+        /// the last `|`/`||` operator. A `|` reached while everything from
+        /// `branch_start` onward is still whitespace is a purely stylistic
+        /// LEADING pipe (`[ | A | B ]`, used for vertical alignment) with no
+        /// branch content before it — recording a boundary there would turn
+        /// the propagated `<.ws>` into a bogus zero-width first alternative
+        /// ahead of `A` itself.
+        branch_start: usize,
+    }
+    let mut bracket_stack: Vec<BracketCtx> = Vec::new();
     while i < chars.len() {
         let c = chars[i];
         if escaped {
@@ -260,6 +308,44 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             i += 1;
             continue;
         }
+        if !in_single && !in_double {
+            if matches!(c, '[' | '(') {
+                out.push(c);
+                i += 1;
+                bracket_stack.push(BracketCtx {
+                    pipe_positions: Vec::new(),
+                    branch_start: out.len(),
+                });
+                continue;
+            }
+            if matches!(c, ']' | ')') {
+                out.push(c);
+                i += 1;
+                bracket_stack.pop();
+                continue;
+            }
+            // Record the branch boundary once per `|`/`||` operator — the
+            // second pipe of a `||` sits right after the one just pushed, so
+            // it is skipped rather than recording the same boundary twice.
+            // Nothing is recorded for a purely stylistic LEADING pipe (no
+            // branch content between the group's open / the previous pipe
+            // and this one) — see `BracketCtx::branch_start`.
+            if c == '|' {
+                let is_second_of_double = out.ends_with('|');
+                if !is_second_of_double
+                    && let Some(ctx) = bracket_stack.last_mut()
+                    && !out[ctx.branch_start..].trim().is_empty()
+                {
+                    ctx.pipe_positions.push(out.len());
+                }
+                out.push(c);
+                i += 1;
+                if let Some(ctx) = bracket_stack.last_mut() {
+                    ctx.branch_start = out.len();
+                }
+                continue;
+            }
+        }
         if !in_single && !in_double && c.is_whitespace() {
             let mut j = i;
             while j < chars.len() && chars[j].is_whitespace() {
@@ -307,6 +393,22 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     out.push_str("<.ws>");
                     if next.is_some() {
                         out.push(' ');
+                    }
+                    // The `<.ws>` just inserted sits textually inside
+                    // whichever alternative happens to be last before this
+                    // closing `]`/`)`. When the group's content is a
+                    // top-level `|`/`||` alternation, a quantifier on the
+                    // group (`[ <.comment> || <line> ]+`) needs the same
+                    // trailing whitespace allowance after EVERY branch — not
+                    // just the one next to the close — or the `+` loop has no
+                    // way to skip the separator before its next iteration
+                    // whenever an earlier branch is the one that matched
+                    // (mutsu#8561).
+                    if matches!(next, Some(']') | Some(')'))
+                        && let Some(ctx) = bracket_stack.last()
+                        && !ctx.pipe_positions.is_empty()
+                    {
+                        propagate_ws_to_alt_branches(&mut out, &ctx.pipe_positions);
                     }
                 } else if !out.ends_with(' ') && !out.is_empty() {
                     out.push(' ');
