@@ -9,7 +9,7 @@ use Test;
 # both a literal `.IO` receiver and a variable receiver (the mut dispatch path)
 # must agree with Rakudo.
 
-plan 45;
+plan 48;
 
 # --- literal `.IO` receiver (non-mut dispatch path) ---
 is "/foo/bar/baz".IO.parent.Str,        "/foo/bar",     "parent (literal)";
@@ -32,6 +32,14 @@ is "..".IO.parent.Str,                  "../..",        "parent of .. stacks ano
 is "../..".IO.parent.Str,               "../../..",     "parent of ../.. stacks a third ..";
 is "rel/path".IO.parent.parent.parent.parent.Str, "../..",
    "repeated parent walks past root into a growing .. chain, never cycling";
+
+# --- but a `..` trailing a REAL path segment must still strip normally
+# (only a path that is nothing BUT `..` segments stacks another one) ---
+# regression: an earlier, overly-broad fix stacked on ANY trailing `..`,
+# which broke roast/S32-io/io-path-unix.t's `foo/..`/`/foo/..` cases.
+is "foo/..".IO.parent.Str,              "foo",          "parent of 'foo/..' strips normally";
+is "/foo/..".IO.parent.Str,             "/foo",         "parent of '/foo/..' strips normally";
+is "../a/..".IO.parent.Str,             "../a",         "parent of '../a/..' strips normally";
 
 # --- variable receiver (mut dispatch path) ---
 my $p = "/a/b/c.tar.gz".IO;

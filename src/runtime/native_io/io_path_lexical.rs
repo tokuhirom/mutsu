@@ -146,13 +146,25 @@ impl Interpreter {
                         path = "..".to_string();
                         continue;
                     }
-                    // A path whose final component is already `..` (`..`,
-                    // `../..`, ...) has no real basename to strip: raku's
-                    // `.parent` stacks one more `..` instead of collapsing
-                    // back to the previous level (`'..'.IO.parent` is
-                    // `"../.."`, not `.` or `""`).
+                    // A path that is NOTHING BUT a chain of `..` segments
+                    // (`..`, `../..`, `../../..`, ...) has no real directory
+                    // component left to strip: raku's `.parent` stacks one
+                    // more `..` instead of collapsing back to the previous
+                    // level (`'..'.IO.parent` is `"../.."`, not `.`).
+                    // Critically, this does NOT apply once a real name
+                    // appears anywhere before the trailing `..` — `foo/..`,
+                    // `/foo/..` and `../a/..` all still just strip their
+                    // ordinary dirname (`foo`, `/foo`, `../a`), matching
+                    // raku's `roast/S32-io/io-path-unix.t` exactly; only the
+                    // *entirely*-dotdot dirname (`.`, `..`, `../..`, ...)
+                    // marks a path with nothing further to remove.
                     let (volume, dirname, basename) = Self::io_path_parts(&path);
-                    if basename == ".." {
+                    let dirname_is_pure_dotdot = dirname == "."
+                        || (volume.is_empty()
+                            && !dirname.starts_with(['/', '\\'])
+                            && !dirname.is_empty()
+                            && dirname.split(['/', '\\']).all(|seg| seg == ".."));
+                    if basename == ".." && dirname_is_pure_dotdot {
                         path = format!("{}{}{}", path, sep, "..");
                         continue;
                     }
