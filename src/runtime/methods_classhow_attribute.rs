@@ -547,7 +547,16 @@ impl Interpreter {
                     .then(|| self.resolve_type_object(trait_name))
                     .flatten();
                 let mut args = vec![attr_obj];
-                if let Some(type_val) = type_obj {
+                if kind == "will" {
+                    // `will name { ... }` passes the block positionally and
+                    // the trait name as a named argument:
+                    // `trait_mod:<will>($attr, { ... }, :name)`. A `will`
+                    // trait without a block keeps the named-only spelling.
+                    if let Some(arg_val) = trait_arg_val {
+                        args.push(arg_val);
+                    }
+                    args.push(Value::pair(trait_name.clone(), Value::TRUE));
+                } else if let Some(type_val) = type_obj {
                     args.push(type_val);
                     if let Some(arg_val) = trait_arg_val {
                         args.push(arg_val);
@@ -576,6 +585,32 @@ impl Interpreter {
                 self.set_current_package(saved_pkg);
                 self.trait_mod_writeback_key = saved_wb_key;
                 if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
+                    // Attribute traits may compose a role whose `compose`
+                    // method edits the declaring class's method table. This
+                    // is how `will lazy { ... }` installs its lazy accessor:
+                    // the role is mixed into the Attribute meta-object, then
+                    // its compose hook is called with the owning class.
+                    let has_compose_hook = match mixin_val.view() {
+                        ValueView::Mixin(_, mixins) => mixins.keys().any(|key| {
+                            key.strip_prefix("__mutsu_role__").is_some_and(|role_name| {
+                                self.role_def_for_mixin_role(mixins, role_name).is_some_and(
+                                    |role| {
+                                        role.methods.get("compose").is_some_and(|defs| {
+                                            defs.iter().any(|def| !def.is_private)
+                                        })
+                                    },
+                                )
+                            })
+                        }),
+                        _ => false,
+                    };
+                    if has_compose_hook {
+                        self.call_method_with_values(
+                            mixin_val.clone(),
+                            "compose",
+                            vec![Value::package(Symbol::intern(owner))],
+                        )?;
+                    }
                     self.registry_mut()
                         .class_attribute_trait_objects
                         .insert((owner.to_string(), attr_name_str.to_string()), mixin_val);

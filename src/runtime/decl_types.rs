@@ -285,6 +285,13 @@ pub(crate) enum DeferralEntry {
         /// checked when advancement actually reaches it.
         wraps_spliced: bool,
     },
+    /// An auto-generated attribute accessor. It has no `MethodDef`, but a
+    /// wrapped accessor is still a real callsame candidate after its wrapper
+    /// chain has run (for example Attribute::Lazy's `compose` hook).
+    Accessor {
+        owner: crate::symbol::Symbol,
+        name: String,
+    },
 }
 
 /// One entry of `Interpreter::samewith_context_stack` (ADR-0019 E9c-1).
