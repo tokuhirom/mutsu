@@ -562,6 +562,26 @@ impl Value {
                         )
                 )
             }
+            // `Seq`/`HyperSeq`/`RaceSeq` are the only built-ins that compose
+            // `Sequence` and `PositionalBindFailover` in Raku — an ordinary
+            // `Array`/`List`/`Range`/`Slip` does neither, even though all of
+            // them do `Iterable` above (verified against rakudo: `[1,2,3] ~~
+            // Sequence` and `~~ PositionalBindFailover` are both False, while
+            // `(1,2,3).sort ~~ Sequence` and a `HyperSeq` from `.hyper.map`
+            // are both True for both roles).
+            "Sequence" | "PositionalBindFailover" => {
+                matches!(
+                    self.view(),
+                    ValueView::LazyList(_)
+                        | ValueView::Seq(_)
+                        | ValueView::HyperSeq(_)
+                        | ValueView::RaceSeq(_)
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(name.resolve().as_str(), "Seq" | "HyperSeq" | "RaceSeq")
+                )
+            }
             _ => false,
         }
     }

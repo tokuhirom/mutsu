@@ -746,7 +746,16 @@ impl Compiler {
         if self.rw_tail {
             self.compile_return_rw_arg(expr);
         } else {
-            self.compile_expr(expr);
+            // A bare regex literal is a statement in its own right in Raku
+            // (it implicitly matches against `$_`), not merely a value
+            // expression — `compile_condition_expr` is the shared desugar
+            // for that (already used for an `if`/`while` condition and for
+            // an ordinary sunk `Stmt::Expr`). Without it here, a block/sub
+            // whose final statement is `/regex/` (the common `dir(:test)`
+            // predicate shape, e.g. `{ /\.html$/ }`) returned the bare
+            // `Regex` object instead of the match, and a `Regex` is always
+            // truthy — so `dir(:test)` never rejected any entry.
+            self.compile_condition_expr(expr);
         }
     }
 

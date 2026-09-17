@@ -4659,8 +4659,15 @@ impl Compiler {
     fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
-                // Tail expression escapes the frame (implicit result).
-                self.with_escape(true, |c| c.compile_expr(expr));
+                // Tail expression escapes the frame (implicit result). A bare
+                // regex literal is a statement in its own right in Raku, not
+                // merely a value expression, so it must desugar to a `$_`
+                // match here exactly as the non-tail `Stmt::Expr` arm already
+                // does via `compile_condition_expr` — otherwise a block/sub
+                // whose sole or final statement is `/regex/` (the common
+                // `dir(:test)` predicate shape) returns the bare `Regex`
+                // object, which is always truthy, instead of the match result.
+                self.with_escape(true, |c| c.compile_condition_expr(expr));
             }
             Stmt::Call { name, args } => {
                 self.compile_tail_stmt_call_value(*name, args);
