@@ -174,13 +174,23 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf-8".to_string());
-        let replacement = Self::named_value(args, "replacement").map(|v| {
-            if matches!(v.view(), ValueView::Bool(true)) {
-                "?".to_string()
-            } else {
-                v.to_string_value()
-            }
-        });
+        // `:!replacement` (an explicit `False`) must behave exactly like
+        // omitting the adverb: both leave `replacement` at `None`, which
+        // routes `encode_with_encoding_and_replacement` to the STRICT path
+        // that throws on an unencodable codepoint. Only a truthy value opts
+        // into the lenient path — `Bool(true)` falls back to the default `?`
+        // replacement string, anything else is used as the literal
+        // replacement text. Treating `False` like any other present value
+        // (the previous `.map`, unconditional over `Option::Some`) instead
+        // stringified it to `"False"` and used THAT as the replacement text,
+        // so `.encode('ascii', :!replacement)` silently substituted bytes
+        // from "False" for every non-ASCII codepoint instead of throwing.
+        let replacement = match Self::named_value(args, "replacement") {
+            Some(v) if matches!(v.view(), ValueView::Bool(false)) => None,
+            Some(v) if matches!(v.view(), ValueView::Bool(true)) => Some("?".to_string()),
+            Some(v) => Some(v.to_string_value()),
+            None => None,
+        };
         let normalized_encoding = self
             .find_encoding(&encoding)
             .map(|e| e.name.as_str().to_lowercase())

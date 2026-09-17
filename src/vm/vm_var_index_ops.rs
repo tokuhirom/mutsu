@@ -2454,10 +2454,9 @@ impl Interpreter {
                 },
             ) => {
                 let len = items.len() as i64;
-                let mut resolve_endpoint = |val: &Value| -> i64 {
+                let mut resolve_endpoint = |val: &Value| -> f64 {
                     match val.view() {
-                        ValueView::Int(i) => i,
-                        ValueView::Whatever => len,
+                        ValueView::Whatever => len as f64,
                         ValueView::Sub(data) => {
                             let mut sub_env = data.env.clone();
                             for p in data.params.iter() {
@@ -2469,20 +2468,17 @@ impl Interpreter {
                                 loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
                             *self.env_mut() = saved_env;
                             match result.view() {
-                                ValueView::Int(i) => i,
-                                _ => 0,
+                                ValueView::Int(i) => i as f64,
+                                _ => 0.0,
                             }
                         }
-                        _ => match val.view() {
-                            ValueView::Num(f) => f as i64,
-                            _ => 0,
-                        },
+                        _ => generic_range_endpoint_as_f64(val),
                     }
                 };
-                let s = resolve_endpoint(start);
-                let e = resolve_endpoint(end);
-                let actual_start = if excl_start { s + 1 } else { s }.max(0) as usize;
-                let actual_end = if excl_end { e } else { e + 1 }.max(0) as usize;
+                let s = generic_range_bound(resolve_endpoint(start), true, excl_start);
+                let e = generic_range_bound(resolve_endpoint(end), false, excl_end);
+                let actual_start = s.max(0) as usize;
+                let actual_end = e.max(0) as usize;
                 let actual_end = actual_end.min(items.len());
                 let slice = if actual_start >= actual_end {
                     Vec::new()
@@ -2572,6 +2568,42 @@ impl Interpreter {
                     .skip(start)
                     .map(|c| Value::int(*c as i64))
                     .collect();
+                Value::array(slice)
+            }
+            // A non-Int-endpoint Range (`^($x.codes / 2)`, where dividing two
+            // `Int`s always yields a `Rat` even on an even split) reaches here
+            // as a `GenericRange`, same as the Array/GenericRange arm above —
+            // Email::MIME's `Email::Simple::Header` header-folding preprocess
+            // slices a `Str.NFC` (a `Uni`) exactly this way.
+            (
+                ValueView::Uni(u),
+                ValueView::GenericRange {
+                    start,
+                    end,
+                    excl_start,
+                    excl_end,
+                },
+            ) => {
+                let chars: Vec<char> = u.text().chars().collect();
+                let len = chars.len() as i64;
+                let resolve_endpoint = |val: &Value| -> f64 {
+                    match val.view() {
+                        ValueView::Whatever => len as f64,
+                        _ => generic_range_endpoint_as_f64(val),
+                    }
+                };
+                let s = generic_range_bound(resolve_endpoint(start), true, excl_start);
+                let e = generic_range_bound(resolve_endpoint(end), false, excl_end);
+                let actual_start = s.max(0) as usize;
+                let actual_end = (e.max(0) as usize).min(chars.len());
+                let slice: Vec<Value> = if actual_start >= actual_end {
+                    Vec::new()
+                } else {
+                    chars[actual_start..actual_end]
+                        .iter()
+                        .map(|c| Value::int(*c as i64))
+                        .collect()
+                };
                 Value::array(slice)
             }
             // Capture indexing: $capture<key> (named) or $capture[idx] (positional)
@@ -2903,6 +2935,70 @@ fn endpoint_as_exact_i64(v: &Value) -> Option<i64> {
         ValueView::Rat(n, 1) => Some(n),
         ValueView::FatRat(n, 1) => Some(n),
         _ => None,
+    }
+}
+
+/// A `GenericRange` endpoint's numeric value, or `0.0` for anything
+/// non-numeric (`Whatever`/WhateverCode are resolved by the caller before
+/// this runs). Dividing two `Int`s in Raku always produces a `Rat`, even on
+/// an even split (`2/2` is `Rat` `1.0`, not `Int` `1`), so a `Rat`/`FatRat`
+/// endpoint here is the common case a positional subscript hits, not an edge
+/// case — `^($x.codes / 2)` in Email::Simple's header-folding preprocessor is
+/// exactly this shape.
+fn generic_range_endpoint_as_f64(val: &Value) -> f64 {
+    match val.view() {
+        ValueView::Int(i) => i as f64,
+        ValueView::Num(f) => f,
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+        _ => 0.0,
+    }
+}
+
+/// Resolve one already-evaluated `GenericRange` endpoint to the correct
+/// integer subscript boundary. `is_start` selects the START-side rule
+/// (rounds UP to the next value actually in range) vs. the END-side rule
+/// (rounds to the correct EXCLUSIVE bound of a half-open slice);
+/// `exclusive` is that side's own `^` marker.
+///
+/// A `Rat`/`FatRat` endpoint that happens to be whole (`2/2` is `Rat` `1.0`,
+/// not `Int` `1` — Raku's `/` never returns `Int`) must behave exactly like
+/// the equivalent `Int` endpoint; a genuinely fractional one (`5/2`, `2.5`)
+/// must behave like Raku's own `Range` iteration would: `@a[^2.5]` includes
+/// indices 0, 1 AND 2 (everything `< 2.5`), not just 0 and 1 from naively
+/// flooring the endpoint first.
+///
+/// `f` may be non-finite (`@a[0..^Inf]`/`@a[0..*]` reach here with an
+/// unbounded end, since `Whatever`/WhateverCode are resolved to a length
+/// BEFORE this runs, but a literal `Inf` endpoint is a plain `Num` that
+/// arrives as `f64::INFINITY` unchanged). `f.floor() as i64` already
+/// saturates to `i64::MAX`/`i64::MIN` for a non-finite `f` (a Rust cast
+/// guarantee), so the one thing every arithmetic step here must do is use
+/// `saturating_add` rather than plain `+` — a bare `i64::MAX + 1` silently
+/// wraps to `i64::MIN` in a release build, turning an unbounded end into an
+/// empty slice instead of one that later clamps to the container's length.
+fn generic_range_bound(f: f64, is_start: bool, exclusive: bool) -> i64 {
+    let floor = f.floor() as i64;
+    let whole = f.fract() == 0.0;
+    if is_start {
+        // Inclusive + whole: the endpoint itself is the first index in range
+        // (`@a[2..]` starts at 2). Every other combination needs the next
+        // integer strictly past `f` — `floor + 1` covers both "exclusive, any
+        // fraction" (one past whichever integer `f` already is or floors to)
+        // and "inclusive, fractional" (`ceil`, which equals `floor + 1` for
+        // any non-whole value).
+        if !exclusive && whole {
+            floor
+        } else {
+            floor.saturating_add(1)
+        }
+    } else if exclusive && whole {
+        // Exclusive + whole: the endpoint itself is already the correct
+        // exclusive bound (`@a[^2]` stops before index 2).
+        floor
+    } else {
+        // Inclusive (any fraction) or exclusive-fractional both want the
+        // half-open bound one past the last whole index actually included.
+        floor.saturating_add(1)
     }
 }
 

@@ -1735,6 +1735,21 @@ impl Interpreter {
                 .then(|| self.scalar_attr_type_constraint(name))
                 .flatten()
         });
+        // A `:=` bind — of a container (`is_bind`) or a plain scalar
+        // (`scalar_bind`, e.g. `$x := foo()`) — never coerces. A genuine
+        // DECLARED type still type-checks the bound value below (`my Array $x
+        // := "s"` dies "Type check failed in binding"), but a COERCION type
+        // (`Array()`) is a one-shot conversion applied only where the value
+        // was originally bound/assigned (a parameter, or an earlier `=`); it
+        // is not an ongoing constraint a later `:=` must satisfy or re-apply.
+        // Without this, `sub f(Array() $x is copy) { $x := SomeClass.new }`
+        // silently re-coerced the bound object back through `Array()`,
+        // leaving `$x` an Array and breaking every method call on it
+        // (found via Email::MIME's `Email::Simple.create`, which does
+        // exactly this to swap its `header` field for a real header object).
+        let constraint = constraint.filter(|c| {
+            !((is_bind || scalar_bind) && crate::runtime::types::is_coercion_constraint(c))
+        });
         if let Some(constraint) = constraint
             && !name.starts_with('%')
             && !name.starts_with('@')

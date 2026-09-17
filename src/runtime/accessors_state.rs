@@ -1246,8 +1246,33 @@ impl Interpreter {
         let container_protocol_override = Self::is_container_protocol_method(method_name)
             && self.class_has_native_container_backing(receiver_class)
             && self.has_user_method_including_role(receiver_class, method_name);
-        let native_base_override =
-            grammar_parse_override || mu_base_override || container_protocol_override;
+        // A user method that shadows an ancestor's auto-generated public
+        // attribute accessor of the same name (`has $.body = ""` in a parent,
+        // `method body(...) { ...callwith()... }` in the child) needs an MRO
+        // frame too: the accessor is registry metadata, not a `MethodDef`, so
+        // it never appears among `matched_deferral_candidates` and a
+        // single-user-candidate call would otherwise skip the frame entirely
+        // — leaving `callwith`/`callsame`/`nextsame` with nothing to defer to
+        // and silently answering Nil instead of reading the attribute
+        // (Email::MIME's `Email::Simple` subclass overrides the auto `body`
+        // reader this way).
+        let accessor_owner = {
+            let name_sym = crate::symbol::Symbol::intern(method_name);
+            self.class_mro(receiver_class)
+                .iter()
+                .find(|owner| {
+                    self.registry()
+                        .accessor_is_public_sym(**owner, name_sym)
+                        .is_some_and(|is_public| is_public)
+                })
+                .copied()
+        };
+        let accessor_base_override =
+            accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
+        let native_base_override = grammar_parse_override
+            || mu_base_override
+            || container_protocol_override
+            || accessor_base_override;
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO can never produce a deferral frame (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`
@@ -1318,7 +1343,7 @@ impl Interpreter {
             let dispatch_token = self.next_dispatch_token();
             // ADR-0019 E9b-1: every entry is a plain Candidate — this builder
             // never wraps a method's own chain into the frame (that is E9b-2).
-            let remaining = remaining
+            let mut remaining: Vec<super::DeferralEntry> = remaining
                 .into_iter()
                 .map(|(owner, def)| super::DeferralEntry::Candidate {
                     owner,
@@ -1326,6 +1351,16 @@ impl Interpreter {
                     wraps_spliced: false,
                 })
                 .collect();
+            // The shadowed ancestor accessor (if any) is the terminal
+            // candidate, exactly like `push_wrapped_accessor_dispatch_frame`'s
+            // trailing entry — read directly by `dispatch_next_candidate`'s
+            // `DeferralEntry::Accessor` arm since it has no `MethodDef`.
+            if let Some(owner) = accessor_owner {
+                remaining.push(super::DeferralEntry::Accessor {
+                    owner,
+                    name: method_name.to_string(),
+                });
+            }
             self.method_dispatch_stack.push(super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
