@@ -1683,7 +1683,40 @@ impl Interpreter {
             // made, so an `ItemList` that reaches here unnormalized by some
             // other route is still handled.)
             ValueView::Array(keys, kind) if is_positional || !kind.is_itemized() => {
-                let vals = self.assignment_rhs_values(&val)?;
+                // A nested sublist key (`@a[1,(lazy 3,4,5)] = ...`) must be
+                // resolved to a `SliceKeyTree` BEFORE `env_root_descended_mut`
+                // takes out a `&mut Value` borrow on `self.env` below — forcing
+                // a nested `LazyList` needs `&mut self`, which would otherwise
+                // conflict with that borrow. Detecting it is also cheap (a pure
+                // read of `keys`, no `&mut self` needed) and is computed first
+                // so the RHS pull below can be bounded by it.
+                let has_nested_key = keys.iter().any(|k| {
+                    matches!(
+                        k.view(),
+                        ValueView::Array(..)
+                            | ValueView::Seq(..)
+                            | ValueView::Slip(..)
+                            | ValueView::LazyList(..)
+                    )
+                });
+                // A slice assignment never reads past `keys.len()` RHS values
+                // (`slice_rhs_value` indexes `0..keys.len()`; a nested key's
+                // own leaves are additional, so that shape keeps the full
+                // cap). Bounding a live/lazy RHS (an infinite Range, or a
+                // `gather`/`loop`-as-expression coroutine) to that instead of
+                // the blanket 100_000-element cap is what keeps
+                // `@bytes[^4] = (loop { 0 })` from re-running a shaped/typed
+                // target's per-element `where`-clause type check up to
+                // 100_000 times over values that will never be stored (#8633).
+                // `.max(1)` covers the depth>1 / single-key multidim-cell arm
+                // below, which type-checks `val`'s own (non-keyed) expansion
+                // rather than one value per key.
+                let needed = if has_nested_key {
+                    crate::runtime::utils::MAX_LAZY_RANGE_PREFIX as usize
+                } else {
+                    keys.len().max(1)
+                };
+                let vals = self.assignment_rhs_values_bounded(&val, needed)?;
                 // The value the slots past the end of the RHS get -- see
                 // `slice_pad_value`. Computed once here, before the `&mut
                 // self.env` borrows below.
@@ -1703,20 +1736,6 @@ impl Interpreter {
                         }
                     }
                 }
-                // A nested sublist key (`@a[1,(lazy 3,4,5)] = ...`) must be
-                // resolved to a `SliceKeyTree` BEFORE `env_root_descended_mut`
-                // takes out a `&mut Value` borrow on `self.env` below — forcing
-                // a nested `LazyList` needs `&mut self`, which would otherwise
-                // conflict with that borrow.
-                let has_nested_key = keys.iter().any(|k| {
-                    matches!(
-                        k.view(),
-                        ValueView::Array(..)
-                            | ValueView::Seq(..)
-                            | ValueView::Slip(..)
-                            | ValueView::LazyList(..)
-                    )
-                });
                 let key_trees = if has_nested_key {
                     let trees = keys
                         .iter()
