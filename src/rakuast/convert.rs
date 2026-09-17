@@ -3924,7 +3924,7 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let value = convert_expr(right)?;
     if matches!(
         right.as_ref(),
-        Expr::AnonSub { is_block: true, .. } | Expr::Block(_)
+        Expr::AnonSub { is_block: true, .. } | Expr::Block(_) | Expr::Hash(_)
     ) {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,

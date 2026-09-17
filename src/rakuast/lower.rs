@@ -1757,27 +1757,43 @@ fn colonpair_value_source(expr: &Expr) -> Option<String> {
     }
 }
 
-/// Render the small, expression-only block subset used by a constructed
-/// regex's block-valued colonpair. `SetLine` markers are compiler metadata and
-/// do not belong in the reconstructed source. Hash-composer bodies stay out of
-/// this renderer because the source parser intentionally reads `{ key => value
-/// }` as a hash rather than as a bare block.
+/// Render the small block subset used by a constructed regex's block-valued
+/// colonpair. `SetLine` markers are compiler metadata and do not belong in the
+/// reconstructed source. A comma list made entirely of fat-arrow pairs is
+/// rendered without the internal `ArrayLiteral` brackets, because the source
+/// parser intentionally reads `{ key => value, ... }` as a hash composer.
 fn block_value_source(body: &[crate::ast::Stmt]) -> Option<String> {
     let mut expressions = Vec::new();
     for stmt in body {
         match stmt {
             crate::ast::Stmt::SetLine(_) => {}
-            crate::ast::Stmt::Expr(Expr::Binary {
-                op: crate::token_kind::TokenKind::FatArrow,
-                ..
-            }) => return None,
+            crate::ast::Stmt::Expr(Expr::ArrayLiteral(items)) => {
+                if !items.iter().all(|item| {
+                    matches!(
+                        item,
+                        Expr::Binary {
+                            op: crate::token_kind::TokenKind::FatArrow,
+                            ..
+                        }
+                    )
+                }) {
+                    return None;
+                }
+                expressions.push(
+                    items
+                        .iter()
+                        .map(crate::regex_tree::expression_source)
+                        .collect::<Option<Vec<_>>>()?
+                        .join(", "),
+                );
+            }
             crate::ast::Stmt::Expr(expr) => {
                 expressions.push(crate::regex_tree::expression_source(expr)?);
             }
             _ => return None,
         }
     }
-    (!expressions.is_empty()).then(|| format!("{{ {} }}", expressions.join("; ")))
+    Some(format!("{{ {} }}", expressions.join("; ")))
 }
 
 fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {

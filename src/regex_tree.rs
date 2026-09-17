@@ -2096,6 +2096,14 @@ impl Parser {
                 self.pos += 1;
                 continue;
             }
+            // A hash-composer entry inside an argumented subrule contains a
+            // fat arrow (`key => value`). Its `>` is not the closing angle of
+            // the subrule, even though this scanner is otherwise looking for
+            // that delimiter.
+            if *ch == '>' && self.pos > start && self.chars.get(self.pos - 1) == Some(&'=') {
+                self.pos += 1;
+                continue;
+            }
             match *ch {
                 '\'' | '"' => quote = Some(*ch),
                 '<' => angle_depth += 1,
@@ -2109,7 +2117,7 @@ impl Parser {
             return None;
         }
         let contents: String = self.chars[start..self.pos - 1].iter().collect();
-        if let Some((alias, target)) = contents.split_once('=') {
+        if let Some((alias, target)) = split_subrule_alias(&contents) {
             let alias = alias.trim();
             let target = target.trim();
             let (capturing, target) = if let Some(target) = target.strip_prefix('.') {
@@ -2194,6 +2202,55 @@ impl Parser {
             false
         }
     }
+}
+
+/// Split the alias assignment in `<alias=name>` without mistaking an equals
+/// sign inside an argument expression (most notably a hash-composer `=>`) for
+/// the alias delimiter.
+fn split_subrule_alias(source: &str) -> Option<(&str, &str)> {
+    let mut delimiters = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in source.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(end) = quote {
+            if ch == end {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' | '[' | '{' | '<' => delimiters.push(ch),
+            ')' if delimiters.last() == Some(&'(') => {
+                delimiters.pop();
+            }
+            ']' if delimiters.last() == Some(&'[') => {
+                delimiters.pop();
+            }
+            '}' if delimiters.last() == Some(&'{') => {
+                delimiters.pop();
+            }
+            '>' if delimiters.last() == Some(&'<') => {
+                delimiters.pop();
+            }
+            '=' if delimiters.is_empty()
+                && !source[index + ch.len_utf8()..].starts_with('>')
+                && !source[..index].ends_with('=') =>
+            {
+                return Some((&source[..index], &source[index + ch.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_simple_subrule_name(name: &str) -> bool {
@@ -2371,7 +2428,15 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                     crate::ast::Expr::AnonSub { is_block: true, .. }
                 )
             );
-            (is_pair || is_block)
+            let is_hash_composer = matches!(
+                argument,
+                crate::ast::Expr::Binary {
+                    right,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                } if matches!(right.as_ref(), crate::ast::Expr::Hash(_))
+            );
+            (is_pair || is_block || is_hash_composer)
                 && parts.get(index).is_some_and(|part| {
                     let part = part.trim();
                     let Some(name) = part.strip_prefix(':') else {
@@ -2383,7 +2448,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                         }
                         (open, ')')
                     } else if let Some(open) = name.find('{') {
-                        if !is_block {
+                        if !is_block && !is_hash_composer {
                             return false;
                         }
                         (open, '}')
@@ -2524,6 +2589,7 @@ fn split_top_level_arguments(source: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut depth = 0usize;
+    let mut angle_depth = 0usize;
     let mut quote = None;
     let mut escaped = false;
     for (index, ch) in source.char_indices() {
@@ -2543,9 +2609,11 @@ fn split_top_level_arguments(source: &str) -> Vec<&str> {
         }
         match ch {
             '\'' | '"' => quote = Some(ch),
-            '(' | '[' | '{' | '<' => depth += 1,
-            ')' | ']' | '}' | '>' if depth > 0 => depth -= 1,
-            ',' if depth == 0 => {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth > 0 => depth -= 1,
+            '<' => angle_depth += 1,
+            '>' if angle_depth > 0 => angle_depth -= 1,
+            ',' if depth == 0 && angle_depth == 0 => {
                 parts.push(&source[start..index]);
                 start = index + ch.len_utf8();
             }
