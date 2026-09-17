@@ -634,6 +634,7 @@ impl Interpreter {
                 &params,
                 &param_defs,
                 &body,
+                return_type.as_ref(),
                 is_rw,
                 is_raw,
             );
@@ -680,6 +681,7 @@ impl Interpreter {
                             alt_params,
                             alt_param_defs,
                             &body,
+                            return_type.as_ref(),
                             is_rw,
                             is_raw,
                         );
@@ -837,7 +839,12 @@ impl Interpreter {
                 }
                 let name_str = name.resolve();
                 let metadata = crate::opcode::compiled_routine_metadata(
-                    params, param_defs, body, *is_rw, *is_raw,
+                    params,
+                    param_defs,
+                    body,
+                    return_type.as_ref(),
+                    *is_rw,
+                    *is_raw,
                 );
                 let compiled = self
                     .compile_forward_declared_sub(*name, params, param_defs, body, *is_rw, *is_raw);

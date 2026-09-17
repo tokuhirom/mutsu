@@ -113,6 +113,11 @@ pub(crate) fn restore_slang_state(
 /// `is_definite_return_spec` twin can consult the same parse-time enum-value
 /// registry (#8022) without interpreter access.
 pub(crate) use stmt::simple::is_user_declared_enum_value;
+/// Re-exported crate-wide for the same reason: the compiler's
+/// `is_definite_return_spec` twin must also recognize a lowercase-named user
+/// `subset` (or class/role/grammar/enum) as a type constraint rather than a
+/// definite return value, independent of runtime sub-hoisting order (#8657).
+pub(crate) use stmt::simple::is_user_declared_type;
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };

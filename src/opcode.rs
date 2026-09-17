@@ -3251,6 +3251,18 @@ pub(crate) struct CompiledRoutineMetadata {
     pub(crate) has_non_nil_return: bool,
     pub(crate) is_stub: bool,
     pub(crate) has_param_return_redeclaration: bool,
+    /// Whether the declared `--> spec` names a definite return *value*
+    /// (`--> Nil`, `--> 42`, `--> some-lowercase-term`) rather than a return
+    /// *type* constraint, decided once here at plan lowering from
+    /// [`crate::compiler::Compiler::is_definite_return_spec`] (parser-registry
+    /// based, so it already sees every `subset`/`class`/`role`/`grammar`/
+    /// `enum` declared anywhere in the file). Registration must consult this
+    /// instead of re-deriving the same classification against the
+    /// interpreter's own runtime type registry, which reflects execution
+    /// order rather than declaration order — a hoisted sub's signature is
+    /// validated before an earlier-or-later `subset` statement has actually
+    /// run (#8657).
+    pub(crate) is_definite_return_value: bool,
     /// The OTF-gate body predicates, computed once at plan lowering (ADR-0019
     /// C6e): registration seeds `FunctionDef::body_facts_cache` from this, so
     /// a plan-derived def never has to re-walk its body on a lazy cache miss —
@@ -3279,6 +3291,7 @@ pub(crate) fn compiled_routine_metadata(
     params: &[String],
     param_defs: &[ParamDef],
     body: &[Stmt],
+    return_type: Option<&String>,
     is_rw: bool,
     is_raw: bool,
 ) -> CompiledRoutineMetadata {
@@ -3318,6 +3331,8 @@ pub(crate) fn compiled_routine_metadata(
                     .as_ref()
                     .is_some_and(|(_, ret)| ret.is_some())
         }),
+        is_definite_return_value: return_type
+            .is_some_and(|s| crate::compiler::Compiler::is_definite_return_spec(s)),
         body_facts: crate::ast::RoutineBodyFacts {
             needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(body),
             declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
@@ -8625,11 +8640,25 @@ impl CompiledCode {
                 *is_raw,
             )
         });
-        let routine_metadata = compiled_routine_metadata(params, param_defs, body, *is_rw, *is_raw);
+        let routine_metadata = compiled_routine_metadata(
+            params,
+            param_defs,
+            body,
+            return_type.as_ref(),
+            *is_rw,
+            *is_raw,
+        );
         let alternate_metadata = signature_alternates
             .iter()
             .map(|(alt_params, alt_param_defs)| {
-                compiled_routine_metadata(alt_params, alt_param_defs, body, *is_rw, *is_raw)
+                compiled_routine_metadata(
+                    alt_params,
+                    alt_param_defs,
+                    body,
+                    return_type.as_ref(),
+                    *is_rw,
+                    *is_raw,
+                )
             })
             .collect();
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
