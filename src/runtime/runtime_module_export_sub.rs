@@ -419,8 +419,16 @@ impl Interpreter {
                 self.record_imported_routine_alias(&package, &normalized_env_key[1..]);
             }
         }
+        // Record the alias the same way the tag-based `is export` path does
+        // (`import_module` in `runtime_module_exports.rs`), so the MY::/LEXICAL
+        // pseudo-stash (`exec_get_lexical_stash_op`, which is built from the
+        // compiler's static scope chain plus this alias table -- not from a
+        // dynamic env scan) sees a symbol a custom `sub EXPORT` installed, not
+        // just one an `is export` tag installed (#8564).
+        self.record_import_env_key(&env_key);
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {
+            self.record_import_env_key(&normalized_env_key);
             self.env.insert(normalized_env_key, value);
         }
         self.invalidate_fn_resolution();

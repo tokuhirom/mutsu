@@ -233,13 +233,34 @@ impl Interpreter {
             // symmetry with the registry-side rule above and to cover the
             // trait-value path's `&{importing_pkg}::{name}` write. A sigil
             // (`$@%&`) may prefix the qualifier, so strip it before checking.
-            for key in imported_env_keys {
-                let ks = key.resolve();
-                let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
-                let is_module_owned_qualified =
-                    unqualified.contains("::") && !unqualified.starts_with("GLOBAL::");
-                if !is_module_owned_qualified {
-                    self.env.remove_sym(key);
+            //
+            // A PRELOAD scope (`scope_classes == false`, see
+            // `push_preload_scope`) never removes these bare aliases at all,
+            // for the same reason it keeps the classes/qualified defs a
+            // preload registers (see that function's doc comment): a custom
+            // `sub EXPORT`'s installed symbol (e.g. JSON::Fast's `&to-json`)
+            // lives ONLY in `env` -- unlike a tag-based `is export` routine,
+            // it has no registry entry to fall back on -- and a `sub`
+            // hoisted to the head of the SAME package block (`RegisterDecl`,
+            // emitted before the block's own in-position `use` runs) needs it
+            // visible right away. Removing it here and relying on the
+            // in-position `use`'s later re-install left that hoisted sub
+            // permanently unable to resolve the symbol (#8564): the preload
+            // and the hoisted registration both run before the in-position
+            // `use`, so the bare alias must already be live by then. A real
+            // scope-exit removal still happens for a genuine user block
+            // (`{ use JSON::Fast; ... }` pairs its own ordinary
+            // `PushImportScope`/`PopImportScope` around the in-position
+            // `use`, which is not a preload scope).
+            if scope_classes {
+                for key in imported_env_keys {
+                    let ks = key.resolve();
+                    let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
+                    let is_module_owned_qualified =
+                        unqualified.contains("::") && !unqualified.starts_with("GLOBAL::");
+                    if !is_module_owned_qualified {
+                        self.env.remove_sym(key);
+                    }
                 }
             }
             self.newline_mode = newline_mode;
