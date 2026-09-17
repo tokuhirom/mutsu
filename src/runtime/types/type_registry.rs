@@ -836,7 +836,18 @@ impl Interpreter {
                 break;
             }
             let qualified = format!("{pkg}::{name}");
-            if self.has_type_direct(&qualified) {
+            // Same footgun `resolve_type_in_current_package` guards against:
+            // `pkg` here can be a prefix obtained by stripping the LAST
+            // segment off a compound *declared name* (`class Foo::Bar::Supply`
+            // splits to owner-chain segment `Foo::Bar`), not a real lexical
+            // enclosing package. When `name` happens to equal that class's own
+            // last segment (`has Supply $.Supply` inside `Foo::Bar::Supply`),
+            // `qualified` reconstructs the class's OWN full name and this loop
+            // would "resolve" the attribute's `Supply` type constraint to the
+            // enclosing class itself instead of the real core `Supply` type.
+            if !self.compound_name_segment_is_not_a_scope(&qualified)
+                && self.has_type_direct(&qualified)
+            {
                 return qualified;
             }
             match pkg.rsplit_once("::") {
