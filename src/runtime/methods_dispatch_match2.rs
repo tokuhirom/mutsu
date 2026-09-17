@@ -234,6 +234,17 @@ impl Interpreter {
                             ValueView::Seq(sub_items) => {
                                 flat_items.extend(sub_items.iter().cloned());
                             }
+                            // Ranges are iterable values too. A mapper can
+                            // return a Range (for example, `* * 2` applied to
+                            // a Range), and `.flatmap` must flatten that
+                            // result just like `.flat` does.
+                            ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. } => {
+                                flat_items.extend(crate::runtime::utils::value_to_list(&item));
+                            }
                             _ => flat_items.push(item.clone()),
                         }
                     }
