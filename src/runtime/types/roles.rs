@@ -911,7 +911,15 @@ impl Interpreter {
                     // `role Q[::T] { has $.y }`, `Q[Str]` binds the type
                     // parameter and leaves `$.y` at its default (raku:
                     // `(1 but Q[Str]).y` is `Any`, not `Str`).
-                    arg.clone()
+                    // A named role initializer reaches this path as a
+                    // string-keyed Pair (`R(:attr(value))`). The role
+                    // initializer has one public attribute, so the payload
+                    // is the value to store; retaining the Pair itself makes
+                    // the accessor return `:attr(value)`.
+                    match arg.view() {
+                        ValueView::Pair(_, value) => value.clone(),
+                        _ => arg.clone(),
+                    }
                 } else if let Some(default_arg) = default_expr {
                     let raw = self.eval_decl_trait_arg(default_arg)?;
                     Self::coerce_attr_value_by_sigil(raw, *sigil)

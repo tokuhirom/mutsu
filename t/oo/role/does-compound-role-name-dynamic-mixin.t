@@ -2,7 +2,7 @@ use Test;
 use lib 't/lib';
 use DynamicDoesCompoundRole;
 
-plan 2;
+plan 3;
 
 # Getopt::Long's exact shape (issue #8578): a lexically-scoped, dot-qualified
 # role (`my role Formatted::Named`) declared inside a module, mixed into a
@@ -19,11 +19,11 @@ plan 2;
 # (`t/oo/role/my-role-compound-name-qualification.t`) already handled this
 # compound-name aliasing; the dynamic `does` call path did not.
 #
-# NB: this only pins the symbol-resolution bug (#8578). A related but
-# separate bug (#8577) still loses the role's named-arg-parametrized
-# attribute value on a dynamic `does`, so `.x` is not asserted here.
+# The same call also pins the role initializer's named argument: the role has
+# one public attribute, so `:x(1)` must store `1`, not the `:x(1)` Pair itself.
 
 my $r = apply(42);
 is $r.^name, 'Int+{DynamicDoesCompoundRole::Formatted::Named}',
     'the dynamic does mixes in the compound-named role';
 ok applied-formatted-named($r), 'the mixed-in value does the lexically-scoped role';
+is $r.x, 1, 'a named role initializer stores the argument value';
