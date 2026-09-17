@@ -1,6 +1,6 @@
 use Test;
 
-plan 23;
+plan 24;
 
 # Basic Z operator
 is (<a b> Z <1 2>), <a 1 b 2>, 'non-meta zip produces expected result';
@@ -44,6 +44,9 @@ is ((10, 20) Z* map { $_ }, (0, 1 ... *)), (0, 20),
     'zip pulls a lazy map pipe';
 is ((10, 20) Z* (0, 1 ... *).map({ $_ + 1 })), (10, 40),
     'zip pulls a lazy mapped sequence method';
+my $z = 1;
+is ([+] (10, 20, 30) Z* 1, |map 1 / ($z +*), 0 .. *), 45,
+    'zip flattens a slipped lazy map before reducing';
 is ((1..40) Z+ (0, 1 ... *)).elems, 40,
     'zip extends an arithmetic sequence beyond its eager prefix';
 is ((1..4) Z+ (0..*)).[^4], (1, 3, 5, 7),

@@ -1500,6 +1500,19 @@ impl Interpreter {
             // Scan-based lazy list: compute only as many elements as needed
             let needed = match index.view() {
                 ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+                // `AT-POS` numifies a positional index before reading it. An
+                // integral Rat therefore has the same finite bound as its Int
+                // counterpart; treating it as unknown would force an infinite
+                // lazy source to completion (Math::SpecialFunctions' Bernoulli
+                // sequence exposed this through `($n + 2) / 2`).
+                ValueView::Rat(n, d) if d != 0 => n
+                    .checked_div(d)
+                    .filter(|i| *i >= 0)
+                    .map(|i| (i as usize).saturating_add(1)),
+                ValueView::FatRat(n, d) if d != 0 => n
+                    .checked_div(d)
+                    .filter(|i| *i >= 0)
+                    .map(|i| (i as usize).saturating_add(1)),
                 ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
                 ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
                 _ => None,
@@ -1520,6 +1533,22 @@ impl Interpreter {
             match index.view() {
                 ValueView::Int(i) if i >= 0 => {
                     self.force_lazy_list_vm_n(list, (i as usize).saturating_add(1))
+                }
+                // Positional indexing truncates numeric indices toward zero,
+                // just as the ordinary Array/Seq paths do. Keep this read
+                // bounded when the numeric value is an exact Rat/FatRat rather
+                // than falling through to an unbounded full force.
+                ValueView::Rat(n, d) if d != 0 => {
+                    match n.checked_div(d).filter(|i| *i >= 0).map(|i| i as usize) {
+                        Some(i) => self.force_lazy_list_vm_n(list, i.saturating_add(1)),
+                        None => self.force_lazy_list_vm(list),
+                    }
+                }
+                ValueView::FatRat(n, d) if d != 0 => {
+                    match n.checked_div(d).filter(|i| *i >= 0).map(|i| i as usize) {
+                        Some(i) => self.force_lazy_list_vm_n(list, i.saturating_add(1)),
+                        None => self.force_lazy_list_vm(list),
+                    }
                 }
                 ValueView::Range(_, end) if end >= 0 => {
                     self.force_lazy_list_vm_n(list, (end as usize).saturating_add(1))
