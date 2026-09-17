@@ -234,6 +234,14 @@ static REGEX_PREFILTER_POSITION_HITS: AtomicU64 = AtomicU64::new(0);
 // to look through (ADR-0099 §4 constraint 3).
 static REGEX_PREFILTER_SUBRULE_RESOLVED: AtomicU64 = AtomicU64::new(0);
 static REGEX_PREFILTER_SUBRULE_DECLINED: AtomicU64 = AtomicU64::new(0);
+// ADR-0099 §5 (#8272): the NFA chain layered on top of the mechanisms above.
+// `engaged` counts SCANS whose pattern had a usable chain (>=2 steps);
+// `rejections` counts POSITIONS the chain turned away that the mechanism
+// underneath it had already yielded -- the number that would otherwise have
+// paid a full engine entry for a second, later character the chain alone
+// could rule out (e.g. `\d\d\d`'s second or third digit).
+static REGEX_PREFILTER_CHAIN_ENGAGED: AtomicU64 = AtomicU64::new(0);
+static REGEX_PREFILTER_CHAIN_REJECTIONS: AtomicU64 = AtomicU64::new(0);
 
 /// Which of the prefilter's narrowing mechanisms a scan used. Counted apart so
 /// that "the first-character set stopped engaging" is visible even while the
@@ -294,6 +302,24 @@ pub(crate) fn record_regex_prefilter_declined() {
 pub(crate) fn record_regex_prefilter_position_hit() {
     if enabled() {
         REGEX_PREFILTER_POSITION_HITS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record that a scan's candidate positions were additionally re-filtered
+/// through the ADR-0099 §5 NFA chain (`Prefilter::chain` was `Some`).
+#[inline]
+pub(crate) fn record_regex_prefilter_chain_engaged() {
+    if enabled() {
+        REGEX_PREFILTER_CHAIN_ENGAGED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one position the chain rejected that the mechanism underneath it
+/// had already yielded.
+#[inline]
+pub(crate) fn record_regex_prefilter_chain_rejection() {
+    if enabled() {
+        REGEX_PREFILTER_CHAIN_REJECTIONS.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -1434,8 +1460,10 @@ pub(crate) fn dump() {
     let prefilter_position_hits = REGEX_PREFILTER_POSITION_HITS.load(Ordering::Relaxed);
     let prefilter_subrule_resolved = REGEX_PREFILTER_SUBRULE_RESOLVED.load(Ordering::Relaxed);
     let prefilter_subrule_declined = REGEX_PREFILTER_SUBRULE_DECLINED.load(Ordering::Relaxed);
+    let prefilter_chain_engaged = REGEX_PREFILTER_CHAIN_ENGAGED.load(Ordering::Relaxed);
+    let prefilter_chain_rejections = REGEX_PREFILTER_CHAIN_REJECTIONS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits} subrule_derivations=(resolved={prefilter_subrule_resolved} declined={prefilter_subrule_declined})"
+        "[mutsu vm-stats] regex-prefilter: applied={prefilter_applied} (literal_prefix={prefilter_prefix} inner_literal={prefilter_inner} first_char_set={prefilter_first_char}) declined={prefilter_declined} positions_offered={prefilter_positions_offered} position_hits={prefilter_position_hits} subrule_derivations=(resolved={prefilter_subrule_resolved} declined={prefilter_subrule_declined}) chain=(engaged={prefilter_chain_engaged} rejections={prefilter_chain_rejections})"
     );
     let regex_parse_cache_hits = REGEX_PARSE_CACHE_HITS.load(Ordering::Relaxed);
     let regex_parse_cache_misses = REGEX_PARSE_CACHE_MISSES.load(Ordering::Relaxed);

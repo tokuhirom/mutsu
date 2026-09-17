@@ -9,10 +9,18 @@
 //! It asserts on the `MUTSU_VM_STATS` counters rather than on wall-clock,
 //! which makes it an exact, load-independent statement of the same property:
 //! `positions_offered` is what the unfiltered scan would have had to walk and
-//! `position_hits` is what the prefilter actually handed the engine, so
+//! `position_hits` is what the mechanism BELOW the ADR-0099 §5 NFA chain
+//! (literal prefix / inner literal / first-character set) handed onward, so
 //! "sub-linear in subject length" is `position_hits` staying flat while
 //! `positions_offered` grows with the subject. A timing assertion would say
 //! the same thing far less reliably on a loaded CI box.
+//!
+//! Since the chain (§5, the last Stage 1 slice) is layered ON TOP of those
+//! mechanisms rather than replacing them, `position_hits` no longer means
+//! "what reached the engine" by itself where a chain is engaged — the chain
+//! can reject some of those positions too, and `chain_rejections` counts
+//! exactly how many. What actually reaches the engine is
+//! `position_hits - chain_rejections`.
 
 use std::process::Command;
 
@@ -45,6 +53,8 @@ fn prefilter_stats(src: &str) -> Stats {
         declined: counter("declined="),
         positions_offered: counter("positions_offered="),
         position_hits: counter("position_hits="),
+        chain_engaged: counter("engaged="),
+        chain_rejections: counter("rejections="),
         line,
     }
 }
@@ -56,6 +66,12 @@ struct Stats {
     declined: u64,
     positions_offered: u64,
     position_hits: u64,
+    /// ADR-0099 §5's NFA chain, layered on top of whichever mechanism above
+    /// applies: `chain_engaged` counts SCANS whose pattern had a usable
+    /// chain, `chain_rejections` counts POSITIONS the chain turned away that
+    /// the mechanism underneath it had already yielded.
+    chain_engaged: u64,
+    chain_rejections: u64,
     line: String,
 }
 
@@ -573,5 +589,56 @@ fn a_composite_class_naming_a_user_rule_declines_rather_than_narrowing() {
         shadowed.declined >= 1,
         "a composite class naming a user rule did not decline: {}",
         shadowed.line
+    );
+}
+
+#[test]
+fn a_multi_atom_chain_rejects_positions_the_first_character_set_alone_could_not() {
+    // ADR-0099 §5: every mechanism before the chain narrows a scan using
+    // only its very first character, so a single isolated digit still
+    // reaches the engine under `\d\d\d`'s first-character set alone. The
+    // unit here has exactly one digit per repeat -- enough to pass the
+    // first-character set, never enough to satisfy three in a row -- so
+    // every position the chain is offered should be one it rejects.
+    let repeats = 200;
+    let stats = prefilter_stats(&failing_scan(r"/ \d\d\d /", repeats));
+    assert!(
+        stats.first_char_set >= 1,
+        "a leading character class got no first-character set: {}",
+        stats.line
+    );
+    assert!(
+        stats.chain_engaged >= 1,
+        "three consecutive digits got no NFA chain: {}",
+        stats.line
+    );
+    assert!(
+        stats.chain_rejections > 0,
+        "the chain never rejected a position it was offered: {}",
+        stats.line
+    );
+    // Nothing should actually reach the engine: no run of three consecutive
+    // digits exists in this subject, so every position the first-character
+    // set let through must be one the chain then rejects.
+    assert_eq!(
+        stats.position_hits.checked_sub(stats.chain_rejections),
+        Some(0),
+        "a position survived both the first-character set and the chain, but \
+         no run of three consecutive digits exists in this subject: {}",
+        stats.line
+    );
+}
+
+#[test]
+fn a_single_step_pattern_never_engages_the_chain() {
+    // A pattern whose declarative run pins fewer than two characters offers
+    // nothing beyond the existing first-character set, so `build_chain`
+    // deliberately does not surface one -- pinned here so a future change
+    // cannot silently start paying the extra per-position check for no gain.
+    let stats = prefilter_stats(&failing_scan(r"/ \d /", 200));
+    assert_eq!(
+        stats.chain_engaged, 0,
+        "a single-character pattern should not engage the chain: {}",
+        stats.line
     );
 }

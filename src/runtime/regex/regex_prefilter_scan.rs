@@ -51,6 +51,15 @@ pub(crate) enum ScanPositions<'c> {
         /// The needle has no further occurrence, so no window can open again.
         exhausted: bool,
     },
+    /// `inner` re-filtered by the pattern's ADR-0099 §5 NFA chain (see
+    /// [`super::regex_prefilter::Prefilter::chain`]) — a purely additive
+    /// layer that can only reject a position `inner` already yielded, never
+    /// admit one it did not.
+    Chained {
+        inner: Box<ScanPositions<'c>>,
+        chars: &'c [char],
+        prefilter: Arc<Prefilter>,
+    },
 }
 
 /// The first index at or after `from` where `needle` occurs in `haystack`.
@@ -162,6 +171,20 @@ impl Iterator for ScanPositions<'_> {
                         *pos = (*pos).max(at.saturating_sub(max_before));
                     }
                     *window_end = Some(end);
+                }
+            }
+            ScanPositions::Chained {
+                inner,
+                chars,
+                prefilter,
+            } => {
+                let chain = prefilter.chain.as_ref()?;
+                loop {
+                    let candidate = inner.next()?;
+                    if chain.admits(chars, candidate) {
+                        return Some(candidate);
+                    }
+                    crate::vm::vm_stats::record_regex_prefilter_chain_rejection();
                 }
             }
         }

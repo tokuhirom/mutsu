@@ -152,6 +152,45 @@ pub(super) fn analyze_subrule(an: &mut Analyzer, atom_text: &str, ctx: Ctx) -> O
     })
 }
 
+/// The chain of a `<subrule>` call, for [`super::regex_prefilter_chain`]: the
+/// same resolution and recursion-guard discipline as [`analyze_subrule`]
+/// above, walking each candidate body's own chain and merging them the way an
+/// alternation's branches merge (a multi-candidate rule IS an alternation —
+/// LTM picks between them, but any candidate may be the one that matches).
+pub(super) fn chain_subrule(
+    an: &mut Analyzer,
+    atom_text: &str,
+    ctx: Ctx,
+) -> Option<super::regex_prefilter_chain::Piece> {
+    if ctx.depth > MAX_DEPTH || an.budget == 0 {
+        return None;
+    }
+    let interp = an.interp.as_deref_mut()?;
+    an.budget -= 1;
+    let resolved = interp.prefilter_subrule_candidates(atom_text, ctx.pkg)?;
+    if an.active.contains(&resolved.node) {
+        return None;
+    }
+    an.resolved_subrule = true;
+    an.active.push(resolved.node);
+    let mut pieces = Vec::with_capacity(resolved.candidates.len());
+    let mut ok = true;
+    for (parsed, sub_pkg, _) in resolved.candidates.iter() {
+        match super::regex_prefilter_chain::chain_pattern(an, parsed, *sub_pkg, ctx.depth + 1) {
+            Some(piece) => pieces.push(piece),
+            None => {
+                ok = false;
+                break;
+            }
+        }
+    }
+    an.active.pop();
+    if !ok || pieces.is_empty() {
+        return None;
+    }
+    Some(super::regex_prefilter_chain_atom::merge_alternation(pieces))
+}
+
 /// The union of a resolved rule's candidate bodies, each walked in the package
 /// that defined it.
 fn subrule_candidates_seq(
