@@ -186,6 +186,23 @@ impl Compiler {
                         .insert(crate::symbol::Symbol::intern(name));
                 }
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
+                // A `constant` declared in expression position (`(constant $ =
+                // EXPR)`, `f((constant FOO = EXPR))`) binds its value like `:=`
+                // rather than assigning it: Raku constants have no Scalar
+                // container, so a List/Array/Blob initializer must not be
+                // itemized. The statement-position path (`compile_stmt`)
+                // already emits `MarkConstantContext` before its store for
+                // exactly this reason; this arm compiles the very same
+                // `Stmt::VarDecl` shape when the declaration appears inline, so
+                // it must emit the same mark before its own scalar stores below
+                // — see the `MarkVarDeclContext` sites in the non-@/% branch.
+                // Without it, `(constant $ = blob32.new: ...)` used directly as
+                // a call argument got boxed into a Scalar item, and a zip
+                // operator (or anything else reading it as a list) saw a
+                // one-element list instead of the constant's real elements
+                // (found via Digest::PSHA1's SHA-1 dependency, whose `sha1-block`
+                // reduce accumulator is exactly such a constant).
+                let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
                 let shadows_outer = self.enclosing_local_names.contains(name)
                     || self.local_scopes.len() >= 2
                         && self.local_scopes[..self.local_scopes.len() - 1]
@@ -204,13 +221,24 @@ impl Compiler {
                     self.local_map.get(name).copied()
                 } else if !*is_our
                     && !is_promoted
-                    && (shadows_outer || Self::container_slot_read_applies(name))
+                    && (shadows_outer
+                        || Self::container_slot_read_applies(name)
+                        || is_constant_decl)
                 {
                     // ADR-0039 slice 2: a container declaration in expression
                     // position must take the slot its own READS resolve to —
                     // see `Compiler::container_slot_read_applies`. Without it
                     // `(my @a)` stored into `env` alone while a popped
                     // sibling's slot answered every read of the name.
+                    //
+                    // A `constant` decl needs a local slot too, for a
+                    // different reason: only the `SetLocal` store path reads
+                    // `MarkConstantContext` (via `mark_ctx.consume_for_store`)
+                    // to skip Scalar-container itemization. `SetGlobal` (what
+                    // a slot-less declaration falls through to below) has no
+                    // such check, so an unslotted `(constant $ = EXPR)` got
+                    // itemized like a plain `my $x = EXPR` — see the
+                    // `is_constant_decl` comment above.
                     Some(self.declare_local(name))
                 } else {
                     None
@@ -485,8 +513,26 @@ impl Compiler {
                     if *is_our {
                         self.code.emit(OpCode::Dup); // for return value
                         self.code.emit(OpCode::Dup); // for SetGlobal
+                        if is_constant_decl {
+                            self.code.emit(OpCode::MarkConstantContext);
+                        }
                         self.code.emit(OpCode::MarkVarDeclContext);
-                        self.emit_set_named_var(name);
+                        // A `constant` (including the anonymous `(constant $ =
+                        // EXPR)` form, which compiles to `is_our: true` with
+                        // name `__ANON_STATE__`) publishes via `SetGlobalRaw`,
+                        // exactly like the statement-position path (stmt.rs) —
+                        // `raw_mode` is what makes the general SetGlobal
+                        // handler skip Scalar-container itemization for a
+                        // constant's value. Plain `SetGlobal` (what
+                        // `emit_set_named_var` always emits) has no such
+                        // exemption, so an expression-position constant got
+                        // itemized like an ordinary `my $x = EXPR`.
+                        if is_constant_decl {
+                            let bare_idx = self.code.add_constant(Value::str(name.clone()));
+                            self.code.emit(OpCode::SetGlobalRaw(bare_idx));
+                        } else {
+                            self.emit_set_named_var(name);
+                        }
                         let qualified = self.qualify_variable_name(name);
                         let slot_opt = self.local_map.get(name).copied();
                         if let Some(slot) = slot_opt {
@@ -495,7 +541,11 @@ impl Compiler {
                                 .push((slot as usize, qualified.clone()));
                         }
                         let idx = self.code.add_constant(Value::str(qualified));
-                        self.code.emit(OpCode::SetGlobal(idx));
+                        if is_constant_decl {
+                            self.code.emit(OpCode::SetGlobalRaw(idx));
+                        } else {
+                            self.code.emit(OpCode::SetGlobal(idx));
+                        }
                     } else {
                         // For native int types, the value may be wrapped during
                         // assignment (e.g., -1 -> 255 for uint8). We need to
@@ -518,6 +568,9 @@ impl Compiler {
                             if mark_explicit_local_init {
                                 self.code.emit(OpCode::MarkExplicitInitializerContext);
                             }
+                            if is_constant_decl {
+                                self.code.emit(OpCode::MarkConstantContext);
+                            }
                             self.code.emit(OpCode::MarkVarDeclContext);
                             self.emit_set_named_var(name);
                         } else {
@@ -539,6 +592,9 @@ impl Compiler {
                                 self.emit_set_var_type(name, name_idx2, tc_idx, false);
                                 if mark_explicit_local_init {
                                     self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
+                                if is_constant_decl {
+                                    self.code.emit(OpCode::MarkConstantContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
@@ -571,6 +627,9 @@ impl Compiler {
                                 if mark_explicit_local_init {
                                     self.code.emit(OpCode::MarkExplicitInitializerContext);
                                 }
+                                if is_constant_decl {
+                                    self.code.emit(OpCode::MarkConstantContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                                 if decl_slot.is_some() {
@@ -599,6 +658,9 @@ impl Compiler {
                                 }
                                 if mark_explicit_local_init {
                                     self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
+                                if is_constant_decl {
+                                    self.code.emit(OpCode::MarkConstantContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
@@ -653,9 +715,17 @@ impl Compiler {
                 // List and later mutate the element via index assignment.
                 // Typed anonymous scalars (`my num $`, `my int $`, etc.) must NOT
                 // be wrapped -- their value must be used directly for numeric ops.
-                if name == "__ANON_STATE__" && type_constraint.is_none() {
+                // An anonymous `constant $ = expr` shares this synthetic name but
+                // must ALSO stay unwrapped: a Raku constant has no Scalar
+                // container at all (see `is_constant_decl` above), so wrapping it
+                // here undid the unitemized `SetGlobalRaw` store just above and
+                // turned a flattening consumer (e.g. a `Z` zip, or binding into a
+                // typed positional parameter) into a one-item read of the whole
+                // aggregate.
+                if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl {
                     self.code.emit(OpCode::WrapScalar);
                 } else if name == "__ANON_STATE__"
+                    && !is_constant_decl
                     && let Some(tc) = type_constraint
                     && !matches!(tc.as_str(), "Any" | "Mu" | "")
                     && !crate::runtime::native_types::is_native_array_element_type(tc)
