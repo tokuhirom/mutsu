@@ -146,14 +146,59 @@ impl Interpreter {
         arg_values: &[Value],
         prior: Option<SavedDynParams>,
     ) -> Option<SavedDynParams> {
-        if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) {
-            return prior;
-        }
-        let params = self.subrule_dynamic_params(name, pkg);
-        if params.is_empty() {
+        let has_block_arg = arg_values.iter().any(|value| match value.view() {
+            ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+                matches!(value.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+            }
+            _ => false,
+        });
+        if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) && !has_block_arg {
             return prior;
         }
         let mut saved = prior.unwrap_or_default();
+        // A block-valued named argument is a closure and must remain a closure
+        // when the callee's regex code assertion runs. The scratch interpreter
+        // used to build the callee's pattern has the named binding, but the
+        // final code block executes in this matcher. Preserve the binding in
+        // this env for the same resolve-and-match window instead of baking the
+        // Block through its string representation.
+        if has_block_arg {
+            for def in self.resolve_token_defs_in_pkg(name, pkg) {
+                for pd in &def.param_defs {
+                    if !pd.named || pd.named_alias {
+                        continue;
+                    }
+                    let Some(value) = arg_values.iter().rev().find_map(|arg| match arg.view() {
+                        ValueView::Pair(key, value) => pd
+                            .named_external_keys()
+                            .iter()
+                            .any(|candidate| candidate == key.as_str())
+                            .then_some(value),
+                        ValueView::ValuePair(key, value) => {
+                            let ValueView::Str(key) = key.view() else {
+                                return None;
+                            };
+                            pd.named_external_keys()
+                                .iter()
+                                .any(|candidate| candidate == key.as_str())
+                                .then_some(value)
+                        }
+                        _ => None,
+                    }) else {
+                        continue;
+                    };
+                    if !matches!(value.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
+                        continue;
+                    }
+                    saved.push((pd.name.clone(), self.env.get(&pd.name).cloned()));
+                    self.env.insert(pd.name.clone(), value.clone());
+                }
+            }
+        }
+        let params = self.subrule_dynamic_params(name, pkg);
+        if params.is_empty() {
+            return (!saved.is_empty()).then_some(saved);
+        }
         // Named arguments (`:args(:x(1),)`) never fill a positional slot.
         let positional: Vec<&Value> = arg_values
             .iter()

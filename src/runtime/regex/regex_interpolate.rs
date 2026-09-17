@@ -421,6 +421,11 @@ impl Interpreter {
                 let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
                 Some(format!("'{escaped}'"))
             }
+            // A callable is a value, not source text. Keeping its lexical
+            // reference in the code block lets the enclosing matcher provide
+            // the actual closure at match time; `raku_value` would stringify
+            // the Block and turn `$callback()` into a call on a Str.
+            ValueView::Sub(_) | ValueView::WeakSub(_) => None,
             // Bound token parameters are evaluated before the token's code
             // blocks run.  Reparse their ordinary Raku representation in the
             // caller-side block so composite arguments (notably Pair/Hash and
