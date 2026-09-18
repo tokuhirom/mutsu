@@ -4039,6 +4039,21 @@ pub struct Interpreter {
     /// `lexical_override` check resolves the correct callable). Populated at sub
     /// registration; checked cheaply (guarded by `is_empty()`) on each call.
     pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
+    /// Bare names for which a `sub EXPORT`'s returned map installed an
+    /// `&name` value into `env` (`install_export_symbol`). A custom EXPORT
+    /// hook can re-export a routine wrapped in a closure under the same bare
+    /// name it wraps (`'&greet' => -> |c { greet |c, :extra } }`), so a
+    /// bareword call of that name must keep re-checking `env` for the
+    /// installed override instead of caching straight through to the
+    /// registered package sub of the same name (#8746). Unlike
+    /// `amp_param_shadowed_names`, the env value here is not gated by
+    /// `free_var_syms`: an `EXPORT`-installed override is a lexical import of
+    /// the whole importing compunit, not a value inherited from an unrelated
+    /// caller frame, so every bareword call to the name within that unit's
+    /// reach must see it. Populated at export-symbol installation; checked
+    /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
+    /// `amp_param_shadowed_names`.
+    pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
     /// Names declared with an empty-signature proto (`proto bar {*}`). Such a
     /// proto's signature gates the whole multi dispatch: any call with
     /// positional arguments "will never work with signature of the proto ()"

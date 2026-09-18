@@ -365,6 +365,11 @@ impl Interpreter {
         let sigil = key.chars().next();
         if let Some('&') = sigil {
             let op = &key[1..];
+            // A bareword call of this name must keep re-checking `env` for
+            // this installed value instead of caching straight through to a
+            // same-named package sub (#8746) — see the field's doc comment.
+            self.export_amp_override_names
+                .insert(crate::symbol::Symbol::intern(op));
             let normalized_op = Interpreter::normalize_categorical_operator_name(op);
             if matches!(
                 op.split_once(":<").map(|(c, _)| c),
