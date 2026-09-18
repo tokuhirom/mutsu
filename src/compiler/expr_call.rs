@@ -279,6 +279,32 @@ impl Compiler {
         self.compile_expr_call_inner(name, args, true);
     }
 
+    /// Raku treats a parameterized core aggregate used as a callable as its
+    /// constructor (`Array[Int](1, 2)` is `Array[Int].new(1, 2)`). The parser
+    /// represents that spelling as a call-on an indexed type expression.
+    pub(super) fn is_parameterized_aggregate_type_expr(expr: &Expr) -> bool {
+        let Expr::Index {
+            target,
+            index,
+            is_positional: true,
+        } = expr
+        else {
+            return false;
+        };
+        let Expr::BareWord(base) = target.as_ref() else {
+            return false;
+        };
+        let has_type_args = match index.as_ref() {
+            Expr::ArrayLiteral(args) => !args.is_empty(),
+            _ => true,
+        };
+        has_type_args
+            && matches!(
+                base.as_str(),
+                "Array" | "List" | "Positional" | "array" | "Hash" | "Map"
+            )
+    }
+
     fn compile_expr_call_inner(
         &mut self,
         name: &Symbol,

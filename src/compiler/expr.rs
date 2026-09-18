@@ -503,6 +503,20 @@ impl Compiler {
                     Self::lower_infix_assign_call(&opname, args[0].clone(), args[1].clone());
                 self.compile_expr(&lowered);
             }
+            // A parameterized aggregate used as a callable is its constructor:
+            // `Array[Int](1, 2)` is the same operation as
+            // `Array[Int].new(1, 2)`. The parser represents the former as a
+            // call-on an indexed type expression, so route it through the
+            // existing typed aggregate constructor path.
+            Expr::CallOn { target, args } if Self::is_parameterized_aggregate_type_expr(target) => {
+                self.compile_expr(&Expr::MethodCall {
+                    target: target.clone(),
+                    name: Symbol::intern("new"),
+                    args: args.clone(),
+                    modifier: None,
+                    quoted: false,
+                });
+            }
             Expr::Call { name, args } => {
                 self.compile_expr_call(name, args);
             }

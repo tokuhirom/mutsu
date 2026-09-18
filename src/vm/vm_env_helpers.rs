@@ -2200,14 +2200,15 @@ impl Interpreter {
                 // (inner shadow) slot, not the by-name `position` (outer) slot. Fall
                 // back to the name search for sources with no baked slot (a
                 // captured-outer free-var write, undefine env-identity, …).
-                // Remove (not just read) this source's baked slot: it is consumed by
-                // this drain. A blanket clear would wrongly drop an OUTER call's
+                // Remove this source's baked slot only when the owning frame
+                // consumes it. A blanket clear would wrongly drop an OUTER call's
                 // still-pending slot when a NESTED call drains first (`f($a)` whose
                 // body calls `g($b)` — g's drain must not lose f's `a` slot).
                 let baked_raw = self
                     .pending_rw_writeback_slots
-                    .remove(&source)
-                    .map(|s| s as usize);
+                    .get(&source)
+                    .copied()
+                    .map(|(slot, owner_depth)| (slot as usize, owner_depth));
                 // A baked slot index is only meaningful in the frame it was baked
                 // in. When a NESTED call drains a source whose slot was baked for an
                 // ANCESTOR frame (`f(@a, %h)` whose body calls `@a.map(...)` — the
@@ -2215,15 +2216,15 @@ impl Interpreter {
                 // caller-frame index can collide with THIS frame's `locals` range
                 // (`s < locals.len()`) yet name a *different* variable — writing the
                 // wrong value into an unrelated slot (a Hash param clobbered by an
-                // Array source). Trust the baked slot only when THIS frame's `code`
-                // actually holds `source` at it; otherwise the source belongs to a
-                // frame further up the stack, so retain it for that frame's own
-                // drain rather than mis-applying (or draining early by name) here.
-                let baked = baked_raw.filter(|&s| {
-                    s < self.locals.len() && code.locals.get(s).is_some_and(|n| n == &source)
+                // Array source). The owner depth and local name must both match;
+                // otherwise retain the source for its owning frame's drain.
+                let baked = baked_raw.filter(|&(s, owner_depth)| {
+                    owner_depth == self.call_frames.len()
+                        && s < self.locals.len()
+                        && code.locals.get(s).is_some_and(|n| n == &source)
                 });
-                let slot = if baked.is_some() {
-                    baked
+                let slot = if let Some((slot, _)) = baked {
+                    Some(slot)
                 } else if baked_raw.is_some() {
                     // Baked for a different frame: retain for the owning frame.
                     None
@@ -2233,6 +2234,9 @@ impl Interpreter {
                     self.find_local_slot(code, &source)
                 };
                 if let Some(slot) = slot {
+                    if baked_raw.is_some() {
+                        self.pending_rw_writeback_slots.remove(&source);
+                    }
                     if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
                     {
@@ -2341,8 +2345,22 @@ impl Interpreter {
             // `remove` is the membership test and the "matched -> do not retain"
             // step in one: a source is applied at most once, at the first slot
             // bearing its name.
+            let baked_owner = self
+                .pending_rw_writeback_slots
+                .get(name.as_str())
+                .copied()
+                .map(|(slot, owner_depth)| (slot as usize, owner_depth));
+            if baked_owner.is_some_and(|(slot, owner_depth)| {
+                owner_depth != self.call_frames.len()
+                    || code.locals.get(slot).is_none_or(|local| local != name)
+            }) {
+                continue;
+            }
             if !self.pending_caller_var_writeback.remove(name.as_str()) {
                 continue;
+            }
+            if baked_owner.is_some() {
+                self.pending_rw_writeback_slots.remove(name.as_str());
             }
             if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                 && let Some(val) = self.env().get(name).cloned()
