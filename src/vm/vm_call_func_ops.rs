@@ -1759,15 +1759,42 @@ impl Interpreter {
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
                 self.set_pending_call_arg_sources(arg_sources.clone());
-                let pushed_dispatch =
-                    loan_env!(self, push_multi_dispatch_frame_sym(name, name_sym, &args));
+                // Hand over the winner this call already resolved (via
+                // `find_compiled_function_memo` above) instead of letting the
+                // frame resolve the identical call a second time. For a
+                // value-dependent multi -- one whose candidates carry a `where`
+                // clause, a subset-typed parameter, or any of the other shapes
+                // `func_multi_dispatch_type_cacheable` refuses -- the
+                // resolution is NOT cacheable, so a second one re-runs the
+                // user's constraint. Rakudo evaluates a `where` once per call;
+                // mutsu evaluated it four times, and this is one of them
+                // (#8697). `push_multi_dispatch_frame_with_winner_sym` exists
+                // for exactly this and says so in its own doc comment.
+                let pushed_dispatch = loan_env!(
+                    self,
+                    push_multi_dispatch_frame_with_winner_sym(
+                        name,
+                        name_sym,
+                        &args,
+                        multi_def_memo.as_deref(),
+                    )
+                );
                 self.push_samewith_context(name, None, None);
                 // Use the function's defining package so that lookups inside the
                 // function body resolve against the correct namespace.
                 let pkg_sym = if let Some(cached_pkg) = self.cached_fn_package(name, args.len()) {
                     Symbol::intern(&cached_pkg)
                 } else {
-                    let resolved_def = loan_env!(self, resolve_function_with_types(name, &args));
+                    // The same reuse as the dispatch frame above (#8697): this
+                    // resolved the identical call a THIRD time, purely to read
+                    // the winner's declaring package and run its deprecation
+                    // check. The memo holds the answer already, and for a
+                    // value-dependent multi re-resolving means re-running the
+                    // candidates' `where` clauses.
+                    let resolved_def = match multi_def_memo.clone() {
+                        memoised @ Some(_) => memoised,
+                        None => loan_env!(self, resolve_function_with_types(name, &args)),
+                    };
                     if let Some(ref def) = resolved_def {
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
                             .or_else(|| self.pending_callsite_line());

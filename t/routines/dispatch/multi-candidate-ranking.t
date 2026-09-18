@@ -79,18 +79,26 @@ multi counted(Int $x where { $where-runs++; $x > 0 }) { 'pos' }
 multi counted(Int $x) { 'nonpos' }
 $where-runs = 0;
 is counted(5), 'pos', 'a where-constrained candidate still binds';
-# rakudo evaluates the constraint exactly ONCE here; mutsu evaluates it 4
-# times, because the resolution cascade in `dispatch_resolve.rs` /
-# `dispatch_proto_call.rs` reaches `choose_best_matching_candidate` from
-# several fallback layers and each gathers and binds its own list. That is
-# pre-existing (verified against the parent commit) and tracked as #8697.
+# rakudo evaluates the constraint exactly ONCE for a call that matches.
+# mutsu evaluated it FOUR times, because one user-level call resolved the
+# multi three separate times -- `find_compiled_function_memo`, the
+# multi-dispatch frame, and `dispatch_func_call_inner`'s own probe for the
+# winner's declaring package -- and for a value-dependent multi (a `where`, a
+# subset-typed parameter) `func_multi_dispatch_type_cacheable` refuses the
+# resolution cache, so each of those re-ran the user's constraint. #8697.
 #
-# A BOUND, not the rakudo value: this pins that the per-key dedup #7858 added
-# -- which #8696 step 1 moved ahead of the ranking loop -- keeps working, so
-# the count cannot climb back toward once-per-registry-key. Tighten it to 1
-# when #8697 lands.
-ok $where-runs <= 4,
-    "its where clause ran a bounded number of times ($where-runs <= 4; raku: 1, see issue 8697)";
+# Two of the three now reuse the winner the call already resolved, leaving 2:
+# one resolution, plus the winning candidate's actual parameter bind
+# re-checking a constraint the resolution had already proved. Closing that
+# last one means carrying "already validated" into the binder and is the
+# remainder of #8697.
+#
+# Still a BOUND rather than an equality, for the same reason as before: it
+# also pins that the per-registry-key dedup #7858 added, which #8696 step 1
+# moved ahead of the ranking loop, keeps working -- the count cannot climb
+# back toward once-per-registry-key. Tighten to 1 when #8697 closes.
+ok $where-runs <= 2,
+    "its where clause ran a bounded number of times ($where-runs <= 2; raku: 1, see issue 8697)";
 
 $where-runs = 0;
 is counted(-5), 'nonpos', 'and the wider candidate wins when the where rejects';
