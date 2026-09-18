@@ -28,11 +28,14 @@ binary of `d559d288` (main immediately before the slice), with `MUTSU_GC=off`: `
 and a fixture driving 4,000,000 native backedges moves +0.069% — all inside the ADR's 0.5%. The full
 table is in ADR-0106 §8.1.
 
-Measuring that last fixture turned up something the design had not accounted for. **No Raku loop form
-puts a backward jump inside a JIT-compiled range**: `while`, `for`, `loop`, C-style `loop` and
-`repeat` all compile to compound opcodes whose body is a separate compiled range, so the range has no
-backedge of its own, and the emitted hook never fires for them. The shape that does reach it is
-`nqp::while`, which emits a plain backward `Jump` into the enclosing chunk. That matters beyond this
-slice: the JIT's per-line coverage comes from the once-per-body-entry poll rather than from the
-backedge hook, which is [#8713](https://github.com/tokuhirom/mutsu/issues/8713) and a precondition for
-ADR-0106's gate 4.
+Building that last fixture turned up something worth recording. **No Raku loop form puts a backward
+jump inside a JIT-compiled range**: `while`, `for`, `loop`, C-style `loop` and `repeat` all compile to
+compound opcodes whose body is a separate compiled range, so the range has no backedge of its own, and
+the emitted backedge hook never fires for them. The shape that does reach it is `nqp::while`, which
+emits a plain backward `Jump` into the enclosing chunk — which is why the gate's 4,000,000-backedge
+fixture had to be written in it. Line coverage is a different hook and is unaffected: Slice 3 emits it
+at chunk entry, jump targets and line transitions inside the compiled body.
+
+(An earlier revision of this entry drew a further conclusion from the same measurement — that the
+JIT's per-line coverage therefore came only from a once-per-body-entry poll. That was wrong; see
+`news/2026-09/profiler-exact-line-counts.md`.)

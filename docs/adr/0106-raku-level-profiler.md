@@ -461,24 +461,34 @@ Everything is inside 0.5%, gate 1c's JIT-on rows included. The bench CI remains 
 for *wall-clock* numbers in documents (`CLAUDE.md`); this table is an instruction count, which is what
 gates 1 and 1c actually specify.
 
-### 8.2 Gate 4 is not met yet, and §5 Slice 1 says why more than it knew
+**Gates 3 and 4, after Slice 3 (2026-09-18): pass, and are now asserted.** On a `while` loop whose
+body runs exactly 5,000 times, both body lines report `hits=5000` and the condition line `hits=5001`
+(it is evaluated once more, the time it is false), with every line outside the loop at 1 — the trip
+count, exactly, which is gate 3. Running the same fixture with `MUTSU_JIT=off` and with
+`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=1` produces **identical** line, routine and callsite tables, which
+is gate 4. `tests/profile_counts.rs` holds both, and asserts that the JIT actually entered before
+claiming parity from it. They could not be asserted before that: `flush_at_exit` folded its snapshot
+into a static nothing read, so the counters had no consumer outside the crate
+([#8713](https://github.com/tokuhirom/mutsu/issues/8713)).
 
-Measuring gate 1c turned up a property of the bytecode that the design did not account for: **no Raku
-loop form places a backward jump inside a JIT-compiled range.** `while`, `for`, `loop`, C-style `loop`
-and `repeat` all compile to compound opcodes whose body is a *separate* compiled range, entered once
-per iteration, so that range holds no backedge of its own — 0 native backedge polls on every one of
-those shapes, and on `bench-fib` / `bench-tak` / `bench-mandelbrot`. The one shape that reaches the
-emitted hook is `nqp::while` (`src/compiler/nqp_forms.rs`), which emits a plain backward `Jump` into
-the enclosing chunk.
+### 8.2 What gate 1c's fixture had to be, and why
 
-So the backedge hook the JIT emits is, for ordinary Raku, not the thing carrying line information:
-`try_enter_range` polls once per native body *entry*, and `try_enter` (a whole compiled function body)
-does not poll at all. A hot loop therefore yields one line hit per iteration rather than one per
-opcode dispatch, and a compiled function body yields none — which is not the exactness gate 3 asserts,
-and makes gate 4's "the same `hits`" unachievable as things stand. Tracked as
-[#8713](https://github.com/tokuhirom/mutsu/issues/8713): the line hook belongs *inside* compiled
-bodies, at each op whose line differs, emitted only when armed (the specialization that keeps gate 1c
-green is already in place). Gate 1c must be re-measured once it is.
+Measuring gate 1c turned up a property of the bytecode worth recording: **no Raku loop form places a
+backward jump inside a JIT-compiled range.** `while`, `for`, `loop`, C-style `loop` and `repeat` all
+compile to compound opcodes whose body is a *separate* compiled range, entered once per iteration, so
+that range holds no backedge of its own — 0 native backedge polls on every one of those shapes, and on
+`bench-fib` / `bench-tak` / `bench-mandelbrot`. The one shape that reaches the emitted backedge hook is
+`nqp::while` (`src/compiler/nqp_forms.rs`), which emits a plain backward `Jump` into the enclosing
+chunk, and that is what the `nqp-backedge` row of §8.1 exercises. Anything else would have measured the
+Slice 1 shim specialization on a path that never runs.
+
+This says nothing about line coverage, which does **not** come from the backedge hook: Slice 3 emits
+`helpers::profile_line` at chunk entry, at every jump target, and at every sequential line transition
+inside the compiled body, all gated on the profiler being armed (`src/vm/vm_jit_compile.rs`). That is
+why gate 4 above holds exactly rather than approximately. (An earlier revision of this section claimed
+the opposite — that a native body recorded only at its entry, leaving gate 4 unachievable. It was
+wrong: it inferred the emission sites from a grep for the `vm_poll` function name rather than the
+helper's.)
 
 ## 9. Implementation status
 
