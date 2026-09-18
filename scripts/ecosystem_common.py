@@ -180,6 +180,31 @@ def _latest_by_name(entries, into: dict | None = None) -> dict:
     return best
 
 
+def _provides_by_module(entries) -> dict[str, str]:
+    """Map every provided module to the newest indexed distribution.
+
+    Unlike the distribution pool, this must inspect every version. A module
+    can disappear from a distribution's metadata after it is split out or
+    renamed, while an older release remains a valid provider for dependents.
+    Ties keep the first index entry, preserving the fez-before-REA preference
+    used by the merged distribution pool.
+    """
+    providers = {}
+    provider_versions = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("name"):
+            continue
+        if not _entry_url(entry):
+            continue
+        name = entry["name"]
+        version = version_key(entry.get("version", "0"))
+        for module in (entry.get("provides") or {}):
+            if module not in providers or version > provider_versions[module]:
+                providers[module] = name
+                provider_versions[module] = version
+    return providers
+
+
 class Index:
     """The merged fez + REA ecosystem index.
 
@@ -249,10 +274,10 @@ def load_index(cache_dir: str = CACHE_DIR, *, refresh: bool = False,
         _latest_by_name(rea, dists)
         snapshot["rea"] = {"url": REA_URL, "sha256": rea_digest,
                            "dists_added": len(dists) - before}
-    provides: dict[str, str] = {}
-    for name, entry in dists.items():
-        for module in (entry.get("provides") or {}):
-            provides.setdefault(module, name)
+    all_entries = list(fez)
+    if with_rea:
+        all_entries.extend(rea)
+    provides = _provides_by_module(all_entries)
     snapshot["modules"] = len(provides)
     return Index(targets, dists, provides, snapshot)
 
@@ -685,6 +710,29 @@ def _self_test() -> int:
     want_deps = ["Lumberjack"]
     if got_deps != want_deps:
         print(f"dep_names (url): want {want_deps!r}, got {got_deps!r}", file=sys.stderr)
+        failures += 1
+
+    # A distribution can stop providing a module in a newer release, while an
+    # older release remains the provider zef can select. The concrete example
+    # is Digest::SHA: Digest 0.28 provides Digest::SHA1/2/3, but Digest 0.17.1
+    # still provides Digest::SHA. The dependency pool keeps Digest's latest
+    # entry, but the module map must inspect both versions or this becomes a
+    # false blocked_dep result.
+    index_entries = [
+        {"name": "Digest", "version": "0.28.0", "path": "new.tar.gz",
+         "provides": {"Digest::SHA1": "lib/SHA1.rakumod"}},
+        {"name": "Digest", "version": "0.17.1", "path": "old.tar.gz",
+         "provides": {"Digest::SHA": "lib/SHA.rakumod"}},
+        {"name": "Consumer", "version": "1.0", "path": "consumer.tar.gz",
+         "depends": ["Digest::SHA"]},
+    ]
+    index = Index(_latest_by_name(index_entries), _latest_by_name(index_entries),
+                  _provides_by_module(index_entries), {})
+    if index.provides.get("Digest::SHA") != "Digest":
+        print("_provides_by_module: lost the older Digest::SHA provider", file=sys.stderr)
+        failures += 1
+    if index.closure("Consumer") != (["Digest"], []):
+        print(f"Index.closure: got {index.closure('Consumer')}", file=sys.stderr)
         failures += 1
 
     # A `# TODO` failure is an expected one: TAP says the file still passes.
