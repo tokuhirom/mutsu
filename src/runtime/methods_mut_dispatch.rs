@@ -1586,10 +1586,18 @@ impl Interpreter {
                                         ),
                                     );
                                 }
-                                // A duplicate key turns the scalar value into an
-                                // array; reject it when the element type does not
-                                // accept that array.
-                                if let Some(ex) = &existing[i] {
+                                // A typed Hash-valued append merges two nested
+                                // hashes, so it does not turn the value into an
+                                // Array. Other duplicate keys still need the
+                                // resulting Array checked against the element
+                                // constraint.
+                                let merges_hashes = !is_push
+                                    && matches!(vc.as_str(), "Hash" | "Hash()")
+                                    && existing[i].as_ref().is_some_and(|ex| {
+                                        matches!(ex.view(), ValueView::Hash(_))
+                                            && matches!(v.view(), ValueView::Hash(_))
+                                    });
+                                if !merges_hashes && let Some(ex) = &existing[i] {
                                     let resulting = match ex.view() {
                                         ValueView::Array(arr, ..) => {
                                             let mut items = arr.to_vec();
@@ -1629,7 +1637,13 @@ impl Interpreter {
                                                 .get_or_insert_with(ValueMap::default)
                                                 .insert(wk.clone(), k);
                                         }
-                                        Self::hash_push_insert(hash, wk, v, is_push);
+                                        Self::hash_push_insert_typed(
+                                            hash,
+                                            wk,
+                                            v,
+                                            is_push,
+                                            value_constraint.as_deref(),
+                                        );
                                     }
                                     Value::hash_with_data(arc_hash.clone())
                                 })
@@ -1648,7 +1662,13 @@ impl Interpreter {
                             if is_object_hash {
                                 orig.insert(wk.clone(), k);
                             }
-                            Self::hash_push_insert(&mut map, wk, v, is_push);
+                            Self::hash_push_insert_typed(
+                                &mut map,
+                                wk,
+                                v,
+                                is_push,
+                                value_constraint.as_deref(),
+                            );
                         }
                         let mut hd = crate::value::HashData::new(map);
                         if is_object_hash {
@@ -2026,7 +2046,10 @@ impl Interpreter {
         // (L2b). Writeback is meaningless on an unbounded array anyway.
         if method == "map"
             && target_var.starts_with('@')
-            && !matches!(target.view(), ValueView::LazyList(ll) if ll.is_infinite_spec())
+            // A live gather/pipe has no eager item snapshot to put into the
+            // deferred map body. Let the ordinary map dispatcher preserve
+            // its lazy source instead of turning it into an empty Seq.
+            && !matches!(target.view(), ValueView::LazyList(ll) if ll.needs_vm_lazy_dispatch())
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmutwithvalues",

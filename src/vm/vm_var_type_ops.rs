@@ -38,6 +38,17 @@ impl Interpreter {
         // Resolve type capture variables (e.g., `T` → `Int` when `::T`
         // was captured earlier in the signature).
         let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
+        // Container metadata is later rendered as `Array[T]`/`Hash[T]`, so a
+        // user type used unqualified inside a module must retain the same
+        // package-qualified identity as the type checker.  Keeping the raw
+        // spelling (`DataSlice`) made a typed array report `Array[DataSlice]`
+        // even though its elements were instances of `Dan::DataSlice`.
+        let constraint = if !constraint.contains("::") && !constraint.contains('[') {
+            self.resolve_type_in_current_package(&constraint)
+                .unwrap_or(constraint)
+        } else {
+            constraint
+        };
         // Clear stale atomic CAS state when an @-variable is
         // (re-)declared with a type constraint like atomicint. Not on the
         // hoist: the state belongs to whatever container is bound right now,

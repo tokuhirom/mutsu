@@ -292,6 +292,31 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            // Numeric equality on two positional values compares their
+            // numeric size, not their individual elements. Handle this before
+            // the numeric bridge turns each positional value into its `.Int`
+            // size, and normalize the cross-variant collection case as well.
+            let is_numeric_collection = |value: &Value| {
+                matches!(
+                    value.view(),
+                    ValueView::Array(..)
+                        | ValueView::Seq(..)
+                        | ValueView::Slip(..)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                )
+            };
+            vm.reify_map_grep_seq(&l)?;
+            vm.reify_map_grep_seq(&r)?;
+            if is_numeric_collection(&l) && is_numeric_collection(&r) {
+                return Ok(Value::truth(
+                    crate::runtime::utils::value_to_list(&l).len()
+                        == crate::runtime::utils::value_to_list(&r).len(),
+                ));
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // rakudo's last-resort candidate is `multi infix:<==>(Any \a, Any
             // \b) { a.Numeric == b.Numeric }`, so two objects the bridge left

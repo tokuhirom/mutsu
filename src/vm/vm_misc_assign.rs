@@ -273,7 +273,18 @@ impl Interpreter {
         let mut val = if name.starts_with('%') {
             self.coerce_object_to_hash(raw_val)
         } else if name.starts_with('@') {
-            let mut assigned = runtime::coerce_to_array(raw_val);
+            // A by-name aggregate assignment (for example the anonymous
+            // array synthesized for `([Z] @ = df)`) follows the same
+            // decomposition rule as a local-slot assignment. In
+            // particular, an unitemized role-punned Iterable must contribute
+            // its iterator's items, while `ItemizeVar` has already wrapped a
+            // scalar source when it must remain one item.
+            let mut assigned =
+                if let Some(decomposed) = self.array_assign_decomposed_instance(&raw_val)? {
+                    decomposed
+                } else {
+                    runtime::coerce_to_array(raw_val)
+                };
             // Check for shaped array on current value, and preserve on re-assignment.
             // The local slot and the env copy of a variable can diverge (the
             // `env_dirty` dual store): a method call between two assignments may

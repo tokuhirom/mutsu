@@ -653,6 +653,14 @@ impl Interpreter {
         // never leaks onto a later, unrelated subscript.
         let core_subscript_call = std::mem::take(&mut self.skip_postcircumfix_overload);
         let mut index = self.stack.pop().unwrap();
+        // Aggregate parameters bind their elements through shared scalar cells.
+        // A cell can therefore reach a later subscript as the index itself
+        // (`sub f(@s) { $x[@s] }`), but AT-POS dispatch expects the cell's value.
+        // Decontainerize this read-only index here, just as the target path
+        // below does for a ContainerRef receiver.
+        if matches!(index.view(), ValueView::ContainerRef(_)) {
+            index = index.deref_container();
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice
@@ -855,8 +863,16 @@ impl Interpreter {
         // `prefix:<~>`/`infix:<...>` operator overloads are checked ahead of
         // their native fallback (`vm_misc_coerce.rs`, `builtins_operators_infix.rs`).
         // See todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md.
-        if let ValueView::Instance { .. } = target.view()
-            && !core_subscript_call
+        if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Array(..)
+        ) && !core_subscript_call
+            // A typed array can carry a user-defined postcircumfix overload
+            // (`DataSlice @rows, Whatever`) that turns `rows[*]` into a new
+            // object.  The Whatever-specific mixin path below must retain its
+            // own handling, but ordinary arrays need overload resolution here.
+            && (!matches!(index.view(), ValueView::Whatever)
+                || matches!(target.view(), ValueView::Array(..)))
         {
             let op_name = if is_positional {
                 "postcircumfix:<[ ]>"
@@ -865,8 +881,7 @@ impl Interpreter {
             };
             let args = vec![target.clone(), index.clone()];
             if let Some(def) = self.resolve_function_with_types(op_name, &args) {
-                let empty_fns = crate::opcode::CompiledFns::default();
-                let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
+                let result = self.call_routine_def(&def, args)?;
                 self.stack.push(result);
                 return Ok(());
             }
@@ -1133,7 +1148,9 @@ impl Interpreter {
             // (`{a => 1}[*]` is `(:a(1),)`, not the hash) — so it gets its own
             // arm rather than the one-element rule.
             (_, ValueView::Whatever)
-                if is_positional && target.is_one_element_under_positional_subscript() =>
+                if is_positional
+                    && !matches!(target.view(), ValueView::Mixin(..))
+                    && target.is_one_element_under_positional_subscript() =>
             {
                 // Decontainerized first, so a hash held in a `$` still lists its
                 // pairs rather than counting as the single item its itemization
@@ -1922,6 +1939,23 @@ impl Interpreter {
                 }
                 Value::array(results)
             }
+            // A from-the-end index on a role-punned Positional value must be
+            // evaluated against the role's element count before dispatching
+            // AT-POS. Without this, `Series[*-1]` passed the WhateverCode
+            // object directly to the role method and returned the whole
+            // object instead of its final element.
+            (ValueView::Mixin(..), ValueView::Sub(_)) if is_positional => {
+                let len = self
+                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .map(|value| crate::runtime::to_int(&value).max(0))
+                    .unwrap_or(0);
+                let resolved = self
+                    .eval_whatever_code_index(&index, len)
+                    .unwrap_or(Value::NIL);
+                self.stack.push(target);
+                self.stack.push(resolved);
+                return self.exec_index_op_with_positional(is_positional);
+            }
             (ValueView::Mixin(..), ValueView::Str(key)) => {
                 let default = self.typed_container_default(&target);
                 // Propagate a genuine exception thrown by a mixed-in role's
@@ -1939,6 +1973,112 @@ impl Interpreter {
                     vec![Value::str_arc(key.clone())],
                 )?;
                 if result.is_nil() { default } else { result }
+            }
+            // A role-punned Positional value is represented as a Mixin rather
+            // than an Instance.  Keep the same slice semantics as the class
+            // path below: a Range subscript is a series of scalar AT-POS
+            // calls, not one direct AT-POS call with the Range object.
+            (ValueView::Mixin(inner, _), _)
+                if is_positional
+                    && let Some((start, end, _, excl_end)) = range_params(&index)
+                    && !Self::range_end_is_unbounded(end) =>
+            {
+                if matches!(
+                    inner.view(),
+                    ValueView::Array(..)
+                        | ValueView::LazyList(_)
+                        | ValueView::Slip(_)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                ) {
+                    let inner = inner.as_ref().clone();
+                    self.stack.push(inner);
+                    self.stack.push(index);
+                    return self.exec_index_op_with_positional(is_positional);
+                }
+                let last = if excl_end { end - 1 } else { end };
+                let mut results = Vec::new();
+                for i in start.max(0)..=last {
+                    results.push(
+                        self.try_compiled_method_or_interpret(
+                            target.clone(),
+                            "AT-POS",
+                            vec![Value::int(i)],
+                        )
+                        .unwrap_or(Value::NIL),
+                    );
+                }
+                Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                    crate::value::ArrayKind::Array,
+                )
+            }
+            // `*` on a role-punned Positional value likewise expands against
+            // its elems and reads one element at a time.  A Mixin around an
+            // ordinary positional value keeps the inner value's native slice
+            // behavior when the role supplies no delegated AT-POS.
+            (ValueView::Mixin(inner, mixins), ValueView::Whatever) if is_positional => {
+                if self
+                    .delegated_role_attr_value_from_mixins(mixins, "AT-POS")
+                    .is_none()
+                    && matches!(
+                        inner.view(),
+                        ValueView::Array(..)
+                            | ValueView::LazyList(_)
+                            | ValueView::Slip(_)
+                            | ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. }
+                    )
+                {
+                    let inner = inner.as_ref().clone();
+                    self.stack.push(inner);
+                    self.stack.push(index);
+                    return self.exec_index_op_with_positional(is_positional);
+                }
+                let elems = self
+                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .unwrap_or(Value::int(0));
+                let len = crate::runtime::to_int(&elems).max(0);
+                let mut results = Vec::with_capacity(len as usize);
+                for i in 0..len {
+                    // Keep the role-punned receiver, not just its backing
+                    // instance: attribute access inside the user overload
+                    // must see the mixin's current role-attribute overrides.
+                    let dispatch_target = target.clone();
+                    let args = vec![dispatch_target, Value::int(i)];
+                    let value = if let Some(def) =
+                        self.resolve_function_with_types("postcircumfix:<[ ]>", &args)
+                    {
+                        self.call_routine_def(&def, args)?
+                    } else {
+                        self.try_compiled_method_or_interpret(
+                            target.clone(),
+                            "AT-POS",
+                            vec![Value::int(i)],
+                        )
+                        .unwrap_or(Value::NIL)
+                    };
+                    results.push(value);
+                }
+                let value_type = results.first().and_then(|value| match value.view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                    ValueView::Mixin(inner, _) => match inner.view() {
+                        ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                        _ => None,
+                    },
+                    _ => None,
+                });
+                let declared_type = value_type.as_ref().map(|name| format!("Array[{name}]"));
+                let mut data = crate::value::ArrayData::new(results);
+                data.value_type = value_type;
+                data.declared_type = declared_type;
+                Value::array_with_kind(crate::gc::Gc::new(data), crate::value::ArrayKind::Array)
             }
             (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
                 if let ValueView::Mixin(_, mixins) = target.view()
@@ -2016,6 +2156,11 @@ impl Interpreter {
                         None
                     };
                 for k in keys.iter() {
+                    let k = if matches!(k.view(), ValueView::ContainerRef(_)) {
+                        k.deref_container()
+                    } else {
+                        k.clone()
+                    };
                     let value = match (&delegated_attr, k.view()) {
                         (
                             Some(attr_value),
@@ -2029,7 +2174,7 @@ impl Interpreter {
                         ) => {
                             self.stack.push(attr_value.clone());
                             self.stack.push(k.clone());
-                            self.exec_index_op()?;
+                            self.exec_index_op_with_positional(is_positional)?;
                             self.stack.pop().unwrap_or(Value::NIL)
                         }
                         _ => match k.view() {
@@ -2039,20 +2184,28 @@ impl Interpreter {
                             | ValueView::RangeExcl(_, _)
                             | ValueView::Whatever
                             | ValueView::Sub(_)
-                            | ValueView::WeakSub(_) => self
-                                .try_compiled_method_or_interpret(
-                                    target.clone(),
-                                    "AT-POS",
-                                    vec![k.clone()],
-                                )
-                                .or_else(|_| {
+                            | ValueView::WeakSub(_) => {
+                                if is_positional {
+                                    self.stack.push(target.clone());
+                                    self.stack.push(k.clone());
+                                    self.exec_index_op_with_positional(true)?;
+                                    self.stack.pop().unwrap_or(Value::NIL)
+                                } else {
                                     self.try_compiled_method_or_interpret(
                                         target.clone(),
-                                        "AT-KEY",
+                                        "AT-POS",
                                         vec![k.clone()],
                                     )
-                                })
-                                .unwrap_or(Value::NIL),
+                                    .or_else(|_| {
+                                        self.try_compiled_method_or_interpret(
+                                            target.clone(),
+                                            "AT-KEY",
+                                            vec![k.clone()],
+                                        )
+                                    })
+                                    .unwrap_or(Value::NIL)
+                                }
+                            }
                             _ => self
                                 .try_compiled_method_or_interpret(
                                     target.clone(),

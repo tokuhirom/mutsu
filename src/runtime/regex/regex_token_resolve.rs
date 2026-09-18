@@ -369,6 +369,17 @@ impl Interpreter {
             if !out.is_empty() {
                 return out;
             }
+            // Namespace nesting is lexical visibility, but it is not
+            // represented in a role/class MRO. A method in `X::RR` must be
+            // able to resolve the `my regex nr` registered under `X`.
+            let mut scope = pkg.to_string();
+            while let Some((parent, _)) = scope.rsplit_once("::") {
+                scope = parent.to_string();
+                self.collect_token_defs_for_scope_dedup(&scope, name, &mut out, &mut seen);
+                if !out.is_empty() {
+                    return out;
+                }
+            }
         }
         self.collect_token_defs_for_scope("GLOBAL", name, &mut out);
         out

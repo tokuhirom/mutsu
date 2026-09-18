@@ -140,4 +140,31 @@ impl Interpreter {
             hash.insert(key, value);
         }
     }
+
+    /// Insert with the element constraint of a typed hash.  `Hash() %h` uses
+    /// `append` to merge duplicate Hash-valued entries, rather than producing
+    /// an Array that would violate the value constraint (`%options.append: %o`
+    /// is the common nested-options pattern).
+    pub(crate) fn hash_push_insert_typed(
+        hash: &mut ValueMap,
+        key: String,
+        value: Value,
+        is_push: bool,
+        value_type: Option<&str>,
+    ) {
+        if !is_push
+            && matches!(value_type, Some("Hash" | "Hash()"))
+            && let Some(existing) = hash.get(&key)
+            && let ValueView::Hash(old) = existing.view()
+            && let ValueView::Hash(new) = value.view()
+        {
+            let mut merged = (**old).clone();
+            for (nested_key, nested_value) in new.iter() {
+                merged.map.insert(nested_key.clone(), nested_value.clone());
+            }
+            hash.insert(key, Value::hash_with_data(Value::hash_arc(merged)));
+            return;
+        }
+        Self::hash_push_insert(hash, key, value, is_push);
+    }
 }

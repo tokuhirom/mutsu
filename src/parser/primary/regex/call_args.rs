@@ -103,7 +103,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             }
             return Ok((r, compound_expr));
         }
-        Ok((rest, expr))
+        Ok((rest, crate::parser::expr::wrap_finished_expr(expr)))
     }
 
     if input.starts_with(')') {

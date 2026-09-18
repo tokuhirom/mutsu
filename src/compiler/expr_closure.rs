@@ -882,6 +882,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             let share_value = Self::element_share_bind_value(&name, index, value);
+            self.compile_expr(index);
             match &share_value {
                 Some(bind_value) => self.compile_bind_index_value(bind_value),
                 None => self.compile_bind_index_value(value),
@@ -889,11 +890,11 @@ impl Compiler {
             if share_value.is_some() {
                 self.code.emit(OpCode::MarkElementShare);
             }
-            self.compile_expr(index);
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional: outer_positional,
+                index_first: true,
                 target_slot,
             });
         } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
@@ -982,6 +983,7 @@ impl Compiler {
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional: outer_positional,
+                index_first: false,
                 target_slot,
             });
         } else if let Expr::ArrayLiteral(elements) = target {

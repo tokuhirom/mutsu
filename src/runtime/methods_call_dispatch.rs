@@ -317,6 +317,33 @@ impl Interpreter {
         if let Some(result) = self.try_var_meta_delegate(&target, method, &args) {
             return result;
         }
+        // A public attribute accessor is a user-visible method and must win
+        // over same-named native by-name routines. This matters for role
+        // attributes such as `%.index`: the native String `index` dispatcher
+        // otherwise sees the role instance first and interprets the accessor
+        // read as a zero-argument string search.
+        if args.is_empty()
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && {
+                let resolution =
+                    self.resolve_user_method_or_accessor(&class_name.resolve(), method);
+                let role_accessor = self
+                    .registry()
+                    .roles
+                    .get(&class_name.resolve())
+                    .is_some_and(|role| {
+                        role.attributes
+                            .iter()
+                            .any(|attr| attr.is_public && attr.name == method)
+                    });
+                matches!(
+                    resolution,
+                    Some(crate::runtime::UserMethodOrAccessor::Accessor)
+                ) || role_accessor
+            }
+        {
+            return self.dispatch_instance_and_fallback(target, method, args);
+        }
         // ADR-0040 §9.2: a renderer resolves its receiver's `Proxy` elements
         // first. Rakudo renders a container by calling `.gist`/`.Str`/`.raku`
         // ON EACH ELEMENT, and a method call deconts its invocant, so a `Proxy`
@@ -1801,6 +1828,9 @@ impl Interpreter {
                 unreachable!()
             };
             let is_push = method == "push";
+            let value_type = self
+                .container_type_metadata(&target)
+                .map(|info| info.value_type);
             let pairs = Self::hash_push_collect_pairs(args);
             // Check if we can mutate in-place (shared reference)
             if crate::gc::Gc::strong_count_of(&arc) > 1 {
@@ -1810,14 +1840,26 @@ impl Interpreter {
                 // each insert.
                 let data = unsafe { crate::value::gc_contents_mut(&arc) };
                 for (k, v) in pairs {
-                    Self::hash_push_insert(&mut data.map, k, v, is_push);
+                    Self::hash_push_insert_typed(
+                        &mut data.map,
+                        k,
+                        v,
+                        is_push,
+                        value_type.as_deref(),
+                    );
                 }
                 return Ok(target);
             }
             // Not shared: build a new hash
             let mut new_data: crate::value::HashData = (**arc).clone();
             for (k, v) in pairs {
-                Self::hash_push_insert(&mut new_data.map, k, v, is_push);
+                Self::hash_push_insert_typed(
+                    &mut new_data.map,
+                    k,
+                    v,
+                    is_push,
+                    value_type.as_deref(),
+                );
             }
             return Ok(Value::hash_with_data(Value::hash_arc(new_data)));
         }

@@ -214,6 +214,20 @@ impl Interpreter {
         let right_itemized = Self::is_itemized_operand(&right);
         let right = Self::deitemize_hyper_operand(&right);
         let left = Self::deitemize_hyper_operand(&left);
+        let left = if matches!(left.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&left, "iterator")
+        {
+            Value::array(self.drive_user_iterator_items(&left)?)
+        } else {
+            left
+        };
+        let right = if matches!(right.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&right, "iterator")
+        {
+            Value::array(self.drive_user_iterator_items(&right)?)
+        } else {
+            right
+        };
         let op = Self::const_str(code, op_idx).to_string();
         // X::HyperOp::Infinite: when the result length is determined by an
         // infinite/lazy operand, the hyper op cannot produce a finite result.

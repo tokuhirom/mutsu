@@ -210,8 +210,15 @@ impl Interpreter {
         // upstream, but normalizing them here too is harmless. Only for `@` vars.
         let value = if var_name.starts_with('@') {
             match value.view() {
-                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) | ValueView::Seq(items) => {
+                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     Value::real_array(items.to_vec())
+                }
+                ValueView::Seq(items) => {
+                    let body = std::sync::Arc::clone(&items);
+                    if body.needs_touch() {
+                        self.reify_seq_body(&body)?;
+                    }
+                    Value::real_array(body.to_vec())
                 }
                 ValueView::Slip(items) => Value::real_array(items.to_vec()),
                 _ => value,

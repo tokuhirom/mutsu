@@ -11,6 +11,22 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // A role-punned Iterable keeps its iterator protocol in the composed
+        // role, while the collection reduction methods are supplied by the
+        // core Iterable surface rather than by the user's role itself. Drive
+        // that iterator before applying the ordinary Array implementation;
+        // otherwise a value such as Series does DataSlice reaches Mixin's
+        // inner-instance fallback and .sum is reported as missing.
+        if matches!(method, "sum" | "min" | "max" | "minmax")
+            && matches!(target.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&target, "iterator")
+        {
+            let items = match self.drive_user_iterator_items(&target) {
+                Ok(items) => items,
+                Err(error) => return Some(Err(error)),
+            };
+            return Some(self.call_method_with_values(Value::array(items), method, args));
+        }
         // `.List`/`.list`/`.Array` on a shaped array flattens all dimensions and
         // replaces uninitialized (`Nil`) slots with the container's type-default.
         if matches!(method, "List" | "list" | "Array")
@@ -604,7 +620,15 @@ impl Interpreter {
         {
             return Ok(pipe);
         }
-        let items = if crate::runtime::utils::is_shaped_array(&target) {
+        let items = if matches!(target.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&target, "iterator")
+        {
+            // A role-punned Iterable keeps its storage in the wrapped object;
+            // the generic list converter cannot see that storage and would
+            // map over the mixin itself. Drive the role's iterator just as
+            // `for` does, preserving user-defined Iterable semantics.
+            self.drive_user_iterator_items(&target)?
+        } else if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else {
             match target.view() {
@@ -618,6 +642,16 @@ impl Interpreter {
                     .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(&target)),
             }
         };
+        // A map called while a gather body is being pulled must execute its
+        // callback in that body. Deferring it to a Seq lets the gather body
+        // finish before callbacks containing `take` run, so only the first
+        // yielded value survives the coroutine suspension (Dan's
+        // `sliced-slices` helper is the concrete shape). The surrounding
+        // gather pull still bounds suspension and resumes the compiled frame.
+        if self.gather_items_len() > 0 {
+            let result = self.eval_map_over_items(args.first().cloned(), items)?;
+            return Ok(Value::seq(crate::runtime::utils::value_to_list(&result)));
+        }
         // A `return` callback keeps the older `LazyList` deferral for now
         // (ADR-0058 step 4 retires it): that `return` targets the lexically
         // enclosing routine, and if the Seq is forced after that routine has

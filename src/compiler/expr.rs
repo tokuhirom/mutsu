@@ -177,6 +177,25 @@ impl Compiler {
                 self.compile_expr_var(name);
             }
             Expr::ArrayVar(name) => {
+                // In a method body, the array twigil form @.attr is an
+                // accessor call in array context, not a lookup of a lexical
+                // variable literally named @.attr. This also covers
+                // @.fivenum in Dan's describe, where the method returns
+                // the five values that must be slipped into a new array.
+                if let Some(attr_name) = name.strip_prefix('.')
+                    && !attr_name.is_empty()
+                {
+                    self.emit_load_self_for_accessor(&format!("@.{}", attr_name));
+                    let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: method_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                        arg_sources_idx: None,
+                    });
+                    return;
+                }
                 let sigiled = format!("@{}", name);
                 // ADR-0039 slice 2: a plain lexical container read resolves
                 // through its slot, exactly as a scalar read does.
@@ -989,6 +1008,40 @@ impl Compiler {
                         }
                     }
                     self.compile_expr(&acc);
+                    return;
+                }
+                // `[Z] @ = $value` is Raku's zip reduction over the freshly
+                // assigned anonymous array: the assignment is evaluated first,
+                // then the reduction reads the assigned container.  Compiling
+                // the nested assignment as the reduction operand instead feeds
+                // the assignment's RHS directly to `Reduction`, which leaves
+                // this idiom as the original DataFrame/object rather than its
+                // transposed tuples.
+                if !is_scan
+                    && base_op == "Z"
+                    && let Expr::AssignExpr {
+                        name,
+                        expr: rhs,
+                        is_bind: false,
+                    } = expr.as_ref()
+                {
+                    let assignment = Expr::AssignExpr {
+                        name: name.clone(),
+                        expr: rhs.clone(),
+                        is_bind: false,
+                    };
+                    self.compile_expr(&assignment);
+                    self.code.emit(OpCode::Pop);
+                    let target = if name.starts_with('@') {
+                        Expr::ArrayVar(name.trim_start_matches('@').to_string())
+                    } else if name.starts_with('%') {
+                        Expr::HashVar(name.trim_start_matches('%').to_string())
+                    } else {
+                        Expr::Var(name.clone())
+                    };
+                    self.compile_expr(&target);
+                    let op_idx = self.code.add_constant(Value::str(op.clone()));
+                    self.code.emit(OpCode::Reduction(op_idx));
                     return;
                 }
                 if matches!(

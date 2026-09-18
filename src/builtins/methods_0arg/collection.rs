@@ -313,116 +313,121 @@ pub(crate) fn combinations_range(items: &[Value], min_k: i64, max_k: i64) -> Vec
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        "hash" => match target.view() {
-            ValueView::Set(s, _) => {
-                let mut map = ValueMap::default();
-                let mut original_keys = ValueMap::default();
-                let mut has_typed = false;
-                for k in s.iter() {
-                    let typed = s.typed_key(k);
-                    let display = typed.to_string_value();
-                    map.insert(display.clone(), Value::TRUE);
-                    if !matches!(typed.view(), ValueView::Str(_)) {
-                        has_typed = true;
-                        original_keys.insert(display, typed);
+        "hash" => {
+            match target.view() {
+                ValueView::Set(s, _) => {
+                    let mut map = ValueMap::default();
+                    let mut original_keys = ValueMap::default();
+                    let mut has_typed = false;
+                    for k in s.iter() {
+                        let typed = s.typed_key(k);
+                        let display = typed.to_string_value();
+                        map.insert(display.clone(), Value::TRUE);
+                        if !matches!(typed.view(), ValueView::Str(_)) {
+                            has_typed = true;
+                            original_keys.insert(display, typed);
+                        }
                     }
-                }
-                let mut result = Value::hash(map);
-                if has_typed {
-                    // Tag so .keys can distinguish setty-origin hashes
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
-                }
-                Some(Ok(result))
-            }
-            ValueView::Bag(b, _) => {
-                let mut map = ValueMap::default();
-                let mut original_keys = ValueMap::default();
-                let mut has_typed = false;
-                for (k, v) in b.iter() {
-                    let typed = b.typed_key(k);
-                    let display = typed.to_string_value();
-                    map.insert(display.clone(), Value::from_bigint(v.clone()));
-                    if !matches!(typed.view(), ValueView::Str(_)) {
-                        has_typed = true;
-                        original_keys.insert(display, typed);
+                    let mut result = Value::hash(map);
+                    if has_typed {
+                        // Tag so .keys can distinguish setty-origin hashes
+                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
+                        result =
+                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
                     }
+                    Some(Ok(result))
                 }
-                let mut result = Value::hash(map);
-                if has_typed {
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
-                }
-                Some(Ok(result))
-            }
-            ValueView::Mix(m, _) => {
-                let mut map = ValueMap::default();
-                let mut original_keys = ValueMap::default();
-                let mut has_typed = false;
-                for (k, v) in m.iter() {
-                    let typed = m.typed_key(k);
-                    let display = typed.to_string_value();
-                    map.insert(display.clone(), crate::value::mix_weight_to_value(*v));
-                    if !matches!(typed.view(), ValueView::Str(_)) {
-                        has_typed = true;
-                        original_keys.insert(display, typed);
+                ValueView::Bag(b, _) => {
+                    let mut map = ValueMap::default();
+                    let mut original_keys = ValueMap::default();
+                    let mut has_typed = false;
+                    for (k, v) in b.iter() {
+                        let typed = b.typed_key(k);
+                        let display = typed.to_string_value();
+                        map.insert(display.clone(), Value::from_bigint(v.clone()));
+                        if !matches!(typed.view(), ValueView::Str(_)) {
+                            has_typed = true;
+                            original_keys.insert(display, typed);
+                        }
                     }
+                    let mut result = Value::hash(map);
+                    if has_typed {
+                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
+                        result =
+                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
+                    }
+                    Some(Ok(result))
                 }
-                let mut result = Value::hash(map);
-                if has_typed {
-                    original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
-                    result = crate::runtime::utils::set_hash_original_keys(result, original_keys);
+                ValueView::Mix(m, _) => {
+                    let mut map = ValueMap::default();
+                    let mut original_keys = ValueMap::default();
+                    let mut has_typed = false;
+                    for (k, v) in m.iter() {
+                        let typed = m.typed_key(k);
+                        let display = typed.to_string_value();
+                        map.insert(display.clone(), crate::value::mix_weight_to_value(*v));
+                        if !matches!(typed.view(), ValueView::Str(_)) {
+                            has_typed = true;
+                            original_keys.insert(display, typed);
+                        }
+                    }
+                    let mut result = Value::hash(map);
+                    if has_typed {
+                        original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
+                        result =
+                            crate::runtime::utils::set_hash_original_keys(result, original_keys);
+                    }
+                    Some(Ok(result))
                 }
-                Some(Ok(result))
+                ValueView::Instance { .. } => {
+                    // Instance types should fall through to accessor dispatch,
+                    // not be coerced via .hash builtin
+                    None
+                }
+                // Type objects for setty/baggy types: .hash returns empty hash
+                // A type object has no contents, so `Any.hash` (which every type
+                // object below Any inherits) is the empty hash — NOT a one-element
+                // hash initializer, which is what the list path below would make of
+                // it ("Odd number of elements ... last element seen: (Any)").
+                ValueView::Package(name) => match name.resolve().as_str() {
+                    // Mu is the root type and does not inherit Any's `.hash` at all.
+                    // Raise here rather than returning None: the slow-path `.hash`
+                    // would take over and report the "Odd number of elements" error
+                    // instead of the missing method.
+                    "Mu" => Some(Err(RuntimeError::method_not_found("hash", "Mu"))),
+                    // An Associative's `.hash` is itself, and the Hash *type object*
+                    // is no exception (`Hash.hash` is `Hash`, not `{}`).
+                    "Hash" => Some(Ok(target.clone())),
+                    _ => Some(Ok(Value::hash(ValueMap::default()))),
+                },
+                // An undefined invocant (`my $d`; a bare `Nil`) has no contents, so
+                // `.hash` is the empty hash — like the type-object arm above. Without
+                // this, `Nil` falls to the list path below and is treated as a
+                // one-element initializer → spurious "Odd number of elements".
+                ValueView::Nil => Some(Ok(Value::hash(ValueMap::default()))),
+                // `.hash` on a hash (`%$h`) IS that hash in Associative context:
+                // return it de-itemized (a `$`-held itemized hash contextualized as
+                // `%$h` spills to the hash, not an opaque single element), preserving
+                // the backing `HashData` (and its type metadata). Without this arm an
+                // itemized hash falls to the list path below and `value_to_list`
+                // treats it as one opaque element → spurious "Odd number of elements".
+                ValueView::Hash(_) => Some(Ok(target.clone().with_hash_itemized(false))),
+                _ => {
+                    // Iterate an Array/Seq/Slip's own elements as the hash
+                    // initializer, even when the value is itemized (`$(:a, :b).hash`):
+                    // `value_to_list` would treat an itemized list as one opaque
+                    // element and wrongly raise "Odd number of elements". This mirrors
+                    // the `my %h = $list` assignment path.
+                    let items = match target.view() {
+                        ValueView::Array(items, _) => items.iter().cloned().collect(),
+                        ValueView::Seq(items) => items.iter().cloned().collect(),
+                        ValueView::Slip(items) => items.iter().cloned().collect(),
+                        _ => crate::runtime::utils::value_to_list(target),
+                    };
+                    Some(crate::runtime::utils::build_hash_from_items(items))
+                }
             }
-            ValueView::Instance { .. } => {
-                // Instance types should fall through to accessor dispatch,
-                // not be coerced via .hash builtin
-                None
-            }
-            // Type objects for setty/baggy types: .hash returns empty hash
-            // A type object has no contents, so `Any.hash` (which every type
-            // object below Any inherits) is the empty hash — NOT a one-element
-            // hash initializer, which is what the list path below would make of
-            // it ("Odd number of elements ... last element seen: (Any)").
-            ValueView::Package(name) => match name.resolve().as_str() {
-                // Mu is the root type and does not inherit Any's `.hash` at all.
-                // Raise here rather than returning None: the slow-path `.hash`
-                // would take over and report the "Odd number of elements" error
-                // instead of the missing method.
-                "Mu" => Some(Err(RuntimeError::method_not_found("hash", "Mu"))),
-                // An Associative's `.hash` is itself, and the Hash *type object*
-                // is no exception (`Hash.hash` is `Hash`, not `{}`).
-                "Hash" => Some(Ok(target.clone())),
-                _ => Some(Ok(Value::hash(ValueMap::default()))),
-            },
-            // An undefined invocant (`my $d`; a bare `Nil`) has no contents, so
-            // `.hash` is the empty hash — like the type-object arm above. Without
-            // this, `Nil` falls to the list path below and is treated as a
-            // one-element initializer → spurious "Odd number of elements".
-            ValueView::Nil => Some(Ok(Value::hash(ValueMap::default()))),
-            // `.hash` on a hash (`%$h`) IS that hash in Associative context:
-            // return it de-itemized (a `$`-held itemized hash contextualized as
-            // `%$h` spills to the hash, not an opaque single element), preserving
-            // the backing `HashData` (and its type metadata). Without this arm an
-            // itemized hash falls to the list path below and `value_to_list`
-            // treats it as one opaque element → spurious "Odd number of elements".
-            ValueView::Hash(_) => Some(Ok(target.clone().with_hash_itemized(false))),
-            _ => {
-                // Iterate an Array/Seq/Slip's own elements as the hash
-                // initializer, even when the value is itemized (`$(:a, :b).hash`):
-                // `value_to_list` would treat an itemized list as one opaque
-                // element and wrongly raise "Odd number of elements". This mirrors
-                // the `my %h = $list` assignment path.
-                let items = match target.view() {
-                    ValueView::Array(items, _) => items.iter().cloned().collect(),
-                    ValueView::Seq(items) => items.iter().cloned().collect(),
-                    ValueView::Slip(items) => items.iter().cloned().collect(),
-                    _ => crate::runtime::utils::value_to_list(target),
-                };
-                Some(crate::runtime::utils::build_hash_from_items(items))
-            }
-        },
+        }
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);

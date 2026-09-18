@@ -881,11 +881,6 @@ fn slot_read_filter() -> Option<&'static Vec<String>> {
         .as_ref()
 }
 
-fn slot_read_dump_enabled() -> bool {
-    static DUMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *DUMP.get_or_init(|| std::env::var("MUTSU_SLOT_READ_DUMP").is_ok())
-}
-
 impl Compiler {
     /// ADR-0039 slice 2: the local slot an `@`/`%` READ resolves to, or `None`
     /// when the read must stay on the by-name `GetArrayVar`/`GetHashVar` path.
@@ -918,9 +913,6 @@ impl Compiler {
             return None;
         }
         let &slot = self.local_map.get(sigiled)?;
-        if slot_read_dump_enabled() {
-            eprintln!("mutsu-slot-read: {sigiled}");
-        }
         Some(slot)
     }
 

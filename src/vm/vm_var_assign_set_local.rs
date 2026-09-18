@@ -1346,6 +1346,14 @@ impl Interpreter {
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
+                    // CoerceToList leaves a Range intact because a constant
+                    // @ bound to one is a lazy Positional range, not a List
+                    // containing the Range as its only element.
+                    ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => raw_popped.clone(),
                     // `CoerceToList` runs first for every `constant @x` and has
                     // already applied the constant-@ list semantics, including the
                     // decision to keep an unreifiable lazy list lazy (Digest::SHA2's

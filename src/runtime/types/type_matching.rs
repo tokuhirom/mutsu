@@ -1720,7 +1720,10 @@ impl Interpreter {
             // graph from every mixed-in role marker.
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
-                    && (self.role_is_subtype(role_name, effective_constraint)
+                    && (role_name == effective_constraint
+                        || role_name.rsplit("::").next()
+                            == effective_constraint.rsplit("::").next()
+                        || self.role_is_subtype(role_name, effective_constraint)
                         || self.role_is_subtype(role_name, constraint))
                 {
                     return true;

@@ -497,6 +497,48 @@ impl Interpreter {
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
     ) -> Result<Value, RuntimeError> {
+        // A gather normally materializes when it is bound to an aggregate,
+        // but a gather whose captured environment contains another live
+        // gather or an infinite sequence must stay pullable.  The latter is
+        // the shape of `gather { for @infinite { take ... } }`: forcing it
+        // here would never reach the callee's bounded consumer.
+        if pd.name.starts_with('@')
+            && let ValueView::LazyList(list) = value.view()
+            && list.is_from_gather()
+            && !list.env.iter().any(|(_, captured)| {
+                matches!(
+                    captured.view(),
+                    ValueView::LazyList(inner)
+                        if inner.is_from_gather() || inner.is_lazy_infinite()
+                ) || matches!(
+                    captured.view(),
+                    ValueView::Range(_, end)
+                        | ValueView::RangeExcl(_, end)
+                        | ValueView::RangeExclStart(_, end)
+                        | ValueView::RangeExclBoth(_, end)
+                        if end == i64::MAX
+                )
+            })
+        {
+            // A finite gather is a Seq until it is consumed, while an
+            // aggregate parameter exposes its pulled values as a List.
+            let items = self.force_lazy_list_vm(&list)?;
+            value = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            );
+        }
+        if pd.name.starts_with('@')
+            && let ValueView::Seq(body) = value.view()
+            && !body.is_lazy()
+        {
+            let body = std::sync::Arc::clone(&body);
+            let items = self.reify_seq_body(&body)?;
+            value = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            );
+        }
         let is_builtin_seq = matches!(value.view(), ValueView::Seq(..));
         let is_positional_bind_failover =
             is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
@@ -1472,7 +1514,9 @@ impl Interpreter {
                 let single_lazy = if remaining_positional.len() == 1 && single_seq.is_none() {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
                     match single.view() {
-                        ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
+                        ValueView::LazyList(ll)
+                            if ll.is_genuinely_lazy() || ll.is_from_gather() =>
+                        {
                             if pd.sigilless {
                                 Some(single.clone())
                             } else {
@@ -1757,7 +1801,13 @@ impl Interpreter {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
                         let val = unwrap_varref_value(args[positional_idx].clone());
-                        if !val.is_string_pair_value() {
+                        let is_explicit_named_value_pair = matches!(
+                            val.view(),
+                            ValueView::ValuePair(key, _)
+                                if matches!(key.view(), ValueView::Str(_))
+                                    && explicit_named_keys.contains(&key.to_string_value())
+                        );
+                        if !val.is_string_pair_value() && !is_explicit_named_value_pair {
                             items.push(val);
                         }
                         positional_idx += 1;
@@ -1783,7 +1833,13 @@ impl Interpreter {
                         let raw_arg = args[positional_idx].clone();
                         positional_idx += 1;
                         let arg = unwrap_varref_value(raw_arg);
-                        if arg.is_string_pair_value() {
+                        let is_explicit_named_value_pair = matches!(
+                            arg.view(),
+                            ValueView::ValuePair(key, _)
+                                if matches!(key.view(), ValueView::Str(_))
+                                    && explicit_named_keys.contains(&key.to_string_value())
+                        );
+                        if arg.is_string_pair_value() || is_explicit_named_value_pair {
                             // Named arg -- leave for *%_ slurpy; keep scanning.
                             continue;
                         }
@@ -1957,6 +2013,15 @@ impl Interpreter {
                         match arg.view() {
                             ValueView::Pair(..) => {
                                 // Named arg -- leave for *%_ slurpy or post-loop check
+                            }
+                            ValueView::ValuePair(key, _)
+                                if matches!(key.view(), ValueView::Str(..))
+                                    && explicit_named_keys.contains(&key.to_string_value()) =>
+                            {
+                                // A named argument represented as a ValuePair
+                                // has already been consumed by its explicit
+                                // named parameter; it must not become an
+                                // element of the positional slurpy.
                             }
                             ValueView::Array(..)
                             | ValueView::Range(..)

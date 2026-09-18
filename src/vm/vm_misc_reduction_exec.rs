@@ -85,7 +85,14 @@ impl Interpreter {
         // `is_quanthash_instance` (a view match) would not see through.
         let derefed_operand = list_value.deref_container();
         let operand_is_quanthash = runtime::is_quanthash_instance(&derefed_operand);
-        let mut list = if operand_is_buf {
+        let mut list = if matches!(list_value.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&list_value, "iterator")
+        {
+            // A role-punned Iterable stores its elements behind user code;
+            // the pure value-to-list helper sees only the wrapper instance.
+            // Reductions must consume the same iterator as `.map` and `for`.
+            self.drive_user_iterator_items(&list_value)?
+        } else if operand_is_buf {
             vec![list_value.clone()]
         } else if operand_is_quanthash {
             vec![derefed_operand]

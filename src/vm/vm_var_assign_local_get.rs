@@ -392,7 +392,18 @@ impl Interpreter {
         // is visible here. Gated on a non-container slot so `$!x := outer`
         // bindings keep their ContainerRef handling. The cell lookup returns None
         // for non-attribute names and when `self` is not an instance.
-        if !self.locals[idx].is_container_ref()
+        // Array/hash attributes can arrive in this frame as a stale
+        // ContainerRef inherited from a caller that was dispatching on a
+        // different invocant (for example a `Series` topic inside a
+        // DataFrame's `given`/`when`).  The attribute cell on the current
+        // invocant is authoritative, so refresh those slots even when the
+        // old env value is itself a ContainerRef.  Scalar bound attributes
+        // retain the old guard because their ContainerRef is an explicit
+        // lvalue binding that must survive a local read.
+        let attr_slot_is_container = code
+            .local_attr_key(idx)
+            .is_some_and(|(_, _, sigil)| matches!(sigil, '@' | '%'));
+        if (!self.locals[idx].is_container_ref() || attr_slot_is_container)
             // Slot form: the attribute `Symbol` is pre-resolved per chunk, so
             // this read parses no twigil and interns no string (ADR-0006 §2.4).
             && let Some(cell_val) = self.read_self_attr_cell_slot(code, idx)

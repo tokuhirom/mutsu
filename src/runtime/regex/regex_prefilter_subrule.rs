@@ -84,7 +84,7 @@ impl Interpreter {
             return None;
         }
         // `<&re>` / `<&$re>` read the caller's lexical scope.
-        if Self::may_name_lexical_regex(&spec) {
+        if self.lexical_regex_is_in_scope(&spec) {
             return None;
         }
         // A body re-parsed per call cannot be held by a generation-keyed memo.

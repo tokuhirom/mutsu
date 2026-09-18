@@ -476,6 +476,16 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        // A role-punned instance stores its iterator method in the composed
+        // role, not in the wrapped class's method table.  List assignment of
+        // such an Iterable (for example `@ = DataFrame`) must therefore use
+        // the role dispatch path just like reductions and `for` loops do.
+        if matches!(iterable.view(), ValueView::Mixin(..)) {
+            if self.mixin_composes_method(iterable, "iterator") {
+                return self.drive_user_iterator_items(iterable).map(Some);
+            }
+            return Ok(None);
+        }
         let ValueView::Instance {
             class_name,
             attributes,
@@ -548,8 +558,13 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let iterator =
-            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
+        let iterator = if let Some(result) =
+            self.dispatch_mixin_method_call(iterable, "iterator", Vec::new())
+        {
+            result?
+        } else {
+            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
+        };
         // Drive `pull-one` through a temp *variable*, not a bare value: a user
         // `Iterator` instance keeps its cursor in its own attributes, and an
         // Instance value clone deep-copies those, so calling `pull-one` on a

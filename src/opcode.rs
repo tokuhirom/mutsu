@@ -2019,6 +2019,10 @@ pub(crate) enum OpCode {
     IndexAssignExprNamed {
         name_idx: u32,
         is_positional: bool,
+        /// Whether the compiler evaluated the subscript before the RHS. Raku
+        /// evaluates an lvalue's target and index before its assigned value;
+        /// the legacy stack layout remains available for the other emitters.
+        index_first: bool,
         /// §1.4 shadow-slot: the compiler-resolved local slot for the target var
         /// (`local_map[name]` at emit time), or `None` for a non-local target
         /// (global/dynamic/undeclared). The exec prefers this baked slot over the

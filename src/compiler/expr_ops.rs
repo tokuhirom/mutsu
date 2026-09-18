@@ -301,6 +301,7 @@ impl Compiler {
                         self.code.emit(OpCode::IndexAssignExprNamed {
                             name_idx,
                             is_positional: *is_positional,
+                            index_first: false,
                             target_slot,
                         });
                     }
