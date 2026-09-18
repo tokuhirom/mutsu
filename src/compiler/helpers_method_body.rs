@@ -538,6 +538,68 @@ mod d3_8a_byte_parity_tests {
     /// comparison is order-independent, mirroring what a real `AttrMap`
     /// (semantically a set of key/value pairs, not an ordered list) should
     /// be compared as.
+    /// The compilation unit a chunk belongs to (ADR-0106 Slice 0,
+    /// `CompiledCode::source_file`, and `CompiledFunction::source_file`
+    /// beside it) is not bytecode: it records where the unit came from, and
+    /// this test pair's two sides come from different places BY
+    /// CONSTRUCTION. The main-pass side compiles a bare string with no unit
+    /// around it (`None`); the runtime side runs the same string as a
+    /// program, whose unit is the interpreter's `?FILE` (`<unknown>` for an
+    /// `Interpreter` with no program path). Normalizing it away keeps the
+    /// assertion on the thing it is about — the emitted code — exactly like
+    /// [`normalize_symbol_ids`]/[`normalize_instance_ids`] do for their own
+    /// construction-order artifacts.
+    fn normalize_source_file(s: &str) -> String {
+        let markers = ["source_file: ", "source_file_sym_cache: OnceLock("];
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some((pos, marker)) = markers
+            .iter()
+            .filter_map(|m| rest.find(m).map(|pos| (pos, *m)))
+            .min_by_key(|(pos, _)| *pos)
+        {
+            out.push_str(&rest[..pos]);
+            out.push_str(marker);
+            rest = &rest[pos + marker.len()..];
+            // Consume the value: `None`, or a `Some(...)` whose parentheses
+            // nest (`Some(Symbol(91: "x"))`, `Some("x")`).
+            if let Some(tail) = rest.strip_prefix("None") {
+                out.push_str("<unit>");
+                rest = tail;
+                continue;
+            }
+            let Some(after_some) = rest.strip_prefix("Some(") else {
+                // Not a shape this normalizer understands — leave it alone
+                // rather than guessing, so a future field change fails loudly.
+                continue;
+            };
+            let mut depth = 1i32;
+            let mut end = None;
+            for (i, c) in after_some.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            match end {
+                Some(i) => {
+                    out.push_str("<unit>");
+                    rest = &after_some[i + 1..];
+                }
+                None => continue,
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
     fn normalize_attr_map_order(s: &str) -> String {
         let marker = "AttrMap({";
         let mut out = String::with_capacity(s.len());
@@ -665,8 +727,8 @@ mod d3_8a_byte_parity_tests {
             });
         let runtime_debug = format!("{runtime_code:?}");
         let normalize = |s: &str| {
-            normalize_attr_map_order(&normalize_instance_ids(&normalize_symbol_ids(
-                &normalize_closure_ordinals(s),
+            normalize_source_file(&normalize_attr_map_order(&normalize_instance_ids(
+                &normalize_symbol_ids(&normalize_closure_ordinals(s)),
             )))
         };
         (normalize(&main_pass_debug), normalize(&runtime_debug))
