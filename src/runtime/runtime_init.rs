@@ -3439,6 +3439,7 @@ impl Interpreter {
             dispatch_multi_candidate: rustc_hash::FxHashMap::default(),
             method_body_fp_cache: rustc_hash::FxHashMap::default(),
             func_multi_resolve_cache: rustc_hash::FxHashMap::default(),
+            func_multi_argkey_cacheable: rustc_hash::FxHashMap::default(),
             func_multi_type_cacheable: rustc_hash::FxHashMap::default(),
             func_multi_cache_generation: 0,
             block_declared_vars: crate::runtime::ScopeStack::new(),
