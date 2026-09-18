@@ -195,6 +195,28 @@ impl Compiler {
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
     ) {
+        // The parser synthesizes `*%_` for a signature-less block that reads
+        // `%_`. Inside a method, however, an ordinary nested block captures
+        // the method's implicit `%_`; it does not shadow it with a new empty
+        // hash. RakuAST blocks carrying the real
+        // `VarDeclaration::Placeholder::SlurpyHash` deliberately leave
+        // `block_param` false (see `make_rakuast_anon_sub`), so they retain
+        // their own named-slurpy binding even when lowered inside a method.
+        if self.lexically_in_method
+            && params.len() == 1
+            && params[0] == "%_"
+            && param_defs.len() == 1
+            && param_defs[0].name == "%_"
+            && param_defs[0].slurpy
+            && param_defs[0].block_param
+            && crate::ast::body_reads_args_hash(body)
+        {
+            let saved = self.capture_enclosing_method_named_args;
+            self.capture_enclosing_method_named_args = true;
+            self.compile_expr_anon_sub(body, false, true);
+            self.capture_enclosing_method_named_args = saved;
+            return;
+        }
         // Validate for placeholder conflicts
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
             let idx = self.code.add_constant(err_val);

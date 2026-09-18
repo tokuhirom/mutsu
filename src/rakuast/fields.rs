@@ -109,6 +109,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         Blockoid => &[("statement-list", Absent::Required)],
         VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
         VarDeclarationPlaceholderSlurpyArray => &[],
+        VarDeclarationPlaceholderSlurpyHash => &[],
         Sub => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("signature", Absent::EmptyNode(Signature)),

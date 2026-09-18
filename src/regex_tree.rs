@@ -2428,6 +2428,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                     crate::ast::Expr::AnonSub { is_block: true, .. }
                 ) || is_scalar_placeholder_block(right)
                     || is_array_slurpy_placeholder_block(right)
+                    || is_hash_slurpy_placeholder_block(right)
             );
             let is_hash_composer = matches!(
                 argument,
@@ -2512,6 +2513,29 @@ pub(crate) fn is_array_slurpy_placeholder_block(expr: &crate::ast::Expr) -> bool
             && param_defs[0].slurpy
             && !param_defs[0].double_slurpy
             && crate::ast::body_reads_args_array(body)
+    )
+}
+
+/// Whether an execution-level closure came from the bare `%_` placeholder
+/// block used by a regex colonpair, such as `{ %_ }`. RakuAST represents this
+/// as a `Block` containing `VarDeclaration::Placeholder::SlurpyHash`, while
+/// the execution AST keeps the implicit named slurpy on `AnonSubParams`.
+pub(crate) fn is_hash_slurpy_placeholder_block(expr: &crate::ast::Expr) -> bool {
+    matches!(
+        expr,
+        crate::ast::Expr::AnonSubParams {
+            params,
+            param_defs,
+            body,
+            declarator: crate::ast::RoutineDeclarator::Block,
+            ..
+        } if params.len() == 1
+            && params[0] == "%_"
+            && param_defs.len() == 1
+            && param_defs[0].name == "%_"
+            && param_defs[0].slurpy
+            && !param_defs[0].double_slurpy
+            && crate::ast::body_reads_args_hash(body)
     )
 }
 

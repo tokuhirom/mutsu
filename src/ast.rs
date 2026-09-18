@@ -3732,17 +3732,37 @@ pub(crate) fn body_reads_args_array(stmts: &[Stmt]) -> bool {
     format!("{stmts:?}").contains("ArrayVar(\"_\")")
 }
 
+/// Whether `stmts` reads the legacy named-argument hash `%_` anywhere.
+///
+/// Unlike `@_`, a `%_` read does not make a signature-less routine accept
+/// surplus positional arguments. It does, however, require the implicit
+/// named slurpy so that the block can observe named arguments passed to it.
+/// Keep this separate from [`body_reads_args_array`] because the two legacy
+/// aggregates have different call-arity semantics.
+pub(crate) fn body_reads_args_hash(stmts: &[Stmt]) -> bool {
+    format!("{stmts:?}").contains("HashVar(\"_\")")
+}
+
 /// Create an `Expr::AnonSub` or `Expr::AnonSubParams` depending on whether
 /// the block body contains placeholder variables (`$^a`, `$^b`, etc.).
 pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
     let placeholders = collect_placeholders_shallow(&stmts);
     if placeholders.is_empty() {
-        // A signature-less block has an implicit `*@_` when it reads the
-        // legacy argument array. Keep that distinction from an explicitly
-        // empty `-> {}` signature, which still rejects positional arguments.
+        // A signature-less block has an implicit `*@_`/`*%_` when it reads
+        // the corresponding legacy argument aggregate. Keep that distinction
+        // from an explicitly empty `-> {}` signature, which still rejects
+        // positional arguments.
         let uses_at_underscore = body_reads_args_array(&stmts);
-        if uses_at_underscore {
-            let legacy_params = vec!["@_".to_string()];
+        let uses_hash_underscore = body_reads_args_hash(&stmts);
+        if uses_at_underscore || uses_hash_underscore {
+            let legacy_params = [
+                uses_at_underscore.then_some("@_"),
+                uses_hash_underscore.then_some("%_"),
+            ]
+            .into_iter()
+            .flatten()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
@@ -3831,6 +3851,49 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             declarator: crate::ast::RoutineDeclarator::Block,
         }
     }
+}
+
+/// Build the execution closure for a RakuAST `Block` whose body contains an
+/// implicit legacy placeholder.  RakuAST has already told us that `%_` is the
+/// block's own named-slurpy declaration, so keep it distinct from the parser's
+/// ordinary signature-less block.  The latter may capture an enclosing
+/// method's `%_` instead of introducing a shadowing hash.
+pub(crate) fn make_rakuast_anon_sub(stmts: Vec<Stmt>) -> Expr {
+    let expr = make_anon_sub(stmts);
+    if let Expr::AnonSubParams {
+        params, param_defs, ..
+    } = &expr
+        && params.len() == 1
+        && params[0] == "%_"
+        && param_defs.len() == 1
+        && param_defs[0].name == "%_"
+    {
+        let Expr::AnonSubParams {
+            params,
+            mut param_defs,
+            return_type,
+            body,
+            is_rw,
+            is_raw,
+            is_whatever_code,
+            declarator,
+        } = expr
+        else {
+            unreachable!("the RakuAST legacy placeholder shape was checked above")
+        };
+        param_defs[0].block_param = false;
+        return Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            body,
+            is_rw,
+            is_raw,
+            is_whatever_code,
+            declarator,
+        };
+    }
+    expr
 }
 
 #[cfg(test)]

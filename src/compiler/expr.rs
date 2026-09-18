@@ -193,6 +193,10 @@ impl Compiler {
                 self.code.emit(OpCode::GetArrayVar(name_idx));
             }
             Expr::HashVar(name) => {
+                if name == "_" && self.capture_enclosing_method_named_args {
+                    self.emit_outers_var_access("%_".to_string());
+                    return;
+                }
                 // `%.attr` is `self.attr` in *hash* context — call the accessor and
                 // coerce the result to a Hash (e.g. an `@.a = (1,2,3,4)` attribute
                 // read as `%.a` yields `{1 => 2, 3 => 4}`). Mirrors the `$.attr`

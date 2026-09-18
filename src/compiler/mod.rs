@@ -1330,6 +1330,11 @@ pub(crate) struct Compiler {
     /// plain `sub` has no such implicit slurpy, so `%_` there only works as a
     /// per-block placeholder and may not appear in a nested signature-less block.
     pub(crate) lexically_in_method: bool,
+    /// Whether the current closure body is an ordinary nested block that must
+    /// read an enclosing method's implicit `%_` instead of its own legacy
+    /// placeholder. This is set only while compiling that closure and is
+    /// resolved through the lexical `OUTERS::<%_>` path.
+    pub(crate) capture_enclosing_method_named_args: bool,
     /// True when the enclosing routine's own signature declares a parameter
     /// spelled `$self` — an explicit invocant (`method m($self: $n)`,
     /// `method symbol(::?CLASS $self: ...)`) or an ordinary parameter
@@ -1724,6 +1729,7 @@ impl Compiler {
             eval_context_dead_routine: false,
             lexically_in_block: false,
             lexically_in_method: false,
+            capture_enclosing_method_named_args: false,
             self_is_signature_param: false,
             bind_vardecl: false,
             sigilless_bind_vardecl: false,
