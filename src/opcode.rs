@@ -2502,6 +2502,9 @@ pub(crate) enum OpCode {
         /// True when CATCH { } is explicitly present — unhandled exceptions
         /// (no `when`/`default` match) must be re-thrown.
         explicit_catch: bool,
+        /// True when a matching CATCH handler's value is the value of this
+        /// region, as for the special-form `nqp::handle`.
+        catch_value: bool,
         /// True when this block's CONTROL handler unconditionally `.resume`s
         /// (e.g. `CONTROL { default { ...; .resume } }`) with no `when`/`succeed`
         /// exit. Such a handler can be run *inline* at a deep `warn` raise site

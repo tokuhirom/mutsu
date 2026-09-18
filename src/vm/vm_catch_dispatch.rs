@@ -16,6 +16,7 @@ impl Interpreter {
         e: RuntimeError,
         verdict: crate::value::CatchInlineVerdict,
         explicit_catch: bool,
+        catch_value: bool,
         traps: bool,
         end: usize,
         saved_depth: usize,
@@ -40,7 +41,11 @@ impl Interpreter {
                 // `LoadNil`). `$!` was already restored to its pre-throw value by
                 // the inline runner.
                 self.stack.truncate(saved_depth);
-                self.stack.push(Value::NIL);
+                self.stack.push(if catch_value {
+                    e.return_value.unwrap_or(Value::NIL)
+                } else {
+                    Value::NIL
+                });
                 *ip = end;
                 Ok(())
             }
@@ -82,6 +87,7 @@ impl Interpreter {
         control_begin: usize,
         end: usize,
         explicit_catch: bool,
+        catch_value: bool,
         traps: bool,
         catch_token: Option<u64>,
         saved_depth: usize,
@@ -99,6 +105,7 @@ impl Interpreter {
                 e,
                 verdict,
                 explicit_catch,
+                catch_value,
                 traps,
                 end,
                 saved_depth,
@@ -151,10 +158,15 @@ impl Interpreter {
             Ok(()) => self.when_matched(),
             // succeed from `when` inside CATCH means exception was handled
             Err(catch_err) if catch_err.is_succeed() => {
-                // Truncate values left by default body, then push Nil
-                // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
+                // Truncate values left by default body, then push its result.
+                // Ordinary try/CATCH regions deliberately yield Nil; the
+                // special-form nqp::handle preserves the handler value.
                 self.stack.truncate(catch_stack_base);
-                self.stack.push(Value::NIL);
+                self.stack.push(if catch_value {
+                    catch_err.return_value.unwrap_or(Value::NIL)
+                } else {
+                    Value::NIL
+                });
                 true
             }
             // .resume called inside CATCH: resume execution after the die
