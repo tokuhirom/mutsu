@@ -185,6 +185,32 @@ fn propagate_ws_to_alt_branches(out: &mut String, positions: &[usize]) {
 }
 
 pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
+    /// True when the last character already pushed to `out` arrived via a
+    /// backslash escape (`\{`, `\(`, `\|`, ...) rather than as bare regex
+    /// syntax. `should_insert`'s suppression rules key off raw characters
+    /// like `{`/`(`/`|` to recognize code-block and group syntax, but an
+    /// ESCAPED occurrence of one of those characters is an ordinary literal
+    /// atom, not the syntax it resembles — treating it the same way silently
+    /// drops the `<.ws>` that should follow it (mutsu#8700: `'frame' \{ 'x'`
+    /// never matched the space before `'x'` because the escaped `\{` was
+    /// read as a code-block opener).
+    fn last_char_is_escaped(out: &str) -> bool {
+        let trimmed_end = out.trim_end_matches(char::is_whitespace);
+        let mut chars = trimmed_end.chars().rev();
+        if chars.next().is_none() {
+            return false;
+        }
+        let mut backslash_count = 0usize;
+        for c in chars {
+            if c == '\\' {
+                backslash_count += 1;
+            } else {
+                break;
+            }
+        }
+        backslash_count % 2 == 1
+    }
+
     fn should_insert(prev: char, next: char) -> bool {
         // Whitespace AFTER a term but BEFORE a closing `]`/`)` IS significant in
         // Raku sigspace (`rule r { [ <w> ]**3 }` matches "a b c", not "abc" — the
@@ -352,6 +378,23 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                 j += 1;
             }
             let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
+            // `should_insert`'s prev-position rules recognize `|`, `(`, `[`,
+            // `{`, `^`, `<`, `%` as syntax that suppresses the following
+            // `<.ws>`. When the character we just read from `out` was
+            // written as an escape (`\{` and friends), it is a literal atom
+            // instead, so neutralize it before `should_insert` sees it. The
+            // next-position rules never need this: an escaped upcoming
+            // character always shows its backslash first in `chars[j..]`,
+            // which matches none of `should_insert`'s next-position arms.
+            let prev = prev.map(|p| {
+                if matches!(p, '|' | '(' | '[' | '{' | '^' | '<' | '%')
+                    && last_char_is_escaped(&out)
+                {
+                    'x'
+                } else {
+                    p
+                }
+            });
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
             if let Some(p) = prev {
                 // A `$` that begins a capture alias / variable (`$<name>=…`,
