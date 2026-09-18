@@ -147,6 +147,31 @@ impl Interpreter {
         // `sort_candidates_by_specificity` keep that order within a rank group
         // — which is what makes the final "first declared wins" tie-break come
         // out the same as it did when every candidate was tried.
+        // One `multi` is registered under SEVERAL registry keys — the arity key
+        // `Pkg::f/1`, the typed key `Pkg::f/1:Int`, the `__m<n>` multi suffixes
+        // — and the gathers above collect by key, so the same
+        // `Arc<FunctionDef>` arrives two or three times over. Drop the repeats
+        // BEFORE ranking: identical fingerprints mean identical
+        // `params`/`param_defs`/`body`, and the repeats are the very same
+        // `Arc`, so they would each produce a byte-identical rank key --
+        // ranking them was `candidate_rank_key` (and the whole signature walk
+        // under it) run two or three times over per resolution for no effect
+        // on the outcome (#8696).
+        //
+        // The incoming order is the caller's `sort_candidates_by_specificity`
+        // order, and `retain` keeps the first of each fingerprint, so the
+        // survivor is the same copy that won the caller's declaration-order
+        // tie-break -- which is what the stable sort below then preserves
+        // within a rank group. This is where the dedup used to sit, after the
+        // sort; moving it earlier cannot change which copy survives, because
+        // every copy of one fingerprint is the same `Arc` and therefore ties
+        // on every component of the key, `decl_order` included.
+        let mut candidates = candidates;
+        {
+            let mut seen_keys = std::collections::HashSet::new();
+            candidates.retain(|(_, def)| seen_keys.insert(def.body_fingerprint()));
+        }
+
         let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
             Vec::with_capacity(candidates.len());
         for (_, def) in candidates {
@@ -154,23 +179,12 @@ impl Interpreter {
             ranked.push((key, def));
         }
         ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
-        // One `multi` is registered under SEVERAL registry keys — the arity key
-        // `Pkg::f/1`, the typed key `Pkg::f/1:Int`, the `__m<n>` multi suffixes
-        // — and the gathers above collect by key, so the same `Arc<FunctionDef>`
-        // arrives two or three times over. Dropping the repeats here, rather
-        // than after matching (where the `seen` set below used to be the only
-        // filter), is what stops one candidate's `where` clause from being RUN
-        // once per key it happens to be registered under: `multi f(Int:D $x
-        // where {...})` evaluated its constraint 3x per resolution before this.
-        // Identical fingerprints mean identical `params`/`param_defs`/`body`, so
-        // the dropped copies would have matched and ranked exactly the same;
-        // the sort above is stable, so the survivor is the one that already won
-        // the caller's declaration-order tie-break.
-        {
-            let mut seen_keys = std::collections::HashSet::new();
-            ranked.retain(|(_, def)| seen_keys.insert(def.body_fingerprint()));
-        }
-
+        // The duplicate-registry-key dedup that used to sit here now runs
+        // before the ranking loop above -- see the comment there. It stops one
+        // candidate's `where` clause from being RUN once per key it happens to
+        // be registered under (`multi f(Int:D $x where {...})` evaluated its
+        // constraint 3x per resolution before the dedup existed), and now also
+        // stops it being RANKED that many times.
         let mut matches: Vec<Arc<FunctionDef>> = Vec::new();
         // The rank key of `matches[0]`, i.e. of the narrowest candidate that
         // actually bound. `None` until the first match.
