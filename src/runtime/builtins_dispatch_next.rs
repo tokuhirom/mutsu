@@ -1347,15 +1347,17 @@ impl Interpreter {
                     }
                 }
             }
-            // Find the first candidate whose signature matches the (possibly new) args.
-            let mut matched_idx = None;
-            for (i, cand) in candidates.iter().enumerate() {
+            // Find the first candidate whose signature matches the (possibly new)
+            // args. `i` is the candidate's absolute index in the shared list
+            // (#8727), which is what `advanced_past` below consumes.
+            let mut matched: Option<(usize, std::sync::Arc<FunctionDef>)> = None;
+            for (i, cand) in candidates.iter() {
                 if self.args_match_multi_candidate(&call_args, &cand.param_defs) {
-                    matched_idx = Some(i);
+                    matched = Some((i, std::sync::Arc::clone(cand)));
                     break;
                 }
             }
-            let Some(idx) = matched_idx else {
+            let Some((idx, next_def)) = matched else {
                 // Core infix operators are implicit final candidates: they do
                 // not occur in `candidates`, but `callsame` from a user
                 // `infix:<op>` must still reach them.
@@ -1394,8 +1396,7 @@ impl Interpreter {
                 }
                 return Ok(Value::NIL);
             };
-            let next_def = candidates[idx].clone();
-            let remaining = candidates[idx + 1..].to_vec();
+            let remaining = candidates.advanced_past(idx);
             let stack_len = self.multi_dispatch_stack.len();
             // Keep rw_params fixed: it always identifies the FIRST candidate's
             // slots, even as the chain advances through later candidates.
@@ -1662,14 +1663,14 @@ impl Interpreter {
         // mirroring the behavior of dispatch_next_candidate/callsame.
         // This ensures nextcallee returns the candidate that callsame would
         // have dispatched to, skipping non-matching candidates.
-        let mut matched_idx = None;
-        for (i, cand) in candidates.iter().enumerate() {
+        let mut matched: Option<(usize, std::sync::Arc<FunctionDef>)> = None;
+        for (i, cand) in candidates.iter() {
             if self.args_match_multi_candidate(&orig_args, &cand.param_defs) {
-                matched_idx = Some(i);
+                matched = Some((i, std::sync::Arc::clone(cand)));
                 break;
             }
         }
-        let Some(idx) = matched_idx else {
+        let Some((idx, next_def)) = matched else {
             // A `multi method` whose candidate list is exhausted falls back to
             // the same native base candidate the single-method branch above
             // uses (`AccountableBagHash`'s `multi method AT-KEY`).
@@ -1678,9 +1679,8 @@ impl Interpreter {
             }
             return Ok(Value::NIL);
         };
-        let next_def = candidates[idx].clone();
         // Remove this candidate and all before it from the remaining list
-        let remaining = candidates[idx + 1..].to_vec();
+        let remaining = candidates.advanced_past(idx);
         let stack_len = self.multi_dispatch_stack.len();
         self.multi_dispatch_stack[stack_len - 1] =
             (_name, remaining, orig_args, rw_params, dispatch_token);

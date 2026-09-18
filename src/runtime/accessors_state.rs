@@ -1523,7 +1523,7 @@ impl Interpreter {
             let dispatch_token = self.next_dispatch_token();
             self.multi_dispatch_stack.push((
                 name.to_string(),
-                Vec::new(),
+                super::MultiRemaining::empty(),
                 args.to_vec(),
                 Vec::new(),
                 dispatch_token,
@@ -1555,14 +1555,11 @@ impl Interpreter {
             }
         };
         let current_fp = current_def.map(|def| def.body_fingerprint());
-        let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
-            .iter()
-            .filter(|c| {
-                let fp = c.body_fingerprint();
-                Some(fp) != current_fp
-            })
-            .cloned()
-            .collect();
+        // Share the memoized candidate list instead of copying every candidate
+        // but the winner into a fresh Vec: that copy ran on every call of every
+        // multi with two or more candidates, and almost no call ever redispatches
+        // (#8727). `MultiRemaining` skips the winner lazily, so the push is O(1).
+        let remaining = super::MultiRemaining::new(all_candidates, current_fp);
         // Capture the FIRST (winning) candidate's scalar rw params so a
         // nextsame+rw redispatch can chain the rw value through it (§D).
         let rw_params = current_def

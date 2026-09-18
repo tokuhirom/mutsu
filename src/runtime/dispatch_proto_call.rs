@@ -184,6 +184,9 @@ impl Interpreter {
         let remaining = self.resolve_remaining_proto_candidates(&proto_name, &args, &def);
         let pushed_dispatch = !remaining.is_empty();
         if pushed_dispatch {
+            // Already winner-excluded by `resolve_remaining_proto_candidates`,
+            // so the chain needs no fingerprint filter of its own (#8727).
+            let remaining = super::MultiRemaining::from_vec(remaining, None);
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
             let dispatch_token = self.next_dispatch_token();

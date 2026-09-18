@@ -244,13 +244,100 @@ pub(crate) struct ProtoMethodCtx {
     pub(crate) call_arg_sources: Option<Vec<Option<String>>>,
 }
 
+/// The deferral chain of a `multi_dispatch_stack` frame: the candidates
+/// `callsame`/`nextsame`/`nextcallee` may still defer to.
+///
+/// This is a *view* over the shared, per-generation candidate list
+/// (`MultiCandidateList`, memoized by `resolve_all_multi_candidates_cached_sym`)
+/// rather than a private `Vec` of its own. `push_multi_dispatch_frame_*` runs on
+/// every call of a `multi` with two or more candidates, and materializing
+/// "every candidate except the winner" there cost one allocation plus N `Arc`
+/// clones per call — the last O(candidates) step on the ordinary call path,
+/// which the overwhelming majority of calls never read (#8727). Building the
+/// view instead is O(1): the winner is skipped lazily by body fingerprint, and
+/// advancing the chain moves `next` instead of copying a tail.
+///
+/// Indices handed out by [`MultiRemaining::iter`] and consumed by
+/// [`MultiRemaining::advanced_past`] are absolute positions in `all`, so
+/// `advanced_past(i)` yields exactly the same sequence the old
+/// `candidates[i + 1..].to_vec()` did.
+#[derive(Debug, Clone)]
+pub(crate) struct MultiRemaining {
+    /// The family's full candidate list, in dispatch order.
+    all: super::MultiCandidateList,
+    /// Index into `all` of the first candidate still available.
+    next: usize,
+    /// Body fingerprint of the candidate currently running. It is skipped
+    /// wherever it occurs in `all` — the eager filter this replaces dropped
+    /// *every* candidate sharing the winner's fingerprint, not just the first.
+    skip_fp: Option<u64>,
+}
+
+thread_local! {
+    /// Shared empty candidate list, so `MultiRemaining::empty` (the
+    /// single-candidate frame, pushed on every call of a one-candidate multi)
+    /// allocates nothing.
+    static EMPTY_MULTI_CANDIDATES: super::MultiCandidateList = Arc::new(Vec::new());
+}
+
+impl MultiRemaining {
+    /// A chain with nowhere to defer to: still a dispatcher (so `nextsame` is
+    /// legal and Nil-valued), just with no next candidate.
+    pub(crate) fn empty() -> Self {
+        Self {
+            all: EMPTY_MULTI_CANDIDATES.with(Arc::clone),
+            next: 0,
+            skip_fp: None,
+        }
+    }
+
+    /// A chain over the shared candidate list, skipping the running candidate.
+    pub(crate) fn new(all: super::MultiCandidateList, skip_fp: Option<u64>) -> Self {
+        Self {
+            all,
+            next: 0,
+            skip_fp,
+        }
+    }
+
+    /// A chain over a list this caller owns (the proto-candidate and
+    /// Callable-value paths, which build their own ordering).
+    pub(crate) fn from_vec(all: Vec<Arc<FunctionDef>>, skip_fp: Option<u64>) -> Self {
+        Self::new(Arc::new(all), skip_fp)
+    }
+
+    /// The still-available candidates, each with its absolute index in `all`.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (usize, &Arc<FunctionDef>)> {
+        let skip_fp = self.skip_fp;
+        self.all
+            .iter()
+            .enumerate()
+            .skip(self.next)
+            .filter(move |(_, c)| Some(c.body_fingerprint()) != skip_fp)
+    }
+
+    /// The same chain, resumed after the candidate at absolute index `idx`.
+    pub(crate) fn advanced_past(&self, idx: usize) -> Self {
+        Self {
+            all: Arc::clone(&self.all),
+            next: idx.saturating_add(1).min(self.all.len()),
+            skip_fp: self.skip_fp,
+        }
+    }
+
+    /// Drop every remaining candidate (`lastcall`).
+    pub(crate) fn clear(&mut self) {
+        self.next = self.all.len();
+    }
+}
+
 /// One entry of `multi_dispatch_stack`: (function_name, remaining_candidates,
 /// original_args, first_candidate_rw_params, dispatch_token). See the field doc
 /// on `Interpreter::multi_dispatch_stack`. The trailing `u64` is the ADR-0019
 /// E9b-0 push-order token — see `MethodDispatchFrame::dispatch_token`.
 pub(crate) type MultiDispatchEntry = (
     String,
-    Vec<Arc<FunctionDef>>,
+    MultiRemaining,
     Vec<Value>,
     Vec<(usize, String)>,
     u64,
