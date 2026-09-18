@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Proposed (design complete; Slices 0-1 and 3 shipped, Slices 2 and 4-5 not started — §9)
+- **Status**: Proposed (design complete; Slices 0-3 shipped, Slices 4-5 not started — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -257,8 +257,9 @@ Gate: §8 gates 1 and 1c.
   of the report rather than a silent hole.
 - The epoch load happens **inside** the armed branch (Slice 1), so a disarmed run does not pay an
   atomic load per opcode.
-- A poll that observes a new epoch: read the clock once, walk the `RoutineFrame` stack plus the active
-  `(chunk, ip)`, and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
+- A poll that observes a new epoch: read the clock once, walk the `RoutineFrame` stack plus the
+  `(chunk, ip)` the **previous** poll stood at (§5.1 — the active ip is the start of the *next* region,
+  not the one that ran), and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
   path performs **no allocation** and takes no lock — it writes fixed-size frames (chunk id, ip,
   routine id, region tag) into reserved space, which keeps the profiler out of its own measurement
   (an allocating sampler would pollute both the GC's candidate buffer and the alloc-stats counters).
@@ -270,6 +271,42 @@ Gate: §8 gates 1 and 1c.
   long region that delays the poll contributes its real duration rather than a fixed tick's worth.
 - Aggregation happens at run end (or when a buffer fills) off the hot path: samples fold into a
   `(file, line) → {self, inclusive}` table and a caller-keyed routine table.
+
+#### 5.1 Three corrections the implementation forced (2026-09-18, [#8702](https://github.com/tokuhirom/mutsu/issues/8702))
+
+**A sample credits the line of the *previous* poll, not the line the poll is standing on.** A
+poll-based sampler never sees where the tick fired; it finds out at the next poll, by which point the
+region that was running has finished and the thread is at the start of the next one. The probability
+of noticing at a given poll site is proportional to the time spent in the region *preceding* it, so
+crediting the site itself shifts a profile one region late — systematically, not on average. On Raku
+code, where a line is a handful of opcodes, "one region late" means a hot line's cost is reported
+against the line below it, which is the same class of plausible-looking wrong answer §6b rejects
+`cur_source_line` for. In the interpreter the polls are per opcode and in JIT-compiled code the
+emitted hooks are per line transition, so in both the previous poll bounds exactly the region that
+delayed this one. It is also what makes the elapsed weighting do its §7 job: a long native region has
+its whole duration charged to the line that entered it rather than to whatever ran next.
+
+**The sampler has to ride the JIT's per-line hook, not only the poll.** Sampling from `poll_code`
+alone gives a native body one sample per entry, carrying the range's first ip — because no Raku loop
+form places a backward jump inside a compiled range (§8.2). A hot loop then reports all of its time
+against its first line and the other body lines are *absent*, not merely under-weighted. This is the
+time half of exactly what [#8713](https://github.com/tokuhirom/mutsu/issues/8713) fixed for the
+counts, and it has the same fix: the sampler rides `helpers::profile_line`, which the JIT already
+emits at every line transition while armed.
+
+**Per-thread tables must be registered, not folded on `Drop` alone.** A worker-pool thread is still
+alive when the process reports, so a fold-on-drop loses everything it collected. This was latent in
+Slice 3's counters too and surfaced the moment a `start` block was profiled: a routine called once on
+the mainline and once on a worker reported `entries=1`. Both halves now register a handle the report
+can drain from another thread; the counters' hot path is unchanged, because the "still on the same
+line" poll reads one `Cell` and takes no lock.
+
+One thing the slice deliberately did **not** do. A chunk's `source_file` is the canonicalized path
+while a `RoutineFrame`'s is `$?FILE` as the user spelled it, so a `line` row and a `callsite` row
+could name one file two ways and could not be joined — the mainline case of the `EVAL` hazard this
+ADR's §7 risk table already ruled on once. The report reconciles them (`src/profile/paths.rs`);
+settling it at the source means deciding what `$?FILE`, `Code.file` and backtraces report, which
+several `t/` tests pin, and is [#8719](https://github.com/tokuhirom/mutsu/issues/8719).
 
 ### Slice 3 — exact counts
 
@@ -436,6 +473,11 @@ memory, and it is not enough to assert it: each of these is measured per slice.
    is that line, and its exact `hits` equals the trip count — asserted in `t/`.
 4. **JIT parity**: the same fixture profiled with `--profile-jit=off` and on produces the same top line
    and the same `hits` (only the times differ). This is the check that the JIT backedge poll works.
+   For the *sampled* half there is no "same number" to compare — a native body and an interpreted one
+   take neither the same polls nor the same time per line — so what is asserted there is that the two
+   runs name the same **set** of lines, routines and caller edges. That is what gate 4 is actually
+   about: whether a profile silently loses resolution the moment a loop gets hot, which is exactly
+   when a profiler is opened.
 
 ### 8.1 Measured results
 
