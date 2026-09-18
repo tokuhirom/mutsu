@@ -183,8 +183,13 @@ impl Interpreter {
         // on a param-binding error -- rather than the manual
         // `self.set_current_package(saved)` calls this replaced, which a
         // panic unwind would skip entirely.
+        // The guard takes the package as a `Symbol` (#8686 Phase 1): the
+        // `def_package.to_string()` this passed was a per-call allocation of a
+        // string the symbol already resolves to, and the guard skips both the
+        // switch and its restore while the callee's package is the one already
+        // current — the shape of every same-package sibling call.
         let pkg_guard = (!def_package.is_empty() && def_package != "GLOBAL")
-            .then(|| self.enter_package_guarded_with_sym(def_package.to_string(), def_package_sym));
+            .then(|| self.enter_package_guarded_sym(def_package_sym));
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
         // into the current env so where-constraint expressions can access them.

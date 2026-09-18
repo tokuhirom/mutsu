@@ -733,9 +733,9 @@ impl Interpreter {
         *self.current_package.write().unwrap() = pkg;
     }
 
-    /// Switch `current_package` to `pkg`, returning an RAII guard that
-    /// restores the previous value when dropped -- on normal control flow OR
-    /// when a Rust panic unwinds through the guarded call.
+    /// Switch `current_package` to `sym`'s package, returning an RAII guard
+    /// that restores the previous value when dropped -- on normal control flow
+    /// OR when a Rust panic unwinds through the guarded call.
     ///
     /// Several call-dispatch functions (`call_compiled_closure_with_topic`,
     /// `call_compiled_function_named_inner`) temporarily switch
@@ -755,25 +755,33 @@ impl Interpreter {
     /// moving it there would require restructuring both dispatch functions.
     /// An RAII guard self-heals regardless of what a future unwind boundary
     /// looks like.
-    pub(crate) fn enter_package_guarded(&mut self, pkg: String) -> CurrentPackageGuard {
-        let sym = Symbol::intern(&pkg);
-        self.enter_package_guarded_with_sym(pkg, sym)
-    }
-
-    /// [`Self::enter_package_guarded`] for a caller that already holds the
-    /// package's `Symbol` — see [`Self::set_current_package_with_sym`].
-    pub(crate) fn enter_package_guarded_with_sym(
-        &mut self,
-        pkg: String,
-        sym: Symbol,
-    ) -> CurrentPackageGuard {
-        let saved_str = self.current_package();
+    ///
+    /// Takes the target package as a `Symbol` only: the `String` the backing
+    /// store holds is recoverable from it (`Symbol::as_str` is an indexed read
+    /// out of the per-thread resolve table), so the `pkg: String` this used to
+    /// take was pure per-call allocation at every call site — and the sites
+    /// that had only a `Symbol` were spelling it `sym.as_str().to_string()`
+    /// just to satisfy the signature, then paying `Symbol::intern` to get the
+    /// symbol back. Three call sites, all of which hold the symbol already
+    /// (`CompiledFunction::package_sym`, `SubData::package`); see #8686 Phase 1.
+    ///
+    /// **Entering the package that is already current is free.** The switch and
+    /// its restore are then both no-ops, so neither is performed: the common
+    /// shape on the hot path is a routine calling a sibling in its own package
+    /// (every `JSON::Fast` helper calling the next), which used to pay two
+    /// `String` allocations and three `RwLock` acquisitions to write back the
+    /// value that was already there. The guard is still returned, and still
+    /// restores on drop if the *body* moved `current_package` — only the
+    /// redundant writes are skipped, so no caller has to reason about whether
+    /// the switch happened.
+    pub(crate) fn enter_package_guarded_sym(&mut self, sym: Symbol) -> CurrentPackageGuard {
         let saved_sym_id = self.current_package_sym().id();
-        self.set_current_package_with_sym(pkg, sym);
+        if sym.id() != saved_sym_id {
+            self.set_current_package_with_sym(sym.as_str().to_owned(), sym);
+        }
         CurrentPackageGuard {
             pkg_lock: std::sync::Arc::clone(&self.current_package),
             pkg_sym: std::sync::Arc::clone(&self.current_package_sym),
-            saved_str,
             saved_sym_id,
         }
     }
@@ -918,7 +926,7 @@ impl Interpreter {
     }
 }
 
-/// RAII guard returned by [`Interpreter::enter_package_guarded`]. Restores
+/// RAII guard returned by [`Interpreter::enter_package_guarded_sym`]. Restores
 /// `current_package` on drop, including on a Rust panic unwind.
 ///
 /// `current_package`/`current_package_sym` are already interior-mutable
@@ -929,17 +937,33 @@ impl Interpreter {
 /// pointers) even though it is typically constructed deep inside a large
 /// `&mut self` dispatch function and lives across many further `self.*`
 /// calls before being dropped.
+/// Only the saved package's `Symbol` id is held, not its text: the two are kept
+/// in lockstep by every writer (`set_current_package_with_sym` asserts it,
+/// `set_current_package_shared_sym` derives the text *from* the symbol, and the
+/// `Interpreter` clones that build a fresh pair — a thread snapshot, a regex
+/// scratch — copy both together, which [#7576](https://github.com/tokuhirom/mutsu/issues/7576)
+/// is the record of), so the string is recoverable from the id and does not
+/// need saving. That is what lets the guard be free to *construct*: it used to
+/// clone the package out from behind its `RwLock` on every guarded call.
 pub(crate) struct CurrentPackageGuard {
     pkg_lock: std::sync::Arc<std::sync::RwLock<String>>,
     pkg_sym: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    saved_str: String,
     saved_sym_id: u32,
 }
 
 impl Drop for CurrentPackageGuard {
     fn drop(&mut self) {
-        *self.pkg_lock.write().unwrap() = std::mem::take(&mut self.saved_str);
-        self.pkg_sym
-            .store(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
+        // Restore only if something actually moved. The `swap` both reads and
+        // writes the mirror in one operation, so the guarded region ends with
+        // the saved package current either way; the `RwLock` write and the
+        // `String` allocation behind it are what the check is for, and they are
+        // skipped for every guard whose region never left its own package.
+        let previous = self
+            .pkg_sym
+            .swap(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
+        if previous != self.saved_sym_id {
+            *self.pkg_lock.write().unwrap() =
+                Symbol::from_id(self.saved_sym_id).as_str().to_owned();
+        }
     }
 }

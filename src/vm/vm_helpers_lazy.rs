@@ -61,8 +61,7 @@ impl Interpreter {
                             )
                             && data.package != self.current_package_sym() =>
                     {
-                        let pkg = data.package.as_str().to_string();
-                        Some(self.enter_package_guarded(pkg))
+                        Some(self.enter_package_guarded_sym(data.package))
                     }
                     _ => None,
                 });
