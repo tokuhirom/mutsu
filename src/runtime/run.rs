@@ -680,18 +680,37 @@ impl Interpreter {
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
-        let source_file = std::fs::canonicalize(&file_name)
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| file_name.clone());
+        // #8719: one source file, one runtime identity. The unit stamp every
+        // chunk carries (`CompiledCode::source_file`) and the env's `?FILE` --
+        // which is what a `RoutineFrame` call site, `Code.file`, `CallFrame.file`
+        // and a backtrace report -- are the SAME string, the path as the program
+        // was invoked with. This used to be the one compilation unit in mutsu
+        // where they disagreed: the stamp went through `fs::canonicalize` while
+        // the env kept the spelling, so a profile's line rows and callsite rows
+        // named one file two ways and could not be joined. A `use`d module and
+        // an `EVAL` already published one string to both.
+        //
+        // `$?FILE` keeps its own, absolutified spelling -- that split is
+        // rakudo's own (measured: `$?FILE` is `$*CWD`-joined, `Code.file` is the
+        // path as spelled), and `EVAL` already implements it. Absolutifying
+        // rather than canonicalizing also matches rakudo exactly, which does not
+        // resolve symlinks or fold `.`/`..`; it costs no syscall, and it keeps
+        // the two spellings derivable from each other.
+        let source_file = if Self::is_pseudo_unit_name(&file_name) {
+            // `-e`, `<repl>`, `<unknown>`: not a path, so there is nothing to
+            // resolve it against. rakudo reports `-e` for `$?FILE` too.
+            file_name.clone()
+        } else {
+            self.absolutify_unit_name(&file_name)
+        };
+        let unit_file = crate::symbol::Symbol::intern(&file_name);
         self.env.insert("?FILE".to_string(), Value::str(file_name));
         // ADR-0106 Slice 0: publish this compilation unit's identity for every
         // chunk compiled from here on -- the BEGIN-time compiles below, the
         // mainline itself, and any on-the-fly compile the running program
         // triggers. A `use`d module and an `EVAL` re-publish their own over
         // this one for the span they own.
-        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
-            crate::symbol::Symbol::intern(&source_file),
-        ));
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(unit_file));
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());

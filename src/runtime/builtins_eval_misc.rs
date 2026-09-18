@@ -244,10 +244,32 @@ impl Interpreter {
         format!("EVAL_{}", EVAL_UNIT_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
+    /// Is this compilation-unit name a *pseudo* name rather than a path?
+    ///
+    /// `-e` (and `-`, a program read from stdin) are rakudo's own spellings for
+    /// a unit that has no file, and mutsu adds bracketed names of its own
+    /// (`<unknown>`, `<repl>`). None of them denotes a location, so
+    /// [`Interpreter::absolutify_unit_name`] must leave them alone: rakudo
+    /// reports a bare `-e` for `$?FILE` under `raku -e`, not `$*CWD/-e`.
+    ///
+    /// An `EVAL` unit name (`EVAL_0`) is deliberately NOT in this set -- it is
+    /// absolutified, and `t/modules/compunit/eval-compunit-introspection.t`
+    /// pins that.
+    pub(crate) fn is_pseudo_unit_name(name: &str) -> bool {
+        name == "-e" || name == "-" || (name.starts_with('<') && name.ends_with('>'))
+    }
+
     /// Absolutify a compilation-unit name for `$?FILE`, which is always an
     /// absolute path even when the unit's own name is relative (`EVAL_0`,
     /// or a relative `:filename`). An already-absolute name is left alone.
-    fn absolutify_unit_name(&self, name: &str) -> String {
+    ///
+    /// Absolutifies; it does NOT canonicalize. rakudo's `$?FILE` keeps `.` and
+    /// `..` components and does not resolve symlinks (measured: invoking
+    /// `raku ./tmp/sub/../x.raku` reports `<cwd>/./tmp/sub/../x.raku`), so
+    /// folding them here would be a divergence, and resolving them would cost a
+    /// syscall and make `$?FILE` underivable from the unit's own identity
+    /// (#8719).
+    pub(crate) fn absolutify_unit_name(&self, name: &str) -> String {
         let path = std::path::Path::new(name);
         if path.is_absolute() {
             return name.to_string();

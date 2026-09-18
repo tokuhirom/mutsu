@@ -2,10 +2,8 @@
 //!
 //! Split out of [`super::aggregate`], which owns the per-thread buffers and
 //! the fold that fills these tables: this half runs once, at report time, and
-//! is where every file identity is reconciled and every row is put in a
-//! deterministic order.
+//! is where every row is put in a deterministic order.
 
-use super::paths;
 use super::region::Region;
 use super::{CallsiteLocation, LineLocation, LineRegion, RoutineLocation};
 use rustc_hash::FxHashMap;
@@ -60,51 +58,23 @@ pub(crate) struct SampledSnapshot {
     pub(crate) truncated: u64,
 }
 
-fn merge<K: std::hash::Hash + Eq>(rows: impl Iterator<Item = (K, u64)>) -> Vec<(K, u64)> {
-    let mut merged: FxHashMap<K, u64> = FxHashMap::default();
-    for (key, ns) in rows {
-        *merged.entry(key).or_default() += ns;
-    }
-    merged.into_iter().collect()
-}
-
-fn merge_lines(table: &mut FxHashMap<LineLocation, u64>) -> Vec<(LineLocation, u64)> {
-    merge(table.drain().map(|(mut location, ns)| {
-        location.file = paths::canonical(location.file);
-        (location, ns)
-    }))
-}
-
-fn merge_routines(table: &mut FxHashMap<RoutineLocation, u64>) -> Vec<(RoutineLocation, u64)> {
-    merge(table.drain().map(|(mut location, ns)| {
-        location.file = paths::canonical_opt(location.file);
-        (location, ns)
-    }))
-}
-
 /// Fold every thread and take everything accumulated so far.
 pub(crate) fn take_samples() -> SampledSnapshot {
     super::sampler::fold_this_thread();
     super::aggregate::fold_all_threads();
     let mut totals = lock(totals());
-    // One identity per file (`super::paths`): the self table is keyed by the
-    // chunk's own file and the inclusive/callsite tables by the frames' spelled
-    // `$?FILE`, and a report that let those disagree would credit one file's
-    // time to two names -- and would leave a caller row unmatchable against the
-    // line row it belongs to.
+    // The self table is keyed by the chunk's own file and the inclusive and
+    // callsite tables by the frames' `?FILE`. Those were once two spellings of
+    // one path and a reconciliation pass had to fold them back together here;
+    // since #8719 they are the same interned symbol, so `totals` is already the
+    // final table and each drain is a plain collect.
     let mut snapshot = SampledSnapshot {
-        line_self_ns: merge_lines(&mut totals.line_self_ns),
-        line_incl_ns: merge_lines(&mut totals.line_incl_ns),
-        line_region_ns: merge(totals.line_region_ns.drain().map(|(mut key, ns)| {
-            key.location.file = paths::canonical(key.location.file);
-            (key, ns)
-        })),
-        routine_self_ns: merge_routines(&mut totals.routine_self_ns),
-        routine_incl_ns: merge_routines(&mut totals.routine_incl_ns),
-        callsite_incl_ns: merge(totals.callsite_incl_ns.drain().map(|(mut location, ns)| {
-            location.caller_file = paths::canonical(location.caller_file);
-            (location, ns)
-        })),
+        line_self_ns: totals.line_self_ns.drain().collect(),
+        line_incl_ns: totals.line_incl_ns.drain().collect(),
+        line_region_ns: totals.line_region_ns.drain().collect(),
+        routine_self_ns: totals.routine_self_ns.drain().collect(),
+        routine_incl_ns: totals.routine_incl_ns.drain().collect(),
+        callsite_incl_ns: totals.callsite_incl_ns.drain().collect(),
         region_ns: std::mem::take(&mut totals.region_ns),
         region_samples: std::mem::take(&mut totals.region_samples),
         excluded_region_ns: super::region::take_excluded_ns(),

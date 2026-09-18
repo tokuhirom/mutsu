@@ -264,12 +264,16 @@ split is a partition of the samples, so `sum(regions[].samples) == samples`.
 - **Nothing is asserted about a duration anywhere in mutsu's own tests**
   (ADR-0106 D5), and nothing should be asserted about one in yours: a test that
   says "this line got at least N samples" is a flaky test by construction.
-- **File identity.** mutsu names one file two ways at runtime — a chunk's
-  canonicalized path and a frame's `$?FILE` spelling — and the profiler
-  reconciles them at report time so its tables can be joined
-  ([#8719](https://github.com/tokuhirom/mutsu/issues/8719) tracks settling it at
-  the source). The call site of a call made inside a `use`d module is resolved
-  from the enclosing routine's declaring file for the same reason.
+- **File identity.** A file is named in the profile exactly as the command line
+  spelled it — run `mutsu prof.raku` from its own directory and the document
+  says `prof.raku`, not the absolute path. That is the one runtime identity a
+  source file has ([#8719](https://github.com/tokuhirom/mutsu/issues/8719)), the
+  same string `Code.file`, `CallFrame.file` and a backtrace report; `$?FILE`'s
+  absolutified spelling is derived from it, and is not what the tables are keyed
+  by. One reconciliation remains: the call site of a call made inside a `use`d
+  module is resolved from the enclosing routine's declaring file, because a
+  frame's own `?FILE` still names the mainline there
+  ([#8743](https://github.com/tokuhirom/mutsu/issues/8743)).
 - **`EVAL` and threads.** An `EVAL`'d unit appears under its own name
   (`EVAL_<n>`), as it does in a backtrace. A `start` block's samples belong to
   its own thread's stack and are not folded into the line that spawned it.
