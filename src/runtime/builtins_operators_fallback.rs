@@ -666,7 +666,7 @@ impl Interpreter {
                 .push(crate::runtime::CodeFrame::Ready(sub_val));
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             let invocation_id = self.take_invocation_id();
-            self.routine_stack.push(RoutineFrame {
+            let frame = RoutineFrame {
                 package: def.package,
                 lexical_package: None,
                 name: def.name,
@@ -677,7 +677,9 @@ impl Interpreter {
                 is_block: false,
                 def_file: None,
                 invocation_id,
-            });
+            };
+            self.record_profile_routine_frame(&frame);
+            self.routine_stack.push(frame);
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.
             let callable_key = MetaNs::CallableId.key_pair(def.package, def.name);

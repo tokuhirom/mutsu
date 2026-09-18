@@ -514,7 +514,7 @@ impl Interpreter {
                     let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
                     let invocation_id = self.take_invocation_id();
-                    self.routine_stack.push(super::super::RoutineFrame {
+                    let frame = super::super::RoutineFrame {
                         package,
                         lexical_package: None,
                         name,
@@ -525,7 +525,9 @@ impl Interpreter {
                         is_block: false,
                         def_file: None,
                         invocation_id,
-                    });
+                    };
+                    self.record_profile_routine_frame(&frame);
+                    self.routine_stack.push(frame);
                     // A `my token`/`rule` whose pattern interpolates a lexical
                     // from its defining frame (`<{$x}>`) closed over it at
                     // declaration time (issue #8662); install that scope for

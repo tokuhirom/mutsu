@@ -113,8 +113,6 @@ fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
 struct Sigs {
     /// `(interp) -> ()`
     v1: SigRef,
-    /// `(interp, u32) -> ()`
-    v1_u32: SigRef,
     /// `(interp) -> i32`
     s1: SigRef,
     /// `(interp, code, u32) -> ()`
@@ -140,7 +138,6 @@ fn make_sigs(module: &JITModule, b: &mut FunctionBuilder, ptr: Type) -> Sigs {
     };
     Sigs {
         v1: sig(&[ptr], None),
-        v1_u32: sig(&[ptr, types::I32], None),
         s1: sig(&[ptr], Some(types::I32)),
         v_code_u32: sig(&[ptr, ptr, types::I32], None),
         s_code_u32: sig(&[ptr, ptr, types::I32], Some(types::I32)),
@@ -196,6 +193,7 @@ fn build(
     let interp = b.block_params(entry)[0];
     let codep = b.block_params(entry)[1];
     let fnsp = b.block_params(entry)[2];
+    let poll_with_code = crate::vm::vm_poll::profiler_armed();
 
     // Tier B inline emitter (ADR-0004 J4): available when the stack layout
     // probe succeeded on this target. `None` degrades every opcode below to
@@ -203,11 +201,12 @@ fn build(
     let tier_b = if ptr == types::I64 {
         super::vm_jit_layout::layout().map(|lay| TierB {
             interp,
+            codep,
             ptr_ty: ptr,
             lay,
             s1: sigs.s1,
             v1: sigs.v1,
-            v1_u32: sigs.v1_u32,
+            poll_with_code,
             v_code_u32: sigs.v_code_u32,
             s_code_u32: sigs.s_code_u32,
         })
@@ -239,6 +238,32 @@ fn build(
         b.switch_to_block(cont);
     };
 
+    let emit_safepoint =
+        |b: &mut FunctionBuilder, f: usize, site: u32| -> Option<cranelift_codegen::ir::Value> {
+            if poll_with_code {
+                let site = b.ins().iconst(types::I32, site as i64);
+                call_helper(b, sigs.v_code_u32, f, &[interp, codep, site])
+            } else {
+                call_helper(b, sigs.v1, f, &[interp])
+            }
+        };
+    let emit_profile_line = |b: &mut FunctionBuilder, site: u32| {
+        if poll_with_code {
+            let site = b.ins().iconst(types::I32, site as i64);
+            let _ = call_helper(
+                b,
+                sigs.v_code_u32,
+                helpers::profile_line as *const () as usize,
+                &[interp, codep, site],
+            );
+        }
+    };
+    let safepoint_fn = if poll_with_code {
+        helpers::profile_safepoint as *const () as usize
+    } else {
+        helpers::safepoint as *const () as usize
+    };
+
     // `open` = the current block still needs a terminator.
     let mut open = true;
     for (i, op) in code.ops[start..end]
@@ -257,6 +282,18 @@ fn build(
             // Straight-line code right after a terminator with no incoming
             // jump: unreachable, skip.
             continue;
+        }
+        // A native line hook is needed at chunk entry, every jump target, and
+        // every sequential line transition.  The runtime counter still
+        // compares its last location, so a same-line branch target does not
+        // create a false hit while a branch from another line counts exactly
+        // once.  These hooks are emitted only for an armed profiler.
+        if poll_with_code
+            && (i == start
+                || block_at.contains_key(&i)
+                || code.line_at(i) != code.line_at(i.saturating_sub(1)))
+        {
+            emit_profile_line(&mut b, i as u32);
         }
         if dump.on() {
             b.set_srcloc(cranelift_codegen::ir::SourceLoc::new(i as u32));
@@ -488,13 +525,7 @@ fn build(
                     // Backedge: poll the shared VM network so a native loop
                     // keeps participating in cooperative STW and future
                     // profiler consumers (ADR-0004 §2.4, ADR-0106 §5).
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    let _ = emit_safepoint(&mut b, safepoint_fn, i as u32);
                 }
                 b.ins().jump(block_at[&t], &[]);
                 open = false;
@@ -507,7 +538,7 @@ fn build(
                     block_at[&t],
                     t <= i,
                     i as u32,
-                    helpers::safepoint as *const () as usize,
+                    safepoint_fn,
                     helpers::mark_failure_top as *const () as usize,
                     helpers::jump_if_false_cond as *const () as usize,
                 );
@@ -520,7 +551,7 @@ fn build(
                     block_at[&t],
                     t <= i,
                     i as u32,
-                    helpers::safepoint as *const () as usize,
+                    safepoint_fn,
                     helpers::jump_if_true_cond as *const () as usize,
                 );
             }
@@ -540,13 +571,7 @@ fn build(
                     let poll = b.create_block();
                     b.ins().brif(cond, poll, &[], next, &[]);
                     b.switch_to_block(poll);
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    let _ = emit_safepoint(&mut b, safepoint_fn, i as u32);
                     b.ins().jump(block_at[&t], &[]);
                 } else {
                     b.ins().brif(cond, block_at[&t], &[], next, &[]);
@@ -573,13 +598,7 @@ fn build(
                     let poll = b.create_block();
                     b.ins().brif(cond, poll, &[], next, &[]);
                     b.switch_to_block(poll);
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    let _ = emit_safepoint(&mut b, safepoint_fn, i as u32);
                     b.ins().jump(block_at[&t], &[]);
                 } else {
                     b.ins().brif(cond, block_at[&t], &[], next, &[]);

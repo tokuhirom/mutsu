@@ -51,14 +51,16 @@ pub(super) enum NumCmp {
 
 pub(super) struct TierB {
     pub(super) interp: CVal,
+    pub(super) codep: CVal,
     pub(super) ptr_ty: Type,
     pub(super) lay: &'static JitLayout,
     /// `(interp) -> i32` — fallible slow-path shims.
     pub(super) s1: SigRef,
     /// `(interp) -> ()` — infallible helpers.
     pub(super) v1: SigRef,
-    /// `(interp, u32) -> ()` — a VM poll carrying the bytecode ip.
-    pub(super) v1_u32: SigRef,
+    /// Select the location-carrying poll ABI only when profiling was armed at
+    /// JIT compilation time; otherwise use the one-argument GC helper.
+    pub(super) poll_with_code: bool,
     /// `(interp, code, u32) -> ()` — the `load_const` slow path.
     pub(super) v_code_u32: SigRef,
     /// `(interp, code, u32) -> i32` — the `get_local` slow path.
@@ -202,14 +204,18 @@ impl TierB {
     }
 
     /// Call a VM poll helper with the bytecode instruction that formed the
-    /// backedge. The immediate keeps the disarmed path free of an extra load.
+    /// backedge. The disarmed path keeps the original one-argument ABI.
     pub(super) fn call_safepoint(&self, b: &mut FunctionBuilder, f: usize, site: u32) {
         let callee = b.ins().iconst(self.ptr_ty, f as i64);
-        let site = b
-            .ins()
-            .iconst(cranelift_codegen::ir::types::I32, site as i64);
-        b.ins()
-            .call_indirect(self.v1_u32, callee, &[self.interp, site]);
+        if self.poll_with_code {
+            let site = b
+                .ins()
+                .iconst(cranelift_codegen::ir::types::I32, site as i64);
+            b.ins()
+                .call_indirect(self.v_code_u32, callee, &[self.interp, self.codep, site]);
+        } else {
+            b.ins().call_indirect(self.v1, callee, &[self.interp]);
+        }
     }
 
     /// `Add`/`Sub`/`Mul`: pop two Int (or two Num) words, push the result.

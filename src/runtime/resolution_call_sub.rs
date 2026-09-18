@@ -819,7 +819,7 @@ impl Interpreter {
                 Value::int(data.id as i64),
             );
             let invocation_id = self.take_invocation_id();
-            self.routine_stack.push(RoutineFrame {
+            let frame = RoutineFrame {
                 package: data.package,
                 lexical_package: None,
                 name: data.name,
@@ -841,7 +841,9 @@ impl Interpreter {
                 // own private `helper`.
                 def_file: data.source_file.as_deref().map(Symbol::intern),
                 invocation_id,
-            });
+            };
+            self.record_profile_routine_frame(&frame);
+            self.routine_stack.push(frame);
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data

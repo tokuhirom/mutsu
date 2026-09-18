@@ -286,7 +286,7 @@ impl Interpreter {
             }
         };
         let invocation_id = self.take_invocation_id();
-        self.routine_stack.push(RoutineFrame {
+        let frame = RoutineFrame {
             package: def.package,
             lexical_package: None,
             name: def.name,
@@ -297,7 +297,9 @@ impl Interpreter {
             is_block: false,
             def_file: None,
             invocation_id,
-        });
+        };
+        self.record_profile_routine_frame(&frame);
+        self.routine_stack.push(frame);
         let result = self.eval_block_value(&def.body);
         self.routine_stack.pop();
         // Apply <sym> instantiation for proto token :sym<> variants

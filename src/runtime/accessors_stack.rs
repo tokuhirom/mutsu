@@ -214,7 +214,7 @@ impl Interpreter {
             Some((_, short)) => Symbol::intern(short),
             None => name,
         };
-        self.routine_stack.push(super::RoutineFrame {
+        let frame = super::RoutineFrame {
             package,
             lexical_package,
             name,
@@ -225,7 +225,9 @@ impl Interpreter {
             is_block: false,
             def_file,
             invocation_id,
-        });
+        };
+        self.record_profile_routine_frame(&frame);
+        self.routine_stack.push(frame);
     }
 
     /// Push a method routine frame. `line`/`file` record the call-site (as for
@@ -247,7 +249,7 @@ impl Interpreter {
         is_submethod: bool,
     ) {
         let invocation_id = self.take_invocation_id();
-        self.routine_stack.push(super::RoutineFrame {
+        let frame = super::RoutineFrame {
             package,
             lexical_package: Some(lexical_package),
             name,
@@ -258,7 +260,9 @@ impl Interpreter {
             is_block: false,
             def_file,
             invocation_id,
-        });
+        };
+        self.record_profile_routine_frame(&frame);
+        self.routine_stack.push(frame);
     }
 
     /// Push a block/closure routine frame. `def_file` is the file the block's
@@ -274,7 +278,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
     ) {
         let invocation_id = self.take_invocation_id();
-        self.routine_stack.push(super::RoutineFrame {
+        let frame = super::RoutineFrame {
             package,
             lexical_package: None,
             name,
@@ -285,7 +289,18 @@ impl Interpreter {
             is_block: true,
             def_file,
             invocation_id,
-        });
+        };
+        self.record_profile_routine_frame(&frame);
+        self.routine_stack.push(frame);
+    }
+
+    /// Record the exact routine entry only when the profiler consumer is
+    /// armed.  Keeping this at the common frame-push boundary covers the fast,
+    /// light, method, and closure dispatch paths with one implementation.
+    pub(crate) fn record_profile_routine_frame(&self, frame: &super::RoutineFrame) {
+        if crate::vm::vm_poll::profiler_armed() {
+            crate::profile::record_routine_frame(frame);
+        }
     }
 
     /// Find the unit-module package owning a routine or closure's body. EVAL
