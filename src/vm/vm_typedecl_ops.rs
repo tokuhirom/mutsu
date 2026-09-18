@@ -84,10 +84,10 @@ impl Interpreter {
                 register_enum_decl(
                     &name.resolve(),
                     variants,
-                    *is_export,
-                    export_tags,
+                    (*is_export).then_some(export_tags.as_slice()),
                     base_type.as_deref(),
                     roles,
+                    *is_my,
                 )
             )?;
             // A `my enum` is lexical: its type name and every variant name die

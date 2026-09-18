@@ -589,12 +589,33 @@ impl Interpreter {
             return Value::package(Symbol::intern(name));
         }
 
-        // Check if the full compound name (e.g. "IO::Path") is a known type
-        // before splitting on "::".
-        if name.contains("::")
-            && (crate::runtime::utils::is_known_compound_type(name)
+        // Check if the name is already a known registered type before
+        // splitting on "::". A registered class/role/enum lives in the
+        // REGISTRY for the whole process, regardless of which call frame
+        // declared it (#8683): `RegisterClass`/`RegisterRole`/
+        // `register_enum_decl` only install a BAREWORD binding into the
+        // currently executing lexical env tier, which is exactly what a sub
+        // call frame discards on return -- even when the declaration was not
+        // `my`-scoped and so should remain a visible package member
+        // (`sub make-it { class Foo {...} }; make-it(); ::('Foo')` must find
+        // `Foo` after `make-it()` returns). A `my`-scoped declaration is not
+        // wrongly picked up here: a namespaced one is excluded by the
+        // `is_my_scoped_type_name` guard above, and a bare one registers
+        // under a call-frame-mangled storage key, so `has_class`/`is_role`
+        // miss it by its unmangled source-facing name. `is_known_compound_type`
+        // stays gated on "::" since it only ever recognizes compound names
+        // (e.g. "IO::Path"). A type loaded by a nested `require` is excluded
+        // too: `require` installs into the CURRENT LEXICAL SCOPE rather than
+        // the enclosing package, so it must rely purely on the ordinary
+        // frame-scoped `env` check above for its (correctly frame-lifetime-
+        // bound) visibility -- see `require_loaded_type_names`'s doc comment
+        // and `roast/S11-modules/require.t`'s `GlobalOuter.load` case.
+        if !self.is_require_loaded_type_name(name)
+            && ((name.contains("::") && crate::runtime::utils::is_known_compound_type(name))
                 || self.has_class(name)
-                || self.is_role(name))
+                || self.is_role(name)
+                || (self.registry().enum_types.contains_key(name)
+                    && !self.is_my_scoped_package_item(name)))
         {
             return Value::package(Symbol::intern(name));
         }

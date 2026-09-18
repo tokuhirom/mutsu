@@ -3518,6 +3518,24 @@ pub struct Interpreter {
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: std::sync::Arc<HashSet<String>>,
+    /// Names of classes/roles/enums registered while loading a foreign
+    /// compunit via runtime `require` (`require_load_from_file`). Unlike a
+    /// plain `class`/`role`/`enum` declaration -- which always installs into
+    /// the enclosing PACKAGE no matter how deeply it is nested inside call
+    /// frames (#8683) -- `require` installs its symbols into the CURRENT
+    /// LEXICAL SCOPE of the `require` statement itself, so a type it loads
+    /// while a call frame is live must keep the ordinary frame-scoped `env`
+    /// entry as its ONLY route to indirect (`::()`) lookup, and correctly
+    /// stop resolving once that frame returns
+    /// (`roast/S11-modules/require.t`'s `GlobalOuter.load` requiring
+    /// `GlobalInner`: `::('GlobalInner')` succeeds while `.load` is still
+    /// running, and fails again once it returns). This set marks such a name
+    /// so `resolve_indirect_type_name`'s registry-backed fallback (which
+    /// exists precisely to survive a returned frame for the #8683 case) never
+    /// trusts it -- the frame-scoped `env` check earlier in that function is
+    /// untouched by this set and keeps giving a require-loaded type its
+    /// correct, frame-lifetime-bound visibility.
+    require_loaded_type_names: std::sync::Arc<HashSet<String>>,
     /// Names published by an explicit `our` declaration; wins over
     /// `my_scoped_package_items` (see `mark_our_scoped_package_item`).
     our_scoped_package_items: std::sync::Arc<HashSet<String>>,
