@@ -60,6 +60,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
+            | OpCode::ConcatAssignLocal(_)
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::CallFunc { .. }
@@ -482,6 +483,20 @@ fn build(
                     sigs.s_code_u32,
                     helpers::set_local as *const () as usize,
                     &[interp, codep, idxv],
+                )?;
+                check_status(&mut b, status);
+            }
+            // The fused `$local ~= rhs` (#8695): one shim, like `SetLocal`.
+            // The append's own fast path lives in the interpreter handler, so
+            // there is nothing to inline here — this exists so a loop that
+            // contains one still gets a JIT body at all.
+            OpCode::ConcatAssignLocal(slot) => {
+                let slotv = b.ins().iconst(types::I32, *slot as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_code_u32,
+                    helpers::concat_assign_local as *const () as usize,
+                    &[interp, codep, slotv],
                 )?;
                 check_status(&mut b, status);
             }

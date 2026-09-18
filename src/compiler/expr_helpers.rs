@@ -105,6 +105,60 @@ impl Compiler {
         }
     }
 
+    /// If `expr` is the `$local ~= rhs` shape, compile the RHS and emit a fused
+    /// [`OpCode::ConcatAssignLocal`], which performs the whole statement —
+    /// including the store — and leaves nothing on the stack; returns `true`.
+    ///
+    /// This is the compiler half of #8695. The unfused form reads the
+    /// accumulated string onto the stack *before* the RHS runs, so the buffer
+    /// is always held twice and every append has to build a fresh string:
+    /// O(n²) to accumulate n characters. Emitting the read as part of a single
+    /// post-RHS instruction is what lets the append own the buffer and grow it.
+    ///
+    /// Only the METAOP_ASSIGN spelling (`~=`, which the parser wraps in
+    /// `MetaAssignIdentity::EmptyStr`) is fused, never a literal
+    /// `$s = $s ~ rhs`: the wrapper is what makes an undefined LHS seed `''`
+    /// instead of warning, and the fused op always applies that seed.
+    pub(super) fn try_compile_fused_concat_assign_local(
+        &mut self,
+        name: &str,
+        expr: &Expr,
+    ) -> bool {
+        let Some(&slot) = self.local_map.get(name) else {
+            return false;
+        };
+        // A sigilless alias is not a container: its store suppresses
+        // itemization through `MarkParamRawBindContext`, which this op does
+        // not emit.
+        if self.sigilless_locals.contains(name) || !Self::is_plain_compound_target(name) {
+            return false;
+        }
+        let Expr::Binary { left, op, right } = expr else {
+            return false;
+        };
+        if !matches!(op, TokenKind::Tilde) {
+            return false;
+        }
+        let Expr::Unary {
+            op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
+            expr: left,
+        } = left.as_ref()
+        else {
+            return false;
+        };
+        let Expr::Var(left_name) = left.as_ref() else {
+            return false;
+        };
+        if left_name != name {
+            return false;
+        }
+        // The RHS compiles exactly as the unfused `Binary` path compiles it (a
+        // call-arg compile would itemize / escape-box a scalar operand).
+        self.compile_expr(right);
+        self.code.emit(OpCode::ConcatAssignLocal(slot));
+        true
+    }
+
     /// If `expr` is `Var(name) OP rhs` with a fusable base operator and `name`
     /// is a plain env-named scalar (not a local slot), compile the rhs and emit
     /// a fused `OpCode::AtomicCompoundVar`, leaving the new value on the stack;

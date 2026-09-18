@@ -390,8 +390,20 @@ impl Interpreter {
             .is_some_and(|sym| self.env().contains_key_sym(sym))
     }
 
-    fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
-        let idx = idx as usize;
+    /// Everything [`Self::exec_set_local_scalar_fast`] checks *before* it
+    /// commits, minus the two value-shape probes (which differ per caller):
+    /// the slot's name, the pending store flavours, and the metadata lanes.
+    ///
+    /// Extracted so `OpCode::ConcatAssignLocal`'s in-place append can ask the
+    /// same question before writing a local slot directly. Two copies of this
+    /// list would drift, and a drifted copy would take the in-place path on a
+    /// store the full path was about to treat specially — silently, since the
+    /// specialness is exactly what would be skipped.
+    pub(super) fn set_local_scalar_fast_metadata_clear(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+    ) -> bool {
         // The slot's name makes every name-derived branch inert (see the
         // bitmap's doc), and there is no `@`/`%`/`&`/attribute slot in play for
         // the wrapper's tied-store, `our`-sync and attribute-mirror steps either.
@@ -426,7 +438,7 @@ impl Interpreter {
         //     `slot_has_sigilless_meta`),
         //   - a `Failure` to turn fatal, or a declaration still in flight on
         //     another thread.
-        if crate::env::bound_array_slice_possible()
+        !(crate::env::bound_array_slice_possible()
             || self.bound_decont_active().get()
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
@@ -438,8 +450,16 @@ impl Interpreter {
             || self.slot_has_sigilless_meta(code, idx)
             || self.fatal_mode
             || !self.thread_decl_in_flight.is_empty()
-            || !code.our_locals.is_empty()
-        {
+            || !code.our_locals.is_empty())
+    }
+
+    fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
+        let idx = idx as usize;
+        // The slot's name, the pending store flavours, and every metadata lane
+        // the full path would consult — see
+        // `set_local_scalar_fast_metadata_clear`, which owns that list so the
+        // in-place `~=` append can ask exactly the same question.
+        if !self.set_local_scalar_fast_metadata_clear(code, idx) {
             return false;
         }
         // The incoming value is an ordinary scalar — nothing to unwrap, reify,

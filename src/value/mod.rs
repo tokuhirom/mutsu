@@ -495,6 +495,7 @@ mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
+mod value_str_append;
 mod view;
 pub(crate) mod waker;
 

@@ -742,6 +742,22 @@ pub(crate) enum OpCode {
         slot: u32,
         identity: crate::token_kind::MetaAssignIdentity,
     },
+    /// `$local ~= <rhs>` as ONE instruction: the fused form of
+    /// `GetLocalMetaAssign{slot, EmptyStr}; <rhs>; Concat; SetLocal(slot)`,
+    /// with the RHS already evaluated and on the stack.
+    ///
+    /// The fusion exists for ownership, not for dispatch count (#8695). The
+    /// unfused sequence reads the accumulated string onto the stack first, so
+    /// the buffer is held twice (slot + stack) by the time `Concat` runs, and
+    /// concatenation can only ever build a fresh string — O(len) per append,
+    /// O(n²) for the whole accumulation. Reading the slot *after* the RHS, and
+    /// moving the value out of it rather than cloning, leaves the append the
+    /// buffer's only holder, so it can grow in place.
+    ///
+    /// Reading the LHS after the RHS is also what rakudo does: `$s ~= f()`
+    /// where `f` assigns to `$s` answers with `f`'s write in rakudo, and with
+    /// the pre-call value in mutsu's unfused sequence (measured, 2026-09-18).
+    ConcatAssignLocal(u32),
     /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
@@ -5607,6 +5623,9 @@ impl CompiledCode {
                 | OpCode::GetLocalRaw(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::AssignExprLocal(slot)
+                // Reads AND writes its slot, so it counts as an access on both
+                // halves of every scan that asks about one.
+                | OpCode::ConcatAssignLocal(slot)
                 | OpCode::StateVarInit(slot, _) => Some(*slot),
                 OpCode::GetLocalMetaAssign { slot, .. } | OpCode::SetLocalDecl { slot, .. } => {
                     Some(*slot)
@@ -7413,7 +7432,9 @@ impl CompiledCode {
                 }
             }
             let store_slot = match op {
-                OpCode::SetLocal(slot) | OpCode::AssignExprLocal(slot) => Some(*slot),
+                OpCode::SetLocal(slot)
+                | OpCode::AssignExprLocal(slot)
+                | OpCode::ConcatAssignLocal(slot) => Some(*slot),
                 OpCode::SetLocalDecl { slot, .. } => Some(*slot),
                 _ => None,
             };
@@ -7444,7 +7465,9 @@ impl CompiledCode {
                 // The fused declaration (ADR-0006 §2.3) carries the marker with
                 // it, so it is a declaration, never a reassignment.
                 OpCode::SetLocalDecl { .. } => pending_decl = false,
-                OpCode::AssignExprLocal(slot) => {
+                // `$x ~= ...` is a reassignment of an own local, exactly like
+                // the `SetLocal` it replaces (it never declares one).
+                OpCode::ConcatAssignLocal(slot) | OpCode::AssignExprLocal(slot) => {
                     if let Some(name) = self.locals.get(*slot as usize) {
                         self_mutated.insert(Symbol::intern(name));
                     }

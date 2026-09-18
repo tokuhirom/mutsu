@@ -5657,6 +5657,14 @@ impl Interpreter {
                     })?;
                 *ip += 1;
             }
+            OpCode::ConcatAssignLocal(slot) => {
+                // The line sync the `Concat` arm performs: a `.Stringy`
+                // dispatch or a failed coercion on the general path reports
+                // from this statement.
+                self.sync_source_line(code, *ip);
+                self.exec_concat_assign_local_op(code, *slot)?;
+                *ip += 1;
+            }
             OpCode::GetLocalRaw(idx) => {
                 self.exec_get_local_raw_op(*idx);
                 *ip += 1;
