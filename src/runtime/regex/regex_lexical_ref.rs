@@ -28,13 +28,11 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Could this subrule reference name a lexical Regex? `<&x…>` sets
-    /// `token_lookup`; `<&$x…>` additionally keeps the sigil on the name.
-    /// A `my regex name { ... }` declaration is also callable as `<name>` and
-    /// is stored in the lexical `&name` lane, so ordinary unqualified names
-    /// must be eligible for the fallback too. Registry-backed rules still win
-    /// in `resolve_lexical_regex`, which keeps this additive.
+    /// `token_lookup`; `<&$x…>` additionally keeps the sigil on the name. A
+    /// pure string test, so the overwhelmingly common `<rule>` reference pays
+    /// nothing.
     pub(super) fn may_name_lexical_regex(spec: &NamedRegexLookupSpec) -> bool {
-        spec.token_lookup || spec.lookup_name.starts_with('$') || !spec.lookup_name.contains("::")
+        spec.token_lookup || spec.lookup_name.starts_with('$')
     }
 
     /// The Regex value this reference resolves to, or `None` when it does not
