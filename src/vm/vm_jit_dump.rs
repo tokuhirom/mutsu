@@ -99,6 +99,8 @@ fn helper_names() -> &'static [(usize, &'static str)] {
             (addr!(h::load_const), "load_const"),
             (addr!(h::containerize_pair), "containerize_pair"),
             (addr!(h::safepoint), "safepoint"),
+            (addr!(h::profile_safepoint), "profile_safepoint"),
+            (addr!(h::profile_line), "profile_line"),
             (addr!(h::mark_failure_top), "mark_failure_top"),
             (addr!(h::get_local), "get_local"),
             (addr!(h::meta_assign_identity), "meta_assign_identity"),

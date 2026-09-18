@@ -490,7 +490,7 @@ impl Interpreter {
                 .is_ok()
             {
                 let invocation_id = interp.take_invocation_id();
-                interp.routine_stack.push(super::super::RoutineFrame {
+                let frame = super::super::RoutineFrame {
                     package: def.package,
                     lexical_package: None,
                     name: def.name,
@@ -501,7 +501,9 @@ impl Interpreter {
                     is_block: false,
                     def_file: None,
                     invocation_id,
-                });
+                };
+                interp.record_profile_routine_frame(&frame);
+                interp.routine_stack.push(frame);
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();
                 let value = match result {

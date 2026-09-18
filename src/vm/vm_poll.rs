@@ -5,6 +5,7 @@
 //! Slice 2 will replace the placeholder profiler consumer with the sampler.
 
 use crate::gc::SafepointKind;
+use crate::opcode::CompiledCode;
 
 /// The site carried by a poll is the bytecode instruction pointer that caused
 /// it. A `u32` matches bytecode jump operands and keeps the JIT helper ABI
@@ -41,6 +42,15 @@ pub(crate) fn armed() -> bool {
     t.armed || test_profiler_enabled()
 }
 
+/// Whether the profiler consumer is armed.  JIT code generation uses this
+/// process-lifetime decision to select the location-carrying helper ABI, so a
+/// disarmed native backedge keeps the original one-argument helper shape.
+#[inline]
+pub(crate) fn profiler_armed() -> bool {
+    let t = triggers();
+    t.profiler || test_profiler_enabled()
+}
+
 /// Run the consumers for one VM poll.
 #[inline]
 pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
@@ -52,6 +62,32 @@ pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
     }
     if t.profiler || test_profiler_enabled() {
         profiler_poll(kind, site);
+    }
+}
+
+/// Poll with the bytecode chunk available for exact line counts.  Non-dispatch
+/// boundaries use [`poll`] because they do not own an instruction pointer.
+#[inline]
+pub(crate) fn poll_code(kind: SafepointKind, site: PollSite, code: &CompiledCode) {
+    let t = triggers();
+    if t.profiler || test_profiler_enabled() {
+        record_line(code, site);
+    }
+    if t.gc {
+        crate::gc::gc_safepoint_armed(kind);
+    }
+    if t.profiler || test_profiler_enabled() {
+        profiler_poll(kind, site);
+    }
+}
+
+/// Record a native line-entry hook without making it a GC safepoint.  The JIT
+/// emits this only while the profiler is armed, and the helper itself keeps
+/// the gate for test and future callers.
+#[inline]
+pub(crate) fn record_line(code: &CompiledCode, site: PollSite) {
+    if profiler_armed() {
+        crate::profile::record_line(code, site as usize);
     }
 }
 
@@ -126,8 +162,9 @@ mod tests {
 
         // The helper has the same ABI used by Cranelift. Calling it here pins
         // the value that a generated native backedge supplies to vm_poll.
+        let code = crate::opcode::CompiledCode::new();
         unsafe {
-            super::super::vm_jit_helpers::safepoint(std::ptr::null_mut(), 73);
+            super::super::vm_jit_helpers::profile_safepoint(std::ptr::null_mut(), &code, 73);
         }
 
         TEST_PROFILER_ARMED.store(false, std::sync::atomic::Ordering::Relaxed);

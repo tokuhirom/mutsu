@@ -179,7 +179,7 @@ impl Interpreter {
             }
         };
         let invocation_id = self.take_invocation_id();
-        self.routine_stack.push(RoutineFrame {
+        let frame = RoutineFrame {
             package: def.package,
             lexical_package: None,
             name: def.name,
@@ -190,7 +190,9 @@ impl Interpreter {
             is_block: false,
             def_file: None,
             invocation_id,
-        });
+        };
+        self.record_profile_routine_frame(&frame);
+        self.routine_stack.push(frame);
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec(), None));
         let result = if def.body.is_empty() {

@@ -1,0 +1,1 @@
+The profiler now records exact per-line transition counts, routine entries, and callsite calls in per-thread tables. JIT-compiled chunks emit the same line-entry hooks while profiling is armed, so their counts remain complete rather than silently partial. Report rendering will consume these counters in the later profiler output slice.

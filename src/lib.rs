@@ -22,6 +22,7 @@ mod parse_dispatch;
 mod parser;
 mod placeholder_order;
 pub(crate) mod precomp;
+pub(crate) mod profile;
 mod rakuast;
 pub(crate) mod regex_tree;
 #[cfg(feature = "native")]
@@ -62,6 +63,7 @@ pub fn arm_stack_guard(stack_size: usize) {
 pub fn dump_vm_stats() {
     vm::vm_stats::dump();
     alloc_stats::dump();
+    profile::flush_at_exit();
 }
 
 /// Count every allocation the process makes, so `alloc_scope!` regions can

@@ -62,10 +62,34 @@ pub(super) unsafe extern "C" fn containerize_pair(interp: *mut Interpreter) {
     interp.stack.push(containerized);
 }
 
-/// VM poll emitted on native backedges (ADR-0004 §2.4, ADR-0106 Slice 1).
-/// `site` is a compile-time bytecode ip supplied by the Cranelift emitter.
-pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter, site: u32) {
-    crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, site);
+/// GC-only VM poll emitted on native backedges (ADR-0004 §2.4).  The JIT
+/// selects this one-argument ABI while the profiler is disarmed, preserving
+/// the zero-cost native backedge promised by ADR-0106 Slice 1.
+pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter) {
+    crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, 0);
+}
+
+/// Location-carrying VM poll emitted on native backedges while profiling is
+/// armed.  The code pointer is the live compiled chunk received by the JIT
+/// entry, and `site` is the compile-time bytecode ip.
+pub(super) unsafe extern "C" fn profile_safepoint(
+    _interp: *mut Interpreter,
+    code: *const CompiledCode,
+    site: u32,
+) {
+    let code = unsafe { &*code };
+    crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, site, code);
+}
+
+/// Exact line-entry hook emitted at native basic-block boundaries while the
+/// profiler is armed.  It records counts without becoming another GC poll.
+pub(super) unsafe extern "C" fn profile_line(
+    _interp: *mut Interpreter,
+    code: *const CompiledCode,
+    site: u32,
+) {
+    let code = unsafe { &*code };
+    crate::vm::vm_poll::record_line(code, site);
 }
 
 /// Mark a `Failure` at the current top of stack as handled. The Tier B
