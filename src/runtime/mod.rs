@@ -2291,10 +2291,11 @@ pub struct Interpreter {
     pub(crate) literal_native_args: u32,
     /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
     /// time (clobber-safe: before the callee body runs) from
-    /// `pending_call_arg_source_slots`. The rw writeback drain
-    /// (`apply_pending_rw_writeback`) prefers this slot over the by-name `position`
-    /// resolution, so the write lands on the LIVE (inner shadow) caller slot.
-    pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, u32>,
+    /// `pending_call_arg_source_slots`. The value also records the call-frame depth
+    /// that owns the slot. The rw writeback drain (`apply_pending_rw_writeback`)
+    /// prefers this slot over the by-name resolution only at that depth, so a
+    /// nested frame with a same-named local cannot consume the pending writeback.
+    pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, (u32, usize)>,
     test_pending_callsite_line: Option<i64>,
     /// Current source line of the executing statement (`$?LINE` for internal
     /// consumers: backtraces, warn/die locations, callframe records). Lives as

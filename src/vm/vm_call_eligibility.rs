@@ -198,7 +198,13 @@ impl Interpreter {
                     // named plan only binds alias leaves to the whole value,
                     // which would make every destructured scalar see the
                     // original array and would skip inner slurpies.
-                    pd.type_constraint.is_none() && pd.sub_signature.is_none()
+                    // Named container parameters (`:@a`, `:%h`, `:&cb`) also
+                    // need the general binder: `%h` materializes nested named
+                    // pairs into a Hash, while the light path would bind the
+                    // nested Pair itself.
+                    pd.type_constraint.is_none()
+                        && pd.sub_signature.is_none()
+                        && !pd.name.starts_with(['@', '%', '&'])
                 } else {
                     // Positional params in a mixed signature: the
                     // positional-light constraints (see

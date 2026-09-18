@@ -475,7 +475,9 @@ impl Interpreter {
         }
         for (_, source) in rw_bindings {
             if let Some(&slot) = arg_source_slots.get(source) {
-                self.pending_rw_writeback_slots.insert(source.clone(), slot);
+                let owner_depth = self.call_frames.len().saturating_sub(1);
+                self.pending_rw_writeback_slots
+                    .insert(source.clone(), (slot, owner_depth));
             }
         }
     }
@@ -2204,6 +2206,67 @@ impl Interpreter {
                             bound_value =
                                 self.check_and_coerce_param_type(pd, bound_value, None, None)?;
                         }
+                        // A named hash parameter (`:%params`) collects the
+                        // entries nested in its named argument into a Hash.
+                        // The call `f(:params(query => 'value'))` arrives here
+                        // as the Pair `query => 'value'`; binding that Pair
+                        // directly leaves `%params` as a Pair, so later
+                        // mutations or hash iteration lose the named-hash
+                        // semantics. A real Hash is already in the desired
+                        // form (for example `f(:params(%options))`).
+                        if pd.name == "%"
+                            || (pd.name.starts_with('%')
+                                && pd.traits.iter().any(|trait_name| trait_name == "copy"))
+                        {
+                            let entries = match bound_value.view() {
+                                ValueView::Pair(key, value) => {
+                                    let mut entries = ValueMap::default();
+                                    entries.insert(key.clone(), value.clone());
+                                    Some(entries)
+                                }
+                                ValueView::ValuePair(key, value) => {
+                                    let mut entries = ValueMap::default();
+                                    entries.insert(key.to_string_value(), value.clone());
+                                    Some(entries)
+                                }
+                                ValueView::Array(items, _) => {
+                                    let mut entries = ValueMap::default();
+                                    for item in items.iter() {
+                                        match item.view() {
+                                            ValueView::Pair(key, value) => {
+                                                entries.insert(key.clone(), value.clone());
+                                            }
+                                            ValueView::ValuePair(key, value) => {
+                                                entries
+                                                    .insert(key.to_string_value(), value.clone());
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Some(entries)
+                                }
+                                ValueView::Seq(items) => {
+                                    let mut entries = ValueMap::default();
+                                    for item in items.iter() {
+                                        match item.view() {
+                                            ValueView::Pair(key, value) => {
+                                                entries.insert(key.clone(), value.clone());
+                                            }
+                                            ValueView::ValuePair(key, value) => {
+                                                entries
+                                                    .insert(key.to_string_value(), value.clone());
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Some(entries)
+                                }
+                                _ => None,
+                            };
+                            if let Some(entries) = entries {
+                                bound_value = Value::hash_bare_values(entries);
+                            }
+                        }
                         // Named `is copy` container param: own a distinct
                         // container, exactly like the positional arm — and give
                         // the fresh copy the "element" descriptor name (rakudo:
@@ -2563,7 +2626,66 @@ impl Interpreter {
                     // Caller source name a scalar `is rw`/`is raw` param should
                     // alias through a shared cell (set below when eligible).
                     let mut rw_shared_cell_key: Option<String> = None;
-                    if is_rw || is_raw {
+                    let arg_source_name = varref_from_value(&args[positional_idx])
+                        .map(|(source_name, _)| source_name)
+                        .or_else(|| {
+                            arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(positional_idx))
+                                .and_then(|name| name.as_ref())
+                                .cloned()
+                        });
+                    let arg_is_container_ref = matches!(
+                        args[positional_idx].unwrap_varref().view(),
+                        ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+                    );
+                    let arg_is_multidim_slice =
+                        is_multidim_slice_cells(args[positional_idx].unwrap_varref());
+                    let arg_is_source_type_object = match (
+                        arg_source_name.as_deref(),
+                        args[positional_idx].unwrap_varref().view(),
+                    ) {
+                        (Some(source_name), ValueView::Package(package)) => {
+                            args[positional_idx].varref_slot() == Some(u32::MAX) || {
+                                let package_name = package.as_str();
+                                package_name
+                                    .strip_prefix(source_name)
+                                    .is_some_and(|suffix| {
+                                        suffix.is_empty()
+                                            || suffix.chars().next().is_some_and(|ch| {
+                                                !ch.is_ascii_alphanumeric() && ch != '_'
+                                            })
+                                    })
+                                    || package_name.strip_suffix(source_name).is_some_and(
+                                        |prefix| prefix.is_empty() || prefix.ends_with("::"),
+                                    )
+                            }
+                        }
+                        _ => false,
+                    };
+                    // An implicit sigilless/raw parameter is writable only when
+                    // its argument is a real caller variable. A type object is
+                    // a value, not an lvalue; treating its source spelling as a
+                    // writeback target lets a nested callee's same-named local
+                    // clobber the caller (JSON::Unmarshal's
+                    // `maybe-nominalize(type)` exposed this).
+                    let implicit_raw_veto = is_raw
+                        && !pd.traits.iter().any(|t| t == "raw")
+                        && ((!arg_is_container_ref
+                            && !arg_is_multidim_slice
+                            && arg_source_name.is_none())
+                            || arg_is_source_type_object);
+                    // An explicit `is raw` parameter also cannot write through
+                    // a sigilless readonly source.  Such a source denotes a
+                    // value rather than a caller container; allowing the raw
+                    // writeback makes a nested call replace the caller's
+                    // type-object selector (for example `my \\type = Person`
+                    // passed through JSON::Unmarshal's `$obj is raw`).
+                    let raw_readonly_source = is_raw
+                        && arg_source_name
+                            .as_deref()
+                            .is_some_and(|name| self.name_is_readonly_binding(name));
+                    if is_rw || (is_raw && !implicit_raw_veto && !raw_readonly_source) {
                         let source_name = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
@@ -2582,7 +2704,31 @@ impl Interpreter {
                             // `inner(\container)` calling `Replace.replace(container)`).
                             let writeback_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
-                            rw_bindings.push((pd.name.clone(), writeback_source.clone()));
+                            // Preserve the caller slot even when the compiler did not attach
+                            // an arg-source descriptor (for example a raw parameter reached
+                            // through a multi candidate). Nested calls can report the same
+                            // source name while this frame is still active; keeping the first
+                            // slot lets the writeback drain retain that source until its owner
+                            // frame returns instead of applying it to a same-named callee local.
+                            if let Some(slot) = args[positional_idx]
+                                .varref_slot()
+                                .filter(|slot| *slot != u32::MAX)
+                            {
+                                self.pending_rw_writeback_slots
+                                    .entry(source_name.clone())
+                                    .or_insert((slot, self.call_frames.len().saturating_sub(1)));
+                                if writeback_source != source_name {
+                                    self.pending_rw_writeback_slots
+                                        .entry(writeback_source.clone())
+                                        .or_insert((
+                                            slot,
+                                            self.call_frames.len().saturating_sub(1),
+                                        ));
+                                }
+                            }
+                            if !implicit_raw_veto && !raw_readonly_source {
+                                rw_bindings.push((pd.name.clone(), writeback_source.clone()));
+                            }
                             // ...and to the IMMEDIATE source as well, when the
                             // two differ. A method call does not chain envs: its
                             // writeback merges only into the frame that called
@@ -2599,7 +2745,10 @@ impl Interpreter {
                             // (container, ..., :in-place)` at the root path:
                             // `Crane` is a chain of class methods forwarding one
                             // `\container`.
-                            if writeback_source != source_name {
+                            if !implicit_raw_veto
+                                && !raw_readonly_source
+                                && writeback_source != source_name
+                            {
                                 rw_bindings.push((pd.name.clone(), source_name.clone()));
                             }
                             // A plain scalar param aliasing a plain scalar caller
@@ -2648,18 +2797,11 @@ impl Interpreter {
                             // environment by a `ContainerRef`; the next use then
                             // cannot follow the imported type alias. Explicit
                             // `is rw` / `is raw` are untouched.
-                            let implicit_raw_veto = is_raw
-                                && !pd.traits.iter().any(|t| t == "raw")
-                                && (args[positional_idx].varref_slot() == Some(u32::MAX)
-                                    || (args[positional_idx].varref_slot().is_none()
-                                        && matches!(
-                                            args[positional_idx].unwrap_varref().view(),
-                                            ValueView::Package(_)
-                                        )));
                             if param_is_plain_scalar
                                 && source_is_plain_scalar
                                 && !source_is_indexed
                                 && !implicit_raw_veto
+                                && !raw_readonly_source
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
                             }
@@ -2689,17 +2831,11 @@ impl Interpreter {
                             // (not added to rw_bindings, will be marked readonly below)
                             raw_nonlvalue_params.push(pd.name.clone());
                         }
+                    } else if implicit_raw_veto || raw_readonly_source {
+                        raw_nonlvalue_params.push(pd.name.clone());
                     }
                     let raw_arg = args[positional_idx].clone();
-                    let source_name = varref_from_value(&raw_arg)
-                        .map(|(source_name, _)| source_name)
-                        .or_else(|| {
-                            arg_sources
-                                .as_ref()
-                                .and_then(|names| names.get(positional_idx))
-                                .and_then(|name| name.as_ref())
-                                .cloned()
-                        });
+                    let source_name = arg_source_name;
                     // Plain positional `@`/`%` params bind the caller's container
                     // by alias (Raku readonly-container semantics): element
                     // assignment, `.push`, `splice`, and whole-container `=`
@@ -2870,7 +3006,16 @@ impl Interpreter {
                         self.sigilless_alias_seen = true;
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
-                        if matches!(
+                        if implicit_raw_veto || raw_readonly_source {
+                            // A type object or sigilless-readonly source is a
+                            // value, not a writable source for a raw parameter.
+                            // Do not leave alias metadata behind: method calls in
+                            // the callee would otherwise report the source name as
+                            // a caller write even though no writable lvalue was
+                            // supplied.
+                            self.env.remove_sym(alias_key);
+                            self.env.insert_sym_noting(readonly_key, Value::TRUE);
+                        } else if matches!(
                             value.view(),
                             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
                         ) || is_multidim_slice_cells(&value)

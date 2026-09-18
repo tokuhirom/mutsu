@@ -1384,7 +1384,12 @@ impl Interpreter {
                     class_def.mro = mro;
                 }
                 self.native_ctor_plan_cache.clear();
-                Ok(Value::NIL)
+                // Rakudo returns the composed type object. MOP clients use
+                // that result directly (for example Test::Mock calls
+                // `$mocker.HOW.compose($mocker).CREATE`), so returning Nil
+                // loses the freshly composed type and turns the following
+                // call into an Any dispatch.
+                Ok(args[0].clone())
             }
             // `$type.HOW.add_parent($type, $parent)` — the native ClassHOW
             // metamethod a user HOW (`class MyHOW is Metamodel::ClassHOW`) reaches
@@ -1412,6 +1417,13 @@ impl Interpreter {
                     changed = true;
                 }
                 if changed {
+                    // `new_type` starts with an eagerly cached MRO. Adding a
+                    // parent must invalidate that cache before recomputing it,
+                    // otherwise the new parent is invisible to `^mro` and
+                    // role checks on instances of the dynamic type.
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
+                        class_def.mro = [].into();
+                    }
                     let mro = self.class_mro(&class_name);
                     if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                         class_def.mro = mro;
