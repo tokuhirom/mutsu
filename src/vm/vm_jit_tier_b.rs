@@ -24,6 +24,42 @@ use cranelift_frontend::FunctionBuilder;
 
 type CVal = cranelift_codegen::ir::Value;
 
+/// Which VM-poll shim a native backedge calls, decided once per process
+/// (ADR-0106 §5 step 3).
+///
+/// The bytecode ip is a compile-time immediate, but emitting it costs an
+/// argument setup on *every* native backedge — the hottest code mutsu emits —
+/// and only the profiler has any use for it. So the emitter picks the
+/// ip-carrying shim only when the profiler is armed, and every other run keeps
+/// exactly the single-argument call it had before the poll network grew a
+/// second consumer. This is sound because arming is a process-lifetime
+/// decision read from the environment at the first poll, while a chunk is
+/// compiled later, at the hotness threshold.
+#[derive(Clone, Copy)]
+pub(super) struct PollShim {
+    /// Address of the `extern "C"` shim to call.
+    pub(super) addr: usize,
+    /// `true` when `addr` is the `(interp, u32)` form and the ip is passed.
+    pub(super) with_site: bool,
+}
+
+impl PollShim {
+    /// The shim this process emits, from the current arming state.
+    pub(super) fn current() -> Self {
+        if crate::vm::vm_poll::profiler_armed() {
+            Self {
+                addr: super::vm_jit_helpers::safepoint_at as *const () as usize,
+                with_site: true,
+            }
+        } else {
+            Self {
+                addr: super::vm_jit_helpers::safepoint as *const () as usize,
+                with_site: false,
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum IntArith {
     Add,
@@ -201,15 +237,19 @@ impl TierB {
         b.ins().call_indirect(self.v1, callee, &[self.interp]);
     }
 
-    /// Call a VM poll helper with the bytecode instruction that formed the
-    /// backedge. The immediate keeps the disarmed path free of an extra load.
-    pub(super) fn call_safepoint(&self, b: &mut FunctionBuilder, f: usize, site: u32) {
-        let callee = b.ins().iconst(self.ptr_ty, f as i64);
-        let site = b
-            .ins()
-            .iconst(cranelift_codegen::ir::types::I32, site as i64);
-        b.ins()
-            .call_indirect(self.v1_u32, callee, &[self.interp, site]);
+    /// Emit the VM poll of a native backedge, in whichever form [`PollShim`]
+    /// selected for this process.
+    pub(super) fn call_poll(&self, b: &mut FunctionBuilder, shim: PollShim, site: u32) {
+        let callee = b.ins().iconst(self.ptr_ty, shim.addr as i64);
+        if shim.with_site {
+            let site = b
+                .ins()
+                .iconst(cranelift_codegen::ir::types::I32, site as i64);
+            b.ins()
+                .call_indirect(self.v1_u32, callee, &[self.interp, site]);
+        } else {
+            b.ins().call_indirect(self.v1, callee, &[self.interp]);
+        }
     }
 
     /// `Add`/`Sub`/`Mul`: pop two Int (or two Num) words, push the result.

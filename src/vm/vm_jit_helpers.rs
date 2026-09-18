@@ -63,8 +63,23 @@ pub(super) unsafe extern "C" fn containerize_pair(interp: *mut Interpreter) {
 }
 
 /// VM poll emitted on native backedges (ADR-0004 §2.4, ADR-0106 Slice 1).
-/// `site` is a compile-time bytecode ip supplied by the Cranelift emitter.
-pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter, site: u32) {
+///
+/// This is the form emitted when no consumer needs to know *where* the
+/// mutator is — i.e. every run that does not profile. It keeps the backedge
+/// call at exactly the argument setup it had before the poll network was
+/// generalized (ADR-0106 §5 step 3).
+pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter) {
+    crate::vm::vm_poll::poll(
+        crate::gc::SafepointKind::Backedge,
+        crate::vm::vm_poll::NO_SITE,
+    );
+}
+
+/// The ip-carrying form of [`safepoint`], emitted only when the profiler is
+/// armed. `site` is a compile-time immediate: the bytecode instruction whose
+/// backedge this is.
+pub(super) unsafe extern "C" fn safepoint_at(_interp: *mut Interpreter, site: u32) {
+    crate::vm::vm_poll::note_native_poll(site);
     crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, site);
 }
 

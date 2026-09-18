@@ -404,11 +404,18 @@ thread-local (`src/unit_source_file.rs`) that `CompiledCode::new()` reads — th
 already uses for `$?FILE` — so every chunk a compile produces is stamped, including the nested ones no
 walker enumerates. `--dump-bytecode` is its first consumer.
 
-Slice 1 generalizes the safepoint network into `vm_poll`, with GC as its first consumer and a
-profiler gate/site ABI ready for Slice 2; the JIT supplies the bytecode ip on native backedges.
-`tests/jit_diff.rs` pins that arming the profiler consumer preserves JIT execution. Slices 2-5 are
-not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its own gate (§8),
-and Slices 0-1 were independently useful, as claimed.
+**Slice 1** generalizes the safepoint network into `vm_poll` (`src/vm/vm_poll.rs`), with GC as its
+first consumer and a profiler gate plus site ABI ready for Slice 2. `armed()` is the single cached
+union bool; `gc_safepoint_armed` keeps the collector's trigger policy unchanged behind it. The JIT
+supplies the bytecode ip on native backedges through a **specialized shim**: `safepoint(interp)` when
+no profiler is armed (the call a backedge made before this change, unchanged), `safepoint_at(interp,
+site)` when one is — chosen once per process by `PollShim::current()`, which is sound because arming
+is fixed before any chunk reaches the hotness threshold. Two findings from the slice: Raku's own loop
+forms all compile to compound opcodes, so a backward jump never lands inside a JIT-compiled range and
+the native backedge poll is reached through `nqp::while`; and the ip-carrying poll is observable end
+to end through the `MUTSU_PROFILE=1` report line that stands in for the sampler until Slice 2
+(`tests/jit_diff.rs`). Slices 2-5 are not started; Slice 6 is explicitly optional. Each slice lands
+as its own PR with its own gate (§8), and Slices 0-1 were independently useful, as claimed.
 
 ## 10. Open questions
 

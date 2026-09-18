@@ -307,7 +307,10 @@ impl Interpreter {
 
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // GC safepoint (§9.2a `nested_run`): the nested-VM entry boundary.
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::NestedRun, 0);
+        crate::vm::vm_poll::poll(
+            crate::gc::SafepointKind::NestedRun,
+            crate::vm::vm_poll::NO_SITE,
+        );
         // Save the per-execution registers (the fields `Interpreter::new` initializes
         // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);

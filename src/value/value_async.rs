@@ -392,7 +392,7 @@ impl SharedPromise {
         // GC safepoint (§9.2a `await`): the await entry boundary, before the
         // state lock is taken (a collect here can run finalizers that touch
         // other promises/channels, so it must not hold this mutex).
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, 0);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, crate::vm::vm_poll::NO_SITE);
         let (lock, cvar) = &*self.inner;
         // STW-aware: the waiting thread counts as quiescent for the GC's
         // cooperative stop-the-world, and never resumes (cloning `Value`s
@@ -480,7 +480,7 @@ impl SharedChannel {
     pub(crate) fn receive_result(&self) -> Result<Value, Value> {
         // GC safepoint (§9.2a `await`): the blocking-receive entry, before the
         // channel lock is taken — see `SharedPromise::wait`.
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, 0);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, crate::vm::vm_poll::NO_SITE);
         let (lock, cvar) = &*self.inner;
         loop {
             // STW-aware: block (quiescent) until there is something to take or
