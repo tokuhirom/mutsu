@@ -995,7 +995,19 @@ impl Compiler {
         // boundary carries that fact to the VM so a backtrace captured in the
         // body includes it.
         self.next_try_is_bare_block = true;
-        self.compile_try_region(body, catch, true);
+        self.compile_try_region(body, catch, true, false);
+    }
+
+    /// Compile the exception-catching form used by `nqp::handle`, whose
+    /// handler expression is itself the value of the form. Ordinary `try`
+    /// and phaser regions intentionally discard their catch value.
+    pub(super) fn compile_try_with_catch_value(
+        &mut self,
+        body: &[Stmt],
+        catch: &Option<Vec<Stmt>>,
+    ) {
+        self.next_try_is_bare_block = true;
+        self.compile_try_region(body, catch, true, true);
     }
 
     /// Compile the implicit TryCatch wrapper the compiler puts around any block
@@ -1004,10 +1016,16 @@ impl Compiler {
     /// exception no handler matched propagates out of it instead of being
     /// swallowed (`{ die "x"; CONTROL { } }` dies).
     pub(super) fn compile_implicit_try(&mut self, body: &[Stmt]) {
-        self.compile_try_region(body, &None, false);
+        self.compile_try_region(body, &None, false, false);
     }
 
-    fn compile_try_region(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>, traps: bool) {
+    fn compile_try_region(
+        &mut self,
+        body: &[Stmt],
+        catch: &Option<Vec<Stmt>>,
+        traps: bool,
+        catch_value: bool,
+    ) {
         let saved = self.push_dynamic_scope_lexical();
         // Detect duplicate CATCH/CONTROL phasers in the same block: Raku
         // requires at most one of each per block (X::Phaser::Multiple).
@@ -1090,6 +1108,7 @@ impl Compiler {
             control_start: 0,
             body_end: 0,
             explicit_catch: has_explicit_catch,
+            catch_value,
             resume_safe,
             control_handles_take,
             is_bare_block,
@@ -1191,7 +1210,9 @@ impl Compiler {
             // outer CATCH can be handled by the nested CATCH.
             if Self::has_catch_or_control(catch_body) {
                 self.compile_implicit_try(catch_body);
-                self.code.emit(OpCode::Pop);
+                if !catch_value {
+                    self.code.emit(OpCode::Pop);
+                }
             } else {
                 for stmt in catch_body {
                     self.compile_stmt(stmt);
@@ -1201,8 +1222,11 @@ impl Compiler {
                 jump_after_catch = Some(self.code.emit(OpCode::Jump(0)));
             }
         }
-        // catch result is Nil
-        self.code.emit(OpCode::LoadNil);
+        // Ordinary catch/phaser regions discard their value. `nqp::handle`
+        // preserves the handler expression's result instead.
+        if !catch_value {
+            self.code.emit(OpCode::LoadNil);
+        }
         // Patch control_start.
         let catch_range_start = match self.code.ops[try_idx] {
             OpCode::TryCatch { catch_start, .. } => catch_start as usize,

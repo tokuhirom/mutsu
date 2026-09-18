@@ -12,9 +12,10 @@
 //! entirely in these ops — see `todo/tickets/cbor-simple-nqp-buf-ops.md`.
 
 use crate::builtins::mvm_array_read_buf_oob_message;
-use crate::runtime::{Interpreter, RuntimeError};
+use crate::runtime::{Interpreter, RuntimeError, path_is_readable};
 use crate::value::value_buf;
 use crate::value::{Value, ValueView};
+use std::fs;
 
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
@@ -259,6 +260,158 @@ impl Interpreter {
                     .unwrap_or_default()
                     == args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
             )),
+            "isne_s" => Ok(bool_int(
+                args.first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default()
+                    != args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
+            )),
+
+            // `nqp::stat` follows the process cwd (or the interpreter's
+            // configured cwd) and reports the basic filesystem predicates
+            // needed by the standard `paths` module. `metadata` follows
+            // symlinks, matching the POSIX stat operation rather than lstat.
+            "stat" => {
+                let path = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let code = iarg(args, 1);
+                let path_buf = self.resolve_path(&path);
+                let result = match code {
+                    0 => i64::from(path_buf.exists()), // STAT_EXISTS
+                    1..=3 => {
+                        let metadata = match fs::metadata(&path_buf) {
+                            Ok(metadata) => metadata,
+                            Err(_) => {
+                                return Some(Err(RuntimeError::new(format!(
+                                    "Failed to stat file: {path}"
+                                ))));
+                            }
+                        };
+                        match code {
+                            1 => metadata.len() as i64,         // STAT_FILESIZE
+                            2 => i64::from(metadata.is_dir()),  // STAT_ISDIR
+                            3 => i64::from(metadata.is_file()), // STAT_ISREG
+                            _ => -1,
+                        }
+                    }
+                    _ => -1,
+                };
+                Ok(Value::int(result))
+            }
+
+            // Directory handles are represented as ordinary opaque instance
+            // values. The entry names are captured at open time, while the
+            // cursor lives in the instance's shared attribute cell so aliases
+            // to the handle observe the same iteration state.
+            "opendir" => {
+                let path = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let path_buf = self.resolve_path(&path);
+                let entries = match fs::read_dir(&path_buf) {
+                    Ok(entries) => entries,
+                    Err(_) => {
+                        return Some(Err(RuntimeError::new(format!(
+                            "Failed to open directory: {path}"
+                        ))));
+                    }
+                };
+                let mut names = Vec::new();
+                for entry in entries {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(_) => {
+                            return Some(Err(RuntimeError::new(format!(
+                                "Failed to read directory: {path}"
+                            ))));
+                        }
+                    };
+                    names.push(Value::str(entry.file_name().to_string_lossy().into_owned()));
+                }
+                let mut attrs = crate::value::AttrMap::new();
+                attrs.insert("entries", Value::array(names));
+                attrs.insert("index", Value::int(0));
+                attrs.insert("closed", Value::FALSE);
+                Ok(Value::make_instance_without_destroy(
+                    crate::symbol::Symbol::intern("__NQPDirHandle"),
+                    attrs,
+                ))
+            }
+            "nextfiledir" => {
+                let handle = args.first().cloned().unwrap_or(Value::NIL);
+                let crate::value::ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = handle.view()
+                else {
+                    return Some(Err(RuntimeError::new(
+                        "nqp::nextfiledir: expected a directory handle",
+                    )));
+                };
+                if class_name.resolve() != "__NQPDirHandle" {
+                    return Some(Err(RuntimeError::new(
+                        "nqp::nextfiledir: expected a directory handle",
+                    )));
+                }
+                let (entries, index, closed) = {
+                    let attrs = attributes.as_map();
+                    (
+                        attrs.get("entries").cloned().unwrap_or(Value::NIL),
+                        attrs
+                            .get("index")
+                            .map(crate::runtime::to_int)
+                            .unwrap_or(0)
+                            .max(0) as usize,
+                        attrs.get("closed").is_some_and(Value::truthy),
+                    )
+                };
+                if closed {
+                    return Some(Ok(Value::str_from("")));
+                }
+                let Some(name) = (match entries.view() {
+                    crate::value::ValueView::Array(items, _) => items.get(index).cloned(),
+                    _ => None,
+                }) else {
+                    return Some(Ok(Value::str_from("")));
+                };
+                attributes.insert("index", Value::int((index + 1) as i64));
+                Ok(name)
+            }
+            "closedir" => {
+                let handle = args.first().cloned().unwrap_or(Value::NIL);
+                if let crate::value::ValueView::Instance { attributes, .. } = handle.view() {
+                    attributes.insert("closed", Value::TRUE);
+                }
+                Ok(Value::NIL)
+            }
+            "fileislink" => {
+                let path = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let path_buf = self.resolve_path(&path);
+                Ok(Value::int(i64::from(
+                    fs::symlink_metadata(path_buf)
+                        .map(|metadata| metadata.file_type().is_symlink())
+                        .unwrap_or(false),
+                )))
+            }
+            "filereadable" => {
+                let path = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let path_buf = self.resolve_path(&path);
+                Ok(Value::int(i64::from(
+                    fs::metadata(&path_buf)
+                        .map(|_| path_is_readable(&path_buf))
+                        .unwrap_or(false),
+                )))
+            }
 
             // -- type test --
             "istype" => {

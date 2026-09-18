@@ -483,6 +483,25 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // WhateverCode's ACCEPTS is its predicate interface: invoke the
+        // placeholder with the value being tested and return the result as a
+        // Bool. This is what paths' `:file(* eq $name)` matcher relies on;
+        // ordinary callable method composition would return a new composed
+        // Sub instead of evaluating the predicate.
+        if method == "ACCEPTS"
+            && args.len() == 1
+            && matches!(
+                data.env
+                    .get_sym(crate::symbol::well_known::callable_type())
+                    .map(Value::view),
+                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
+            )
+        {
+            return Some(
+                self.call_sub_value(target.clone(), vec![args[0].clone()], false)
+                    .map(|value| Value::truth(value.truthy())),
+            );
+        }
         if method == "nextwith" {
             // Tail-style dispatch: call target with caller frame and return from current frame.
             let saved_env = self.env.clone();

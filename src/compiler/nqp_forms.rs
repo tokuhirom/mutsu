@@ -38,6 +38,12 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
         "NORMALIZE_NFD" => 2,
         "NORMALIZE_NFKC" => 3,
         "NORMALIZE_NFKD" => 4,
+        // Filesystem stat selectors used by nqp::stat. These values follow
+        // NQP's STAT_* constants (and the order used by MoarVM).
+        "STAT_EXISTS" => 0,
+        "STAT_FILESIZE" => 1,
+        "STAT_ISDIR" => 2,
+        "STAT_ISREG" => 3,
         _ => return None,
     })
 }
@@ -107,6 +113,16 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(&args[1]);
                 self.code.patch_jump(jump_keep);
+                true
+            }
+            // nqp::handle(body, 'CATCH', handler) — evaluate the body and run
+            // the handler only when it throws. NQP uses this around filesystem
+            // operations such as opendir, where the handler can return an
+            // empty iterator after a missing directory.
+            "nqp::handle" if args.len() == 3 => {
+                let body = vec![Stmt::Expr(args[0].clone())];
+                let catch = Some(vec![Stmt::Default(vec![Stmt::Expr(args[2].clone())])]);
+                self.compile_try_with_catch_value(&body, &catch);
                 true
             }
             // nqp::while(c, body) / nqp::until(c, body) — re-evaluate the
