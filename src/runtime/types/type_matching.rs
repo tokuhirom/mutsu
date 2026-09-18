@@ -481,6 +481,21 @@ impl Interpreter {
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
         }
+        // A `ContainerRef`/`ContainerView` (a `:=`-bound or aliased element —
+        // e.g. an array slot or hash entry holding a shared cell) is checked
+        // against the type of the value it holds, not the cell itself: without
+        // this, `array_elements_match_constraint`'s element-level fallback
+        // (which does not itself deref) saw the cell's opaque shape and fell
+        // through to "no match", misreporting a perfectly type-conforming
+        // element as `Any` (`my SomeRole @x = @a.values` on an `@a` whose
+        // elements are container cells).
+        if matches!(
+            value.view(),
+            ValueView::ContainerRef(_) | ValueView::ContainerView(_)
+        ) {
+            let inner = value.deref_container();
+            return self.type_matches_value(constraint, &inner);
+        }
         // `PositionalBindFailover` is the implicit check `binding_signature.rs`
         // runs on every parameter bind, not just `@`-sigil ones (the flag is
         // computed before the sigil is looked at), to decide whether a

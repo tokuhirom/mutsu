@@ -111,7 +111,8 @@ pub(crate) fn parse_optional_role_type_params(
         }
     }
     if normalized_content == content
-        && let Ok((after_params, param_defs)) = parse_param_list(&r[1..])
+        && let Ok((params_start, _)) = ws(&r[1..])
+        && let Ok((after_params, param_defs)) = parse_param_list(params_start)
         && let Ok((rest, _)) = parse_char(after_params, ']')
     {
         for pd in &param_defs {

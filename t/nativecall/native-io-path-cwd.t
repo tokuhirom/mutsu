@@ -6,7 +6,7 @@ use Test;
 # lexical (no filesystem access), so the bytecode VM dispatches them natively,
 # sharing the single impl the interpreter's `native_io_path` also uses.
 
-plan 14;
+plan 16;
 
 {
     my $*CWD = "/base/dir".IO;
@@ -16,6 +16,18 @@ plan 14;
     is "/abs/y".IO.absolute,       "/abs/y",          "absolute of already-absolute is itself";
     is "rel/x".IO.absolute("/o"),  "/o/rel/x",        "absolute with an explicit base";
     is "/abs/y".IO.absolute("/o"), "/abs/y",          "absolute base ignored when already absolute";
+    # `.absolute`'s `$base` is POSITIONAL-only (`multi method absolute(IO::Path:D:
+    # $base --> Str)`); a `base => ...`/`:base(...)` NAMED argument does not bind
+    # to it at all, so rakudo falls back to the zero-arg `$*CWD` candidate rather
+    # than using the named value (verified against rakudo 2026.07). mutsu used to
+    # stringify the stray named argument's `Pair` itself (`args.first()` picked up
+    # the Pair, and a Pair's `.Str` is `"key\tvalue"`), producing a `"base\t..."`
+    # prefix instead of ignoring it (WebDriver2 0.1.12, ecosystem sweep — its
+    # `WebDriver2::SUT::Tree::URL.new` calls exactly `.absolute: base => $cdir`).
+    is "rel/x".IO.absolute(base => "/o"), "/base/dir/rel/x",
+        "a NAMED base=> argument does not bind the positional \$base; falls back to \$*CWD";
+    is "rel/x".IO.absolute(:base("/o")), "/base/dir/rel/x",
+        "a NAMED :base(...) argument does not bind the positional \$base; falls back to \$*CWD";
 
     # --- .relative ---
     is "/base/dir/sub/f".IO.relative,          "sub/f", "relative strips \$*CWD prefix";
