@@ -1827,21 +1827,27 @@ fn pointy_block_source(
         if !ordinary_parameter(param) {
             return None;
         }
+        let simple_type_name = |type_name: &str| {
+            type_name.split("::").all(|part| {
+                !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            })
+        };
         match (
             param.type_constraint.as_deref(),
             param.default.as_ref(),
             param.required,
         ) {
-            (Some(type_name), None, true)
-                if type_name.split("::").all(|part| {
-                    !part.is_empty()
-                        && part
-                            .chars()
-                            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-                }) =>
-            {
+            (Some(type_name), None, true) if simple_type_name(type_name) => {
                 format!("{type_name} ${}", param.name)
             }
+            (Some(type_name), Some(default), false) if simple_type_name(type_name) => format!(
+                "{type_name} ${} = {}",
+                param.name,
+                crate::regex_tree::expression_source(default)?
+            ),
             (None, Some(default), false) => format!(
                 "${} = {}",
                 param.name,

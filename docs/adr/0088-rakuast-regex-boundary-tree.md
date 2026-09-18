@@ -17,8 +17,8 @@
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
-  dynamic-argument, and typed-scalar and defaulted-scalar explicit-signature
-  slices implemented
+  dynamic-argument, and typed-scalar, defaulted-scalar, and typed-defaulted-
+  scalar explicit-signature slices implemented
   2026-09-12 through
   2026-09-18;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1489,4 +1489,24 @@ unchanged.
 The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the default node and
 parameter target, direct constructed-call defaulting, constructed regex
+lowering, and source grammar match-time lexical behavior.
+
+## 61. Typed defaulted scalar explicit-signature block-valued colonpair dynamic argument slice (2026-09-19)
+
+An ordinary single typed defaulted scalar parameter in an explicit pointy block,
+such as `<word(:expected(-> Int $candidate = 42 { ... }))>`, now survives the
+constructed RakuAST lowering boundary. The lowerer retains the signature-bearing
+`AnonSubParams` representation and the regex colonpair renderer reconstructs
+both the simple type and the `$candidate = 42` default for the existing
+match-time argument evaluator.
+
+This slice accepts one scalar parameter with a simple type name and a default
+expression. It does not widen to named/slurpy/decorated parameters, type
+captures, where constraints, traits, or statement-rich signatures. The existing
+signature binder remains responsible for enforcing the type and evaluating the
+default, and the Parser -> Compiler -> VM matcher path is unchanged.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the typed and default
+RakuAST nodes, direct constructed-call type/default behavior, constructed regex
 lowering, and source grammar match-time lexical behavior.
