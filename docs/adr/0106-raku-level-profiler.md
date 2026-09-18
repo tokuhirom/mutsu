@@ -1,0 +1,411 @@
+# ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
+
+- **Status**: Proposed (design complete; implementation not started — §9)
+- **Date**: 2026-09-18
+- **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
+  the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
+  manual translation step — from "which Rust symbol is hot" to "which Raku line pays for it" — and a
+  mutsu *user* cannot take even the first step. [#8289](https://github.com/tokuhirom/mutsu/issues/8289)
+  (the vendored `JSON::Fast` at ~63x/~126x rakudo) is the case that made the gap concrete.
+- **Relates to**: [ADR-0006](0006-baseline-interpreter-optimizations.md) (the measurement protocol
+  this profiler must not pretend to replace), [ADR-0004](0004-jit-strategy.md) and
+  [ADR-0003](0003-default-on-gc-trigger.md) (the safepoint poll network this rides),
+  [ADR-0065](0065-language-server-targets-ai-agents.md) (output is for a tool or an agent first, a
+  human browser second), [ADR-0085](0085-ecosystem-testsuite-parity-measurement.md) (the ecosystem
+  campaign that will consume this), [ADR-0096](0096-batteries-adoption-policy.md) §D3 (a measured gap
+  justifies optimizing the *real* module's path — which requires knowing which of its lines is slow),
+  [ADR-0099](0099-regex-engine-performance-strategy.md) (a perf strategy ADR whose §2 measurements had
+  to be hand-assembled for want of this tool).
+
+## 1. The gap
+
+What mutsu can measure today, and what each thing answers:
+
+| tool | question it answers |
+|---|---|
+| `callgrind` + `callgrind_annotate --tree=caller` | which **Rust** function costs instructions, and who called it |
+| `MUTSU_ALLOC_STATS` + `alloc_scope!` | how many allocations a **Rust region** performs |
+| `MUTSU_VM_STATS` | opcode histogram, fallback/carrier dispatch counts, full-resolve counts — per **opcode/name**, not per source location |
+| bench CI (`bench-history.tsv`) | whether a **whole benchmark script** got faster since the last main commit |
+| `--dump-bytecode`, `MUTSU_TRACE` | what was compiled / what executed, with no cost attached |
+
+Nothing in that table names a line of Raku. Two constituencies are blocked by that:
+
+1. **mutsu's own performance work on real modules.** The #8289 investigation is the worked example.
+   A Rust profile of `to-json` says the time is in call resolution and string hashing — true, and
+   ~3x too coarse to act on, because it does not say *which of `JSON::Fast`'s own routines and lines*
+   run often enough for that to matter. The actual root cause (`nqp::elems`/`nqp::atpos_i` copying the
+   whole element vector per call, making `str-escape` quadratic) was found by hand-writing `now`-delta
+   micro-benchmarks around suspected calls — i.e. by manually performing, over several hours, exactly
+   the attribution a line profiler performs in one run. ADR-0099 §2 is the same story at larger scale:
+   its subrule-resolution finding needed a bespoke measurement harness per hypothesis.
+2. **Users profiling their own Raku code.** For them callgrind is not a coarse tool, it is *no* tool:
+   a profile of `mutsu` tells them about mutsu's internals, which is not information they can act on.
+   Perl programmers have had `Devel::NYTProf` since 2008 and reach for it reflexively; the question
+   that prompted this ADR is exactly that reflex.
+
+There is a third, quieter reason. ADR-0096 forbids substituting a native implementation for a slow
+battery and requires optimizing the real module's path instead. That policy is only executable if the
+real module's slow *line* can be found. Without this tool, the pressure to break the policy grows with
+every vendored distribution.
+
+## 2. Prior art
+
+### 2.1 Perl — `Devel::NYTProf`, the thing being asked for
+
+Mechanism: a `runops` replacement that fires at every **statement** boundary (each `nextstate`/COP op
+carries file+line), plus subroutine entry/exit hooks. Each event reads a high-resolution clock, so
+both statement time and sub time are **deterministic** (exact counts, measured times), with
+**caller attribution** ("this sub cost 3.1s, of which 2.9s when called from `Foo::bar` line 42") and
+correct handling of string `eval`s. The profile is written to a compact binary file and rendered
+offline (`nytprofhtml`) into per-source-file pages annotated line by line.
+
+Two properties explain why it displaced everything else in Perl: the report is *the source code with
+numbers on it* (no mental mapping needed), and the sub/caller table tells you where to cut, not just
+where the time is. The cost is the usual deterministic-profiler tax: commonly 2-6x slowdown, and a
+distortion that falls hardest on call-heavy code.
+
+### 2.2 Rakudo / MoarVM — routine-level, and no statement-level anything
+
+`raku --profile[=name]` (instrumented, the default `--profile-kind`) is the built-in. Its JSON output,
+inspected directly on this box (rakudo 2026.07, `raku --profile=tmp/prof.json`), is:
+
+- a **frame table**: `{ id → { name, file, line } }` — one entry per routine/block, where `line` is the
+  routine's **declaration** line;
+- a **call graph**: nodes of `{ id, entries, inclusive_time, exclusive_time, first_entry_time,
+  callees, allocations, mono/poly/mega }` (µs; the `mono`/`poly`/`mega` counters are dispatch-inline-cache
+  state, and allocations are counted per type).
+
+So it is a call-graph profiler with allocation accounting and spesh/JIT visibility — genuinely good,
+and **routine-granular**. Around it:
+
+- `--profile-compile` profiles the compilation phase; `--profile-kind=heap` writes heap snapshots for
+  `App::MoarVM::HeapAnalyzer` (`moar-ha`); `--profile-filename` picks the file; the extension picks
+  HTML/JSON/SQL.
+- **moarperf** (`MoarVM::Profile` in the ecosystem) is the web front-end for that JSON.
+- **`Telemetry`** (core module): `snap`/`T`/`snapper` — periodic sampling of *resource counters*
+  (wallclock, CPU, GC runs, spesh, thread state), not of code locations. It answers "what was the VM
+  doing", never "which line".
+- Ecosystem: `Grammar::Profiler::Simple` (per-rule counts/time for grammars), `Grammar::Tracer`,
+  `MoarVM::Remote` / `App::MoarVM::Debug` (remote debug protocol, stepping and stack inspection).
+
+**There is no Devel::NYTProf-class statement-level profiler for Raku.** That is worth stating plainly,
+because it has two consequences for this decision: there is no upstream format to be compatible with
+for the line half (§6g), and a line profiler is not mutsu catching up — it is mutsu ahead.
+
+### 2.3 Python — the clearest split between counting and sampling
+
+- `cProfile`/`profile` + `pstats`: deterministic, **function**-level, built in.
+- **`line_profiler` / `kernprof`**: deterministic **line**-level, opt-in per function (`@profile`).
+  The direct NYTProf analogue, and instructive: it is opt-in precisely because per-line deterministic
+  timing is too expensive to leave on for a whole program.
+- `pyinstrument` (sampling, call-stack, low overhead), **`py-spy`** (out-of-process sampling — attaches
+  to a running process and reads its memory), `yappi` (per-thread, wall and CPU).
+- **`Scalene`**: samples, attributes **per line**, and separates *Python time from native time* and
+  memory growth per line. It is the tool whose output most resembles what mutsu needs (§4 D4).
+- `memray` for allocations.
+- PEP 669 `sys.monitoring` (3.12) gave the VM a set of **arm-able, near-zero-when-off event hooks**
+  (including `LINE`), replacing the old blanket `sys.settrace`. The direction of travel is:
+  *the VM provides cheap armed hooks; tools stop paying for what they do not use.*
+
+### 2.4 Ruby — same split, arrived at from the other end
+
+- `ruby-prof`: deterministic, C extension, call graphs and several measure modes.
+- **`stackprof`**: sampling (`:cpu`/`:wall`/`:object`), and its `:line` mode attributes samples to
+  file:line — a sampled line profiler, the exact shape proposed here.
+- `vernier`: newer sampling profiler with a timeline view and GVL awareness.
+- `rbspy`: out-of-process sampling, like py-spy.
+- `TracePoint` (line/call/return events) and `Coverage` (line/branch/method counts) are the VM-provided
+  hooks tools build on; the old stdlib `profile.rb` was dropped.
+
+### 2.5 What the field agrees on
+
+1. **Counts are instrumented; time is sampled.** Every ecosystem that started with deterministic
+   timing (Perl, Python, Ruby) grew a sampling profiler next to it, and the sampling one is what people
+   run first. Exact counts stay valuable and stay cheap.
+2. **Line granularity is worth having and nobody pays deterministic timing for it by default.**
+   `line_profiler` is opt-in-per-function; `stackprof :line` is sampled.
+3. **The most useful modern tool is the one that splits the user's time from the runtime's**
+   (Scalene). For a young interpreter whose runtime cost *is* the story, that is not a nice-to-have;
+   it is the feature.
+
+## 3. What mutsu already has (why this is much cheaper than it looks)
+
+- **A static ip→line table on every chunk.** `CompiledCode::op_lines: Vec<u32>`, parallel to `ops`,
+  with `line_at(ip)`. It is already compiled, already paid for, and is exactly NYTProf's COP data. The
+  per-statement `SetSourceLine` opcode was deliberately removed in favour of it (refreshing the line on
+  every op measured +7.8% instructions on fib).
+- **A poll network, already placed, already armed by one cached load.** `gc_safepoint(SafepointKind)`
+  has ten kinds — `Backedge`, `Call`, `Return`, `Await`, `ReactPoll`, `LazyForce`, `NestedRun`,
+  `ThreadJoin`, `Manual`, construction — sited across all thirteen bytecode dispatch loops and the
+  async machinery, gated by `gc::armed()` (a cached bool; `MUTSU_GC=off` pays one load).
+- **The JIT polls it too.** `vm_jit_compile.rs` emits a call to `vm_jit_helpers::safepoint` on native
+  backedges (ADR-0004 §2.4), and `vm_jit.rs` polls on entry. A profiler riding this network gets
+  JIT-compiled code covered on day one rather than as a special case.
+- **A Raku-level call stack.** `RoutineFrame { package, name, line, file, def_file, is_method,
+  is_block, invocation_id }` is pushed on every dispatch path (ADR-0037 slice 1), which is the
+  shadow stack a sampler needs — no new bookkeeping.
+- **`FunctionData::source_file` / `source_file_sym()`** — per-routine file identity with a memoized
+  `Symbol`.
+- **Two precedents for arm-by-env-var instrumentation that costs nothing when off**: `MUTSU_VM_STATS`
+  (histograms behind one relaxed atomic load, summary at exit) and `MUTSU_ALLOC_STATS` (compiled out
+  entirely behind a cargo feature).
+
+Two gaps, both small and both on the critical path:
+
+- **`CompiledCode` has no file identity.** `op_lines` is line-only; the current file lives in the env
+  (`?FILE`, `wk::file()`) and on `FunctionData`. A line profiler needs `(file, line)`, so the chunk must
+  carry a compunit/file id (§5 Slice 0).
+- **`cur_source_line` is not the executing line.** It is refreshed only where a line can be *observed*
+  — 89 `sync_source_line` call sites, all at call/reentry/raise boundaries. Between those it is stale.
+  It is a correct *call-site* line and a wrong *sample* line (§6b).
+
+## 4. Decision
+
+**D1 — Sampled time, instrumented counts.** Time attribution is statistical: a timer arms a tick, the
+next poll takes one sample. Counts (per-line hits, per-routine entries, per-callsite calls) are exact,
+taken at chokepoints that already exist. mutsu does **not** time every statement by default.
+
+**D2 — A sample resolves `(chunk, ip)` through the static table, at report time.** The sample path
+records the identity of the chunk and the instruction pointer; `op_lines`/`line_at` maps it to a line
+when the report is built, not while the mutator is running. Never `cur_source_line` (§6b).
+
+**D3 — A sample carries the whole Raku-level stack**, not just its top: the `RoutineFrame` stack,
+top frame refined to `(chunk, ip)`. This is what buys self time, inclusive time and **caller
+attribution** — NYTProf's most useful column, and the one thing a flat line table cannot give.
+
+**D4 — Native time is attributed to the Raku line on top of the stack, and tagged with the
+interpreter phase it was spent in.** A per-thread region tag (`call-resolve`, `method-dispatch`,
+`regex`, `gc`, `parse`, `io`, `nqp`, `native-builtin:<name>`) is set at the few chokepoints that
+already exist for stats, so a report line reads
+
+> `JSON-Fast/lib/JSON/Fast.rakumod:412   38.1% self   (of which 71% call-resolve, 12% gc)`
+
+This is the Scalene property from §2.3, and it is the feature that closes the loop with the Rust-level
+tooling: the profile names the Raku line **and** the interpreter subsystem, so a callgrind session is
+entered with a hypothesis instead of a hunch.
+
+**D5 — Counts are exact; only counts are ever asserted in a test.** Per-line hit counts come from the
+line-transition edge (`op_lines[ip] != last_line`) under the armed gate; per-routine entry counts from
+the frame push. Both are deterministic and independent of load and optimization level — the same
+property that makes `MUTSU_VM_STATS` usable in the debug build. **Tests assert counts and structure,
+never a duration or a sample count**: a test that asserts "this line got ≥N samples" is a flaky test by
+construction, and under this repo's definition of risk (flaky tests, reduced compatibility, band-aids)
+shipping one would be a worse outcome than shipping no profiler.
+
+**D6 — The profiled program is the program.** JIT and GC stay on under profiling; nothing is recompiled
+in a "profiling mode" bytecode shape. This is a hard requirement, not a preference: a profiler that
+changes JIT eligibility measures a program the user will never run. It is affordable precisely because
+of D1 — sampling does not need per-op instrumentation, and the poll network already covers native code.
+`--profile-jit=off` exists as an explicit A/B knob, and the report header records which it was.
+
+**D7 — Output is a documented JSON document plus a built-in text summary.** JSON first because the
+primary consumers are tooling and agents (ADR-0065's stance) and because the ecosystem-parity campaign
+will want to diff profiles across runs. The text summary must be good enough to make HTML optional:
+top-N self lines, top-N inclusive routines, per-caller breakdown for the top routines, region split.
+HTML rendering is out of scope for the first implementation.
+
+**D8 — Surface**: `--profile[=FILE]` (rakudo-compatible spelling; default `mutsu-prof.json`),
+`--profile-kind=line|routine|both` (default `both`), `--profile-rate=<Hz>` (default 1000),
+`--profile-report=<json|text|both>`, and `MUTSU_PROFILE=1` / `MUTSU_PROFILE_RATE` for env-armed runs
+(matching how every other mutsu instrument is armed). Rakudo spellings that mean something different
+in mutsu (`--profile-kind=heap`) are **not** claimed until they do that thing; an unknown kind is a CLI
+option error per [ADR-0017](0017-cli-option-errors-follow-rakudo.md).
+
+## 5. Mechanism, by slice
+
+Each slice is independently landable and independently useful; the order is chosen so the first one
+that lands already answers a question nobody can answer today.
+
+### Slice 0 — file identity on the chunk
+
+Add `source_file: Option<Symbol>` (or a compunit id into a side table of paths) to `CompiledCode`,
+set by the compiler from the unit being compiled, propagated to closure chunks. `line_at(ip)` gains a
+sibling `location_at(ip) -> Option<(Symbol, u32)>`. No runtime cost: a field read at report time.
+Independent value: backtraces and error metadata get a chunk-local file without an env probe.
+
+### Slice 1 — generalize the poll network
+
+`gc::armed()` becomes `vm_poll::armed()` = `gc_armed | profiler_armed` (one cached load, same shape),
+and `gc_safepoint(kind)` becomes the GC consumer of a `vm_poll(kind, site)` entry point. The JIT's
+`helpers::safepoint` shim gains an ip argument — the backedge ip is a compile-time immediate in the
+emitted code, so this is one extra `iconst` per backedge and nothing at runtime when disarmed.
+
+Gate: `perf stat -e instructions:u` on `bench-fib` / `bench-tak` / `bench-mandelbrot`, profiler
+compiled in and disarmed, must be within noise (≤0.5%) of the pre-slice binary, per ADR-0006's protocol.
+
+### Slice 2 — the sampler
+
+- A **timer thread** sets a per-thread `AtomicBool` tick at the configured rate (all registered mutator
+  threads, so threaded programs are covered rather than silently under-reported).
+- A poll that observes its tick: read the clock once, walk the `RoutineFrame` stack plus the active
+  `(chunk, ip)`, and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
+  path performs **no allocation** and takes no lock — it writes fixed-size frames (chunk id, ip,
+  routine id, region tag) into reserved space, which keeps the profiler out of its own measurement
+  (an allocating sampler would pollute both the GC's candidate buffer and the alloc-stats counters).
+- Weighting: each sample carries the elapsed time since the previous sample **on that thread**, so a
+  long region that delays the poll contributes its real duration rather than a fixed tick's worth.
+- Aggregation happens at run end (or when a buffer fills) off the hot path: samples fold into a
+  `(file, line) → {self, inclusive}` table and a caller-keyed routine table.
+
+### Slice 3 — exact counts
+
+In the dispatch loops, under the armed gate only, compare `code.op_lines[ip]` with the last recorded
+line and bump a per-`(chunk,line)` counter on a change. This is one indexed load and a compare on a
+path that is already gated; when disarmed it is not reached at all. Per-routine entry counts and
+per-callsite call counts come from the frame push, which already runs on every dispatch path.
+
+Result: the report has NYTProf's two columns — *how many times* (exact) and *how long* (sampled).
+
+### Slice 4 — region tags
+
+A per-thread `region: u8` set/restored at the chokepoints that already exist for `MUTSU_VM_STATS`
+accounting (`resolve_function_with_types`, the method-dispatch entry, the regex walk entry, GC
+safepoint work, the parser entry, native builtin dispatch). Set under the armed gate; a plain
+thread-local store, no atomics. This is what produces D4's "of which 71% call-resolve".
+
+### Slice 5 — report, schema, docs, tests
+
+- JSON schema documented in `docs/profiler.md`: header (mutsu version, argv, JIT/GC state, rate,
+  wall time, sample count, **an explicit `"time_is_sampled": true`**), per-file per-line rows
+  (`hits` exact, `self_us`/`incl_us` sampled, region split), routine rows with caller breakdown.
+- Text renderer for the same document.
+- Tests (`t/` — category per `docs/t-directory-layout.md`): run a fixture script with a known shape,
+  assert **counts and structure** — the hot line appears, its `hits` is exactly the loop trip count,
+  the caller table links the right routines, the JSON parses and carries the header. No timing
+  assertion anywhere.
+
+### Slice 6 — optional, only if a case appears
+
+Compile/parse-phase profiling (rakudo's `--profile-compile`; mutsu's parse cost is real —
+[#8095](https://github.com/tokuhirom/mutsu/issues/8095)); a MoarVM-shaped export of the routine half so
+moarperf can open it; HTML; a Raku-level API (`use Telemetry`-alike) over the same data.
+
+### What the report has to say to be worth building
+
+For #8289, a five-minute triage instead of an afternoon would have read approximately (illustrative
+shape, not measured data):
+
+```
+mutsu-prof: 6.2s wall, 6,143 samples @1000Hz, jit=on gc=on
+TOP SELF LINES
+  1  modules/JSON-Fast/lib/JSON/Fast.rakumod:412   41.3%  hits 1,904,000   [nqp 78% | call-resolve 14%]
+  2  modules/JSON-Fast/lib/JSON/Fast.rakumod:389   18.7%  hits   238,000   [call-resolve 61% | gc 9%]
+TOP ROUTINES (inclusive)
+  str-escape          88.1%   entries 1,204   <- to-json:117 (99%)
+```
+
+Line 412's `hits` being an order of magnitude larger than the loop it sits in is the quadratic scan;
+the `[nqp 78%]` tag names the subsystem to open callgrind on. Both facts are on screen without a
+hypothesis having been formed first — that is the whole value proposition.
+
+## 6. Rejected alternatives
+
+**(a) Reintroduce a per-statement opcode (a profiling-mode `SetSourceLine`).** The data is already in
+`op_lines`, so this buys nothing but a second bytecode shape — and a different shape means different
+JIT eligibility and different dispatch counts, i.e. profiling a program the user does not run
+(violates D6). It was removed for a measured +7.8% on fib; re-adding it even conditionally re-opens a
+settled question.
+
+**(b) Attribute samples from `cur_source_line`.** Rejected, and worth recording *why* because it is
+the obvious shortcut: `cur_source_line` is refreshed only at the 89 `sync_source_line` observation
+points, so between calls it holds the line of the last call site. A sampler reading it would produce
+a plausible-looking profile that systematically credits time to call sites instead of to the code
+doing the work. For a measurement tool, "wrong but plausible" is the worst available failure mode.
+
+**(c) Deterministic per-statement timing (a true NYTProf) as the default.** Two clock reads per
+statement, on a VM whose *call path* is the known bottleneck ([#7573](https://github.com/tokuhirom/mutsu/issues/7573)),
+distorts exactly the programs most in need of profiling — and the distortion is not uniform, so
+comparing two profiled runs is unsound. Deferred, not banned: if a case appears for exact statement
+timing on a small region, it can be a later `--profile-kind=exact` over the same infrastructure.
+
+**(d) `SIGPROF` signal-based sampling.** The classic way to escape safepoint bias, and rejected for
+the first implementation: an async signal handler inside this VM would have to be safe against the GC,
+the allocator and every borrow state the interrupted code holds, and the poll network already covers
+JIT-compiled code (which is the usual reason to reach for signals). Revisit only if measurement shows
+bias from long native regions the poll network cannot interrupt — the cheaper fix there is an explicit
+poll inside those few loops (regex scan, sort, large-list map), which mutsu owns.
+
+**(e) Out-of-process sampling (py-spy / rbspy style).** Genuinely valuable for production (attach to a
+running process, no cooperation needed) and far too expensive now: it needs a versioned, stable
+in-memory layout for the frame stack that mutsu cannot promise while ADR-0077/0078/0092 are still
+moving the stacks around. Revisit when mutsu has long-running production users.
+
+**(f) Force `MUTSU_JIT=off` while profiling.** Simplifies the sampler and measures a different
+program (see D6). Kept as an explicit flag for A/B work, never as the default.
+
+**(g) Adopt MoarVM's profile JSON as mutsu's native format.** Attractive for the free moarperf UI, and
+wrong as the *native* format: the schema has nowhere to put per-line data (its `line` is a routine's
+declaration line, §2.2) and carries MoarVM-specific fields (`spesh_time`, `mono`/`poly`/`mega`,
+type-keyed allocations) mutsu would have to fabricate or leave empty. An **exporter** for the
+routine-level half is a legitimate Slice 6 nice-to-have; the line data stays in mutsu's own document.
+
+**(h) Ship it as a Raku-level module instead of VM support.** A `Telemetry`-alike, or wrapping routines
+from Raku, cannot see the line currently executing, cannot see native time, and would pay Raku-level
+call costs per event. A module surface over the VM's data is a fine later addition; it is not the
+mechanism.
+
+## 7. Consequences
+
+**Gained**
+
+- Perf work stops guessing. ADR-0096's "optimize the real module, never substitute for it" becomes
+  executable by someone who has not already memorized the module; ADR-0085's parity campaign gets a
+  triage tool for the slow-but-passing distributions it keeps finding.
+- A user-facing capability rakudo does not have (§2.2), on a compatibility-driven project that usually
+  measures itself by how much of rakudo it has caught up with.
+- The Rust-level and Raku-level views finally join up through D4's region tags, instead of being two
+  separate investigations connected by intuition.
+
+**Paid**
+
+- The poll network gains a second consumer. Its off-cost must stay at one cached load, which is a
+  standing gate (§8), not a one-time check.
+- A new output format to keep stable enough for tooling to consume, and a `docs/profiler.md` to keep
+  honest.
+- A discipline risk worth naming: **sampled numbers must never be quoted as authoritative in
+  documents.** PERFORMANCE.md / PLAN.md / `news/` numbers continue to come from the bench CI
+  (`bench-history.tsv`), per the existing rule. The report header carries `"time_is_sampled": true`
+  so a pasted profile cannot be mistaken for a measurement.
+
+**Residual risks and what answers each**
+
+| risk | answer |
+|---|---|
+| safepoint bias (a long native region delays the poll) | elapsed-time weighting (Slice 2) plus explicit polls in the few long loops mutsu owns; §6d if measurement still shows bias |
+| threaded programs under-sampled | per-thread tick + per-thread buffers from the start, not a retrofit |
+| `EVAL`/precomp chunks with no file | Slice 0 gives every chunk an identity, including a synthetic one for `EVAL` (rendered as `EVAL#<n>`, as NYTProf does) |
+| profiler perturbs GC/alloc statistics | no allocation on the sample path; buffers pre-reserved at arm time |
+| a flaky timing test sneaks in | D5 — the test suite may assert counts and structure only |
+
+## 8. Gates
+
+1. **Disarmed cost**: ≤0.5% instructions on `bench-fib`, `bench-tak`, `bench-mandelbrot`
+   (`perf stat -e instructions:u`, ADR-0006 protocol) with the profiler compiled in. Fails → the poll
+   generalization is wrong, not the profiler.
+2. **Armed cost**: ≤1.3x wall on `bench-json-fast` at 1000 Hz for `--profile-kind=line`. (For scale:
+   NYTProf is commonly 2-6x; sampling should be far cheaper, and if it is not, the sample path is
+   allocating or locking.)
+3. **Attribution correctness**: on a fixture whose hot line is known by construction, the top self line
+   is that line, and its exact `hits` equals the trip count — asserted in `t/`.
+4. **JIT parity**: the same fixture profiled with `--profile-jit=off` and on produces the same top line
+   and the same `hits` (only the times differ). This is the check that the JIT backedge poll works.
+
+## 9. Implementation status
+
+Not started. Slices 0-5 are the deliverable; Slice 6 is explicitly optional. Each slice lands as its
+own PR with its own gate (§8), and Slice 0 is independently useful if the rest is deferred.
+
+## 10. Open questions
+
+- **Rate and clock.** 1000 Hz default is a guess borrowed from stackprof/py-spy; the right default
+  should be measured against gate 2. Which clock (`Instant`, `clock_gettime(CLOCK_MONOTONIC)`,
+  `CLOCK_THREAD_CPUTIME_ID`) — wall is the right default for an interpreter whose costs include I/O
+  and GC, but a CPU-time mode may be worth having for threaded runs.
+- **Allocation attribution per line.** Cheap to add once `alloc-stats` and the sampler coexist
+  (Scalene and MoarVM both do it, and mutsu's costs are allocation-shaped often enough to want it).
+  Deliberately out of the first implementation to keep the sample path non-allocating and the scope
+  honest.
+- **Inclusive time across `EVAL` and thread boundaries** — a `start` block's samples belong to their
+  own thread's stack; whether the report should also fold them into the spawning line is a reporting
+  decision, not a mechanism one, and can be made after the first real profiles exist.
