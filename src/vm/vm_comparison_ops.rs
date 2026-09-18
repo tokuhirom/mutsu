@@ -296,18 +296,16 @@ impl Interpreter {
             // numeric size, not their individual elements. Handle this before
             // the numeric bridge turns each positional value into its `.Int`
             // size, and normalize the cross-variant collection case as well.
-            let is_numeric_collection = |value: &Value| {
-                matches!(
-                    value.view(),
-                    ValueView::Array(..)
-                        | ValueView::Seq(..)
-                        | ValueView::Slip(..)
-                        | ValueView::Range(..)
-                        | ValueView::RangeExcl(..)
-                        | ValueView::RangeExclStart(..)
-                        | ValueView::RangeExclBoth(..)
-                        | ValueView::GenericRange { .. }
-                )
+            let is_numeric_collection = |value: &Value| match value.view() {
+                ValueView::Array(_, kind) => !kind.is_itemized(),
+                ValueView::Seq(..)
+                | ValueView::Slip(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => true,
+                _ => false,
             };
             vm.reify_map_grep_seq(&l)?;
             vm.reify_map_grep_seq(&r)?;
