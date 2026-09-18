@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 153;
+plan 161;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -797,3 +797,62 @@ ok GDynamicTypedSignatureColonPairArgument.parse('a').defined,
 $typed_value = 41;
 ok !GDynamicTypedSignatureColonPairArgument.parse('a').defined,
     'a typed signature keeps its outer lexical dynamic';
+
+my $default_signature_ast =
+    Q[/<word(:expected(-> $candidate = 42 { $candidate == 42 }))>/].AST;
+my $default_signature_gist = $default_signature_ast.gist;
+ok $default_signature_gist.contains('default => RakuAST::IntLiteral.new(42)'),
+    'a defaulted signature keeps its default expression';
+ok $default_signature_gist.contains('name => "\\$candidate"'),
+    'a defaulted signature keeps its parameter target';
+ok EVAL($default_signature_ast) ~~ Regex,
+    'a source defaulted-signature regex lowers successfully';
+
+my $default_parameter = RakuAST::Parameter.new(
+    target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+    default => RakuAST::IntLiteral.new(42),
+);
+my $default_statements = RakuAST::StatementList.new;
+$default_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $default_pointy = RakuAST::PointyBlock.new(
+    signature => RakuAST::Signature.new(parameters => [$default_parameter]),
+    body => RakuAST::Blockoid.new($default_statements),
+);
+my &default_callable = EVAL($default_pointy);
+is &default_callable(), 42,
+    'a constructed defaulted pointy block supplies its default';
+is &default_callable(7), 7,
+    'a constructed defaulted pointy block accepts an explicit argument';
+
+my $default_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(expression => $default_pointy),
+        ),
+    ),
+);
+my $default_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($default_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($default_constructed_ast) ~~ Regex,
+    'a hand-built defaulted-signature regex lowers through the matcher';
+
+my $default_value = 42;
+grammar GDynamicDefaultedSignatureColonPairArgument {
+    token TOP { <word(:expected(-> $candidate = $default_value { $candidate == 42 }))> };
+    token word(:$expected) { <.alpha> <?{ $expected() }> }
+}
+ok GDynamicDefaultedSignatureColonPairArgument.parse('a').defined,
+    'a defaulted signature reaches the named subrule without an argument';
+$default_value = 41;
+ok !GDynamicDefaultedSignatureColonPairArgument.parse('a').defined,
+    'a defaulted signature keeps its outer lexical dynamic';

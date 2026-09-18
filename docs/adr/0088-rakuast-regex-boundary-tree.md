@@ -17,7 +17,8 @@
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
-  dynamic-argument, and typed-scalar explicit-signature slices implemented
+  dynamic-argument, and typed-scalar and defaulted-scalar explicit-signature
+  slices implemented
   2026-09-12 through
   2026-09-18;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1465,4 +1466,27 @@ Parser -> Compiler -> VM matcher path is unchanged.
 The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the typed parameter's
 RakuAST shape, direct constructed-call type enforcement, constructed regex
+lowering, and source grammar match-time lexical behavior.
+
+## 60. Defaulted scalar explicit-signature block-valued colonpair dynamic argument slice (2026-09-18)
+
+An ordinary single defaulted scalar parameter in an explicit pointy block, such
+as `<word(:expected(-> $candidate = 42 { ... }))>`, now survives the
+constructed RakuAST lowering boundary. The lowerer keeps the pointy block on
+the signature-bearing `AnonSubParams` path instead of collapsing it to
+`Expr::Lambda`, whose execution shape cannot carry a default expression. The
+regex colonpair renderer reconstructs the bounded `$candidate = 42` spelling
+for the existing match-time argument evaluator.
+
+This slice accepts one untyped scalar parameter with a default expression. It
+does not widen to typed defaults, named/slurpy parameters, optional parameters
+without defaults, where constraints, traits, or statement-rich signatures.
+The existing signature binder remains responsible for evaluating the default
+when the regex assertion calls the constructed callable without that
+positional argument, and the Parser -> Compiler -> VM matcher path is
+unchanged.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the default node and
+parameter target, direct constructed-call defaulting, constructed regex
 lowering, and source grammar match-time lexical behavior.

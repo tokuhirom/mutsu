@@ -1792,9 +1792,9 @@ fn colonpair_value_source(expr: &Expr) -> Option<String> {
 /// Render the deliberately small explicit pointy-signature subset accepted by
 /// the regex colonpair write direction. The source parser already supports all
 /// closure signatures; this helper reconstructs ordinary multiple bare scalar
-/// parameters and one typed scalar parameter from a hand-built RakuAST tree.
-/// Defaults, slurpy, named, and trait-bearing parameters remain separate
-/// boundaries.
+/// parameters, one typed scalar parameter, and one defaulted scalar parameter
+/// from a hand-built RakuAST tree. Slurpy, named, and trait-bearing parameters
+/// remain separate boundaries.
 fn pointy_block_source(
     param_defs: &[crate::ast::ParamDef],
     body: &[crate::ast::Stmt],
@@ -1805,8 +1805,6 @@ fn pointy_block_source(
                 .name
                 .chars()
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-            && param.default.is_none()
-            && param.required
             && !param.named
             && !param.slurpy
             && !param.double_slurpy
@@ -1826,23 +1824,39 @@ fn pointy_block_source(
     };
 
     let params = if let [param] = param_defs {
-        let type_name = param.type_constraint.as_deref()?;
-        if !ordinary_parameter(param)
-            || !type_name.split("::").all(|part| {
-                !part.is_empty()
-                    && part
-                        .chars()
-                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-            })
-        {
+        if !ordinary_parameter(param) {
             return None;
         }
-        format!("{type_name} ${}", param.name)
+        match (
+            param.type_constraint.as_deref(),
+            param.default.as_ref(),
+            param.required,
+        ) {
+            (Some(type_name), None, true)
+                if type_name.split("::").all(|part| {
+                    !part.is_empty()
+                        && part
+                            .chars()
+                            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                }) =>
+            {
+                format!("{type_name} ${}", param.name)
+            }
+            (None, Some(default), false) => format!(
+                "${} = {}",
+                param.name,
+                crate::regex_tree::expression_source(default)?
+            ),
+            _ => return None,
+        }
     } else {
         if param_defs.len() < 2
-            || !param_defs
-                .iter()
-                .all(|param| ordinary_parameter(param) && param.type_constraint.is_none())
+            || !param_defs.iter().all(|param| {
+                ordinary_parameter(param)
+                    && param.type_constraint.is_none()
+                    && param.default.is_none()
+                    && param.required
+            })
         {
             return None;
         }
@@ -2404,7 +2418,8 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             })
         }
         // A pointy block in expression position (`-> $x { … }`) is a closure. A
-        // single plain parameter lowers to `Expr::Lambda`; zero or several to
+        // single plain parameter without a default lowers to `Expr::Lambda`;
+        // zero or several to
         // `AnonSubParams` — which is exactly what the parser builds for
         // `-> { … }`, an arity-0 closure that (unlike a bare block) rejects
         // arguments. Keep a typed single parameter on `AnonSubParams`: Lambda
@@ -2414,9 +2429,9 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
-                1 if param_defs
-                    .first()
-                    .is_some_and(|param| param.type_constraint.is_none()) =>
+                1 if param_defs.first().is_some_and(|param| {
+                    param.type_constraint.is_none() && param.default.is_none()
+                }) =>
                 {
                     Ok(Expr::Lambda {
                         param: params.into_iter().next().unwrap(),
