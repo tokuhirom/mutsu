@@ -8,8 +8,8 @@
 //! - [`collect`] — the synchronous trial-deletion collector that reclaims
 //!   cycles from the candidate buffer.
 //! - [`safepoint`] — the trigger policy (ADR-0003 adaptive size threshold, or
-//!   the `MUTSU_GC_EVERY_CANDIDATE` stress period) and the `gc_safepoint`
-//!   entry point the VM calls at re-entry boundaries (dispatch backedge).
+//!   the `MUTSU_GC_EVERY_CANDIDATE` stress period) and the GC consumer called
+//!   by `vm_poll` at re-entry boundaries (dispatch backedge).
 //! - [`stw`] — the cooperative stop-the-world (design §6.1): a collect waits
 //!   until every other mutator thread is parked at a safepoint or inside a
 //!   registered blocking wait, then scans.
@@ -40,7 +40,7 @@ pub(crate) use gc_ptr::{
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 pub(crate) use safepoint::{
     SafepointKind, armed as gc_safepoints_armed,
-    current_size_threshold as gc_current_size_threshold, gc_safepoint,
+    current_size_threshold as gc_current_size_threshold, gc_safepoint_armed,
     startup_collect_if_requested,
 };
 pub(crate) use stw::{

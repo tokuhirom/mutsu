@@ -1043,7 +1043,7 @@ impl Interpreter {
         list: &LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
         // GC safepoint (§9.2a `lazy_force`): the strict-force entry boundary.
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::LazyForce, 0);
         let caller_code = self.current_code;
         // The body runs under its OWN readonly context, not the consumer
         // frame's (see take_readonly_state).
@@ -1451,7 +1451,7 @@ impl Interpreter {
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
         // GC safepoint (§9.2a `lazy_force`): the bounded pull/resume boundary.
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::LazyForce, 0);
         let caller_code = self.current_code;
         // The body runs under its OWN readonly context, not the consumer
         // frame's (see take_readonly_state).

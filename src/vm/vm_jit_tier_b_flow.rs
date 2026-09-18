@@ -20,6 +20,7 @@ impl TierB {
         b: &mut FunctionBuilder,
         target: cranelift_codegen::ir::Block,
         backedge: bool,
+        site: u32,
         safepoint_fn: usize,
         mark_fn: usize,
         cond_fn: usize,
@@ -52,7 +53,7 @@ impl TierB {
         // branch is taken; the shim is a cheap top-of-stack check.
         self.call_v1(b, mark_fn);
         if backedge {
-            self.call_v1(b, safepoint_fn);
+            self.call_safepoint(b, safepoint_fn, site);
         }
         b.ins().jump(target, &[]);
 
@@ -64,7 +65,7 @@ impl TierB {
             let poll = b.create_block();
             b.ins().brif(cond, poll, &[], fall, &[]);
             b.switch_to_block(poll);
-            self.call_v1(b, safepoint_fn);
+            self.call_safepoint(b, safepoint_fn, site);
             b.ins().jump(target, &[]);
         } else {
             b.ins().brif(cond, target, &[], fall, &[]);
@@ -81,6 +82,7 @@ impl TierB {
         b: &mut FunctionBuilder,
         target: cranelift_codegen::ir::Block,
         backedge: bool,
+        site: u32,
         safepoint_fn: usize,
         cond_fn: usize,
     ) {
@@ -99,7 +101,7 @@ impl TierB {
 
         b.switch_to_block(take);
         if backedge {
-            self.call_v1(b, safepoint_fn);
+            self.call_safepoint(b, safepoint_fn, site);
         }
         b.ins().jump(target, &[]);
 
@@ -115,7 +117,7 @@ impl TierB {
             let poll = b.create_block();
             b.ins().brif(cond, poll, &[], fall, &[]);
             b.switch_to_block(poll);
-            self.call_v1(b, safepoint_fn);
+            self.call_safepoint(b, safepoint_fn, site);
             b.ins().jump(target, &[]);
         } else {
             b.ins().brif(cond, target, &[], fall, &[]);

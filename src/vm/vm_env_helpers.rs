@@ -53,7 +53,7 @@ impl Interpreter {
         // GC safepoint (§9.2a `call`): the frame-push boundary holds no
         // container borrow. Self-gated — one cached load unless `MUTSU_GC`
         // arms a trigger.
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, 0);
         crate::vm::vm_stats::record_clone_env();
         // Save the caller env by an O(1) clone (an Arc bump, even when scoped):
         // it is only restored on return, so it need not be flattened. The callee
@@ -91,7 +91,7 @@ impl Interpreter {
     /// flavors now open a scope for two integer ops.
     pub(super) fn push_light_call_frame(&mut self) {
         // GC safepoint (§9.2a `call`) — see `push_call_frame`.
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, 0);
         crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
@@ -117,7 +117,7 @@ impl Interpreter {
     pub(super) fn pop_call_frame(&mut self) -> VmCallFrame {
         // GC safepoint (§9.2a `return`): the frame-pop / return-merge boundary
         // holds no container borrow (the return value is an owned stack root).
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::Return);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Return, 0);
         let mut frame = self
             .call_frames
             .pop()

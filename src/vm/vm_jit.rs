@@ -357,10 +357,10 @@ pub(crate) fn try_enter_range(
         }
     };
     crate::vm::vm_stats::record_jit_entry();
-    // The interpreter loop polls the GC safepoint once per opcode; a native
+    // The interpreter loop polls the VM network once per opcode; a native
     // body polls only its own backedges. The enclosing compound loop's
     // per-iteration poll therefore lands here, before each native body run.
-    crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+    crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, start as u32);
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
     match status {

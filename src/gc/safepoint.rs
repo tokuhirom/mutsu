@@ -4,7 +4,8 @@
 //! The collector ([`super::collect::collect_cycles_at`]) may only run at a
 //! *re-entry boundary* — a point holding no long borrow / lock / `gc_contents_mut`
 //! (design doc §1.2). This module holds the trigger policy and the one hot-path
-//! entry point ([`gc_safepoint`]) the VM calls at those boundaries.
+//! GC consumer ([`gc_safepoint_armed`]) called by the shared `vm_poll` entry
+//! point at those boundaries.
 //!
 //! ## Triggers (design doc §9.2)
 //! - `MUTSU_GC=off` disables everything: [`armed`] is `false`, so the VM's
@@ -363,14 +364,11 @@ pub(crate) fn note_candidate_push() {
     }
 }
 
-/// A re-entry-boundary safepoint. Runs a collect iff a trigger fires. Cheap and
-/// a no-op unless [`armed`]; safe to call anywhere the caller holds no borrow
-/// into a `Gc`-managed container (design doc §1.2).
+/// Run the GC consumer after the shared VM-poll gate has established that GC
+/// is armed. Keeping the gate outside this function lets `vm_poll` make one
+/// composite cached-load decision for GC and the profiler.
 #[inline]
-pub(crate) fn gc_safepoint(kind: SafepointKind) {
-    if !armed() {
-        return;
-    }
+pub(crate) fn gc_safepoint_armed(kind: SafepointKind) {
     // Another thread may have stopped the world for its cycle scan: park here
     // until it releases (one load when no stop is requested — see gc::stw).
     super::stw::park_at_safepoint();
