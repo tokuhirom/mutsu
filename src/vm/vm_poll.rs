@@ -184,6 +184,11 @@ mod tests {
     #[test]
     fn jit_safepoint_forwards_the_backedge_site_to_the_second_consumer() {
         let _lock = test_lock();
+        // Built BEFORE the consumer is armed: `Interpreter::new` polls the
+        // network itself (`SafepointKind::Construct`), so arming first would
+        // put that poll in the log this test reads.
+        let code = crate::opcode::CompiledCode::new();
+        let mut interp = crate::runtime::Interpreter::new();
         TEST_POLLS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -192,8 +197,6 @@ mod tests {
 
         // The helper has the same ABI used by Cranelift. Calling it here pins
         // the value that a generated native backedge supplies to vm_poll.
-        let code = crate::opcode::CompiledCode::new();
-        let mut interp = crate::runtime::Interpreter::new();
         unsafe {
             super::super::vm_jit_helpers::profile_safepoint(&mut interp, &code, 73);
         }
