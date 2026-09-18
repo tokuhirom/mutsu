@@ -121,19 +121,10 @@ pub(crate) fn record_line(code: &CompiledCode, site: PollSite, interp: &Interpre
     }
 }
 
-/// Parse the Slice 5-compatible environment gate early, while keeping this
-/// slice independent of the profiler's eventual CLI and report machinery.
+/// Whether this run profiles at all, decided by the profiler's own option
+/// surface (`--profile`, or `MUTSU_PROFILE=1`): see `profile::options`.
 fn profile_enabled() -> bool {
-    match std::env::var("MUTSU_PROFILE").ok().as_deref() {
-        Some("1") => true,
-        None | Some("0") => false,
-        Some(other) => {
-            eprintln!(
-                "[mutsu profiler] warning: unrecognized MUTSU_PROFILE={other:?}, treating as 0"
-            );
-            false
-        }
-    }
+    crate::profile::options::armed()
 }
 
 /// The poll-network half of the profiler consumer that needs no interpreter:

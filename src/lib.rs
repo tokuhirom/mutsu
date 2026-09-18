@@ -56,6 +56,33 @@ pub fn arm_stack_guard(stack_size: usize) {
     vm::vm_stack_guard::init_thread_stack_floor(stack_size);
 }
 
+/// Configure the Raku-level profiler from the command line (ADR-0106 D8).
+///
+/// `mutsu`'s own CLI calls this once, before the program runs, with whatever
+/// `--profile*` flags it parsed; an embedder may call it to arm the profiler
+/// without an environment variable. An `Err` carries the message to report for
+/// a value mutsu does not implement — the caller owns the stream and the exit
+/// status, which for the `mutsu` binary is rakudo's (stderr, status 1).
+///
+/// Ignored once the profiler's options have already been resolved, which for
+/// the CLI cannot happen: option parsing runs before the first VM poll.
+pub fn profile_configure(options: ProfileCliOptions) -> Result<(), String> {
+    profile::configure(options)
+}
+
+pub use profile::options::CliOptions as ProfileCliOptions;
+
+/// Force the JIT on or off for this process, overriding `MUTSU_JIT`.
+///
+/// This is `--profile-jit`'s A/B knob (ADR-0106 D6: the profiled program is the
+/// program, so profiling does not change JIT eligibility by itself). It must be
+/// called before the first chunk becomes hot; the CLI calls it while parsing
+/// options. In a build without the `jit` feature there is no JIT to switch on,
+/// and `jit_enabled()` keeps reporting `false`.
+pub fn set_jit_enabled(enabled: bool) {
+    vm::vm_jit::set_cli_override(enabled);
+}
+
 /// Print VM -> interpreter fallback statistics to stderr.
 ///
 /// No-op unless the `MUTSU_VM_STATS` environment variable is set. Used to track

@@ -299,7 +299,22 @@ impl Interpreter {
     /// light, method, and closure dispatch paths with one implementation.
     pub(crate) fn record_profile_routine_frame(&self, frame: &super::RoutineFrame) {
         if crate::vm::vm_poll::profiler_armed() {
-            crate::profile::record_routine_frame(frame);
+            // Called *before* the push, so the stack's top is the caller: the
+            // call site is in its body, and therefore in its declaring file.
+            // The frame's own `file` is the dynamically-scoped `?FILE`, which
+            // still names the mainline while a `use`d module's routine runs
+            // (#8719), so using it would file the module's callsites under the
+            // script's path. Walking outward resolves a `def_file: None`
+            // ("the same file as the caller") the way its contract says; it
+            // stops at the first frame that names a file, which all but
+            // synthetic and inlined-block frames do.
+            let caller_file = self
+                .routine_stack
+                .iter()
+                .rev()
+                .find_map(|caller| caller.def_file)
+                .or(frame.file);
+            crate::profile::record_routine_frame(frame, caller_file);
         }
     }
 

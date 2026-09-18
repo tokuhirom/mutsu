@@ -19,6 +19,7 @@ use super::paths;
 use super::{CallsiteLocation, LineLocation, RoutineLocation};
 use crate::opcode::CompiledCode;
 use crate::runtime::RoutineFrame;
+use crate::symbol::Symbol;
 use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -117,7 +118,15 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
 /// Reset the line-transition edge after a routine frame is pushed, then count
 /// the exact routine entry and its call site when that site has a source
 /// location.
-pub(crate) fn record_routine_frame(frame: &RoutineFrame) {
+///
+/// `caller_file` is the file the *call site* is in, resolved by the caller from
+/// the frame stack (`Interpreter::record_profile_routine_frame`): the frame's
+/// own `file` is the dynamically-scoped `?FILE`, which still names the mainline
+/// while a `use`d module's routine is running ([#8719]), so trusting it files
+/// a module's callsites under the script's path.
+///
+/// [#8719]: https://github.com/tokuhirom/mutsu/issues/8719
+pub(crate) fn record_routine_frame(frame: &RoutineFrame, caller_file: Option<Symbol>) {
     LAST_LINE.with(|cell| cell.set(None));
     with_tables(|tables| {
         let routine = RoutineLocation {
@@ -128,7 +137,7 @@ pub(crate) fn record_routine_frame(frame: &RoutineFrame) {
             file: frame.def_file.or(frame.file),
         };
         *tables.routine_entries.entry(routine).or_default() += 1;
-        if let (Some(caller_file), Some(caller_line)) = (frame.file, frame.line) {
+        if let (Some(caller_file), Some(caller_line)) = (caller_file, frame.line) {
             let callsite = CallsiteLocation {
                 caller_file,
                 caller_line,

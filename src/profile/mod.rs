@@ -14,17 +14,25 @@
 //!   native builtin, an `nqp::` op, GC. Without it a profile names the Raku
 //!   line and leaves the next step -- which part of mutsu -- to callgrind.
 //!
+//! [`options`] is the surface all of that is armed through (`--profile`,
+//! `MUTSU_PROFILE=1`), and [`document`] / [`text`] / [`report`] are the output:
+//! one JSON document, one text rendering of the same document, both emitted at
+//! process exit.
+//!
 //! Everything here is reached only from inside the armed branch of
 //! [`crate::vm::vm_poll`], so a run that never profiles does not execute a
 //! single instruction of it (ADR-0106 §8 gates 1/1b/1c).
 
 pub(crate) mod aggregate;
 pub(crate) mod counts;
+pub(crate) mod document;
+pub(crate) mod options;
 pub(crate) mod paths;
 pub(crate) mod region;
 pub(crate) mod report;
 pub(crate) mod sampler;
 pub(crate) mod snapshot;
+pub(crate) mod text;
 
 use crate::symbol::Symbol;
 
@@ -63,6 +71,7 @@ pub(crate) struct LineRegion {
 }
 
 pub(crate) use counts::{record_line_at, record_routine_frame};
+pub(crate) use options::configure;
 pub(crate) use region::{Region, enter};
 pub(crate) use report::flush_at_exit;
 pub(crate) use sampler::{arm, exclude_non_raku, sample_if_due};

@@ -179,6 +179,19 @@ pub(crate) fn local_read_unspoiled() -> bool {
 pub(crate) type JitEntryFn =
     unsafe extern "C" fn(*mut Interpreter, *const CompiledCode, *const CompiledFns) -> u32;
 
+/// `--profile-jit=on|off`, which ADR-0106 D6 keeps as an explicit A/B knob:
+/// the profiled program is the program, so the JIT stays in whatever state the
+/// run would have had unless a flag says otherwise. `0` = nothing said,
+/// `1` = off, `2` = on. Set from the CLI before the first `jit_enabled()` call,
+/// which is why a plain relaxed store is enough: nothing reads it until the
+/// option list has been parsed.
+static CLI_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Force the JIT on or off for this process, overriding `MUTSU_JIT`.
+pub(crate) fn set_cli_override(on: bool) {
+    CLI_OVERRIDE.store(if on { 2 } else { 1 }, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// True when the JIT is switched on for this process. **Default ON** since
 /// the ADR-0004 J5 gates passed (2026-07-13): gc-stress × jit-stress green,
 /// startup budget unchanged, and every bench-CI `+jit` series at or ahead of
@@ -194,7 +207,27 @@ pub(crate) type JitEntryFn =
 #[inline]
 pub(crate) fn jit_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| match std::env::var("MUTSU_JIT").ok().as_deref() {
+    *ENABLED.get_or_init(
+        || match CLI_OVERRIDE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => false,
+            2 => true,
+            _ => jit_enabled_from_env(),
+        },
+    )
+}
+
+/// A JIT this build has no code for is off, whatever the flag said. The CLI
+/// warns when `--profile-jit=on` is asked of such a build; here it is simply
+/// the truth the report header prints.
+#[cfg(not(feature = "jit"))]
+#[inline]
+pub(crate) fn jit_enabled() -> bool {
+    false
+}
+
+#[cfg(feature = "jit")]
+fn jit_enabled_from_env() -> bool {
+    match std::env::var("MUTSU_JIT").ok().as_deref() {
         Some(v) if v == "0" || v.eq_ignore_ascii_case("off") => false,
         Some(v) if v == "1" || v.eq_ignore_ascii_case("on") => true,
         None => true,
@@ -202,7 +235,7 @@ pub(crate) fn jit_enabled() -> bool {
             eprintln!("[mutsu jit] warning: unrecognized MUTSU_JIT={other:?}, defaulting to on");
             true
         }
-    })
+    }
 }
 
 /// Call-count threshold before a chunk is considered hot and compiled.

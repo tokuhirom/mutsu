@@ -122,27 +122,14 @@ thread_local! {
 /// Arm the sampler. Called once, from the poll network's arm-time trigger
 /// computation, so nothing here exists in a disarmed run (§8 gate 1b).
 pub(crate) fn arm() {
-    let tick = match std::env::var("MUTSU_PROFILE_TICK").ok().as_deref() {
-        None | Some("timer") => Tick::Timer,
-        Some("every-poll") => Tick::EveryPoll,
-        Some(other) => {
-            eprintln!(
-                "[mutsu profiler] warning: unrecognized MUTSU_PROFILE_TICK={other:?}, using timer"
-            );
-            Tick::Timer
-        }
-    };
-    let rate_hz = match std::env::var("MUTSU_PROFILE_RATE").ok().as_deref() {
-        None => DEFAULT_RATE_HZ,
-        Some(text) => match text.parse::<u64>() {
-            Ok(hz) if (1..=1_000_000).contains(&hz) => hz,
-            _ => {
-                eprintln!(
-                    "[mutsu profiler] warning: MUTSU_PROFILE_RATE={text:?} is not a rate in 1..=1000000, using {DEFAULT_RATE_HZ}"
-                );
-                DEFAULT_RATE_HZ
-            }
-        },
+    // Rate and tick come from the resolved options (`--profile-rate`, or
+    // `MUTSU_PROFILE_RATE`/`MUTSU_PROFILE_TICK` for an env-armed run): the CLI
+    // and the environment must not be able to disagree about them, and the
+    // options module is where that is settled once.
+    let (tick, rate_hz) = match super::options::get() {
+        Some(options) => (options.tick, options.rate_hz),
+        // Armed through the test hook rather than the options.
+        None => (Tick::Timer, super::options::DEFAULT_RATE_HZ),
     };
     let _ = CONFIG.set(SamplerConfig {
         tick,
@@ -154,10 +141,6 @@ pub(crate) fn arm() {
         Tick::EveryPoll => EVERY_POLL.store(true, Ordering::Relaxed),
     }
 }
-
-/// stackprof and py-spy both default here; ADR-0106 §10 leaves the number open
-/// until gate 2 has been measured at a few rates.
-const DEFAULT_RATE_HZ: u64 = 1000;
 
 /// The tick source. Detached on purpose: it holds no state anything else
 /// reads, so the process exits out from under it without a join.
