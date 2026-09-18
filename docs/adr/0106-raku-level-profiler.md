@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Proposed (design complete; Slices 0-3 shipped, Slices 4-5 not started — §9)
+- **Status**: Accepted (Slices 0-5 shipped; Slice 6 optional and unstarted — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -603,7 +603,12 @@ profiler gate/site ABI ready for Slice 2; the JIT supplies the bytecode ip on na
 when the profiler is armed. `tests/jit_diff.rs` pins that arming the profiler consumer preserves JIT
 execution. Slice 3 adds per-thread exact line-transition counters, routine entries, and callsite
 calls, folding them off the hot path; native code emits line-entry hooks while armed so JIT counts
-are not silently partial.
+are not silently partial. Being *transition* counters has a consequence the design did not call out
+and the first profiles made visible: a loop whose body occupies a single line never transitions, so
+its `hits` is one per loop entry rather than one per trip, for every loop form. Whether a backedge
+landing on the same line should record a hit — which would touch the counter's cheapest branch and
+re-open the §8 gates — is [#8737](https://github.com/tokuhirom/mutsu/issues/8737); `docs/profiler.md`
+documents the behaviour as it is.
 
 Slice 2 adds the sampler: a detached tick thread at `MUTSU_PROFILE_RATE` Hz (1000 by default), a
 thread-local `last_seen` compared inside the armed branch, and per-thread buffers reserved at arm
@@ -669,7 +674,8 @@ implementation settled that the sketch left open:
   reconciliation: it changes no Raku-visible file, and #8719 still owns settling the divergence
   at the source.
 
-Slice 6 is explicitly optional and unstarted. Each slice landed as its own PR with its
+Slice 6 is explicitly optional and unstarted, tracked as
+  [#8738](https://github.com/tokuhirom/mutsu/issues/8738). Each slice landed as its own PR with its
 own gate (§8), and Slices 0-5 were each independently useful, as claimed.
 
 ## 10. Open questions
@@ -679,11 +685,13 @@ own gate (§8), and Slices 0-5 were each independently useful, as claimed.
   (wall), which is right for an interpreter whose costs include I/O and GC; whether a
   `CLOCK_THREAD_CPUTIME_ID` mode is worth having for threaded runs is still open, and is the thing
   that would make `sampled_ns` comparable to `wall_ns` on a multi-threaded profile instead of
-  summing past it.
+  summing past it. Tracked as
+  [#8739](https://github.com/tokuhirom/mutsu/issues/8739).
 - **Allocation attribution per line.** Cheap to add once `alloc-stats` and the sampler coexist
   (Scalene and MoarVM both do it, and mutsu's costs are allocation-shaped often enough to want it).
   Deliberately out of the first implementation to keep the sample path non-allocating and the scope
-  honest.
+  honest. Tracked as [#8740](https://github.com/tokuhirom/mutsu/issues/8740).
 - **Inclusive time across `EVAL` and thread boundaries** — a `start` block's samples belong to their
   own thread's stack; whether the report should also fold them into the spawning line is a reporting
-  decision, not a mechanism one, and can be made after the first real profiles exist.
+  decision, not a mechanism one, and can be made after the first real profiles exist. Tracked as
+  [#8741](https://github.com/tokuhirom/mutsu/issues/8741).
