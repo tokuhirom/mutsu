@@ -212,17 +212,33 @@ impl Interpreter {
         &self,
         candidates: &mut [(String, Arc<FunctionDef>)],
     ) {
-        candidates.sort_by(|a, b| {
-            let a_rank = self.candidate_specificity_rank(&a.1);
-            let b_rank = self.candidate_specificity_rank(&b.1);
-            // Equal narrowness: Rakudo picks the candidate declared first, so
-            // the registration stamp decides. The registry key string is only
-            // the last resort (defs built outside a registration path share
-            // stamp 0), and keeps the order deterministic.
-            b_rank
-                .cmp(&a_rank)
-                .then(a.1.decl_order.cmp(&b.1.decl_order))
-                .then(a.0.cmp(&b.0))
+        // Decorate-sort-undecorate, via `sort_by_cached_key`, which calls the
+        // key closure exactly once per element.
+        //
+        // `candidate_specificity_rank` walks the candidate's whole declared
+        // signature. Computing it *inside* a `sort_by` comparator ran it
+        // `2·n·log(n)` times per sort where `n` computations suffice — 424 for
+        // a 40-candidate family against the 40 needed — and this sort runs on
+        // every dispatch of a multi, once per fallback layer that gathers a
+        // list. It was the largest single share of a subset-typed multi call
+        // (`candidate_specificity_rank_for_args`, 17.8% of
+        // [#8696](https://github.com/tokuhirom/mutsu/issues/8696)'s profile).
+        //
+        // The key reproduces the previous comparator exactly, so the resulting
+        // order is unchanged: rank descending (hence `Reverse`), then — for
+        // equal narrowness, where Rakudo picks the candidate declared first —
+        // the registration stamp ascending, then the registry key string,
+        // which is only the last resort (defs built outside a registration
+        // path share stamp 0) and keeps the order deterministic. The key
+        // string is cloned because that last tie-break is load-bearing:
+        // leaving it to the sort's stability would order those defs by however
+        // the caller's gather happened to collect them.
+        candidates.sort_by_cached_key(|(key, def)| {
+            (
+                std::cmp::Reverse(self.candidate_specificity_rank(def)),
+                def.decl_order,
+                key.clone(),
+            )
         });
     }
 
