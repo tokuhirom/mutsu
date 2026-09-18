@@ -789,6 +789,7 @@ impl Interpreter {
         self.func_multi_cache_generation = self.fn_resolve_gen;
         self.func_multi_resolve_cache.clear();
         self.func_multi_type_cacheable.clear();
+        self.func_multi_argkey_cacheable.clear();
     }
 
     /// Whether a multi *sub* `name` (in `pkg`) has a dispatch that is purely
@@ -813,53 +814,13 @@ impl Interpreter {
             return c;
         }
         let candidates = self.resolve_all_multi_candidates_indexed(name);
-        let mut value_dependent = false;
-        'outer: for def in &candidates {
-            for pd in &def.param_defs {
-                if pd.where_constraint.is_some() || pd.literal_value.is_some() {
-                    value_dependent = true;
-                    break 'outer;
-                }
-                // A code-signature callback param (`&cb:(Int)`) or a capture
-                // subsignature (`|c($a, $b)`) dispatches on the argument's
-                // *signature/shape*, not its `value_type_name` (a callback is
-                // always "Sub"), so type-keying would mis-route it.
-                if pd.code_signature.is_some() || pd.sub_signature.is_some() {
-                    value_dependent = true;
-                    break 'outer;
-                }
-                // A CONSTRAINED `&`-sigil parameter dispatches on the passed
-                // routine's declared RETURN type — `multi f(Int &x)` vs
-                // `multi f(Str &x)` (roast S06-multi/type-based.t) — and every
-                // routine has the same `value_type_name`, so no argument type
-                // key can tell the two calls apart. Same family as the two
-                // signature checks above; an unconstrained `&x` is fine.
-                if pd.name.starts_with('&') && pd.type_constraint.is_some() {
-                    value_dependent = true;
-                    break 'outer;
-                }
-                // An `is rw` candidate matches only a writable-lvalue argument —
-                // a call-site property, not an arg-type one — so `f($var)` and
-                // `f("lit")` need different winners under one type key.
-                if pd.traits.iter().any(|t| t == "rw") {
-                    value_dependent = true;
-                    break 'outer;
-                }
-                // A coercion (`Int(Str)`), an enum-value / `::`-qualified
-                // refinement, a value-refining numeric pseudo-type or a subset
-                // makes the winner depend on the argument's value. A trailing
-                // `:D`/`:U`/`:_` smiley does not: `multi_arg_type_keys` carries
-                // the definedness bit. See `type_constraint_is_value_dependent`,
-                // shared with the method-side gate so both agree on the key
-                // shape they are guarding.
-                if let Some(tc) = &pd.type_constraint
-                    && self.type_constraint_is_value_dependent(tc)
-                {
-                    value_dependent = true;
-                    break 'outer;
-                }
-            }
-        }
+        // The per-candidate rule lives in `dispatch_narrow.rs` because the
+        // per-argument-type refinement there must narrow away exactly the
+        // candidates that make this gate say `false`; two copies of the rule
+        // could drift apart and make that refinement unsound.
+        let value_dependent = candidates
+            .iter()
+            .any(|def| self.def_has_value_dependent_param(def));
         // A SINGLE candidate counts. The gate used to require two, on the
         // reasoning that one candidate is what the name-keyed light-call caches
         // already handle — but a lone `multi sub` is registered only under its
@@ -923,7 +884,14 @@ impl Interpreter {
         // `RwLock` read plus a `String` heap allocation on a path that runs on
         // every multi call, and both spellings intern to the same symbol.
         let pkg_sym = self.current_package_sym();
-        if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
+        if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name)
+            // The family carries a value-dependent candidate, but the winner is
+            // still a pure function of the argument types whenever every such
+            // candidate is ruled out by its DECLARED base types for these
+            // argument types — which is the whole of the subset-typed case
+            // ([#8696](https://github.com/tokuhirom/mutsu/issues/8696) step 2).
+            && !self.func_multi_argkeys_cacheable(pkg_sym, name_sym, name, args, &arg_keys)
+        {
             return self.resolve_function_with_types(name, args);
         }
         let key = (pkg_sym, name_sym, arg_keys);
