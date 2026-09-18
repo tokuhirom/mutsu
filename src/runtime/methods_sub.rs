@@ -155,6 +155,29 @@ impl Interpreter {
         if method == "candidates" && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
         }
+        if matches!(method, "rw" | "readonly") && args.is_empty() {
+            // A `Routine` handle reached through `.^can` on an auto-generated
+            // attribute accessor (`has $.x is rw`) carries no `SubData` (see
+            // `collect_can_methods`'s `Value::routine_parts` construction), so
+            // `dispatch_sub_method`'s `data.is_rw` never runs for it and this
+            // fell through to "No such method" (Object::Permission's
+            // `trait_mod:<is>` calls `$meth.rw` on exactly this shape). Look
+            // the accessor's own `is rw` up from the class attribute table
+            // instead; a name with no matching public attribute (an ordinary
+            // method reached this way, e.g. via the Mixin/RakuAst branches of
+            // `collect_can_methods`) defaults to not-rw, matching Raku's
+            // default for a method with no `is rw`.
+            let is_rw = self
+                .collect_class_attributes(package)
+                .into_iter()
+                .find(|attr| attr.is_public && attr.name == name)
+                .is_some_and(|attr| attr.is_rw);
+            return Some(Ok(Value::truth(if method == "rw" {
+                is_rw
+            } else {
+                !is_rw
+            })));
+        }
         if matches!(method, "line" | "file") && args.is_empty() {
             // A `Routine` value names a routine by (package, name) and carries
             // no body of its own — a proto/token reached by name, or a core
@@ -395,6 +418,8 @@ impl Interpreter {
                     | "file"
                     | "wrap"
                     | "unwrap"
+                    | "rw"
+                    | "readonly"
             );
             return Some(Ok(Value::truth(can)));
         }
