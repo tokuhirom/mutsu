@@ -32,6 +32,7 @@ use super::region::Region;
 use super::sampler;
 use super::snapshot::SampledSnapshot;
 use super::{CallsiteLocation, LineLocation, RoutineLocation};
+use crate::alloc_stats::LineAllocation;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
@@ -63,6 +64,10 @@ pub(crate) struct Header {
     /// the profiled program is the program).
     pub(crate) jit: &'static str,
     pub(crate) gc: &'static str,
+    /// Whether this document carries exact source-line allocation totals from
+    /// an `alloc-stats` build. Such a document deliberately has no sampled
+    /// time, because the counting allocator changes allocation timing.
+    pub(crate) allocation_stats: bool,
     /// Always `true`. Kept as a field rather than implied by the `_us` suffix
     /// so that a consumer, or a person pasting a row into a document, cannot
     /// miss it.
@@ -110,8 +115,16 @@ pub(crate) struct LineRow {
     pub(crate) self_us: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) incl_us: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) allocations: Option<AllocationRow>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) regions: Vec<LineRegionRow>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct AllocationRow {
+    pub(crate) count: u64,
+    pub(crate) bytes: u64,
 }
 
 #[derive(Serialize, Clone)]
@@ -180,9 +193,13 @@ pub(crate) fn build(
     options: &ProfileOptions,
     counts: CountsSnapshot,
     samples: SampledSnapshot,
+    allocations: Vec<(LineLocation, LineAllocation)>,
 ) -> Profile {
     let header = build_header(options, &samples);
-    let files = options.kind.lines().then(|| build_files(&counts, &samples));
+    let files = options
+        .kind
+        .lines()
+        .then(|| build_files(&counts, &samples, &allocations));
     let routines = options
         .kind
         .routines()
@@ -226,6 +243,7 @@ fn build_header(options: &ProfileOptions, samples: &SampledSnapshot) -> Header {
         report: options.report.name(),
         jit: on_off(crate::vm::vm_jit::jit_enabled()),
         gc: on_off(crate::gc::gc_enabled()),
+        allocation_stats: crate::alloc_stats::line_attribution_enabled(),
         time_is_sampled: true,
         blocked_threads_absent: true,
         // Absent when the sampler never armed — an embedder that collected
@@ -249,10 +267,16 @@ fn build_header(options: &ProfileOptions, samples: &SampledSnapshot) -> Header {
 /// The per-file, per-line table: the union of the three per-line measurements,
 /// so a line the counters saw and the sampler did not (and the reverse) is
 /// present with the other field absent.
-fn build_files(counts: &CountsSnapshot, samples: &SampledSnapshot) -> Vec<FileRows> {
+fn build_files(
+    counts: &CountsSnapshot,
+    samples: &SampledSnapshot,
+    allocations: &[(LineLocation, LineAllocation)],
+) -> Vec<FileRows> {
     let hits: FxHashMap<LineLocation, u64> = counts.line_hits.iter().copied().collect();
     let self_ns: FxHashMap<LineLocation, u64> = samples.line_self_ns.iter().copied().collect();
     let incl_ns: FxHashMap<LineLocation, u64> = samples.line_incl_ns.iter().copied().collect();
+    let allocations: FxHashMap<LineLocation, LineAllocation> =
+        allocations.iter().copied().collect();
     let mut line_regions: FxHashMap<LineLocation, Vec<LineRegionRow>> = FxHashMap::default();
     for (key, ns) in &samples.line_region_ns {
         line_regions
@@ -273,6 +297,7 @@ fn build_files(counts: &CountsSnapshot, samples: &SampledSnapshot) -> Vec<FileRo
         .keys()
         .chain(self_ns.keys())
         .chain(incl_ns.keys())
+        .chain(allocations.keys())
         .chain(line_regions.keys())
     {
         if seen.insert(*location, ()).is_none() {
@@ -296,6 +321,10 @@ fn build_files(counts: &CountsSnapshot, samples: &SampledSnapshot) -> Vec<FileRo
             hits: hits.get(&location).copied(),
             self_us: self_ns.get(&location).copied().map(us),
             incl_us: incl_ns.get(&location).copied().map(us),
+            allocations: allocations.get(&location).map(|totals| AllocationRow {
+                count: totals.count,
+                bytes: totals.bytes,
+            }),
             regions: line_regions.get(&location).cloned().unwrap_or_default(),
         };
         match files.last_mut() {

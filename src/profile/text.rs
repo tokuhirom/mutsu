@@ -57,6 +57,11 @@ fn render_header(profile: &Profile, out: &mut String) {
     out.push_str(
         "            hits are exact; every time below is SAMPLED -- never quote it as a measurement\n",
     );
+    if header.allocation_stats {
+        out.push_str(
+            "            allocations are exact; this alloc-stats profile omits sampled time\n",
+        );
+    }
     if let Some(sampling) = &header.sampling
         && sampling.truncated_samples > 0
     {
@@ -112,7 +117,7 @@ fn render_lines(profile: &Profile, out: &mut String) {
     }
     for (rank, (path, row)) in rows.iter().take(TOP_LINES).enumerate() {
         out.push_str(&format!(
-            "  {:>2}  {}:{}  {}  {}{}\n",
+            "  {:>2}  {}:{}  {}  {}{}{}\n",
             rank + 1,
             path,
             row.line,
@@ -123,9 +128,23 @@ fn render_lines(profile: &Profile, out: &mut String) {
                 // line-transition counter did not (an inclusive-only frame).
                 None => "hits n/a".to_string(),
             },
+            fmt_allocations(row),
             fmt_line_regions(row, total),
         ));
     }
+}
+
+fn fmt_allocations(row: &super::document::LineRow) -> String {
+    row.allocations
+        .as_ref()
+        .map(|allocations| {
+            format!(
+                "  allocs {} ({} bytes)",
+                fmt_count(allocations.count),
+                fmt_count(allocations.bytes),
+            )
+        })
+        .unwrap_or_default()
 }
 
 fn fmt_line_regions(row: &super::document::LineRow, total: Option<f64>) -> String {

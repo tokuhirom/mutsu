@@ -67,6 +67,7 @@ pub fn arm_stack_guard(stack_size: usize) {
 /// Ignored once the profiler's options have already been resolved, which for
 /// the CLI cannot happen: option parsing runs before the first VM poll.
 pub fn profile_configure(options: ProfileCliOptions) -> Result<(), String> {
+    alloc_stats::configure_line_attribution();
     profile::configure(options)
 }
 

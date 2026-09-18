@@ -116,6 +116,8 @@ pub(crate) fn record_line(code: &CompiledCode, site: PollSite, interp: &Interpre
         let here = code
             .location_at(site as usize)
             .map(|(file, line)| crate::profile::LineLocation { file, line });
+        #[cfg(feature = "alloc-stats")]
+        crate::alloc_stats::set_current_line(here);
         crate::profile::record_line_at(code, here);
         crate::profile::sample_if_due(interp, here);
     }

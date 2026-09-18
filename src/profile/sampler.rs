@@ -122,6 +122,12 @@ thread_local! {
 /// Arm the sampler. Called once, from the poll network's arm-time trigger
 /// computation, so nothing here exists in a disarmed run (§8 gate 1b).
 pub(crate) fn arm() {
+    // The counting allocator changes the timing of every allocation. An
+    // allocation profile is therefore counts-only: it must not emit sampled
+    // time from the same run and invite consumers to compare the two halves.
+    if crate::alloc_stats::line_attribution_enabled() {
+        return;
+    }
     // Rate and tick come from the resolved options (`--profile-rate`, or
     // `MUTSU_PROFILE_RATE`/`MUTSU_PROFILE_TICK` for an env-armed run): the CLI
     // and the environment must not be able to disagree about them, and the
@@ -188,6 +194,9 @@ fn spawn_timer(rate_hz: u64) {
 /// thread-local swap, a relaxed load and a compare per poll.
 #[inline]
 pub(crate) fn sample_if_due(interp: &Interpreter, here: Option<LineLocation>) {
+    if crate::alloc_stats::line_attribution_enabled() {
+        return;
+    }
     let was_at = LAST_POLL.with(|c| c.replace(here));
     let seen = LAST_SEEN.with(|c| c.get());
     let epoch = if EVERY_POLL.load(Ordering::Relaxed) {
@@ -274,7 +283,7 @@ pub(crate) fn tick_pending() -> bool {
 /// excluded-time table, and the header says the line table does not include it.
 #[inline]
 pub(crate) fn exclude_non_raku<R>(region: Region, f: impl FnOnce() -> R) -> R {
-    if !crate::vm::vm_poll::profiler_armed() {
+    if !crate::vm::vm_poll::profiler_armed() || crate::alloc_stats::line_attribution_enabled() {
         return f();
     }
     let started = Instant::now();

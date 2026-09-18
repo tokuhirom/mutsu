@@ -177,6 +177,11 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        #[cfg(feature = "alloc-stats")]
+        let _allocation_line = crate::alloc_stats::enter_line(
+            code.location_at(*ip)
+                .map(|(file, line)| crate::profile::LineLocation { file, line }),
+        );
         crate::trace::trace_log!(
             "vm",
             "exec_one[{}]: {:?}",

@@ -294,6 +294,8 @@ pub(crate) fn try_enter(
     crate::vm::vm_stats::record_jit_entry();
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
+    #[cfg(feature = "alloc-stats")]
+    crate::alloc_stats::clear_current_line();
     match status {
         JIT_STATUS_ERR => {
             let e = interp

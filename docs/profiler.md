@@ -17,7 +17,7 @@ surface, the document's schema, and the things the numbers do and do not mean.
 
 ## The one thing to know first
 
-**Counts are exact. Times are sampled.**
+**Counts are exact. Times are sampled. Allocation totals are exact when explicitly enabled.**
 
 - `hits`, `entries` and `calls` are counted at chokepoints the VM already runs
   through. They are deterministic: the same program run twice produces the same
@@ -25,6 +25,9 @@ surface, the document's schema, and the things the numbers do and do not mean.
 - every `*_us` field is **statistical**. A timer fires at `--profile-rate` Hz and
   the next VM poll records the Raku stack it is standing on. Two runs of the same
   program will not agree, and a short run may not sample a line at all.
+- an `alloc-stats` build with `MUTSU_ALLOC_STATS=1` attributes allocation count and
+  requested bytes to source lines exactly. That mode omits sampled time because
+  the counting allocator changes allocation timing.
 
 That is why the document says `"time_is_sampled": true` in its header and the text
 report says so on its second line. Numbers that go into PERFORMANCE.md, PLAN.md
@@ -73,6 +76,22 @@ Replaces the timer with "every poll is a tick". Far slower than the timer, and
 not a way to profile a real program — but the samples a run takes become a
 function of the bytecode it executes rather than of the clock, which is what lets
 the profiler's own tests assert its *structure* without asserting a duration.
+
+### Per-line allocation totals
+
+Build the measurement-only variant and enable the existing allocation report
+alongside the profiler:
+
+```console
+$ cargo build --features alloc-stats
+$ MUTSU_ALLOC_STATS=1 mutsu --profile=alloc.json myscript.raku
+```
+
+The resulting document has `header.allocation_stats: true`, exact
+`allocations.count` and `allocations.bytes` fields on lines that allocated, and
+no `sampling` section or sampled time fields. `bytes` is allocator-requested
+turnover, not peak live memory. The normal build omits `allocations` entirely;
+the field is absent rather than zero when a line was not measured.
 
 ## Reading the text report
 
@@ -126,6 +145,7 @@ because a zero that means "not measured" is a lie a tool reads as data.
     "report": "both",
     "jit": "on",
     "gc": "on",
+    "allocation_stats": false,
     "time_is_sampled": true,
     "blocked_threads_absent": true,
     "sampling": {
@@ -179,6 +199,7 @@ because a zero that means "not measured" is a lie a tool reads as data.
 | `mutsu_version`, `argv` | Which mutsu, invoked how. |
 | `kind`, `report` | The options this document was produced under. |
 | `jit`, `gc` | The configuration the profiled program **ran in**. Profiling does not change it (ADR-0106 D6): a profiler that changed JIT eligibility would measure a program nobody runs. |
+| `allocation_stats` | `true` when exact per-line allocation totals were collected by an `alloc-stats` build. Such a document omits sampled time because the counting allocator changes timing. |
 | `time_is_sampled` | Always `true`. |
 | `blocked_threads_absent` | Always `true`, and a property rather than a defect: the sampler is poll-based, so a thread parked in `sleep`, IO, `await` or a GC park does not poll and contributes nothing. It is *absent* from the tables, not shown as idle. |
 | `sampling` | Absent when the sampler never ran (a counts-only run). Its presence is what marks the statistical numbers as a group. |
@@ -194,6 +215,11 @@ because a zero that means "not measured" is a lie a tool reads as data.
 | `self_us` | sampled | Time sampled with this line on top of the stack. |
 | `incl_us` | sampled | Time sampled with this line anywhere on the stack — so a line holding a call carries what the call cost. |
 | `regions[]` | sampled | The subsystem split of `self_us`. |
+| `allocations` | exact | Allocation count and requested bytes attributed to this line. Present only in an allocation profile and only for lines with measured allocations. |
+
+An allocation row has the shape `{ "count": 321, "bytes": 15061 }`. It is
+available only in the measurement-only `alloc-stats` mode described above; do
+not compare that run's wall clock or sampled time with a normal build.
 
 `hits` counts *line entries*, and a line entry is a line-**transition** edge: the
 line is counted each time control arrives at it *from a different line*. It is not
@@ -277,9 +303,8 @@ split is a partition of the samples, so `sum(regions[].samples) == samples`.
 - **`EVAL` and threads.** An `EVAL`'d unit appears under its own name
   (`EVAL_<n>`), as it does in a backtrace. A `start` block's samples belong to
   its own thread's stack and are not folded into the line that spawned it.
-- **Out of scope for now**: HTML, allocation-per-line, compile-phase profiling and
-  a MoarVM-shaped export (ADR-0106 Slice 6 — none of them blocked, none of them
-  built).
+- **Out of scope for now**: HTML, compile-phase profiling and a MoarVM-shaped
+  export (ADR-0106 Slice 6 — none of them blocked, none of them built).
 
 ## Related
 

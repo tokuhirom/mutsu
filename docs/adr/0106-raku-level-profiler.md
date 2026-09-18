@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Accepted (Slices 0-5 shipped; Slice 6 optional and unstarted — §9)
+- **Status**: Accepted (Slices 0-5 and opt-in allocation attribution shipped; Slice 6 optional and unstarted — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -684,7 +684,17 @@ implementation settled that the sketch left open:
 
 Slice 6 is explicitly optional and unstarted, tracked as
   [#8738](https://github.com/tokuhirom/mutsu/issues/8738). Each slice landed as its own PR with its
-own gate (§8), and Slices 0-5 were each independently useful, as claimed.
+  own gate (§8), and Slices 0-5 were each independently useful, as claimed.
+
+Per-line allocation attribution is also shipped ([#8740](https://github.com/tokuhirom/mutsu/issues/8740);
+`news/2026-09/profiler-per-line-allocation-attribution.md`). It is deliberately a separate,
+measurement-only mode: an `alloc-stats` build with `MUTSU_ALLOC_STATS=1` keeps exact allocation
+count and requested-byte totals in a thread-local line accumulator and publishes them as
+`files[].lines[].allocations`. The sampler is not armed in that mode, because the counting
+allocator changes allocation timing; `header.allocation_stats` marks the document and `sampling`
+is absent. The default build and all normal profiles pay no allocation-attribution cost. The
+regression test runs the feature build and checks the published document, while the normal profile
+tests continue to assert the sampled-time and exact-count halves independently.
 
 ## 10. Open questions
 
@@ -695,10 +705,10 @@ own gate (§8), and Slices 0-5 were each independently useful, as claimed.
   that would make `sampled_ns` comparable to `wall_ns` on a multi-threaded profile instead of
   summing past it. Tracked as
   [#8739](https://github.com/tokuhirom/mutsu/issues/8739).
-- **Allocation attribution per line.** Cheap to add once `alloc-stats` and the sampler coexist
-  (Scalene and MoarVM both do it, and mutsu's costs are allocation-shaped often enough to want it).
-  Deliberately out of the first implementation to keep the sample path non-allocating and the scope
-  honest. Tracked as [#8740](https://github.com/tokuhirom/mutsu/issues/8740).
+- **Allocation attribution per line.** Resolved by the opt-in exact mode above: the counting
+  allocator attributes count and requested bytes to the VM/JIT source line currently executing.
+  It is feature-gated and uses no sampled time in the same document, so the numbers answer an
+  allocation question without pretending that an instrumented build is a timing run.
 - **Inclusive time across `EVAL` and thread boundaries** — a `start` block's samples belong to their
   own thread's stack; whether the report should also fold them into the spawning line is a reporting
   decision, not a mechanism one, and can be made after the first real profiles exist. Tracked as

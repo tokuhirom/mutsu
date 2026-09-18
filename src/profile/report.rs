@@ -27,7 +27,12 @@ pub(crate) fn flush_at_exit() {
         return;
     };
     // Both snapshots drain their tables, so this runs exactly once.
-    let profile = document::build(options, counts::take_counts(), snapshot::take_samples());
+    let profile = document::build(
+        options,
+        counts::take_counts(),
+        snapshot::take_samples(),
+        crate::alloc_stats::take_line_stats(),
+    );
     if options.report.text() {
         eprint!("{}", text::render(&profile));
     }
