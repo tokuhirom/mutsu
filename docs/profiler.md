@@ -195,11 +195,44 @@ because a zero that means "not measured" is a lie a tool reads as data.
 | `incl_us` | sampled | Time sampled with this line anywhere on the stack — so a line holding a call carries what the call cost. |
 | `regions[]` | sampled | The subsystem split of `self_us`. |
 
-`hits` counts *line entries*, which is a line-transition edge and not a statement
-count. The consequence to know: **a line that calls a routine is entered twice** —
-once to make the call, and once more when control returns to finish the
-statement. A line inside a loop body with no call is entered exactly once per
-trip.
+`hits` counts *line entries*, and a line entry is a line-**transition** edge: the
+line is counted each time control arrives at it *from a different line*. It is not
+a statement-execution count, and the difference is not academic. Two consequences
+to know before reading any `hits` column:
+
+- **A line that calls a routine is entered twice** per execution — once to make
+  the call, and once more when control returns to finish the statement.
+- **A loop whose body occupies a single line is counted once per loop entry, not
+  once per trip.** Staying on the same line is not a transition, so there is
+  nothing to count. Only a body spanning two or more lines gets one hit per line
+  per trip:
+
+  ```raku
+  for 1..100 { $b = $b + 1 }       # that line: hits 1
+
+  for 1..100 {
+      $b = $b + 1;                 # that line: hits 1  (body is still one line)
+  }
+
+  for 1..100 {
+      $b = $b + 1;                 # hits 100
+      $c = $c + 1;                 # hits 100
+  }
+  ```
+
+  This is a property of the counting mechanism, not of any one loop form: `for`,
+  `while`, `loop` and `repeat` all behave this way, and it applies to the loop's
+  header line too: a one-line `while $i < 100 { ... }` reports `hits 1`, while a
+  `while` whose body is on separate lines reports one hit per condition
+  evaluation on its header line — trips plus the final false one. That second
+  shape is the one `tests/profile_counts.rs` pins (5,000 trips: body lines
+  5,000 each, header 5,001).
+
+So a `hits` column is a reliable trip count only where the loop body is spread
+over several lines, and comparing it against NYTProf's statement counts is not
+meaningful in general. [#8737](https://github.com/tokuhirom/mutsu/issues/8737)
+tracks whether the counter should record a hit on a loop backedge that lands on
+the same line, which would make `hits` a trip count for every loop form.
 
 ### Routine rows
 
