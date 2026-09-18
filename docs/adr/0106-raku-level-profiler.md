@@ -709,7 +709,11 @@ tests continue to assert the sampled-time and exact-count halves independently.
   allocator attributes count and requested bytes to the VM/JIT source line currently executing.
   It is feature-gated and uses no sampled time in the same document, so the numbers answer an
   allocation question without pretending that an instrumented build is a timing run.
-- **Inclusive time across `EVAL` and thread boundaries** — a `start` block's samples belong to their
-  own thread's stack; whether the report should also fold them into the spawning line is a reporting
-  decision, not a mechanism one, and can be made after the first real profiles exist. Tracked as
-  [#8741](https://github.com/tokuhirom/mutsu/issues/8741).
+- **Inclusive time across `EVAL` and thread boundaries.** Resolved by
+  [#8741](https://github.com/tokuhirom/mutsu/issues/8741): `incl_us` remains the sampled time of
+  locations present on the sample's own stack. There is no synthetic fold from a `start` worker into
+  the spawning thread and no separate `spawned_incl_us` field; an ordinary call-site line that is
+  already represented by a worker's block frame may receive its normal stack credit, but the report
+  does not invent a parent-thread edge. `EVAL` follows the same rule. This keeps the line table
+  faithful to the stack that was sampled and leaves the known multi-thread `sampled_us` versus
+  `wall_us` relationship explicit rather than hiding it in a mixed inclusive column.

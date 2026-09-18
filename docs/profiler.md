@@ -213,7 +213,7 @@ because a zero that means "not measured" is a lie a tool reads as data.
 | --- | --- | --- |
 | `hits` | exact | How many times execution **entered** this line. |
 | `self_us` | sampled | Time sampled with this line on top of the stack. |
-| `incl_us` | sampled | Time sampled with this line anywhere on the stack — so a line holding a call carries what the call cost. |
+| `incl_us` | sampled | Time sampled with this line anywhere on the same thread's stack — so a line holding a call carries what the call cost. No synthetic credit crosses a `start` thread boundary. |
 | `regions[]` | sampled | The subsystem split of `self_us`. |
 | `allocations` | exact | Allocation count and requested bytes attributed to this line. Present only in an allocation profile and only for lines with measured allocations. |
 
@@ -301,8 +301,13 @@ split is a partition of the samples, so `sum(regions[].samples) == samples`.
   frame's own `?FILE` still names the mainline there
   ([#8743](https://github.com/tokuhirom/mutsu/issues/8743)).
 - **`EVAL` and threads.** An `EVAL`'d unit appears under its own name
-  (`EVAL_<n>`), as it does in a backtrace. A `start` block's samples belong to
-  its own thread's stack and are not folded into the line that spawned it.
+  (`EVAL_<n>`), as it does in a backtrace. Inclusive time is always the sampled
+  stack on the thread that took the sample: an `EVAL` does not get a special
+  fold, and a `start` block's samples are not synthetically folded into the
+  spawning thread. A worker's ordinary call-site line can still receive credit
+  when that line is present in the worker stack; that is not cross-thread
+  aggregation. Consequently, threaded profiles may sum sampled time past wall
+  time, as documented by `sampling.wall_us` versus `sampling.sampled_us`.
 - **Out of scope for now**: HTML, compile-phase profiling and a MoarVM-shaped
   export (ADR-0106 Slice 6 — none of them blocked, none of them built).
 
