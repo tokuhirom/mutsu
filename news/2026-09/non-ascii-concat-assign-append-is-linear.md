@@ -52,16 +52,26 @@ compose?" — is answerable from the suffix.
 
 ## Result
 
-Release build, 20,000 appends, timing the loop only:
+Release build, 20,000 appends, timing the loop only (the "before" column is
+#8725's own measurement):
 
 | suffix | before | after | rakudo |
 | --- | --- | --- | --- |
-| `'x'` (ASCII) | 0.0066s | 0.0067s | 0.0176s |
-| `"\c[SNOWMAN]"` | 5.98s | 0.0072s | 0.0188s |
+| `'x'` (ASCII) | 0.0066s | 0.0072s | 0.0135s |
+| `"\c[SNOWMAN]"` | 5.98s | 0.0037s | 0.0182s |
+| `"\c[CJK UNIFIED IDEOGRAPH-4E00]"` | — | 0.0070s | 0.0131s |
 
-The ASCII path is untouched (its `is_ascii()` check still runs first, ahead of
-any table lookup), and the non-ASCII case goes from 318x rakudo to faster than
-it.
+The ASCII path is untouched — its `is_ascii()` check still runs first, ahead of
+any table lookup — and the non-ASCII case goes from 318x rakudo to about 5x
+faster than it.
+
+The one case that stays slow is the pathological one the window limit exists
+for: `$s ~= "\x[301]"` 20,000 times builds a *single* grapheme with 20,000
+combining marks and so has no interior normalization boundary anywhere. mutsu
+takes 2.5s over it, essentially what the pre-#8695 general path cost, because
+the window search gives up after 64 characters and renormalizes the whole
+buffer. There is no faster answer that is also correct, and rakudo does not
+answer it at all — it dies with "Too many codepoints (1024) in grapheme".
 
 ## Coverage
 
