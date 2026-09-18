@@ -645,6 +645,28 @@ impl Interpreter {
         Self::lookup_in_package_chain(&self.module_scope_lexicals, owner, name)
     }
 
+    /// Whether `name` is a core type name that no user declaration shadows.
+    ///
+    /// A core type name is normally not shadowed by a package-local
+    /// declaration, so a caller that would otherwise walk the enclosing
+    /// package chain building `Owner::Int` candidates can skip the walk
+    /// outright. BUT a user CAN declare e.g. `subset Method of Str` inside a
+    /// class (Cro::HTTP::Request does), and that lexically shadows the
+    /// builtin; subsets/roles/enums register their short name too, so a few
+    /// direct hash probes detect a shadow without the per-package allocation.
+    /// `classes` is deliberately not probed: every builtin type has its own
+    /// entry there under its bare name, so probing it would make this answer
+    /// `false` for every core name and the guard would never fire.
+    pub(crate) fn unshadowed_builtin_type_name(&self, name: &str) -> bool {
+        if !Self::is_builtin_type(name) {
+            return false;
+        }
+        let reg = self.registry();
+        !(reg.subsets.contains_key(name)
+            || reg.enum_types.contains_key(name)
+            || reg.roles.contains_key(name))
+    }
+
     /// `has_type` without short-name alias resolution — checks the type
     /// registries directly (classes/roles/enums/subsets, including parametric
     /// base names).
@@ -813,52 +835,43 @@ impl Interpreter {
         if name.contains("::") || name.is_empty() {
             return name;
         }
-        // A core type name is normally not shadowed by a package-local
-        // declaration, so skip the probe — it would otherwise allocate a
-        // `Owner::Int` candidate for every ordinary attribute on every `.new`.
-        // BUT a user CAN declare e.g. `subset Method of Str` inside a class
-        // (Cro::HTTP::Request does), and that lexically shadows the builtin;
-        // subsets/classes/enums register their short name too, so a few direct
-        // hash probes detect a shadow without the per-package allocation.
-        if crate::runtime::Interpreter::is_builtin_type(&name) {
-            let reg = self.registry();
-            let shadowed = reg.subsets.contains_key(&name)
-                || reg.enum_types.contains_key(&name)
-                || reg.roles.contains_key(&name);
-            if !shadowed {
-                // A compound class name is not an additional lexical scope:
-                // inside `unit class IO::Blob`, the bare `Blob` in
-                // `has Blob $.data` is the core Blob type, not the class being
-                // declared. The owner walk below used to see `IO::Blob` after
-                // stripping the `IO` segment and incorrectly resolve the
-                // attribute to the owning class itself. Keep the package walk
-                // for a real package-local type that shadows this builtin,
-                // but never let that self-reference win.
-                let mut pkg = owner;
-                loop {
-                    if pkg.is_empty() {
-                        break;
-                    }
-                    let qualified = format!("{pkg}::{name}");
-                    if qualified != owner && self.has_type_direct(&qualified) {
-                        return qualified;
-                    }
-                    match pkg.rsplit_once("::") {
-                        Some((parent, _)) => pkg = parent,
-                        None => break,
-                    }
+        // Skipping the probe for an unshadowed core name is what keeps this
+        // from allocating an `Owner::Int` candidate for every ordinary
+        // attribute on every `.new` (see
+        // [`Interpreter::unshadowed_builtin_type_name`]).
+        if self.unshadowed_builtin_type_name(&name) {
+            // A compound class name is not an additional lexical scope:
+            // inside `unit class IO::Blob`, the bare `Blob` in
+            // `has Blob $.data` is the core Blob type, not the class being
+            // declared. The owner walk below used to see `IO::Blob` after
+            // stripping the `IO` segment and incorrectly resolve the
+            // attribute to the owning class itself. Keep the package walk
+            // for a real package-local type that shadows this builtin,
+            // but never let that self-reference win.
+            let mut pkg = owner;
+            loop {
+                if pkg.is_empty() {
+                    break;
                 }
-                if let Some(ValueView::Package(target)) = self
-                    .module_scope_lexical_for_owner(owner, &name)
-                    .map(Value::view)
-                {
-                    let resolved = target.resolve();
-                    if resolved != name && resolved != owner && self.has_type_direct(&resolved) {
-                        return resolved.to_string();
-                    }
+                let qualified = format!("{pkg}::{name}");
+                if qualified != owner && self.has_type_direct(&qualified) {
+                    return qualified;
                 }
-                return name;
+                match pkg.rsplit_once("::") {
+                    Some((parent, _)) => pkg = parent,
+                    None => break,
+                }
             }
+            if let Some(ValueView::Package(target)) = self
+                .module_scope_lexical_for_owner(owner, &name)
+                .map(Value::view)
+            {
+                let resolved = target.resolve();
+                if resolved != name && resolved != owner && self.has_type_direct(&resolved) {
+                    return resolved.to_string();
+                }
+            }
+            return name;
         }
         let mut pkg = owner;
         loop {

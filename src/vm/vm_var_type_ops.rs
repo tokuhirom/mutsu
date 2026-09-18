@@ -43,7 +43,19 @@ impl Interpreter {
         // package-qualified identity as the type checker.  Keeping the raw
         // spelling (`DataSlice`) made a typed array report `Array[DataSlice]`
         // even though its elements were instances of `Dan::DataSlice`.
-        let constraint = if !constraint.contains("::") && !constraint.contains('[') {
+        //
+        // A core name that nothing shadows is skipped, and that is not merely
+        // an optimization of a walk that would have returned `None`: this op
+        // runs on EVERY execution of a typed declaration, and the walk it
+        // guards ends in `resolve_lexical_type_key`, whose miss path is a
+        // linear scan of every registry key. Without the guard, JSON::Fast's
+        // 43 `my int`/`my str` declarations doubled bench-json-fast
+        // (3.35G -> 6.91G simulated instructions, 22% of the run in `memcmp`
+        // alone) — `news/2026-09/typed-decl-package-probe-regression.md`.
+        let constraint = if !constraint.contains("::")
+            && !constraint.contains('[')
+            && !self.unshadowed_builtin_type_name(&constraint)
+        {
             self.resolve_type_in_current_package(&constraint)
                 .unwrap_or(constraint)
         } else {
