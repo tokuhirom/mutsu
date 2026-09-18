@@ -28,11 +28,13 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Could this subrule reference name a lexical Regex? `<&x…>` sets
-    /// `token_lookup`; `<&$x…>` additionally keeps the sigil on the name. A
-    /// pure string test, so the overwhelmingly common `<rule>` reference pays
-    /// nothing.
+    /// `token_lookup`; `<&$x…>` additionally keeps the sigil on the name.
+    /// A `my regex name { ... }` declaration is also callable as `<name>` and
+    /// is stored in the lexical `&name` lane, so ordinary unqualified names
+    /// must be eligible for the fallback too. Registry-backed rules still win
+    /// in `resolve_lexical_regex`, which keeps this additive.
     pub(super) fn may_name_lexical_regex(spec: &NamedRegexLookupSpec) -> bool {
-        spec.token_lookup || spec.lookup_name.starts_with('$')
+        spec.token_lookup || spec.lookup_name.starts_with('$') || !spec.lookup_name.contains("::")
     }
 
     /// The Regex value this reference resolves to, or `None` when it does not
@@ -73,6 +75,14 @@ impl Interpreter {
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
         )
         .then_some(value)
+    }
+
+    /// Whether this reference actually resolves to a caller-scope Regex.
+    /// Unqualified names are eligible for the lexical fallback because
+    /// `my regex name` uses that spelling, but a normal package token/rule
+    /// must still remain eligible for regex prefilter analysis.
+    pub(super) fn lexical_regex_is_in_scope(&self, spec: &NamedRegexLookupSpec) -> bool {
+        Self::may_name_lexical_regex(spec) && self.lookup_lexical_regex(&spec.lookup_name).is_some()
     }
 
     /// Candidates for a `<&lexical(args)>` reference, or `None` when it does

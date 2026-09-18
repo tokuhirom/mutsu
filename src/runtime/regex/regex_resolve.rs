@@ -416,6 +416,18 @@ impl Interpreter {
             if !out.is_empty() {
                 return out;
             }
+            // A nested role/class sees token declarations from its enclosing
+            // package. Namespace nesting is lexical visibility, but it is not
+            // represented in an MRO: `my regex nr` declared in `X` is stored
+            // as `X::nr`, while a role method resolves in `X::RR`.
+            let mut scope = pkg.to_string();
+            while let Some((parent, _)) = scope.rsplit_once("::") {
+                scope = parent.to_string();
+                self.collect_token_patterns_for_scope(&scope, name, &mut out);
+                if !out.is_empty() {
+                    return out;
+                }
+            }
         }
         self.collect_token_patterns_for_scope("GLOBAL", name, &mut out);
         out

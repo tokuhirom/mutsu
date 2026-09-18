@@ -148,6 +148,25 @@ pub(crate) fn mark_current_scope_routine_body() {
     });
 }
 
+/// Whether a bare anonymous-state variable is inside a block nested below a
+/// routine body. Such a block literal is cloned each time its enclosing
+/// routine runs, so the state cell must be keyed to that routine invocation;
+/// a bare `$` directly in the routine body intentionally persists across calls.
+pub(crate) fn anon_state_is_per_call() -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let Some(current) = scopes.last() else {
+            return false;
+        };
+        !current.is_routine_body
+            && scopes
+                .iter()
+                .rev()
+                .skip(1)
+                .any(|scope| scope.is_routine_body)
+    })
+}
+
 /// Mark the current (innermost) scope as having `self` available. Called by
 /// the method/submethod body parsers right after they push the body's scope.
 /// Unlike `mark_current_scope_routine_body`, the flag this sets IS inherited

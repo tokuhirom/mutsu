@@ -325,14 +325,33 @@ impl Interpreter {
         {
             return (code.clone(), fns.clone());
         }
+        // A trailing map/grep expression is a lazy producer. In a gather body
+        // its returned Seq is otherwise left on the VM stack without being
+        // forced, so callbacks containing `take` never contribute to the
+        // gather. Sink only this shape: adding a synthetic tail to every
+        // gather changes coroutine resumption for control-flow-heavy bodies
+        // such as nested recursive loops.
+        let needs_lazy_tail = body.last().is_some_and(|stmt| match stmt {
+            crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall { name, .. })
+            | crate::ast::Stmt::Expr(crate::ast::Expr::Call { name, .. }) => {
+                matches!(name.resolve().as_str(), "map" | "grep")
+            }
+            _ => false,
+        });
+        let mut gather_body = body.to_vec();
+        if needs_lazy_tail {
+            gather_body.push(crate::ast::Stmt::Expr(crate::ast::Expr::Literal(
+                crate::value::Value::NIL,
+            )));
+        }
         let compiler = crate::compiler::Compiler::new();
         let scoped_body: Vec<crate::ast::Stmt>;
         let compile_target: &[crate::ast::Stmt] =
-            if crate::compiler::Compiler::stmts_declare_routines(body) {
-                scoped_body = vec![crate::ast::Stmt::Block(body.to_vec())];
+            if crate::compiler::Compiler::stmts_declare_routines(&gather_body) {
+                scoped_body = vec![crate::ast::Stmt::Block(gather_body)];
                 &scoped_body
             } else {
-                body
+                &gather_body
             };
         let (code, fns) = compiler.compile(compile_target);
         let code = std::sync::Arc::new(code);

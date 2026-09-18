@@ -857,6 +857,7 @@ impl Compiler {
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx: var_name_idx,
                 is_positional: *index_is_positional,
+                index_first: false,
                 target_slot,
             });
             self.code.emit(OpCode::Pop);

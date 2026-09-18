@@ -235,10 +235,9 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws)
             && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
         {
-            return Ok((
-                r2,
-                crate::parser::stmt::assign::compound_assign_marker(expr, op, rhs, result),
-            ));
+            let compound =
+                crate::parser::stmt::assign::compound_assign_marker(expr, op, rhs, result);
+            return Ok((r2, crate::parser::expr::wrap_finished_expr(compound)));
         }
     }
 

@@ -768,9 +768,10 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             && !expr_consumes_more
             && (!rest_ws.starts_with("=>") || rest_ws.starts_with("==>"))
         {
+            let assign_expr = regroup_assign_expr_metaop_rhs(assign_expr);
             return Ok((
                 rest,
-                CallArg::Positional(regroup_assign_expr_metaop_rhs(assign_expr)),
+                CallArg::Positional(crate::parser::expr::wrap_finished_expr(assign_expr)),
             ));
         }
     }
@@ -807,9 +808,10 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
         }
         return Ok((r, CallArg::Positional(compound_expr)));
     }
+    let expr = regroup_assign_expr_metaop_rhs(expr);
     Ok((
         rest,
-        CallArg::Positional(regroup_assign_expr_metaop_rhs(expr)),
+        CallArg::Positional(crate::parser::expr::wrap_finished_expr(expr)),
     ))
 }
 

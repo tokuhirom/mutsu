@@ -834,9 +834,14 @@ fn body_has_placeholder_vars(input: &str) -> bool {
 /// `%hash`, it is a hash. Placeholder variables (`$^x`, `@^x`, `%^x`) and a
 /// reference to the topic force it back to a block.
 fn body_is_hash_composer(input: &str) -> bool {
-    is_hash_literal_start(input)
-        && !body_has_placeholder_vars(input)
+    // Check the block's topic references before the structural hash probe.
+    // `is_hash_literal_start` may parse an arbitrary expression to distinguish
+    // a top-level `=>`; doing that first would mint the bare `$` in a block
+    // such as `{ $_ => $++ }` in the enclosing routine scope and memoize the
+    // wrong state-bearing AST before the real block scope is pushed.
+    !body_has_placeholder_vars(input)
         && !body_references_topic(input)
+        && is_hash_literal_start(input)
 }
 
 /// Does the `{ … }` starting at `input` compose a Hash?

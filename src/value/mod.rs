@@ -294,10 +294,42 @@ impl From<ValueMap> for MixinOverrides {
 
 impl Clone for MixinOverrides {
     fn clone(&self) -> Self {
+        let attributes = Gc::new((*self.attributes).clone());
+        let mut attribute_map = attributes.to_map();
+        for value in attribute_map.values_mut() {
+            *value = deep_clone_mixin_value(value);
+        }
+        attributes.commit_attrs(attribute_map);
         Self {
             overrides: self.overrides.clone(),
-            attributes: Gc::new((*self.attributes).clone()),
+            attributes,
         }
+    }
+}
+
+/// Role mixin cloning is the implementation behind `.clone` when the mixed-in
+/// role does not provide a separate clone method.  Its role attributes must not
+/// retain nested Array/Hash backing nodes from the original object: a common
+/// role pattern is an outer `@.data` containing row arrays, and mutating a row
+/// on the clone must not mutate the source.
+fn deep_clone_mixin_value(value: &Value) -> Value {
+    match value.view() {
+        ValueView::Array(items, kind) => {
+            let mut data = (**items).clone();
+            for item in &mut data.items {
+                *item = deep_clone_mixin_value(item);
+            }
+            Value::array_with_kind(Gc::new(data), kind)
+        }
+        ValueView::Hash(hash) => {
+            let mut data = (**hash).clone();
+            for item in data.map.values_mut() {
+                *item = deep_clone_mixin_value(item);
+            }
+            Value::hash_with_data_itemized(Gc::new(data), value.hash_is_itemized())
+        }
+        ValueView::Scalar(inner) => Value::scalar(deep_clone_mixin_value(inner)),
+        _ => value.clone(),
     }
 }
 

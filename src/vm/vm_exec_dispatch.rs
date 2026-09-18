@@ -1140,6 +1140,18 @@ impl Interpreter {
                     || bare_no_sigil.starts_with('.'))
                     && bare_no_sigil.len() > 1
                     && bare_no_sigil.as_bytes()[1].is_ascii_alphabetic();
+                // Attribute SetGlobal names may omit the sigil (`!data`) even
+                // though the declaring local slot is an array/hash attribute.
+                // Preserve that declaration shape for the write-through path;
+                // the slot metadata is the authoritative way to distinguish it
+                // from a scalar attribute read mirror (`!head`).
+                let is_array_hash_attr_twigil = Self::is_array_hash_attr_twigil(&name)
+                    || code.locals.iter().enumerate().any(|(idx, local)| {
+                        local == &name
+                            && code
+                                .local_attr_key(idx)
+                                .is_some_and(|(_, _, sigil)| matches!(sigil, '@' | '%'))
+                    });
                 // Synthetic compiler temporaries (rw index/argument desugaring,
                 // `with`/`without` topic temps `__with_tmp_*`, for-loop element
                 // sources, constant hoists, `__mutsu_*`, ...) are all named with a
@@ -1406,6 +1418,11 @@ impl Interpreter {
                         ValueView::Array(items, _) => {
                             Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
                         }
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => raw_val,
                         ValueView::Instance { class_name, .. } => {
                             let cn = class_name.resolve();
                             let does_positional = matches!(
@@ -1511,7 +1528,11 @@ impl Interpreter {
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = self.coerce_typed_container_assignment(&name, val, false)?;
-                } else if name.starts_with('@') && name.len() > 1 && !name.contains("__") {
+                } else if name.starts_with('@')
+                    && name.len() > 1
+                    && !name.contains("__")
+                    && !is_attr_twigil
+                {
                     // `@a = list` reached by name (a closure/nested-sub write to
                     // a captured free var, `our @a`, a for-loop multi-param
                     // bind, ...): the assignment writes INTO whatever container
@@ -1536,6 +1557,26 @@ impl Interpreter {
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
                 val = self.apply_attr_container_element_type(&name, val)?;
+                // SetGlobal is also used for an attribute assignment inside a
+                // nested `given`/`when` body.  The by-name env mirror can then
+                // be shadowed by the topic's same-named attribute (for example
+                // `@!data` on a Series topic), but the assignment still belongs
+                // to the enclosing method's invocant.  Update the invocant's
+                // shared attribute cell directly, just as the local-slot path
+                // does, so topic selection cannot retarget the write.
+                if is_array_hash_attr_twigil && !Self::is_non_mirrorable_attr_value(&val) {
+                    self.write_self_attr_cell(&name, val.clone());
+                    // Attribute assignments have no lexical/global store to
+                    // reconcile.  Finish them here so a stale by-name mirror
+                    // left by a nested accessor call cannot be routed through
+                    // a topic-owned ContainerRef by any later generic store
+                    // path.
+                    if !is_bind_ctx && !is_rebind && bind_source.is_none() {
+                        self.env_mut().insert_sym_noting(name_sym, val);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                }
                 if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
                     && !name.starts_with('%')
                     && !name.starts_with('@')
@@ -1871,6 +1912,7 @@ impl Interpreter {
                 if !is_rebind && !raw_mode {
                     // Check env directly (not through alias resolution to avoid circular lookups)
                     if !fresh_binding_decl
+                        && !is_attr_twigil
                         && let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
@@ -2066,6 +2108,18 @@ impl Interpreter {
                     // `vardecl_context` has already been cleared past by the
                     // time this line runs, hence capturing the flag earlier).
                     self.set_env_with_main_alias_fresh_binding(&name, val.clone());
+                } else if is_array_hash_attr_twigil
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && bind_source.is_none()
+                {
+                    // An attribute-twigil env entry can be a temporary
+                    // ContainerRef to the current topic's same-named
+                    // attribute (for example after `when Series`).  Replace
+                    // that mirror instead of writing through it: the
+                    // invocant's attribute cell was updated above and is the
+                    // authoritative storage for this assignment.
+                    self.env_mut().insert_sym_noting(name_sym, val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
@@ -2123,7 +2177,11 @@ impl Interpreter {
                 }
                 // Sync to shared_vars for cross-thread visibility.
                 // Skip for raw_mode @-variables to preserve List kind.
-                if !(unit_lexical_write || our_scalar_write || raw_mode && name.starts_with('@')) {
+                if !(unit_lexical_write
+                    || our_scalar_write
+                    || raw_mode && name.starts_with('@')
+                    || is_attr_twigil)
+                {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
                 let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
@@ -2470,6 +2528,9 @@ impl Interpreter {
                         ValueView::Instance { .. }
                             if self.instance_decomposes_on_array_assign(&val) =>
                         {
+                            Value::scalar(val)
+                        }
+                        ValueView::Mixin(..) if self.mixin_composes_method(&val, "iterator") => {
                             Value::scalar(val)
                         }
                         _ => Self::itemize_value(val),
@@ -3223,6 +3284,15 @@ impl Interpreter {
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
+                    // A Range assigned to a constant @ variable is already
+                    // the lazy Positional value, not one element of a List.
+                    // Keeping the Range intact preserves finite indexing and
+                    // avoids wrapping `"A"..Inf` as `("A"..Inf,)`.
+                    ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => val,
                     // Hash values are flattened to pairs for constant @.
                     ValueView::Hash(map) => {
                         let pairs: Vec<Value> = map
@@ -4472,8 +4542,13 @@ impl Interpreter {
             OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional,
+                index_first,
                 target_slot,
             } => {
+                if *index_first && self.stack.len() >= 2 {
+                    let top = self.stack.len() - 1;
+                    self.stack.swap(top, top - 1);
+                }
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_index_assign_expr_named_op(
                     code,

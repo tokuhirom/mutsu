@@ -24,6 +24,17 @@ impl Interpreter {
         // (docs/adr/0058 §8.2's read-path family; `t/seq-multidim-flatten.t`).
         self.reify_map_grep_seq(&target)?;
 
+        // A role-punned Positional value is represented as a Mixin and does
+        // not expose its storage to the ordinary array-walking reader.  Its
+        // AT-POS method is the source of truth, including for a DataFrame-like
+        // two-dimensional role, so expand slice dimensions into scalar
+        // AT-POS calls before falling through to the container reader.
+        if is_positional && matches!(target.view(), ValueView::Mixin(..)) {
+            let result = self.multi_dim_mixin_index_read(&target, &dims)?;
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // For shaped arrays, check bounds before reading
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
@@ -52,6 +63,92 @@ impl Interpreter {
             result = Value::array(vec![result]);
         }
         self.stack.push(result);
+        Ok(())
+    }
+
+    /// Read a positional multi-dimensional subscript from a role-punned
+    /// value.  Scalar dimensions are passed to one AT-POS call.  A slice
+    /// dimension is expanded against the selected axis and each resulting
+    /// scalar coordinate is passed to AT-POS, preserving the distinction
+    /// between `df[0;1]` and `df[*;1]`.
+    fn multi_dim_mixin_index_read(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if !dims.iter().any(Self::dim_is_read_slice) {
+            return Ok(self
+                .try_compiled_method_or_interpret(target.clone(), "AT-POS", dims.to_vec())
+                .unwrap_or(Value::NIL));
+        }
+
+        let mut prefix = Vec::with_capacity(dims.len());
+        let mut results = Vec::new();
+        self.collect_mixin_index_values(target, dims, &mut prefix, &mut results)?;
+        Ok(Value::array(results))
+    }
+
+    fn collect_mixin_index_values(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+        prefix: &mut Vec<Value>,
+        results: &mut Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        if prefix.len() == dims.len() {
+            if dims.len() == 1 {
+                self.stack.push(target.clone());
+                self.stack.push(prefix[0].clone());
+                self.exec_index_op_with_positional(true)?;
+                results.push(self.stack.pop().unwrap_or(Value::NIL));
+            } else {
+                results.push(
+                    self.try_compiled_method_or_interpret(target.clone(), "AT-POS", prefix.clone())
+                        .unwrap_or(Value::NIL),
+                );
+            }
+            return Ok(());
+        }
+
+        let dim = &dims[prefix.len()];
+        if Self::dim_is_read_slice(dim) {
+            let axis = if prefix.is_empty() {
+                target.clone()
+            } else {
+                self.try_compiled_method_or_interpret(target.clone(), "AT-POS", prefix.clone())
+                    .unwrap_or(Value::NIL)
+            };
+            let elems = self
+                .try_compiled_method_or_interpret(axis, "elems", vec![])
+                .unwrap_or(Value::int(0));
+            let len = crate::runtime::to_int(&elems).max(0) as usize;
+            let indices = if let Some(indices) =
+                crate::runtime::utils::expand_unbounded_range_dim(dim, len)
+            {
+                indices
+            } else if matches!(dim.view(), ValueView::Whatever) {
+                (0..len as i64).map(Value::int).collect()
+            } else if let Some(resolved) = self.eval_whatever_code_index(dim, len as i64) {
+                match Self::normalize_multidim_dim(&resolved).view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    _ => vec![resolved],
+                }
+            } else {
+                match Self::normalize_multidim_dim(dim).view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    _ => Vec::new(),
+                }
+            };
+            for index in indices {
+                prefix.push(index);
+                self.collect_mixin_index_values(target, dims, prefix, results)?;
+                prefix.pop();
+            }
+        } else {
+            prefix.push(dim.clone());
+            self.collect_mixin_index_values(target, dims, prefix, results)?;
+            prefix.pop();
+        }
         Ok(())
     }
 
@@ -109,6 +206,17 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+
+        // A role-punned positional object has no array storage for
+        // `multi_dim_slot_ref` to descend into.  Ordinary rvalue indexing
+        // already dispatches its AT-POS protocol method; call arguments use
+        // this bind-capable opcode as well, even when the eventual parameter
+        // is not writable, so they must retain the same value semantics.
+        if matches!(target.view(), ValueView::Mixin(..)) {
+            let result = self.multi_dim_mixin_index_read(&target, &dims)?;
+            self.stack.push(result);
+            return Ok(());
+        }
 
         if let Some(slot) = self.multi_dim_slot_ref(&target, &dims)? {
             self.stack.push(slot);
@@ -565,6 +673,17 @@ impl Interpreter {
             // is the same single-level unwrap chokepoint plain variable/array
             // reads already use (`GetLocal`/`GetGlobal`).
             return Ok(target.clone().into_deref());
+        }
+        // A nested role-punned Positional element (for example one
+        // `DataSlice` inside the typed array returned by Dan's row selector)
+        // is reached after the outer array dimension has been consumed.  It
+        // still owns the remaining positional dimensions through AT-POS;
+        // treating the Mixin as a scalar here loses that protocol and turns a
+        // valid `rows[1;1]` into Nil.
+        if matches!(target.view(), ValueView::Mixin(..))
+            && self.type_matches_value("Positional", target)
+        {
+            return self.multi_dim_mixin_index_read(target, dims);
         }
         // An intermediate level may be a `ContainerRef` element cell (Track B:
         // the celled atomic store boxes top-level elements; `:=` bindings can

@@ -430,10 +430,24 @@ impl Interpreter {
             return None;
         }
         if anon_state_per_call(name) {
-            Some(format!(
-                "__anon_state::{name}#{}",
+            // A deferred block can run after the routine which created it has
+            // returned.  In that case the routine stack no longer identifies
+            // the call, but the closure's state scope still does.  Use that
+            // closure-instance scope first; the routine invocation remains a
+            // fallback for the eager path and older call sites without one.
+            // Ordinary inline blocks are cloned with their enclosing routine,
+            // while direct closure dispatch supplies a fresh closure scope.
+            // A deferred direct closure can run after the enclosing routine has
+            // returned, so the closure scope is also the only surviving key in
+            // that case.
+            let scope = if self.routine_stack().iter().any(|frame| frame.is_block)
+                || self.state_scope_belongs_to_routine()
+            {
                 self.enclosing_routine_invocation_id()
-            ))
+            } else {
+                self.state_scope_id.get().unwrap_or(0)
+            };
+            Some(format!("__anon_state::{name}#{scope}"))
         } else {
             Some(format!("__anon_state::{name}"))
         }
@@ -449,6 +463,25 @@ impl Interpreter {
             .find(|f| !f.is_block)
             .map(|f| f.invocation_id)
             .unwrap_or(0)
+    }
+
+    /// Whether the active state scope is the registration clone of the
+    /// enclosing named routine rather than the identity of a direct callback.
+    /// Carrier-evaluated blocks (notably string interpolation) inherit the
+    /// routine's scope without pushing a block frame; direct map callbacks set
+    /// the scope to their own fresh `SubData` identity instead.
+    fn state_scope_belongs_to_routine(&self) -> bool {
+        let Some(scope) = self.state_scope_id.get() else {
+            return false;
+        };
+        let Some(frame) = self.routine_stack().iter().rev().find(|f| !f.is_block) else {
+            return false;
+        };
+        let key = Self::callable_id_key_for_syms(frame.package, frame.name);
+        self.env()
+            .get_sym(key)
+            .and_then(|value| value.as_int())
+            .is_some_and(|id| id == scope as i64)
     }
 
     /// The value of a per-call anonymous state, which the state store owns

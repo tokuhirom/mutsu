@@ -70,7 +70,7 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
-    clear_current_scope_self_available, current_scope_anon_state_count,
+    anon_state_is_per_call, clear_current_scope_self_available, current_scope_anon_state_count,
     current_scope_anon_state_names_from, finish_block_anon_states, is_test_assertion_callable,
     lookup_compile_time_constant, mark_current_scope_routine_body,
     mark_current_scope_self_available, pop_scope, prepend_anon_state_decls, push_scope,

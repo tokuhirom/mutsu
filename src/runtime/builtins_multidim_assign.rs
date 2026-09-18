@@ -794,6 +794,17 @@ impl Interpreter {
         // TARGET must keep its container, but the assigned VALUE is an ordinary
         // rvalue — `$obj.attr = $p` stores what `$p` FETCHes.
         let value = self.fetch_proxy_for_store(args[3].clone())?;
+        // A list-valued accessor assignment (`$obj.data .= grep &pred`)
+        // receives grep's lazy Seq as the rvalue.  The accessor STORE below
+        // writes into an Array/Hash container, so realize that Seq before the
+        // in-place replacement; otherwise `replace_container_contents` sees a
+        // non-array source and leaves the old container unchanged.
+        self.reify_map_grep_seq(&value)?;
+        let value = if value.is_seq_value() {
+            crate::runtime::coerce_to_array(value)
+        } else {
+            value
+        };
         let target_var = args.get(4).and_then(|v| {
             let name = v.to_string_value();
             if name.is_empty() { None } else { Some(name) }

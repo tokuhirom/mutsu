@@ -30,7 +30,11 @@ static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// otherwise collapsed every occurrence onto one shared `__ANON_STATE__` name.
 pub(in crate::parser) fn mint_anon_state_name() -> String {
     let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("__ANON_STATE_{id}__");
+    let name = if crate::parser::stmt::simple::anon_state_is_per_call() {
+        format!("__ANON_STATE_PC_{id}__")
+    } else {
+        format!("__ANON_STATE_{id}__")
+    };
     crate::parser::stmt::simple::record_anon_state_name(&name);
     name
 }

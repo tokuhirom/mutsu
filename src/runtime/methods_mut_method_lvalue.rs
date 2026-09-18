@@ -974,19 +974,26 @@ impl Interpreter {
                         method
                     )));
                 }
-                let mut updated_mixins = (**mixins).clone();
-                updated_mixins.insert(mixin_attr_key, value.clone());
-                updated_mixins.set_role_attribute_by_name(method, value.clone());
-                let new_mixin =
-                    Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
+                // Role attributes are stored in the Mixin-owned live cell.  A
+                // method-lvalue assignment often reaches this branch through
+                // a temporary dot-assignment invocant; replacing the whole
+                // Mixin in that temporary binding would leave the original
+                // lexical object unchanged.  Update the live attribute cell
+                // directly, preserving both the object identity and aliases.
+                if let Some(existing) = mixins.role_attribute_by_name(method)
+                    && existing.replace_container_contents(&value)
+                {
+                    return Ok(value);
+                }
+                mixins.set_role_attribute_by_name(method, value.clone());
                 if let Some(var_name) = target_var {
                     self.env
-                        .insert_through(var_name.to_string(), new_mixin.clone());
+                        .insert_through(var_name.to_string(), target.clone());
                 }
                 if self.trait_mod_writeback_key.is_some()
                     && self.trait_mod_writeback_value.is_some()
                 {
-                    self.trait_mod_writeback_value = Some(new_mixin);
+                    self.trait_mod_writeback_value = Some(target.clone());
                 }
                 return Ok(value);
             }
@@ -1149,7 +1156,7 @@ impl Interpreter {
                 // (below) write through the cell instead of replacing it.
                 let mut assigned_value = Self::normalize_rw_accessor_assignment(
                     updated.get(&attr_key).cloned().map(|v| v.deref_container()),
-                    value,
+                    value.clone(),
                     preserve_hash_entries,
                     attr_sigil == '%',
                 );
