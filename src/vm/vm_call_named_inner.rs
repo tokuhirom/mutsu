@@ -170,21 +170,25 @@ impl Interpreter {
         // Carried as a `(name, symbol)` pair so the package switch below does
         // not re-intern it: `CompiledFunction::package_sym` is interned once per
         // routine, and `fn_package_sym` once per call above (#7736).
-        let (def_package, def_package_sym): (&str, Symbol) = if !cf.package.is_empty()
-            && !crate::runtime::utils::has_routine_scope_marker(&cf.package)
-        {
-            (cf.package.as_str(), cf.package_sym())
-        } else {
-            (fn_package, fn_package_sym)
-        };
+        let (def_package, def_package_sym): (&str, Symbol) =
+            if !cf.package.is_empty() && !cf.package_is_routine_scoped() {
+                (cf.package.as_str(), cf.package_sym())
+            } else {
+                (fn_package, fn_package_sym)
+            };
         // RAII (`CurrentPackageGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores `current_package` on drop -- including on a Rust panic
         // unwind through the body loop below, or through an early `return`
         // on a param-binding error -- rather than the manual
         // `self.set_current_package(saved)` calls this replaced, which a
         // panic unwind would skip entirely.
+        // The guard takes the package as a `Symbol` (#8686 Phase 1): the
+        // `def_package.to_string()` this passed was a per-call allocation of a
+        // string the symbol already resolves to, and the guard skips both the
+        // switch and its restore while the callee's package is the one already
+        // current — the shape of every same-package sibling call.
         let pkg_guard = (!def_package.is_empty() && def_package != "GLOBAL")
-            .then(|| self.enter_package_guarded_with_sym(def_package.to_string(), def_package_sym));
+            .then(|| self.enter_package_guarded_sym(def_package_sym));
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
         // into the current env so where-constraint expressions can access them.

@@ -1055,7 +1055,7 @@ impl Interpreter {
                 && !crate::runtime::utils::has_routine_scope_marker(pkg)
                 && data.package != self.current_package_sym()
             {
-                Some(self.enter_package_guarded(pkg.to_string()))
+                Some(self.enter_package_guarded_sym(data.package))
             } else {
                 None
             }

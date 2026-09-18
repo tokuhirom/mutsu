@@ -17,28 +17,64 @@ impl Interpreter {
     /// `String` clones live in the outlined slow half, so a GLOBAL routine's
     /// call site does not even pay a call.
     #[inline]
-    pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<String> {
+    pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
         if cf.package.is_empty() || cf.package == "GLOBAL" {
             return None;
         }
         self.enter_routine_package_outlined(cf)
     }
 
+    /// The saved package is carried as a `Symbol`, not a `String`: reading the
+    /// current one is then a relaxed atomic load off the `current_package_sym`
+    /// mirror instead of a `RwLock` read plus a `String` clone, and the target
+    /// comes from `CompiledFunction::package_sym`, interned once per routine.
+    /// This used to go through the by-name `set_current_package`, which
+    /// re-hashed the declaring package — `Bench::Light::Path`, `JSON::Fast` —
+    /// on entry AND again on the restore, so a light call into any module sub
+    /// paid two `Symbol::intern`s and four `String` allocations for a value
+    /// both sides already had interned (#8686 Phase 1).
+    ///
+    /// **Entering the package that is already current costs nothing.** The
+    /// switch is skipped, and so is the restore below while nothing has moved
+    /// it — the dominant hot shape is a routine calling a sibling in its own
+    /// package, where both writes put back the value that was already there.
     #[inline(never)]
-    fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<String> {
-        if crate::runtime::utils::has_routine_scope_marker(&cf.package) {
+    fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
+        // Memoized on the routine rather than re-scanned per call: with the
+        // redundant `current_package` writes gone, this substring scan over
+        // the declaring package name was all that remained of this function's
+        // cost -- see `CompiledFunction::package_is_routine_scoped`.
+        if cf.package_is_routine_scoped() {
             return None;
         }
-        let saved = self.current_package();
-        self.set_current_package(cf.package.clone());
+        let saved = self.current_package_sym();
+        debug_assert_eq!(
+            saved.as_str(),
+            self.current_package(),
+            "current_package and its `current_package_sym` mirror diverged; the \
+             restore below rebuilds the string from the symbol, so the two must \
+             agree (see #7576)"
+        );
+        let target = cf.package_sym();
+        if target != saved {
+            self.set_current_package_with_sym(cf.package.clone(), target);
+        }
         Some(saved)
     }
 
     /// Restore the package saved by [`Self::enter_routine_package`].
+    ///
+    /// Writes only when the package actually differs from the saved one, which
+    /// covers both the skipped switch above and a body that never moved it.
+    /// The restore itself is unconditional in effect — if the body *did* move
+    /// `current_package`, this puts it back exactly as before — so no caller
+    /// has to know whether the entry switched anything.
     #[inline]
-    pub(super) fn leave_routine_package(&mut self, saved: Option<String>) {
-        if let Some(s) = saved {
-            self.set_current_package(s);
+    pub(super) fn leave_routine_package(&mut self, saved: Option<Symbol>) {
+        if let Some(sym) = saved
+            && sym != self.current_package_sym()
+        {
+            self.set_current_package_shared_sym(sym);
         }
     }
 
