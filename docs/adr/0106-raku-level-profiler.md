@@ -226,23 +226,46 @@ Independent value: backtraces and error metadata get a chunk-local file without 
 
 ### Slice 1 — generalize the poll network
 
-`gc::armed()` becomes `vm_poll::armed()` = `gc_armed | profiler_armed` (one cached load, same shape),
-and `gc_safepoint(kind)` becomes the GC consumer of a `vm_poll(kind, site)` entry point. The JIT's
-`helpers::safepoint` shim gains an ip argument — the backedge ip is a compile-time immediate in the
-emitted code, so this is one extra `iconst` per backedge and nothing at runtime when disarmed.
+`gc::armed()` becomes `vm_poll::armed()` = `gc_armed | profiler_armed` (**one** cached bool, the union
+computed once at arm time — not two loads OR'd per poll, which would cost a load per opcode on a path
+that runs on every backedge), and `gc_safepoint(kind)` becomes the GC consumer of a
+`vm_poll(kind, site)` entry point.
 
-Gate: `perf stat -e instructions:u` on `bench-fib` / `bench-tak` / `bench-mandelbrot`, profiler
-compiled in and disarmed, must be within noise (≤0.5%) of the pre-slice binary, per ADR-0006's protocol.
+The JIT's `helpers::safepoint` shim needs the current ip, and this is the one place in the slice where
+"free when disarmed" is not automatic: the backedge ip is a compile-time immediate, but emitting it
+unconditionally puts an extra argument setup on every native backedge — i.e. in the hottest code mutsu
+has — whether or not anyone is profiling. **The JIT must emit the ip-passing form only when the
+profiler is armed.** That is sound because arming is a process-lifetime decision read at startup, while
+JIT compilation happens later, at the hotness threshold: by the time a chunk is compiled the arming
+state is already fixed, so the two shim shapes can be selected at codegen time and the disarmed build
+pays exactly nothing.
+
+The same rule governs everything the poll gains: the profiler's own work (including the tick check of
+Slice 2) sits **inside** the armed branch, never before it.
+
+Gate: §8 gates 1 and 1c.
 
 ### Slice 2 — the sampler
 
-- A **timer thread** sets a per-thread `AtomicBool` tick at the configured rate (all registered mutator
-  threads, so threaded programs are covered rather than silently under-reported).
-- A poll that observes its tick: read the clock once, walk the `RoutineFrame` stack plus the active
+- A **timer thread** bumps one global `AtomicU64` epoch at the configured rate; each poll compares it
+  against a thread-local `last_seen` and samples when they differ. There is deliberately **no registry
+  of mutator threads** to maintain — mutsu has none to reuse (`src/gc/stw.rs` keeps only a per-thread
+  `REGISTERED_MUTATOR` flag), and a registry would have to be kept in step with `clone_for_thread`
+  (`src/runtime/runtime_thread.rs:198`) and the worker pool. The epoch reaches every thread that polls,
+  which is every thread running Raku code. A thread blocked in a native call (sleep, IO, `await`, a
+  GC `stw_aware_wait` park) does not poll and contributes nothing — correct, and a documented property
+  of the report rather than a silent hole.
+- The epoch load happens **inside** the armed branch (Slice 1), so a disarmed run does not pay an
+  atomic load per opcode.
+- A poll that observes a new epoch: read the clock once, walk the `RoutineFrame` stack plus the active
   `(chunk, ip)`, and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
   path performs **no allocation** and takes no lock — it writes fixed-size frames (chunk id, ip,
   routine id, region tag) into reserved space, which keeps the profiler out of its own measurement
   (an allocating sampler would pollute both the GC's candidate buffer and the alloc-stats counters).
+- **The buffers are thread-local and allocated at arm time**, never fields on `Interpreter`.
+  `Interpreter` is cloned per thread (`clone_for_thread`), so a buffer living on it would be memory
+  every thread pays in every run, profiled or not — which is precisely the disarmed cost §8 gate 1b
+  exists to keep at zero.
 - Weighting: each sample carries the elapsed time since the previous sample **on that thread**, so a
   long region that delays the poll contributes its real duration rather than a fixed tick's worth.
 - Aggregation happens at run end (or when a buffer fills) off the hot path: samples fold into a
@@ -361,6 +384,11 @@ mechanism.
 
 - The poll network gains a second consumer. Its off-cost must stay at one cached load, which is a
   standing gate (§8), not a one-time check.
+- **A permanent cost for everyone, in exchange for a tool most runs never use.** The profiler is
+  compiled into the shipped binary, and Slice 0's chunk identity is memory every program pays. The
+  design keeps that to one word per chunk and nothing else (§8 gates 1/1b/1c hold it there), which is
+  the trade this ADR is making explicitly rather than discovering later: a profiler nobody can reach
+  without a rebuild is not a profiler users have.
 - A new output format to keep stable enough for tooling to consume, and a `docs/profiler.md` to keep
   honest.
 - A discipline risk worth naming: **sampled numbers must never be quoted as authoritative in
@@ -380,9 +408,27 @@ mechanism.
 
 ## 8. Gates
 
-1. **Disarmed cost**: ≤0.5% instructions on `bench-fib`, `bench-tak`, `bench-mandelbrot`
+The first three are all forms of one question — **what does a user who never profiles pay?** — because
+the profiler ships compiled in (it is not behind a cargo feature like `alloc-stats`: `--profile` has to
+work on the binary people actually install). The answer must be "nothing measurable", in CPU *and* in
+memory, and it is not enough to assert it: each of these is measured per slice.
+
+1. **Disarmed CPU**: ≤0.5% instructions on `bench-fib`, `bench-tak`, `bench-mandelbrot`
    (`perf stat -e instructions:u`, ADR-0006 protocol) with the profiler compiled in. Fails → the poll
    generalization is wrong, not the profiler.
+1b. **Disarmed memory**: peak RSS within noise on a battery-heavy run — `bench-json-fast` and a
+   META6-shaped `mzef` metadata read, which load enough modules to multiply any per-chunk or
+   per-thread cost. The only permanent allocation this ADR licenses is Slice 0's per-chunk
+   `Option<Symbol>`: **8 bytes against a `CompiledCode` measured at 2,168 bytes** of field headers
+   alone (2026-09-18, debug build, `size_of` — 51 `Vec`s, 10 `FxHashSet`s, a `FxHashMap`, 4
+   `OnceLock`s, 16 `bool`s, before any element storage), i.e. **0.37%** of a chunk's fixed cost and
+   less of its real one. Everything else — ring buffers, counter tables, the timer thread — is
+   allocated at arm time and must not exist in a disarmed run. A regression here means state leaked
+   onto `Interpreter` (cloned per thread) or into `CompiledCode` (one per chunk, thousands per run).
+1c. **Disarmed JIT backedge**: `bench-mandelbrot` and `bench-fib` with JIT **on**, isolating the Slice 1
+   shim change, within the same 0.5%. This is the gate that catches the one non-automatic cost in the
+   design — an ip argument emitted on every native backedge regardless of arming (§5 Slice 1). If it
+   fails, the codegen is not specializing on arming state.
 2. **Armed cost**: ≤1.3x wall on `bench-json-fast` at 1000 Hz for `--profile-kind=line`. (For scale:
    NYTProf is commonly 2-6x; sampling should be far cheaper, and if it is not, the sample path is
    allocating or locking.)
