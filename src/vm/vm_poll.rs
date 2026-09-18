@@ -97,7 +97,9 @@ static LAST_NATIVE_SITE: std::sync::atomic::AtomicU32 = std::sync::atomic::Atomi
 
 /// Note a poll raised by a JIT-compiled backedge. Only the ip-passing shim
 /// calls this, and that shim is only emitted when the profiler is armed, so a
-/// disarmed run never reaches it.
+/// disarmed run never reaches it. With the JIT compiled out there is no native
+/// code to raise one, and the counter stays at the zero `dump` reports.
+#[cfg(feature = "jit")]
 #[inline]
 pub(crate) fn note_native_poll(site: PollSite) {
     NATIVE_POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
