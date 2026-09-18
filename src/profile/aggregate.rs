@@ -499,6 +499,36 @@ mod tests {
     }
 
     #[test]
+    fn a_thread_sample_does_not_invent_a_parent_line() {
+        // A worker buffer carries the worker's top line and the frames visible
+        // on that worker. There is deliberately no spawning-thread location in
+        // this input, so inclusive folding must not manufacture one from a
+        // cross-thread relationship that the sampler never recorded.
+        let worker = file_line(Symbol::intern("worker.raku"), 12);
+        let spawn = file_line(Symbol::intern("main.raku"), 4);
+        let header = SampleHeader {
+            elapsed_ns: 1000,
+            top: Some(worker),
+            region: Region::Interp,
+            frames: 1,
+        };
+        let frames = [SampleFrame {
+            package: Symbol::intern("MAIN"),
+            name: Symbol::intern("worker"),
+            def_file: Some(Symbol::intern("worker.raku")),
+            call_file: Some(Symbol::intern("worker.raku")),
+            call_line: Some(12),
+        }];
+        let mut totals = SampledTotals::default();
+        let mut scratch = FoldScratch::default();
+
+        fold_one(&mut totals, &mut scratch, &header, &frames);
+
+        assert_eq!(totals.line_incl_ns.get(&worker), Some(&1000));
+        assert!(!totals.line_incl_ns.contains_key(&spawn));
+    }
+
+    #[test]
     fn recursion_earns_inclusive_credit_once_per_distinct_routine() {
         let _lock = test_lock();
         let _ = take_samples();
