@@ -448,6 +448,7 @@ fn every_variant_roundtrips_losslessly() {
             package: Symbol::intern("Main"),
             name: Symbol::intern("frobnicate"),
             is_regex: true,
+            captured_regex: None,
         },
         ValueRepr::Pair("key".to_string(), Box::new(Value::int(9)), None),
         ValueRepr::ValuePair(

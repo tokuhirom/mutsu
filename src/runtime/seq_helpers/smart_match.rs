@@ -492,16 +492,25 @@ impl Interpreter {
                     is_regex: true,
                     name,
                     package,
+                    captured_regex,
                 },
             ) => {
-                // Look up the token def and retain its source tree when the
-                // declaration body has one. The compatibility spelling still
-                // drives the legacy fallback for dynamic declarations.
-                let qualified = format!("{}::{}", package, name);
-                if let Some(regex) = self
-                    .extract_token_regex_value(&qualified)
-                    .or_else(|| self.extract_token_regex_value(&name.resolve()))
-                {
+                // A `&NAME` reference resolved at reference-creation time to a
+                // direct pointer to its own declaration's (closure-captured)
+                // regex value (#8680) -- use it directly rather than
+                // re-resolving `name` against whatever is CURRENTLY
+                // registered under that short name, which may by now belong
+                // to an unrelated later declaration (e.g. a sibling
+                // instance's own `my token` of the same name). Only a
+                // reference that could not capture identity at creation time
+                // (a proto/multi token name, or one with no resolvable
+                // literal body) falls back to the legacy by-name lookup.
+                let captured = captured_regex.map(|v| (**v).clone()).or_else(|| {
+                    let qualified = format!("{}::{}", package, name);
+                    self.extract_token_regex_value(&qualified)
+                        .or_else(|| self.extract_token_regex_value(&name.resolve()))
+                });
+                if let Some(regex) = captured {
                     let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
                     let invocation_id = self.take_invocation_id();

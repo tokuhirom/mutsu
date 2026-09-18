@@ -106,12 +106,14 @@ impl NanBox {
                 package,
                 name,
                 is_regex,
+                captured_regex,
             } => pack_arc(
                 Kind::Routine,
                 Arc::new(RoutineBox {
                     package,
                     name,
                     is_regex,
+                    captured_regex,
                 }),
             ),
             ValueRepr::RegexWithAdverbs(adv) => pack_arc(Kind::RegexWithAdverbs, Arc::new(*adv)),

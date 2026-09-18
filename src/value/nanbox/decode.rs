@@ -176,6 +176,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 package: r.package,
                 name: r.name,
                 is_regex: r.is_regex,
+                captured_regex: r.captured_regex,
             }
         }
         Kind::HashEntryRef => {

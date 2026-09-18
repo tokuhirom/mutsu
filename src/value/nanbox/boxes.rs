@@ -119,6 +119,8 @@ pub(in crate::value) struct RoutineBox {
     pub(in crate::value) package: Symbol,
     pub(in crate::value) name: Symbol,
     pub(in crate::value) is_regex: bool,
+    /// See `ValueRepr::Routine`'s `captured_regex` field doc comment.
+    pub(in crate::value) captured_regex: Option<Arc<Value>>,
 }
 
 #[derive(Debug, Clone)]

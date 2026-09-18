@@ -75,12 +75,20 @@ impl Interpreter {
                 is_regex: true,
                 name,
                 package,
+                captured_regex,
             } => {
-                let qualified = format!("{}::{}", package.resolve(), name.resolve());
-                match self
-                    .extract_token_regex_pattern(&qualified)
-                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
-                {
+                // Prefer the reference's own captured identity (#8680) over a
+                // fresh by-name lookup, which would resolve to whatever
+                // declaration is CURRENTLY registered under this short name
+                // rather than the one this particular `&NAME` was bound to.
+                let resolved = captured_regex
+                    .and_then(|v| Self::regex_pattern_of_value(v))
+                    .or_else(|| {
+                        let qualified = format!("{}::{}", package.resolve(), name.resolve());
+                        self.extract_token_regex_pattern(&qualified)
+                            .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
+                    });
+                match resolved {
                     Some(p) => p,
                     None => {
                         let escaped = pattern.to_string_value().replace('\'', "\\'");

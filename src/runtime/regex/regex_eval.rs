@@ -149,6 +149,7 @@ impl Interpreter {
                 is_regex: true,
                 name,
                 package,
+                ..
             } => {
                 let full_name = if package.resolve().is_empty() {
                     name.resolve()

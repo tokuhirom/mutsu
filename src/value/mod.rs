@@ -1873,6 +1873,23 @@ pub(in crate::value) enum ValueRepr {
         package: Symbol,
         name: Symbol,
         is_regex: bool,
+        /// A direct pointer to the regex value (embedding its own
+        /// closure-captured lexical scope, #8662) that a `&NAME` reference to
+        /// a `my token`/`rule` resolved to AT THE MOMENT the reference was
+        /// created — set only by `Value::routine_token_capture`. Bypasses the
+        /// name-keyed `token_defs` registry lookup that match dispatch would
+        /// otherwise redo at match time, which resolves to whatever is
+        /// CURRENTLY registered under that short name rather than the
+        /// specific declaration this reference was bound to: two objects
+        /// each declaring `my token FULLRE {...}` under the same class
+        /// register under the same registry key, so the second declaration's
+        /// registration silently overwrote the first's, and a `&FULLRE`
+        /// reference captured by the first object resolved, at match time,
+        /// to the second object's token (#8680). `None` for every other
+        /// `Routine` value (builtin/multi/method references, and a
+        /// proto/multi token name, which must still resolve by LTM at match
+        /// time and so has no single identity to capture).
+        captured_regex: Option<Arc<Value>>,
     },
     /// The named-argument-flavour Pair (ADR-0021): a transient marker that
     /// only a call-site (a bareword-keyed fat-arrow/colonpair written
