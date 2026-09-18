@@ -1013,6 +1013,16 @@ impl Interpreter {
     /// being built. Shared first half of [`Self::push_method_dispatch_frame`]'s and
     /// [`Self::deferral_tail_entries`]'s computation, before either applies
     /// its own "skip the chosen winner" step.
+    ///
+    /// A non-`multi` candidate is always included regardless of whether its
+    /// signature matches `args`: only a `multi` participates in Raku's
+    /// signature-based overload resolution, so a plain method override is a
+    /// valid `nextwith`/`callwith` deferral target no matter what arity it
+    /// was declared with. `args` here is the shape of the ORIGINAL call, but
+    /// `nextwith`/`callwith` can (and routinely do) hand the deferred call a
+    /// DIFFERENT argument list — filtering a plain override out here because
+    /// its arity doesn't match the original call wrongly hides it even when
+    /// it would perfectly match the args `nextwith` is about to use (#8654).
     fn matched_deferral_candidates(
         &mut self,
         receiver_class: &str,
@@ -1024,13 +1034,15 @@ impl Interpreter {
         let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
         let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
         for (owner, def) in expansion {
-            if self.method_args_match_for_invocant(
-                receiver_class,
-                &def,
-                args,
-                role_bindings.as_ref(),
-                Some(invocant),
-            ) {
+            if !def.is_multi
+                || self.method_args_match_for_invocant(
+                    receiver_class,
+                    &def,
+                    args,
+                    role_bindings.as_ref(),
+                    Some(invocant),
+                )
+            {
                 all_candidates.push((owner, def));
             }
         }
