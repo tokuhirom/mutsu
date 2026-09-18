@@ -635,8 +635,42 @@ silent hole. `tests/profile_regions.rs` asserts the split the only way D5 permit
 `MUTSU_PROFILE_TICK=every-poll` the region rows are a function of the executed bytecode, so which
 subsystem each sample was charged to is reproducible while its nanoseconds are never asserted.
 
-Slice 5 is not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
-own gate (§8), and Slices 0-4 were each independently useful, as claimed.
+**Slice 5 is shipped** ([#8705](https://github.com/tokuhirom/mutsu/issues/8705);
+`news/2026-09/profiler-output.md`, reference documentation in
+[docs/profiler.md](../profiler.md)): the `--profile[=FILE]` /
+`--profile-kind` / `--profile-rate` / `--profile-report` / `--profile-jit` surface with
+`MUTSU_PROFILE*` twins (`src/profile/options.rs`), one document built once from both
+snapshots (`src/profile/document.rs`) and rendered as pretty-printed JSON and as the text
+summary D7 asks for (`src/profile/text.rs`). The scaffolding report §9 described above is
+gone; `tests/profile_counts.rs`, `tests/profile_samples.rs` and `tests/profile_regions.rs` now
+read the **published** document through one shared reader (`tests/profile_doc/`), so the same
+assertions that pin the counters also pin the schema, and `t/tooling/profiler-report.t` plus
+`t/tooling/profiler-cli-options.t` pin gate 3 and the CLI from Raku. Three things the
+implementation settled that the sketch left open:
+
+- **Absent is not zero.** Every measured field is omitted when this run did not measure it, so
+  `hits` on a line only the sampler reached, `self_us` on a line only the counters reached, and
+  the whole half `--profile-kind` did not ask for are all *missing* rather than `0`. §4's D7
+  said this for the halves; the line and routine rows need it for the same reason, and a zero
+  that means "not measured" is the one error a consumer cannot detect.
+- **A flag and an environment variable disagree on purpose.** `--profile-kind=heap` is rakudo's
+  `Unknown profiler specified` on stderr with exit 1 (measured against rakudo 2026.07, which is
+  *not* the ADR-0017 option-list shape — that stays exit 0 for an unknown option like
+  `--profile-frobnicate`), while `MUTSU_PROFILE_KIND=heap` warns and falls back: a flag was typed
+  by a person just now, a variable is usually inherited from somewhere else.
+- **A call site's file comes from the enclosing body, not from `$?FILE`.** The first profile of a
+  multi-file program (`benchmarks/bench-json-fast.raku`) filed every callsite inside JSON::Fast
+  under the *script's* path with the *module's* line numbers -- a caller row reading
+  `bench-json-fast.raku:275` for a file 84 lines long -- because a frame records its call site's
+  file as the dynamically-scoped `?FILE`, which still names the mainline while a `use`d module's
+  routine runs (#8719). The profiler now derives it from the declaring file of the routine whose
+  body holds the call site, in one outward pass over the sampled stack and from the frame stack
+  at the exact counter's push site. Like `src/profile/paths.rs` this is a profiler-side
+  reconciliation: it changes no Raku-visible file, and #8719 still owns settling the divergence
+  at the source.
+
+Slice 6 is explicitly optional and unstarted. Each slice landed as its own PR with its
+own gate (§8), and Slices 0-5 were each independently useful, as claimed.
 
 ## 10. Open questions
 

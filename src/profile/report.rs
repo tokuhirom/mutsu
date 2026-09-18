@@ -1,199 +1,59 @@
-//! The at-exit scaffolding report.
+//! Emitting the profile at process exit (ADR-0106 Slice 5).
 //!
-//! **This is not the profile document.** Slice 5 ([#8705]) owns that — its
-//! JSON schema, its file, its CLI, its text renderer. What this prints is the
-//! minimum that makes the collected data *observable from outside the
-//! process*, because until it is, ADR-0106 §8's gates cannot be asserted at
-//! all: the counters and the sampled tables would be folded into statics
-//! nothing reads. `tests/profile_counts.rs` and `tests/profile_samples.rs`
-//! are the consumers. Slice 5 replaces these bodies with its document
-//! builder; neither the counters nor the sampler change.
+//! This is the whole output path, and it is deliberately thin: fold both
+//! halves, build one [`document`], then render it as JSON to a
+//! file and/or as text to stderr according to `--profile-report`. Nothing here
+//! decides *what* a number means — that is the document's job — so adding a
+//! renderer (HTML, a MoarVM-shaped export; ADR-0106 Slice 6) touches this file
+//! only to call it.
 //!
-//! [#8705]: https://github.com/tokuhirom/mutsu/issues/8705
+//! **stderr, never stdout.** The profiled program owns stdout; a report written
+//! there would corrupt the output of the very program being profiled, and would
+//! be invisible to anyone piping it.
 
-use super::counts;
-use super::region::Region;
-use super::sampler;
-use super::snapshot;
+use super::document;
+use super::options;
+use super::text;
+use super::{counts, snapshot};
 
-/// How many rows of each table the scaffolding report prints. A fixture small
-/// enough to reason about fits well inside this; a real program does not, and
-/// is Slice 5's problem.
-const REPORT_ROWS: usize = 20;
-
-/// Fold every thread at process shutdown and print what was collected.
+/// Fold every thread at process shutdown and emit the report.
 pub(crate) fn flush_at_exit() {
     if !crate::vm::vm_poll::profiler_armed() {
         return;
     }
-    report_counts();
-    report_samples();
-}
-
-fn report_counts() {
-    let snapshot = counts::take_counts();
-    // Hottest first, so "the top self line" is the first row; the location
-    // breaks ties, so two lines with equal hits print in a stable order.
-    let mut line_hits = snapshot.line_hits;
-    line_hits.sort_by_key(|(location, hits)| {
-        (
-            std::cmp::Reverse(*hits),
-            location.file.as_str(),
-            location.line,
-        )
-    });
-    for (location, hits) in line_hits.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: line {}:{} hits={hits}",
-            location.file, location.line
-        );
-    }
-    let mut routine_entries = snapshot.routine_entries;
-    routine_entries.sort_by_key(|(location, entries)| {
-        (
-            std::cmp::Reverse(*entries),
-            location.package.as_str(),
-            location.name.as_str(),
-        )
-    });
-    for (location, entries) in routine_entries.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: routine {}::{} entries={entries}",
-            location.package, location.name
-        );
-    }
-    let mut callsite_calls = snapshot.callsite_calls;
-    callsite_calls.sort_by_key(|(location, calls)| {
-        (
-            std::cmp::Reverse(*calls),
-            location.caller_file.as_str(),
-            location.caller_line,
-        )
-    });
-    for (location, calls) in callsite_calls.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: callsite {}:{} -> {}::{} calls={calls}",
-            location.caller_file, location.caller_line, location.package, location.name
-        );
-    }
-}
-
-fn report_samples() {
-    let Some(config) = sampler::config() else {
+    let Some(options) = options::get() else {
+        // Armed through the test hook rather than through the options (the JIT
+        // site-ABI test in `vm_poll`), so there is no report to emit.
         return;
     };
-    let snapshot = snapshot::take_samples();
-    let tick = match config.tick {
-        sampler::Tick::Timer => "timer",
-        sampler::Tick::EveryPoll => "every-poll",
-    };
-    // `time_is_sampled` is deliberately shouted (ADR-0106 §7): a pasted
-    // profile must not be mistaken for a bench-CI measurement. `blocked
-    // threads contribute nothing` is the documented property of a poll-based
-    // sampler — a thread in `sleep`/IO/`await`/a GC park does not poll, so it
-    // is absent rather than idle.
-    eprintln!(
-        "profile: samples n={} sampled_ns={} truncated={} wall_ns={} rate_hz={} tick={tick} threads={} top_region={} time_is_sampled=1 blocked_threads_absent=1",
-        snapshot.samples,
-        snapshot.sampled_ns,
-        snapshot.truncated,
-        config.started_at.elapsed().as_nanos(),
-        config.rate_hz,
-        sampler::sampled_threads(),
-        snapshot
-            .top_region()
-            .map_or("none", |(region, _)| region.name()),
-    );
-    print_region_rows(&snapshot);
-    print_line_rows("self-line", snapshot.line_self_ns);
-    print_line_rows("incl-line", snapshot.line_incl_ns);
-    print_routine_rows("self-routine", snapshot.routine_self_ns);
-    print_routine_rows("incl-routine", snapshot.routine_incl_ns);
-
-    let mut rows = snapshot.callsite_incl_ns;
-    rows.sort_by_key(|(location, ns)| {
-        (
-            std::cmp::Reverse(*ns),
-            location.caller_file.as_str(),
-            location.caller_line,
-            location.name.as_str(),
-        )
-    });
-    for (location, ns) in rows.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: incl-callsite {}:{} -> {}::{} ns={ns}",
-            location.caller_file, location.caller_line, location.package, location.name
-        );
+    // Both snapshots drain their tables, so this runs exactly once.
+    let profile = document::build(options, counts::take_counts(), snapshot::take_samples());
+    if options.report.text() {
+        eprint!("{}", text::render(&profile));
     }
-}
-
-/// The D4 half of the report: which interpreter subsystem the sampled time
-/// went to, whole-run and per line.
-///
-/// `interp` is not a residue category -- it is the answer "mutsu was running
-/// bytecode", which is what a sample no subsystem claimed means -- so there is
-/// no `unknown` row to explain away. `excluded-region` is measured, not
-/// sampled, and is deliberately a separate row type: it is time the line table
-/// above does **not** contain.
-fn print_region_rows(snapshot: &snapshot::SampledSnapshot) {
-    for index in 0..Region::COUNT {
-        let ns = snapshot.region_ns[index];
-        if ns == 0 {
-            continue;
+    if let (true, Some(path)) = (options.report.json(), options.out.as_deref()) {
+        match write_json(path, &profile) {
+            // Rakudo's wording for the same event, on the same stream.
+            Ok(()) => eprintln!("Writing profiler output to {}", path.display()),
+            Err(err) => eprintln!(
+                "[mutsu profiler] warning: cannot write {}: {err}",
+                path.display()
+            ),
         }
-        eprintln!(
-            "profile: region {} ns={ns} samples={}",
-            Region::from_index(index).name(),
-            snapshot.region_samples[index],
-        );
-    }
-    for (region, ns) in &snapshot.excluded_region_ns {
-        eprintln!("profile: excluded-region {} ns={ns}", region.name());
-    }
-    let mut rows = snapshot.line_region_ns.clone();
-    rows.sort_by_key(|(key, ns)| {
-        (
-            std::cmp::Reverse(*ns),
-            key.location.file.as_str(),
-            key.location.line,
-            key.region.index(),
-        )
-    });
-    for (key, ns) in rows.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: self-line-region {}:{} {} ns={ns}",
-            key.location.file,
-            key.location.line,
-            key.region.name(),
-        );
     }
 }
 
-fn print_line_rows(tag: &str, mut rows: Vec<(super::LineLocation, u64)>) {
-    rows.sort_by_key(|(location, ns)| {
-        (
-            std::cmp::Reverse(*ns),
-            location.file.as_str(),
-            location.line,
-        )
-    });
-    for (location, ns) in rows.iter().take(REPORT_ROWS) {
-        eprintln!("profile: {tag} {}:{} ns={ns}", location.file, location.line);
+fn write_json(path: &std::path::Path, profile: &document::Profile) -> std::io::Result<()> {
+    // Pretty-printed: the document is read by people at least as often as by
+    // tools, and `git diff` of two profiles is one of the uses ADR-0106 D7
+    // names.
+    let json = serde_json::to_string_pretty(profile)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
     }
-}
-
-fn print_routine_rows(tag: &str, mut rows: Vec<(super::RoutineLocation, u64)>) {
-    rows.sort_by_key(|(location, ns)| {
-        (
-            std::cmp::Reverse(*ns),
-            location.package.as_str(),
-            location.name.as_str(),
-        )
-    });
-    for (location, ns) in rows.iter().take(REPORT_ROWS) {
-        eprintln!(
-            "profile: {tag} {}::{} ns={ns}",
-            location.package, location.name
-        );
-    }
+    std::fs::write(path, json + "\n")
 }

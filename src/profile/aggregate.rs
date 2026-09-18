@@ -114,12 +114,15 @@ impl ThreadSamples {
             pending.frames.push(SampleFrame {
                 package: frame.package,
                 name: frame.name,
-                // `def_file: None` means "the same file as the caller" (see
-                // `RoutineFrame`), so resolving it here is what keeps ONE
-                // routine from becoming two rows -- which it otherwise does as
-                // soon as a `start` block calls it, because the frames pushed
-                // on a worker do not always carry the declaring file.
-                def_file: frame.def_file.or(frame.file),
+                // Both files are copied **raw**, and `def_file: None` ("the
+                // same file as the caller", see `RoutineFrame`) is resolved in
+                // the fold: it is the fold that has the whole stack, and the
+                // resolution needs it twice over -- once to keep ONE routine
+                // from becoming two rows (a worker's frames do not always carry
+                // the declaring file), and once to name the file a *call site*
+                // is in, which is the enclosing body's file and not this
+                // frame's dynamically-scoped `?FILE`.
+                def_file: frame.def_file,
                 call_file: frame.file,
                 call_line: frame.line,
             });
@@ -172,6 +175,8 @@ struct FoldScratch {
     lines: FxHashSet<LineLocation>,
     routines: FxHashSet<RoutineLocation>,
     callsites: FxHashSet<CallsiteLocation>,
+    /// Per-frame call-site file, filled by one outward pass per sample.
+    caller_files: Vec<Option<Symbol>>,
 }
 
 fn fold_handle(handle: &BufferHandle) {
@@ -238,11 +243,12 @@ fn fold_one(
     scratch.lines.clear();
     scratch.routines.clear();
     scratch.callsites.clear();
+    resolve_caller_files(&mut scratch.caller_files, frames);
     if let Some(top) = header.top {
         scratch.lines.insert(top);
     }
-    for frame in frames {
-        if let (Some(file), Some(line)) = (frame.call_file, frame.call_line) {
+    for (index, frame) in frames.iter().enumerate() {
+        if let (Some(file), Some(line)) = (scratch.caller_files[index], frame.call_line) {
             scratch.lines.insert(LineLocation { file, line });
             scratch.callsites.insert(CallsiteLocation {
                 caller_file: file,
@@ -268,7 +274,38 @@ fn routine_of(frame: &SampleFrame) -> RoutineLocation {
     RoutineLocation {
         package: frame.package,
         name: frame.name,
-        file: frame.def_file,
+        // `None` means "the same file as the caller", so resolve it rather than
+        // let one routine become two rows.
+        file: frame.def_file.or(frame.call_file),
+    }
+}
+
+/// Which file each frame's **call site** is in.
+///
+/// A frame records the call that created it as `(file, line)`, but that `file`
+/// is the dynamically-scoped `?FILE` — which still names the mainline while a
+/// `use`d module's routine is running ([#8719]). Taking it at face value put
+/// module line numbers under the script's path: a caller row reading
+/// `bench-json-fast.raku:275` for a file 84 lines long.
+///
+/// The call site is in the body of the *enclosing* routine, so its file is that
+/// routine's declaring file. One outward pass computes it for every frame:
+/// walking from the outermost inward, `enclosing` is the body the next call is
+/// made from, and a frame with no declaring file inherits it — which is exactly
+/// what `def_file: None` means. The outermost frame's call site is in the
+/// mainline, where the frame's own `?FILE` is the right answer.
+///
+/// This is a profiler-side reconciliation, like [`super::paths`]: it changes no
+/// Raku-visible file, only which file the profile's own tables are keyed by.
+///
+/// [#8719]: https://github.com/tokuhirom/mutsu/issues/8719
+fn resolve_caller_files(out: &mut Vec<Option<Symbol>>, frames: &[SampleFrame]) {
+    out.clear();
+    out.resize(frames.len(), None);
+    let mut enclosing: Option<Symbol> = None;
+    for (index, frame) in frames.iter().enumerate().rev() {
+        out[index] = enclosing.or(frame.call_file);
+        enclosing = frame.def_file.or(enclosing);
     }
 }
 
@@ -346,6 +383,73 @@ mod tests {
         assert!(snapshot.routine_incl_ns.iter().all(|(_, ns)| *ns == 1000));
         assert_eq!(snapshot.line_incl_ns.len(), 3);
         assert_eq!(snapshot.sampled_ns, 1000);
+    }
+
+    /// A call site is in the body of the routine that made the call, so its
+    /// file is that routine's declaring file -- not the frame's own `?FILE`,
+    /// which still names the mainline while a `use`d module's routine runs
+    /// (#8719). Before this, a module's callsites were filed under the script's
+    /// path *with the module's line numbers*.
+    #[test]
+    fn a_call_site_is_in_the_file_of_the_body_that_made_the_call() {
+        let script = Symbol::intern("script.raku");
+        let module = Symbol::intern("Module.rakumod");
+        // Innermost first, as the sample path stores them: the mainline calls
+        // `outer` (declared in the module), which calls `leaf`. Every frame
+        // spells its `?FILE` as the script, which is the bug being defended
+        // against.
+        let frames = [
+            SampleFrame {
+                package: Symbol::intern("Module"),
+                name: Symbol::intern("leaf"),
+                def_file: Some(module),
+                call_file: Some(script),
+                call_line: Some(5),
+            },
+            SampleFrame {
+                package: Symbol::intern("Module"),
+                name: Symbol::intern("outer"),
+                def_file: Some(module),
+                call_file: Some(script),
+                call_line: Some(3),
+            },
+        ];
+        let mut caller_files = Vec::new();
+        resolve_caller_files(&mut caller_files, &frames);
+        assert_eq!(
+            caller_files,
+            vec![Some(module), Some(script)],
+            "`leaf` was called from the module's body; `outer` from the mainline"
+        );
+    }
+
+    /// `def_file: None` means "the same file as the caller", so a frame that
+    /// does not name a file must not break the chain -- the call it makes is
+    /// still in the nearest enclosing body that does name one.
+    #[test]
+    fn a_frame_with_no_declaring_file_inherits_the_one_outside_it() {
+        let script = Symbol::intern("script.raku");
+        let module = Symbol::intern("Module.rakumod");
+        let unnamed = |line: u32| SampleFrame {
+            package: Symbol::intern("Module"),
+            name: Symbol::intern("block"),
+            def_file: None,
+            call_file: Some(script),
+            call_line: Some(line),
+        };
+        let frames = [
+            unnamed(7),
+            SampleFrame {
+                package: Symbol::intern("Module"),
+                name: Symbol::intern("outer"),
+                def_file: Some(module),
+                call_file: Some(script),
+                call_line: Some(3),
+            },
+        ];
+        let mut caller_files = Vec::new();
+        resolve_caller_files(&mut caller_files, &frames);
+        assert_eq!(caller_files, vec![Some(module), Some(script)]);
     }
 
     #[test]

@@ -6,131 +6,18 @@ use std::io::{self, Read};
 
 use mutsu::{Interpreter, RuntimeError, Value};
 
+mod cli_options;
+
+use cli_options::{
+    handle_negated_long_option, handle_negated_short_option, illegal_option, print_help,
+    print_negation_error,
+};
+
 fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_name: Option<&str>) {
     eprintln!(
         "{}",
         mutsu::error_render::render_error(prefix, err, source, program_name)
     );
-}
-
-fn print_help(program: &str) {
-    print!("{}", usage_text(program));
-}
-
-fn usage_text(program: &str) -> String {
-    let mut out = String::new();
-    macro_rules! println {
-        () => { out.push('\n') };
-        ($($arg:tt)*) => {{ out.push_str(&format!($($arg)*)); out.push('\n'); }};
-    }
-    println!("Usage: {} [OPTIONS] [FILE | -e CODE]", program);
-    println!();
-    println!("Options:");
-    println!("  -e CODE        Evaluate CODE");
-    println!("  -I PATH        Add PATH to the module search path");
-    println!("  -M MODULE      use MODULE before executing program (repeatable)");
-    println!("  --dump-ast     Dump the AST instead of executing");
-    println!("  --dump-bytecode  Dump compiled bytecode instead of executing");
-    println!("  --doc          Render Pod documentation from the source");
-    println!("  --doc=module   Render it with Pod::To::[module] (only Text)");
-    println!("  --repl         Start the interactive REPL");
-    println!("  --no-precomp   Disable module precompilation cache");
-    println!("  -h, --help     Show this help message");
-    println!();
-    println!("Environment variables:");
-    println!("  MUTSULIB       Colon-separated list of module search paths");
-    println!("                 (searched after -I paths, so -I takes priority;");
-    println!("                 both are searched before installed modules)");
-    println!("  MUTSU_PRECOMP  Set to 0 to disable the module precompilation");
-    println!("                 cache, like --no-precomp but for every mutsu");
-    println!("                 process a script or test harness spawns");
-    println!("  MUTSU_CRASH_REPORT");
-    println!("                 Set to 0 to disable the fatal-signal crash");
-    println!("                 report (tmp/crash/<pid>.txt, written only when");
-    println!("                 the interpreter dies of SIGSEGV and friends)");
-    println!("  MUTSU_CRASH_DIR");
-    println!("                 Directory to write crash reports to");
-    println!("                 (default: tmp/crash)");
-    out
-}
-
-/// A command-line option that cannot be negated. The message goes to *stdout*
-/// and the process ends **successfully** — see `docs/adr/0017` for why an
-/// option-parsing error is not a failure exit.
-fn print_negation_error(option: &str) -> ! {
-    println!("SORRY! Option '{}' cannot be negated", option);
-    std::process::exit(0);
-}
-
-/// An option mutsu does not know, reported the way rakudo reports it: the
-/// message and the usage text on *stderr*, exit status **0** (ADR-0017). Long
-/// options are named without their `=value` part, matching
-/// `Illegal option --nosucharg` for `--nosucharg=foo`.
-///
-/// Without this, an unknown `--switch` fell through to "this must be the
-/// program file" and died with `Could not open --switch`.
-fn illegal_option(program: &str, arg: &str) -> ! {
-    if let Some(long) = arg.strip_prefix("--") {
-        let name = long.split('=').next().unwrap_or(long);
-        eprintln!("Illegal option --{}", name);
-    } else {
-        eprintln!("No such option {}", arg);
-    }
-    eprint!("{}", usage_text(program));
-    std::process::exit(0);
-}
-
-fn handle_negated_short_option(
-    arg: &str,
-    auto_print: &mut bool,
-    auto_loop: &mut bool,
-) -> Option<Result<(), ()>> {
-    let name = arg.strip_prefix("-/")?;
-    if name.len() != 1 {
-        print_negation_error(arg);
-    }
-    Some(match name {
-        "h" | "v" => Ok(()),
-        "n" => {
-            *auto_loop = false;
-            Ok(())
-        }
-        "p" => {
-            *auto_print = false;
-            Ok(())
-        }
-        _ => Err(()),
-    })
-}
-
-fn handle_negated_long_option(
-    arg: &str,
-    dump_ast: &mut bool,
-    doc_mode: &mut bool,
-    repl_flag: &mut bool,
-    no_precomp: &mut bool,
-) -> Option<Result<(), ()>> {
-    let name = arg.strip_prefix("--/")?;
-    Some(match name {
-        "help" | "version" => Ok(()),
-        "dump-ast" => {
-            *dump_ast = false;
-            Ok(())
-        }
-        "doc" => {
-            *doc_mode = false;
-            Ok(())
-        }
-        "repl" => {
-            *repl_flag = false;
-            Ok(())
-        }
-        "no-precomp" => {
-            *no_precomp = false;
-            Ok(())
-        }
-        _ => Err(()),
-    })
 }
 
 /// Stack for the `mutsu-main` thread the interpreter actually runs on. Matches
@@ -187,6 +74,7 @@ fn run_main() {
     let mut auto_loop = false;
     let mut lib_paths: Vec<String> = Vec::new();
     let mut preload_modules: Vec<String> = Vec::new();
+    let mut profile_options = mutsu::ProfileCliOptions::default();
     let mut filtered_args: Vec<String> = Vec::new();
     let mut iter = args[1..].iter();
     let mut seen_source = false; // true once -e CODE or a filename is consumed
@@ -280,6 +168,15 @@ fn run_main() {
                 eprintln!("Usage: {} -pe <code>", args[0]);
                 std::process::exit(1);
             }
+        } else if let Some(result) = profile_options.take_arg(arg) {
+            // A profiler flag whose *value* names something mutsu does not
+            // implement is rakudo's error, not an option-list error: stderr and
+            // exit 1, where an unknown option is stdout-free usage and exit 0
+            // (ADR-0017).
+            if let Err(message) = result {
+                eprintln!("{}", message);
+                std::process::exit(1);
+            }
         } else if arg.starts_with("--parser=") {
             eprintln!("--parser option is no longer supported");
             std::process::exit(1);
@@ -318,6 +215,14 @@ fn run_main() {
             filtered_args.push(arg.clone());
             seen_source = true;
         }
+    }
+
+    // Arm the profiler before anything runs: the sampler's tick thread, the
+    // per-thread buffers and the JIT's helper ABI are all chosen from these
+    // options at the first VM poll (ADR-0106 §8 gate 1b).
+    if let Err(message) = mutsu::profile_configure(profile_options) {
+        eprintln!("{}", message);
+        std::process::exit(1);
     }
 
     // MUTSULIB env var: colon-separated paths appended AFTER the -I paths.

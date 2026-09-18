@@ -47,7 +47,7 @@ RULES = [
 
     # -- language machinery --------------------------------------------------
     ("rakuast", r"^ast-|-ast$"),
-    ("tooling", r"^cli-|dump-ast|^lsp|^mzef|^zef-|repl|command-line|shebang|^main-|^exit|^usage|^version-flag|^help-|^test-util|^is-run|^is_run|^subtest|^todo-|^plan-|^bail|^diag|^flunk|^pass-|test-module|^tap-|^prove"),
+    ("tooling", r"^cli-|dump-ast|^lsp|^mzef|^zef-|repl|command-line|shebang|^main-|^exit|^usage|^version-flag|^help-|^profiler-|^test-util|^is-run|^is_run|^subtest|^todo-|^plan-|^bail|^diag|^flunk|^pass-|test-module|^tap-|^prove"),
     ("modules", r"^module|^use-|-use$|^need-|^import|export|^lib-|precomp|^unit-|(^|-)package(-|$)|^require|batteries|^install|distribution|^depends|compunit|^bundled|^mixin-module|-module(-|$)|^our-|^globalish"),
     ("nativecall", r"^libc-|^ffi-"),
 
