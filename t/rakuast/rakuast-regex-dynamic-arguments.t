@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 161;
+plan 170;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -856,3 +856,65 @@ ok GDynamicDefaultedSignatureColonPairArgument.parse('a').defined,
 $default_value = 41;
 ok !GDynamicDefaultedSignatureColonPairArgument.parse('a').defined,
     'a defaulted signature keeps its outer lexical dynamic';
+
+my $typed_default_signature_ast =
+    Q[/<word(:expected(-> Int $candidate = 42 { $candidate == 42 }))>/].AST;
+my $typed_default_signature_gist = $typed_default_signature_ast.gist;
+ok $typed_default_signature_gist.contains('RakuAST::Type::Simple.new('),
+    'a typed defaulted signature keeps its simple type node';
+ok $typed_default_signature_gist.contains('default => RakuAST::IntLiteral.new(42)'),
+    'a typed defaulted signature keeps its default expression';
+ok EVAL($typed_default_signature_ast) ~~ Regex,
+    'a source typed-defaulted-signature regex lowers successfully';
+
+my $typed_default_parameter = RakuAST::Parameter.new(
+    type => RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Int')),
+    target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+    default => RakuAST::IntLiteral.new(42),
+);
+my $typed_default_statements = RakuAST::StatementList.new;
+$typed_default_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $typed_default_pointy = RakuAST::PointyBlock.new(
+    signature => RakuAST::Signature.new(parameters => [$typed_default_parameter]),
+    body => RakuAST::Blockoid.new($typed_default_statements),
+);
+my &typed_default_callable = EVAL($typed_default_pointy);
+is &typed_default_callable(), 42,
+    'a constructed typed defaulted pointy block supplies its default';
+is &typed_default_callable(7), 7,
+    'a constructed typed defaulted pointy block accepts an explicit argument';
+throws-like { &typed_default_callable('not an Int') }, Exception,
+    'a constructed typed defaulted pointy block enforces its type';
+
+my $typed_default_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(expression => $typed_default_pointy),
+        ),
+    ),
+);
+my $typed_default_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($typed_default_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($typed_default_constructed_ast) ~~ Regex,
+    'a hand-built typed-defaulted-signature regex lowers through the matcher';
+
+my $typed_default_value = 42;
+grammar GDynamicTypedDefaultedSignatureColonPairArgument {
+    token TOP { <word(:expected(-> Int $candidate = $typed_default_value { $candidate == 42 }))> };
+    token word(:$expected) { <.alpha> <?{ $expected() }> }
+}
+ok GDynamicTypedDefaultedSignatureColonPairArgument.parse('a').defined,
+    'a typed defaulted signature reaches the named subrule without an argument';
+$typed_default_value = 41;
+ok !GDynamicTypedDefaultedSignatureColonPairArgument.parse('a').defined,
+    'a typed defaulted signature keeps its outer lexical dynamic';
