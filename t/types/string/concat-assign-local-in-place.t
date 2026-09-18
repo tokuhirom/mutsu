@@ -6,9 +6,9 @@ use Test;
 # buffer when that buffer is the value's alone. Growing a buffer in place is
 # only correct under Raku's value semantics if every way of holding a second
 # reference to the same string is detected, so that is most of what this pins,
-# alongside the normalization rule that lets the append skip NFC.
+# alongside the normalization rule that keeps the grown buffer NFC (#8725).
 
-plan 25;
+plan 40;
 
 # -- the accumulation itself -------------------------------------------------
 
@@ -76,9 +76,9 @@ plan 25;
 
 {
     # NFC is not append-closed: a combining mark at the start of the suffix
-    # composes with the last character of the accumulated string. The fast
-    # path must decline this (it requires an ASCII suffix), or `.chars` and
-    # comparison would silently change.
+    # composes with the last character of the accumulated string, so the
+    # append has to renormalize the join rather than push the mark on -- or
+    # `.chars` and comparison would silently change.
     my $s = "e";
     $s ~= "\x[301]";
     is $s.chars, 1, 'a combining mark composes with the character before it';
@@ -141,4 +141,74 @@ plan 25;
     $s ~= 'tured';
     is $s, 'captured', 'a captured accumulator still appends';
     is $peek(), 'captured', 'and the closure reads the current value';
+}
+
+# -- non-ASCII appends stay linear AND stay normalized (#8725) ---------------
+
+{
+    # The in-place path takes a non-ASCII suffix now, so long accumulations of
+    # one must still come out with every character and nothing composed.
+    my $s = '';
+    $s ~= "\c[SNOWMAN]" for ^5000;
+    is $s.chars, 5000, 'a long non-ASCII accumulation keeps every character';
+    is $s.substr(0, 1), "\c[SNOWMAN]", 'and starts with what was appended first';
+    is $s.substr(*-1), "\c[SNOWMAN]", 'and ends with what was appended last';
+}
+
+{
+    # A suffix that is not itself NFC must be normalized before it lands.
+    my $s = 'x';
+    $s ~= "e\x[301]";
+    is $s.chars, 2, 'a non-NFC suffix is normalized on the way in';
+    is $s.ords.join(','), '120,233', 'to the composed codepoint';
+}
+
+{
+    # Repeated composing appends: each one composes with the tail left by the
+    # previous, so the window rule is exercised on a buffer it just built.
+    my $s = '';
+    $s ~= "e\x[301]" for ^100;
+    is $s.chars, 100, 'repeated composing appends stay one grapheme each';
+    is $s.ords.elems, 100, 'with no leftover combining marks';
+}
+
+{
+    # A below-mark (ccc 220) arriving after an above-mark (ccc 230) has to be
+    # reordered in front of it -- and once it is, it composes with the starter
+    # that the window had to reach back to.
+    my $s = "a\x[30A]";
+    $s ~= "\x[323]";
+    is $s.ords.join(','), '7841,778', 'canonical reordering happens across the join';
+    is $s.chars, 1, 'and the result is still one grapheme';
+}
+
+{
+    # Hangul composes starter-with-starter, so "is a starter" is not a
+    # sufficient test for skipping normalization.
+    my $s = "\x[1100]";
+    $s ~= "\x[1161]";
+    is $s.ords.join(','), '44032', 'Hangul L + V compose across the join';
+    $s ~= "\x[11A8]";
+    is $s.ords.join(','), '44033', 'and LV + T compose too';
+}
+
+{
+    # NFC_QC = No: the character is replaced by normalization even though it
+    # is a starter, so it cannot be appended verbatim.
+    my $s = 'x';
+    $s ~= "\x[212B]";
+    is $s.ords.join(','), '120,197', 'a singleton is normalized rather than appended as-is';
+}
+
+{
+    # An unbounded combining run has no interior normalization boundary; the
+    # append has to stay correct where the bounded window gives up.
+    my $s = 'a';
+    $s ~= "\x[334]" for ^80;
+    $s ~= "\x[301]";
+    is $s.chars, 1, 'a very long combining run is still one grapheme';
+    # The acute is not blocked by the ccc-1 overlays, so it composes with the
+    # starter: 'a' + 301 -> U+00E1, leaving 80 overlays behind it.
+    is $s.ords.elems, 81, 'and keeps every mark';
+    is $s.ords[0], 225, 'with the acute composed onto the starter';
 }

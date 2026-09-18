@@ -11,7 +11,7 @@
 //!
 //! Reading the slot *after* the RHS, and moving the value out of it rather
 //! than cloning, leaves the append holding the only reference — so it can grow
-//! the existing allocation (`Value::str_appended_unnormalized`) and the whole
+//! the existing allocation (`Value::str_appended_nfc`) and the whole
 //! accumulation becomes linear.
 
 use super::*;
@@ -32,9 +32,8 @@ impl Interpreter {
         // Everything else runs the exact sequence this opcode replaces, in the
         // same order and through the same handlers, so every shape the fast
         // path declines (a container or Proxy in the slot, an undefined LHS
-        // needing the identity seed, a `.Stringy` operand, a junction, a
-        // non-ASCII suffix that may compose across the join) behaves as it
-        // always did.
+        // needing the identity seed, a `.Stringy` operand, a junction) behaves
+        // as it always did.
         self.exec_get_local_op(code, slot)?;
         self.exec_meta_assign_identity_op(MetaAssignIdentity::EmptyStr)?;
         self.stack.push(rhs);
@@ -52,11 +51,15 @@ impl Interpreter {
     /// - **Both sides plain `Str`.** An allomorph or mixin views as `Mixin`, a
     ///   user object needs `.Stringy` dispatch, an undefined LHS needs the
     ///   METAOP_ASSIGN identity seed — none of which this path performs.
-    /// - **ASCII suffix.** Skipping NFC is only sound when the join cannot
-    ///   compose. An ASCII character is a starter and never a combining mark,
-    ///   so it neither composes with the character before it nor changes the
-    ///   normalization of anything earlier: `"e" ~= "\x[301]"` (which must
-    ///   yield a single `é`) is non-ASCII and therefore declined here.
+    /// - **Any `Str` suffix, normalized in bounded time.** The result must
+    ///   still be NFC, but re-running NFC over the whole concatenation is
+    ///   O(len) per append and reintroduces the quadratic cost (#8725), so
+    ///   `StrAppendPlan::for_suffix` reads the suffix alone and reports
+    ///   whether the join can compose at all. It cannot for an ASCII suffix,
+    ///   nor for any suffix starting at a normalization boundary (a snowman,
+    ///   a CJK ideograph, a composed `é`); when it can — `"e" ~= "\x[301]"`
+    ///   must yield a single `é` — only a bounded window around the join is
+    ///   renormalized.
     /// - **No env mirror.** A slot that syncs to env is held twice, so the
     ///   append would copy anyway — and, worse, writing only the slot would
     ///   leave the mirror stale.
@@ -73,9 +76,6 @@ impl Interpreter {
         let ValueView::Str(suffix) = rhs.view() else {
             return false;
         };
-        if !suffix.is_ascii() {
-            return false;
-        }
         let Some(current) = self.locals.get(idx) else {
             return false;
         };
@@ -105,8 +105,9 @@ impl Interpreter {
         // Moving the value out is what makes the buffer unique; cloning it
         // here would defeat the whole opcode. `Value::NIL` is never observable
         // in the slot: nothing runs between the take and the store.
+        let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
         let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
-        self.locals[idx] = lhs.str_appended_unnormalized(suffix.as_str());
+        self.locals[idx] = lhs.str_appended_nfc(&plan);
         true
     }
 }
