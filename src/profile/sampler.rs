@@ -39,6 +39,7 @@
 
 use super::LineLocation;
 use super::aggregate::ThreadSamples;
+use super::region::Region;
 use crate::runtime::Interpreter;
 use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -240,6 +241,10 @@ fn take_sample(interp: &Interpreter, was_at: Option<LineLocation>) {
         .saturating_sub(excluded);
 
     let stack = interp.routine_stack();
+    // Whichever subsystem was still running when the tick fired claimed it on
+    // its way out (`super::region`); an unclaimed tick means bytecode was
+    // running, which is `Region::Interp`.
+    let region = super::region::take_pending();
 
     BUFFER.with(|cell| {
         let Ok(mut slot) = cell.try_borrow_mut() else {
@@ -251,19 +256,41 @@ fn take_sample(interp: &Interpreter, was_at: Option<LineLocation>) {
         let buffer = slot.get_or_insert_with(|| {
             ThreadSamples::with_capacity(SAMPLES_PER_BUFFER, MAX_SAMPLE_FRAMES)
         });
-        buffer.record(elapsed.as_nanos() as u64, was_at, stack);
+        buffer.record(elapsed.as_nanos() as u64, was_at, region, stack);
     });
 }
 
-/// Run `f` with its duration charged to nothing.
+/// Whether this thread has an unconsumed tick: the epoch has moved since its
+/// last sample, so the next poll will sample.
+///
+/// This is what lets a region claim the tick that fired inside it
+/// ([`super::region`]) — one relaxed load and a compare, which is the whole
+/// cost the region path pays. A thread that has not polled yet has no clock
+/// baseline, so it has nothing to claim.
+#[inline]
+pub(crate) fn tick_pending() -> bool {
+    let seen = LAST_SEEN.try_with(|c| c.get()).unwrap_or(UNSEEN);
+    if seen == UNSEEN {
+        return false;
+    }
+    EVERY_POLL.load(Ordering::Relaxed) || EPOCH.load(Ordering::Relaxed) != seen
+}
+
+/// Run `f` with its duration charged to `region` instead of to a Raku line.
 ///
 /// The time a thread spends in a GC collect, parked for a stop-the-world, or
 /// blocked in a `sleep`/join/read is not time its Raku line is running, and
 /// weighting by elapsed time would otherwise credit all of it to whichever
 /// line reached the poll. Subtracting it here is what keeps GC and IO out of
-/// the line table; naming *which* subsystem it went to instead is #8704.
+/// the line table.
+///
+/// The two clock reads the subtraction already costs also *measure* the
+/// interval, so the region it went to is recorded exactly rather than sampled
+/// (ADR-0106 Slice 4). That is the difference between a profile that is silent
+/// about the missing time and one that names it: the report carries a separate
+/// excluded-time table, and the header says the line table does not include it.
 #[inline]
-pub(crate) fn exclude_non_raku<R>(f: impl FnOnce() -> R) -> R {
+pub(crate) fn exclude_non_raku<R>(region: Region, f: impl FnOnce() -> R) -> R {
     if !crate::vm::vm_poll::profiler_armed() {
         return f();
     }
@@ -271,6 +298,7 @@ pub(crate) fn exclude_non_raku<R>(f: impl FnOnce() -> R) -> R {
     let r = f();
     let spent = started.elapsed();
     EXCLUDED.with(|c| c.set(c.get().saturating_add(spent)));
+    super::region::add_excluded_ns(region, spent.as_nanos() as u64);
     r
 }
 

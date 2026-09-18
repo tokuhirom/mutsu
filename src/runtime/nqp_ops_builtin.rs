@@ -29,6 +29,7 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        let _region = crate::profile::enter(crate::profile::Region::Nqp);
         if let Some(result) = self.call_nqp_interpreter_op(op, args) {
             return result;
         }

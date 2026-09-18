@@ -608,6 +608,9 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    // Re-entrant (a nested EVAL or module load parses from inside a running
+    // program), which the claim-at-exit rule handles without a depth counter.
+    let _region = crate::profile::enter(crate::profile::Region::Parse);
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());

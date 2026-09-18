@@ -226,7 +226,7 @@ fn park_slow() {
     // A thread parked for someone else's cycle scan is not running Raku code;
     // discounting the park keeps that wait off whichever line reached the poll
     // (ADR-0106 Slice 2).
-    crate::profile::exclude_non_raku(park_slow_inner)
+    crate::profile::exclude_non_raku(crate::profile::Region::Gc, park_slow_inner)
 }
 
 fn park_slow_inner() {
@@ -250,7 +250,7 @@ pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
     // `block_quiescent` wraps exactly the blocking native calls a profile must
     // not attribute to Raku code -- a `sleep`, a join, an OS read -- so it is
     // also the profiler's "this was not Raku time" boundary.
-    crate::profile::exclude_non_raku(|| block_quiescent_inner(f))
+    crate::profile::exclude_non_raku(crate::profile::Region::Gc, || block_quiescent_inner(f))
 }
 
 fn block_quiescent_inner<R>(f: impl FnOnce() -> R) -> R {

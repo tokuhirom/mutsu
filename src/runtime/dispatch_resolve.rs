@@ -339,6 +339,9 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<Arc<FunctionDef>> {
         crate::vm::vm_stats::record_function_full_resolve(name);
+        // The full resolution walk is the subsystem a slow Raku line most
+        // often turns out to be spending its time in (ADR-0106 D4).
+        let _region = crate::profile::enter(crate::profile::Region::CallResolve);
         // Arity counts only positional args, excluding named args (Pair values)
         let arity = arg_values
             .iter()

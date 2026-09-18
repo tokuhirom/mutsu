@@ -10,11 +10,12 @@
 //! `Drop`-only fold would silently lose every sample a `start` block took —
 //! precisely the threaded case the sampler exists to cover.
 
-use super::paths;
-use super::{CallsiteLocation, LineLocation, RoutineLocation};
+use super::region::Region;
+use super::snapshot::{SampledTotals, totals};
+use super::{CallsiteLocation, LineLocation, LineRegion, RoutineLocation};
 use crate::runtime::RoutineFrame;
 use crate::symbol::Symbol;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 /// One Raku-level frame as the sample path copies it: all `Copy`, no strings.
@@ -33,6 +34,9 @@ struct SampleFrame {
 struct SampleHeader {
     elapsed_ns: u64,
     top: Option<LineLocation>,
+    /// Which subsystem was running when the tick fired (ADR-0106 D4). One
+    /// byte, copied like everything else on this path.
+    region: Region,
     frames: u32,
 }
 
@@ -91,6 +95,7 @@ impl ThreadSamples {
         &self,
         elapsed_ns: u64,
         top: Option<LineLocation>,
+        region: Region,
         stack: &[RoutineFrame],
     ) {
         let mut pending = lock(&self.shared);
@@ -122,6 +127,7 @@ impl ThreadSamples {
         pending.headers.push(SampleHeader {
             elapsed_ns,
             top,
+            region,
             frames: kept as u32,
         });
     }
@@ -140,24 +146,6 @@ impl Drop for ThreadSamples {
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Sampled totals, keyed the way a report reads them.
-#[derive(Default)]
-pub(crate) struct SampledTotals {
-    pub(crate) line_self_ns: FxHashMap<LineLocation, u64>,
-    pub(crate) line_incl_ns: FxHashMap<LineLocation, u64>,
-    pub(crate) routine_self_ns: FxHashMap<RoutineLocation, u64>,
-    pub(crate) routine_incl_ns: FxHashMap<RoutineLocation, u64>,
-    pub(crate) callsite_incl_ns: FxHashMap<CallsiteLocation, u64>,
-    pub(crate) samples: u64,
-    pub(crate) sampled_ns: u64,
-    pub(crate) truncated: u64,
-}
-
-fn totals() -> &'static Mutex<SampledTotals> {
-    static TOTALS: OnceLock<Mutex<SampledTotals>> = OnceLock::new();
-    TOTALS.get_or_init(|| Mutex::new(SampledTotals::default()))
 }
 
 fn registry() -> &'static Mutex<Vec<BufferHandle>> {
@@ -220,8 +208,21 @@ fn fold_one(
     totals.samples += 1;
     totals.sampled_ns += ns;
 
+    // The region split rides on *self* time: "line 412 is 38% self, of which
+    // 71% call-resolve" is the sentence D4 exists to make printable, and
+    // inclusive time would attribute a callee's subsystem to every caller
+    // above it.
+    totals.region_ns[header.region.index()] += ns;
+    totals.region_samples[header.region.index()] += 1;
     if let Some(top) = header.top {
         *totals.line_self_ns.entry(top).or_default() += ns;
+        *totals
+            .line_region_ns
+            .entry(LineRegion {
+                location: top,
+                region: header.region,
+            })
+            .or_default() += ns;
     }
     // The innermost frame is the routine the sample caught running; the rest
     // of the stack only earns inclusive credit.
@@ -271,91 +272,11 @@ fn routine_of(frame: &SampleFrame) -> RoutineLocation {
     }
 }
 
-/// Every sampled table, sorted by interned ids so a report and a test see a
-/// deterministic order rather than hash order.
-#[derive(Default)]
-pub(crate) struct SampledSnapshot {
-    pub(crate) line_self_ns: Vec<(LineLocation, u64)>,
-    pub(crate) line_incl_ns: Vec<(LineLocation, u64)>,
-    pub(crate) routine_self_ns: Vec<(RoutineLocation, u64)>,
-    pub(crate) routine_incl_ns: Vec<(RoutineLocation, u64)>,
-    pub(crate) callsite_incl_ns: Vec<(CallsiteLocation, u64)>,
-    pub(crate) samples: u64,
-    pub(crate) sampled_ns: u64,
-    pub(crate) truncated: u64,
-}
-
-fn merge<K: std::hash::Hash + Eq>(rows: impl Iterator<Item = (K, u64)>) -> Vec<(K, u64)> {
-    let mut merged: FxHashMap<K, u64> = FxHashMap::default();
-    for (key, ns) in rows {
-        *merged.entry(key).or_default() += ns;
-    }
-    merged.into_iter().collect()
-}
-
-fn merge_lines(table: &mut FxHashMap<LineLocation, u64>) -> Vec<(LineLocation, u64)> {
-    merge(table.drain().map(|(mut location, ns)| {
-        location.file = paths::canonical(location.file);
-        (location, ns)
-    }))
-}
-
-fn merge_routines(table: &mut FxHashMap<RoutineLocation, u64>) -> Vec<(RoutineLocation, u64)> {
-    merge(table.drain().map(|(mut location, ns)| {
-        location.file = paths::canonical_opt(location.file);
-        (location, ns)
-    }))
-}
-
-/// Fold every thread and take everything accumulated so far.
-pub(crate) fn take_samples() -> SampledSnapshot {
-    super::sampler::fold_this_thread();
-    fold_all_threads();
-    let mut totals = lock(totals());
-    // One identity per file (`super::paths`): the self table is keyed by the
-    // chunk's own file and the inclusive/callsite tables by the frames' spelled
-    // `$?FILE`, and a report that let those disagree would credit one file's
-    // time to two names -- and would leave a caller row unmatchable against the
-    // line row it belongs to.
-    let mut snapshot = SampledSnapshot {
-        line_self_ns: merge_lines(&mut totals.line_self_ns),
-        line_incl_ns: merge_lines(&mut totals.line_incl_ns),
-        routine_self_ns: merge_routines(&mut totals.routine_self_ns),
-        routine_incl_ns: merge_routines(&mut totals.routine_incl_ns),
-        callsite_incl_ns: merge(totals.callsite_incl_ns.drain().map(|(mut location, ns)| {
-            location.caller_file = paths::canonical(location.caller_file);
-            (location, ns)
-        })),
-        samples: std::mem::take(&mut totals.samples),
-        sampled_ns: std::mem::take(&mut totals.sampled_ns),
-        truncated: std::mem::take(&mut totals.truncated),
-    };
-    let by_line = |(location, _): &(LineLocation, u64)| (location.file.id(), location.line);
-    snapshot.line_self_ns.sort_by_key(by_line);
-    snapshot.line_incl_ns.sort_by_key(by_line);
-    let by_routine = |(location, _): &(RoutineLocation, u64)| {
-        (
-            location.package.id(),
-            location.name.id(),
-            location.file.map_or(0, |file| file.id()),
-        )
-    };
-    snapshot.routine_self_ns.sort_by_key(by_routine);
-    snapshot.routine_incl_ns.sort_by_key(by_routine);
-    snapshot.callsite_incl_ns.sort_by_key(|(location, _)| {
-        (
-            location.caller_file.id(),
-            location.caller_line,
-            location.package.id(),
-            location.name.id(),
-        )
-    });
-    snapshot
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile::paths;
+    use crate::profile::snapshot::take_samples;
 
     /// The tables these tests drain are process-global by design (a profile
     /// spans every thread), so the tests that drain them take turns.
@@ -401,7 +322,7 @@ mod tests {
             frame("MAIN", "outer", Some(3)),
             frame("MAIN", "inner", Some(9)),
         ];
-        buffer.record(1000, at("fixture.raku", 42), &stack);
+        buffer.record(1000, at("fixture.raku", 42), Region::Interp, &stack);
         buffer.fold();
         let snapshot = take_samples();
 
@@ -436,8 +357,8 @@ mod tests {
         // The sampler hands `record` the line that was running when the tick
         // fired, not the poll site that noticed it, so a table row is exactly
         // the interval it was given.
-        buffer.record(700, Some(file_line(file, 10)), &[]);
-        buffer.record(300, Some(file_line(file, 20)), &[]);
+        buffer.record(700, Some(file_line(file, 10)), Region::CallResolve, &[]);
+        buffer.record(300, Some(file_line(file, 20)), Region::Regex, &[]);
         buffer.fold();
         let snapshot = take_samples();
         let ns_at = |line: u32| {
@@ -451,6 +372,22 @@ mod tests {
         assert_eq!(ns_at(10), 700);
         assert_eq!(ns_at(20), 300);
         assert_eq!(snapshot.sampled_ns, 1000);
+        // Each sample's self time also lands under the subsystem that claimed
+        // its tick, so the whole-run split sums to the sampled total.
+        assert_eq!(snapshot.region_ns[Region::CallResolve.index()], 700);
+        assert_eq!(snapshot.region_ns[Region::Regex.index()], 300);
+        assert_eq!(snapshot.region_samples[Region::CallResolve.index()], 1);
+        assert_eq!(snapshot.top_region(), Some((Region::CallResolve, 700)));
+        let split: Vec<(u32, &str, u64)> = snapshot
+            .line_region_ns
+            .iter()
+            .map(|(key, ns)| (key.location.line, key.region.name(), *ns))
+            .collect();
+        assert_eq!(
+            split,
+            vec![(10, "call-resolve", 700), (20, "regex", 300)],
+            "the per-line split names the subsystem each line's time went to"
+        );
     }
 
     #[test]
@@ -463,7 +400,7 @@ mod tests {
             frame("MAIN", "fib", Some(7)),
             frame("MAIN", "fib", Some(7)),
         ];
-        buffer.record(500, at("fixture.raku", 7), &stack);
+        buffer.record(500, at("fixture.raku", 7), Region::Interp, &stack);
         buffer.fold();
         let snapshot = take_samples();
         assert_eq!(snapshot.routine_incl_ns.len(), 1);
@@ -481,7 +418,7 @@ mod tests {
         let _ = take_samples();
         let buffer = ThreadSamples::with_capacity(4, 2);
         let stack: Vec<RoutineFrame> = (0..5).map(|_| frame("MAIN", "deep", Some(1))).collect();
-        buffer.record(10, None, &stack);
+        buffer.record(10, None, Region::Interp, &stack);
         buffer.fold();
         let snapshot = take_samples();
         assert_eq!(snapshot.truncated, 1);
@@ -496,7 +433,7 @@ mod tests {
         let buffer = ThreadSamples::with_capacity(2, 2);
         let file = Symbol::intern("fixture.raku");
         for _ in 0..6 {
-            buffer.record(100, Some(file_line(file, 1)), &[]);
+            buffer.record(100, Some(file_line(file, 1)), Region::Interp, &[]);
         }
         buffer.fold();
         let snapshot = take_samples();

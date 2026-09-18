@@ -371,6 +371,11 @@ impl Interpreter {
         stop_at_full: bool,
         sink: &mut MatchSink<'_>,
     ) -> bool {
+        // ADR-0099 §1's walk, and the one region that re-enters itself freely
+        // (sub-patterns, lookaround, LTM ranking, subrules). No depth counter
+        // is needed: an inner guard drops first and an outer claim is a no-op
+        // while the inner one is still latched.
+        let _region = crate::profile::enter(crate::profile::Region::Regex);
         let mut base = RegexCaptures {
             match_from: start,
             ..Default::default()

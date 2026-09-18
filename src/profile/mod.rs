@@ -9,6 +9,10 @@
 //! - [`sampler`] — **sampled** time. A timer thread bumps one global epoch;
 //!   the next VM poll on each thread notices the bump and records the Raku
 //!   stack it is standing on. Times are statistical and never asserted.
+//! - [`region`] — **which interpreter subsystem** a sampled interval went to
+//!   (D4): call resolution, method dispatch, the regex walk, the parser, a
+//!   native builtin, an `nqp::` op, GC. Without it a profile names the Raku
+//!   line and leaves the next step -- which part of mutsu -- to callgrind.
 //!
 //! Everything here is reached only from inside the armed branch of
 //! [`crate::vm::vm_poll`], so a run that never profiles does not execute a
@@ -17,8 +21,10 @@
 pub(crate) mod aggregate;
 pub(crate) mod counts;
 pub(crate) mod paths;
+pub(crate) mod region;
 pub(crate) mod report;
 pub(crate) mod sampler;
+pub(crate) mod snapshot;
 
 use crate::symbol::Symbol;
 
@@ -48,6 +54,15 @@ pub(crate) struct CallsiteLocation {
     pub(crate) name: Symbol,
 }
 
+/// A `(file, line)` pair together with the subsystem a sample caught running
+/// there -- the key of the per-line region split (ADR-0106 D4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct LineRegion {
+    pub(crate) location: LineLocation,
+    pub(crate) region: region::Region,
+}
+
 pub(crate) use counts::{record_line_at, record_routine_frame};
+pub(crate) use region::{Region, enter};
 pub(crate) use report::flush_at_exit;
 pub(crate) use sampler::{arm, exclude_non_raku, sample_if_due};
