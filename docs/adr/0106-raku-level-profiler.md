@@ -301,12 +301,16 @@ the mainline and once on a worker reported `entries=1`. Both halves now register
 can drain from another thread; the counters' hot path is unchanged, because the "still on the same
 line" poll reads one `Cell` and takes no lock.
 
-One thing the slice deliberately did **not** do. A chunk's `source_file` is the canonicalized path
-while a `RoutineFrame`'s is `$?FILE` as the user spelled it, so a `line` row and a `callsite` row
-could name one file two ways and could not be joined — the mainline case of the `EVAL` hazard this
-ADR's §7 risk table already ruled on once. The report reconciles them (`src/profile/paths.rs`);
-settling it at the source means deciding what `$?FILE`, `Code.file` and backtraces report, which
-several `t/` tests pin, and is [#8719](https://github.com/tokuhirom/mutsu/issues/8719).
+One thing the slice deliberately did **not** do, **since settled at the source**. A chunk's
+`source_file` was the canonicalized path while a `RoutineFrame`'s was `$?FILE` as the user spelled
+it, so a `line` row and a `callsite` row could name one file two ways and could not be joined — the
+mainline case of the `EVAL` hazard this ADR's §7 risk table already ruled on once. The report
+reconciled them at report time (`src/profile/paths.rs`).
+[#8719](https://github.com/tokuhirom/mutsu/issues/8719) removed the divergence instead: the mainline
+now publishes the **as-invoked** path to both the unit stamp and the env, the way a `use`d module and
+an `EVAL` already did, and `$?FILE` keeps its own absolutified spelling — which is rakudo's own
+split, and derivable from the identity without a syscall. `src/profile/paths.rs` is gone with it, and
+the report's tables no longer need a second fold. `t/tooling/profiler-unit-file-identity.t` pins the result.
 
 ### Slice 3 — exact counts
 
@@ -619,7 +623,9 @@ and per-thread tables are registered rather than folded on `Drop`. Time spent in
 stop-the-world park or a blocking `sleep`/join/read is discounted from the weighting
 (`profile::exclude_non_raku`). `MUTSU_PROFILE_TICK=every-poll` replaces the timer with "every poll is
 a tick", which is what lets `tests/profile_samples.rs` assert the sampler's *structure* without
-asserting a duration (D5). #8719 records the one thing the slice worked around rather than fixed.
+asserting a duration (D5). The one thing the slice worked around rather than fixed — one source
+file carrying both a canonicalized and a spelled name — was settled at the source by
+[#8719](https://github.com/tokuhirom/mutsu/issues/8719) (see Slice 3 above).
 
 **Slice 4 is shipped** ([#8704](https://github.com/tokuhirom/mutsu/issues/8704);
 `news/2026-09/profiler-subsystem-regions.md`): a sample carries a `Region` tag naming the interpreter
@@ -668,11 +674,13 @@ implementation settled that the sketch left open:
   under the *script's* path with the *module's* line numbers -- a caller row reading
   `bench-json-fast.raku:275` for a file 84 lines long -- because a frame records its call site's
   file as the dynamically-scoped `?FILE`, which still names the mainline while a `use`d module's
-  routine runs (#8719). The profiler now derives it from the declaring file of the routine whose
+  routine runs (#8743). The profiler now derives it from the declaring file of the routine whose
   body holds the call site, in one outward pass over the sampled stack and from the frame stack
-  at the exact counter's push site. Like `src/profile/paths.rs` this is a profiler-side
-  reconciliation: it changes no Raku-visible file, and #8719 still owns settling the divergence
-  at the source.
+  at the exact counter's push site. This is a profiler-side reconciliation: it changes no
+  Raku-visible file, and settling it at the source -- which means changing what a backtrace and
+  `CallFrame.file` report -- is now [#8743](https://github.com/tokuhirom/mutsu/issues/8743). Its
+  sibling, the canonicalized-versus-spelled split that `src/profile/paths.rs` used to reconcile,
+  was settled by #8719 and that file is gone.
 
 Slice 6 is explicitly optional and unstarted, tracked as
   [#8738](https://github.com/tokuhirom/mutsu/issues/8738). Each slice landed as its own PR with its

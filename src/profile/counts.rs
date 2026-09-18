@@ -15,7 +15,6 @@
 //! The *time* half of the profile lives in [`super::sampler`]: counts are
 //! exact and sampled time is statistical, which is ADR-0106 D1.
 
-use super::paths;
 use super::{CallsiteLocation, LineLocation, RoutineLocation};
 use crate::opcode::CompiledCode;
 use crate::runtime::RoutineFrame;
@@ -122,10 +121,10 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
 /// `caller_file` is the file the *call site* is in, resolved by the caller from
 /// the frame stack (`Interpreter::record_profile_routine_frame`): the frame's
 /// own `file` is the dynamically-scoped `?FILE`, which still names the mainline
-/// while a `use`d module's routine is running ([#8719]), so trusting it files
+/// while a `use`d module's routine is running ([#8743]), so trusting it files
 /// a module's callsites under the script's path.
 ///
-/// [#8719]: https://github.com/tokuhirom/mutsu/issues/8719
+/// [#8743]: https://github.com/tokuhirom/mutsu/issues/8743
 pub(crate) fn record_routine_frame(frame: &RoutineFrame, caller_file: Option<Symbol>) {
     LAST_LINE.with(|cell| cell.set(None));
     with_tables(|tables| {
@@ -147,16 +146,6 @@ pub(crate) fn record_routine_frame(frame: &RoutineFrame, caller_file: Option<Sym
             *tables.callsite_calls.entry(callsite).or_default() += 1;
         }
     });
-}
-
-/// Sum the counts of keys that collapsed onto one another once their files
-/// were reconciled.
-fn merge<K: std::hash::Hash + Eq>(rows: impl Iterator<Item = (K, u64)>) -> Vec<(K, u64)> {
-    let mut merged: FxHashMap<K, u64> = FxHashMap::default();
-    for (key, count) in rows {
-        *merged.entry(key).or_default() += count;
-    }
-    merged.into_iter().collect()
 }
 
 #[derive(Debug, Default)]
@@ -187,21 +176,12 @@ pub(crate) fn take_counts() -> CountsSnapshot {
     // A handle only the registry still holds belongs to a thread that has
     // exited; its tables are now empty and can go.
     lock(registry()).retain(|handle| Arc::strong_count(handle) > 1);
-    // One identity per file, so a callsite row names the same file as the line
-    // row above it and two spellings of one file do not split its counts
-    // (`super::paths`).
-    let mut line_hits = merge(folded.line_hits.drain().map(|(mut location, count)| {
-        location.file = paths::canonical(location.file);
-        (location, count)
-    }));
-    let mut routine_entries = merge(folded.routine_entries.drain().map(|(mut location, count)| {
-        location.file = paths::canonical_opt(location.file);
-        (location, count)
-    }));
-    let mut callsite_calls = merge(folded.callsite_calls.drain().map(|(mut location, count)| {
-        location.caller_file = paths::canonical(location.caller_file);
-        (location, count)
-    }));
+    // No reconciliation pass, and so no second fold either: a source file has
+    // one runtime identity now (#8719), so a callsite row already names the
+    // same string as the line row above it and `folded` is already final.
+    let mut line_hits: Vec<_> = folded.line_hits.drain().collect();
+    let mut routine_entries: Vec<_> = folded.routine_entries.drain().collect();
+    let mut callsite_calls: Vec<_> = folded.callsite_calls.drain().collect();
     line_hits.sort_by_key(|(location, _)| (location.file.id(), location.line));
     routine_entries.sort_by_key(|(location, _)| {
         (

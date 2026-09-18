@@ -27,7 +27,6 @@ pub(crate) mod aggregate;
 pub(crate) mod counts;
 pub(crate) mod document;
 pub(crate) mod options;
-pub(crate) mod paths;
 pub(crate) mod region;
 pub(crate) mod report;
 pub(crate) mod sampler;

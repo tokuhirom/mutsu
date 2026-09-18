@@ -284,7 +284,7 @@ fn routine_of(frame: &SampleFrame) -> RoutineLocation {
 ///
 /// A frame records the call that created it as `(file, line)`, but that `file`
 /// is the dynamically-scoped `?FILE` — which still names the mainline while a
-/// `use`d module's routine is running ([#8719]). Taking it at face value put
+/// `use`d module's routine is running ([#8743]). Taking it at face value put
 /// module line numbers under the script's path: a caller row reading
 /// `bench-json-fast.raku:275` for a file 84 lines long.
 ///
@@ -295,10 +295,15 @@ fn routine_of(frame: &SampleFrame) -> RoutineLocation {
 /// what `def_file: None` means. The outermost frame's call site is in the
 /// mainline, where the frame's own `?FILE` is the right answer.
 ///
-/// This is a profiler-side reconciliation, like [`super::paths`]: it changes no
-/// Raku-visible file, only which file the profile's own tables are keyed by.
+/// This is a profiler-side reconciliation: it changes no Raku-visible file,
+/// only which file the profile's own tables are keyed by. Settling it at the
+/// source means changing what a backtrace and `CallFrame.file` report, which is
+/// [#8743]. (The *other* divergence this pass used to sit beside -- one file
+/// carrying both a canonicalized and a spelled name -- is gone: #8719 made the
+/// unit stamp and `?FILE` one string, which is why there is no longer a
+/// `super::paths` reconciliation next to this one.)
 ///
-/// [#8719]: https://github.com/tokuhirom/mutsu/issues/8719
+/// [#8743]: https://github.com/tokuhirom/mutsu/issues/8743
 fn resolve_caller_files(out: &mut Vec<Option<Symbol>>, frames: &[SampleFrame]) {
     out.clear();
     out.resize(frames.len(), None);
@@ -312,7 +317,6 @@ fn resolve_caller_files(out: &mut Vec<Option<Symbol>>, frames: &[SampleFrame]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::paths;
     use crate::profile::snapshot::take_samples;
 
     /// The tables these tests drain are process-global by design (a profile
@@ -364,7 +368,7 @@ mod tests {
         let snapshot = take_samples();
 
         let hot = LineLocation {
-            file: paths::canonical(Symbol::intern("fixture.raku")),
+            file: Symbol::intern("fixture.raku"),
             line: 42,
         };
         assert_eq!(snapshot.line_self_ns, vec![(hot, 1000)]);
@@ -388,7 +392,7 @@ mod tests {
     /// A call site is in the body of the routine that made the call, so its
     /// file is that routine's declaring file -- not the frame's own `?FILE`,
     /// which still names the mainline while a `use`d module's routine runs
-    /// (#8719). Before this, a module's callsites were filed under the script's
+    /// (#8743). Before this, a module's callsites were filed under the script's
     /// path *with the module's line numbers*.
     #[test]
     fn a_call_site_is_in_the_file_of_the_body_that_made_the_call() {
