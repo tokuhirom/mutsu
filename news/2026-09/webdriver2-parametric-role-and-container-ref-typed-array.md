@@ -43,7 +43,7 @@ already decontainerized its entries; `Array.values()` did not.
 
 Both are fixed — `type_matches_value` now derefs a container cell the same way it already derefs a
 `Scalar`, and `Array.values()` matches `Hash.values()`'s existing decontainerization. Regression test:
-`t/types/coercion/typed-array-element-container-ref-role-check.t`.
+`t/oo/role/typed-array-element-container-ref-role-check.t`.
 
 ## Bug 3 (smaller, same distribution): `.absolute`/`.relative`'s named `base` argument corrupted the path
 
