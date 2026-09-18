@@ -106,7 +106,15 @@ like $err, /'a text-only report writes no file'/,
     '... and says so rather than silently dropping the name';
 # The text report has to be good enough to make HTML optional (ADR-0106 D7), so
 # the four sections a triage session needs are all there.
-like $err, /'TOP SELF LINES'/, '... the top self lines are on screen';
+#
+# Either heading counts, and that is the point rather than a hedge: a fixture
+# this small can finish between two ticks of a 1000Hz timer, in which case the
+# line table is ranked by exact hits and says so. Asserting only the sampled
+# heading would have been an assertion that a sample was taken -- the flaky test
+# ADR-0106 D5 forbids, and it duly failed on the release binary after passing on
+# the debug one.
+like $err, /'TOP ' ['SELF LINES' | 'LINES BY HITS']/,
+    '... the line table is on screen';
 like $err, /'TOP ROUTINES (inclusive)'/, '... the top routines too';
 like $err, /'SAMPLED'/,
     '... and the report says of itself that its times are sampled';
