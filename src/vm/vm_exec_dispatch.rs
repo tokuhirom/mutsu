@@ -508,6 +508,12 @@ impl Interpreter {
                     // `require` inside a method); `module_scope_lexicals` keeps it
                     // attached to the module. Last resort, after every live store.
                     .or_else(|| self.module_scope_lexical(name).cloned())
+                    // A `PROCESS::<$name> := ...` install that ran in a frame
+                    // which has since exited: `env`'s parent chain no longer
+                    // has it, but `process_dynamics` outlives every frame
+                    // (#8682). Also last resort — a live `env`/dynamic-scope
+                    // binding for the same name always wins.
+                    .or_else(|| self.get_process_dynamic(name).cloned())
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
@@ -924,7 +930,15 @@ impl Interpreter {
                 // into env and a caller's `my $*x` propagates into the callee env,
                 // so this only fires for a never-declared dynamic variable.
                 let name = Self::const_str(code, *name_idx);
-                if !self.env().contains_key(name) && !self.is_var_dynamic(name) {
+                // `store_process_dynamic` also marks the name dynamic via
+                // `set_var_dynamic`, so `is_var_dynamic` alone already covers
+                // a `PROCESS::`-installed name; `process_dynamics` is probed
+                // too as a direct, defensive check of the durable store
+                // itself (#8682).
+                if !self.env().contains_key(name)
+                    && !self.is_var_dynamic(name)
+                    && !self.process_dynamics_contains(name)
+                {
                     let display = if name.starts_with(['@', '%', '&']) {
                         name.to_string()
                     } else {
@@ -1791,6 +1805,13 @@ impl Interpreter {
                     let proxy_val = match self
                         .unit_lexical_slot(&name)
                         .or_else(|| self.env().get(&name))
+                        // A `PROCESS::<$name> := Proxy.new(...)` install that ran
+                        // in a since-exited frame: `env` no longer has it, but
+                        // `process_dynamics` does (#8682) — without this, a
+                        // `$*name = value` reaching this opcode from a LATER,
+                        // unrelated frame would fall through to a plain rebind
+                        // below instead of firing the Proxy's `STORE`.
+                        .or_else(|| self.get_process_dynamic(&name))
                     {
                         Some(v) if v.is_proxy_value() => Some(v.clone()),
                         Some(v) if v.is_container_ref() => {
@@ -2063,6 +2084,15 @@ impl Interpreter {
                 // slot, e.g. a built-in like `$*OUT` that lives only in `env`).
                 if name.starts_with('*') {
                     self.pending_rw_writeback_sources.push(name.clone());
+                }
+                // A plain `$*name = val` (as opposed to `PROCESS::<$name> :=
+                // ...`) to a name previously installed via `PROCESS::`: keep
+                // the durable store in sync so a read from a LATER, unrelated
+                // frame sees the fresh value instead of the one recorded at
+                // install time (#8682). No-op for an ordinary dynamic
+                // variable that was never installed that way.
+                if self.process_dynamics_contains(&name) {
+                    self.set_process_dynamic(name.clone(), val.clone());
                 }
                 // Persist anonymous state variable (`$`) so it survives
                 // across closure calls (e.g. `$ ~= $_` in classify block).

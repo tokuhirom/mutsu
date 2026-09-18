@@ -298,6 +298,21 @@ impl Interpreter {
         self.our_vars.insert(key, value);
     }
 
+    /// A runtime-installed `PROCESS::` dynamic, keyed exactly like
+    /// `store_process_dynamic`'s env write (`*name`/`@*name`/`%*name`). See
+    /// [`Interpreter::process_dynamics`].
+    pub(crate) fn get_process_dynamic(&self, key: &str) -> Option<&Value> {
+        self.process_dynamics.get(key)
+    }
+
+    pub(crate) fn process_dynamics_contains(&self, key: &str) -> bool {
+        self.process_dynamics.contains_key(key)
+    }
+
+    pub(crate) fn set_process_dynamic(&mut self, key: String, value: Value) {
+        self.process_dynamics.insert(key, value);
+    }
+
     /// The unqualified spelling of an `our_vars` key: its sigil (if any) plus
     /// the segment after the last `::`. `"@Foo::Bar::words"` -> `"@words"`,
     /// `"x"` -> `"x"`. See [`Interpreter::our_var_unqualified`].

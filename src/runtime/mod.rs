@@ -2970,6 +2970,23 @@ pub struct Interpreter {
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
     our_var_unqualified: rustc_hash::FxHashSet<String>,
+    /// Runtime-installed `PROCESS::` dynamics (`PROCESS::<$name> := value`,
+    /// the `Rakudo::Internals.REGISTER-DYNAMIC` idiom), keyed by the same
+    /// dynamic-var env key `store_process_dynamic` writes (`*name`/`@*name`/
+    /// `%*name`).
+    ///
+    /// `self.env_mut().insert(...)` alone is not durable: when the
+    /// `PROCESS::<...> := ...` write executes inside any nested block/
+    /// module/sub frame (a `Env::scoped_child`), that frame's overlay is
+    /// dropped the moment the frame exits, and a later `$*name` read from an
+    /// unrelated frame throws `X::Dynamic::NotFound` even though real `raku`
+    /// installs the default globally regardless of nesting depth (#8682).
+    /// This store — plain on `Interpreter`, not part of any `Env` chain, so
+    /// it outlives every frame — is what such a later read falls back to
+    /// (`GetGlobal`'s final fallback chain) and what a same-named later
+    /// `$*name = ...` write from any frame keeps in sync, mirroring
+    /// `our_vars`'s block-scope-survival role for `our` variables.
+    process_dynamics: rustc_hash::FxHashMap<String, Value>,
     /// Package-block `my` lexicals, keyed by package name then env var name.
     /// A named sub defined in a `package Foo { my $x = ...; sub f { $x } }` block
     /// closes over `$x`, but mutsu's registry subs have no per-sub closure env and
