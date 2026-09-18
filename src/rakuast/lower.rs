@@ -1704,6 +1704,20 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             Expr::Grouped(inner) => *inner,
             value => value,
         };
+        let explicit_pointy_source = match &value {
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+                is_rw: false,
+                is_raw: false,
+                is_whatever_code: false,
+                return_type: None,
+                declarator: crate::ast::RoutineDeclarator::Block,
+                ..
+            } if params.len() >= 2 => plain_pointy_block_source(param_defs, body),
+            _ => None,
+        };
         let block_body = match &value {
             Expr::AnonSub {
                 is_block: true,
@@ -1727,7 +1741,9 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             }
             _ => None,
         };
-        let value = if let Some(body) = block_body {
+        let value = if let Some(source) = explicit_pointy_source {
+            format!(":{key}({source})")
+        } else if let Some(body) = block_body {
             let body = block_value_source(body).ok_or_else(|| unsupported(node))?;
             format!(":{key}{body}")
         } else {
@@ -1771,6 +1787,53 @@ fn colonpair_value_source(expr: &Expr) -> Option<String> {
             .map(|parts| parts.join(", ")),
         expr => crate::regex_tree::expression_source(expr),
     }
+}
+
+/// Render the deliberately small explicit pointy-signature subset accepted by
+/// the regex colonpair write direction. The source parser already supports all
+/// closure signatures; this helper only reconstructs ordinary multiple bare
+/// scalar parameters from a hand-built RakuAST tree. Typed, defaulted,
+/// slurpy, named, and trait-bearing parameters remain separate boundaries.
+fn plain_pointy_block_source(
+    param_defs: &[crate::ast::ParamDef],
+    body: &[crate::ast::Stmt],
+) -> Option<String> {
+    if param_defs.len() < 2
+        || !param_defs.iter().all(|param| {
+            !param.name.is_empty()
+                && param
+                    .name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                && param.default.is_none()
+                && param.required
+                && !param.named
+                && !param.slurpy
+                && !param.double_slurpy
+                && !param.onearg
+                && !param.sigilless
+                && param.type_constraint.is_none()
+                && param.type_capture.is_none()
+                && param.literal_value.is_none()
+                && param.sub_signature.is_none()
+                && param.where_constraint.is_none()
+                && param.traits.is_empty()
+                && !param.optional_marker
+                && param.outer_sub_signature.is_none()
+                && param.code_signature.is_none()
+                && !param.is_invocant
+                && param.shape_constraints.is_none()
+                && param.trait_args.is_empty()
+        })
+    {
+        return None;
+    }
+    let params = param_defs
+        .iter()
+        .map(|param| format!("${}", param.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!("-> {params} {}", block_value_source(body)?))
 }
 
 /// Render the small block subset used by a constructed regex's block-valued

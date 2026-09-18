@@ -1425,3 +1425,23 @@ statement-rich explicit signatures remain separate boundaries.
 The focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it
 pins the colonpair/value/pointy/signature tree, source and hand-built regex
 lowering, named callable binding, and lexical reassignment at match time.
+
+## 58. Multi-parameter explicit pointy-signature block-valued colonpair dynamic argument slice (2026-09-18)
+
+An ordinary multi-parameter pointy block used as a regex colonpair value, such
+as `<word(:expected(-> $candidate, $other { ... }))>`, already retained
+Rakudo's `RakuAST::PointyBlock` and one `RakuAST::Parameter` per positional
+parameter on the read direction. The write direction now reconstructs that
+same source form from a hand-built `RakuAST::PointyBlock` after lowering it to
+the existing `AnonSubParams` execution representation.
+
+This slice is deliberately limited to two or more required, bare scalar
+parameters. The renderer refuses typed, defaulted, named, slurpy, `is rw`,
+sub-signature, and other decorated parameters rather than silently changing
+their call semantics. The existing match-time evaluator remains responsible
+for binding all positional arguments and captured outer lexicals; no matcher or
+VM path is added.
+
+The focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it
+pins both parameter nodes, source and hand-built regex lowering, multi-argument
+callability, and lexical reassignment at match time.

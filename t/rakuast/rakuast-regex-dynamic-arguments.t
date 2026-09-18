@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 139;
+plan 145;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -679,3 +679,62 @@ ok GDynamicExplicitSignatureColonPairArgument.parse('a').defined,
 $value = 'b';
 ok !GDynamicExplicitSignatureColonPairArgument.parse('a').defined,
     'an explicit-signature colonpair keeps its outer lexical dynamic';
+
+my $other-value = 'b';
+my $multi_signature_ast =
+    Q[/<word(:expected(-> $candidate, $other { $candidate eq $value && $other eq $other-value }))>/].AST;
+my $multi_signature_gist = $multi_signature_ast.gist;
+ok $multi_signature_gist.contains('name => "\\$candidate"'),
+    'a multi-parameter signature keeps its first parameter';
+ok $multi_signature_gist.contains('name => "\\$other"'),
+    'a multi-parameter signature keeps its second parameter';
+ok EVAL($multi_signature_ast) ~~ Regex,
+    'a source multi-parameter signature regex lowers successfully';
+
+my $multi_parameters = [
+    RakuAST::Parameter.new(
+        target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+    ),
+    RakuAST::Parameter.new(
+        target => RakuAST::ParameterTarget::Var.new(name => '$other'),
+    ),
+];
+my $multi_statements = RakuAST::StatementList.new;
+$multi_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $multi_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(
+                expression => RakuAST::PointyBlock.new(
+                    signature => RakuAST::Signature.new(parameters => $multi_parameters),
+                    body => RakuAST::Blockoid.new($multi_statements),
+                ),
+            ),
+        ),
+    ),
+);
+my $multi_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($multi_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($multi_constructed_ast) ~~ Regex,
+    'a hand-built multi-parameter signature regex lowers through the matcher';
+
+grammar GDynamicMultiParameterSignatureColonPairArgument {
+    token TOP { <word(:expected(-> $candidate, $other { $candidate eq $value && $other eq $other-value }))> };
+    token word(:$expected) { <.alpha> <?{ $expected('a', 'b') }> }
+}
+$value = 'a';
+ok GDynamicMultiParameterSignatureColonPairArgument.parse('a').defined,
+    'a multi-parameter signature reaches the named subrule as a callable';
+$value = 'c';
+ok !GDynamicMultiParameterSignatureColonPairArgument.parse('a').defined,
+    'a multi-parameter signature keeps its outer lexical dynamic';
