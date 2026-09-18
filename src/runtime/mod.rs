@@ -14,6 +14,11 @@ pub(crate) type PackageLexicals = PackageKeyed<Value>;
 /// (`push_multi_dispatch_frame`), shared between the frames that reuse it.
 pub(crate) type MultiCandidateList = std::sync::Arc<Vec<std::sync::Arc<FunctionDef>>>;
 
+/// Key of the sound multi-*sub* resolution caches (`func_multi_resolve_cache`
+/// and the per-argument-type `func_multi_argkey_cacheable` refinement):
+/// `(package, name, argument type keys)`.
+pub(crate) type FuncMultiResolveKey = (Symbol, Symbol, Vec<Symbol>);
+
 /// `is export`-ed regex declarator bodies, keyed by the module that declared
 /// them and then by the declarator's name (see `Interpreter::exported_token_defs`).
 type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>;
@@ -4186,9 +4191,7 @@ pub struct Interpreter {
     /// family whose value-dependent candidates are ALL excluded that way is
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
-    #[allow(clippy::type_complexity)]
-    pub(crate) func_multi_argkey_cacheable:
-        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), bool>,
+    pub(crate) func_multi_argkey_cacheable: rustc_hash::FxHashMap<FuncMultiResolveKey, bool>,
     /// The `fn_resolve_gen` value `func_multi_resolve_cache`/`func_multi_type_cacheable`
     /// were last cleared for (see `refresh_func_multi_caches_for_generation`, ADR-0019
     /// Phase F box F5). Mirrors `method_cache_generation`'s role for the method-side
