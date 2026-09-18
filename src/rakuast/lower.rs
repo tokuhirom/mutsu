@@ -1715,7 +1715,7 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
                 return_type: None,
                 declarator: crate::ast::RoutineDeclarator::Block,
                 ..
-            } if params.len() >= 2 => plain_pointy_block_source(param_defs, body),
+            } if !params.is_empty() => pointy_block_source(param_defs, body),
             _ => None,
         };
         let block_body = match &value {
@@ -1791,48 +1791,71 @@ fn colonpair_value_source(expr: &Expr) -> Option<String> {
 
 /// Render the deliberately small explicit pointy-signature subset accepted by
 /// the regex colonpair write direction. The source parser already supports all
-/// closure signatures; this helper only reconstructs ordinary multiple bare
-/// scalar parameters from a hand-built RakuAST tree. Typed, defaulted,
-/// slurpy, named, and trait-bearing parameters remain separate boundaries.
-fn plain_pointy_block_source(
+/// closure signatures; this helper reconstructs ordinary multiple bare scalar
+/// parameters and one typed scalar parameter from a hand-built RakuAST tree.
+/// Defaults, slurpy, named, and trait-bearing parameters remain separate
+/// boundaries.
+fn pointy_block_source(
     param_defs: &[crate::ast::ParamDef],
     body: &[crate::ast::Stmt],
 ) -> Option<String> {
-    if param_defs.len() < 2
-        || !param_defs.iter().all(|param| {
-            !param.name.is_empty()
-                && param
-                    .name
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-                && param.default.is_none()
-                && param.required
-                && !param.named
-                && !param.slurpy
-                && !param.double_slurpy
-                && !param.onearg
-                && !param.sigilless
-                && param.type_constraint.is_none()
-                && param.type_capture.is_none()
-                && param.literal_value.is_none()
-                && param.sub_signature.is_none()
-                && param.where_constraint.is_none()
-                && param.traits.is_empty()
-                && !param.optional_marker
-                && param.outer_sub_signature.is_none()
-                && param.code_signature.is_none()
-                && !param.is_invocant
-                && param.shape_constraints.is_none()
-                && param.trait_args.is_empty()
-        })
-    {
+    let ordinary_parameter = |param: &crate::ast::ParamDef| {
+        !param.name.is_empty()
+            && param
+                .name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            && param.default.is_none()
+            && param.required
+            && !param.named
+            && !param.slurpy
+            && !param.double_slurpy
+            && !param.onearg
+            && !param.sigilless
+            && param.type_capture.is_none()
+            && param.literal_value.is_none()
+            && param.sub_signature.is_none()
+            && param.where_constraint.is_none()
+            && param.traits.is_empty()
+            && !param.optional_marker
+            && param.outer_sub_signature.is_none()
+            && param.code_signature.is_none()
+            && !param.is_invocant
+            && param.shape_constraints.is_none()
+            && param.trait_args.is_empty()
+    };
+
+    let params = if let [param] = param_defs {
+        let type_name = param.type_constraint.as_deref()?;
+        if !ordinary_parameter(param)
+            || !type_name.split("::").all(|part| {
+                !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            })
+        {
+            return None;
+        }
+        format!("{type_name} ${}", param.name)
+    } else {
+        if param_defs.len() < 2
+            || !param_defs
+                .iter()
+                .all(|param| ordinary_parameter(param) && param.type_constraint.is_none())
+        {
+            return None;
+        }
+        param_defs
+            .iter()
+            .map(|param| format!("${}", param.name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    if param_defs.is_empty() {
         return None;
     }
-    let params = param_defs
-        .iter()
-        .map(|param| format!("${}", param.name))
-        .collect::<Vec<_>>()
-        .join(", ");
     Some(format!("-> {params} {}", block_value_source(body)?))
 }
 
@@ -2381,20 +2404,27 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             })
         }
         // A pointy block in expression position (`-> $x { … }`) is a closure. A
-        // single parameter lowers to `Expr::Lambda`; zero or several to
+        // single plain parameter lowers to `Expr::Lambda`; zero or several to
         // `AnonSubParams` — which is exactly what the parser builds for
         // `-> { … }`, an arity-0 closure that (unlike a bare block) rejects
-        // arguments.
+        // arguments. Keep a typed single parameter on `AnonSubParams`: Lambda
+        // has no field for its type constraint, so collapsing it would make a
+        // constructed `-> Int $x { … }` accept values that Rakudo rejects.
         RakuAstClass::PointyBlock => {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
-                1 => Ok(Expr::Lambda {
-                    param: params.into_iter().next().unwrap(),
-                    body,
-                    is_whatever_code: false,
-                    param_sigilless: param_defs.first().is_some_and(|pd| pd.sigilless),
-                }),
+                1 if param_defs
+                    .first()
+                    .is_some_and(|param| param.type_constraint.is_none()) =>
+                {
+                    Ok(Expr::Lambda {
+                        param: params.into_iter().next().unwrap(),
+                        body,
+                        is_whatever_code: false,
+                        param_sigilless: param_defs.first().is_some_and(|pd| pd.sigilless),
+                    })
+                }
                 _ => Ok(Expr::AnonSubParams {
                     params,
                     param_defs,

@@ -17,7 +17,7 @@
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
-  dynamic-argument slices implemented
+  dynamic-argument, and typed-scalar explicit-signature slices implemented
   2026-09-12 through
   2026-09-18;
   direct hash interpolation is reserved by Rakudo and mutsu;
@@ -1445,3 +1445,24 @@ VM path is added.
 The focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it
 pins both parameter nodes, source and hand-built regex lowering, multi-argument
 callability, and lexical reassignment at match time.
+
+## 59. Typed scalar explicit-signature block-valued colonpair dynamic argument slice (2026-09-18)
+
+An ordinary simple typed scalar parameter in an explicit pointy block, such as
+`<word(:expected(-> Int $candidate { ... }))>`, now survives the constructed
+RakuAST lowering boundary. The lowerer keeps a single typed pointy parameter in
+the signature-bearing `AnonSubParams` representation instead of collapsing it
+to `Expr::Lambda`, whose execution shape has no type-constraint field. The
+regex colonpair renderer then reconstructs the bounded `Int $candidate`
+spelling for the existing match-time argument evaluator.
+
+This slice accepts one required scalar parameter with a simple type name. It
+does not widen to defaults, named/slurpy parameters, type captures, where
+constraints, traits, or other decorated signatures. The existing signature
+binder remains responsible for enforcing the type at call time, and the
+Parser -> Compiler -> VM matcher path is unchanged.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the typed parameter's
+RakuAST shape, direct constructed-call type enforcement, constructed regex
+lowering, and source grammar match-time lexical behavior.
