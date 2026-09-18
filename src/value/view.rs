@@ -56,6 +56,7 @@ pub enum ValueView<'a> {
         package: Symbol,
         name: Symbol,
         is_regex: bool,
+        captured_regex: Option<&'a Arc<Value>>,
     },
     Pair(&'a String, &'a Value),
     ValuePair(&'a Value, &'a Value),
@@ -246,6 +247,25 @@ impl Value {
             package,
             name,
             is_regex,
+            captured_regex: None,
+        })
+    }
+
+    /// Construct a `Routine` stub for a `my token`/`rule` reference (`&NAME`)
+    /// that carries a direct pointer to the specific declaration it resolved
+    /// to at the moment of reference — see `ValueRepr::Routine::captured_regex`'s
+    /// doc comment (#8680).
+    #[inline]
+    pub(crate) fn routine_token_capture(
+        package: Symbol,
+        name: Symbol,
+        captured_regex: Arc<Value>,
+    ) -> Self {
+        Value::from_repr(ValueRepr::Routine {
+            package,
+            name,
+            is_regex: true,
+            captured_regex: Some(captured_regex),
         })
     }
 

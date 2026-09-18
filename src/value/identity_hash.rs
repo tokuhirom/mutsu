@@ -112,6 +112,7 @@ impl Hash for Value {
                 package,
                 name,
                 is_regex,
+                ..
             } => {
                 package.hash(state);
                 name.hash(state);

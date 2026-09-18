@@ -631,11 +631,29 @@ impl Interpreter {
             // empty-sig proto with no candidates yet, or a grammar
             // token/rule) — fall back to the lazy by-name reference; there is
             // nothing to capture by value instead.
-            Value::routine_parts(
-                Symbol::intern(&self.current_package()),
-                Symbol::intern(lookup_name),
-                self.resolve_token_defs(lookup_name).is_some() || self.has_proto_token(lookup_name),
-            )
+            let is_regex_ref =
+                self.resolve_token_defs(lookup_name).is_some() || self.has_proto_token(lookup_name);
+            let package = Symbol::intern(&self.current_package());
+            let name = Symbol::intern(lookup_name);
+            // A plain (non-proto/multi) token/rule name resolves to exactly
+            // one declaration right now -- capture a direct pointer to its
+            // regex value (carrying its own closure-captured lexicals,
+            // #8662) so this `&NAME` reference keeps resolving to THIS
+            // declaration even after a later one under the same short name
+            // overwrites the name-keyed `token_defs` entry -- e.g. a sibling
+            // instance's own method call re-declaring `my token` under the
+            // same name (#8680). A proto/multi token name has no single
+            // candidate to capture (LTM must still pick among candidates at
+            // match time), so it keeps the lazy by-name form.
+            if is_regex_ref
+                && !self.has_proto(lookup_name)
+                && !self.has_proto_token(lookup_name)
+                && let Some(regex_value) = self.extract_token_regex_value(lookup_name)
+            {
+                Value::routine_token_capture(package, name, std::sync::Arc::new(regex_value))
+            } else {
+                Value::routine_parts(package, name, is_regex_ref)
+            }
         } else if let Some(def) = def {
             self.sub_value_from_function_def(def)
         } else if core_visible && Self::is_builtin_function(lookup_name) {

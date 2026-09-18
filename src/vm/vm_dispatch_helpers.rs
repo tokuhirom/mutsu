@@ -883,6 +883,7 @@ impl Interpreter {
             package,
             name,
             is_regex,
+            ..
         } = target.view()
         {
             let pkg = package.resolve();

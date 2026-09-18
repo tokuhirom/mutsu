@@ -802,6 +802,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     package: r.package,
                     name: r.name,
                     is_regex: r.is_regex,
+                    captured_regex: r.captured_regex.as_ref(),
                 }
             }
             Kind::HashEntryRef => {

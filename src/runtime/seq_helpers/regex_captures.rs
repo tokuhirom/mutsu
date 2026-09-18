@@ -680,6 +680,15 @@ impl Interpreter {
     /// have not migrated to the value-aware source-tree path yet.
     pub(in crate::runtime) fn extract_token_regex_pattern(&self, name: &str) -> Option<String> {
         let value = self.extract_token_regex_value(name)?;
+        Self::regex_pattern_of_value(&value)
+    }
+
+    /// [`Self::extract_token_regex_pattern`]'s value-in-hand half: pull the
+    /// pattern string out of a regex `Value` directly, without any
+    /// `token_defs` name lookup. Used by matcher entry points to prefer a
+    /// `Routine` value's own `captured_regex` (#8680) over re-resolving its
+    /// name against whatever declaration currently holds that registry key.
+    pub(in crate::runtime) fn regex_pattern_of_value(value: &Value) -> Option<String> {
         match value.view() {
             ValueView::Regex(pattern) => Some(pattern.to_string()),
             _ => None,

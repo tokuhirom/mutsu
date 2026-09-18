@@ -225,6 +225,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             package,
             name,
             is_regex,
+            ..
         } => Ok(SerValue::Routine {
             package,
             name,
@@ -451,6 +452,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             package,
             name,
             is_regex,
+            captured_regex: None,
         }),
         SerValue::Pair(k, v) => Value::Pair(k, Box::new(ser_to_value(*v))),
         SerValue::ValuePair(k, v) => {

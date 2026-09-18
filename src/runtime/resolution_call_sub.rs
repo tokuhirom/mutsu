@@ -320,6 +320,7 @@ impl Interpreter {
             package,
             name,
             is_regex,
+            ..
         } = func.view()
         {
             // A token/rule method value called with a cursor (`$meth($c)`,
