@@ -437,6 +437,49 @@ memory, and it is not enough to assert it: each of these is measured per slice.
 4. **JIT parity**: the same fixture profiled with `--profile-jit=off` and on produces the same top line
    and the same `hits` (only the times differ). This is the check that the JIT backedge poll works.
 
+### 8.1 Measured results
+
+**Gates 1 and 1c, after Slice 1 (2026-09-18): pass.** Measured with **callgrind** rather than
+`perf stat` — the container this ran in has no `perf`, and callgrind's `Ir` count is deterministic and
+load-independent, so it answers the same question with less noise than the gate asks for. Baseline is
+the release binary of `d559d288` (main immediately before Slice 1 landed); `MUTSU_GC=off` throughout.
+`nqp-backedge` is the fixture of §8.2 scaled to 4,000,000 native backedges — the workload the Slice 1
+shim specialization exists for, and the one that would show its absence.
+
+| workload | JIT | baseline Ir | after Slice 1 | delta |
+|---|---|---:|---:|---:|
+| `bench-fib` | off | 2,703,889,033 | 2,705,162,835 | +0.047% |
+| `bench-tak` | off | 2,603,936,806 | 2,604,720,102 | +0.030% |
+| `bench-mandelbrot` | off | 1,106,631,576 | 1,106,551,354 | -0.007% |
+| `nqp-backedge` | off | 14,642,371,483 | 14,642,375,080 | +0.000% |
+| `bench-fib` | on | 1,498,712,992 | 1,499,983,919 | +0.085% |
+| `bench-tak` | on | 1,743,997,234 | 1,744,776,039 | +0.045% |
+| `bench-mandelbrot` | on | 663,204,510 | 663,419,849 | +0.032% |
+| `nqp-backedge` | on | 11,016,642,286 | 11,024,251,001 | +0.069% |
+
+Everything is inside 0.5%, gate 1c's JIT-on rows included. The bench CI remains the source of truth
+for *wall-clock* numbers in documents (`CLAUDE.md`); this table is an instruction count, which is what
+gates 1 and 1c actually specify.
+
+### 8.2 Gate 4 is not met yet, and §5 Slice 1 says why more than it knew
+
+Measuring gate 1c turned up a property of the bytecode that the design did not account for: **no Raku
+loop form places a backward jump inside a JIT-compiled range.** `while`, `for`, `loop`, C-style `loop`
+and `repeat` all compile to compound opcodes whose body is a *separate* compiled range, entered once
+per iteration, so that range holds no backedge of its own — 0 native backedge polls on every one of
+those shapes, and on `bench-fib` / `bench-tak` / `bench-mandelbrot`. The one shape that reaches the
+emitted hook is `nqp::while` (`src/compiler/nqp_forms.rs`), which emits a plain backward `Jump` into
+the enclosing chunk.
+
+So the backedge hook the JIT emits is, for ordinary Raku, not the thing carrying line information:
+`try_enter_range` polls once per native body *entry*, and `try_enter` (a whole compiled function body)
+does not poll at all. A hot loop therefore yields one line hit per iteration rather than one per
+opcode dispatch, and a compiled function body yields none — which is not the exactness gate 3 asserts,
+and makes gate 4's "the same `hits`" unachievable as things stand. Tracked as
+[#8713](https://github.com/tokuhirom/mutsu/issues/8713): the line hook belongs *inside* compiled
+bodies, at each op whose line differs, emitted only when armed (the specialization that keeps gate 1c
+green is already in place). Gate 1c must be re-measured once it is.
+
 ## 9. Implementation status
 
 **Slices 0, 1, and 3 are shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699),
