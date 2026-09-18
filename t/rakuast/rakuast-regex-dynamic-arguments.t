@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 145;
+plan 153;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -738,3 +738,62 @@ ok GDynamicMultiParameterSignatureColonPairArgument.parse('a').defined,
 $value = 'c';
 ok !GDynamicMultiParameterSignatureColonPairArgument.parse('a').defined,
     'a multi-parameter signature keeps its outer lexical dynamic';
+
+my $typed_signature_ast =
+    Q[/<word(:expected(-> Int $candidate { $candidate == 42 }))>/].AST;
+my $typed_signature_gist = $typed_signature_ast.gist;
+ok $typed_signature_gist.contains('RakuAST::Type::Simple.new('),
+    'a typed signature keeps its simple type node';
+ok $typed_signature_gist.contains('name => "\\$candidate"'),
+    'a typed signature keeps its parameter target';
+ok EVAL($typed_signature_ast) ~~ Regex,
+    'a source typed-signature regex lowers successfully';
+
+my $typed_parameter = RakuAST::Parameter.new(
+    type => RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Int')),
+    target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+);
+my $typed_statements = RakuAST::StatementList.new;
+$typed_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $typed_pointy = RakuAST::PointyBlock.new(
+    signature => RakuAST::Signature.new(parameters => [$typed_parameter]),
+    body => RakuAST::Blockoid.new($typed_statements),
+);
+my &typed_callable = EVAL($typed_pointy);
+is &typed_callable(42), 42,
+    'a constructed typed pointy block keeps its callable parameter';
+throws-like { &typed_callable('not an Int') }, Exception,
+    'a constructed typed pointy block enforces its parameter type';
+
+my $typed_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(expression => $typed_pointy),
+        ),
+    ),
+);
+my $typed_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($typed_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($typed_constructed_ast) ~~ Regex,
+    'a hand-built typed-signature regex lowers through the matcher';
+
+my $typed_value = 42;
+grammar GDynamicTypedSignatureColonPairArgument {
+    token TOP { <word(:expected(-> Int $candidate { $candidate == $typed_value }))> };
+    token word(:$expected) { <.alpha> <?{ $expected(42) }> }
+}
+ok GDynamicTypedSignatureColonPairArgument.parse('a').defined,
+    'a typed signature reaches the named subrule as a callable';
+$typed_value = 41;
+ok !GDynamicTypedSignatureColonPairArgument.parse('a').defined,
+    'a typed signature keeps its outer lexical dynamic';
