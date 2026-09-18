@@ -389,7 +389,9 @@ pub(crate) fn gc_safepoint_armed(kind: SafepointKind) {
         // Collector time belongs to the collector, not to the Raku line that
         // happened to reach this poll (ADR-0106 Slice 2; naming the subsystem
         // it went to instead is #8704).
-        crate::profile::exclude_non_raku(|| collect_cycles_at(kind.name()));
+        crate::profile::exclude_non_raku(crate::profile::Region::Gc, || {
+            collect_cycles_at(kind.name())
+        });
     }
 }
 

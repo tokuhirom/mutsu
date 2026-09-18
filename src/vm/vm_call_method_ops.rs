@@ -706,6 +706,7 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);

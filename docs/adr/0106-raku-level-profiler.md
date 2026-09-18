@@ -616,8 +616,27 @@ stop-the-world park or a blocking `sleep`/join/read is discounted from the weigh
 a tick", which is what lets `tests/profile_samples.rs` assert the sampler's *structure* without
 asserting a duration (D5). #8719 records the one thing the slice worked around rather than fixed.
 
-Slices 4-5 are not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
-own gate (§8), and Slices 0-3 were each independently useful, as claimed.
+**Slice 4 is shipped** ([#8704](https://github.com/tokuhirom/mutsu/issues/8704);
+`news/2026-09/profiler-subsystem-regions.md`): a sample carries a `Region` tag naming the interpreter
+subsystem it caught running — `interp`, `call-resolve`, `method-dispatch`, `native-builtin`, `nqp`,
+`regex`, `parse`, `gc` — and the report prints a whole-run split, a per-`(file, line)` split, and a
+`top_region` header field. One deviation from the sketch, and it is the whole mechanism: **a
+thread-local "current region" read at the sample point cannot work**, because mutsu's sampler is
+poll-based and the regions worth naming are exactly the long native stretches that do not poll, so by
+the time a poll notices the tick the region has returned and the tag reads `interp` every time.
+Instead the region *claims* the tick on its way out — one relaxed load and a compare, no clock read
+and no hash on the region path — and the first claim wins, which is correct rather than arbitrary: a
+claim only happens when the tick was already pending at that exit, so a region that runs afterwards
+demonstrably was not running when the tick fired. `Interp` is an answer ("bytecode was running"), not
+a residue bucket, so there is no `unknown` tag to explain away. GC and stop-the-world time, which §5's
+Slice 2 already subtracts from the sampled weight, is *measured* by the two clock reads that
+subtraction already costs and reported in a separate `excluded-region` table — named rather than a
+silent hole. `tests/profile_regions.rs` asserts the split the only way D5 permits: under
+`MUTSU_PROFILE_TICK=every-poll` the region rows are a function of the executed bytecode, so which
+subsystem each sample was charged to is reproducible while its nanoseconds are never asserted.
+
+Slice 5 is not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
+own gate (§8), and Slices 0-4 were each independently useful, as claimed.
 
 ## 10. Open questions
 

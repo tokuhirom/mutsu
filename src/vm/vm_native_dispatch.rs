@@ -24,6 +24,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
         // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
         // method by NAME and answer out of the stringified receiver, which for
         // a type object is its gist -- so `$undefined.uc` answered `"(ANY)"`.

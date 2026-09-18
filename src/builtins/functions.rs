@@ -31,6 +31,7 @@ pub(crate) fn native_function(
     name_sym: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
     // A plain-variable argument reaches a call site wrapped in a `VarRef` so an
     // `is rw` parameter can bind the caller's container. Nothing in this table
     // binds rw — every handler here is pure Rust over values — and none of them

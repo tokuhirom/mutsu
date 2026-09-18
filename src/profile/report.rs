@@ -11,9 +11,10 @@
 //!
 //! [#8705]: https://github.com/tokuhirom/mutsu/issues/8705
 
-use super::aggregate;
 use super::counts;
+use super::region::Region;
 use super::sampler;
+use super::snapshot;
 
 /// How many rows of each table the scaffolding report prints. A fixture small
 /// enough to reason about fits well inside this; a real program does not, and
@@ -81,7 +82,7 @@ fn report_samples() {
     let Some(config) = sampler::config() else {
         return;
     };
-    let snapshot = aggregate::take_samples();
+    let snapshot = snapshot::take_samples();
     let tick = match config.tick {
         sampler::Tick::Timer => "timer",
         sampler::Tick::EveryPoll => "every-poll",
@@ -92,14 +93,18 @@ fn report_samples() {
     // sampler — a thread in `sleep`/IO/`await`/a GC park does not poll, so it
     // is absent rather than idle.
     eprintln!(
-        "profile: samples n={} sampled_ns={} truncated={} wall_ns={} rate_hz={} tick={tick} threads={} time_is_sampled=1 blocked_threads_absent=1",
+        "profile: samples n={} sampled_ns={} truncated={} wall_ns={} rate_hz={} tick={tick} threads={} top_region={} time_is_sampled=1 blocked_threads_absent=1",
         snapshot.samples,
         snapshot.sampled_ns,
         snapshot.truncated,
         config.started_at.elapsed().as_nanos(),
         config.rate_hz,
         sampler::sampled_threads(),
+        snapshot
+            .top_region()
+            .map_or("none", |(region, _)| region.name()),
     );
+    print_region_rows(&snapshot);
     print_line_rows("self-line", snapshot.line_self_ns);
     print_line_rows("incl-line", snapshot.line_incl_ns);
     print_routine_rows("self-routine", snapshot.routine_self_ns);
@@ -118,6 +123,48 @@ fn report_samples() {
         eprintln!(
             "profile: incl-callsite {}:{} -> {}::{} ns={ns}",
             location.caller_file, location.caller_line, location.package, location.name
+        );
+    }
+}
+
+/// The D4 half of the report: which interpreter subsystem the sampled time
+/// went to, whole-run and per line.
+///
+/// `interp` is not a residue category -- it is the answer "mutsu was running
+/// bytecode", which is what a sample no subsystem claimed means -- so there is
+/// no `unknown` row to explain away. `excluded-region` is measured, not
+/// sampled, and is deliberately a separate row type: it is time the line table
+/// above does **not** contain.
+fn print_region_rows(snapshot: &snapshot::SampledSnapshot) {
+    for index in 0..Region::COUNT {
+        let ns = snapshot.region_ns[index];
+        if ns == 0 {
+            continue;
+        }
+        eprintln!(
+            "profile: region {} ns={ns} samples={}",
+            Region::from_index(index).name(),
+            snapshot.region_samples[index],
+        );
+    }
+    for (region, ns) in &snapshot.excluded_region_ns {
+        eprintln!("profile: excluded-region {} ns={ns}", region.name());
+    }
+    let mut rows = snapshot.line_region_ns.clone();
+    rows.sort_by_key(|(key, ns)| {
+        (
+            std::cmp::Reverse(*ns),
+            key.location.file.as_str(),
+            key.location.line,
+            key.region.index(),
+        )
+    });
+    for (key, ns) in rows.iter().take(REPORT_ROWS) {
+        eprintln!(
+            "profile: self-line-region {}:{} {} ns={ns}",
+            key.location.file,
+            key.location.line,
+            key.region.name(),
         );
     }
 }

@@ -168,6 +168,12 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Tagging the whole call, body included, is deliberate and costs
+        // nothing in accuracy: a tick that fires while the method's *bytecode*
+        // runs is consumed by that bytecode's own poll long before this guard
+        // drops, so only the dispatch work itself can still be holding one
+        // (`crate::profile::region`).
+        let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // `Any` is not a `Cool`, so it does not answer `Cool`'s methods. Gated
         // here, ahead of every native/instance handler, because the by-name
         // native cascades below recognize the NAME and then stringify the
@@ -3623,6 +3629,11 @@ impl Interpreter {
         let native_result = if bypass_native_fastpath {
             None
         } else {
+            // The interpreter-side twin of `try_native_method_raw`, and the
+            // reason it is tagged separately from the dispatch around it: a
+            // line whose time is a native builtin is the user's own code being
+            // slow, while one whose time is `method-dispatch` is mutsu's.
+            let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
             match cascade_args {
                 [] => crate::builtins::native_method_0arg(&target, method_sym),
                 [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
