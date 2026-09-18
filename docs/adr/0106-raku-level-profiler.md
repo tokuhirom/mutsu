@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Proposed (design complete; Slice 0 shipped, Slices 1-5 not started — §9)
+- **Status**: Proposed (design complete; Slices 0-1 shipped, Slices 2-5 not started — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -393,8 +393,10 @@ mechanism.
 
 ## 9. Implementation status
 
-**Slice 0 is shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699);
-`news/2026-09/a-compiled-chunk-knows-which-file-its-lines-belong-to.md`): `CompiledCode` carries
+**Slices 0 and 1 are shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699),
+[#8701](https://github.com/tokuhirom/mutsu/issues/8701);
+`news/2026-09/a-compiled-chunk-knows-which-file-its-lines-belong-to.md` and
+`news/2026-09/profiler-safepoint-poll-network.md`): `CompiledCode` carries
 `source_file: Option<Symbol>` and `location_at(ip) -> Option<(Symbol, u32)>`. One deviation from the
 sketch above: rather than threading the unit path through `Compiler::compile` and its ~40 chunk-
 compiler construction sites, the unit's identity is published for the duration of a compile through a
@@ -402,8 +404,11 @@ thread-local (`src/unit_source_file.rs`) that `CompiledCode::new()` reads — th
 already uses for `$?FILE` — so every chunk a compile produces is stamped, including the nested ones no
 walker enumerates. `--dump-bytecode` is its first consumer.
 
-Slices 1-5 are not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
-own gate (§8), and Slice 0 was independently useful, as claimed.
+Slice 1 generalizes the safepoint network into `vm_poll`, with GC as its first consumer and a
+profiler gate/site ABI ready for Slice 2; the JIT supplies the bytecode ip on native backedges.
+`tests/jit_diff.rs` pins that arming the profiler consumer preserves JIT execution. Slices 2-5 are
+not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its own gate (§8),
+and Slices 0-1 were independently useful, as claimed.
 
 ## 10. Open questions
 

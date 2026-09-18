@@ -501,7 +501,7 @@ impl Interpreter {
             // parks when a trigger is armed.)
             crate::gc::gc_park_point();
             // GC safepoint (§9.2a `react_poll`): one drive-loop poll unit.
-            crate::gc::gc_safepoint(crate::gc::SafepointKind::ReactPoll);
+            crate::vm::vm_poll::poll(crate::gc::SafepointKind::ReactPoll, 0);
             let mut progressed = false;
             if let SupplyDrivePolicy::Promise {
                 promise, deadline, ..

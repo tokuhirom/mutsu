@@ -10,7 +10,12 @@ use std::process::Command;
 fn run(src: &str, envs: &[(&str, &str)]) -> (String, String, bool) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_mutsu"));
     cmd.arg("-e").arg(src);
-    for k in ["MUTSU_JIT", "MUTSU_JIT_THRESHOLD", "MUTSU_VM_STATS"] {
+    for k in [
+        "MUTSU_JIT",
+        "MUTSU_JIT_THRESHOLD",
+        "MUTSU_VM_STATS",
+        "MUTSU_PROFILE",
+    ] {
         cmd.env_remove(k);
     }
     for (k, v) in envs {
@@ -69,6 +74,32 @@ fn jit_actually_compiles_and_enters() {
         };
         assert!(field("compiles=") >= 1, "hot fib chunk was not compiled");
         assert!(field("entries=") >= 1, "compiled fib chunk never entered");
+    }
+}
+
+/// ADR-0106 Slice 1: arming the future profiler consumer must not disable the
+/// JIT or change the result. Native backedges use the shared VM poll ABI while
+/// carrying their bytecode ip for the consumer that will land in Slice 2.
+#[test]
+fn jit_backedges_work_with_profiler_consumer_armed() {
+    let (out, err, ok) = run(
+        FIB,
+        &[
+            ("MUTSU_JIT", "on"),
+            ("MUTSU_JIT_THRESHOLD", "1"),
+            ("MUTSU_PROFILE", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+    assert!(ok, "JIT + profiler poll run failed: {err}");
+    assert_eq!(out, "2584\n");
+    if cfg!(feature = "jit") {
+        let jit_line = err
+            .lines()
+            .find(|l| l.contains("jit: compiles="))
+            .expect("no jit stats line");
+        assert!(jit_line.contains("compiles="));
+        assert!(jit_line.contains("entries="));
     }
 }
 

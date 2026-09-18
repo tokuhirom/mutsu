@@ -211,7 +211,8 @@ pub(crate) fn worker_started() {
 }
 
 /// Park the calling mutator until the stop-the-world (if any) is released.
-/// Called from `gc_safepoint` — a single load when no stop is requested.
+/// Called from the GC consumer in `vm_poll` — a single load when no stop is
+/// requested.
 #[inline]
 pub(crate) fn park_at_safepoint() {
     if !stw_requested() {

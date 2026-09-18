@@ -62,9 +62,10 @@ pub(super) unsafe extern "C" fn containerize_pair(interp: *mut Interpreter) {
     interp.stack.push(containerized);
 }
 
-/// GC safepoint poll emitted on native backedges (ADR-0004 §2.4).
-pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter) {
-    crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+/// VM poll emitted on native backedges (ADR-0004 §2.4, ADR-0106 Slice 1).
+/// `site` is a compile-time bytecode ip supplied by the Cranelift emitter.
+pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter, site: u32) {
+    crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, site);
 }
 
 /// Mark a `Failure` at the current top of stack as handled. The Tier B

@@ -144,9 +144,9 @@ impl Interpreter {
         let entry_begin_time_depth = self.begin_time_hidden.len() as u32;
         let mut ip = 0;
         while ip < code.ops.len() {
-            // GC safepoint (design doc §1.2): the dispatch backward edge holds no
+            // VM poll (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here.
-            // `gc_safepoints_armed()` is a single cached load (false only with
+            // `vm_poll::armed()` is a single cached load (false only with
             // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
             // the work by thread-safety — the dead sweep (refcount-dead
             // candidates, plain `Arc` drops) runs even while other mutators are
@@ -155,8 +155,8 @@ impl Interpreter {
             // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
             // the candidate buffer — and their dead snapshots' memory —
             // unboundedly until the post-join collect.
-            if crate::gc::gc_safepoints_armed() {
-                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            if crate::vm::vm_poll::armed() {
+                crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, ip as u32);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
@@ -307,7 +307,7 @@ impl Interpreter {
 
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // GC safepoint (§9.2a `nested_run`): the nested-VM entry boundary.
-        crate::gc::gc_safepoint(crate::gc::SafepointKind::NestedRun);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::NestedRun, 0);
         // Save the per-execution registers (the fields `Interpreter::new` initializes
         // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
@@ -465,9 +465,9 @@ impl Interpreter {
         self.push_once_scope(root_once_scope);
         let mut ip = 0;
         while ip < code.ops.len() {
-            // GC safepoint (design doc §1.2): the dispatch backward edge holds no
+            // VM poll (design doc §1.2): the dispatch backward edge holds no
             // container borrow, so a cycle collect may run here.
-            // `gc_safepoints_armed()` is a single cached load (false only with
+            // `vm_poll::armed()` is a single cached load (false only with
             // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
             // the work by thread-safety — the dead sweep (refcount-dead
             // candidates, plain `Arc` drops) runs even while other mutators are
@@ -476,8 +476,8 @@ impl Interpreter {
             // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
             // the candidate buffer — and their dead snapshots' memory —
             // unboundedly until the post-join collect.
-            if crate::gc::gc_safepoints_armed() {
-                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            if crate::vm::vm_poll::armed() {
+                crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, ip as u32);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
@@ -810,15 +810,15 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut ip = from;
         while ip < end {
-            // GC safepoint on the inner dispatch backedge too: compound-loop
+            // VM poll on the inner dispatch backedge too: compound-loop
             // ops (for/while bodies) iterate entirely inside ONE `exec_one` of
             // the outer `run` loop, so without this a tight loop never reaches
             // a safepoint and candidate-triggered collects (and the dead sweep
             // that bounds buffer memory) defer to the loop's end. Same borrow
             // argument as the outer site: between instructions no container
             // borrow is live (design doc §1.2).
-            if crate::gc::gc_safepoints_armed() {
-                crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+            if crate::vm::vm_poll::armed() {
+                crate::vm::vm_poll::poll(crate::gc::SafepointKind::Backedge, ip as u32);
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()

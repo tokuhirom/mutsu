@@ -57,6 +57,8 @@ pub(super) struct TierB {
     pub(super) s1: SigRef,
     /// `(interp) -> ()` — infallible helpers.
     pub(super) v1: SigRef,
+    /// `(interp, u32) -> ()` — a VM poll carrying the bytecode ip.
+    pub(super) v1_u32: SigRef,
     /// `(interp, code, u32) -> ()` — the `load_const` slow path.
     pub(super) v_code_u32: SigRef,
     /// `(interp, code, u32) -> i32` — the `get_local` slow path.
@@ -197,6 +199,17 @@ impl TierB {
     pub(super) fn call_v1(&self, b: &mut FunctionBuilder, f: usize) {
         let callee = b.ins().iconst(self.ptr_ty, f as i64);
         b.ins().call_indirect(self.v1, callee, &[self.interp]);
+    }
+
+    /// Call a VM poll helper with the bytecode instruction that formed the
+    /// backedge. The immediate keeps the disarmed path free of an extra load.
+    pub(super) fn call_safepoint(&self, b: &mut FunctionBuilder, f: usize, site: u32) {
+        let callee = b.ins().iconst(self.ptr_ty, f as i64);
+        let site = b
+            .ins()
+            .iconst(cranelift_codegen::ir::types::I32, site as i64);
+        b.ins()
+            .call_indirect(self.v1_u32, callee, &[self.interp, site]);
     }
 
     /// `Add`/`Sub`/`Mul`: pop two Int (or two Num) words, push the result.

@@ -3047,7 +3047,7 @@ impl Interpreter {
         // scratch interpreter is excluded: it is built from inside regex/grammar
         // evaluation, which is not a re-entry boundary.
         if !Self::is_building_scratch() {
-            crate::gc::gc_safepoint(crate::gc::SafepointKind::Construct);
+            crate::vm::vm_poll::poll(crate::gc::SafepointKind::Construct, 0);
         }
         // Seed the process-wide magicals. A scratch interpreter skips ALL of
         // it: every one of the ten scratch construction sites spells

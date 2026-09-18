@@ -113,6 +113,8 @@ fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
 struct Sigs {
     /// `(interp) -> ()`
     v1: SigRef,
+    /// `(interp, u32) -> ()`
+    v1_u32: SigRef,
     /// `(interp) -> i32`
     s1: SigRef,
     /// `(interp, code, u32) -> ()`
@@ -138,6 +140,7 @@ fn make_sigs(module: &JITModule, b: &mut FunctionBuilder, ptr: Type) -> Sigs {
     };
     Sigs {
         v1: sig(&[ptr], None),
+        v1_u32: sig(&[ptr, types::I32], None),
         s1: sig(&[ptr], Some(types::I32)),
         v_code_u32: sig(&[ptr, ptr, types::I32], None),
         s_code_u32: sig(&[ptr, ptr, types::I32], Some(types::I32)),
@@ -204,6 +207,7 @@ fn build(
             lay,
             s1: sigs.s1,
             v1: sigs.v1,
+            v1_u32: sigs.v1_u32,
             v_code_u32: sigs.v_code_u32,
             s_code_u32: sigs.s_code_u32,
         })
@@ -481,13 +485,15 @@ fn build(
             OpCode::Jump(t) => {
                 let t = *t as usize;
                 if t <= i {
-                    // Backedge: poll the GC safepoint so a native loop keeps
-                    // participating in cooperative STW (ADR-0004 §2.4).
+                    // Backedge: poll the shared VM network so a native loop
+                    // keeps participating in cooperative STW and future
+                    // profiler consumers (ADR-0004 §2.4, ADR-0106 §5).
+                    let site = b.ins().iconst(types::I32, i as i64);
                     call_helper(
                         &mut b,
-                        sigs.v1,
+                        sigs.v1_u32,
                         helpers::safepoint as *const () as usize,
-                        &[interp],
+                        &[interp, site],
                     );
                 }
                 b.ins().jump(block_at[&t], &[]);
@@ -500,6 +506,7 @@ fn build(
                     &mut b,
                     block_at[&t],
                     t <= i,
+                    i as u32,
                     helpers::safepoint as *const () as usize,
                     helpers::mark_failure_top as *const () as usize,
                     helpers::jump_if_false_cond as *const () as usize,
@@ -512,6 +519,7 @@ fn build(
                     &mut b,
                     block_at[&t],
                     t <= i,
+                    i as u32,
                     helpers::safepoint as *const () as usize,
                     helpers::jump_if_true_cond as *const () as usize,
                 );
@@ -532,11 +540,12 @@ fn build(
                     let poll = b.create_block();
                     b.ins().brif(cond, poll, &[], next, &[]);
                     b.switch_to_block(poll);
+                    let site = b.ins().iconst(types::I32, i as i64);
                     call_helper(
                         &mut b,
-                        sigs.v1,
+                        sigs.v1_u32,
                         helpers::safepoint as *const () as usize,
-                        &[interp],
+                        &[interp, site],
                     );
                     b.ins().jump(block_at[&t], &[]);
                 } else {
@@ -564,11 +573,12 @@ fn build(
                     let poll = b.create_block();
                     b.ins().brif(cond, poll, &[], next, &[]);
                     b.switch_to_block(poll);
+                    let site = b.ins().iconst(types::I32, i as i64);
                     call_helper(
                         &mut b,
-                        sigs.v1,
+                        sigs.v1_u32,
                         helpers::safepoint as *const () as usize,
-                        &[interp],
+                        &[interp, site],
                     );
                     b.ins().jump(block_at[&t], &[]);
                 } else {
