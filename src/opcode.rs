@@ -4487,6 +4487,23 @@ pub(crate) struct CompiledCode {
     /// that can *observe* a line (call/reentry boundaries, error and warning
     /// raise sites) instead of maintaining `cur_source_line` on every statement.
     pub(crate) op_lines: Vec<u32>,
+    /// The compilation unit `op_lines` belongs to (ADR-0106 Slice 0): the file
+    /// whose lines those are. `op_lines` alone answers "instruction 412 is line
+    /// 89" but not "…of which file", which left every consumer of a bytecode
+    /// location reaching for one of three *runtime* sources for a fact known at
+    /// compile time — a `?FILE` env probe
+    /// ([`crate::runtime::Interpreter::current_source_file`]), the per-frame
+    /// `RoutineFrame { file, def_file }`, or [`CompiledFunction::source_file`].
+    /// None of those is addressable from `(chunk, ip)` alone.
+    ///
+    /// Distinct from [`Self::source_line`], which is this chunk's own
+    /// *declaration* line rather than a per-ip location. Stamped at
+    /// construction from [`crate::unit_source_file::current`], so every chunk a
+    /// compile produces carries it — including nested closure bodies and
+    /// declaration-expression chunks; `None` only for a chunk built outside any
+    /// compile (a hand-built chunk, a `#[test]` helper). See
+    /// [`Self::location_at`].
+    pub(crate) source_file: Option<Symbol>,
     /// Compile-time cursor: the source line attached to every op emitted from
     /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
     emit_line: u32,
@@ -5666,6 +5683,7 @@ impl CompiledCode {
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
             compiled_fns: None,
+            source_file: crate::unit_source_file::current(),
             atomic_env_sync_locals: Vec::new(),
             atomic_target_syms: rustc_hash::FxHashSet::default(),
             rw_arg_env_sync_syms: rustc_hash::FxHashSet::default(),
@@ -8272,6 +8290,53 @@ impl CompiledCode {
         }
     }
 
+    /// [`Self::line_at`] with the file those lines belong to — the full source
+    /// location of the instruction at `ip`, answerable from `(chunk, ip)` alone
+    /// (ADR-0106 Slice 0).
+    ///
+    /// `None` when either half is missing: a chunk with no
+    /// [`Self::source_file`] (built outside a compile), or an ip with no line
+    /// (a prologue emitted before the first line marker). `line_at`'s
+    /// "0 means leave the current line alone" rule is unchanged, and this never
+    /// reports line 0.
+    #[inline]
+    pub(crate) fn location_at(&self, ip: usize) -> Option<(Symbol, u32)> {
+        let file = self.source_file?;
+        match self.op_lines.get(ip) {
+            Some(&0) | None => None,
+            Some(&line) => Some((file, line)),
+        }
+    }
+
+    /// Give this chunk — and every chunk nested in it — a source file, for the
+    /// compiles that learn theirs only after the fact.
+    ///
+    /// Almost every chunk is stamped at construction from the ambient
+    /// [`crate::unit_source_file`] guard, so this is the exception path: a
+    /// nested named sub is compiled as part of its enclosing routine and gets
+    /// its unit metadata when the enclosing definition becomes known
+    /// ([`CompiledFunction::stamp_source_file`], which calls this).
+    ///
+    /// A chunk that already names a unit is left alone, *and* so is everything
+    /// under it: the ambient guard stamps everything one compile produces
+    /// together, so a stamped parent cannot have an unstamped child. Returns
+    /// whether anything changed. Stopping at the first stamped chunk is what
+    /// keeps this free — descending unconditionally would `Arc::make_mut`
+    /// (and so deep-clone) every shared nested body on every registration.
+    pub(crate) fn stamp_source_file(&mut self, file: Symbol) -> bool {
+        if self.source_file.is_some() {
+            return false;
+        }
+        self.source_file = Some(file);
+        for nested in &mut self.closure_compiled_codes {
+            Arc::make_mut(nested).stamp_source_file(file);
+        }
+        if let Some(nested_fns) = &mut self.compiled_fns {
+            Arc::make_mut(nested_fns).stamp_code_source_file(file);
+        }
+        true
+    }
+
     /// Patch a jump instruction at `idx` to point to the current position.
     pub(crate) fn patch_jump(&mut self, idx: usize) {
         let target = self.ops.len() as i32;
@@ -9077,6 +9142,37 @@ impl CompiledFns {
         self.id = Self::next_id();
     }
 
+    /// [`Self::stamp_source_file`]'s bytecode-side twin (ADR-0106 Slice 0):
+    /// give each routine's compiled CHUNK a source file, so `(chunk, ip)`
+    /// resolves to a location without consulting the routine around it.
+    ///
+    /// A routine that names its own file wins over `file` for its own body and
+    /// everything nested in it — `file` is only the enclosing unit's answer for
+    /// the routines that have none (`CompiledFunction::source_file == None`
+    /// means "the main script", which is exactly what the caller passes).
+    pub(crate) fn stamp_code_source_file(&mut self, file: crate::symbol::Symbol) {
+        let mut changed = false;
+        for value in self.map.values_mut() {
+            // Read before `Arc::make_mut`: an already-stamped body needs no
+            // write, and a shared body (an imported module's routine lives in
+            // two tables) would otherwise be deep-cloned for nothing.
+            if value.code.source_file.is_some() {
+                continue;
+            }
+            let function = Arc::make_mut(value);
+            let file = function.source_file_sym().unwrap_or(file);
+            changed |= function.code.stamp_source_file(file);
+            if let Some(nested) = &mut function.compiled_fns {
+                Arc::make_mut(nested).stamp_code_source_file(file);
+            }
+        }
+        // The map's version token gates inline caches, so renew it only when a
+        // body actually changed.
+        if changed {
+            self.id = Self::next_id();
+        }
+    }
+
     pub(crate) fn retain(
         &mut self,
         mut f: impl FnMut(&crate::symbol::Symbol, &CompiledFunction) -> bool,
@@ -9541,6 +9637,12 @@ impl CompiledFunction {
         if self.source_file.is_none() {
             self.source_file = source_file.clone();
             self.source_file_sym_cache = std::sync::OnceLock::new();
+        }
+        // The bytecode half (ADR-0106 Slice 0): a nested body compiled as part
+        // of its parent is built before the parent's file is known, so the
+        // ambient stamp `CompiledCode::new()` applies can be `None` here.
+        if let Some(file) = self.source_file_sym() {
+            let _ = self.code.stamp_source_file(file);
         }
         if let Some(nested) = &mut self.compiled_fns {
             Arc::make_mut(nested).stamp_source_file(source_file);

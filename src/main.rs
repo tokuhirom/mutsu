@@ -404,7 +404,7 @@ fn run_main() {
     }
 
     if dump_bytecode {
-        match mutsu::dump_bytecode(&input) {
+        match mutsu::dump_bytecode(&input, Some(&program_name)) {
             Ok(listing) => println!("{}", listing),
             Err(err) => {
                 print_error("Parse error", &err, Some(&input), Some(&program_name));

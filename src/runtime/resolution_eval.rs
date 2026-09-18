@@ -203,6 +203,15 @@ impl Interpreter {
                 .get(&self.current_package())
                 .cloned()
         });
+        // ADR-0106 Slice 0: stamp the chunks this compile produces with the unit
+        // they belong to. `?FILE` already names it in every case: the script or
+        // module for an ordinary closure/sub body recompiled here, and the
+        // EVAL's own synthesized unit name (`EVAL_<N>`, scoped around the
+        // compile by `builtin_eval`) for an `EVAL`'d one. Deriving it from
+        // `?FILE` rather than minting a second identity is what keeps
+        // `location_at` agreeing with the file a backtrace reports.
+        let _unit_file =
+            crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
         let (mut code, fns) = compiler.compile(body);
         // ADR-0037 Slice 4: bake the resolved target callable id onto this
         // unit's own `CompiledCode` (not a `Compiler` field, and not an

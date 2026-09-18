@@ -684,6 +684,14 @@ impl Interpreter {
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|_| file_name.clone());
         self.env.insert("?FILE".to_string(), Value::str(file_name));
+        // ADR-0106 Slice 0: publish this compilation unit's identity for every
+        // chunk compiled from here on -- the BEGIN-time compiles below, the
+        // mainline itself, and any on-the-fly compile the running program
+        // triggers. A `use`d module and an `EVAL` re-publish their own over
+        // this one for the span they own.
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
+            crate::symbol::Symbol::intern(&source_file),
+        ));
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
@@ -1101,6 +1109,12 @@ impl Interpreter {
                 .get(&self.current_package())
                 .cloned()
         });
+        // ADR-0106 Slice 0: an on-the-fly compile belongs to the unit whose
+        // code triggered it -- `?FILE`, which a module body scopes to its own
+        // path. `enter(None)` inherits the ambient unit rather than clearing
+        // it, so a chunk compiled with no `?FILE` in scope still names a file.
+        let _unit_file =
+            crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
         compiler.compile(stmts)
     }
 

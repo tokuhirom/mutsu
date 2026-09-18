@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Proposed (design complete; implementation not started — §9)
+- **Status**: Proposed (design complete; Slice 0 shipped, Slices 1-5 not started — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -374,7 +374,7 @@ mechanism.
 |---|---|
 | safepoint bias (a long native region delays the poll) | elapsed-time weighting (Slice 2) plus explicit polls in the few long loops mutsu owns; §6d if measurement still shows bias |
 | threaded programs under-sampled | per-thread tick + per-thread buffers from the start, not a retrofit |
-| `EVAL`/precomp chunks with no file | Slice 0 gives every chunk an identity, including a synthetic one for `EVAL` (rendered as `EVAL#<n>`, as NYTProf does) |
+| `EVAL`/precomp chunks with no file | Slice 0 gives every chunk an identity, including `EVAL` units. **Shipped as mutsu's existing `EVAL_<N>` unit name, not the `EVAL#<n>` this table first proposed** — `builtin_eval` already synthesizes and scopes that name, and it is what `Code.file` and a backtrace report, so a second identity would have made `location_at` disagree with the frame beside it |
 | profiler perturbs GC/alloc statistics | no allocation on the sample path; buffers pre-reserved at arm time |
 | a flaky timing test sneaks in | D5 — the test suite may assert counts and structure only |
 
@@ -393,8 +393,17 @@ mechanism.
 
 ## 9. Implementation status
 
-Not started. Slices 0-5 are the deliverable; Slice 6 is explicitly optional. Each slice lands as its
-own PR with its own gate (§8), and Slice 0 is independently useful if the rest is deferred.
+**Slice 0 is shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699);
+`news/2026-09/a-compiled-chunk-knows-which-file-its-lines-belong-to.md`): `CompiledCode` carries
+`source_file: Option<Symbol>` and `location_at(ip) -> Option<(Symbol, u32)>`. One deviation from the
+sketch above: rather than threading the unit path through `Compiler::compile` and its ~40 chunk-
+compiler construction sites, the unit's identity is published for the duration of a compile through a
+thread-local (`src/unit_source_file.rs`) that `CompiledCode::new()` reads — the shape the parser
+already uses for `$?FILE` — so every chunk a compile produces is stamped, including the nested ones no
+walker enumerates. `--dump-bytecode` is its first consumer.
+
+Slices 1-5 are not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
+own gate (§8), and Slice 0 was independently useful, as claimed.
 
 ## 10. Open questions
 
