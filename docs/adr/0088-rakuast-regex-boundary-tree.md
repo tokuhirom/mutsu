@@ -16,12 +16,12 @@
   dynamic-argument, dynamic-quoted-method-name argument, and hash-index
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
-  block-valued-colonpair, and array-slurpy-placeholder
+  block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
   dynamic-argument slices implemented
   2026-09-12 through
   2026-09-18;
   direct hash interpolation is reserved by Rakudo and mutsu;
-  hash slurpy placeholders, explicit block signatures, other complex block
+  explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
   migration remain)
 - Date: 2026-09-12
@@ -1354,7 +1354,7 @@ The lowering direction maps the placeholder declaration back to the
 caret-prefixed lexical name consumed by the existing implicit-block closure
 builder. Constructed regex trees therefore still lower through the Parser ->
 Compiler -> VM path, and the block remains callable with its captured lexical
-values at match time. Array/hash slurpy placeholders, explicit pointy/signature
+values at match time. Hash-slurpy placeholders, explicit pointy/signature
 forms, and other complex block values remain deferred boundaries.
 
 The focused regression is
@@ -1375,11 +1375,32 @@ The write direction lowers the marker back to `Expr::ArrayVar("_")` and lets
 `make_anon_sub` rebuild the implicit `*@_` parameter. Regex colonpair source
 rendering therefore keeps the brace form, and constructed RakuAST trees still
 use the existing Parser -> Compiler -> VM path with match-time argument and
-outer-lexical behavior unchanged. Hash-slurpy placeholders, explicit pointy
-signatures, and other complex block values remain deferred boundaries.
+outer-lexical behavior unchanged. Explicit pointy signatures and other complex
+block values remain deferred boundaries.
 
 The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block and
 slurpy-placeholder nodes, the no-field constructor, source and hand-built
 regex lowering, multiple placeholder arguments, and dynamic outer-lexical
 behavior.
+
+## 56. Hash-slurpy placeholder block-valued colonpair dynamic argument slice (2026-09-18)
+
+Hash-slurpy placeholder block arguments such as
+`<word(:expected{ %_ })>` now retain Rakudo's direct
+`RakuAST::Block` value with a `RakuAST::VarDeclaration::Placeholder::SlurpyHash`
+body node. The source-level node is distinct from a pointy block with an
+explicit `*%_` signature, while mutsu's execution AST stores the implicit
+named slurpy on `AnonSubParams`.
+
+The write direction lowers the marker back to `Expr::HashVar("_")` and lets
+`make_anon_sub` rebuild the implicit named slurpy. Regex colonpair source
+rendering therefore keeps the brace form, and constructed RakuAST trees still
+use the existing Parser -> Compiler -> VM path with match-time named-argument
+and outer-lexical behavior unchanged. Explicit pointy signatures and other
+complex block values remain deferred boundaries.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block and
+slurpy-placeholder nodes, the no-field constructor, source and hand-built
+regex lowering, named argument binding, and dynamic outer-lexical behavior.

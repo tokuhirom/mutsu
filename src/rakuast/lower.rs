@@ -1720,6 +1720,11 @@ fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeEr
             {
                 Some(body)
             }
+            Expr::AnonSubParams { body, .. }
+                if crate::regex_tree::is_hash_slurpy_placeholder_block(&value) =>
+            {
+                Some(body)
+            }
             _ => None,
         };
         let value = if let Some(body) = block_body {
@@ -2258,8 +2263,14 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::Block => {
             let body = lower_block(node)?;
             if crate::ast::collect_placeholders_shallow(&body).is_empty() {
-                if crate::ast::body_reads_args_array(&body) {
-                    Ok(crate::ast::make_anon_sub(body))
+                if crate::ast::body_reads_args_array(&body)
+                    || crate::ast::body_reads_args_hash(&body)
+                {
+                    if crate::ast::body_reads_args_hash(&body) {
+                        Ok(crate::ast::make_rakuast_anon_sub(body))
+                    } else {
+                        Ok(crate::ast::make_anon_sub(body))
+                    }
                 } else {
                     Ok(Expr::AnonSub {
                         body,
@@ -2538,6 +2549,9 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // RakuAST's implicit flattened array placeholder (`@_`) lowers back
         // to the legacy array variable used by `make_anon_sub`.
         RakuAstClass::VarDeclarationPlaceholderSlurpyArray => Ok(Expr::ArrayVar("_".to_string())),
+        // RakuAST's implicit named hash placeholder (`%_`) lowers back to the
+        // legacy hash variable used by `make_anon_sub`.
+        RakuAstClass::VarDeclarationPlaceholderSlurpyHash => Ok(Expr::HashVar("_".to_string())),
         // `($x OP= EXPR)` in expression position -> a compound assignment.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
             lower_compound_assign_expr(node)

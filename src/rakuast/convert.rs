@@ -1645,6 +1645,12 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) {
                 return Err(desugared(name));
             }
+            if name == "_" {
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
+                    fields: Vec::new(),
+                });
+            }
             Ok(var_lexical("%", name))
         }
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),
@@ -2044,7 +2050,8 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                         && name
                             .chars()
                             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-                }) || crate::regex_tree::is_array_slurpy_placeholder_block(expr))
+                }) || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
+                    || crate::regex_tree::is_hash_slurpy_placeholder_block(expr))
             {
                 return block_node(body);
             }
@@ -3970,7 +3977,8 @@ fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         right.as_ref(),
         Expr::AnonSub { is_block: true, .. } | Expr::Block(_) | Expr::Hash(_)
     ) || crate::regex_tree::is_scalar_placeholder_block(right)
-        || crate::regex_tree::is_array_slurpy_placeholder_block(right);
+        || crate::regex_tree::is_array_slurpy_placeholder_block(right)
+        || crate::regex_tree::is_hash_slurpy_placeholder_block(right);
     if is_direct_block {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,

@@ -1120,6 +1120,7 @@ impl Compiler {
         // so carry the method context down. A nested *named sub* is not a method
         // and gets a fresh compiler via compile_sub_body, so it correctly resets.
         sub_compiler.lexically_in_method = self.lexically_in_method;
+        sub_compiler.capture_enclosing_method_named_args = self.capture_enclosing_method_named_args;
         // A `$self` parameter of an enclosing routine stays visible in a nested
         // block/closure, exactly like any other lexical (ADR-0061).
         sub_compiler.self_is_signature_param =

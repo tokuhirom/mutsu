@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 121;
+plan 131;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -563,3 +563,60 @@ ok GDynamicArraySlurpyPlaceholderColonPairArgument.parse('').defined,
 $value = 'c';
 ok !GDynamicArraySlurpyPlaceholderColonPairArgument.parse('').defined,
     'an array-slurpy placeholder keeps its outer lexical dynamic';
+
+my $hash_slurpy_ast = Q[/<word(:expected{ %_ })>/].AST;
+my $hash_slurpy_gist = $hash_slurpy_ast.gist;
+ok $hash_slurpy_gist.contains('RakuAST::ColonPair::Value'),
+    'a hash-slurpy placeholder colonpair keeps its value node';
+ok $hash_slurpy_gist.contains('value => RakuAST::Block.new('),
+    'a hash-slurpy placeholder colonpair keeps its direct block value';
+ok $hash_slurpy_gist.contains('RakuAST::VarDeclaration::Placeholder::SlurpyHash.new'),
+    'a hash-slurpy placeholder keeps its source-level declaration';
+ok !$hash_slurpy_gist.contains('RakuAST::PointyBlock'),
+    'a hash-slurpy placeholder block is not reclassified as a PointyBlock';
+ok !$hash_slurpy_gist.contains('RakuAST::Var::Lexical.new("\\%_")'),
+    'a hash-slurpy placeholder is not flattened to a lexical variable';
+ok EVAL($hash_slurpy_ast) ~~ Regex,
+    'a source hash-slurpy placeholder colonpair regex lowers successfully';
+ok RakuAST::VarDeclaration::Placeholder::SlurpyHash.new.gist
+        eq 'RakuAST::VarDeclaration::Placeholder::SlurpyHash.new',
+    'the hash-slurpy placeholder constructor renders without fields';
+
+my $hash_slurpy_placeholder = RakuAST::VarDeclaration::Placeholder::SlurpyHash.new;
+my $hash_slurpy_statements = RakuAST::StatementList.new;
+$hash_slurpy_statements.add-statement(
+    RakuAST::Statement::Expression.new(expression => $hash_slurpy_placeholder)
+);
+my $hash_slurpy_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Block.new(
+        body => RakuAST::Blockoid.new($hash_slurpy_statements),
+    ),
+);
+my $hash_slurpy_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($hash_slurpy_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($hash_slurpy_constructed_ast) ~~ Regex,
+    'a hand-built hash-slurpy placeholder regex lowers through the matcher';
+
+grammar GDynamicHashSlurpyPlaceholderColonPairArgument {
+    token TOP { <word(:expected{ %_ })> };
+    token word(:$expected) {
+        <?{
+            my %arguments = $expected(:first('a'), :second($value));
+            %arguments.elems == 2
+                && %arguments<first> eq 'a'
+                && %arguments<second> eq 'b'
+        }>
+    }
+}
+$value = 'b';
+ok GDynamicHashSlurpyPlaceholderColonPairArgument.parse('').defined,
+    'a hash-slurpy placeholder reaches the named subrule as a hash';
+$value = 'c';
+ok !GDynamicHashSlurpyPlaceholderColonPairArgument.parse('').defined,
+    'a hash-slurpy placeholder keeps its outer lexical dynamic';
